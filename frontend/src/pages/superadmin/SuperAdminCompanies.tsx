@@ -968,11 +968,6 @@ export default function SuperAdminCompanies() {
           setDelCompany(null)
         }
       />
-
-
-
-      
-
     </div>
   )
 }
