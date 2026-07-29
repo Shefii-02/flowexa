@@ -8,31 +8,31 @@ import toast from 'react-hot-toast'
 declare global { interface Window { Razorpay: any } }
 
 const DURATIONS = [
-  { key: 'monthly', label: '1 Month',   discount: 0 },
-  { key: '3month',  label: '3 Months',  discount: 5 },
-  { key: '6month',  label: '6 Months',  discount: 10 },
-  { key: 'yearly',  label: '12 Months', discount: 20 },
+  { key: 'monthly', label: '1 Month', discount: 0 },
+  { key: '3month', label: '3 Months', discount: 5 },
+  { key: '6month', label: '6 Months', discount: 10 },
+  { key: 'yearly', label: '12 Months', discount: 20 },
 ]
 
 const featureIcon = (f: string) => {
-  if (f.includes('message'))      return '💬'
-  if (f.includes('number'))       return '📱'
-  if (f.includes('user'))         return '👤'
-  if (f.includes('support'))      return '🎧'
-  if (f.includes('analytic'))     return '📊'
-  if (f.includes('API'))          return '🔌'
-  if (f.includes('CRM'))          return '🔗'
-  if (f.includes('brand'))        return '🏷️'
+  if (f.includes('message')) return '💬'
+  if (f.includes('number')) return '📱'
+  if (f.includes('user')) return '👤'
+  if (f.includes('support')) return '🎧'
+  if (f.includes('analytic')) return '📊'
+  if (f.includes('API')) return '🔌'
+  if (f.includes('CRM')) return '🔗'
+  if (f.includes('brand')) return '🏷️'
   return '✓'
 }
 
 export default function PlanPurchasePage() {
-  const [plans,    setPlans]    = useState<any[]>([])
-  const [current,  setCurrent]  = useState<any>(null)
-  const [history,  setHistory]  = useState<any[]>([])
+  const [plans, setPlans] = useState<any[]>([])
+  const [current, setCurrent] = useState<any>(null)
+  const [history, setHistory] = useState<any[]>([])
   const [duration, setDuration] = useState('monthly')
-  const [loading,  setLoading]  = useState(true)
-  const [paying,   setPaying]   = useState<number | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [paying, setPaying] = useState<number | null>(null)
 
   useEffect(() => {
     Promise.all([planApi.list(), planApi.current(), planApi.history()])
@@ -65,21 +65,41 @@ export default function PlanPurchasePage() {
       }
 
       const rzp = new window.Razorpay({
-        key:         data.razorpay_key,
-        amount:      data.amount,
-        currency:    data.currency || 'INR',
-        order_id:    data.order_id,
-        name:        'WA SaaS Platform',
+        key: data.razorpay_key,
+        amount: data.amount,
+        currency: data.currency || 'INR',
+        order_id: data.order_id,
+        name: 'Flowexa By Univexa Techonologies',
         description: `${plan.name} — ${DURATIONS.find(d => d.key === duration)?.label}`,
-        theme:       { color: '#1D9E75' },
+        prefill: {
+          name: data.user.name,
+          email: data.user.email,
+          contact: normalizePhone(data.user.phone),
+        },
+        notes: {
+          flowexa_id: data.user.id,
+          plan_id: plan.id,
+          order_id: data.order_id,
+          name: data.user.name,
+          email: data.user.email,
+          contact: normalizePhone(data.user.phone),
+        },
+
+        readonly: {
+          name: true,
+          email: true,
+          contact: true,
+        },
+
+        theme: { color: '#1D9E75' },
         handler: async (response: any) => {
           try {
             const res = await planApi.verifyPayment({
-              razorpay_order_id:   response.razorpay_order_id,
+              razorpay_order_id: response.razorpay_order_id,
               razorpay_payment_id: response.razorpay_payment_id,
-              razorpay_signature:  response.razorpay_signature,
-              plan_id:             plan.id,
-              duration_type:       duration,
+              razorpay_signature: response.razorpay_signature,
+              plan_id: plan.id,
+              duration_type: duration,
             })
             toast.success(res.data.message || `Plan activated: ${plan.name}!`)
             // Refresh
@@ -94,6 +114,25 @@ export default function PlanPurchasePage() {
   }
 
   if (loading) return <div className="flex justify-center py-12"><Spinner size="lg" /></div>
+
+  const normalizePhone = (phone: string): string => {
+    if (!phone) return '';
+
+    // Remove everything except digits
+    let digits = phone.replace(/\D/g, '');
+
+    // Remove leading country code 91
+    if (digits.length > 10 && digits.startsWith('91')) {
+      digits = digits.slice(2);
+    }
+
+    // Keep only the last 10 digits
+    if (digits.length > 10) {
+      digits = digits.slice(-10);
+    }
+
+    return digits;
+  };
 
   return (
     <div className="space-y-6">
@@ -142,7 +181,7 @@ export default function PlanPurchasePage() {
       {/* Plans grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {plans.map(plan => {
-          const price         = calcPrice(plan.price, duration)
+          const price = calcPrice(plan.price, duration)
           const isCurrentPlan = current?.plan?.id === plan.id
 
           return (
@@ -208,7 +247,7 @@ export default function PlanPurchasePage() {
                 {history.map((h: any) => (
                   <tr key={h.id}>
                     <td className="font-medium">{h.plan?.name}</td>
-                    <td className="text-xs text-gray-500 capitalize">{h.duration_type?.replace('month',' month')}</td>
+                    <td className="text-xs text-gray-500 capitalize">{h.duration_type?.replace('month', ' month')}</td>
                     <td className="font-medium">{h.amount_paid > 0 ? `₹${fmt.number(h.amount_paid)}` : 'Free'}</td>
                     <td><Badge variant={h.status === 'active' ? 'green' : h.status === 'expired' ? 'red' : 'gray'}>{h.status}</Badge></td>
                     <td className="text-xs text-gray-400">{fmt.date(h.starts_at)}</td>
