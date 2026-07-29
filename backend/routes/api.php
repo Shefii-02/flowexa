@@ -186,12 +186,6 @@ Route::prefix('v1')->group(function () {
         });
 
 
-        Route::prefix('webhook')->name('webhook.')->group(function () {
-            // Meta verification challenge
-            Route::get('whatsapp',  [WebhookController::class, 'verify'])->name('verify');
-            // Inbound events from Meta
-            Route::post('whatsapp', [WebhookController::class, 'handle'])->name('handle');
-        });
 
         // 'company.active'
         Route::prefix('analytics')->name('analytics.')->middleware(['jwt.auth',])->group(function () {
@@ -401,12 +395,9 @@ Route::prefix('v1')->group(function () {
         });
 
 
-//     // ── Message Logs ─────────────────────────────────────────────────────────
-    Route::get('message-logs', [MessageLogController::class, 'index'])->name('message-logs.index');
-    Route::get('message-logs/{log}', [MessageLogController::class, 'show'])->name('message-logs.show');
-
-        // ── Razorpay webhook (public — verified by signature) ────────────────────
-        Route::post('razorpay/webhook', [PaymentController::class, 'webhook']);
+        //     // ── Message Logs ─────────────────────────────────────────────────────────
+        Route::get('message-logs', [MessageLogController::class, 'index'])->name('message-logs.index');
+        Route::get('message-logs/{log}', [MessageLogController::class, 'show'])->name('message-logs.show');
     });
 
 
@@ -461,6 +452,16 @@ Route::prefix('v1')->group(function () {
             //
         });
 
+
+    Route::prefix('webhook')->name('webhook.')->group(function () {
+        // Meta verification challenge
+        Route::get('whatsapp',  [WebhookController::class, 'verify'])->name('verify');
+        // Inbound events from Meta
+        Route::post('whatsapp', [WebhookController::class, 'handle'])->name('handle');
+    });
+
+    // ── Razorpay webhook (public — verified by signature) ────────────────────
+    Route::post('razorpay/webhook', [PaymentController::class, 'webhook']);
 
     // Public webhook
     Route::post('/meta-ads/webhook', [MetaWebhookController::class, 'handle']);
