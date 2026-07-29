@@ -11,8 +11,10 @@ use Illuminate\Http\Resources\Json\JsonResource;
 // ─── Order Result Resource ────────────────────────────────────────────────────
 class OrderResultResource
 {
+
     public static function toArray(OrderResultDTO $dto): array
     {
+         $user = auth()->user();
         return [
             'order_id'     => $dto->orderId,
             'amount'       => $dto->amountPaise,
@@ -22,6 +24,11 @@ class OrderResultResource
                 'messages'  => $dto->messages,
                 'price_inr' => $dto->priceInr,
             ],
+            'user' => [
+                'name' => $user->name,
+                'email' => $user->email,
+                'phone' => $user->phone,
+            ]
         ];
     }
 }

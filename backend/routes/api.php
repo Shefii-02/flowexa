@@ -460,6 +460,7 @@ Route::prefix('v1')->group(function () {
         Route::post('whatsapp', [WebhookController::class, 'handle'])->name('handle');
     });
 
+
     // ── Razorpay webhook (public — verified by signature) ────────────────────
     Route::post('razorpay/webhook', [PaymentController::class, 'webhook']);
 
