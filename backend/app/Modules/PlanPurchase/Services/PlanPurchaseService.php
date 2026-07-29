@@ -39,7 +39,7 @@ class PlanPurchaseService
     public function createPlanOrder(int $companyId, int $userId, int $planId, string $durationType): array
     {
         $plan = Plan::findOrFail($planId);
-
+         $user = auth()->user();
         // Calculate price based on duration
         $price = $this->calculatePrice($plan->price, $durationType);
 
@@ -67,6 +67,11 @@ class PlanPurchaseService
             'razorpay_key'  => config('services.razorpay.key'),
             'plan'          => ['id' => $plan->id, 'name' => $plan->name, 'price' => $price],
             'duration_type' => $durationType,
+            'user' => [
+                'name' => $user->name,
+                'email' => $user->email,
+                'phone' => $user->phone,
+            ]
         ];
     }
 
