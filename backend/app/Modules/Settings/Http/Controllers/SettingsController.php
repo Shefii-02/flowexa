@@ -85,66 +85,83 @@ class SettingsController extends Controller
     {
         $company = auth()->user()->company;
 
-
-        if (!$company->wa_phone_id || !$company->wa_access_token) {
+        if (empty($company->wa_phone_id) || empty($company->wa_access_token)) {
             return response()->json([
                 'connected' => false,
-                'error'     => 'Phone Number ID or Access Token is not set. Please save credentials first.',
-            ]);
+                'error' => 'Phone Number ID or Access Token is missing.'
+            ], 422);
         }
 
         try {
+
+            $apiVersion = 'v25.0';
+
             $response = Http::withToken($company->wa_access_token)
-                ->timeout(10)
-                ->get("https://graph.facebook.com/v21.0/{$company->wa_phone_id}", [
-                    'fields' => 'display_phone_number,verified_name,quality_rating,account_mode,messaging_limit_tier,is_official_business_account',
+                ->acceptJson()
+                ->timeout(15)
+                ->get("https://graph.facebook.com/{$apiVersion}/{$company->wa_phone_id}", [
+                    'fields' => implode(',', [
+                        'id',
+                        'display_phone_number',
+                        'verified_name',
+                        'quality_rating',
+                        'account_mode',
+                        'messaging_limit_tier',
+                        'is_official_business_account'
+                    ])
                 ]);
 
-            if ($response->failed()) {
-                $err = $response->json('error.message') ?? 'Meta API returned an error.';
-                $code = $response->json('error.code');
+            if (!$response->successful()) {
 
-                // Common error codes
+                $error = $response->json('error');
+
+                $code = $error['code'] ?? null;
+
                 $hint = match ($code) {
-                    190  => 'Access token is invalid or expired. Use a permanent system user token.',
-                    100  => 'Phone Number ID is incorrect. Check in Meta Developer Console → WhatsApp → API Setup.',
-                    10   => 'App does not have permission. Make sure whatsapp_business_messaging permission is approved.',
-                    368  => 'Account is temporarily blocked by Meta for policy violations.',
+                    190 => 'Access Token is invalid or expired.',
+                    100 => 'Invalid Phone Number ID or unsupported field.',
+                    10  => 'Missing required permissions (whatsapp_business_management / whatsapp_business_messaging).',
+                    200 => 'The token does not have permission to access this WhatsApp Business Account.',
+                    368 => 'This WhatsApp account has been restricted by Meta.',
                     default => null,
                 };
 
                 return response()->json([
                     'connected' => false,
-                    'error'     => $err . ($hint ? " Hint: {$hint}" : ''),
+                    'error' => $error['message'] ?? 'Meta API Error',
+                    'details' => $error['error_data']['details'] ?? null,
                     'error_code' => $code,
-                ]);
+                    'hint' => $hint,
+                ], $response->status());
             }
 
             $data = $response->json();
 
-            // Update company wa_connected flag
             $company->update([
-                'wa_connected' => true,
-                'last_verified_at' => now(), // add this column if needed
+                'wa_connected'      => true,
+                'last_verified_at'  => now(),
             ]);
 
             return response()->json([
-                'connected'              => true,
-                'phone_number'           => $data['display_phone_number'] ?? null,
-                'verified_name'          => $data['verified_name'] ?? null,
-                'quality_rating'         => $data['quality_rating'] ?? null,
-                'account_status'         => $data['account_mode'] ?? null,
-                'messaging_limit_tier'   => $data['messaging_limit_tier'] ?? null,
-                'is_official'            => $data['is_official_business_account'] ?? false,
+                'connected' => true,
+                'phone_id' => $data['id'] ?? null,
+                'phone_number' => $data['display_phone_number'] ?? null,
+                'verified_name' => $data['verified_name'] ?? null,
+                'quality_rating' => $data['quality_rating'] ?? null,
+                'account_mode' => $data['account_mode'] ?? null,
+                'messaging_limit_tier' => $data['messaging_limit_tier'] ?? null,
+                'is_official_business_account' => $data['is_official_business_account'] ?? false,
+                'verified_at' => now()->toDateTimeString(),
             ]);
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
+
             return response()->json([
                 'connected' => false,
-                'error'     => 'Could not reach Meta API: ' . $e->getMessage(),
-            ]);
+                'error' => 'Unable to connect to Meta Graph API.',
+                'message' => $e->getMessage(),
+            ], 500);
         }
     }
-
     // ── Send test message ─────────────────────────────────────────────────
     // POST /api/v1/settings/test-send
     public function testSend(Request $request): JsonResponse
