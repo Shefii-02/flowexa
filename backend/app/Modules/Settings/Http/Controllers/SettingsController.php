@@ -90,7 +90,7 @@ class SettingsController extends Controller
             return response()->json([
                 'connected' => false,
                 'error' => 'Phone Number ID or Access Token is missing.'
-            ], 422);
+            ]);
         }
 
         try {
@@ -112,27 +112,48 @@ class SettingsController extends Controller
                     ])
                 ]);
 
-            if (!$response->successful()) {
-                $error = $response->json('error');
-                $code = $error['code'] ?? null;
 
+            if ($response->failed()) {
+                $err = $response->json('error.message') ?? 'Meta API returned an error.';
+                $code = $response->json('error.code');
+
+                // Common error codes
                 $hint = match ($code) {
-                    190 => 'Access Token is invalid or expired.',
-                    100 => 'Invalid Phone Number ID or unsupported field.',
-                    10  => 'Missing required permissions (whatsapp_business_management / whatsapp_business_messaging).',
-                    200 => 'The token does not have permission to access this WhatsApp Business Account.',
-                    368 => 'This WhatsApp account has been restricted by Meta.',
+                    190  => 'Access token is invalid or expired. Use a permanent system user token.',
+                    100  => 'Phone Number ID is incorrect. Check in Meta Developer Console → WhatsApp → API Setup.',
+                    10   => 'App does not have permission. Make sure whatsapp_business_messaging permission is approved.',
+                    368  => 'Account is temporarily blocked by Meta for policy violations.',
                     default => null,
                 };
 
                 return response()->json([
                     'connected' => false,
-                    'error' => $error['message'] ?? 'Meta API Error',
-                    'details' => $error['error_data']['details'] ?? null,
+                    'error'     => $err . ($hint ? " Hint: {$hint}" : ''),
                     'error_code' => $code,
-                    'hint' => $hint,
-                ], $response->status());
+                ]);
             }
+
+            // if (!$response->successful()) {
+            //     $error = $response->json('error');
+            //     $code = $error['code'] ?? null;
+
+            //     $hint = match ($code) {
+            //         190 => 'Access Token is invalid or expired.',
+            //         100 => 'Invalid Phone Number ID or unsupported field.',
+            //         10  => 'Missing required permissions (whatsapp_business_management / whatsapp_business_messaging).',
+            //         200 => 'The token does not have permission to access this WhatsApp Business Account.',
+            //         368 => 'This WhatsApp account has been restricted by Meta.',
+            //         default => null,
+            //     };
+
+            //     return response()->json([
+            //         'connected' => false,
+            //         'error' => $error['message'] ?? 'Meta API Error',
+            //         'details' => $error['error_data']['details'] ?? null,
+            //         'error_code' => $code,
+            //         'hint' => $hint,
+            //     ], $response->status());
+            // }
 
 
 
