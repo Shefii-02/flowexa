@@ -25,6 +25,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 
 // ─── Settings Controller ──────────────────────────────────────────────────────
 class SettingsController extends Controller
@@ -93,7 +94,7 @@ class SettingsController extends Controller
         }
 
         try {
-
+            Log::info("Processing");
             $apiVersion = 'v25.0';
 
             $response = Http::withToken($company->wa_access_token)
@@ -110,11 +111,12 @@ class SettingsController extends Controller
                         'is_official_business_account'
                     ])
                 ]);
-
+            Log::info("Respone");
+            Log::info($response);
             if (!$response->successful()) {
-
+                Log::info("Failed");
                 $error = $response->json('error');
-
+                Log::info($error);
                 $code = $error['code'] ?? null;
 
                 $hint = match ($code) {
@@ -135,8 +137,10 @@ class SettingsController extends Controller
                 ], $response->status());
             }
 
-            $data = $response->json();
+                        Log::info("Done");
 
+            $data = $response->json();
+            Log::info($data);
             $company->update([
                 'wa_connected'      => true,
                 'last_verified_at'  => now(),
@@ -181,7 +185,7 @@ class SettingsController extends Controller
 
         try {
             $response = Http::withToken($company->wa_access_token)
-                ->post("https://graph.facebook.com/v21.0/{$company->wa_phone_id}/messages", [
+                ->post("https://graph.facebook.com/v25.0/{$company->wa_phone_id}/messages", [
                     'messaging_product' => 'whatsapp',
                     'recipient_type'    => 'individual',
                     'to'                => $d['phone'],
