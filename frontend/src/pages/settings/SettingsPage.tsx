@@ -81,9 +81,9 @@ export default function SettingsPage() {
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-700">
             Get these from your Meta Developer Console → WhatsApp → API Setup.
           </div>
-          <Input label="Phone Number ID" placeholder="01234567890" value={waForm.wa_phone_id} onChange={(e) => setWa('wa_phone_id', e.target.value)} />
-          <Input label="Access Token" type="password" placeholder="EAAO..." value={waForm.wa_access_token} onChange={(e) => setWa('wa_access_token', e.target.value)} />
-          <Input label="Business Account ID (optional)" value={waForm.wa_business_id} onChange={(e) => setWa('wa_business_id', e.target.value)} />
+          <Input label="Phone Number ID" placeholder="01234567890" autoComplete='off' value={waForm.wa_phone_id} onChange={(e) => setWa('wa_phone_id', e.target.value)} />
+          <Input label="Access Token" type="password" autoComplete='new-password' placeholder="EAAO..." value={waForm.wa_access_token} onChange={(e) => setWa('wa_access_token', e.target.value)} />
+          <Input label="Business Account ID (optional)" autoComplete='off' value={waForm.wa_business_id} onChange={(e) => setWa('wa_business_id', e.target.value)} />
           <div className="flex justify-end">
             <Button onClick={handleWaSave} loading={savingWa}>Update credentials</Button>
           </div>
