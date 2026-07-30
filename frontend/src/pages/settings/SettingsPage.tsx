@@ -16,7 +16,7 @@ export default function SettingsPage() {
   const [verifying,  setVerifying]  = useState(false)
   const [verifyResult, setVerifyResult] = useState<any>(null)
   const [testPhone,  setTestPhone]  = useState('')
-  const [testMsg,    setTestMsg]    = useState('Hello! This is a test message from WA SaaS Platform. ✅')
+  const [testMsg,    setTestMsg]    = useState('Hello! This is a test message from Flowexa Platform. ✅')
   const [sendingTest,setSendingTest]= useState(false)
   const [webhookLogs,setWebhookLogs]= useState<any[]>([])
   const [loadingLogs,setLoadingLogs]= useState(false)
