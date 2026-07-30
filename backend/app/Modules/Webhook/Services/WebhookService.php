@@ -280,3 +280,8 @@ class WebhookService
         return in_array(strtolower(trim($text)), $greetings);
     }
 }
+
+
+
+
+

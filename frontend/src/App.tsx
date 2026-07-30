@@ -51,6 +51,23 @@ export const DashboardRouter = () => {
   return isSuperAdmin ? <SuperAdminStats /> : <DashboardPage />
 }
 
+// Guards superadmin-only pages: renders the children for superadmins,
+// redirects everyone else straight to /dashboard.
+const SuperAdminRoute = ({ children }: { children: React.ReactNode }) => {
+  const isSuperAdmin = useIsSuperAdmin()
+  if (!isSuperAdmin) {
+    return <Navigate to="/dashboard" replace />
+  }
+  return <>{children}</>
+}
+
+// Resolves the default/catch-all landing route based on role,
+// instead of hardcoding /superadmin for everyone.
+const RoleBasedRedirect = () => {
+  const isSuperAdmin = useIsSuperAdmin()
+  return <Navigate to={isSuperAdmin ? '/superadmin' : '/dashboard'} replace />
+}
+
 export default function App() {
   return (
     <Provider store={store}>
@@ -69,10 +86,9 @@ export default function App() {
               </ProtectedRoute>
             }
           >
-            <Route index element={<Navigate to="/superadmin" replace />} />
+            <Route index element={<RoleBasedRedirect />} />
 
             {/* Main app */}
-            {/* <Route path="dashboard" element={<DashboardPage />} /> */}
             <Route path="dashboard" element={<DashboardRouter />} />
             <Route path="staff" element={<StaffPage />} />
             <Route path="contacts" element={<ContactsPage />} />
@@ -100,43 +116,43 @@ export default function App() {
             <Route path="meta-ads/media" element={<MediaLibraryPage />} />
             <Route path="meta-ads/insights" element={<AdsInsightsDashboard />} />
 
-            {/* SuperAdmin */}
+            {/* SuperAdmin — each route redirects non-superadmins to /dashboard */}
             <Route
               path="superadmin"
-              element={<ProtectedRoute superAdminOnly><SuperAdminStats /></ProtectedRoute>}
+              element={<SuperAdminRoute><SuperAdminStats /></SuperAdminRoute>}
             />
             <Route
               path="superadmin/companies"
-              element={<ProtectedRoute superAdminOnly><SuperAdminCompanies /></ProtectedRoute>}
+              element={<SuperAdminRoute><SuperAdminCompanies /></SuperAdminRoute>}
             />
             <Route
               path="superadmin/plans"
-              element={<ProtectedRoute superAdminOnly><SuperAdminPlans /></ProtectedRoute>}
+              element={<SuperAdminRoute><SuperAdminPlans /></SuperAdminRoute>}
             />
             <Route
               path="superadmin/stats"
-              element={<ProtectedRoute superAdminOnly><SuperAdminStats /></ProtectedRoute>}
+              element={<SuperAdminRoute><SuperAdminStats /></SuperAdminRoute>}
             />
             <Route
               path="superadmin/staff"
-              element={<ProtectedRoute superAdminOnly><SuperAdminStaffPage /></ProtectedRoute>}
+              element={<SuperAdminRoute><SuperAdminStaffPage /></SuperAdminRoute>}
             />
             <Route
               path="superadmin/permissions"
-              element={<ProtectedRoute superAdminOnly><PermissionsEditorPage /></ProtectedRoute>}
+              element={<SuperAdminRoute><PermissionsEditorPage /></SuperAdminRoute>}
             />
             <Route
               path="superadmin/topup"
-              element={<ProtectedRoute superAdminOnly><TopupPackagesPage /></ProtectedRoute>}
+              element={<SuperAdminRoute><TopupPackagesPage /></SuperAdminRoute>}
             />
             <Route
               path="superadmin/reports"
-              element={<ProtectedRoute superAdminOnly><ReportsPage /></ProtectedRoute>}
+              element={<SuperAdminRoute><ReportsPage /></SuperAdminRoute>}
             />
           </Route>
 
           {/* Catch-all */}
-          <Route path="*" element={<Navigate to="/superadmin" replace />} />
+          <Route path="*" element={<RoleBasedRedirect />} />
         </Routes>
       </BrowserRouter>
     </Provider>
