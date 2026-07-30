@@ -21,7 +21,7 @@ export default function SettingsPage() {
       const c = r.data.company
       setCompany(c)
       setForm({ name: c.name||'', email: c.email||'', phone: c.phone||'', website: c.website||'' })
-      setWaForm({ wa_phone_id: c.wa_phone_id||'', wa_access_token:'', wa_business_id:'' })
+      setWaForm({ wa_phone_id: c.wa_phone_id||'', wa_access_token:c.wa_access_token||'', wa_business_id:c.wa_business_id||'' })
     })
   }, [])
 
