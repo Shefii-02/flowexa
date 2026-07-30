@@ -31,7 +31,7 @@ class SettingsController extends Controller
     public function index(): JsonResponse
     {
         $company = $this->settingsService->getCompany(auth()->user()->company_id);
-        return response()->json(['company' => CompanyResource::new($company)]);
+        return response()->json(['company' => new CompanyResource($company)]);
     }
 
     public function update(UpdateSettingsRequest $request): JsonResponse
