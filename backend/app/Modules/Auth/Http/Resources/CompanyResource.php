@@ -27,6 +27,7 @@ class CompanyResource extends JsonResource
             'wa_connected' => $this->wa_connected,
             'wa_phone_id'  => $this->wa_phone_id,
             'wa_access_token' => decrypt($this->wa_access_token),
+            'wa_business_id' => $this->wa_business_id,
 
             'plan' => $this->whenLoaded('plan', fn() => [
                 'id'             => $this->plan->id,
