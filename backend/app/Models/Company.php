@@ -44,7 +44,7 @@ class Company extends Model
     // ── Accessors ─────────────────────────────────────────────────────────────
     public function getWaConnectedAttribute(): bool
     {
-        return !empty($this->wa_phone_id);
+        return !empty($this->wa_phone_id) && !empty($this->wa_access_token);
     }
 
     // ── Scopes ───────────────────────────────────────────────────────────────

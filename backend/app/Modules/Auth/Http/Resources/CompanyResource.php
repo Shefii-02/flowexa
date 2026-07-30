@@ -24,7 +24,7 @@ class CompanyResource extends JsonResource
             'created_at'    => $this->created_at->toIso8601String(),
 
             // WA connected status (never expose token)
-            'wa_connected' => !empty($this->wa_phone_id),
+            'wa_connected' => $this->wa_connected,
             'wa_phone_id'  => $this->wa_phone_id,
 
             'plan' => $this->whenLoaded('plan', fn() => [
