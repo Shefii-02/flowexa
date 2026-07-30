@@ -111,12 +111,9 @@ class SettingsController extends Controller
                         'is_official_business_account'
                     ])
                 ]);
-            Log::info("Respone");
-            Log::info($response);
+
             if (!$response->successful()) {
-                Log::info("Failed");
                 $error = $response->json('error');
-                Log::info($error);
                 $code = $error['code'] ?? null;
 
                 $hint = match ($code) {
@@ -137,10 +134,10 @@ class SettingsController extends Controller
                 ], $response->status());
             }
 
-                        Log::info("Done");
+
 
             $data = $response->json();
-            Log::info($data);
+
             $company->update([
                 'wa_connected'      => true,
                 'last_verified_at'  => now(),
