@@ -85,7 +85,8 @@ class SettingsController extends Controller
     {
         $company = auth()->user()->company;
 
-        if (!$company->wa_phone_number_id || !$company->wa_access_token) {
+
+        if (!$company->wa_phone_id || !$company->wa_access_token) {
             return response()->json([
                 'connected' => false,
                 'error'     => 'Phone Number ID or Access Token is not set. Please save credentials first.',
@@ -95,7 +96,7 @@ class SettingsController extends Controller
         try {
             $response = Http::withToken($company->wa_access_token)
                 ->timeout(10)
-                ->get("https://graph.facebook.com/v21.0/{$company->wa_phone_number_id}", [
+                ->get("https://graph.facebook.com/v21.0/{$company->wa_phone_id}", [
                     'fields' => 'display_phone_number,verified_name,quality_rating,account_mode,messaging_limit_tier,is_official_business_account',
                 ]);
 
@@ -155,7 +156,7 @@ class SettingsController extends Controller
 
         $company = auth()->user()->company;
 
-        if (!$company->wa_phone_number_id || !$company->wa_access_token) {
+        if (!$company->wa_phone_id || !$company->wa_access_token) {
             return response()->json(['message' => 'WhatsApp credentials not set.'], 422);
         }
 
@@ -163,7 +164,7 @@ class SettingsController extends Controller
 
         try {
             $response = Http::withToken($company->wa_access_token)
-                ->post("https://graph.facebook.com/v21.0/{$company->wa_phone_number_id}/messages", [
+                ->post("https://graph.facebook.com/v21.0/{$company->wa_phone_id}/messages", [
                     'messaging_product' => 'whatsapp',
                     'recipient_type'    => 'individual',
                     'to'                => $d['phone'],
