@@ -47,6 +47,11 @@ class Company extends Model
         return !empty($this->wa_phone_id) && !empty($this->wa_access_token);
     }
 
+     public function getDecryptWaAccessTokenAttribute()
+    {
+        return decrypt($this->wa_access_token);
+    }
+
     // ── Scopes ───────────────────────────────────────────────────────────────
     public function scopeActive($q)    { return $q->where('status', 'active'); }
     public function scopeSuspended($q) { return $q->where('status', 'suspended'); }

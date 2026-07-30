@@ -86,7 +86,7 @@ class SettingsController extends Controller
     {
         $company = auth()->user()->company;
 
-        if (empty($company->wa_phone_id) || empty($company->wa_access_token)) {
+        if (empty($company->wa_phone_id) || empty($company->decrypt_wa_access_token)) {
             return response()->json([
                 'connected' => false,
                 'error' => 'Phone Number ID or Access Token is missing.'
@@ -97,7 +97,7 @@ class SettingsController extends Controller
             Log::info("Processing");
             $apiVersion = 'v25.0';
 
-            $response = Http::withToken($company->wa_access_token)
+            $response = Http::withToken($company->decrypt_wa_access_token)
                 ->acceptJson()
                 ->timeout(15)
                 ->get("https://graph.facebook.com/{$apiVersion}/{$company->wa_phone_id}", [
@@ -177,14 +177,14 @@ class SettingsController extends Controller
 
         $company = auth()->user()->company;
 
-        if (!$company->wa_phone_id || !$company->wa_access_token) {
+        if (!$company->wa_phone_id || !$company->decrypt_wa_access_token) {
             return response()->json(['message' => 'WhatsApp credentials not set.'], 422);
         }
 
         $message = $d['message'] ?? 'Hello! This is a test message from WA SaaS Platform. ✅ Your connection is working.';
 
         try {
-            $response = Http::withToken($company->wa_access_token)
+            $response = Http::withToken($company->decrypt_wa_access_token)
                 ->post("https://graph.facebook.com/v25.0/{$company->wa_phone_id}/messages", [
                     'messaging_product' => 'whatsapp',
                     'recipient_type'    => 'individual',
