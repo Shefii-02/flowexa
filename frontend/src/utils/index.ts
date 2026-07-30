@@ -73,3 +73,23 @@ export const getError = (e: unknown): string => {
 // ── Truncate text ─────────────────────────────────────────────────────────────
 export const truncate = (str: string, len = 40) =>
   str.length > len ? str.slice(0, len) + '…' : str
+
+
+export const normalizePhone = (phone: string): string => {
+    if (!phone) return '';
+
+    // Remove everything except digits
+    let digits = phone.replace(/\D/g, '');
+
+    // Remove leading country code 91
+    if (digits.length > 10 && digits.startsWith('91')) {
+      digits = digits.slice(2);
+    }
+
+    // Keep only the last 10 digits
+    if (digits.length > 10) {
+      digits = digits.slice(-10);
+    }
+
+    return digits;
+  };

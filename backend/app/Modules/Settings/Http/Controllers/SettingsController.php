@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Company;
 use App\Models\MessageLog;
 use App\Models\Plan;
+use App\Modules\Auth\Http\Resources\CompanyResource;
 use App\Modules\Settings\DTOs\MessageLogFilterDTO;
 use App\Modules\Settings\DTOs\SuperAdminCreateCompanyDTO;
 use App\Modules\Settings\DTOs\TopUpDTO;
@@ -30,7 +31,7 @@ class SettingsController extends Controller
     public function index(): JsonResponse
     {
         $company = $this->settingsService->getCompany(auth()->user()->company_id);
-        return response()->json(['company' => $company]);
+        return response()->json(['company' => CompanyResource::new($company)]);
     }
 
     public function update(UpdateSettingsRequest $request): JsonResponse
@@ -74,7 +75,3 @@ class SettingsController extends Controller
         return response()->json(['otp_credentials' => $credentials]);
     }
 }
-
-
-
-

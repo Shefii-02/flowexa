@@ -48,7 +48,8 @@ class SettingsService
     {
         $company->update([
             'wa_phone_id'     => $dto->waPhoneId,
-            'wa_access_token' => encrypt($dto->waAccessToken),
+            'wa_access_token' =>
+            encrypt($dto->waAccessToken),
             'wa_business_id'  => $dto->waBusinessId,
         ]);
         return $company->fresh();

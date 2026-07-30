@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react'
 import { planApi } from '@/api'
 import { Button, Badge, Spinner, StatCard } from '@/components/ui'
-import { fmt, getError } from '@/utils'
+import { fmt, getError, normalizePhone } from '@/utils'
 import toast from 'react-hot-toast'
 
 declare global { interface Window { Razorpay: any } }
@@ -115,24 +115,6 @@ export default function PlanPurchasePage() {
 
   if (loading) return <div className="flex justify-center py-12"><Spinner size="lg" /></div>
 
-  const normalizePhone = (phone: string): string => {
-    if (!phone) return '';
-
-    // Remove everything except digits
-    let digits = phone.replace(/\D/g, '');
-
-    // Remove leading country code 91
-    if (digits.length > 10 && digits.startsWith('91')) {
-      digits = digits.slice(2);
-    }
-
-    // Keep only the last 10 digits
-    if (digits.length > 10) {
-      digits = digits.slice(-10);
-    }
-
-    return digits;
-  };
 
   return (
     <div className="space-y-6">

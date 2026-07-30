@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react'
 import { walletApi } from '@/api'
 import { Button, Modal, StatCard, Badge, Pagination, Spinner } from '@/components/ui'
-import { fmt, getError } from '@/utils'
+import { fmt, getError, normalizePhone } from '@/utils'
 import toast from 'react-hot-toast'
 import { useAppDispatch } from '@/store'
 import { updateWallet } from '@/store/slices'
@@ -64,6 +64,25 @@ export default function WalletPage() {
         name:        'WA SaaS Platform',
         description: pkg.label,
         theme:       { color: '#1D9E75' },
+         prefill: {
+          name: data.user.name,
+          email: data.user.email,
+          contact: normalizePhone(data.user.phone),
+        },
+        notes: {
+          flowexa_id: data.user.id,
+          label: pkg.label,
+          order_id: data.order_id,
+          name: data.user.name,
+          email: data.user.email,
+          contact: normalizePhone(data.user.phone),
+        },
+
+        readonly: {
+          name: true,
+          email: true,
+          contact: true,
+        },
         handler: async (response: any) => {
           try {
             const verifyRes = await walletApi.verifyPayment({
