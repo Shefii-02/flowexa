@@ -206,14 +206,34 @@ class SettingsController extends Controller
     }
 
     // ── Webhook logs ──────────────────────────────────────────────────────
-    // GET /api/v1/settings/webhook-logs
     public function webhookLogs(): JsonResponse
     {
         $logs = WebhookLog::where('company_id', auth()->user()->company_id)
             ->latest()
             ->limit(50)
-            ->get(['id', 'event_type', 'status', 'error', 'created_at']);
+            ->get();
 
-        return response()->json(['logs' => $logs]);
+        $logs = $logs->map(function ($log) {
+
+            $change = $log->payload['entry'][0]['changes'][0] ?? [];
+
+            $field = $change['field'] ?? 'unknown';
+
+            $messageType = $change['value']['messages'][0]['type'] ?? null;
+
+            return [
+                'id' => $log->id,
+                'event_type' => $messageType
+                    ? "{$field} ({$messageType})"
+                    : $field,
+                'status' => $log->status,
+                'error' => $log->error,
+                'created_at' => $log->created_at,
+            ];
+        });
+
+        return response()->json([
+            'logs' => $logs
+        ]);
     }
 }
