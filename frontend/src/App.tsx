@@ -58,6 +58,9 @@ const SuperAdminRoute = ({ children }: { children: React.ReactNode }) => {
   if (!isSuperAdmin) {
     return <Navigate to="/dashboard" replace />
   }
+  else{
+     return <Navigate to="/superadmin" replace />
+  }
   return <>{children}</>
 }
 
@@ -89,7 +92,7 @@ export default function App() {
             <Route index element={<RoleBasedRedirect />} />
 
             {/* Main app */}
-            <Route path="dashboard" element={<DashboardRouter />} />
+            <Route path="dashboard" element={<SuperAdminRoute><DashboardRouter /></SuperAdminRoute>}  />
             <Route path="staff" element={<StaffPage />} />
             <Route path="contacts" element={<ContactsPage />} />
             <Route path="flow" element={<FlowPage />} />
