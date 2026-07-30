@@ -55,9 +55,9 @@ export default function SettingsPage() {
     setVerifyResult(null)
     try {
       await settingsApi.updateWa({
-        wa_phone_number_id:       waForm.wa_phone_id,
+        wa_phone_id:       waForm.wa_phone_id,
         wa_access_token:          waForm.wa_access_token,
-        wa_business_account_id:   waForm.wa_business_id,
+        wa_business_id:   waForm.wa_business_id,
       })
       toast.success('WhatsApp credentials saved.')
     }
