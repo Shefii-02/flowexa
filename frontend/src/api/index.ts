@@ -134,6 +134,9 @@ export const settingsApi = {
   updateWa: (d: Record<string, string>) => api.post('/settings/wa-credentials', d),
   regenerateToken: () => api.post('/settings/regenerate-token'),
   messageLogs: (p?: Record<string, unknown>) => api.get('/message-logs', { params: p }),
+  verifyWa:    ()                              => api.get('/settings/verify-wa'),
+  testSend:    (d: {phone:string;message?:string}) => api.post('/settings/test-send', d),
+  webhookLogs: ()                              => api.get('/settings/webhook-logs'),
 }
 
 // ── SuperAdmin ────────────────────────────────────────────────────────────────

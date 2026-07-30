@@ -135,6 +135,10 @@ Route::prefix('v1')->group(function () {
             Route::post('regenerate-token',   [SettingsController::class, 'regenerateToken'])->name('regenerate-token');
             Route::post('logo',               [SettingsController::class, 'uploadLogo'])->name('logo');
             Route::get('otp-credentials',     [SettingsController::class, 'getOtpCredentials'])->name('otp-credentials');
+
+            Route::get('verify-wa',    [SettingsController::class, 'verifyWa']);
+            Route::post('test-send',   [SettingsController::class, 'testSend']);
+            Route::get('webhook-logs', [SettingsController::class, 'webhookLogs']);
         });
 
         // ── Message Logs ─────────────────────────────────────────────────────────

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Company;
 use App\Models\MessageLog;
 use App\Models\Plan;
+use App\Models\WebhookLog;
 use App\Modules\Auth\Http\Resources\CompanyResource;
 use App\Modules\Settings\DTOs\MessageLogFilterDTO;
 use App\Modules\Settings\DTOs\SuperAdminCreateCompanyDTO;
@@ -22,6 +23,8 @@ use App\Modules\Settings\Services\SettingsService;
 use App\Modules\Settings\Services\SuperAdminService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+
+use Illuminate\Support\Facades\Http;
 
 // ─── Settings Controller ──────────────────────────────────────────────────────
 class SettingsController extends Controller
@@ -73,5 +76,143 @@ class SettingsController extends Controller
         $credentials = $this->settingsService->getOtpCredentials(auth()->user()->company);
 
         return response()->json(['otp_credentials' => $credentials]);
+    }
+
+
+    // ── Verify WhatsApp connection ────────────────────────────────────────
+    // GET /api/v1/settings/verify-wa
+    public function verifyWa(): JsonResponse
+    {
+        $company = auth()->user()->company;
+
+        if (!$company->wa_phone_number_id || !$company->wa_access_token) {
+            return response()->json([
+                'connected' => false,
+                'error'     => 'Phone Number ID or Access Token is not set. Please save credentials first.',
+            ]);
+        }
+
+        try {
+            $response = Http::withToken($company->wa_access_token)
+                ->timeout(10)
+                ->get("https://graph.facebook.com/v21.0/{$company->wa_phone_number_id}", [
+                    'fields' => 'display_phone_number,verified_name,quality_rating,account_mode,messaging_limit_tier,is_official_business_account',
+                ]);
+
+            if ($response->failed()) {
+                $err = $response->json('error.message') ?? 'Meta API returned an error.';
+                $code = $response->json('error.code');
+
+                // Common error codes
+                $hint = match ($code) {
+                    190  => 'Access token is invalid or expired. Use a permanent system user token.',
+                    100  => 'Phone Number ID is incorrect. Check in Meta Developer Console → WhatsApp → API Setup.',
+                    10   => 'App does not have permission. Make sure whatsapp_business_messaging permission is approved.',
+                    368  => 'Account is temporarily blocked by Meta for policy violations.',
+                    default => null,
+                };
+
+                return response()->json([
+                    'connected' => false,
+                    'error'     => $err . ($hint ? " Hint: {$hint}" : ''),
+                    'error_code' => $code,
+                ]);
+            }
+
+            $data = $response->json();
+
+            // Update company wa_connected flag
+            $company->update([
+                'wa_connected' => true,
+                'last_verified_at' => now(), // add this column if needed
+            ]);
+
+            return response()->json([
+                'connected'              => true,
+                'phone_number'           => $data['display_phone_number'] ?? null,
+                'verified_name'          => $data['verified_name'] ?? null,
+                'quality_rating'         => $data['quality_rating'] ?? null,
+                'account_status'         => $data['account_mode'] ?? null,
+                'messaging_limit_tier'   => $data['messaging_limit_tier'] ?? null,
+                'is_official'            => $data['is_official_business_account'] ?? false,
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'connected' => false,
+                'error'     => 'Could not reach Meta API: ' . $e->getMessage(),
+            ]);
+        }
+    }
+
+    // ── Send test message ─────────────────────────────────────────────────
+    // POST /api/v1/settings/test-send
+    public function testSend(Request $request): JsonResponse
+    {
+        $d = $request->validate([
+            'phone'   => ['required', 'string', 'regex:/^[0-9]{10,15}$/'],
+            'message' => ['nullable', 'string', 'max:1000'],
+        ]);
+
+        $company = auth()->user()->company;
+
+        if (!$company->wa_phone_number_id || !$company->wa_access_token) {
+            return response()->json(['message' => 'WhatsApp credentials not set.'], 422);
+        }
+
+        $message = $d['message'] ?? 'Hello! This is a test message from WA SaaS Platform. ✅ Your connection is working.';
+
+        try {
+            $response = Http::withToken($company->wa_access_token)
+                ->post("https://graph.facebook.com/v21.0/{$company->wa_phone_number_id}/messages", [
+                    'messaging_product' => 'whatsapp',
+                    'recipient_type'    => 'individual',
+                    'to'                => $d['phone'],
+                    'type'              => 'text',
+                    'text'              => ['body' => $message, 'preview_url' => false],
+                ]);
+
+            if ($response->failed()) {
+                $err  = $response->json('error.message') ?? 'Failed to send message.';
+                $code = $response->json('error.code');
+
+                // Most common errors explained clearly
+                $hint = match ($code) {
+                    131030 => "Number {$d['phone']} is not in your Meta test whitelist. During App Review, only whitelisted numbers can receive messages. Go to Meta Developer Console → WhatsApp → API Setup → 'To' section → Add this number.",
+                    131047 => 'This number has not opted in to receive messages from your business.',
+                    130472 => 'Message failed to send. The recipient WhatsApp account may not exist.',
+                    100    => 'Invalid phone number format. Use full international format without + (e.g. 918086544821).',
+                    190    => 'Access token expired. Regenerate a permanent system user token.',
+                    default => null,
+                };
+
+                return response()->json([
+                    'message'    => $err . ($hint ? " → {$hint}" : ''),
+                    'error_code' => $code,
+                    'meta_error' => $response->json('error'),
+                ], 422);
+            }
+
+            $data = $response->json();
+
+            return response()->json([
+                'message'    => 'Test message sent successfully.',
+                'wa_msg_id'  => $data['messages'][0]['id'] ?? null,
+                'phone'      => $d['phone'],
+            ]);
+        } catch (\Exception $e) {
+            return response()->json(['message' => $e->getMessage()], 500);
+        }
+    }
+
+    // ── Webhook logs ──────────────────────────────────────────────────────
+    // GET /api/v1/settings/webhook-logs
+    public function webhookLogs(): JsonResponse
+    {
+        $logs = WebhookLog::where('company_id', auth()->user()->company_id)
+            ->latest()
+            ->limit(50)
+            ->get(['id', 'event_type', 'status', 'error', 'created_at']);
+
+        return response()->json(['logs' => $logs]);
     }
 }
