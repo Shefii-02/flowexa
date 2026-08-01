@@ -14,15 +14,15 @@ return new class extends Migration
             // $table->dropIndex(['name']);
             // $table->dropColumn(['name']);
 
-            $table->string('name', 50)->unique();
-            // Add company_id
-            $table->foreignId('company_id')
-                ->after('id')->nullable()
-                ->constrained('companies')
-                ->cascadeOnDelete();
+            // $table->string('name', 50)->unique();
+            // // Add company_id
+            // $table->foreignId('company_id')
+            //     ->after('id')->nullable()
+            //     ->constrained('companies')
+            //     ->cascadeOnDelete();
 
-            // Create composite unique
-            $table->unique(['company_id', 'name']);
+            // // Create composite unique
+            // $table->unique(['company_id', 'name']);
         });
     }
 
