@@ -437,15 +437,47 @@ Route::prefix('v1')->group(function () {
         Route::delete('topup-packages/{id}', [PlanPurchaseController::class, 'deleteTopupPackage'])->name('sa.topup.destroy');
     });
 
+    // Route::prefix('templates')->name('templates.')
+    //     ->middleware(['company.active'])
+    //     ->group(function () {
+    //         Route::get('/',           [TemplateController::class, 'index'])->name('index');
+    //         Route::get('/{id}',       [TemplateController::class, 'show'])->name('show');
+    //         Route::post('/',          [TemplateController::class, 'store'])->name('store')->middleware('plan.limit:templates');
+    //         Route::put('/{id}',       [TemplateController::class, 'update'])->name('update');
+    //         Route::delete('/{id}',    [TemplateController::class, 'destroy'])->name('destroy');
+    //         Route::post('/{id}/sync', [TemplateController::class, 'syncFromMeta'])->name('sync');
+    //     });
+
     Route::prefix('templates')->name('templates.')
         ->middleware(['company.active'])
         ->group(function () {
-            Route::get('/',           [TemplateController::class, 'index'])->name('index');
-            Route::get('/{id}',       [TemplateController::class, 'show'])->name('show');
-            Route::post('/',          [TemplateController::class, 'store'])->name('store')->middleware('plan.limit:templates');
-            Route::put('/{id}',       [TemplateController::class, 'update'])->name('update');
-            Route::delete('/{id}',    [TemplateController::class, 'destroy'])->name('destroy');
-            Route::post('/{id}/sync', [TemplateController::class, 'syncFromMeta'])->name('sync');
+            Route::get('/',                 [TemplateController::class, 'index'])->name('index');
+
+            // Bulk sync must come before '/{id}' so it isn't swallowed by the id route
+            Route::post('/sync-from-meta',  [TemplateController::class, 'syncFromMeta'])->name('sync-from-meta');
+
+            Route::get('/{id}',             [TemplateController::class, 'show'])->name('show');
+            Route::post('/',                [TemplateController::class, 'store'])->name('store')->middleware('plan.limit:templates');
+            Route::put('/{id}',             [TemplateController::class, 'update'])->name('update');
+            Route::delete('/{id}',          [TemplateController::class, 'destroy'])->name('destroy');
+
+            // Per-template single sync (pulls latest status for just this one template)
+            Route::post('/{id}/sync',       [TemplateController::class, 'syncSingle'])->name('sync');
+
+            // Draft → submit to Meta, once all required media is attached
+            Route::post('/{id}/submit',     [TemplateController::class, 'submit'])->name('submit');
+
+            // Header media
+            Route::post('/{id}/upload-header-media',   [TemplateController::class, 'uploadHeaderMedia'])->name('upload-header-media');
+            Route::delete('/{id}/delete-header-media', [TemplateController::class, 'deleteHeaderMedia'])->name('delete-header-media');
+
+            // Footer media — stored locally only, never sent to Meta (see migration note)
+            Route::post('/{id}/upload-footer-media',   [TemplateController::class, 'uploadFooterMedia'])->name('upload-footer-media');
+            Route::delete('/{id}/delete-footer-media', [TemplateController::class, 'deleteFooterMedia'])->name('delete-footer-media');
+
+            // Per-button media — stored locally only, never sent to Meta (buttons are text-only in the Graph API)
+            Route::post('/{id}/buttons/{buttonId}/upload-media',   [TemplateController::class, 'uploadButtonMedia'])->name('upload-button-media');
+            Route::delete('/{id}/buttons/{buttonId}/delete-media', [TemplateController::class, 'deleteButtonMedia'])->name('delete-button-media');
         });
 
     Route::prefix('push')->name('push.')

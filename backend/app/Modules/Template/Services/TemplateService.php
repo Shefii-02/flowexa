@@ -39,13 +39,10 @@ class TemplateService
             'body_examples'       => $data['body_examples'] ?? null,
             'header_format'       => $data['header_format'] ?? 'TEXT',
             'header'              => $data['header'] ?? null,
-            'header_handle'       => $data['header_handle'] ?? null,
-            'header_sample_path'  => $data['header_sample_path'] ?? null,
-            'header_sample_url'   => $data['header_sample_url'] ?? null,
             'header_example'      => $data['header_example'] ?? null,
             'footer'              => $data['footer'] ?? null,
             'buttons'             => $data['buttons'] ?? null,
-            'status'              => $data['status'] ?? 'pending',
+            'status'              => $data['status'] ?? 'draft',
             'rejection_reason'    => $data['rejection_reason'] ?? null,
         ]);
     }
@@ -62,9 +59,6 @@ class TemplateService
             'body'                => $data['body'] ?? null,
             'header'              => $data['header'] ?? null,
             'header_format'       => $data['header_format'] ?? null,
-            'header_handle'       => $data['header_handle'] ?? null,
-            'header_sample_path'  => $data['header_sample_path'] ?? null,
-            'header_sample_url'   => $data['header_sample_url'] ?? null,
             'header_example'      => $data['header_example'] ?? null,
             'footer'              => $data['footer'] ?? null,
             'status'              => $data['status'] ?? null,
@@ -72,9 +66,9 @@ class TemplateService
             'rejection_reason'    => $data['rejection_reason'] ?? null,
         ], fn($v) => !is_null($v)));
 
-        // These two are legitimately nullable/emptyable (clearing all body examples or
-        // removing all buttons is a valid edit), so they can't go through array_filter
-        // above — array_filter would drop an intentional empty array along with nulls.
+        // Legitimately nullable/emptyable — clearing all body examples or removing all
+        // buttons is a valid edit, so these can't go through array_filter above (it would
+        // drop an intentional empty array along with genuine nulls).
         if (array_key_exists('body_examples', $data)) {
             $template->body_examples = $data['body_examples'];
         }
@@ -92,11 +86,82 @@ class TemplateService
         $template->delete();
     }
 
+    // ── Header media ───────────────────────────────────────────────────
+    public function attachHeaderMedia(int $id, int $companyId, string $handle, string $path, string $url): WaTemplate
+    {
+        $template = $this->show($id, $companyId);
+        $template->update([
+            'header_handle'      => $handle,
+            'header_sample_path' => $path,
+            'header_sample_url'  => $url,
+        ]);
+        return $template->fresh();
+    }
+
+    public function clearHeaderMedia(int $id, int $companyId): WaTemplate
+    {
+        $template = $this->show($id, $companyId);
+        $template->update(['header_handle' => null, 'header_sample_path' => null, 'header_sample_url' => null]);
+        return $template->fresh();
+    }
+
+    // ── Footer media — local reference only, never sent to Meta ───────────
+    public function attachFooterMedia(int $id, int $companyId, string $handle, string $path, string $url): WaTemplate
+    {
+        $template = $this->show($id, $companyId);
+        $template->update([
+            'footer_media_handle' => $handle,
+            'footer_media_path'   => $path,
+            'footer_media_url'    => $url,
+        ]);
+        return $template->fresh();
+    }
+
+    public function clearFooterMedia(int $id, int $companyId): WaTemplate
+    {
+        $template = $this->show($id, $companyId);
+        $template->update(['footer_media_handle' => null, 'footer_media_path' => null, 'footer_media_url' => null]);
+        return $template->fresh();
+    }
+
+    // ── Per-button media — local reference only, never sent to Meta ───────
+    // $buttonId is the button's position (index) in the buttons array.
+    public function attachButtonMedia(int $id, int $companyId, int $buttonId, string $handle, string $path, string $url): WaTemplate
+    {
+        $template = $this->show($id, $companyId);
+        $buttons  = $template->buttons ?? [];
+
+        if (!isset($buttons[$buttonId])) {
+            throw new \Exception('Button not found on this template.');
+        }
+
+        $buttons[$buttonId]['media_handle'] = $handle;
+        $buttons[$buttonId]['media_path']   = $path;
+        $buttons[$buttonId]['media_url']    = $url;
+        $template->update(['buttons' => $buttons]);
+
+        return $template->fresh();
+    }
+
+    public function clearButtonMedia(int $id, int $companyId, int $buttonId): WaTemplate
+    {
+        $template = $this->show($id, $companyId);
+        $buttons  = $template->buttons ?? [];
+
+        if (!isset($buttons[$buttonId])) {
+            throw new \Exception('Button not found on this template.');
+        }
+
+        unset($buttons[$buttonId]['media_handle'], $buttons[$buttonId]['media_path'], $buttons[$buttonId]['media_url']);
+        $template->update(['buttons' => $buttons]);
+
+        return $template->fresh();
+    }
+
     /**
      * Pull a single template's current status from Meta Graph API.
-     * Renamed from syncFromMeta() to avoid colliding with
-     * TemplateController::syncFromMeta(), which does a bulk sync of
-     * every template for the company — a different operation entirely.
+     * (Named distinctly from the controller's bulk syncFromMeta(), which
+     * re-syncs every template for the company — a different operation.)
      */
     public function syncSingleFromMeta(int $id, int $companyId): WaTemplate
     {

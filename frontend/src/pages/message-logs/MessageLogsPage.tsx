@@ -112,7 +112,7 @@ export default function MessageLogsPage() {
                         <Badge variant="purple">Flow reply</Badge>
                       )}
                       {log.reference_type === 'campaign' && (
-                        <Badge variant="amber">Campaign</Badge>
+                        <Badge variant="purple">Campaign</Badge>
                       )}
                     </div>
                     <p className="text-sm text-gray-700 truncate">

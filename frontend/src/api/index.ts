@@ -218,6 +218,21 @@ export const templateApi = {
   sync: (id: number) => api.post(`/templates/${id}/sync`),
   syncFromMeta: (d?: { template_id?: string; language?: string }) =>
     api.post('/templates/sync-from-meta', d),
+  uploadHeaderMedia: (id: number, file: File) => {
+    const fd = new FormData(); fd.append('file', file)
+    return api.post(`/templates/${id}/upload-header-media`, fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+  },
+  deleteHeaderMedia: (id: number) => api.delete(`/templates/${id}/delete-header-media`),
+  uploadFooterMedia: (id: number, file: File) => {
+    const fd = new FormData(); fd.append('file', file)
+    return api.post(`/templates/${id}/upload-footer-media`, fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+  },
+  deleteFooterMedia: (id: number) => api.delete(`/templates/${id}/delete-footer-media`),
+  uploadButtonMedia: (id: number, buttonId: number, file: File) => {
+    const fd = new FormData(); fd.append('file', file)
+    return api.post(`/templates/${id}/buttons/${buttonId}/upload-media`, fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+  },
+  deleteButtonMedia: (id: number, buttonId: number) => api.delete(`/templates/${id}/buttons/${buttonId}/delete-media`),
   // syncFromMeta: (d: { template_id: string; language: string }) => api.post('/templates/sync-from-meta', d),
   
 }

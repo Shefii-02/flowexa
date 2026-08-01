@@ -4,8 +4,8 @@ import { authApi } from '@/api'
 import { Button, Input, Badge } from '@/components/ui'
 import { getError } from '@/utils'
 import { useAppDispatch, useAppSelector } from '@/store'
-import { setUser } from '@/store/slices/authSlice'
 import toast from 'react-hot-toast'
+import { setUser } from '@/store/slices'
 
 const LANGUAGES = [
   { code: 'en', label: '🇬🇧 English' },
