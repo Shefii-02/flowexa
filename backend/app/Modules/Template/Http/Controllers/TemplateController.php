@@ -418,7 +418,7 @@ class TemplateController extends Controller
         }
 
         $response = Http::withToken($company->decrypt_wa_access_token)
-            ->get("https://graph.facebook.com/v25.0/{$company->wa_business_id}/message_template_library", [
+            ->get("https://graph.facebook.com/v25.0/message_template_library", [
                 'fields' => 'id,name,category,language,status,rejected_reason,components',
                 'limit'  => 100,
             ]);
