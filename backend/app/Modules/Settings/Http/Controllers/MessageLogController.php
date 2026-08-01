@@ -39,6 +39,17 @@ class MessageLogController extends Controller
             ->paginate($filter->perPage, ['*'], 'page', $filter->page);
 
         return response()->json($logs);
+
+        //     $logs = MessageLog::with('contact')
+//         ->where('company_id', auth()->user()->company_id)
+//         ->when($request->direction, fn($q) => $q->where('direction', $request->direction))
+//         ->when($request->contact_id, fn($q) => $q->where('contact_id', $request->contact_id))
+//         ->when($request->from, fn($q) => $q->whereDate('created_at', '>=', $request->from))
+//         ->when($request->to,   fn($q) => $q->whereDate('created_at', '<=', $request->to))
+//         ->latest()
+//         ->paginate(50);
+//     return response()->json($logs);
+
     }
 
     public function show(MessageLog $log): JsonResponse

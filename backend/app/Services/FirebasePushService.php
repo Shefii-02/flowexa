@@ -1,4 +1,5 @@
 <?php
+
 namespace App\Services;
 
 use App\Models\PushToken;
@@ -43,7 +44,7 @@ class FirebasePushService
     // ── Lead stage changed notification ────────────────────────────────────
     public function notifyLeadStageChange(int $companyId, int $leadId, string $contactName, string $newStage): void
     {
-        $stageLabels = ['new'=>'New','contacted'=>'Contacted','follow_up'=>'Follow-up','enrolled'=>'Enrolled ✓','lost'=>'Lost'];
+        $stageLabels = ['new' => 'New', 'contacted' => 'Contacted', 'follow_up' => 'Follow-up', 'enrolled' => 'Enrolled ✓', 'lost' => 'Lost'];
         $label       = $stageLabels[$newStage] ?? $newStage;
 
         $this->sendToCompany(
@@ -179,6 +180,19 @@ class FirebasePushService
         $token = $response['access_token'];
         cache(['firebase_access_token' => $token], 3500); // cache for ~58 min
         return $token;
+    }
+
+    public function notifyCompany(int $companyId, array $data = []): void
+    {
+        $tokens = PushToken::where('company_id', $companyId)->where('is_active', true)->pluck('fcm_token');
+        if ($tokens->isEmpty()) return;
+        $this->sendToCompany(
+            $companyId,
+            $data['type'] ?? 'notification',
+            $data['title'] ?? 'Notification',
+            $data['body'] ?? '',
+            $data['data'] ?? []
+        );
     }
 }
 

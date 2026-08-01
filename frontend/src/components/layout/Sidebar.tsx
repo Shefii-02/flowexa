@@ -5,7 +5,7 @@ import { logoutThunk, toggleSidebar } from '@/store/slices'
 import { cn, fmt } from '@/utils'
 import { toast } from 'react-hot-toast'
 
-const NavItem = ({ to, icon, label, badge,end = false, }: { to: string; icon: string; label: string; badge?: number; end?: boolean }) => (
+const NavItem = ({ to, icon, label, badge, end = false, }: { to: string; icon: string; label: string; badge?: number; end?: boolean }) => (
   <NavLink
     to={to}
     className={({ isActive }) => cn('nav-link', isActive && 'nav-link-active')}
@@ -104,15 +104,18 @@ export const Sidebar = () => {
             <NavItem to="/dashboard" icon="📊" label="Dashboard" />
             <p className="text-xs font-medium text-gray-400 uppercase tracking-wide px-2 pt-3 pb-1">Engage</p>
             <NavItem to="/contacts" icon="👥" label="Contacts" />
+            <NavItem to="/labels" icon="🏷️" label="Labels" />
+            <NavItem to="/blacklist" icon="🚫" label="Blacklist" />
             {canViewFlow && <NavItem to="/flow" icon="🌿" label="Flow builder" />}
             {canViewCamp && <NavItem to="/campaigns" icon="📢" label="Campaigns" />}
-            <NavItem to="/leads" icon="🎯" label="Leads" />
 
+            <NavItem to="/templates" icon="📄" label="WA Templates" />
             <p className="text-xs font-medium text-gray-400 uppercase tracking-wide px-2 pt-3 pb-1">Manage</p>
             {canViewStaff && <NavItem to="/staff" icon="👤" label="Staff" />}
             {canViewBill && <NavItem to="/wallet" icon="💳" label="Wallet" />}
             <NavItem to="/otp" icon="🔐" label="OTP service" />
-            <NavItem to="/message-logs" icon="📋" label="Message logs" />
+            <NavItem to="/phone-numbers" icon="📱" label="Phone numbers" />
+
 
             {canViewAnalyt && (
               <>
@@ -120,13 +123,14 @@ export const Sidebar = () => {
                 <NavItem to="/analytics" icon="📈" label="Analytics" />
               </>
             )}
+            <NavItem to="/leads" icon="🎯" label="Leads" />
+            <NavItem to="/message-logs" icon="📋" label="Message logs" />
 
             <p className="text-xs font-medium text-gray-400 uppercase tracking-wide px-2 pt-3 pb-1">Account</p>
             <NavItem to="/settings" icon="⚙️" label="Settings" />
 
-            <NavItem to="/phone-numbers" icon="📱" label="Phone numbers" />
-            <NavItem to="/templates" icon="📄" label="WA Templates" />
-            <NavItem to="/blacklist" icon="🚫" label="Blacklist" />
+
+
             <NavItem to="/plan-purchase" icon="📦" label="Plans & billing" />
 
 
@@ -135,6 +139,7 @@ export const Sidebar = () => {
             <NavItem to="/meta-ads/accounts" icon="🔗" label="Ad accounts" />
             <NavItem to="/meta-ads/creatives" icon="🎨" label="Creative studio" />
             <NavItem to="/meta-ads/media" icon="🖼️" label="Media library" />
+            <p className="text-xs font-medium text-gray-400 uppercase tracking-wide px-2 pt-3 pb-1">Insights</p>
             <NavItem to="/meta-ads/insights" icon="📊" label="Ads insights" />
           </>
         )}

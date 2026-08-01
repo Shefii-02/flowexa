@@ -17,6 +17,7 @@ class UpdateContactRequest extends FormRequest
             'name'          => ['nullable', 'string', 'max:100'],
             'email'         => ['nullable', 'email', 'max:150'],
             'custom_fields' => ['nullable', 'array'],
+            'opted_in'      => ['nullable', 'boolean'],
         ];
     }
 

@@ -52,6 +52,9 @@ export const authSlice = createSlice({
             s.token = a.payload
             localStorage.setItem('wa_token', a.payload)
         },
+        setUser: (s, a: PayloadAction<AuthState['user']>) => {
+            s.user = a.payload
+        },
         logout: (s) => {
             s.user = null; s.token = null; s.isAuthenticated = false
             localStorage.removeItem('wa_token')
@@ -76,10 +79,10 @@ export const authSlice = createSlice({
             })
             .addCase(loginThunk.rejected, (s, a) => { s.loading = false; s.error = a.payload as string })
             .addCase(fetchMeThunk.pending, (s) => { s.loading = true })
-            .addCase(fetchMeThunk.fulfilled, (s, a) => { s.user = a.payload; s.isAuthenticated = true, s.error = null, s.loading = false })
+            .addCase(fetchMeThunk.fulfilled, (s, a) => { s.user = a.payload; s.isAuthenticated = true, s.error = null, s.loading = false})
             .addCase(fetchMeThunk.rejected, (s) => { s.user = null; s.isAuthenticated = false; localStorage.removeItem('wa_token'), s.loading = false })
             .addCase(logoutThunk.fulfilled, (s) => { s.user = null; s.token = null; s.isAuthenticated = false; localStorage.removeItem('wa_token') })
     },
 })
-export const { setToken, logout, clearError: clearAuthError, updateWallet } = authSlice.actions
+export const { setToken,setUser, logout, clearError: clearAuthError, updateWallet } = authSlice.actions
 export default authSlice.reducer

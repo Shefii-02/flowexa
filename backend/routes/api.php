@@ -13,6 +13,7 @@ use App\Modules\Campaign\Http\Controllers\CampaignController;
 use App\Modules\Contact\Http\Controllers\ContactController;
 use App\Modules\Contact\Http\Controllers\LabelController;
 use App\Modules\Flow\Http\Controllers\FlowAnalyticsController;
+use App\Modules\Flow\Http\Controllers\FlowBuilderController;
 use App\Modules\Flow\Http\Controllers\FlowController;
 use App\Modules\Lead\Http\Controllers\LeadController;
 use App\Modules\Lead\Http\Controllers\LeadNoteController;
@@ -464,6 +465,25 @@ Route::prefix('v1')->group(function () {
         Route::post('whatsapp', [WebhookController::class, 'handle'])->name('handle');
     });
 
+
+    Route::get('auth/profile',          [AuthController::class, 'profile']);
+    Route::put('auth/profile',          [AuthController::class, 'updateProfile']);
+    Route::post('auth/change-password',  [AuthController::class, 'changePassword']);
+    Route::post('auth/forgot-password',  [AuthController::class, 'forgotPassword']);    // public
+    Route::post('auth/reset-password',   [AuthController::class, 'resetPassword']);     // public
+
+
+    Route::get('flow-builders',             [FlowBuilderController::class, 'index']);
+    Route::post('flow-builders',             [FlowBuilderController::class, 'store']);
+    Route::put('flow-builders/{id}',        [FlowBuilderController::class, 'update']);
+    Route::delete('flow-builders/{id}',        [FlowBuilderController::class, 'destroy']);
+    Route::post('flow-builders/{id}/activate', [FlowBuilderController::class, 'activate']);
+
+
+    Route::get('company-roles',      [CompanyRoleController::class, 'index']);
+    Route::post('company-roles',      [CompanyRoleController::class, 'store']);
+    Route::put('company-roles/{id}', [CompanyRoleController::class, 'update']);
+    Route::delete('company-roles/{id}', [CompanyRoleController::class, 'destroy']); // is_system check
 
     // ── Razorpay webhook (public — verified by signature) ────────────────────
     Route::post('razorpay/webhook', [PaymentController::class, 'webhook']);

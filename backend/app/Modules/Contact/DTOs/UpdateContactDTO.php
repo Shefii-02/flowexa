@@ -10,14 +10,16 @@ readonly class UpdateContactDTO
         public ?string $name         = null,
         public ?string $email        = null,
         public ?array  $customFields = null,
+        public ?bool   $optedIn      = true,
     ) {}
 
     public static function fromRequest(array $data): self
     {
         return new self(
-            name:         $data['name']          ?? null,
-            email:        $data['email']         ?? null,
+            name: $data['name']          ?? null,
+            email: $data['email']         ?? null,
             customFields: $data['custom_fields'] ?? null,
+            optedIn: isset($data['opted_in']) ? (bool) $data['opted_in'] : true,
         );
     }
 }

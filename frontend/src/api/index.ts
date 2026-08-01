@@ -4,10 +4,17 @@ import api from './client'
 // ── Auth ──────────────────────────────────────────────────────────────────────
 export const authApi = {
   login: (email: string, password: string) => api.post('/auth/login', { email, password }),
+  forgotPassword: (d: { email: string }) => api.post('/auth/forgot-password', d),
   register: (d: Record<string, string>) => api.post('/auth/register', d),
   me: () => api.get('/auth/me'),
   refresh: () => api.post('/auth/refresh'),
   logout: () => api.post('/auth/logout'),
+  updateProfile: (d: { name: string; phone: string; language: string; department: string }) =>
+    api.put('/auth/profile', d),
+  changePassword: (d: { current_password: string; password: string; password_confirmation: string }) =>
+    api.post('/auth/change-password', d),
+  resetPassword: (d: { token: string; email: string; password: string; password_confirmation: string }) =>
+    api.post('/auth/reset-password', d),
 }
 
 // ── Company ───────────────────────────────────────────────────────────────────
@@ -38,6 +45,9 @@ export const contactApi = {
   show: (id: number) => api.get(`/contacts/${id}`),
   create: (d: Record<string, unknown>) => api.post('/contacts', d),
   update: (id: number, d: Record<string, unknown>) => api.put(`/contacts/${id}`, d),
+  blacklist: (phone: string, reason?: string) => api.post('/blacklist', { phone, reason }),
+  leads: (id: number) => api.get(`/contacts/${id}/leads`),
+  messages: (id: number, p?: Record<string, unknown>) => api.get(`/contacts/${id}/messages`, { params: p }),
   delete: (id: number) => api.delete(`/contacts/${id}`),
   optIn: (id: number) => api.patch(`/contacts/${id}/opt-in`),
   optOut: (id: number) => api.patch(`/contacts/${id}/opt-out`),
@@ -92,13 +102,36 @@ export const campaignApi = {
   show: (id: number) => api.get(`/campaigns/${id}`),
   stats: (id: number) => api.get(`/campaigns/${id}/stats`),
   create: (d: FormData) => api.post('/campaigns', d, { headers: { 'Content-Type': 'multipart/form-data' } }),
-  update: (id: number, d: Record<string, unknown>) => api.put(`/campaigns/${id}`, d),
+  update: (id: number, d: FormData) => {
+    d.append('_method', 'PUT')
+    return api.post(`/campaigns/${id}`, d, { headers: { 'Content-Type': 'multipart/form-data' } })
+  },
   delete: (id: number) => api.delete(`/campaigns/${id}`),
   launch: (id: number) => api.post(`/campaigns/${id}/launch`),
   pause: (id: number) => api.post(`/campaigns/${id}/pause`),
   resume: (id: number) => api.post(`/campaigns/${id}/resume`),
   resendFailed: (id: number) => api.post(`/campaigns/${id}/resend-failed`),
   contacts: (id: number, p?: Record<string, unknown>) => api.get(`/campaigns/${id}/contacts`, { params: p }),
+}
+
+// ── Role ─────────────────────────────────────────────────────────────────────
+
+export const roleApi = {
+  companyRoles:      () => api.get('/roles'),
+  createCompanyRole: (d: { label: string; permissions: string[] }) => api.post('/roles', d),
+  updateCompanyRole: (id: number, d: { label: string; permissions: string[] }) => api.put(`/roles/${id}`, d),
+  deleteCompanyRole: (id: number) => api.delete(`/roles/${id}`),
+}
+
+// ── Flow Builder ─────────────────────────────────────────────────────────────────────
+
+export const flowBuilderApi = {
+  list:     () => api.get('/flow-builders'),
+  show:     (id: number) => api.get(`/flow-builders/${id}`),
+  create:   (d: Record<string, unknown>) => api.post('/flow-builders', d),
+  update:   (id: number, d: Record<string, unknown>) => api.put(`/flow-builders/${id}`, d),
+  activate: (id: number) => api.post(`/flow-builders/${id}/activate`),
+  delete:   (id: number) => api.delete(`/flow-builders/${id}`),
 }
 
 // ── Leads ─────────────────────────────────────────────────────────────────────
@@ -137,6 +170,11 @@ export const settingsApi = {
   verifyWa:    ()                              => api.get('/settings/verify-wa'),
   testSend:    (d: {phone:string;message?:string}) => api.post('/settings/test-send', d),
   webhookLogs: ()                              => api.get('/settings/webhook-logs'),
+}
+
+
+export const messageLogApi = {
+  list: (p?: Record<string, unknown>) => api.get('/message-logs', { params: p }),
 }
 
 // ── SuperAdmin ────────────────────────────────────────────────────────────────
@@ -178,7 +216,13 @@ export const templateApi = {
   update: (id: number, d: Record<string, unknown>) => api.put(`/templates/${id}`, d),
   delete: (id: number) => api.delete(`/templates/${id}`),
   sync: (id: number) => api.post(`/templates/${id}/sync`),
+  syncFromMeta: (d?: { template_id?: string; language?: string }) =>
+    api.post('/templates/sync-from-meta', d),
+  // syncFromMeta: (d: { template_id: string; language: string }) => api.post('/templates/sync-from-meta', d),
+  
 }
+
+
 
 // ── Plan Purchase ─────────────────────────────────────────────────────────
 export const planApi = {

@@ -87,6 +87,8 @@ class ContactRepository implements ContactRepositoryInterface
             'name'          => $dto->name,
             'email'         => $dto->email,
             'custom_fields' => $dto->customFields,
+            'opted_in'      => $dto->optedIn,
+            'opted_out_at' => $dto->optedIn ? null : now(),
         ], fn($v) => !is_null($v));
 
         $contact->update($data);

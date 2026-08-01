@@ -12,15 +12,55 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 // ════════════════════════════════════════════════════════════════════════════
 class WaTemplate extends Model
 {
+
     protected $fillable = [
-        'company_id', 'name', 'wa_template_id', 'category',
-        'language', 'body', 'header', 'footer', 'variables', 'status',
+        'company_id',
+        'wa_phone_number_id',
+        'name',
+        'wa_template_id',
+        'category',
+        'language',
+        'body',
+        'body_examples',
+        'header',
+        'header_format',
+        'header_handle',
+        'header_sample_path',
+        'header_sample_url',
+        'header_example',
+        'footer',
+        'buttons',
+        'status',
+        'rejection_reason',
     ];
 
-    protected $casts = ['variables' => 'array'];
+    protected $casts = [
+        'body_examples' => 'array',
+        'buttons'       => 'array',
+    ];
 
-    public function company(): BelongsTo  { return $this->belongsTo(Company::class); }
-    public function campaigns(): HasMany  { return $this->hasMany(Campaign::class, 'template_id'); }
+    // protected $fillable = [
+    //     'company_id', 'name', 'wa_template_id', 'category',
+    //     'language', 'body', 'header', 'footer', 'variables', 'status',
+    // ];
 
-    public function scopeApproved($q) { return $q->where('status', 'approved'); }
+    // protected $casts = ['variables' => 'array'];
+
+    public function company(): BelongsTo
+    {
+        return $this->belongsTo(Company::class);
+    }
+    public function campaigns(): HasMany
+    {
+        return $this->hasMany(Campaign::class, 'template_id');
+    }
+    public function waPhoneNumber(): BelongsTo
+    {
+        return $this->belongsTo(WaPhoneNumber::class, 'wa_phone_number_id');
+    }
+
+    public function scopeApproved($q)
+    {
+        return $q->where('status', 'approved');
+    }
 }

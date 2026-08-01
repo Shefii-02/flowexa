@@ -17,6 +17,7 @@ use App\Modules\Contact\Http\Resources\ContactResource;
 use App\Modules\Contact\Http\Resources\ImportResultResource;
 use App\Modules\Contact\Services\ContactService;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
@@ -31,7 +32,7 @@ class ContactController extends Controller
     {
         $paginator = $this->contactService->list(
             companyId: auth()->user()->company_id,
-            filter:    ContactFilterDTO::fromRequest($request->validated()),
+            filter: ContactFilterDTO::fromRequest($request->validated()),
         );
 
         return (new ContactCollection($paginator))->response();
@@ -50,7 +51,7 @@ class ContactController extends Controller
     {
         $contact = $this->contactService->create(
             companyId: auth()->user()->company_id,
-            dto:       CreateContactDTO::fromRequest($request->validated()),
+            dto: CreateContactDTO::fromRequest($request->validated()),
         );
 
         return response()->json([
@@ -62,10 +63,12 @@ class ContactController extends Controller
     // ─── PUT /contacts/{id} ───────────────────────────────────────────────────
     public function update(UpdateContactRequest $request, int $contact): JsonResponse
     {
+
+        Log::info('Updating contact with data: ' . json_encode($request->validated()));
         $c = $this->contactService->update(
-            id:        $contact,
+            id: $contact,
             companyId: auth()->user()->company_id,
-            dto:       UpdateContactDTO::fromRequest($request->validated()),
+            dto: UpdateContactDTO::fromRequest($request->validated()),
         );
 
         return response()->json([
@@ -78,9 +81,9 @@ class ContactController extends Controller
     public function syncLabels(SyncLabelsRequest $request, int $contact): JsonResponse
     {
         $c = $this->contactService->syncLabels(
-            id:        $contact,
+            id: $contact,
             companyId: auth()->user()->company_id,
-            labelIds:  $request->validated('label_ids'),
+            labelIds: $request->validated('label_ids'),
         );
 
         return response()->json([
@@ -95,7 +98,7 @@ class ContactController extends Controller
         $c = $this->contactService->removeLabel(
             contactId: $contact,
             companyId: auth()->user()->company_id,
-            labelId:   $label
+            labelId: $label
         );
 
         return response()->json([
@@ -142,7 +145,7 @@ class ContactController extends Controller
 
         $result  = $this->contactService->import(
             companyId: auth()->user()->company_id,
-            dto:       ImportContactDTO::fromRequest($request->validated(), $path),
+            dto: ImportContactDTO::fromRequest($request->validated(), $path),
         );
 
         return response()->json([
@@ -156,7 +159,7 @@ class ContactController extends Controller
     {
         $path = $this->contactService->export(
             companyId: auth()->user()->company_id,
-            filter:    ContactFilterDTO::fromRequest($request->validated()),
+            filter: ContactFilterDTO::fromRequest($request->validated()),
         );
 
         return Storage::download($path, 'contacts.csv');

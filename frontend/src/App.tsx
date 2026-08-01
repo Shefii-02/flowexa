@@ -45,6 +45,7 @@ import PhoneNumbersPage from '@/pages/phone-numbers/PhoneNumbersPage'
 import TemplatesPage from '@/pages/template/TemplatesPage'
 import PlanPurchasePage from '@/pages/plan-purchase/PlanPurchasePage'
 import BlacklistPage from '@/pages/blacklist/BlacklistPage'
+import LabelsPage from './pages/contacts/LabelsPage'
 
 export const DashboardRouter = () => {
   const isSuperAdmin = useIsSuperAdmin()
@@ -95,6 +96,7 @@ export default function App() {
             <Route path="dashboard" element={<SuperAdminRoute><DashboardRouter /></SuperAdminRoute>}  />
             <Route path="staff" element={<StaffPage />} />
             <Route path="contacts" element={<ContactsPage />} />
+            <Route path="labels"   element={<LabelsPage />} />
             <Route path="flow" element={<FlowPage />} />
             <Route path="campaigns" element={<CampaignsPage />} />
             <Route path="leads" element={<LeadsPage />} />

@@ -42,6 +42,9 @@ export interface Company {
   settings: Record<string, unknown> | null
   plan: Plan | null
   wallet: Wallet | null
+  plan_expires_at: string | null
+  created_at: string
+  updated_at: string
 }
 
 export interface User {
@@ -60,6 +63,8 @@ export interface User {
   created_at: string
   role: Role | null
   company: Company | null
+  language: string
+  permissions: string[]
 }
 
 export interface ContactLabel {
@@ -81,6 +86,17 @@ export interface Contact {
   crm_id: string | null
   labels: ContactLabel[]
   created_at: string
+  is_blacklisted: boolean
+  last_message: {
+    id: number
+    direction: 'inbound' | 'outbound'
+    type: string
+    status: string | null
+    delivered_at: string | null
+    read_at: string | null
+    created_at: string
+  } | null
+  leads_count: number
 }
 
 export interface FlowNode {
@@ -137,7 +153,7 @@ export interface Campaign {
   completed_at: string | null
   created_at: string
   stats: CampaignStats
-  template?: { id: number; name: string; category: string }
+  template?: { id: number; name: string; category: string; body: string; }
   creator?: { id: number; name: string }
 }
 
@@ -153,9 +169,9 @@ export interface CampaignContact {
   contact?: { id: number; name: string | null }
 }
 
-export type LeadStage    = 'new' | 'contacted' | 'follow_up' | 'enrolled' | 'lost'
+export type LeadStage = 'new' | 'contacted' | 'follow_up' | 'enrolled' | 'lost'
 export type LeadPriority = 'low' | 'medium' | 'high'
-export type LeadSource   = 'flow' | 'campaign' | 'manual' | 'api'
+export type LeadSource = 'flow' | 'campaign' | 'manual' | 'api'
 
 export interface Lead {
   id: number

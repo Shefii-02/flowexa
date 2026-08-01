@@ -15,6 +15,7 @@ readonly class InboundMessageDTO
         public ?string $replyId        = null, // button/list reply_id
         public ?string $replyTitle     = null,
         public ?array  $rawPayload     = null,
+        public ?string $caption        = null,
     ) {}
 
     public static function fromMeta(array $message, string $phone, string $waId): self
@@ -54,6 +55,7 @@ readonly class InboundMessageDTO
             replyId:          $replyId,
             replyTitle:       $replyTitle,
             rawPayload:       $message,
+            caption:          $message['image']['caption'] ?? $message['document']['caption'] ?? null,
         );
     }
 }

@@ -104,13 +104,13 @@ export const Modal = ({ open, onClose, title, children, size = 'md', footer }: M
 }
 
 // ── Confirm Modal ─────────────────────────────────────────────────────────────
-interface ConfirmProps { open: boolean; title: string; message: string; onConfirm: () => void; onCancel: () => void; loading?: boolean; danger?: boolean }
-export const ConfirmModal = ({ open, title, message, onConfirm, onCancel, loading, danger = true }: ConfirmProps) => (
+interface ConfirmProps { open: boolean; title: string; message: string; onConfirm: () => void; onCancel: () => void; loading?: boolean; danger?: boolean; confirmLabel?: string, cancelLabel?: string,confirmVariant?: 'primary'|'danger' }
+export const ConfirmModal = ({ open, title, message,confirmLabel ="confirm", cancelLabel="Cancel", onConfirm, onCancel, loading, danger = true, confirmVariant = 'primary'   }: ConfirmProps) => (
   <Modal open={open} onClose={onCancel} title={title} size="sm"
     footer={
       <>
-        <Button variant="secondary" onClick={onCancel} disabled={loading}>Cancel</Button>
-        <Button variant={danger ? 'danger' : 'primary'} onClick={onConfirm} loading={loading}>{danger ? 'Delete' : 'Confirm'}</Button>
+        <Button variant="secondary" onClick={onCancel} disabled={loading}>{cancelLabel}</Button>
+        <Button variant={confirmVariant} onClick={onConfirm} loading={loading}>{confirmLabel}</Button>
       </>
     }
   >
