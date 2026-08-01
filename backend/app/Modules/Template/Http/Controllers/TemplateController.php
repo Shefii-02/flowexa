@@ -312,7 +312,7 @@ class TemplateController extends Controller
                 ]);
         } else {
             $response = Http::withToken($company->decrypt_wa_access_token)
-                ->post("https://graph.facebook.com/v25.0/{$company->wa_business_id}/message_templates", [
+                ->post("https://graph.facebook.com/v25.0/{$company->wa_business_id}/message_template_library", [
                     'name'       => $d['name'],
                     'category'   => $d['category'],
                     'language'   => $d['language'],
@@ -391,7 +391,7 @@ class TemplateController extends Controller
 
         if ($template->wa_template_id && $company->decrypt_wa_access_token && $company->wa_business_id) {
             Http::withToken($company->decrypt_wa_access_token)
-                ->delete("https://graph.facebook.com/v25.0/{$company->wa_business_id}/message_templates", [
+                ->delete("https://graph.facebook.com/v25.0/{$company->wa_business_id}/message_template_library", [
                     'hsm_id' => $template->wa_template_id,
                     'name'   => $template->name,
                 ]);
@@ -418,7 +418,7 @@ class TemplateController extends Controller
         }
 
         $response = Http::withToken($company->decrypt_wa_access_token)
-            ->get("https://graph.facebook.com/v25.0/{$company->wa_business_id}/message_templates", [
+            ->get("https://graph.facebook.com/v25.0/{$company->wa_business_id}/message_template_library", [
                 'fields' => 'id,name,category,language,status,rejected_reason,components',
                 'limit'  => 100,
             ]);
