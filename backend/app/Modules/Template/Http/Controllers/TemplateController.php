@@ -1,4 +1,5 @@
 <?php
+
 namespace App\Modules\Template\Http\Controllers;
 
 use App\Modules\Template\Services\TemplateService;
@@ -252,9 +253,9 @@ class TemplateController extends Controller
         $uploadSessionId = $session->json('id'); // format: "upload:XYZ"
 
         $upload = Http::withHeaders([
-                'Authorization' => 'OAuth ' . $company->decrypt_wa_access_token,
-                'file_offset'   => '0',
-            ])
+            'Authorization' => 'OAuth ' . $company->decrypt_wa_access_token,
+            'file_offset'   => '0',
+        ])
             ->withBody(file_get_contents($file->getRealPath()), $file->getMimeType())
             ->post("https://graph.facebook.com/v25.0/{$uploadSessionId}");
 
@@ -312,7 +313,7 @@ class TemplateController extends Controller
                 ]);
         } else {
             $response = Http::withToken($company->decrypt_wa_access_token)
-                ->post("https://graph.facebook.com/v25.0/{$company->wa_business_id}/message_template_library", [
+                ->post("https://graph.facebook.com/v25.0/{$company->wa_business_id}/message_templates", [
                     'name'       => $d['name'],
                     'category'   => $d['category'],
                     'language'   => $d['language'],
@@ -391,7 +392,7 @@ class TemplateController extends Controller
 
         if ($template->wa_template_id && $company->decrypt_wa_access_token && $company->wa_business_id) {
             Http::withToken($company->decrypt_wa_access_token)
-                ->delete("https://graph.facebook.com/v25.0/{$company->wa_business_id}/message_template_library", [
+                ->delete("https://graph.facebook.com/v25.0/{$company->wa_business_id}/message_templates", [
                     'hsm_id' => $template->wa_template_id,
                     'name'   => $template->name,
                 ]);
@@ -418,7 +419,7 @@ class TemplateController extends Controller
         }
 
         $response = Http::withToken($company->decrypt_wa_access_token)
-            ->get("https://graph.facebook.com/v25.0/message_template_library", [
+            ->get("https://graph.facebook.com/v25.0/{$company->wa_business_id}/message_templates", [
                 'fields' => 'id,name,category,language,status,rejected_reason,components',
                 'limit'  => 100,
             ]);
@@ -433,22 +434,48 @@ class TemplateController extends Controller
             $bodyComponent   = $components->firstWhere('type', 'BODY');
             $headerComponent = $components->firstWhere('type', 'HEADER');
 
+            // skip malformed entries defensively instead of crashing the whole sync
+            if (empty($meta['name']) || empty($meta['id'])) {
+                continue;
+            }
+
             WaTemplate::updateOrCreate(
                 ['company_id' => $company->id, 'name' => $meta['name']],
                 [
                     'wa_template_id'   => $meta['id'],
-                    'category'         => $meta['category'],
-                    'language'         => $meta['language'],
+                    'category'         => $meta['category'] ?? 'UTILITY',
+                    'language'         => $meta['language'] ?? 'en',
                     'body'             => $bodyComponent['text'] ?? '',
                     'body_examples'    => $bodyComponent['example']['body_text'][0] ?? null,
                     'header_format'    => $headerComponent['format'] ?? 'TEXT',
                     'header'           => ($headerComponent['format'] ?? 'TEXT') === 'TEXT' ? ($headerComponent['text'] ?? null) : null,
-                    'status'           => strtolower($meta['status']),
+                    'status'           => strtolower($meta['status'] ?? 'pending'),
                     'rejection_reason' => $meta['rejected_reason'] ?? null,
                 ]
             );
             $updated++;
         }
+        // foreach ($response->json('data', []) as $meta) {
+        //     $components = collect($meta['components'] ?? []);
+        //     $bodyComponent   = $components->firstWhere('type', 'BODY');
+        //     $headerComponent = $components->firstWhere('type', 'HEADER');
+
+        //     WaTemplate::updateOrCreate(
+        //         ['company_id' => $company->id, 'name' => $meta['name']],
+        //         [
+        //             'wa_template_id'   => $meta['id'],
+        //             'category'         => $meta['category'],
+        //             'language'         => $meta['language'],
+        //             'body'             => $bodyComponent['text'] ?? '',
+        //             'body_examples'    => $bodyComponent['example']['body_text'][0] ?? null,
+        //             'header_format'    => $headerComponent['format'] ?? 'TEXT',
+        //             'header'           => ($headerComponent['format'] ?? 'TEXT') === 'TEXT' ? ($headerComponent['text'] ?? null) : null,
+        //             'status'           => strtolower($meta['status']),
+        //             'rejection_reason' => $meta['rejected_reason'] ?? null,
+        //         ]
+        //     );
+        //     $updated++;
+        // }
 
         return response()->json(['message' => "Synced {$updated} templates from Meta."]);
     }
