@@ -333,7 +333,7 @@ Route::prefix('v1')->group(function () {
 
 
         Route::prefix('phone-numbers')->name('phone-numbers.')
-            ->middleware(['jwt.auth', 'company.active'])
+            ->middleware(['company.active'])
             ->group(function () {
                 Route::get('/',           [PhoneNumberController::class, 'index'])->name('index');
                 Route::post('/',          [PhoneNumberController::class, 'store'])->name('store')->middleware('plan.limit:phone_numbers');
@@ -403,39 +403,162 @@ Route::prefix('v1')->group(function () {
         //     // ── Message Logs ─────────────────────────────────────────────────────────
         Route::get('message-logs', [MessageLogController::class, 'index'])->name('message-logs.index');
         Route::get('message-logs/{log}', [MessageLogController::class, 'show'])->name('message-logs.show');
+
+
+        // Authenticated company routes
+        Route::middleware(['company.active'])->group(function () {
+            Route::get('plans',                        [PlanPurchaseController::class, 'index'])->name('plans.index');
+            Route::get('plans/current',               [PlanPurchaseController::class, 'currentPlan'])->name('plans.current');
+            Route::post('plans/create-order',          [PlanPurchaseController::class, 'createOrder'])->name('plans.create-order');
+            Route::post('plans/verify-payment',        [PlanPurchaseController::class, 'verifyPayment'])->name('plans.verify-payment');
+            Route::get('plans/history',                [PlanPurchaseController::class, 'history'])->name('plans.history');
+            Route::get('addons',                       [PlanPurchaseController::class, 'addons'])->name('addons.index');
+            Route::post('addons/{addon}/create-order', [PlanPurchaseController::class, 'addonOrder'])->name('addons.order');
+            Route::post('addons/verify-payment',       [PlanPurchaseController::class, 'verifyAddonPayment'])->name('addons.verify');
+        });
+
+        // Superadmin plan management
+        Route::middleware(['superadmin'])->prefix('superadmin')->group(function () {
+            Route::get('plans',             [PlanPurchaseController::class, 'superAdminPlans'])->name('sa.plans.index');
+            Route::post('plans',            [PlanPurchaseController::class, 'superAdminCreatePlan'])->name('sa.plans.store');
+            Route::put('plans/{id}',        [PlanPurchaseController::class, 'superAdminUpdatePlan'])->name('sa.plans.update');
+            Route::delete('plans/{id}',     [PlanPurchaseController::class, 'superAdminDeletePlan'])->name('sa.plans.destroy');
+            Route::post('plans/assign',     [PlanPurchaseController::class, 'assignCustomPlan'])->name('sa.plans.assign');
+            Route::get('addons',            [PlanPurchaseController::class, 'superAdminAddons'])->name('sa.addons.index');
+            Route::post('addons',           [PlanPurchaseController::class, 'superAdminCreateAddon'])->name('sa.addons.store');
+            Route::put('addons/{id}',       [PlanPurchaseController::class, 'superAdminUpdateAddon'])->name('sa.addons.update');
+            Route::get('topup-packages',    [PlanPurchaseController::class, 'topupPackages'])->name('sa.topup.index');
+            Route::post('topup-packages',   [PlanPurchaseController::class, 'createTopupPackage'])->name('sa.topup.store');
+            Route::put('topup-packages/{id}', [PlanPurchaseController::class, 'updateTopupPackage'])->name('sa.topup.update');
+            Route::delete('topup-packages/{id}', [PlanPurchaseController::class, 'deleteTopupPackage'])->name('sa.topup.destroy');
+        });
+
+        Route::prefix('templates')->name('templates.')
+            ->middleware(['company.active'])
+            ->group(function () {
+                Route::get('/',                 [TemplateController::class, 'index'])->name('index');
+
+                // Bulk sync must come before '/{id}' so it isn't swallowed by the id route
+                Route::post('/sync-from-meta',  [TemplateController::class, 'syncFromMeta'])->name('sync-from-meta');
+
+                Route::get('/{id}',             [TemplateController::class, 'show'])->name('show');
+                Route::post('/',                [TemplateController::class, 'store'])->name('store')->middleware('plan.limit:templates');
+                Route::put('/{id}',             [TemplateController::class, 'update'])->name('update');
+                Route::delete('/{id}',          [TemplateController::class, 'destroy'])->name('destroy');
+
+                // Per-template single sync (pulls latest status for just this one template)
+                Route::post('/{id}/sync',       [TemplateController::class, 'syncSingle'])->name('sync');
+
+                // Draft → submit to Meta, once all required media is attached
+                Route::post('/{id}/submit',     [TemplateController::class, 'submit'])->name('submit');
+
+                // Header media
+                Route::post('/{id}/upload-header-media',   [TemplateController::class, 'uploadHeaderMedia'])->name('upload-header-media');
+                Route::delete('/{id}/delete-header-media', [TemplateController::class, 'deleteHeaderMedia'])->name('delete-header-media');
+
+                // Footer media — stored locally only, never sent to Meta (see migration note)
+                Route::post('/{id}/upload-footer-media',   [TemplateController::class, 'uploadFooterMedia'])->name('upload-footer-media');
+                Route::delete('/{id}/delete-footer-media', [TemplateController::class, 'deleteFooterMedia'])->name('delete-footer-media');
+
+                // Per-button media — stored locally only, never sent to Meta (buttons are text-only in the Graph API)
+                Route::post('/{id}/buttons/{buttonId}/upload-media',   [TemplateController::class, 'uploadButtonMedia'])->name('upload-button-media');
+                Route::delete('/{id}/buttons/{buttonId}/delete-media', [TemplateController::class, 'deleteButtonMedia'])->name('delete-button-media');
+            });
+
+        Route::get('flow-builders',             [FlowBuilderController::class, 'index']);
+        Route::post('flow-builders',             [FlowBuilderController::class, 'store']);
+        Route::put('flow-builders/{id}',        [FlowBuilderController::class, 'update']);
+        Route::delete('flow-builders/{id}',        [FlowBuilderController::class, 'destroy']);
+        Route::post('flow-builders/{id}/activate', [FlowBuilderController::class, 'activate']);
+
+
+
+        Route::get('company-roles',      [CompanyRoleController::class, 'index']);
+        Route::post('company-roles',      [CompanyRoleController::class, 'store']);
+        Route::put('company-roles/{id}', [CompanyRoleController::class, 'update']);
+
+
+
+        Route::prefix('/meta-ads')->name('meta-ads.')->middleware(['company.active'])->group(function () {
+
+            // Ad accounts
+            Route::get('accounts',                  [MetaAdAccountController::class, 'index']);
+            Route::post('accounts',                 [MetaAdAccountController::class, 'store']);
+            Route::put('accounts/{id}',             [MetaAdAccountController::class, 'update']);
+            Route::delete('accounts/{id}',          [MetaAdAccountController::class, 'destroy']);
+            Route::post('accounts/{id}/set-default', [MetaAdAccountController::class, 'setDefault']);
+            Route::get('accounts/{id}/verify',      [MetaAdAccountController::class, 'verify']);
+
+            // Audience templates
+            Route::get('audience-templates',        [MetaAdSetController::class, 'audienceTemplates']);
+
+            // Campaigns
+            Route::get('campaigns',                 [MetaCampaignController::class, 'index']);
+            Route::post('campaigns',                [MetaCampaignController::class, 'store']);
+            Route::get('campaigns/{id}',            [MetaCampaignController::class, 'show']);
+            Route::put('campaigns/{id}',            [MetaCampaignController::class, 'update']);
+            Route::delete('campaigns/{id}',         [MetaCampaignController::class, 'destroy']);
+            Route::patch('campaigns/{id}/status',   [MetaCampaignController::class, 'updateStatus']);
+
+            // Ad sets
+            Route::get('campaigns/{cid}/adsets',    [MetaAdSetController::class, 'index']);
+            Route::post('campaigns/{cid}/adsets',   [MetaAdSetController::class, 'store']);
+            Route::put('adsets/{id}',               [MetaAdSetController::class, 'update']);
+            Route::patch('adsets/{id}/status',      [MetaAdSetController::class, 'updateStatus']);
+            Route::delete('adsets/{id}',            [MetaAdSetController::class, 'destroy']);
+
+            // Media library
+            Route::get('media',                     [MetaMediaController::class, 'index']);
+            Route::post('media/upload-image',       [MetaMediaController::class, 'uploadImage']);
+            Route::post('media/upload-video',       [MetaMediaController::class, 'uploadVideo']);
+            Route::delete('media/{id}',             [MetaMediaController::class, 'destroy']);
+
+            // Creatives
+            Route::get('creatives',                 [MetaCreativeController::class, 'index']);
+            Route::post('creatives',                [MetaCreativeController::class, 'store']);
+            Route::get('creatives/{id}',            [MetaCreativeController::class, 'show']);
+            Route::delete('creatives/{id}',         [MetaCreativeController::class, 'destroy']);
+
+            // Ads
+            Route::get('adsets/{sid}/ads',          [MetaAdController::class, 'index']);
+            Route::post('adsets/{sid}/ads',         [MetaAdController::class, 'store']);
+            Route::patch('ads/{id}/status',         [MetaAdController::class, 'updateStatus']);
+            Route::post('ads/{id}/sync-review',     [MetaAdController::class, 'syncReview']);
+            Route::delete('ads/{id}',               [MetaAdController::class, 'destroy']);
+
+            // Insights
+            Route::get('insights/campaign/{id}',    [MetaInsightController::class, 'campaign']);
+            Route::get('insights/overview',         [MetaInsightController::class, 'overview']);
+            Route::post('insights/sync/{campaignId}', [MetaInsightController::class, 'sync']);
+        });
+
+
+        Route::delete('company-roles/{id}', [CompanyRoleController::class, 'destroy']); // is_system check
+
+        Route::prefix('push')->name('push.')
+            ->middleware(['company.active'])
+            ->group(function () {
+                Route::post('/register-token',   [PushNotificationController::class, 'registerToken'])->middleware('jwt.auth');
+                Route::delete('/unregister-token', [PushNotificationController::class, 'unregisterToken'])->middleware('jwt.auth');
+                Route::get('/history',           [PushNotificationController::class, 'history'])->middleware('jwt.auth');
+                //
+            });
+
+
+        Route::get('auth/profile',          [AuthController::class, 'profile']);
+        Route::put('auth/profile',          [AuthController::class, 'updateProfile']);
+        Route::post('auth/change-password',  [AuthController::class, 'changePassword']);
+        Route::post('auth/forgot-password',  [AuthController::class, 'forgotPassword']);    // public
+        Route::post('auth/reset-password',   [AuthController::class, 'resetPassword']);     // public
     });
 
 
     // Public — plan listing (companies can see plans before login)
     Route::get('plans/public', [PlanPurchaseController::class, 'publicPlans'])->name('plans.public');
 
-    // Authenticated company routes
-    Route::middleware(['jwt.auth'])->group(function () {
-        Route::get('plans',                        [PlanPurchaseController::class, 'index'])->name('plans.index');
-        Route::get('plans/current',               [PlanPurchaseController::class, 'currentPlan'])->name('plans.current');
-        Route::post('plans/create-order',          [PlanPurchaseController::class, 'createOrder'])->name('plans.create-order');
-        Route::post('plans/verify-payment',        [PlanPurchaseController::class, 'verifyPayment'])->name('plans.verify-payment');
-        Route::get('plans/history',                [PlanPurchaseController::class, 'history'])->name('plans.history');
-        Route::get('addons',                       [PlanPurchaseController::class, 'addons'])->name('addons.index');
-        Route::post('addons/{addon}/create-order', [PlanPurchaseController::class, 'addonOrder'])->name('addons.order');
-        Route::post('addons/verify-payment',       [PlanPurchaseController::class, 'verifyAddonPayment'])->name('addons.verify');
-    });
 
-    // Superadmin plan management
-    Route::middleware(['jwt.auth', 'superadmin'])->prefix('superadmin')->group(function () {
-        Route::get('plans',             [PlanPurchaseController::class, 'superAdminPlans'])->name('sa.plans.index');
-        Route::post('plans',            [PlanPurchaseController::class, 'superAdminCreatePlan'])->name('sa.plans.store');
-        Route::put('plans/{id}',        [PlanPurchaseController::class, 'superAdminUpdatePlan'])->name('sa.plans.update');
-        Route::delete('plans/{id}',     [PlanPurchaseController::class, 'superAdminDeletePlan'])->name('sa.plans.destroy');
-        Route::post('plans/assign',     [PlanPurchaseController::class, 'assignCustomPlan'])->name('sa.plans.assign');
-        Route::get('addons',            [PlanPurchaseController::class, 'superAdminAddons'])->name('sa.addons.index');
-        Route::post('addons',           [PlanPurchaseController::class, 'superAdminCreateAddon'])->name('sa.addons.store');
-        Route::put('addons/{id}',       [PlanPurchaseController::class, 'superAdminUpdateAddon'])->name('sa.addons.update');
-        Route::get('topup-packages',    [PlanPurchaseController::class, 'topupPackages'])->name('sa.topup.index');
-        Route::post('topup-packages',   [PlanPurchaseController::class, 'createTopupPackage'])->name('sa.topup.store');
-        Route::put('topup-packages/{id}', [PlanPurchaseController::class, 'updateTopupPackage'])->name('sa.topup.update');
-        Route::delete('topup-packages/{id}', [PlanPurchaseController::class, 'deleteTopupPackage'])->name('sa.topup.destroy');
-    });
+
+
 
     // Route::prefix('templates')->name('templates.')
     //     ->middleware(['company.active'])
@@ -448,46 +571,9 @@ Route::prefix('v1')->group(function () {
     //         Route::post('/{id}/sync', [TemplateController::class, 'syncFromMeta'])->name('sync');
     //     });
 
-    Route::prefix('templates')->name('templates.')
-        ->middleware(['company.active'])
-        ->group(function () {
-            Route::get('/',                 [TemplateController::class, 'index'])->name('index');
 
-            // Bulk sync must come before '/{id}' so it isn't swallowed by the id route
-            Route::post('/sync-from-meta',  [TemplateController::class, 'syncFromMeta'])->name('sync-from-meta');
 
-            Route::get('/{id}',             [TemplateController::class, 'show'])->name('show');
-            Route::post('/',                [TemplateController::class, 'store'])->name('store')->middleware('plan.limit:templates');
-            Route::put('/{id}',             [TemplateController::class, 'update'])->name('update');
-            Route::delete('/{id}',          [TemplateController::class, 'destroy'])->name('destroy');
 
-            // Per-template single sync (pulls latest status for just this one template)
-            Route::post('/{id}/sync',       [TemplateController::class, 'syncSingle'])->name('sync');
-
-            // Draft → submit to Meta, once all required media is attached
-            Route::post('/{id}/submit',     [TemplateController::class, 'submit'])->name('submit');
-
-            // Header media
-            Route::post('/{id}/upload-header-media',   [TemplateController::class, 'uploadHeaderMedia'])->name('upload-header-media');
-            Route::delete('/{id}/delete-header-media', [TemplateController::class, 'deleteHeaderMedia'])->name('delete-header-media');
-
-            // Footer media — stored locally only, never sent to Meta (see migration note)
-            Route::post('/{id}/upload-footer-media',   [TemplateController::class, 'uploadFooterMedia'])->name('upload-footer-media');
-            Route::delete('/{id}/delete-footer-media', [TemplateController::class, 'deleteFooterMedia'])->name('delete-footer-media');
-
-            // Per-button media — stored locally only, never sent to Meta (buttons are text-only in the Graph API)
-            Route::post('/{id}/buttons/{buttonId}/upload-media',   [TemplateController::class, 'uploadButtonMedia'])->name('upload-button-media');
-            Route::delete('/{id}/buttons/{buttonId}/delete-media', [TemplateController::class, 'deleteButtonMedia'])->name('delete-button-media');
-        });
-
-    Route::prefix('push')->name('push.')
-        ->middleware(['company.active'])
-        ->group(function () {
-            Route::post('/register-token',   [PushNotificationController::class, 'registerToken'])->middleware('jwt.auth');
-            Route::delete('/unregister-token', [PushNotificationController::class, 'unregisterToken'])->middleware('jwt.auth');
-            Route::get('/history',           [PushNotificationController::class, 'history'])->middleware('jwt.auth');
-            //
-        });
 
 
     Route::prefix('webhook')->name('webhook.')->group(function () {
@@ -498,81 +584,11 @@ Route::prefix('v1')->group(function () {
     });
 
 
-    Route::get('auth/profile',          [AuthController::class, 'profile']);
-    Route::put('auth/profile',          [AuthController::class, 'updateProfile']);
-    Route::post('auth/change-password',  [AuthController::class, 'changePassword']);
-    Route::post('auth/forgot-password',  [AuthController::class, 'forgotPassword']);    // public
-    Route::post('auth/reset-password',   [AuthController::class, 'resetPassword']);     // public
 
-
-    Route::get('flow-builders',             [FlowBuilderController::class, 'index']);
-    Route::post('flow-builders',             [FlowBuilderController::class, 'store']);
-    Route::put('flow-builders/{id}',        [FlowBuilderController::class, 'update']);
-    Route::delete('flow-builders/{id}',        [FlowBuilderController::class, 'destroy']);
-    Route::post('flow-builders/{id}/activate', [FlowBuilderController::class, 'activate']);
-
-
-    Route::get('company-roles',      [CompanyRoleController::class, 'index']);
-    Route::post('company-roles',      [CompanyRoleController::class, 'store']);
-    Route::put('company-roles/{id}', [CompanyRoleController::class, 'update']);
-    Route::delete('company-roles/{id}', [CompanyRoleController::class, 'destroy']); // is_system check
 
     // ── Razorpay webhook (public — verified by signature) ────────────────────
     Route::post('razorpay/webhook', [PaymentController::class, 'webhook']);
 
     // Public webhook
     Route::post('/meta-ads/webhook', [MetaWebhookController::class, 'handle']);
-
-    Route::prefix('/meta-ads')->name('meta-ads.')->middleware(['company.active'])->group(function () {
-
-        // Ad accounts
-        Route::get('accounts',                  [MetaAdAccountController::class, 'index']);
-        Route::post('accounts',                 [MetaAdAccountController::class, 'store']);
-        Route::put('accounts/{id}',             [MetaAdAccountController::class, 'update']);
-        Route::delete('accounts/{id}',          [MetaAdAccountController::class, 'destroy']);
-        Route::post('accounts/{id}/set-default', [MetaAdAccountController::class, 'setDefault']);
-        Route::get('accounts/{id}/verify',      [MetaAdAccountController::class, 'verify']);
-
-        // Audience templates
-        Route::get('audience-templates',        [MetaAdSetController::class, 'audienceTemplates']);
-
-        // Campaigns
-        Route::get('campaigns',                 [MetaCampaignController::class, 'index']);
-        Route::post('campaigns',                [MetaCampaignController::class, 'store']);
-        Route::get('campaigns/{id}',            [MetaCampaignController::class, 'show']);
-        Route::put('campaigns/{id}',            [MetaCampaignController::class, 'update']);
-        Route::delete('campaigns/{id}',         [MetaCampaignController::class, 'destroy']);
-        Route::patch('campaigns/{id}/status',   [MetaCampaignController::class, 'updateStatus']);
-
-        // Ad sets
-        Route::get('campaigns/{cid}/adsets',    [MetaAdSetController::class, 'index']);
-        Route::post('campaigns/{cid}/adsets',   [MetaAdSetController::class, 'store']);
-        Route::put('adsets/{id}',               [MetaAdSetController::class, 'update']);
-        Route::patch('adsets/{id}/status',      [MetaAdSetController::class, 'updateStatus']);
-        Route::delete('adsets/{id}',            [MetaAdSetController::class, 'destroy']);
-
-        // Media library
-        Route::get('media',                     [MetaMediaController::class, 'index']);
-        Route::post('media/upload-image',       [MetaMediaController::class, 'uploadImage']);
-        Route::post('media/upload-video',       [MetaMediaController::class, 'uploadVideo']);
-        Route::delete('media/{id}',             [MetaMediaController::class, 'destroy']);
-
-        // Creatives
-        Route::get('creatives',                 [MetaCreativeController::class, 'index']);
-        Route::post('creatives',                [MetaCreativeController::class, 'store']);
-        Route::get('creatives/{id}',            [MetaCreativeController::class, 'show']);
-        Route::delete('creatives/{id}',         [MetaCreativeController::class, 'destroy']);
-
-        // Ads
-        Route::get('adsets/{sid}/ads',          [MetaAdController::class, 'index']);
-        Route::post('adsets/{sid}/ads',         [MetaAdController::class, 'store']);
-        Route::patch('ads/{id}/status',         [MetaAdController::class, 'updateStatus']);
-        Route::post('ads/{id}/sync-review',     [MetaAdController::class, 'syncReview']);
-        Route::delete('ads/{id}',               [MetaAdController::class, 'destroy']);
-
-        // Insights
-        Route::get('insights/campaign/{id}',    [MetaInsightController::class, 'campaign']);
-        Route::get('insights/overview',         [MetaInsightController::class, 'overview']);
-        Route::post('insights/sync/{campaignId}', [MetaInsightController::class, 'sync']);
-    });
 });
