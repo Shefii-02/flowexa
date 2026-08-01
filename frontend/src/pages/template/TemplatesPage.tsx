@@ -31,10 +31,10 @@ const HEADER_ACCEPT: Record<string,string> = {
 
 const statusColor: Record<string,string> = {
   approved: 'green', pending: 'amber', rejected: 'red',
-  error: 'red', pending_deletion: 'gray', disabled: 'gray',
+  error: 'red', draft: 'gray', pending_deletion: 'gray', disabled: 'gray',
 }
 const statusIcon: Record<string,string> = {
-  approved: '✅', pending: '⏳', rejected: '❌', error: '⚠️',
+  approved: '✅', pending: '⏳', rejected: '❌', error: '⚠️', draft: '📝',
 }
 
 const DEFAULT_FORM = {
@@ -164,30 +164,44 @@ export default function TemplatesPage() {
 
     setSaving(true)
     try {
-      // Media headers need a Meta "header handle" from an uploaded sample before the template itself can be submitted
-      let header_handle: string | undefined
+      // header_handle is never sent in this payload — it's only ever set server-side,
+      // via uploadHeaderMedia() below, which requires a template id to already exist.
+      const payload = {
+        name: form.name,
+        category: form.category,
+        language: form.language,
+        header_format: form.header_format,
+        header: form.header_format === 'TEXT' ? form.header : undefined,
+        header_example: headerVars.length === 1 ? form.header_example.trim() : undefined,
+        body: form.body,
+        body_examples: bodyVars.map(n => bodyExamples[n].trim()),
+        footer: form.footer,
+        buttons: form.buttons,
+      }
+
+      // Step 1 — create (as draft) or update the text/structure fields, get a template id
+      let templateId: number
+      if (editTpl) {
+        await templateApi.update(editTpl.id, payload)
+        templateId = editTpl.id
+      } else {
+        const { data } = await templateApi.create(payload)
+        templateId = data.template.id
+      }
+
+      // Step 2 — upload a new header sample, only if one was chosen this session.
+      // Editing without touching the file field leaves the existing header_handle as-is.
       if (form.header_format !== 'TEXT' && headerSampleFile) {
         setUploadingSample(true)
-        const { data } = await templateApi.uploadHeaderMedia(headerSampleFile)
-        header_handle = data.header_handle
+        await templateApi.uploadHeaderMedia(templateId, headerSampleFile)
         setUploadingSample(false)
       }
 
-      const payload = {
-        ...form,
-        header: form.header_format === 'TEXT' ? form.header : undefined,
-        header_example: headerVars.length === 1 ? form.header_example.trim() : undefined,
-        header_handle, // only present when a new sample was just uploaded
-        body_examples: bodyVars.map(n => bodyExamples[n].trim()), // ordered array, index 0 = {{1}}, etc.
-      }
+      // Step 3 — push to Meta. The backend no-ops quietly if WA credentials aren't
+      // connected yet, and for edits this is exactly what "resubmit" is supposed to do.
+      await templateApi.submit(templateId)
 
-      if (editTpl) {
-        await templateApi.update(editTpl.id, payload)
-        toast.success('Template updated and re-submitted to Meta.')
-      } else {
-        await templateApi.create(payload)
-        toast.success('Template created and submitted to Meta for review.')
-      }
+      toast.success(editTpl ? 'Template updated and re-submitted to Meta.' : 'Template created and submitted to Meta for review.')
       setShowCreate(false); resetForm(); load()
     } catch (e) { toast.error(getError(e)) }
     finally     { setSaving(false); setUploadingSample(false) }
@@ -305,6 +319,9 @@ export default function TemplatesPage() {
                           <div className="mt-1.5 text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-2 py-1 max-w-[200px]">
                             <strong>Reason:</strong> {t.rejection_reason}
                           </div>
+                        )}
+                        {t.status === 'draft' && (
+                          <p className="text-xs text-gray-400 mt-1">Not yet submitted to Meta</p>
                         )}
                       </div>
                     </td>
@@ -507,7 +524,7 @@ export default function TemplatesPage() {
               onChange={e => set('footer', e.target.value.slice(0, 60))}
             />
 
-            {/* Buttons */}
+            {/* Buttons — text/url/phone only, matching what Meta actually accepts */}
             <div>
               <div className="flex items-center justify-between mb-2">
                 <label className="label mb-0">Buttons (optional, max 3)</label>

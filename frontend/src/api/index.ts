@@ -216,6 +216,7 @@ export const templateApi = {
   update: (id: number, d: Record<string, unknown>) => api.put(`/templates/${id}`, d),
   delete: (id: number) => api.delete(`/templates/${id}`),
   sync: (id: number) => api.post(`/templates/${id}/sync`),
+  submit: (id: number) => api.post(`/templates/${id}/submit`),
   syncFromMeta: (d?: { template_id?: string; language?: string }) =>
     api.post('/templates/sync-from-meta', d),
   uploadHeaderMedia: (id: number, file: File) => {
@@ -233,8 +234,6 @@ export const templateApi = {
     return api.post(`/templates/${id}/buttons/${buttonId}/upload-media`, fd, { headers: { 'Content-Type': 'multipart/form-data' } })
   },
   deleteButtonMedia: (id: number, buttonId: number) => api.delete(`/templates/${id}/buttons/${buttonId}/delete-media`),
-  // syncFromMeta: (d: { template_id: string; language: string }) => api.post('/templates/sync-from-meta', d),
-  
 }
 
 
