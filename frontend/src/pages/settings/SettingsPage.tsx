@@ -316,28 +316,7 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      {/* ── Webhook info ── */}
-      {/* <div className="card">
-        <div className="card-header"><h3 className="card-title">Webhook URL</h3></div>
-        <div className="card-body space-y-3">
-          <div>
-            <p className="text-xs text-gray-500 mb-1">Callback URL — paste in Meta Developer Console → Webhooks:</p>
-            <code className="text-xs bg-gray-100 px-3 py-2 rounded font-mono text-gray-700 block break-all select-all">
-              {window.location.origin.replace('5173','8000')}/api/v1/webhook/whatsapp
-            </code>
-          </div>
-          <div>
-            <p className="text-xs text-gray-500 mb-1">Verify Token — must match WHATSAPP_VERIFY_TOKEN in your .env:</p>
-            <code className="text-xs bg-gray-100 px-3 py-2 rounded font-mono text-gray-700 block break-all select-all">
-              {company?.webhook_verify_token || 'Set WHATSAPP_VERIFY_TOKEN in .env'}
-            </code>
-          </div>
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-700">
-            <strong>Subscribe to these webhook fields in Meta:</strong><br/>
-            ✅ messages &nbsp;·&nbsp; ✅ message_template_status_update &nbsp;·&nbsp; ✅ message_template_quality_update
-          </div>
-        </div>
-      </div> */}
+  
 
       {/* ── Webhook info ── */}
       <div className="card">
@@ -350,9 +329,9 @@ export default function SettingsPage() {
             </code>
           </div>
           <div>
-            <p className="text-xs text-gray-500 mb-1">Verify Token — must match WHATSAPP_VERIFY_TOKEN in your .env:</p>
+            <p className="text-xs text-gray-500 mb-1">Verify Token — must match WHATSAPP_VERIFY_TOKEN:</p>
             <code className="text-xs bg-gray-100 px-3 py-2 rounded font-mono text-gray-700 block break-all select-all">
-              {company?.webhook_verify_token || 'Set WHATSAPP_VERIFY_TOKEN in .env'}
+              {company?.webhook_verify_token || 'Ask from Support Team will get our WHATSAPP_VERIFY_TOKEN'}
             </code>
           </div>
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-700">
