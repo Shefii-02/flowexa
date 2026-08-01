@@ -11,10 +11,12 @@ return new class extends Migration
         Schema::table('roles', function (Blueprint $table) {
             // Drop the existing unique index on name
             $table->dropUnique(['name']);
+            $table->dropColumn(['name']);
 
+            $table->string('name', 50)->unique();
             // Add company_id
             $table->foreignId('company_id')
-                ->after('id')
+                ->after('id')->nullable()
                 ->constrained('companies')
                 ->cascadeOnDelete();
 
