@@ -298,7 +298,7 @@ class TemplateController extends Controller
     // ── Push a create or update to Meta, mirror status/errors back locally ─
     private function submitToMeta(WaTemplate $template, $company, array $d, bool $isUpdate = false): void
     {
-        if (!$company->decrypt_wa_access_token || !$company->wa_business_account_id) {
+        if (!$company->decrypt_wa_access_token || !$company->wa_business_id) {
             return;
         }
 
@@ -312,7 +312,7 @@ class TemplateController extends Controller
                 ]);
         } else {
             $response = Http::withToken($company->decrypt_wa_access_token)
-                ->post("https://graph.facebook.com/v25.0/{$company->wa_business_account_id}/message_templates", [
+                ->post("https://graph.facebook.com/v25.0/{$company->wa_business_id}/message_templates", [
                     'name'       => $d['name'],
                     'category'   => $d['category'],
                     'language'   => $d['language'],
@@ -389,9 +389,9 @@ class TemplateController extends Controller
 
         $company = auth()->user()->company;
 
-        if ($template->wa_template_id && $company->decrypt_wa_access_token && $company->wa_business_account_id) {
+        if ($template->wa_template_id && $company->decrypt_wa_access_token && $company->wa_business_id) {
             Http::withToken($company->decrypt_wa_access_token)
-                ->delete("https://graph.facebook.com/v25.0/{$company->wa_business_account_id}/message_templates", [
+                ->delete("https://graph.facebook.com/v25.0/{$company->wa_business_id}/message_templates", [
                     'hsm_id' => $template->wa_template_id,
                     'name'   => $template->name,
                 ]);
@@ -413,12 +413,12 @@ class TemplateController extends Controller
     {
         $company = auth()->user()->company;
 
-        if (!$company->decrypt_wa_access_token || !$company->wa_business_account_id) {
+        if (!$company->decrypt_wa_access_token || !$company->wa_business_id) {
             return response()->json(['message' => 'WhatsApp credentials not set.'], 422);
         }
 
         $response = Http::withToken($company->decrypt_wa_access_token)
-            ->get("https://graph.facebook.com/v25.0/{$company->wa_business_account_id}/message_templates", [
+            ->get("https://graph.facebook.com/v25.0/{$company->wa_business_id}/message_templates", [
                 'fields' => 'id,name,category,language,status,rejected_reason,components',
                 'limit'  => 100,
             ]);

@@ -3,6 +3,7 @@
 namespace App\Modules\Webhook\Http\Controllers;
 
 use App\Models\Company;
+use App\Models\WaTemplate;
 use App\Models\WebhookLog;
 use App\Modules\Webhook\DTOs\InboundMessageDTO;
 use App\Modules\Webhook\DTOs\StatusUpdateDTO;
@@ -169,7 +170,7 @@ class WebhookController extends Controller
 
         if ($wabaId) {
             // Match via company's WABA id
-            $query->whereHas('company', fn($q) => $q->where('wa_business_account_id', $wabaId));
+            $query->whereHas('company', fn($q) => $q->where('wa_business_id', $wabaId));
         }
 
         $template = $query->first();
