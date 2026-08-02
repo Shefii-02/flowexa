@@ -117,7 +117,7 @@ export const campaignApi = {
 // ── Role ─────────────────────────────────────────────────────────────────────
 
 export const roleApi = {
-  companyRoles:      () => api.get('/roles'),
+  companyRoles: () => api.get('/roles'),
   createCompanyRole: (d: { label: string; permissions: string[] }) => api.post('/roles', d),
   updateCompanyRole: (id: number, d: { label: string; permissions: string[] }) => api.put(`/roles/${id}`, d),
   deleteCompanyRole: (id: number) => api.delete(`/roles/${id}`),
@@ -125,13 +125,62 @@ export const roleApi = {
 
 // ── Flow Builder ─────────────────────────────────────────────────────────────────────
 
+// export const flowBuilderApi = {
+//   list: () => api.get('/flow-builders'),
+//   show: (id: number) => api.get(`/flow-builders/${id}`),
+//   create: (d: Record<string, unknown>) => api.post('/flow-builders', d),
+//   update: (id: number, d: Record<string, unknown>) => api.put(`/flow-builders/${id}`, d),
+//   activate: (id: number) => api.post(`/flow-builders/${id}/activate`),
+//   delete: (id: number) => api.delete(`/flow-builders/${id}`),
+// }
+
+
+// ── Flow Builder ─────────────────────────────────────────────────────────────
 export const flowBuilderApi = {
-  list:     () => api.get('/flow-builders'),
-  show:     (id: number) => api.get(`/flow-builders/${id}`),
-  create:   (d: Record<string, unknown>) => api.post('/flow-builders', d),
-  update:   (id: number, d: Record<string, unknown>) => api.put(`/flow-builders/${id}`, d),
+  list: () => api.get('/flow-builders'),
+  show: (id: number) => api.get(`/flow-builders/${id}`),
+  create: (d: Record<string, unknown>) => api.post('/flow-builders', d),
+  update: (id: number, d: Record<string, unknown>) => api.put(`/flow-builders/${id}`, d),
   activate: (id: number) => api.post(`/flow-builders/${id}/activate`),
-  delete:   (id: number) => api.delete(`/flow-builders/${id}`),
+  deactivate: (id: number) => api.post(`/flow-builders/${id}/deactivate`),
+  duplicate: (id: number) => api.post(`/flow-builders/${id}/duplicate`),
+  delete: (id: number) => api.delete(`/flow-builders/${id}`),
+}
+
+// ── Flow Nodes (nested under a flow builder) ───────────────────────────────────
+// export const flowNodeApi = {
+//   list: (builderId: number) => api.get(`/flow-builders/${builderId}/nodes`),
+//   create: (builderId: number, d: Record<string, unknown>) => api.post(`/flow-builders/${builderId}/nodes`, d),
+//   update: (builderId: number, id: number, d: Record<string, unknown>) =>
+//     api.put(`/flow-builders/${builderId}/nodes/${id}`, d),
+//   delete: (builderId: number, id: number) => api.delete(`/flow-builders/${builderId}/nodes/${id}`),
+//   activate: (builderId: number, id: number) => api.post(`/flow-builders/${builderId}/nodes/${id}/activate`),
+//   deactivate: (builderId: number, id: number) => api.post(`/flow-builders/${builderId}/nodes/${id}/deactivate`),
+//   reorder: (builderId: number, order: { id: number; sort_order: number }[]) =>
+//     api.post(`/flow-builders/${builderId}/nodes/reorder`, { order }),
+// }
+
+export const flowNodeApi = {
+  list: (builderId: number) => api.get(`/flow-builders/${builderId}/nodes`),
+  create: (builderId: number, d: Record<string, unknown>) => api.post(`/flow-builders/${builderId}/nodes`, d),
+  update: (builderId: number, id: number, d: Record<string, unknown>) =>
+    api.put(`/flow-builders/${builderId}/nodes/${id}`, d),
+  delete: (builderId: number, id: number) => api.delete(`/flow-builders/${builderId}/nodes/${id}`),
+  activate: (builderId: number, id: number) => api.post(`/flow-builders/${builderId}/nodes/${id}/activate`),
+  deactivate: (builderId: number, id: number) => api.post(`/flow-builders/${builderId}/nodes/${id}/deactivate`),
+  reorder: (builderId: number, order: { id: number; sort_order: number }[]) =>
+    api.post(`/flow-builders/${builderId}/nodes/reorder`, { order }),
+
+  // Live reply_id uniqueness check — { reply_id, exclude_id? } → { exists: boolean }
+  checkReplyId: (builderId: number, params: { reply_id: string; exclude_id?: number }) =>
+    api.get(`/flow-builders/${builderId}/nodes/check-reply-id`, { params }),
+
+  // Upload a media file for a multi-message block — returns { url, size, mime_type, asset_id }
+  // Server enforces the company's storage quota; a 422 here means quota exceeded.
+  uploadMedia: (builderId: number, formData: FormData) =>
+    api.post(`/flow-builders/${builderId}/nodes/upload-media`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }),
 }
 
 // ── Leads ─────────────────────────────────────────────────────────────────────
@@ -147,6 +196,22 @@ export const leadApi = {
   analytics: () => api.get('/leads/analytics'),
   notes: (id: number) => api.get(`/leads/${id}/notes`),
   addNote: (id: number, content: string) => api.post(`/leads/${id}/notes`, { content }),
+}
+
+// ── Lead Categories ─────────────────────────────────────────────────────────
+export const leadCategoryApi = {
+  list: () => api.get('/lead-categories'),
+  create: (d: Record<string, unknown>) => api.post('/lead-categories', d),
+  update: (id: number, d: Record<string, unknown>) => api.put(`/lead-categories/${id}`, d),
+  delete: (id: number) => api.delete(`/lead-categories/${id}`),
+}
+
+// ── Lead Sources ─────────────────────────────────────────────────────────────
+export const leadSourceApi = {
+  list: () => api.get('/lead-sources'),
+  create: (d: Record<string, unknown>) => api.post('/lead-sources', d),
+  update: (id: number, d: Record<string, unknown>) => api.put(`/lead-sources/${id}`, d),
+  delete: (id: number) => api.delete(`/lead-sources/${id}`),
 }
 
 // ── Analytics ─────────────────────────────────────────────────────────────────
@@ -167,9 +232,9 @@ export const settingsApi = {
   updateWa: (d: Record<string, string>) => api.post('/settings/wa-credentials', d),
   regenerateToken: () => api.post('/settings/regenerate-token'),
   messageLogs: (p?: Record<string, unknown>) => api.get('/message-logs', { params: p }),
-  verifyWa:    ()                              => api.get('/settings/verify-wa'),
-  testSend:    (d: {phone:string;message?:string}) => api.post('/settings/test-send', d),
-  webhookLogs: ()                              => api.get('/settings/webhook-logs'),
+  verifyWa: () => api.get('/settings/verify-wa'),
+  testSend: (d: { phone: string; message?: string }) => api.post('/settings/test-send', d),
+  webhookLogs: () => api.get('/settings/webhook-logs'),
 }
 
 

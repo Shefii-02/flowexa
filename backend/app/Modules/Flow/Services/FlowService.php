@@ -2,190 +2,272 @@
 
 namespace App\Modules\Flow\Services;
 
+use App\Models\FlowBuilder;
 use App\Models\FlowNode;
-use App\Modules\Flow\DTOs\CreateFlowNodeDTO;
-use App\Modules\Flow\DTOs\ReorderFlowDTO;
-use App\Modules\Flow\DTOs\UpdateFlowNodeDTO;
-use App\Modules\Flow\Exceptions\FlowException;
-use App\Modules\Flow\Repositories\Interfaces\FlowRepositoryInterface;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class FlowService
 {
-    private const MAX_TITLE_LEN   = 24;  // WhatsApp button limit
-    private const MAX_MESSAGE_LEN = 1024;
-    private const MAX_DEPTH       = 5;   // guard against deeply nested trees
-    private const BUTTON_MAX_CHILDREN = 3;
-    private const LIST_MAX_CHILDREN   = 10;
+    // ════════════════════════════════════════════════════════════════════
+    // FLOW BUILDERS
+    // ════════════════════════════════════════════════════════════════════
 
-    public function __construct(
-        private readonly FlowRepositoryInterface $flowRepository,
-    ) {}
-
-    // ─── Full tree ────────────────────────────────────────────────────────────
-    public function tree(int $companyId): Collection
+    public function listBuilders(int $companyId): Collection
     {
-        return $this->flowRepository->tree($companyId);
+        return FlowBuilder::where('company_id', $companyId)
+            ->withCount('nodes')
+            ->withCount(['nodes as active_nodes_count' => fn ($q) => $q->where('is_active', true)])
+            ->orderByDesc('is_active')
+            ->orderByDesc('created_at')
+            ->get();
     }
 
-    // ─── Flat list ────────────────────────────────────────────────────────────
-    public function flat(int $companyId): Collection
+    public function getBuilder(int $companyId, int $builderId): FlowBuilder
     {
-        return $this->flowRepository->flat($companyId);
+        return FlowBuilder::where('id', $builderId)
+            ->where('company_id', $companyId)
+            ->withCount('nodes')
+            ->firstOrFail();
     }
 
-    // ─── Show node ────────────────────────────────────────────────────────────
-    public function show(int $id, int $companyId): FlowNode
+    public function createBuilder(int $companyId, int $userId, array $d): FlowBuilder
     {
-        $node = $this->flowRepository->findById($id, $companyId);
-        if (!$node) throw FlowException::notFound();
+        if ($d['trigger_type'] === 'keyword' && empty($d['trigger_keywords'])) {
+            throw ValidationException::withMessages(['trigger_keywords' => 'Keyword flow needs at least one keyword.']);
+        }
+        if ($d['trigger_type'] === 'season' && (empty($d['active_from']) || empty($d['active_until']))) {
+            throw ValidationException::withMessages(['active_from' => 'Season flow needs active_from and active_until.']);
+        }
+
+        return FlowBuilder::create([
+            'company_id'       => $companyId,
+            'created_by'       => $userId,
+            'name'             => $d['name'],
+            'description'      => $d['description'] ?? null,
+            'trigger_type'     => $d['trigger_type'],
+            'trigger_keywords' => json_encode($d['trigger_keywords'] ?? []),
+            'active_from'      => $d['active_from']  ?? null,
+            'active_until'     => $d['active_until'] ?? null,
+            'is_active'        => false, // always starts inactive — must explicitly activate
+        ])->loadCount('nodes');
+    }
+
+    public function updateBuilder(FlowBuilder $builder, array $d): FlowBuilder
+    {
+        $builder->update([
+            'name'             => $d['name']             ?? $builder->name,
+            'description'      => $d['description']      ?? $builder->description,
+            'trigger_type'     => $d['trigger_type']      ?? $builder->trigger_type,
+            'trigger_keywords' => array_key_exists('trigger_keywords', $d)
+                ? json_encode($d['trigger_keywords'])
+                : $builder->trigger_keywords,
+            'active_from'      => $d['active_from']      ?? $builder->active_from,
+            'active_until'     => $d['active_until']     ?? $builder->active_until,
+        ]);
+
+        return $builder->fresh()->loadCount('nodes');
+    }
+
+    // Only ONE builder per trigger_type can be active at a time
+    public function activateBuilder(FlowBuilder $builder): FlowBuilder
+    {
+        $hasRoot = FlowNode::where('company_id', $builder->company_id)
+            ->where('flow_builder_id', $builder->id)
+            ->whereNull('parent_id')
+            ->where('is_active', true)
+            ->exists();
+
+        if (!$hasRoot) {
+            throw ValidationException::withMessages([
+                'builder' => 'Cannot activate — this flow builder has no active root node. Add at least one root node first.',
+            ]);
+        }
+
+        DB::transaction(function () use ($builder) {
+            FlowBuilder::where('company_id', $builder->company_id)
+                ->where('trigger_type', $builder->trigger_type)
+                ->where('id', '!=', $builder->id)
+                ->update(['is_active' => false]);
+
+            $builder->update(['is_active' => true]);
+        });
+
+        return $builder->fresh()->loadCount('nodes');
+    }
+
+    public function deactivateBuilder(FlowBuilder $builder): FlowBuilder
+    {
+        $builder->update(['is_active' => false]);
+        return $builder->fresh();
+    }
+
+    public function deleteBuilder(FlowBuilder $builder): void
+    {
+        if ($builder->is_active) {
+            throw ValidationException::withMessages(['builder' => 'Cannot delete an active flow builder. Deactivate it first.']);
+        }
+
+        DB::transaction(function () use ($builder) {
+            FlowNode::where('flow_builder_id', $builder->id)->delete();
+            $builder->delete();
+        });
+    }
+
+    public function duplicateBuilder(FlowBuilder $original): FlowBuilder
+    {
+        $nodes = FlowNode::where('flow_builder_id', $original->id)
+            ->where('company_id', $original->company_id)
+            ->orderBy('id')
+            ->get();
+
+        $newBuilder = null;
+
+        DB::transaction(function () use ($original, $nodes, &$newBuilder) {
+            $newBuilder = FlowBuilder::create([
+                'company_id'       => $original->company_id,
+                'created_by'       => $original->created_by,
+                'name'             => $original->name . ' (Copy)',
+                'description'      => $original->description,
+                'trigger_type'     => $original->trigger_type,
+                'trigger_keywords' => $original->trigger_keywords,
+                'active_from'      => null,
+                'active_until'     => null,
+                'is_active'        => false,
+            ]);
+
+            $idMap = [];
+            foreach ($nodes as $node) {
+                $new = FlowNode::create([
+                    ...$node->only([
+                        'title', 'message', 'multi_messages', 'type', 'lead_category',
+                        'sort_order', 'is_active', 'media_type', 'media_url', 'media_id',
+                        'media_caption', 'media_filename', 'location_lat', 'location_lng',
+                        'location_name', 'location_address',
+                    ]),
+                    'company_id'      => $original->company_id,
+                    'flow_builder_id' => $newBuilder->id,
+                    'parent_id'       => null,
+                    'reply_id'        => $node->reply_id . '_c' . $newBuilder->id,
+                ]);
+                $idMap[$node->id] = $new->id;
+            }
+
+            foreach ($nodes as $node) {
+                if ($node->parent_id && isset($idMap[$node->parent_id])) {
+                    FlowNode::where('id', $idMap[$node->id])->update(['parent_id' => $idMap[$node->parent_id]]);
+                }
+            }
+        });
+
+        return $newBuilder->loadCount('nodes');
+    }
+
+    // ════════════════════════════════════════════════════════════════════
+    // FLOW NODES
+    // ════════════════════════════════════════════════════════════════════
+
+    public function assertBuilderOwned(int $companyId, int $builderId): FlowBuilder
+    {
+        return FlowBuilder::where('id', $builderId)->where('company_id', $companyId)->firstOrFail();
+    }
+
+    public function listNodesFlat(int $companyId, int $builderId): Collection
+    {
+        return FlowNode::where('flow_builder_id', $builderId)
+            ->where('company_id', $companyId)
+            ->orderByRaw('ISNULL(parent_id) DESC') // roots first
+            ->orderBy('sort_order')
+            ->get();
+    }
+
+  public function buildTree(int $companyId, int $builderId): \Illuminate\Support\Collection
+{
+    $all = FlowNode::where('company_id', $companyId)
+        ->where('flow_builder_id', $builderId)
+        ->orderBy('sort_order')
+        ->get();
+
+    $byParent = $all->groupBy('parent_id');
+
+    $attach = function (FlowNode $node) use (&$attach, $byParent) {
+        $children = $byParent->get($node->id, collect())->map($attach)->values();
+        $node->setRelation('children', $children);
         return $node;
-    }
+    };
 
-    // ─── Create node ──────────────────────────────────────────────────────────
-    public function create(int $companyId, CreateFlowNodeDTO $dto): FlowNode
+    return $byParent->get(null, collect())->map($attach)->values();
+}
+
+    public function createNode(int $companyId, int $builderId, array $d): FlowNode
     {
-        // Validate parent belongs to same company
-        if ($dto->parentId) {
-            $parent = $this->flowRepository->findById($dto->parentId, $companyId);
-            if (!$parent) throw FlowException::parentNotFound();
-
-            // Depth guard
-            $depth = $this->calculateDepth($dto->parentId, $companyId);
-            if ($depth >= self::MAX_DEPTH) {
-                throw FlowException::maxDepthExceeded(self::MAX_DEPTH);
-            }
-
-            // Child count guard per type
-            $childCount = $this->flowRepository->children($dto->parentId, $companyId)->count();
-            $this->validateChildCount($parent->type, $childCount);
+        $exists = FlowNode::where('flow_builder_id', $builderId)->where('reply_id', $d['reply_id'])->exists();
+        if ($exists) {
+            throw ValidationException::withMessages(['reply_id' => "reply_id '{$d['reply_id']}' already exists in this builder."]);
         }
 
-        // Reply ID uniqueness
-        if ($dto->replyId && $this->flowRepository->replyIdExists($dto->replyId, $companyId)) {
-            throw FlowException::replyIdDuplicate($dto->replyId);
-        }
-
-        return $this->flowRepository->create($companyId, $dto);
-    }
-
-    // ─── Update node ──────────────────────────────────────────────────────────
-    public function update(int $id, int $companyId, UpdateFlowNodeDTO $dto): FlowNode
-    {
-        $node = $this->flowRepository->findById($id, $companyId);
-        if (!$node) throw FlowException::notFound();
-
-        // Guard: cannot set parent to itself or its own descendant
-        if ($dto->parentId) {
-            if ($dto->parentId === $id) {
-                throw FlowException::circularReference();
-            }
-
-            $parent = $this->flowRepository->findById($dto->parentId, $companyId);
-            if (!$parent) throw FlowException::parentNotFound();
-
-            if ($this->isDescendant($dto->parentId, $id, $companyId)) {
-                throw FlowException::circularReference();
+        if (!empty($d['parent_id'])) {
+            $parentOk = FlowNode::where('id', $d['parent_id'])->where('flow_builder_id', $builderId)->exists();
+            if (!$parentOk) {
+                throw ValidationException::withMessages(['parent_id' => 'Parent node not in this builder.']);
             }
         }
 
-        // Reply ID uniqueness (excluding self)
-        if ($dto->replyId && $this->flowRepository->replyIdExists($dto->replyId, $companyId, $id)) {
-            throw FlowException::replyIdDuplicate($dto->replyId);
+        return FlowNode::create([
+            'company_id'       => $companyId,
+            'flow_builder_id'  => $builderId,
+            'parent_id'        => $d['parent_id'] ?? null,
+            'title'            => $d['title'],
+            'message'          => $d['message'],
+            'multi_messages'   => $d['multi_messages']   ?? null,
+            'type'             => $d['type'],
+            'reply_id'         => $d['reply_id'],
+            'lead_category'    => $d['lead_category']    ?? null,
+            'sort_order'       => $d['sort_order']       ?? 0,
+            'is_active'        => true,
+            'media_type'       => $d['media_type']       ?? null,
+            'media_url'        => $d['media_url']        ?? null,
+            'media_id'         => $d['media_id']         ?? null,
+            'media_caption'    => $d['media_caption']    ?? null,
+            'media_filename'   => $d['media_filename']   ?? null,
+            'location_lat'     => $d['location_lat']     ?? null,
+            'location_lng'     => $d['location_lng']     ?? null,
+            'location_name'    => $d['location_name']    ?? null,
+            'location_address' => $d['location_address'] ?? null,
+        ])->load('children');
+    }
+
+    public function updateNode(FlowNode $node, array $d): FlowNode
+    {
+        $node->update($d);
+        return $node->fresh()->load('children');
+    }
+
+    public function deleteNode(FlowNode $node): void
+    {
+        $childCount = FlowNode::where('parent_id', $node->id)->count();
+        if ($childCount > 0) {
+            throw ValidationException::withMessages(['node' => "Cannot delete — this node has {$childCount} child node(s). Delete children first."]);
         }
-
-        return $this->flowRepository->update($node, $dto);
+        $node->delete();
     }
 
-    // ─── Toggle active ────────────────────────────────────────────────────────
-    public function toggle(int $id, int $companyId): FlowNode
+    public function setNodeActive(FlowNode $node, bool $active): FlowNode
     {
-        $node = $this->flowRepository->findById($id, $companyId);
-        if (!$node) throw FlowException::notFound();
-        return $this->flowRepository->toggle($node);
+        $node->update(['is_active' => $active]);
+        return $node->fresh();
     }
 
-    // ─── Delete ───────────────────────────────────────────────────────────────
-    public function delete(int $id, int $companyId): int
+    public function reorderNodes(int $companyId, int $builderId, array $order): void
     {
-        $node = $this->flowRepository->findById($id, $companyId);
-        if (!$node) throw FlowException::notFound();
-
-        $descendantCount = $this->flowRepository->countDescendants($id);
-        $this->flowRepository->delete($node);
-
-        return $descendantCount; // return count so controller can report it
-    }
-
-    // ─── Reorder ──────────────────────────────────────────────────────────────
-    public function reorder(int $companyId, ReorderFlowDTO $dto): void
-    {
-        // Validate all IDs belong to this company
-        $ownedIds = $this->flowRepository->flat($companyId)->pluck('id')->toArray();
-
-        foreach ($dto->items as $id) {
-            if (!in_array($id, $ownedIds)) {
-                throw FlowException::unauthorized();
+        DB::transaction(function () use ($order, $builderId, $companyId) {
+            foreach ($order as $item) {
+                FlowNode::where('id', $item['id'])
+                    ->where('flow_builder_id', $builderId)
+                    ->where('company_id', $companyId)
+                    ->update(['sort_order' => $item['sort_order']]);
             }
-        }
-
-        $this->flowRepository->reorder($dto->items, $companyId);
-    }
-
-    // ─── Duplicate ────────────────────────────────────────────────────────────
-    public function duplicate(int $id, int $companyId): FlowNode
-    {
-        $node = $this->flowRepository->findById($id, $companyId);
-        if (!$node) throw FlowException::notFound();
-
-        return $this->flowRepository->duplicate($node, $companyId);
-    }
-
-    // ─── Analytics ────────────────────────────────────────────────────────────
-    public function analytics(int $companyId): Collection
-    {
-        return $this->flowRepository->analytics($companyId);
-    }
-
-    // ─── Used by webhook: find node by reply_id ───────────────────────────────
-    public function findByReplyId(string $replyId, int $companyId): ?FlowNode
-    {
-        return $this->flowRepository->findByReplyId($replyId, $companyId);
-    }
-
-    // ─── Used by webhook: increment trigger count ─────────────────────────────
-    public function incrementTrigger(int $nodeId): void
-    {
-        $this->flowRepository->incrementTrigger($nodeId);
-    }
-
-    // ─── Private helpers ─────────────────────────────────────────────────────
-
-    private function calculateDepth(int $nodeId, int $companyId, int $depth = 0): int
-    {
-        $node = $this->flowRepository->findById($nodeId, $companyId);
-        if (!$node || !$node->parent_id) return $depth;
-        return $this->calculateDepth($node->parent_id, $companyId, $depth + 1);
-    }
-
-    private function isDescendant(int $potentialDescendant, int $ancestorId, int $companyId): bool
-    {
-        $children = $this->flowRepository->children($ancestorId, $companyId);
-        foreach ($children as $child) {
-            if ($child->id === $potentialDescendant) return true;
-            if ($this->isDescendant($potentialDescendant, $child->id, $companyId)) return true;
-        }
-        return false;
-    }
-
-    private function validateChildCount(string $parentType, int $currentCount): void
-    {
-        if ($parentType === 'button' && $currentCount >= self::BUTTON_MAX_CHILDREN) {
-            throw FlowException::buttonChildLimit(self::BUTTON_MAX_CHILDREN);
-        }
-
-        if ($parentType === 'list' && $currentCount >= self::LIST_MAX_CHILDREN) {
-            throw FlowException::listChildLimit(self::LIST_MAX_CHILDREN);
-        }
+        });
     }
 }

@@ -15,7 +15,9 @@ use App\Modules\Contact\Http\Controllers\LabelController;
 use App\Modules\Flow\Http\Controllers\FlowAnalyticsController;
 use App\Modules\Flow\Http\Controllers\FlowBuilderController;
 use App\Modules\Flow\Http\Controllers\FlowController;
+use App\Modules\Flow\Http\Controllers\FlowNodeController;
 use App\Modules\Lead\Http\Controllers\LeadController;
+use App\Modules\Lead\Http\Controllers\LeadCategoryController;
 use App\Modules\Lead\Http\Controllers\LeadNoteController;
 use App\Modules\Otp\Http\Controllers\OtpController;
 use App\Modules\PhoneNumber\Http\Controllers\PhoneNumberController;
@@ -232,6 +234,14 @@ Route::prefix('v1')->group(function () {
         Route::prefix('otp')->middleware('otp.auth')->group(function () {
             Route::post('send',   [OtpController::class, 'send'])->name('otp.send');
             Route::post('verify', [OtpController::class, 'verify'])->name('otp.verify');
+        });
+
+        Route::prefix('lead-categories')->name('lead-categories.')->group(function () {
+            Route::get('/',           [LeadCategoryController::class, 'index'])->name('index');
+            Route::post('/',          [LeadCategoryController::class, 'store'])->name('store');
+            Route::get('/{category}', [LeadCategoryController::class, 'show'])->name('show');
+            Route::put('/{category}', [LeadCategoryController::class, 'update'])->name('update');
+            Route::delete('/{category}', [LeadCategoryController::class, 'destroy'])->name('destroy');
         });
 
         Route::prefix('leads')->name('leads.')->group(function () {
@@ -465,11 +475,54 @@ Route::prefix('v1')->group(function () {
                 Route::delete('/{id}/buttons/{buttonId}/delete-media', [TemplateController::class, 'deleteButtonMedia'])->name('delete-button-media');
             });
 
-        Route::get('flow-builders',             [FlowBuilderController::class, 'index']);
-        Route::post('flow-builders',             [FlowBuilderController::class, 'store']);
-        Route::put('flow-builders/{id}',        [FlowBuilderController::class, 'update']);
-        Route::delete('flow-builders/{id}',        [FlowBuilderController::class, 'destroy']);
-        Route::post('flow-builders/{id}/activate', [FlowBuilderController::class, 'activate']);
+        // Route::get('flow-builders',             [FlowBuilderController::class, 'index']);
+        // Route::post('flow-builders',             [FlowBuilderController::class, 'store']);
+        // Route::put('flow-builders/{id}',        [FlowBuilderController::class, 'update']);
+        // Route::delete('flow-builders/{id}',        [FlowBuilderController::class, 'destroy']);
+        // Route::post('flow-builders/{id}/activate', [FlowBuilderController::class, 'activate']);
+
+
+
+
+
+        // Flow Builders
+        Route::get('flow-builders',                 [FlowBuilderController::class, 'index']);
+        Route::post('flow-builders',                 [FlowBuilderController::class, 'store']);
+        Route::get('flow-builders/{id}',            [FlowBuilderController::class, 'show']);
+        Route::put('flow-builders/{id}',            [FlowBuilderController::class, 'update']);
+        Route::delete('flow-builders/{id}',            [FlowBuilderController::class, 'destroy']);
+        Route::post('flow-builders/{id}/activate',   [FlowBuilderController::class, 'activate']);
+        Route::post('flow-builders/{id}/deactivate', [FlowBuilderController::class, 'deactivate']);
+
+        // Flow Nodes (nested under builder)
+        Route::get('flow-builders/{bid}/nodes',            [FlowNodeController::class, 'index']);
+        Route::post('flow-builders/{bid}/nodes',            [FlowNodeController::class, 'store']);
+        Route::put('flow-builders/{bid}/nodes/{id}',       [FlowNodeController::class, 'update']);
+        Route::delete('flow-builders/{bid}/nodes/{id}',       [FlowNodeController::class, 'destroy']);
+        Route::post('flow-builders/{bid}/nodes/{id}/toggle', [FlowNodeController::class, 'toggle']);
+        Route::post('flow-builders/{bid}/nodes/reorder',    [FlowNodeController::class, 'reorder']);
+
+        Route::get('flow-builders/{builder}/nodes/check-reply-id', [FlowNodeController::class, 'checkReplyId']);
+        Route::post('flow-builders/{builder}/nodes/upload-media', [FlowNodeController::class, 'uploadMedia']);
+
+        // ── Flow Builders ───────────────────────────────────────────────────────────
+        // Route::get('flow-builders',                 [FlowBuilderController::class, 'index']);
+        // Route::post('flow-builders',                 [FlowBuilderController::class, 'store']);
+        // Route::get('flow-builders/{id}',            [FlowBuilderController::class, 'show']);
+        // Route::put('flow-builders/{id}',            [FlowBuilderController::class, 'update']);
+        // Route::delete('flow-builders/{id}',            [FlowBuilderController::class, 'destroy']);
+        // Route::post('flow-builders/{id}/activate',   [FlowBuilderController::class, 'activate']);
+        // Route::post('flow-builders/{id}/deactivate', [FlowBuilderController::class, 'deactivate']);
+        // Route::post('flow-builders/{id}/duplicate',  [FlowBuilderController::class, 'duplicate']);
+
+        // // ── Flow Nodes (nested under a builder) ─────────────────────────────────────
+        // Route::get('flow-builders/{builderId}/nodes',                 [FlowNodeController::class, 'index']);
+        // Route::post('flow-builders/{builderId}/nodes',                 [FlowNodeController::class, 'store']);
+        // Route::put('flow-builders/{builderId}/nodes/{id}',            [FlowNodeController::class, 'update']);
+        // Route::delete('flow-builders/{builderId}/nodes/{id}',            [FlowNodeController::class, 'destroy']);
+        // Route::post('flow-builders/{builderId}/nodes/{id}/activate',   [FlowNodeController::class, 'activate']);
+        // Route::post('flow-builders/{builderId}/nodes/{id}/deactivate', [FlowNodeController::class, 'deactivate']);
+        // Route::post('flow-builders/{builderId}/nodes/reorder',         [FlowNodeController::class, 'reorder']);
 
 
 

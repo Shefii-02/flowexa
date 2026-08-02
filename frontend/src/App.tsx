@@ -14,7 +14,7 @@ import RegisterPage from '@/pages/auth/RegisterPage'
 import DashboardPage from '@/pages/dashboard/DashboardPage'
 import StaffPage from '@/pages/staff/StaffPage'
 import ContactsPage from '@/pages/contacts/ContactsPage'
-import FlowPage from '@/pages/flow/FlowPage'
+// import FlowPage from '@/pages/flow/FlowPage'
 import CampaignsPage from '@/pages/meta-ads/campaigns/CampaignsPage'
 import LeadsPage from '@/pages/leads/LeadsPage'
 import WalletPage from '@/pages/wallet/WalletPage'
@@ -46,6 +46,8 @@ import TemplatesPage from '@/pages/template/TemplatesPage'
 import PlanPurchasePage from '@/pages/plan-purchase/PlanPurchasePage'
 import BlacklistPage from '@/pages/blacklist/BlacklistPage'
 import LabelsPage from './pages/contacts/LabelsPage'
+import FlowBuildersPage from './pages/flow/FlowBuildersPage'
+import FlowNodesPage from '@/pages/flow/FlowNodesPage'
 
 export const DashboardRouter = () => {
   const isSuperAdmin = useIsSuperAdmin()
@@ -59,8 +61,8 @@ const SuperAdminRoute = ({ children }: { children: React.ReactNode }) => {
   if (!isSuperAdmin) {
     return <Navigate to="/dashboard" replace />
   }
-  else{
-     return <Navigate to="/superadmin" replace />
+  else {
+    return <Navigate to="/superadmin" replace />
   }
   return <>{children}</>
 }
@@ -93,11 +95,13 @@ export default function App() {
             <Route index element={<RoleBasedRedirect />} />
 
             {/* Main app */}
-            <Route path="dashboard" element={<SuperAdminRoute><DashboardRouter /></SuperAdminRoute>}  />
+            <Route path="dashboard" element={<SuperAdminRoute><DashboardRouter /></SuperAdminRoute>} />
             <Route path="staff" element={<StaffPage />} />
             <Route path="contacts" element={<ContactsPage />} />
-            <Route path="labels"   element={<LabelsPage />} />
-            <Route path="flow" element={<FlowPage />} />
+            <Route path="labels" element={<LabelsPage />} />
+            {/* <Route path="flow" element={<FlowPage />} /> */}
+            <Route path="/flow-builders" element={<FlowBuildersPage />} />
+            <Route path="/flow" element={<FlowNodesPage />} />
             <Route path="campaigns" element={<CampaignsPage />} />
             <Route path="leads" element={<LeadsPage />} />
             <Route path="wallet" element={<WalletPage />} />

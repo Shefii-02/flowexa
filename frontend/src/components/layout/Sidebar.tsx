@@ -106,7 +106,8 @@ export const Sidebar = () => {
             <NavItem to="/contacts" icon="👥" label="Contacts" />
             <NavItem to="/labels" icon="🏷️" label="Labels" />
             <NavItem to="/blacklist" icon="🚫" label="Blacklist" />
-            {canViewFlow && <NavItem to="/flow" icon="🌿" label="Flow builder" />}
+            {canViewFlow && <NavItem to="/flow-builders" icon="🌿" label="Flow builder" />}
+            {/* {canViewFlow && <NavItem to="/flow" icon="🌿" label="Flow builder" />} */}
             {canViewCamp && <NavItem to="/campaigns" icon="📢" label="Campaigns" />}
 
             <NavItem to="/templates" icon="📄" label="WA Templates" />
