@@ -70,6 +70,9 @@ export const labelApi = {
   create: (d: { name: string; color: string }) => api.post('/labels', d),
   update: (id: number, d: { name?: string; color?: string }) => api.put(`/labels/${id}`, d),
   delete: (id: number) => api.delete(`/labels/${id}`),
+  addContacts: (id: number, contactIds: number[]) => api.post(`/labels/${id}/contacts`, { contact_ids: contactIds }),
+  removeContacts: (id: number, contactIds: number[]) => api.post(`/labels/${id}/contacts`, { contact_ids: contactIds }),
+
 }
 
 // ── Flow ──────────────────────────────────────────────────────────────────────
@@ -181,6 +184,7 @@ export const flowNodeApi = {
     api.post(`/flow-builders/${builderId}/nodes/upload-media`, formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
     }),
+  toggle: (builderId: number, id: number) => api.post(`/flow-builders/${builderId}/nodes/${id}/toggle`),
 }
 
 // ── Leads ─────────────────────────────────────────────────────────────────────
