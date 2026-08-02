@@ -26,6 +26,9 @@ class FlowBuilder extends Model
 
     protected $casts = [
         'is_active' => 'boolean',
+        'trigger_keywords'=> 'array',
+        'active_from' => 'datetime',
+        'active_until' => 'datetime',
     ];
 
     public function company(): BelongsTo

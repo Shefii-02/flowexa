@@ -168,6 +168,7 @@ export default function FlowBuildersPage() {
                     {b.description && <p className="text-xs text-gray-400 mt-0.5">{b.description}</p>}
 
                     {/* Keywords */}
+                    
                     {b.trigger_type === 'keyword' && (b.trigger_keywords||[]).length > 0 && (
                       <div className="flex gap-1.5 flex-wrap mt-2">
                         {b.trigger_keywords.map((kw:string) => (
