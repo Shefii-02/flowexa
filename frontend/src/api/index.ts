@@ -204,7 +204,7 @@ export const leadApi = {
 
 // ── Lead Categories ─────────────────────────────────────────────────────────
 export const leadCategoryApi = {
-  list: () => api.get('/lead-categories'),
+  list: (p?: Record<string, unknown>) => api.get('/lead-categories', { params: p }),
   create: (d: Record<string, unknown>) => api.post('/lead-categories', d),
   update: (id: number, d: Record<string, unknown>) => api.put(`/lead-categories/${id}`, d),
   delete: (id: number) => api.delete(`/lead-categories/${id}`),

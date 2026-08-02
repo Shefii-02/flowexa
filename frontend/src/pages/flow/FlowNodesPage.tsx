@@ -442,7 +442,7 @@ export default function FlowNodesPage() {
         if (blocks[i].upload) {
           const fd = new FormData()
           fd.append('file', blocks[i].upload)
-          const { data } = await flowNodeApi.uploadMedia?.(fd) ?? { data: { url: '' } }
+          const { data } = await flowNodeApi.uploadMedia?.(builderId, fd) ?? { data: { url: '' } }
           blocks[i] = { ...blocks[i], url: data.url, size: data.size ?? blocks[i].size, mime_type: data.mime_type ?? blocks[i].mime_type, upload: null }
         }
       }
