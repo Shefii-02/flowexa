@@ -92,6 +92,16 @@ export default function FlowBuildersPage() {
     finally    { setActivating(null) }
   }
 
+   const handleDeactivate = async (id:number) => {
+    setActivating(id)
+    try {
+      await flowBuilderApi.deactivate(id)
+      toast.success('Flow builder deactivated.')
+      load()
+    } catch(e) { toast.error(getError(e)) }
+    finally    { setActivating(null) }
+  }
+
   const handleDelete = async () => {
     try {
       await flowBuilderApi.delete(delB.id)
@@ -206,6 +216,16 @@ export default function FlowBuildersPage() {
                       className="text-xs"
                     >
                       ▶ Activate
+                    </Button>
+                  )}
+                  {b.is_active && (
+                    <Button
+                      variant="secondary"
+                      onClick={() => handleDeactivate(b.id)}
+                      loading={activating === b.id}
+                      className="text-xs"
+                    >
+                      ⏸ Deactivate
                     </Button>
                   )}
                   <a href={`/flow?builder=${b.id}`} className="btn btn-outline text-xs">Edit nodes</a>

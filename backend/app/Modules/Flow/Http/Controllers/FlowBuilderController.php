@@ -120,24 +120,24 @@ class FlowBuilderController extends Controller
             ->firstOrFail();
 
         // Must have an active root node before activating
-        $hasRoot = FlowNode::where('company_id', $cid)
-            ->where('flow_builder_id', $id)
-            ->whereNull('parent_id')
-            ->where('is_active', true)
-            ->exists();
+        // $hasRoot = FlowNode::where('company_id', $cid)
+        //     ->where('flow_builder_id', $id)
+        //     ->whereNull('parent_id')
+        //     ->where('is_active', true)
+        //     ->exists();
 
-        if (!$hasRoot) {
-            return response()->json([
-                'message' => 'Cannot activate — add at least one active root node first.',
-            ], 422);
-        }
+        // if (!$hasRoot) {
+        //     return response()->json([
+        //         'message' => 'Cannot activate — add at least one active root node first.',
+        //     ], 422);
+        // }
 
         DB::transaction(function () use ($builder, $cid) {
             // Deactivate all other builders of same trigger_type
-            FlowBuilder::where('company_id', $cid)
-                ->where('trigger_type', $builder->trigger_type)
-                ->where('id', '!=', $builder->id)
-                ->update(['is_active' => false]);
+            // FlowBuilder::where('company_id', $cid)
+            //     ->where('trigger_type', $builder->trigger_type)
+            //     ->where('id', '!=', $builder->id)
+            //     ->update(['is_active' => false]);
 
             $builder->update(['is_active' => true]);
         });
