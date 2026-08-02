@@ -140,7 +140,7 @@ export default function FlowBuildersPage() {
       </div>
 
       {/* Currently active */}
-      {activeBuilder && (
+      {/* {activeBuilder && (
         <div className="bg-green-50 border border-green-300 rounded-xl px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-2.5 h-2.5 rounded-full bg-green-500 animate-pulse" />
@@ -151,7 +151,7 @@ export default function FlowBuildersPage() {
           </div>
           <a href="/flow" className="text-xs text-green-700 hover:underline font-medium">Edit nodes →</a>
         </div>
-      )}
+      )} */}
 
       {loading ? (
         <div className="card p-8 text-center text-gray-400">Loading...</div>

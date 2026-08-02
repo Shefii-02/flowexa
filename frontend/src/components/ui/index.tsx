@@ -13,7 +13,7 @@ export const Spinner = ({ size = 'sm' }: { size?: 'sm' | 'md' | 'lg' }) => {
 // ── Badge ─────────────────────────────────────────────────────────────────────
 interface BadgeProps { children: ReactNode; variant?: 'green'|'blue'|'red'|'yellow'|'purple'|'gray'; className?: string }
 export const Badge = ({ children, variant = 'gray', className }: BadgeProps) => (
-  <span className={cn('badge', `badge-${variant}`, className)}>{children}</span>
+  <span className={cn('badge capitalize', `badge-${variant}`, className)}>{children}</span>
 )
 
 // ── Button ────────────────────────────────────────────────────────────────────
