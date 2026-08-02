@@ -256,6 +256,9 @@ class WebhookService
 
         $node->increment('trigger_count');
 
+        Log::info("Flow node triggered: node={$node->id} reply_id={$dto->replyId} company={$company->id}");
+        Log::info($node);
+
         FlowSession::updateOrCreate(
             ['company_id' => $company->id, 'phone' => $dto->phone],
             [
