@@ -131,7 +131,9 @@ class WebhookService
         }
 
         // 6. Resolve active flow builder
-        $builder = $this->resolveFlowBuilder($company, $dto->text ?? '');
+        // $builder = $this->resolveFlowBuilder($company, $dto->text ?? '');
+
+        [$builder, $triggerReason] = $this->resolveFlowBuilderWithReason($company, $dto->text ?? '');
 
         // 7. Check active flow session (mid-conversation)
         $session = FlowSession::where('company_id', $company->id)
@@ -146,20 +148,30 @@ class WebhookService
             return;
         }
 
-        // 9. Text greeting OR new conversation → send welcome menu
+         // 9. ── KEY FIX ──
+        // If a KEYWORD builder matched → always send its welcome menu
+        // regardless of what the text was (it was the trigger word itself)
+        if ($triggerReason === 'keyword' && $builder) {
+            Log::info("Keyword triggered builder {$builder->id} '{$builder->name}' — sending its welcome menu");
+            $session?->delete(); // clear any existing session — fresh start
+            $this->sendWelcomeMenu($company, $dto->phone, $builder->id);
+            return;
+        }
+
+        // 10. Text greeting OR new conversation → send welcome menu
         if ($dto->type === 'text' && $this->isGreeting($dto->text)) {
             $session?->delete();
             $this->sendWelcomeMenu($company, $dto->phone, $builder?->id);
             return;
         }
 
-        // 10. Mid-session text → try to match current node's children
+        // 11. Mid-session text → try to match current node's children
         if ($session && $dto->type === 'text') {
             $matched = $this->matchTextToNode($company, $contact, $dto, $session, $builder?->id);
             if ($matched) return;
         }
 
-        // 11. Default fallback response
+        // 12. Default fallback response
         $this->sendText(
             $company,
             $dto->phone,
@@ -195,43 +207,47 @@ class WebhookService
 
     // ─── Resolve which flow builder to use ────────────────────────────────────
     // Priority: keyword → season (date range) → default active
-    private function resolveFlowBuilder(Company $company, string $text): ?FlowBuilder
+
+    private function resolveFlowBuilderWithReason(Company $company, string $text): array
     {
         $keyword = strtolower(trim($text));
         $now     = now();
 
+        // ── 1. Keyword match ──────────────────────────────────────────────
         $keywordBuilders = FlowBuilder::where('company_id', $company->id)
             ->where('trigger_type', 'keyword')
             ->where('is_active', true)
             ->get();
 
         foreach ($keywordBuilders as $builder) {
-            // $keywords = json_decode($builder->trigger_keywords ?? '[]', true);
             $keywords = $builder->trigger_keywords ?? [];
-            if (in_array($keyword, array_map('strtolower', $keywords))) {
-                Log::info("Keyword flow triggered: builder {$builder->id} for keyword '{$keyword}'");
-                return $builder;
+            if (is_string($keywords)) {
+                $keywords = json_decode($keywords, true) ?? [];
+            }
+
+            $lowerKeywords = array_map('strtolower', array_map('trim', $keywords));
+
+            if (in_array($keyword, $lowerKeywords, true)) {
+                Log::info("Keyword flow triggered: builder={$builder->id} name='{$builder->name}' keyword='{$keyword}'");
+                return [$builder, 'keyword']; // ← returns reason
             }
         }
 
+        // ── 2. Season / date-range match (IST-aware) ──────────────────────
         $seasonBuilder = FlowBuilder::where('company_id', $company->id)
             ->where('trigger_type', 'season')
             ->where('is_active', true)
             ->where('active_from',  '<=', $now)
             ->where('active_until', '>=', $now)
+            ->orderByDesc('active_from')
             ->first();
 
         if ($seasonBuilder) {
-            Log::info(
-                "Season flow active: builder={$seasonBuilder->id} name='{$seasonBuilder->name}'" .
-                    " from={$seasonBuilder->active_from->toDateTimeString()}" .
-                    " until={$seasonBuilder->active_until->toDateTimeString()}" .
-                    " now_ist={$now->toDateTimeString()}"
-            );
-            return $seasonBuilder;
+            Log::info("Season flow active: builder={$seasonBuilder->id} name='{$seasonBuilder->name}'");
+            return [$seasonBuilder, 'season'];
         }
 
-        // ── 3. Default active flow (fallback) ────────────────────────────
+        // ── 3. Default fallback ────────────────────────────────────────────
         $default = FlowBuilder::where('company_id', $company->id)
             ->where('trigger_type', 'default')
             ->where('is_active', true)
@@ -239,10 +255,60 @@ class WebhookService
 
         if (!$default) {
             Log::warning("No active flow builder found for company={$company->id}");
+            return [null, null];
         }
 
-        return $default;
+        return [$default, 'default'];
     }
+
+    // private function resolveFlowBuilder(Company $company, string $text): ?FlowBuilder
+    // {
+        // $keyword = strtolower(trim($text));
+        // $now     = now();
+
+        // $keywordBuilders = FlowBuilder::where('company_id', $company->id)
+        //     ->where('trigger_type', 'keyword')
+        //     ->where('is_active', true)
+        //     ->get();
+
+        // foreach ($keywordBuilders as $builder) {
+        //     // $keywords = json_decode($builder->trigger_keywords ?? '[]', true);
+        //     $keywords = $builder->trigger_keywords ?? [];
+        //     if (in_array($keyword, array_map('strtolower', $keywords))) {
+        //         Log::info("Keyword flow triggered: builder {$builder->id} for keyword '{$keyword}'");
+        //         return $builder;
+        //     }
+        // }
+
+        // $seasonBuilder = FlowBuilder::where('company_id', $company->id)
+        //     ->where('trigger_type', 'season')
+        //     ->where('is_active', true)
+        //     ->where('active_from',  '<=', $now)
+        //     ->where('active_until', '>=', $now)
+        //     ->first();
+
+        // if ($seasonBuilder) {
+        //     Log::info(
+        //         "Season flow active: builder={$seasonBuilder->id} name='{$seasonBuilder->name}'" .
+        //             " from={$seasonBuilder->active_from->toDateTimeString()}" .
+        //             " until={$seasonBuilder->active_until->toDateTimeString()}" .
+        //             " now_ist={$now->toDateTimeString()}"
+        //     );
+        //     return $seasonBuilder;
+        // }
+
+        // // ── 3. Default active flow (fallback) ────────────────────────────
+        // $default = FlowBuilder::where('company_id', $company->id)
+        //     ->where('trigger_type', 'default')
+        //     ->where('is_active', true)
+        //     ->first();
+
+        // if (!$default) {
+        //     Log::warning("No active flow builder found for company={$company->id}");
+        // }
+
+        // return $default;
+    // }
 
     // ─── Match reply_id to flow node → send response → maybe create lead ─────
     private function handleFlowReply(
