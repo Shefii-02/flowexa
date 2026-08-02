@@ -238,6 +238,8 @@ class WebhookService
         InboundMessageDTO $dto,
         ?int $builderId
     ): void {
+
+    Log::info("Handling flow reply: company={$company->id} contact={$contact->id} reply_id={$dto->replyId} builder_id={$builderId}");
         $query = FlowNode::where('company_id', $company->id)
             ->where('reply_id', $dto->replyId)
             ->where('is_active', true);
