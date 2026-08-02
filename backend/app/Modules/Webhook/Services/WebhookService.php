@@ -139,6 +139,7 @@ class WebhookService
             ->where('expires_at', '>', now())
             ->first();
 
+
         // 8. Interactive reply → match flow node
         if ($dto->type === 'interactive' && $dto->replyId) {
             $this->handleFlowReply($company, $contact, $dto, $builder?->id);
@@ -221,14 +222,26 @@ class WebhookService
             ->first();
 
         if ($seasonBuilder) {
-            Log::info("Season flow active: builder {$seasonBuilder->id}");
+            Log::info(
+                "Season flow active: builder={$seasonBuilder->id} name='{$seasonBuilder->name}'" .
+                    " from={$seasonBuilder->active_from->toDateTimeString()}" .
+                    " until={$seasonBuilder->active_until->toDateTimeString()}" .
+                    " now_ist={$now->toDateTimeString()}"
+            );
             return $seasonBuilder;
         }
 
-        return FlowBuilder::where('company_id', $company->id)
+        // ── 3. Default active flow (fallback) ────────────────────────────
+        $default = FlowBuilder::where('company_id', $company->id)
             ->where('trigger_type', 'default')
             ->where('is_active', true)
             ->first();
+
+        if (!$default) {
+            Log::warning("No active flow builder found for company={$company->id}");
+        }
+
+        return $default;
     }
 
     // ─── Match reply_id to flow node → send response → maybe create lead ─────
@@ -239,7 +252,7 @@ class WebhookService
         ?int $builderId
     ): void {
 
-    Log::info("Handling flow reply: company={$company->id} contact={$contact->id} reply_id={$dto->replyId} builder_id={$builderId}");
+        Log::info("Handling flow reply: company={$company->id} contact={$contact->id} reply_id={$dto->replyId} builder_id={$builderId}");
         $query = FlowNode::where('company_id', $company->id)
             ->where('reply_id', $dto->replyId)
             ->where('is_active', true);

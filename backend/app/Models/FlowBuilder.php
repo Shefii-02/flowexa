@@ -29,6 +29,8 @@ class FlowBuilder extends Model
         'trigger_keywords'=> 'array',
         'active_from' => 'datetime',
         'active_until' => 'datetime',
+         'total_sessions'   => 'integer',
+        'total_leads'      => 'integer',
     ];
 
     public function company(): BelongsTo
