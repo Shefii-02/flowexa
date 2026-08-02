@@ -20,19 +20,44 @@ class WebhookService
 {
     // ── STOP / unsubscribe keywords ────────────────────────────────────────
     private const OPT_OUT_KEYWORDS = [
-        'stop', 'unsubscribe', 'optout', 'opt out', 'quit',
-        'cancel', 'remove', 'end', 'block', 'no more',
+        'stop',
+        'unsubscribe',
+        'optout',
+        'opt out',
+        'quit',
+        'cancel',
+        'remove',
+        'end',
+        'block',
+        'no more',
     ];
 
     // ── Re-subscribe keywords ──────────────────────────────────────────────
     private const OPT_IN_KEYWORDS = [
-        'start', 'subscribe', 'yes', 'optin', 'opt in', 'resume', 'restart', 'begin',
+        'start',
+        'subscribe',
+        'yes',
+        'optin',
+        'opt in',
+        'resume',
+        'restart',
+        'begin',
     ];
 
     // ── Greeting keywords → send welcome menu ──────────────────────────────
     private const GREETING_KEYWORDS = [
-        'hi', 'hello', 'hey', 'start', 'menu', 'hai', 'helo', 'hii',
-        'hola', 'namaste', 'vanakkam', 'ഹലോ',
+        'hi',
+        'hello',
+        'hey',
+        'start',
+        'menu',
+        'hai',
+        'helo',
+        'hii',
+        'hola',
+        'namaste',
+        'vanakkam',
+        'ഹലോ',
     ];
 
     // Options row cap enforced by WhatsApp for interactive lists
@@ -180,7 +205,8 @@ class WebhookService
             ->get();
 
         foreach ($keywordBuilders as $builder) {
-            $keywords = json_decode($builder->trigger_keywords ?? '[]', true);
+            // $keywords = json_decode($builder->trigger_keywords ?? '[]', true);
+            $keywords = $builder->trigger_keywords ?? [];
             if (in_array($keyword, array_map('strtolower', $keywords))) {
                 Log::info("Keyword flow triggered: builder {$builder->id} for keyword '{$keyword}'");
                 return $builder;
@@ -424,14 +450,14 @@ class WebhookService
             $labelField = $node->dynamic_label_field ?: 'name';
             $valueField = $node->dynamic_value_field ?: 'id';
 
-            $options = collect($rows)->map(fn ($row) => [
+            $options = collect($rows)->map(fn($row) => [
                 'title'       => (string) ($row[$labelField] ?? 'Option'),
                 'reply_id'    => (string) ($row[$valueField] ?? ''),
                 'description' => $node->dynamic_description_field ? (string) ($row[$node->dynamic_description_field] ?? '') : '',
                 'image'       => $node->dynamic_image_field ? ($row[$node->dynamic_image_field] ?? null) : null,
                 'subtitle'    => $node->dynamic_subtitle_field ? ($row[$node->dynamic_subtitle_field] ?? null) : null,
             ])
-                ->filter(fn ($o) => $o['reply_id'] !== '')
+                ->filter(fn($o) => $o['reply_id'] !== '')
                 ->take(self::MAX_LIST_ROWS)
                 ->values()
                 ->all();
@@ -446,7 +472,7 @@ class WebhookService
     // ─── Send normalized dynamic options as image(s) + button/list ────────────
     private function sendDynamicOptions(Company $company, string $phone, FlowNode $node, array $options): void
     {
-        $hasImages = collect($options)->contains(fn ($o) => !empty($o['image']));
+        $hasImages = collect($options)->contains(fn($o) => !empty($o['image']));
 
         // WhatsApp list/button rows can't carry an image — send one photo per
         // option first (caption = title/subtitle/description), then the picker.
@@ -581,7 +607,7 @@ class WebhookService
                 'type' => 'button',
                 'body' => ['text' => $body],
                 'action' => [
-                    'buttons' => $children->map(fn ($c) => [
+                    'buttons' => $children->map(fn($c) => [
                         'type'  => 'reply',
                         'reply' => [
                             'id'    => mb_substr($c->reply_id, 0, 256),
@@ -604,7 +630,7 @@ class WebhookService
                 'type' => 'button',
                 'body' => ['text' => $body],
                 'action' => [
-                    'buttons' => collect($options)->map(fn ($o) => [
+                    'buttons' => collect($options)->map(fn($o) => [
                         'type'  => 'reply',
                         'reply' => [
                             'id'    => mb_substr($o['reply_id'], 0, 256),
@@ -629,7 +655,7 @@ class WebhookService
                     'button'   => 'View Options',
                     'sections' => [[
                         'title' => 'Options',
-                        'rows'  => $children->map(fn ($c) => [
+                        'rows'  => $children->map(fn($c) => [
                             'id'          => mb_substr($c->reply_id, 0, 200),
                             'title'       => mb_substr($c->title, 0, 24),
                             'description' => mb_substr($c->message ?? '', 0, 72),
@@ -654,7 +680,7 @@ class WebhookService
                     'button'   => 'View Options',
                     'sections' => [[
                         'title' => 'Options',
-                        'rows'  => collect($options)->map(fn ($o) => [
+                        'rows'  => collect($options)->map(fn($o) => [
                             'id'          => mb_substr($o['reply_id'], 0, 200),
                             'title'       => mb_substr($o['title'], 0, 24),
                             'description' => mb_substr($o['description'] ?? $o['subtitle'] ?? '', 0, 72),
@@ -672,7 +698,7 @@ class WebhookService
             'type' => 'button',
             'body' => ['text' => $node->message],
             'action' => [
-                'buttons' => $children->map(fn ($c) => [
+                'buttons' => $children->map(fn($c) => [
                     'type'  => 'reply',
                     'reply' => [
                         'id'    => mb_substr($c->reply_id, 0, 256),
@@ -751,7 +777,8 @@ class WebhookService
             $token = $company->wa_access_token;
             try {
                 $token = decrypt($token);
-            } catch (\Exception) { /* already plain */ }
+            } catch (\Exception) { /* already plain */
+            }
 
             $response = Http::withToken($token)
                 ->timeout(10)
