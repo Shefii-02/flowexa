@@ -40,8 +40,15 @@ class FlowBuilderResource extends JsonResource
             // Convert JSON string to array
             'trigger_keywords' => $this->trigger_keywords ?? [],
 
-            'active_from'     => $this->active_from,
-            'active_until'    => $this->active_until,
+            // 'active_from'     => $this->active_from,
+            // 'active_until'    => $this->active_until,
+            'active_from' => $this->active_from
+                ? $this->active_from->timezone('Asia/Kolkata')->format('Y-m-d H:i:s')
+                : null,
+
+            'active_until' => $this->active_until
+                ? $this->active_until->timezone('Asia/Kolkata')->format('Y-m-d H:i:s')
+                : null,
 
             'total_sessions'  => $this->total_sessions ?? 0,
             'total_leads'     => $this->total_leads ?? 0,
