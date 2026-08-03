@@ -25,7 +25,7 @@ class FlowBuilderController extends Controller
             ->orderByDesc('created_at')
             ->get();
 
-        return response()->json(['builders' => $builders]);
+        return response()->json(['builders' => FlowBuilderResource::collection($builders)]);
     }
 
     // GET /flow-builders/{id}  — builder + full nested node tree
@@ -39,7 +39,7 @@ class FlowBuilderController extends Controller
 
         $nodes = $this->buildTree($cid, $id);
 
-        return response()->json(['builder' => $builder, 'nodes' => $nodes]);
+        return response()->json(['builder' => new FlowBuilderResource($builder), 'nodes' => $nodes]);
     }
 
     // POST /flow-builders
