@@ -112,9 +112,6 @@ class TemplateController extends Controller
 
         $meta = $this->uploadMediaToMeta($request, $company, 'template-headers');
         if (isset($meta['error'])) {
-
-            Log::error($meta);
-
             return response()->json(['message' => $meta['error']], 422);
         }
 
