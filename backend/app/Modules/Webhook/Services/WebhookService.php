@@ -402,13 +402,19 @@ class WebhookService
             $this->sendMultipleMessages($company, $phone, $node->multi_messages);
 
             if ($children->isNotEmpty()) {
-                usleep(500000); // 0.5s gap before the buttons/list
+                usleep(200000); // 0.5s gap before the buttons/list
                 if ($node->type === 'button' && $children->count() <= 3) {
                     $this->sendButton($company, $phone, '👇 Please select an option:', $children);
                 } else {
                     $this->sendList($company, $phone, '👇 Please select an option:', $children);
                 }
             }
+
+            if ($node->message) {
+                usleep(300000);
+                $this->sendText($company, $phone, $node->message);
+            }
+
             return;
         }
 
@@ -536,7 +542,7 @@ class WebhookService
     {
         foreach ($messages as $i => $msg) {
             if ($i > 0) {
-                usleep(400000); // WhatsApp doesn't guarantee order without a delay
+                usleep(200000); // WhatsApp doesn't guarantee order without a delay
             }
 
             $type = $msg['type'] ?? 'text';
