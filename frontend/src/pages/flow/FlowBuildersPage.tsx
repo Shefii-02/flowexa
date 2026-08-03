@@ -16,7 +16,7 @@ const TRIGGER_TYPES = [
 
 const DEFAULT_FORM = {
   name:'', description:'', trigger_type:'default',
-  trigger_keywords:[] as string[], active_from:'', active_until:'',
+  trigger_keywords:[] as Array<string>, active_from:'', active_until:'',
 }
 
 export default function FlowBuildersPage() {
