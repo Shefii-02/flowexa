@@ -241,7 +241,7 @@ class TemplateController extends Controller
         $publicUrl = Storage::disk('public')->url($path);
 
         $session = Http::withToken($company->decrypt_wa_access_token)
-            ->post("https://graph.facebook.com/v20.0/{$company->wa_business_id}/uploads", [
+            ->post("https://graph.facebook.com/v21.0/{$company->wa_business_id}/uploads", [
                 'file_length' => $file->getSize(),
                 'file_type'   => $file->getMimeType(),
             ]);
