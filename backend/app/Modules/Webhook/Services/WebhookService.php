@@ -381,7 +381,7 @@ class WebhookService
         if ($node->is_dynamic && $node->dynamic_api_url) {
             if ($node->message) {
                 $this->sendText($company, $phone, $node->message);
-                usleep(300000);
+                usleep(100000);
             }
 
             $options = $this->resolveDynamicOptions($node);
@@ -402,7 +402,7 @@ class WebhookService
             $this->sendMultipleMessages($company, $phone, $node->multi_messages);
 
             if ($children->isNotEmpty()) {
-                usleep(200000); // 0.5s gap before the buttons/list
+                usleep(100000); // 0.5s gap before the buttons/list
                 if ($node->type === 'button' && $children->count() <= 3) {
                     $this->sendButton($company, $phone, '👇 Please select an option:', $children);
                 } else {
@@ -411,7 +411,7 @@ class WebhookService
             }
 
             if ($node->message) {
-                usleep(300000);
+                usleep(100000);
                 $this->sendText($company, $phone, $node->message);
             }
 
@@ -422,7 +422,7 @@ class WebhookService
         if ($node->media_type === 'audio' && $node->media_url) {
             $this->sendAudio($company, $phone, $node->media_url);
             if ($node->message) {
-                usleep(300000);
+                usleep(100000);
                 $this->sendText($company, $phone, $node->message);
             }
             return;
