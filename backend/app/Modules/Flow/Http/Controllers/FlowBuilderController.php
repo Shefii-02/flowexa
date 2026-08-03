@@ -4,6 +4,7 @@ namespace App\Modules\Flow\Http\Controllers;
 
 use App\Models\FlowBuilder;
 use App\Models\FlowNode;
+use App\Modules\Flow\Http\Requests\FlowBuilderRequest;
 use App\Modules\Flow\Http\Resources\FlowBuilderResource;
 use App\Modules\Flow\Http\Resources\FlowNodeResource;
 use App\Modules\Flow\Services\FlowService;
@@ -42,19 +43,22 @@ class FlowBuilderController extends Controller
     }
 
     // POST /flow-builders
-    public function store(Request $request): JsonResponse
+    public function store(FlowBuilderRequest $request): JsonResponse
     {
         $cid = auth()->user()->company_id;
 
-        $d = $request->validate([
-            'name'               => ['required', 'string', 'max:100'],
-            'description'        => ['nullable', 'string', 'max:255'],
-            'trigger_type'       => ['required', Rule::in(['default', 'keyword', 'season'])],
-            'trigger_keywords'   => ['nullable', 'array'],
-            'trigger_keywords.*' => ['string', 'max:60'],
-            'active_from'        => ['nullable', 'date'],
-            'active_until'       => ['nullable', 'date', 'after:active_from'],
-        ]);
+        // $d = $request->validate([
+        //     'name'               => ['required', 'string', 'max:100'],
+        //     'description'        => ['nullable', 'string', 'max:255'],
+        //     'trigger_type'       => ['required', Rule::in(['default', 'keyword', 'season'])],
+        //     'trigger_keywords'   => ['nullable', 'array'],
+        //     'trigger_keywords.*' => ['string', 'max:60'],
+        //     'active_from'        => ['nullable', 'date'],
+        //     'active_until'       => ['nullable', 'date', 'after:active_from'],
+        // ]);
+
+        $d = $request->validated();
+
 
         if ($d['trigger_type'] === 'keyword' && empty($d['trigger_keywords'])) {
             return response()->json(['message' => 'Keyword flow needs at least one keyword.'], 422);
@@ -80,31 +84,38 @@ class FlowBuilderController extends Controller
     }
 
     // PUT /flow-builders/{id}
-    public function update(Request $request, int $id): JsonResponse
+    public function update(FlowBuilderRequest $request, int $id): JsonResponse
     {
+        $data = $request->validated();
+
+        // Clean keywords for non-keyword flows
+        if ($data['trigger_type'] !== 'keyword') {
+            $data['trigger_keywords'] = [];
+        }
+
         $builder = FlowBuilder::where('id', $id)
             ->where('company_id', auth()->user()->company_id)
             ->firstOrFail();
 
-        $d = $request->validate([
-            'name'               => ['sometimes', 'string', 'max:100'],
-            'description'        => ['nullable', 'string', 'max:255'],
-            'trigger_type'       => ['sometimes', Rule::in(['default', 'keyword', 'season'])],
-            'trigger_keywords'   => ['nullable', 'array'],
-            'trigger_keywords.*' => ['string', 'max:60'],
-            'active_from'        => ['nullable', 'date'],
-            'active_until'       => ['nullable', 'date', 'after:active_from'],
-        ]);
+        // $d = $request->validate([
+        //     'name'               => ['sometimes', 'string', 'max:100'],
+        //     'description'        => ['nullable', 'string', 'max:255'],
+        //     'trigger_type'       => ['sometimes', Rule::in(['default', 'keyword', 'season'])],
+        //     'trigger_keywords'   => ['nullable', 'array'],
+        //     'trigger_keywords.*' => ['string', 'max:60'],
+        //     'active_from'        => ['nullable', 'date'],
+        //     'active_until'       => ['nullable', 'date', 'after:active_from'],
+        // ]);
 
         $builder->update([
-            'name'             => $d['name']           ?? $builder->name,
-            'description'      => $d['description']    ?? $builder->description,
-            'trigger_type'     => $d['trigger_type']   ?? $builder->trigger_type,
-            'trigger_keywords' => isset($d['trigger_keywords'])
-                ? json_encode($d['trigger_keywords'])
+            'name'             => $data['name']           ?? $builder->name,
+            'description'      => $data['description']    ?? $builder->description,
+            'trigger_type'     => $data['trigger_type']   ?? $builder->trigger_type,
+            'trigger_keywords' => isset($data['trigger_keywords'])
+                ? json_encode($data['trigger_keywords'])
                 : $builder->trigger_keywords,
-            'active_from'      => $d['active_from']    ?? $builder->active_from,
-            'active_until'     => $d['active_until']   ?? $builder->active_until,
+            'active_from'      => $data['active_from']    ?? $builder->active_from,
+            'active_until'     => $data['active_until']   ?? $builder->active_until,
         ]);
 
         return response()->json(['builder' => $builder->fresh()->loadCount('nodes')]);
