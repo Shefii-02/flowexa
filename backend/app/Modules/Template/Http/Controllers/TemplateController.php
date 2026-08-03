@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Models\WaTemplate;
 use Illuminate\Http\{JsonResponse, Request};
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 
 class TemplateController extends Controller
@@ -111,7 +112,10 @@ class TemplateController extends Controller
 
         $meta = $this->uploadMediaToMeta($request, $company, 'template-headers');
         if (isset($meta['error'])) {
-            return response()->json(['message' => $meta['error']], 422);
+
+            Log::error($meta);
+
+            return response()->json(['message--' => $meta['error']], 422);
         }
 
         if ($template->header_sample_path) {
