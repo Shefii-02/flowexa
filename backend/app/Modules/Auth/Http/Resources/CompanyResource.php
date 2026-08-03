@@ -28,6 +28,7 @@ class CompanyResource extends JsonResource
             'wa_phone_id'  => $this->wa_phone_id,
             'wa_access_token' => decrypt($this->wa_access_token),
             'wa_business_id' => $this->wa_business_id,
+            'webhook_verify_token' => $this->wa_webhook_token,
 
             'plan' => $this->whenLoaded('plan', fn() => [
                 'id'             => $this->plan->id,
