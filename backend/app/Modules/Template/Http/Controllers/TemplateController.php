@@ -115,7 +115,7 @@ class TemplateController extends Controller
 
             Log::error($meta);
 
-            return response()->json(['message--' => $meta['error']], 422);
+            return response()->json(['message' => $meta['error']], 422);
         }
 
         if ($template->header_sample_path) {
