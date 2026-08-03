@@ -28,6 +28,9 @@ class Company extends Model
         'wa_access_token',
         'wa_business_id',
         'settings',
+        'meta_app_id',
+        'wa_profile_id',
+        'wa_webhook_token',
     ];
 
     protected $hidden = ['private_token', 'wa_access_token'];
