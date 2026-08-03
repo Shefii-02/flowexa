@@ -150,18 +150,7 @@ export const flowBuilderApi = {
   delete: (id: number) => api.delete(`/flow-builders/${id}`),
 }
 
-// ── Flow Nodes (nested under a flow builder) ───────────────────────────────────
-// export const flowNodeApi = {
-//   list: (builderId: number) => api.get(`/flow-builders/${builderId}/nodes`),
-//   create: (builderId: number, d: Record<string, unknown>) => api.post(`/flow-builders/${builderId}/nodes`, d),
-//   update: (builderId: number, id: number, d: Record<string, unknown>) =>
-//     api.put(`/flow-builders/${builderId}/nodes/${id}`, d),
-//   delete: (builderId: number, id: number) => api.delete(`/flow-builders/${builderId}/nodes/${id}`),
-//   activate: (builderId: number, id: number) => api.post(`/flow-builders/${builderId}/nodes/${id}/activate`),
-//   deactivate: (builderId: number, id: number) => api.post(`/flow-builders/${builderId}/nodes/${id}/deactivate`),
-//   reorder: (builderId: number, order: { id: number; sort_order: number }[]) =>
-//     api.post(`/flow-builders/${builderId}/nodes/reorder`, { order }),
-// }
+
 
 export const flowNodeApi = {
   list: (builderId: number) => api.get(`/flow-builders/${builderId}/nodes`),

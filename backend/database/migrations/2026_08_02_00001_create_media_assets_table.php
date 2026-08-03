@@ -37,8 +37,6 @@ return new class extends Migration
             $table->string('dynamic_label_field', 100)->nullable()->after('dynamic_api_headers');
             $table->string('dynamic_value_field', 100)->nullable()->after('dynamic_label_field');
             $table->string('dynamic_description_field', 255)->nullable()->after('dynamic_value_field');
-
-
             $table->string('dynamic_image_field', 100)->nullable()->after('dynamic_description_field');
             $table->string('dynamic_subtitle_field', 100)->nullable()->after('dynamic_image_field');
         });
@@ -57,6 +55,13 @@ return new class extends Migration
         Schema::table('flow_nodes', function (Blueprint $t) {
             $t->dropColumn('dynamic_image_field');
             $t->dropColumn('dynamic_subtitle_field');
+            $t->dropColumn('dynamic_api_url');
+            $t->dropColumn('dynamic_api_method');
+            $t->dropColumn('dynamic_api_headers');
+            $t->dropColumn('dynamic_label_field');
+            $t->dropColumn('dynamic_value_field');
+            $t->dropColumn('dynamic_description_field');
+
         });
     }
 };
