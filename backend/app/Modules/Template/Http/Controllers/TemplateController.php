@@ -231,7 +231,7 @@ class TemplateController extends Controller
     {
         $request->validate(['file' => ['required', 'file', 'max:16384']]); // 16MB safety cap
 
-        if (!$company->decrypt_wa_access_token || !$company->wa_app_id) {
+        if (!$company->decrypt_wa_access_token || !$company->wa_business_id) {
             return ['error' => 'WhatsApp app credentials not configured.'];
         }
 
@@ -240,7 +240,7 @@ class TemplateController extends Controller
         $publicUrl = Storage::disk('public')->url($path);
 
         $session = Http::withToken($company->decrypt_wa_access_token)
-            ->post("https://graph.facebook.com/v25.0/{$company->wa_app_id}/uploads", [
+            ->post("https://graph.facebook.com/v25.0/{$company->wa_business_id}/uploads", [
                 'file_length' => $file->getSize(),
                 'file_type'   => $file->getMimeType(),
             ]);
