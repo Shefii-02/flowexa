@@ -397,6 +397,7 @@ class TemplateController extends Controller
             'buttons.*.type'  => ['required_with:buttons', 'in:QUICK_REPLY,URL,PHONE_NUMBER'],
             'buttons.*.text'  => ['required_with:buttons', 'string', 'max:25'],
             'buttons.*.url'   => ['nullable', 'url'],
+            'buttons.*.phone_number' => ['nullable', 'string', 'max:20'],
         ]);
 
         $d['header_format'] = $d['header_format'] ?? 'TEXT';
@@ -547,11 +548,20 @@ class TemplateController extends Controller
         }
 
         if (!empty($d['buttons'])) {
-            $buttons = collect($d['buttons'])->map(fn($b) => array_filter([
-                'type' => $b['type'] ?? 'QUICK_REPLY',
-                'text' => $b['text'],
-                'url'  => $b['type'] === 'URL' ? ($b['url'] ?? null) : null,
-            ], fn($v) => !is_null($v)))->toArray(); // media fields intentionally dropped here
+            $buttons = collect($d['buttons'])->map(function ($b) {
+                $isPhone = ($b['type'] ?? 'QUICK_REPLY') === 'PHONE_NUMBER';
+
+                // Frontend may send the number under a dedicated `phone_number` field, or
+                // (legacy behavior) under `text` itself — support both so nothing breaks.
+                $phoneNumber = $b['phone_number'] ?? ($isPhone ? ($b['text'] ?? null) : null);
+
+                return array_filter([
+                    'type'         => $b['type'] ?? 'QUICK_REPLY',
+                    'text'         => $isPhone ? ($b['label'] ?? $b['text'] ?? 'Call') : $b['text'],
+                    'url'          => $b['type'] === 'URL' ? ($b['url'] ?? null) : null,
+                    'phone_number' => $isPhone ? $phoneNumber : null,
+                ], fn($v) => !is_null($v));
+            })->toArray(); // media fields intentionally dropped here
 
             $components[] = ['type' => 'BUTTONS', 'buttons' => $buttons];
         }
