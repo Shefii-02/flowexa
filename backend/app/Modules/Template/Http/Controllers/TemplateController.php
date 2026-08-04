@@ -6,10 +6,10 @@ use App\Modules\Template\Services\TemplateService;
 use App\Http\Controllers\Controller;
 use App\Models\WaTemplate;
 use Illuminate\Http\{JsonResponse, Request};
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
-use Illuminate\Http\Client\ConnectionException;
 
 class TemplateController extends Controller
 {
@@ -253,17 +253,45 @@ class TemplateController extends Controller
     }
 
     // ── Shared upload-to-Meta helper (resumable upload session → PUT bytes) ─
+    // Every stage logs so a failure can be pinpointed to a single line in the logs.
     private function uploadMediaToMeta(Request $request, $company, string $storageFolder): array
     {
+        Log::info('[media-upload] step 1/5: validating request', [
+            'company_id' => $company->id,
+            'folder'     => $storageFolder,
+        ]);
+
         $request->validate(['file' => ['required', 'file', 'max:16384']]); // 16MB safety cap
 
         if (!$company->decrypt_wa_access_token || !$company->meta_app_id) {
+            Log::error('[media-upload] step 1/5 FAILED: missing WhatsApp credentials', [
+                'company_id'   => $company->id,
+                'has_token'    => (bool) $company->decrypt_wa_access_token,
+                'has_app_id'   => (bool) $company->meta_app_id,
+            ]);
             return ['error' => 'WhatsApp app Id and credentials not configured.'];
         }
 
         $file = $request->file('file');
+        Log::info('[media-upload] step 2/5: storing file locally', [
+            'company_id' => $company->id,
+            'filename'   => $file->getClientOriginalName(),
+            'size'       => $file->getSize(),
+            'mime'       => $file->getMimeType(),
+        ]);
+
         $path = $file->store($storageFolder, 'public');
+        if (!$path) {
+            Log::error('[media-upload] step 2/5 FAILED: local disk store returned no path', ['company_id' => $company->id]);
+            return ['error' => 'Failed to save the file locally.'];
+        }
         $publicUrl = Storage::disk('public')->url($path);
+        Log::info('[media-upload] step 2/5 OK: file stored', ['company_id' => $company->id, 'path' => $path]);
+
+        Log::info('[media-upload] step 3/5: requesting Meta upload session', [
+            'company_id' => $company->id,
+            'app_id'     => $company->meta_app_id,
+        ]);
 
         try {
             $session = Http::withToken($company->decrypt_wa_access_token)
@@ -274,16 +302,33 @@ class TemplateController extends Controller
                 ]);
         } catch (ConnectionException $e) {
             Storage::disk('public')->delete($path);
-            Log::warning('Meta upload session timed out.', ['company_id' => $company->id, 'error' => $e->getMessage()]);
+            Log::error('[media-upload] step 3/5 FAILED: connection timeout starting session', [
+                'company_id' => $company->id,
+                'error'      => $e->getMessage(),
+            ]);
             return ['error' => 'Timed out starting upload session with Meta. Please try again.'];
         }
 
         if ($session->failed()) {
             Storage::disk('public')->delete($path);
+            Log::error('[media-upload] step 3/5 FAILED: Meta rejected session start', [
+                'company_id' => $company->id,
+                'http_code'  => $session->status(),
+                'body'       => $session->json(),
+            ]);
             return ['error' => $session->json('error.message') ?? 'Failed to start upload session.'];
         }
 
         $uploadSessionId = $session->json('id'); // format: "upload:XYZ"
+        Log::info('[media-upload] step 3/5 OK: session created', [
+            'company_id' => $company->id,
+            'session_id' => $uploadSessionId,
+        ]);
+
+        Log::info('[media-upload] step 4/5: uploading file bytes to Meta', [
+            'company_id' => $company->id,
+            'session_id' => $uploadSessionId,
+        ]);
 
         try {
             $upload = Http::withHeaders([
@@ -295,16 +340,43 @@ class TemplateController extends Controller
                 ->post("https://graph.facebook.com/v21.0/{$uploadSessionId}");
         } catch (ConnectionException $e) {
             Storage::disk('public')->delete($path);
-            Log::warning('Meta media upload timed out.', ['company_id' => $company->id, 'error' => $e->getMessage()]);
+            Log::error('[media-upload] step 4/5 FAILED: connection timeout uploading bytes', [
+                'company_id' => $company->id,
+                'session_id' => $uploadSessionId,
+                'error'      => $e->getMessage(),
+            ]);
             return ['error' => 'Timed out uploading media to Meta. Please try again.'];
         }
 
         if ($upload->failed()) {
             Storage::disk('public')->delete($path);
+            Log::error('[media-upload] step 4/5 FAILED: Meta rejected byte upload', [
+                'company_id' => $company->id,
+                'session_id' => $uploadSessionId,
+                'http_code'  => $upload->status(),
+                'body'       => $upload->json(),
+            ]);
             return ['error' => $upload->json('error.message') ?? 'Failed to upload sample media.'];
         }
 
-        return ['handle' => $upload->json('h'), 'path' => $path, 'url' => $publicUrl];
+        $handle = $upload->json('h');
+        if (!$handle) {
+            Storage::disk('public')->delete($path);
+            Log::error('[media-upload] step 5/5 FAILED: Meta returned success but no handle ("h")', [
+                'company_id' => $company->id,
+                'session_id' => $uploadSessionId,
+                'body'       => $upload->json(),
+            ]);
+            return ['error' => 'Meta did not return a media handle. Please try again.'];
+        }
+
+        Log::info('[media-upload] step 5/5 OK: upload complete', [
+            'company_id' => $company->id,
+            'handle'     => $handle,
+            'path'       => $path,
+        ]);
+
+        return ['handle' => $handle, 'path' => $path, 'url' => $publicUrl];
     }
 
     // ── Validation shared by store/update ──────────────────────────────
@@ -337,26 +409,56 @@ class TemplateController extends Controller
     }
 
     // ── Push a create or update to Meta, mirror status/errors back locally ─
+    // Every stage logs so a failed submission can be pinpointed to a single line in the logs.
     private function submitToMeta(WaTemplate $template, $company, array $d, bool $isUpdate = false): void
     {
+        Log::info('[template-submit] step 1/4: checking credentials', [
+            'template_id' => $template->id,
+            'company_id'  => $company->id,
+            'is_update'   => $isUpdate,
+        ]);
+
         if (!$company->decrypt_wa_access_token || !$company->wa_business_id) {
+            Log::error('[template-submit] step 1/4 FAILED: missing WhatsApp credentials, submit skipped silently', [
+                'template_id'      => $template->id,
+                'company_id'       => $company->id,
+                'has_token'        => (bool) $company->decrypt_wa_access_token,
+                'has_business_id'  => (bool) $company->wa_business_id,
+            ]);
             return;
         }
 
+        Log::info('[template-submit] step 2/4: building components payload', [
+            'template_id' => $template->id,
+        ]);
         $components = $this->buildComponents($d);
+        Log::info('[template-submit] step 2/4 OK', [
+            'template_id' => $template->id,
+            'components'  => $components,
+        ]);
+
+        $endpoint = ($isUpdate && $template->wa_template_id)
+            ? "https://graph.facebook.com/v25.0/{$template->wa_template_id}"
+            : "https://graph.facebook.com/v25.0/{$company->wa_business_id}/message_templates";
+
+        Log::info('[template-submit] step 3/4: calling Meta', [
+            'template_id' => $template->id,
+            'endpoint'    => $endpoint,
+            'mode'        => ($isUpdate && $template->wa_template_id) ? 'update' : 'create',
+        ]);
 
         try {
             if ($isUpdate && $template->wa_template_id) {
                 $response = Http::withToken($company->decrypt_wa_access_token)
                     ->timeout(20)
-                    ->post("https://graph.facebook.com/v25.0/{$template->wa_template_id}", [
+                    ->post($endpoint, [
                         'category'   => $d['category'],
                         'components' => $components,
                     ]);
             } else {
                 $response = Http::withToken($company->decrypt_wa_access_token)
                     ->timeout(20)
-                    ->post("https://graph.facebook.com/v25.0/{$company->wa_business_id}/message_templates", [
+                    ->post($endpoint, [
                         'name'       => $d['name'],
                         'category'   => $d['category'],
                         'language'   => $d['language'],
@@ -364,13 +466,26 @@ class TemplateController extends Controller
                     ]);
             }
         } catch (ConnectionException $e) {
-            Log::warning('Meta template submit timed out.', ['company_id' => $company->id, 'error' => $e->getMessage()]);
+            Log::error('[template-submit] step 3/4 FAILED: connection timeout calling Meta', [
+                'template_id' => $template->id,
+                'endpoint'    => $endpoint,
+                'error'       => $e->getMessage(),
+            ]);
             $template->update([
                 'status'           => 'error',
                 'rejection_reason' => 'Timed out contacting Meta. Please try submitting again.',
             ]);
             return;
         }
+
+        Log::info('[template-submit] step 3/4 OK: Meta responded', [
+            'template_id' => $template->id,
+            'http_code'   => $response->status(),
+        ]);
+
+        Log::info('[template-submit] step 4/4: updating local template row', [
+            'template_id' => $template->id,
+        ]);
 
         if ($response->successful()) {
             $data = $response->json();
@@ -379,10 +494,22 @@ class TemplateController extends Controller
                 'status'           => strtolower($data['status'] ?? 'pending'),
                 'rejection_reason' => null,
             ]);
+            Log::info('[template-submit] step 4/4 OK: template marked as submitted', [
+                'template_id'    => $template->id,
+                'wa_template_id' => $data['id'] ?? $template->wa_template_id,
+                'status'         => strtolower($data['status'] ?? 'pending'),
+            ]);
         } else {
+            $reason = $response->json('error.error_user_msg') ?? $response->json('error.message') ?? 'Meta API error';
+            Log::error('[template-submit] step 4/4 FAILED: Meta rejected the template', [
+                'template_id' => $template->id,
+                'http_code'   => $response->status(),
+                'body'        => $response->json(),
+                'reason'      => $reason,
+            ]);
             $template->update([
                 'status'           => 'error',
-                'rejection_reason' => $response->json('error.error_user_msg') ?? $response->json('error.message') ?? 'Meta API error',
+                'rejection_reason' => $reason,
             ]);
         }
     }
@@ -529,7 +656,6 @@ class TemplateController extends Controller
         return response()->json(['message' => 'Synced from Meta.', 'template' => $template]);
     }
 }
-
 
 // class TemplateController extends Controller
 // {
