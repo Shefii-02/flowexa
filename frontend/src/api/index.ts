@@ -267,7 +267,8 @@ export const phoneApi = {
 }
 
 export const phoneNumberApi = {
-  list: () => api.get('/phone-numbers'),
+  list: (p?: Record<string, unknown>) => api.get('/phone-numbers', { params: p }),
+  show: (id: number) => api.get(`/phone-numbers/${id}`),
   create: (d: Record<string, unknown>) => api.post('/phone-numbers', d),
   update: (id: number, d: Record<string, unknown>) => api.put(`/phone-numbers/${id}`, d),
   delete: (id: number) => api.delete(`/phone-numbers/${id}`),
@@ -280,6 +281,7 @@ export const templateApi = {
   list: (p?: Record<string, unknown>) => api.get('/templates', { params: p }),
   show: (id: number) => api.get(`/templates/${id}`),
   create: (d: Record<string, unknown>) => api.post('/templates', d),
+  duplicate: (id: number) => api.post(`/templates/${id}/duplicate`),
   update: (id: number, d: Record<string, unknown>) => api.put(`/templates/${id}`, d),
   delete: (id: number) => api.delete(`/templates/${id}`),
   sync: (id: number) => api.post(`/templates/${id}/sync`),
