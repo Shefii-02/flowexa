@@ -1,5 +1,4 @@
 <?php
-
 namespace App\Modules\Template\Http\Controllers;
 
 use App\Modules\Template\Services\TemplateService;
@@ -13,6 +12,14 @@ use Illuminate\Support\Facades\Storage;
 
 class TemplateController extends Controller
 {
+    // Meta only allows editing a template that is still a local draft or that Meta
+    // itself rejected — approved/pending templates are locked on Meta's side and any
+    // edit/resubmit attempt against them fails with error_subcode 2388003. We mirror
+    // that rule here so the user gets an immediate, clear message instead of a 400
+    // from Meta after a round trip.
+    private const EDITABLE_STATUSES = ['draft', 'rejected', 'error'];
+    private const LOCKED_STATUSES   = ['approved', 'pending', 'pending_deletion', 'disabled'];
+
     public function __construct(private TemplateService $templates) {}
 
     // ── List / show ────────────────────────────────────────────────────
@@ -48,9 +55,16 @@ class TemplateController extends Controller
     // ── Update a draft or resubmit an existing template ───────────────────
     public function update(int $id, Request $request): JsonResponse
     {
+        $template = $this->templates->show($id, auth()->user()->company_id);
+
+        if (in_array($template->status, self::LOCKED_STATUSES, true)) {
+            return response()->json([
+                'message' => 'Approved or pending templates cannot be edited on Meta. Duplicate this template to create a new version instead.',
+            ], 422);
+        }
+
         $d = $this->validated($request, isUpdate: true);
 
-        $template = $this->templates->show($id, auth()->user()->company_id);
         $wasSubmitted = $template->status !== 'draft';
 
         $template = $this->templates->update($id, auth()->user()->company_id, [
@@ -73,6 +87,12 @@ class TemplateController extends Controller
     {
         $template = $this->templates->show($id, auth()->user()->company_id);
         $company  = auth()->user()->company;
+
+        if (!in_array($template->status, self::EDITABLE_STATUSES, true)) {
+            return response()->json([
+                'message' => "Only draft or rejected templates can be submitted. This template is already \"{$template->status}\" on Meta.",
+            ], 422);
+        }
 
         if ($template->header_format !== 'TEXT' && !$template->header_handle) {
             return response()->json(['message' => "Upload a sample {$template->header_format} before submitting."], 422);
@@ -252,6 +272,61 @@ class TemplateController extends Controller
         }
     }
 
+    // ── Duplicate an existing template as a new draft ──────────────────────
+    // Copies all content fields so the user only has to pick a new unique name
+    // and, optionally, swap out media/text before submitting — instead of
+    // retyping the whole template from scratch. Physically copies the sample
+    // media file too, so the duplicate doesn't break if the original is later
+    // edited or deleted.
+    public function duplicate(int $id): JsonResponse
+    {
+        $company = auth()->user()->company;
+        $source  = $this->templates->show($id, $company->id);
+
+        $copiedHeaderPath = null;
+        if ($source->header_sample_path && Storage::disk('public')->exists($source->header_sample_path)) {
+            $ext = pathinfo($source->header_sample_path, PATHINFO_EXTENSION);
+            $copiedHeaderPath = 'template-headers/' . uniqid('dup_') . ($ext ? ".{$ext}" : '');
+            Storage::disk('public')->copy($source->header_sample_path, $copiedHeaderPath);
+        }
+
+        $duplicate = WaTemplate::create([
+            'company_id'         => $company->id,
+            // Left blank on purpose — template names must be unique, so the user
+            // picks a new one in the modal rather than us guessing one for them.
+            'name'               => $source->name . '_copy_' . substr(uniqid(), -4),
+            'category'           => $source->category,
+            'language'           => $source->language,
+            'body'               => $source->body,
+            'body_examples'      => $source->body_examples,
+            'header_format'      => $source->header_format,
+            'header'             => $source->header,
+            'header_example'     => $source->header_example,
+            // The Meta upload handle stays valid well past a single use, so it's safe to
+            // reuse directly rather than forcing a re-upload — as long as we keep our own
+            // copy of the file around locally for the preview to keep working.
+            'header_handle'      => $copiedHeaderPath ? $source->header_handle : null,
+            'header_sample_path' => $copiedHeaderPath,
+            'header_sample_url'  => $copiedHeaderPath ? Storage::disk('public')->url($copiedHeaderPath) : null,
+            'footer'             => $source->footer,
+            // Per-button media is intentionally not copied — it's reference-only on our
+            // side and cheap for the user to re-attach if they still want it.
+            'buttons'            => collect($source->buttons ?? [])
+                ->map(fn ($b) => collect($b)->except(['media_path', 'media_url'])->toArray())
+                ->toArray(),
+            'status'             => 'draft',
+            'wa_template_id'     => null,
+            'rejection_reason'   => null,
+        ]);
+
+        Log::info('[template-duplicate] created draft copy', [
+            'source_id'      => $source->id,
+            'duplicate_id'   => $duplicate->id,
+        ]);
+
+        return response()->json(['template' => $duplicate->fresh()], 201);
+    }
+
     // ── Shared upload-to-Meta helper (resumable upload session → PUT bytes) ─
     // Every stage logs so a failure can be pinpointed to a single line in the logs.
     private function uploadMediaToMeta(Request $request, $company, string $storageFolder): array
@@ -396,8 +471,8 @@ class TemplateController extends Controller
             'buttons'         => ['nullable', 'array', 'max:3'],
             'buttons.*.type'  => ['required_with:buttons', 'in:QUICK_REPLY,URL,PHONE_NUMBER'],
             'buttons.*.text'  => ['required_with:buttons', 'string', 'max:25'],
-            'buttons.*.url'   => ['nullable', 'url'],
-            'buttons.*.phone_number' => ['nullable', 'string', 'max:20'],
+            'buttons.*.url'   => ['nullable', 'required_if:buttons.*.type,URL', 'url'],
+            'buttons.*.phone_number' => ['nullable', 'required_if:buttons.*.type,PHONE_NUMBER', 'string', 'max:20'],
         ]);
 
         $d['header_format'] = $d['header_format'] ?? 'TEXT';
@@ -501,7 +576,24 @@ class TemplateController extends Controller
                 'status'         => strtolower($data['status'] ?? 'pending'),
             ]);
         } else {
-            $reason = $response->json('error.error_user_msg') ?? $response->json('error.message') ?? 'Meta API error';
+            $subcode = $response->json('error.error_subcode');
+            $reason  = $response->json('error.error_user_msg') ?? $response->json('error.message') ?? 'Meta API error';
+
+            // subcode 2388024: Meta already has a template with this name+language, almost
+            // always because an earlier "create" attempt actually succeeded on Meta's side
+            // before our local row caught up (e.g. we timed out reading the response, or the
+            // button-validation bug from before meant we never advanced past isUpdate=false).
+            // Rather than leave the row endlessly retrying a doomed create, look the real
+            // template up and link it so status/id are accurate going forward.
+            if ($subcode === 2388024 && !$isUpdate) {
+                Log::warning('[template-submit] step 4/4: content already exists on Meta, reconciling', [
+                    'template_id' => $template->id,
+                    'name'        => $d['name'],
+                ]);
+                $this->reconcileExistingFromMeta($template, $company, $d['name']);
+                return;
+            }
+
             Log::error('[template-submit] step 4/4 FAILED: Meta rejected the template', [
                 'template_id' => $template->id,
                 'http_code'   => $response->status(),
@@ -511,6 +603,56 @@ class TemplateController extends Controller
             $template->update([
                 'status'           => 'error',
                 'rejection_reason' => $reason,
+            ]);
+        }
+    }
+
+    // ── Recover from a "content already exists" create failure by pulling the
+    // real template (id/status) down from Meta and linking it to our local row,
+    // instead of leaving the row stuck retrying a create that can never succeed.
+    private function reconcileExistingFromMeta(WaTemplate $template, $company, string $name): void
+    {
+        try {
+            $lookup = Http::withToken($company->decrypt_wa_access_token)
+                ->timeout(15)
+                ->get("https://graph.facebook.com/v25.0/{$company->wa_business_id}/message_templates", [
+                    'fields' => 'id,name,language,status,rejected_reason',
+                    'name'   => $name,
+                ]);
+        } catch (ConnectionException $e) {
+            Log::error('[template-reconcile] FAILED: timeout looking up existing template', [
+                'template_id' => $template->id,
+                'name'        => $name,
+                'error'       => $e->getMessage(),
+            ]);
+            $template->update([
+                'status'           => 'error',
+                'rejection_reason' => 'A template with this name already exists on Meta. Try "Sync from Meta" to link it, or rename this one.',
+            ]);
+            return;
+        }
+
+        $match = collect($lookup->json('data', []))->first();
+
+        if ($match) {
+            $template->update([
+                'wa_template_id'   => $match['id'],
+                'status'           => strtolower($match['status'] ?? 'pending'),
+                'rejection_reason' => $match['rejected_reason'] ?? null,
+            ]);
+            Log::info('[template-reconcile] OK: linked existing Meta template', [
+                'template_id'    => $template->id,
+                'wa_template_id' => $match['id'],
+                'status'         => strtolower($match['status'] ?? 'pending'),
+            ]);
+        } else {
+            Log::error('[template-reconcile] FAILED: no matching template found on Meta', [
+                'template_id' => $template->id,
+                'name'        => $name,
+            ]);
+            $template->update([
+                'status'           => 'error',
+                'rejection_reason' => 'A template with this name/language already exists on Meta but could not be found automatically. Try "Sync from Meta" or rename this template.',
             ]);
         }
     }

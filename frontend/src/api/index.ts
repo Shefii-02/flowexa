@@ -266,6 +266,15 @@ export const phoneApi = {
   verify: (id: number) => api.post(`/phone-numbers/${id}/verify`),
 }
 
+export const phoneNumberApi = {
+  list: () => api.get('/phone-numbers'),
+  create: (d: Record<string, unknown>) => api.post('/phone-numbers', d),
+  update: (id: number, d: Record<string, unknown>) => api.put(`/phone-numbers/${id}`, d),
+  delete: (id: number) => api.delete(`/phone-numbers/${id}`),
+  setDefault: (id: number) => api.post(`/phone-numbers/${id}/set-default`),
+  verify: (id: number) => api.post(`/phone-numbers/${id}/verify`),
+}
+
 // ── WA Templates ──────────────────────────────────────────────────────────
 export const templateApi = {
   list: (p?: Record<string, unknown>) => api.get('/templates', { params: p }),
