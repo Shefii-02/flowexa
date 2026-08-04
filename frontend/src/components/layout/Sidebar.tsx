@@ -108,9 +108,9 @@ export const Sidebar = () => {
             <NavItem to="/blacklist" icon="🚫" label="Blacklist" />
             {canViewFlow && <NavItem to="/flow-builders" icon="🌿" label="Flow builder" />}
             {/* {canViewFlow && <NavItem to="/flow" icon="🌿" label="Flow builder" />} */}
+            <NavItem to="/templates" icon="📄" label="WA Templates" />
             {canViewCamp && <NavItem to="/campaigns" icon="📢" label="Campaigns" />}
 
-            <NavItem to="/templates" icon="📄" label="WA Templates" />
             <p className="text-xs font-medium text-gray-400 uppercase tracking-wide px-2 pt-3 pb-1">Manage</p>
             {canViewStaff && <NavItem to="/staff" icon="👤" label="Staff" />}
             {canViewBill && <NavItem to="/wallet" icon="💳" label="Wallet" />}
@@ -135,7 +135,7 @@ export const Sidebar = () => {
             <NavItem to="/plan-purchase" icon="📦" label="Plans & billing" />
 
 
-            <div className="nav-section">Meta Ads Manager</div>
+            <div className="nav-section text-sm py-2">Meta Ads Manager</div>
             <NavItem to="/meta-ads/campaigns" icon="📢" label="Campaigns" />
             <NavItem to="/meta-ads/accounts" icon="🔗" label="Ad accounts" />
             <NavItem to="/meta-ads/creatives" icon="🎨" label="Creative studio" />

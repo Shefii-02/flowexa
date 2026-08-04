@@ -450,7 +450,7 @@ Route::prefix('v1')->group(function () {
 
                 // Bulk sync must come before '/{id}' so it isn't swallowed by the id route
                 Route::post('/sync-from-meta',  [TemplateController::class, 'syncFromMeta'])->name('sync-from-meta');
-
+                Route::post('templates/{id}/duplicate', [TemplateController::class, 'duplicate']);
                 Route::get('/{id}',             [TemplateController::class, 'show'])->name('show');
                 Route::post('/',                [TemplateController::class, 'store'])->name('store')->middleware('plan.limit:templates');
                 Route::put('/{id}',             [TemplateController::class, 'update'])->name('update');
