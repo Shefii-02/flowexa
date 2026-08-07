@@ -173,7 +173,7 @@ return new class extends Migration
             $t->foreignId('company_id')->constrained()->cascadeOnDelete();
             $t->foreignId('parent_id')->nullable()->constrained('flow_nodes')->cascadeOnDelete();
             $t->string('title', 24);                        // WA button label limit
-            $t->text('message');
+            $t->text('message')->nullable();
             $t->string('type', 15)->default('list');        // list | button | text
             $t->string('reply_id', 60)->nullable();         // unique per company
             $t->string('lead_category', 100)->nullable();   // triggers auto-lead

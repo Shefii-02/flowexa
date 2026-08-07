@@ -224,7 +224,7 @@ class FlowNodeController extends Controller
 
         $d = $request->validate([
             'title'    => ['sometimes', 'string', 'max:100'],
-            'message'  => ['sometimes', 'string', 'max:4096'],
+            'message'  => ['nullable', 'string', 'max:4096'],
             'type'     => ['sometimes', Rule::in(['text', 'button', 'list', 'image', 'video', 'document', 'audio', 'location','survey','template'])],
             ...$this->sharedRules(),
         ]);
