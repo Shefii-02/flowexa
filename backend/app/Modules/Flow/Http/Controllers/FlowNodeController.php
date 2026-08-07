@@ -154,8 +154,8 @@ class FlowNodeController extends Controller
         $d = $request->validate([
             'parent_id'   => ['nullable', 'integer'],
             'title'       => ['required', 'string', 'max:100'],
-            'message'     => ['required', 'string', 'max:4096'],
-            'type'        => ['required', Rule::in(['text', 'button', 'list', 'image', 'video', 'document', 'audio', 'location'])],
+            'message'     => ['nullable', 'string', 'max:4096'],
+            'type'        => ['required', Rule::in(['text', 'button', 'list', 'image', 'video', 'document', 'audio', 'location','survey','template'])],
             'reply_id'    => ['required', 'string', 'max:200'],
             ...$this->sharedRules(),
         ]);
@@ -225,7 +225,7 @@ class FlowNodeController extends Controller
         $d = $request->validate([
             'title'    => ['sometimes', 'string', 'max:100'],
             'message'  => ['sometimes', 'string', 'max:4096'],
-            'type'     => ['sometimes', Rule::in(['text', 'button', 'list', 'image', 'video', 'document', 'audio', 'location'])],
+            'type'     => ['sometimes', Rule::in(['text', 'button', 'list', 'image', 'video', 'document', 'audio', 'location','survey','template'])],
             ...$this->sharedRules(),
         ]);
 

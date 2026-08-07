@@ -9,7 +9,10 @@ use Illuminate\Http\Exceptions\HttpResponseException;
 // ─── Create Flow Node ─────────────────────────────────────────────────────────
 class CreateFlowNodeRequest extends FormRequest
 {
-    public function authorize(): bool { return true; }
+    public function authorize(): bool
+    {
+        return true;
+    }
 
     public function rules(): array
     {
