@@ -15,7 +15,7 @@ class CreateFlowNodeRequest extends FormRequest
     {
         return [
             'title'         => ['required', 'string', 'max:24'],
-            'message'       => ['required', 'string', 'max:1024'],
+            'message'       => ['nullable', 'string', 'max:1024'],
             'type'          => ['required', 'in:list,button,text'],
             'parent_id'     => ['nullable', 'integer', 'exists:flow_nodes,id'],
             'reply_id'      => ['nullable', 'string', 'max:50', 'alpha_dash'],
