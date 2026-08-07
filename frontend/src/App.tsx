@@ -51,6 +51,9 @@ import FlowNodesPage from '@/pages/flow/FlowNodesPage'
 import InboxPage from './pages/inbox/InboxPage'
 import SurveyFormsPage from './pages/survey/SurveyFormsPage'
 
+
+
+
 export const DashboardRouter = () => {
   const isSuperAdmin = useIsSuperAdmin()
   return isSuperAdmin ? <SuperAdminStats /> : <DashboardPage />
