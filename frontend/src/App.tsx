@@ -48,6 +48,8 @@ import BlacklistPage from '@/pages/blacklist/BlacklistPage'
 import LabelsPage from './pages/contacts/LabelsPage'
 import FlowBuildersPage from './pages/flow/FlowBuildersPage'
 import FlowNodesPage from '@/pages/flow/FlowNodesPage'
+import InboxPage from './pages/inbox/InboxPage'
+import SurveyFormsPage from './pages/survey/SurveyFormsPage'
 
 export const DashboardRouter = () => {
   const isSuperAdmin = useIsSuperAdmin()
@@ -109,6 +111,8 @@ export default function App() {
             <Route path="settings" element={<SettingsPage />} />
             <Route path="otp" element={<OtpPage />} />
             <Route path="message-logs" element={<MessageLogsPage />} />
+            <Route path='inbox' element={<InboxPage />} />
+            <Route path='survey-forms' element={<SurveyFormsPage />} />
 
             {/* V2 routes */}
             <Route path="phone-numbers" element={<PhoneNumbersPage />} />

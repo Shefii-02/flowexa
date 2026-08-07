@@ -109,6 +109,8 @@ export const Sidebar = () => {
             {canViewFlow && <NavItem to="/flow-builders" icon="🌿" label="Flow builder" />}
             {/* {canViewFlow && <NavItem to="/flow" icon="🌿" label="Flow builder" />} */}
             <NavItem to="/templates" icon="📄" label="WA Templates" />
+
+
             {canViewCamp && <NavItem to="/campaigns" icon="📢" label="Campaigns" />}
 
             <p className="text-xs font-medium text-gray-400 uppercase tracking-wide px-2 pt-3 pb-1">Manage</p>
@@ -126,6 +128,10 @@ export const Sidebar = () => {
             )}
             <NavItem to="/leads" icon="🎯" label="Leads" />
             <NavItem to="/message-logs" icon="📋" label="Message logs" />
+            {/* Realtime shared inbox — conversations from all customers, agents can claim/reply */}
+            <NavItem to="/inbox" icon="💬" label="Inbox" />
+            {canViewFlow && <NavItem to="/survey-forms" icon="📝" label="Survey forms" />}
+
 
             <p className="text-xs font-medium text-gray-400 uppercase tracking-wide px-2 pt-3 pb-1">Account</p>
             <NavItem to="/settings" icon="⚙️" label="Settings" />
