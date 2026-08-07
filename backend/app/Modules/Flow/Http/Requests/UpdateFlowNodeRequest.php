@@ -17,7 +17,7 @@ class UpdateFlowNodeRequest extends FormRequest
         return [
             'title'         => ['sometimes', 'string', 'max:24'],
             'message'       => ['sometimes', 'string', 'max:1024'],
-            'type'          => ['sometimes', 'in:list,button,text'],
+            'type'          => ['sometimes', 'in:list,button,text,survey,template'],
             'parent_id'     => ['nullable', 'integer', 'exists:flow_nodes,id'],
             'reply_id'      => ['nullable', 'string', 'max:50', 'alpha_dash'],
             'lead_category' => ['nullable', 'string', 'max:100'],
