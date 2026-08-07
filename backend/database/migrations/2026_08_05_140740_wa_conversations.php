@@ -48,6 +48,8 @@ return new class extends Migration
             $table->index(['conversation_id', 'created_at']);
 
         });
+
+
     }
 
     /**
