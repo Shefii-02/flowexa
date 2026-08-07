@@ -180,7 +180,7 @@ function SurveyFormSelect({ value, onChange }: {
   // If we only have the id (editing an existing node), fetch the form once for the label
   useEffect(() => {
     if (value && (!selected || selected.id !== value)) {
-      surveyFormApi.show(value).then(r => setSelected(r.data.form)).catch(() => {})
+      surveyFormApi.show(value).then(r => setSelected(r.data.form)).catch(() => { })
     }
     if (!value) setSelected(null)
   }, [value]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -271,7 +271,7 @@ function FlowTemplateSelect({ value, onChange }: {
 
   useEffect(() => {
     if (value && (!selected || selected.id !== value)) {
-      templateApi.show(value).then(r => setSelected(r.data.template)).catch(() => {})
+      templateApi.show(value).then(r => setSelected(r.data.template)).catch(() => { })
     }
     if (!value) setSelected(null)
   }, [value]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -734,8 +734,8 @@ export default function FlowNodesPage() {
                 <span className={`inline-flex items-center text-xs capitalize font-semibold px-2 py-0.5 rounded-full ${n.type === 'list' ? 'bg-blue-50 text-blue-600' :
                   n.type === 'button' ? 'bg-purple-50 text-purple-600' :
                     n.type === 'survey' ? 'bg-amber-50 text-amber-600' :
-                    n.type === 'template' ? 'bg-pink-50 text-pink-600' :
-                    'bg-green-50 text-green-600'
+                      n.type === 'template' ? 'bg-pink-50 text-pink-600' :
+                        'bg-green-50 text-green-600'
                   }`}>{n.type}</span>
 
                 <span className="font-semibold text-sm text-gray-900">{n.title}</span>
@@ -954,15 +954,15 @@ export default function FlowNodesPage() {
               </div>
             </div>
           )}
-
-          {!isSurvey && !isTemplateNode && !multiMode && (
+          {/* !isSurvey && !multiMode &&  */}
+          {/* {!isTemplateNode && ( */}
             <div>
               <label className="label">Message * <span className="text-xs text-gray-400 font-normal">{form.message.length}/4096</span></label>
               <textarea className="form-control border w-full p-2 rounded" rows={4} maxLength={4096}
                 placeholder="Great choice! 🎉 We offer the following cloud-based SaaS products..."
                 value={form.message} onChange={e => set('message', e.target.value)} />
             </div>
-          )}
+          {/* )} */}
 
           <div className="grid grid-cols-1 gap-4 items-end">
             <ParentNodeSelect
@@ -984,15 +984,15 @@ export default function FlowNodesPage() {
           </div>
 
           {!isSurvey && !isTemplateNode && (
-          <div className="flex items-center gap-3 bg-brand-50 border border-brand-200 rounded-xl px-4 py-3">
-            <label className="flex items-center gap-2 cursor-pointer select-none">
-              <input type="checkbox" className="w-4 h-4 rounded text-brand-500"
-                checked={multiMode} onChange={e => setMultiMode(e.target.checked)} />
-              <span className="text-sm font-medium text-brand-800">
-                Send multiple messages one-by-one (text + images + video + document + audio + location)
-              </span>
-            </label>
-          </div>
+            <div className="flex items-center gap-3 bg-brand-50 border border-brand-200 rounded-xl px-4 py-3">
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <input type="checkbox" className="w-4 h-4 rounded text-brand-500"
+                  checked={multiMode} onChange={e => setMultiMode(e.target.checked)} />
+                <span className="text-sm font-medium text-brand-800">
+                  Send multiple messages one-by-one (text + images + video + document + audio + location)
+                </span>
+              </label>
+            </div>
           )}
 
           {!isSurvey && !isTemplateNode && multiMode && (
@@ -1082,88 +1082,88 @@ export default function FlowNodesPage() {
           )}
 
           {!isSurvey && !isTemplateNode && (
-          <div className="border border-indigo-200 rounded-xl overflow-hidden">
-            <div className="flex items-center gap-3 px-4 py-3 bg-indigo-50 cursor-pointer"
-              onClick={() => set('is_dynamic', !form.is_dynamic)}>
-              <input type="checkbox" className="w-4 h-4 rounded text-indigo-500"
-                checked={form.is_dynamic} onChange={e => set('is_dynamic', e.target.checked)}
-                onClick={e => e.stopPropagation()} />
-              <div className="flex-1">
-                <p className="text-sm font-semibold text-indigo-800">⚡ Dynamic node — options loaded from API</p>
-                <p className="text-xs text-indigo-500">For doctor appointments, product lists, slot booking — options come from your database at runtime</p>
+            <div className="border border-indigo-200 rounded-xl overflow-hidden">
+              <div className="flex items-center gap-3 px-4 py-3 bg-indigo-50 cursor-pointer"
+                onClick={() => set('is_dynamic', !form.is_dynamic)}>
+                <input type="checkbox" className="w-4 h-4 rounded text-indigo-500"
+                  checked={form.is_dynamic} onChange={e => set('is_dynamic', e.target.checked)}
+                  onClick={e => e.stopPropagation()} />
+                <div className="flex-1">
+                  <p className="text-sm font-semibold text-indigo-800">⚡ Dynamic node — options loaded from API</p>
+                  <p className="text-xs text-indigo-500">For doctor appointments, product lists, slot booking — options come from your database at runtime</p>
+                </div>
               </div>
-            </div>
 
-            {form.is_dynamic && (
-              <div className="p-4 space-y-3 bg-white">
-                <div className="grid grid-cols-4 gap-3">
-                  <div className="col-span-3">
-                    <label className="label text-xs">API endpoint URL *</label>
+              {form.is_dynamic && (
+                <div className="p-4 space-y-3 bg-white">
+                  <div className="grid grid-cols-4 gap-3">
+                    <div className="col-span-3">
+                      <label className="label text-xs">API endpoint URL *</label>
+                      <input className="form-control border w-full p-2 rounded font-mono text-sm"
+                        placeholder="https://api.yourdomain.com/doctors/available"
+                        value={form.dynamic_api_url}
+                        onChange={e => set('dynamic_api_url', e.target.value)} />
+                    </div>
+                    <div>
+                      <label className="label text-xs">Method</label>
+                      <select className="form-control border w-full p-2 rounded" value={form.dynamic_api_method}
+                        onChange={e => set('dynamic_api_method', e.target.value)}>
+                        <option value="GET">GET</option>
+                        <option value="POST">POST</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-3">
+                    <div>
+                      <label className="label text-xs">Label field (shown to user)</label>
+                      <input className="form-control border w-full p-2 rounded font-mono text-sm" placeholder="name"
+                        value={form.dynamic_label_field} onChange={e => set('dynamic_label_field', e.target.value)} />
+                    </div>
+                    <div>
+                      <label className="label text-xs">Value field (reply_id)</label>
+                      <input className="form-control border w-full p-2 rounded font-mono text-sm" placeholder="id"
+                        value={form.dynamic_value_field} onChange={e => set('dynamic_value_field', e.target.value)} />
+                    </div>
+                    <div>
+                      <label className="label text-xs">Description field (optional)</label>
+                      <input className="form-control border w-full p-2 rounded font-mono text-sm" placeholder="specialization"
+                        value={form.dynamic_description_field} onChange={e => set('dynamic_description_field', e.target.value)} />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="label text-xs">Image field (optional)</label>
+                      <input className="form-control border w-full p-2 rounded font-mono text-sm" placeholder="photo_url"
+                        value={form.dynamic_image_field} onChange={e => set('dynamic_image_field', e.target.value)} />
+                    </div>
+                    <div>
+                      <label className="label text-xs">Subtitle field (optional)</label>
+                      <input className="form-control border w-full p-2 rounded font-mono text-sm" placeholder="clinic_name"
+                        value={form.dynamic_subtitle_field} onChange={e => set('dynamic_subtitle_field', e.target.value)} />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="label text-xs">Custom headers (JSON, optional)</label>
                     <input className="form-control border w-full p-2 rounded font-mono text-sm"
-                      placeholder="https://api.yourdomain.com/doctors/available"
-                      value={form.dynamic_api_url}
-                      onChange={e => set('dynamic_api_url', e.target.value)} />
+                      placeholder='{"Authorization": "Bearer YOUR_TOKEN"}'
+                      value={form.dynamic_api_headers} onChange={e => set('dynamic_api_headers', e.target.value)} />
                   </div>
-                  <div>
-                    <label className="label text-xs">Method</label>
-                    <select className="form-control border w-full p-2 rounded" value={form.dynamic_api_method}
-                      onChange={e => set('dynamic_api_method', e.target.value)}>
-                      <option value="GET">GET</option>
-                      <option value="POST">POST</option>
-                    </select>
-                  </div>
-                </div>
 
-                <div className="grid grid-cols-3 gap-3">
-                  <div>
-                    <label className="label text-xs">Label field (shown to user)</label>
-                    <input className="form-control border w-full p-2 rounded font-mono text-sm" placeholder="name"
-                      value={form.dynamic_label_field} onChange={e => set('dynamic_label_field', e.target.value)} />
-                  </div>
-                  <div>
-                    <label className="label text-xs">Value field (reply_id)</label>
-                    <input className="form-control border w-full p-2 rounded font-mono text-sm" placeholder="id"
-                      value={form.dynamic_value_field} onChange={e => set('dynamic_value_field', e.target.value)} />
-                  </div>
-                  <div>
-                    <label className="label text-xs">Description field (optional)</label>
-                    <input className="form-control border w-full p-2 rounded font-mono text-sm" placeholder="specialization"
-                      value={form.dynamic_description_field} onChange={e => set('dynamic_description_field', e.target.value)} />
+                  <div className="bg-indigo-50 rounded-lg p-3 text-xs text-indigo-700 space-y-1">
+                    <p className="font-semibold">How dynamic nodes work:</p>
+                    <p>When a customer reaches this node, the platform calls your API URL, gets the response array, and uses <span className="font-mono bg-indigo-100 px-1 rounded">{form.dynamic_label_field}</span> as option text and <span className="font-mono bg-indigo-100 px-1 rounded">{form.dynamic_value_field}</span> as the reply_id.</p>
+                    <p className="text-indigo-500">Your API must return: <span className="font-mono bg-indigo-100 px-1 rounded">[{`{"${form.dynamic_label_field}": "Dr. Rahul", "${form.dynamic_value_field}": "doc_123"}`}]</span></p>
+                    {form.dynamic_image_field && (
+                      <p className="text-indigo-500">⚠️ WhatsApp list/button messages can't show an image per row — when an image field is set, each option is sent as a separate photo message first, followed by the picker.</p>
+                    )}
+                    <p className="text-indigo-400">If the API fails or returns nothing, the customer gets a friendly fallback message instead of a dead end.</p>
                   </div>
                 </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="label text-xs">Image field (optional)</label>
-                    <input className="form-control border w-full p-2 rounded font-mono text-sm" placeholder="photo_url"
-                      value={form.dynamic_image_field} onChange={e => set('dynamic_image_field', e.target.value)} />
-                  </div>
-                  <div>
-                    <label className="label text-xs">Subtitle field (optional)</label>
-                    <input className="form-control border w-full p-2 rounded font-mono text-sm" placeholder="clinic_name"
-                      value={form.dynamic_subtitle_field} onChange={e => set('dynamic_subtitle_field', e.target.value)} />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="label text-xs">Custom headers (JSON, optional)</label>
-                  <input className="form-control border w-full p-2 rounded font-mono text-sm"
-                    placeholder='{"Authorization": "Bearer YOUR_TOKEN"}'
-                    value={form.dynamic_api_headers} onChange={e => set('dynamic_api_headers', e.target.value)} />
-                </div>
-
-                <div className="bg-indigo-50 rounded-lg p-3 text-xs text-indigo-700 space-y-1">
-                  <p className="font-semibold">How dynamic nodes work:</p>
-                  <p>When a customer reaches this node, the platform calls your API URL, gets the response array, and uses <span className="font-mono bg-indigo-100 px-1 rounded">{form.dynamic_label_field}</span> as option text and <span className="font-mono bg-indigo-100 px-1 rounded">{form.dynamic_value_field}</span> as the reply_id.</p>
-                  <p className="text-indigo-500">Your API must return: <span className="font-mono bg-indigo-100 px-1 rounded">[{`{"${form.dynamic_label_field}": "Dr. Rahul", "${form.dynamic_value_field}": "doc_123"}`}]</span></p>
-                  {form.dynamic_image_field && (
-                    <p className="text-indigo-500">⚠️ WhatsApp list/button messages can't show an image per row — when an image field is set, each option is sent as a separate photo message first, followed by the picker.</p>
-                  )}
-                  <p className="text-indigo-400">If the API fails or returns nothing, the customer gets a friendly fallback message instead of a dead end.</p>
-                </div>
-              </div>
-            )}
-          </div>
+              )}
+            </div>
           )}
 
         </div>
