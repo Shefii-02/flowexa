@@ -285,6 +285,7 @@ export const templateApi = {
   update: (id: number, d: Record<string, unknown>) => api.put(`/templates/${id}`, d),
   delete: (id: number) => api.delete(`/templates/${id}`),
   sync: (id: number) => api.post(`/templates/${id}/sync`),
+  syncSingle: (id: number) => api.post(`/templates/${id}/sync`),
   submit: (id: number) => api.post(`/templates/${id}/submit`),
   syncFromMeta: (d?: { template_id?: string; language?: string }) =>
     api.post('/templates/sync-from-meta', d),
@@ -305,6 +306,78 @@ export const templateApi = {
   deleteButtonMedia: (id: number, buttonId: number) => api.delete(`/templates/${id}/buttons/${buttonId}/delete-media`),
 }
 
+
+export const conversationApi = {
+  // GET /conversations — inbox list, most recently active first.
+  // filter: mine=1 (only conversations assigned to me), unassigned=1 (only unclaimed).
+  list: (params?: { status?: string; mine?: number | boolean; unassigned?: number | boolean; page?: number; per_page?: number }) =>
+    api.get('/conversations', { params }),
+
+  // GET /conversations/{id}/messages — full thread, oldest first. Marks the thread read.
+  messages: (id: number) =>
+    api.get(`/conversations/${id}/messages`),
+
+  // POST /conversations/{id}/claim — atomic first-come-first-served assignment.
+  // Returns 409 if someone else already claimed it (caller should surface that message).
+  claim: (id: number) =>
+    api.post(`/conversations/${id}/claim`),
+
+  // POST /conversations/{id}/release — give an assigned conversation back to the unassigned pool.
+  release: (id: number) =>
+    api.post(`/conversations/${id}/release`),
+
+  // POST /conversations/{id}/messages — send a reply. Backend enforces who's allowed
+  // to reply (assigned agent, or admin/team_leader override) — a 403 here means
+  // permission was denied server-side, not just a UI restriction.
+  send: (id: number, payload: { body: string }) =>
+    api.post(`/conversations/${id}/messages`, payload),
+}
+
+export const surveyFormApi = {
+  // GET /survey-forms — list forms, optionally filtered by name search
+  list: (params?: { search?: string; page?: number; per_page?: number }) =>
+    api.get('/survey-forms', { params }),
+
+  // GET /survey-forms/{id}
+  show: (id: number) =>
+    api.get(`/survey-forms/${id}`),
+
+  // POST /survey-forms
+  create: (payload: {
+    name: string
+    description?: string
+    is_active?: boolean
+    fields: {
+      key: string
+      question_text: string
+      type: 'text' | 'number' | 'choice'
+      options?: string[]
+      required?: boolean
+    }[]
+  }) => api.post('/survey-forms', payload),
+
+  // PUT /survey-forms/{id}
+  update: (id: number, payload: {
+    name: string
+    description?: string
+    is_active?: boolean
+    fields: {
+      key: string
+      question_text: string
+      type: 'text' | 'number' | 'choice'
+      options?: string[]
+      required?: boolean
+    }[]
+  }) => api.put(`/survey-forms/${id}`, payload),
+
+  // DELETE /survey-forms/{id}
+  delete: (id: number) =>
+    api.delete(`/survey-forms/${id}`),
+
+  // GET /survey-forms/{id}/responses — submitted answers for this form
+  responses: (id: number, params?: { status?: string; page?: number; per_page?: number }) =>
+    api.get(`/survey-forms/${id}/responses`, { params }),
+}
 
 
 // ── Plan Purchase ─────────────────────────────────────────────────────────

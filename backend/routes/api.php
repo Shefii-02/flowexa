@@ -12,6 +12,7 @@ use App\Modules\Campaign\Http\Controllers\CampaignContactController;
 use App\Modules\Campaign\Http\Controllers\CampaignController;
 use App\Modules\Contact\Http\Controllers\ContactController;
 use App\Modules\Contact\Http\Controllers\LabelController;
+use App\Modules\Conversation\Http\Controllers\ConversationController;
 use App\Modules\Flow\Http\Controllers\FlowAnalyticsController;
 use App\Modules\Flow\Http\Controllers\FlowBuilderController;
 use App\Modules\Flow\Http\Controllers\FlowController;
@@ -44,7 +45,7 @@ use App\Modules\MetaAds\Http\Controllers\{
     MetaMediaController,
     MetaWebhookController,
 };
-
+use App\Modules\Survey\Http\Controllers\SurveyFormController;
 
 /*
 |--------------------------------------------------------------------------
@@ -244,6 +245,23 @@ Route::prefix('v1')->group(function () {
             Route::delete('/{category}', [LeadCategoryController::class, 'destroy'])->name('destroy');
         });
 
+        Route::get('conversations', [ConversationController::class, 'index']);
+        Route::get('conversations/{id}/messages', [ConversationController::class, 'messages']);
+        Route::post('conversations/{id}/claim', [ConversationController::class, 'claim']);
+        Route::post('conversations/{id}/release', [ConversationController::class, 'release']);
+        Route::post('conversations/{id}/messages', [ConversationController::class, 'send']);
+
+        Route::prefix('survey-forms')->group(function () {
+            Route::get('/',                 [SurveyFormController::class, 'index']);
+            Route::post('/',                [SurveyFormController::class, 'store']);
+            Route::get('/{id}',             [SurveyFormController::class, 'show']);
+            Route::put('/{id}',             [SurveyFormController::class, 'update']);
+            Route::delete('/{id}',          [SurveyFormController::class, 'destroy']);
+            Route::get('/{id}/responses',   [SurveyFormController::class, 'responses']);
+        });
+
+
+
         Route::prefix('leads')->name('leads.')->group(function () {
 
             Route::get('/',           [LeadController::class, 'index'])->name('index');
@@ -371,26 +389,26 @@ Route::prefix('v1')->group(function () {
         });
 
 
-        Route::prefix('flow')->name('flow.')->group(function () {
+        // Route::prefix('flow')->name('flow.')->group(function () {
 
-            // ── Read ─────────────────────────────────────────────────────────────
-            Route::middleware('permission:flow.view')->group(function () {
-                Route::get('/',            [FlowController::class, 'tree'])->name('tree');
-                Route::get('/flat',        [FlowController::class, 'flat'])->name('flat');
-                Route::get('/{node}',      [FlowController::class, 'show'])->name('show');
-                Route::get('/analytics',   [FlowAnalyticsController::class, 'index'])->name('analytics');
-            });
+        //     // ── Read ─────────────────────────────────────────────────────────────
+        //     Route::middleware('permission:flow.view')->group(function () {
+        //         Route::get('/',            [FlowController::class, 'tree'])->name('tree');
+        //         Route::get('/flat',        [FlowController::class, 'flat'])->name('flat');
+        //         Route::get('/{node}',      [FlowController::class, 'show'])->name('show');
+        //         Route::get('/analytics',   [FlowAnalyticsController::class, 'index'])->name('analytics');
+        //     });
 
-            // ── Manage ───────────────────────────────────────────────────────────
-            Route::middleware('permission:flow.manage')->group(function () {
-                Route::post('/',              [FlowController::class, 'store'])->name('store');
-                Route::put('/{node}',         [FlowController::class, 'update'])->name('update');
-                Route::delete('/{node}',      [FlowController::class, 'destroy'])->name('destroy');
-                Route::post('/reorder',       [FlowController::class, 'reorder'])->name('reorder');
-                Route::patch('/{node}/toggle', [FlowController::class, 'toggle'])->name('toggle');
-                Route::post('/duplicate/{node}', [FlowController::class, 'duplicate'])->name('duplicate');
-            });
-        });
+        //     // ── Manage ───────────────────────────────────────────────────────────
+        //     Route::middleware('permission:flow.manage')->group(function () {
+        //         Route::post('/',              [FlowController::class, 'store'])->name('store');
+        //         Route::put('/{node}',         [FlowController::class, 'update'])->name('update');
+        //         Route::delete('/{node}',      [FlowController::class, 'destroy'])->name('destroy');
+        //         Route::post('/reorder',       [FlowController::class, 'reorder'])->name('reorder');
+        //         Route::patch('/{node}/toggle', [FlowController::class, 'toggle'])->name('toggle');
+        //         Route::post('/duplicate/{node}', [FlowController::class, 'duplicate'])->name('duplicate');
+        //     });
+        // });
 
         Route::prefix('wallet')->name('wallet.')->group(function () {
 

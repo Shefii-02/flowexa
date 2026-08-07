@@ -44,7 +44,9 @@ return new class extends Migration
             $table->timestamp('status_updated_at')->nullable();
             $table->timestamps();
 
+
             $table->index(['conversation_id', 'created_at']);
+
         });
     }
 
