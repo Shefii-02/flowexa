@@ -342,7 +342,7 @@ class WebhookService
 
                     'flow_action_payload' => [
                         'screen' => 'SURVEY',
-                        'data'   => new \stdClass(),
+                        // 'data'   => new \stdClass(),
                     ],
                 ],
             ],
