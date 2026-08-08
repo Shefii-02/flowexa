@@ -305,31 +305,52 @@ class WebhookService
     // Send the survey as a native WhatsApp Flow — one interactive message that opens
     // a bottom-sheet form with all fields on one screen. No data-exchange endpoint
     // needed here since the form is static (navigate mode, terminal screen).
-    private function sendSurveyFlowMessage(Company $company, string $phone, SurveyForm $form): void
-    {
-        Log::info("Bottom sheet opening");
-        $this->dispatch($company, [
-            'messaging_product' => 'whatsapp',
-            'to'                => $phone,
-            'type'              => 'interactive',
-            'interactive'       => [
-                'type' => 'flow',
-                'body' => ['text' => $form->description ?: "Please fill out this quick form: {$form->name}"],
-                'action' => [
-                    'name'       => 'flow',
-                    'parameters' => [
-                        'flow_message_version' => '3',
-                        'flow_token'            => 'survey_' . $form->id . '_' . now()->timestamp, // opaque token, not decoded — matching happens via FlowSession below
-                        'flow_id'               => $form->flow_id,
-                        'flow_cta'              => 'Start',
-                        'flow_action'           => 'navigate',
-                        'flow_action_payload'   => ['screen' => 'SURVEY', 'data' => []],
+   private function sendSurveyFlowMessage(
+    Company $company,
+    string $phone,
+    SurveyForm $form
+): void {
+    Log::info("Bottom sheet opening");
+
+    $this->dispatch($company, [
+        'messaging_product' => 'whatsapp',
+        'to'                => $phone,
+        'type'              => 'interactive',
+
+        'interactive' => [
+            'type' => 'flow',
+
+            'body' => [
+                'text' => $form->description
+                    ?: "Please fill out this quick form: {$form->name}",
+            ],
+
+            'action' => [
+                'name' => 'flow',
+
+                'parameters' => [
+                    'flow_message_version' => '3',
+
+                    'flow_token' =>
+                        'survey_' . $form->id . '_' . now()->timestamp,
+
+                    'flow_id' => $form->flow_id,
+
+                    'flow_cta' => 'Start',
+
+                    'flow_action' => 'navigate',
+
+                    'flow_action_payload' => [
+                        'screen' => 'SURVEY',
+                        'data'   => new \stdClass(),
                     ],
                 ],
             ],
-        ]);
-         Log::info("Bottom sheet done");
-    }
+        ],
+    ]);
+
+    Log::info("Bottom sheet done");
+}
 
     // Captures a native Flow submission (one message, all answers at once) instead of
     // stepping through fields one by one. Returns true if this was a survey submission
