@@ -35,10 +35,11 @@ class WhatsAppFlowPublisher
     // subsequent publishes reuse the same flow_id and just re-upload + re-publish).
     private function createFlowShell(Company $company, string $token, SurveyForm $form): string
     {
+        $now = now();
         $response = Http::withToken($token)
             ->timeout(15)
             ->post("https://graph.facebook.com/v21.0/{$company->wa_business_id}/flows", [
-                'name'       => "survey_{now()}_" . str()->slug($form->name),
+                'name'       => "survey_{$now}_" . str()->slug($form->name),
                 'categories' => ['SURVEY'], // Meta's closest built-in category for a form/questionnaire
             ]);
 
