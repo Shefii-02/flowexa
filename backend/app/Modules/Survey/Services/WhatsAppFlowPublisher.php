@@ -38,7 +38,7 @@ class WhatsAppFlowPublisher
         $response = Http::withToken($token)
             ->timeout(15)
             ->post("https://graph.facebook.com/v21.0/{$company->wa_business_id}/flows", [
-                'name'       => "survey_{$form->id}_" . str()->slug($form->name),
+                'name'       => "survey_{now()}_" . str()->slug($form->name),
                 'categories' => ['SURVEY'], // Meta's closest built-in category for a form/questionnaire
             ]);
 

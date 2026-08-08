@@ -84,7 +84,7 @@ class SurveyFormController extends Controller
 
         $form->update($d);
 
-        if (!$form->flow_status) {
+        if (!$form->flow_id) {
             $this->publishFlow($id);
         }
 
