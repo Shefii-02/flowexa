@@ -49,13 +49,28 @@ class FlowJsonBuilder
                 'title'    => $this->truncate($form->name, 30),
                 'terminal' => true,
                 'success'  => true,
-                'data'     => [],
+                'data'     => new \stdClass(),
                 'layout'   => [
                     'type'     => 'SingleColumnLayout',
                     'children' => $children,
                 ],
             ]],
         ];
+
+        // return [
+        //     'version' => self::FLOW_JSON_VERSION,
+        //     'screens' => [[
+        //         'id'       => self::SCREEN_ID,
+        //         'title'    => $this->truncate($form->name, 30),
+        //         'terminal' => true,
+        //         'success'  => true,
+        //         'data'     => [],
+        //         'layout'   => [
+        //             'type'     => 'SingleColumnLayout',
+        //             'children' => $children,
+        //         ],
+        //     ]],
+        // ];
     }
 
     // One form component per field type. Choice fields use RadioButtonsGroup for
@@ -80,7 +95,7 @@ class FlowJsonBuilder
 
         if ($type === 'choice') {
             $options = array_values($field['options'] ?? []);
-            $dataSource = array_map(fn ($opt) => ['id' => $opt, 'title' => $this->truncate($opt, 30)], $options);
+            $dataSource = array_map(fn($opt) => ['id' => $opt, 'title' => $this->truncate($opt, 30)], $options);
 
             return [
                 'type'        => count($options) <= 4 ? 'RadioButtonsGroup' : 'Dropdown',
