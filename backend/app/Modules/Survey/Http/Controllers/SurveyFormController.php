@@ -16,7 +16,7 @@ class SurveyFormController extends Controller
     public function index(Request $request): JsonResponse
     {
         $forms = SurveyForm::where('company_id', auth()->user()->company_id)
-            ->when($request->search, fn ($q, $s) => $q->where('name', 'like', "%{$s}%"))
+            ->when($request->search, fn($q, $s) => $q->where('name', 'like', "%{$s}%"))
             ->withCount('responses')
             ->latest()
             ->paginate($request->integer('per_page', 20));
@@ -63,6 +63,8 @@ class SurveyFormController extends Controller
             'is_active'   => $d['is_active'] ?? true,
         ]);
 
+        $this->publishFlow($form->id);
+
         return response()->json(['form' => $form], 201);
     }
 
@@ -82,6 +84,8 @@ class SurveyFormController extends Controller
 
         $form->update($d);
 
+        $this->publishFlow($id);
+
         return response()->json(['form' => $form->fresh(), 'needs_republish' => $needsRepublish]);
     }
 
@@ -99,7 +103,7 @@ class SurveyFormController extends Controller
 
         $responses = $form->responses()
             ->with('contact:id,name,phone')
-            ->when($request->status, fn ($q, $s) => $q->where('status', $s))
+            ->when($request->status, fn($q, $s) => $q->where('status', $s))
             ->latest()
             ->paginate($request->integer('per_page', 30));
 
