@@ -220,11 +220,14 @@ class WebhookService
     // Begin a survey: create the response row, link it to the session, ask question 1.
     private function startSurvey(Company $company, Contact $contact, string $phone, FlowNode $node): void
     {
+        Log::info("Survey Started");
+
         $form = SurveyForm::where('id', $node->survey_form_id)
             ->where('company_id', $company->id)
             ->where('is_active', true)
             ->first();
-
+        Log::info("Form Getted");
+        Log::info($form);
         if (!$form || empty($form->fields)) {
             Log::warning("Survey node {$node->id} has no usable survey_form — falling back to fallback message", ['company' => $company->id]);
             $this->sendFallbackMessage($company, $phone);
@@ -257,7 +260,10 @@ class WebhookService
         // Native bottom-sheet Flow (published on Meta) — one message, one screen with
         // all fields, single nfm_reply on submit. Preferred whenever it's available.
         if ($form->isNativeFlowReady()) {
+            Log::info("Botton Form Getted");
+
             $this->sendSurveyFlowMessage($company, $phone, $form);
+                    Log::info("Botton Form Done");
             return;
         }
 
@@ -301,6 +307,7 @@ class WebhookService
     // needed here since the form is static (navigate mode, terminal screen).
     private function sendSurveyFlowMessage(Company $company, string $phone, SurveyForm $form): void
     {
+        Log::info("Bottom sheet opening");
         $this->dispatch($company, [
             'messaging_product' => 'whatsapp',
             'to'                => $phone,
@@ -321,6 +328,7 @@ class WebhookService
                 ],
             ],
         ]);
+         Log::info("Bottom sheet done");
     }
 
     // Captures a native Flow submission (one message, all answers at once) instead of
@@ -687,6 +695,7 @@ class WebhookService
 
         // ── Special node types short-circuit the normal response-building path ──
         if ($node->type === 'survey' && $node->survey_form_id) {
+            Log::info("Survey Starting");
             $this->startSurvey($company, $contact, $dto->phone, $node);
             return;
         }
