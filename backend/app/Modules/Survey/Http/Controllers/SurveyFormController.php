@@ -84,7 +84,9 @@ class SurveyFormController extends Controller
 
         $form->update($d);
 
-        $this->publishFlow($id);
+        if (!$form->flow_status) {
+            $this->publishFlow($id);
+        }
 
         return response()->json(['form' => $form->fresh(), 'needs_republish' => $needsRepublish]);
     }
