@@ -49,7 +49,7 @@ class FlowJsonBuilder
                 'title'    => $this->truncate($form->name, 30),
                 'terminal' => true,
                 'success'  => true,
-                'data'     => new \stdClass(),
+                // 'data'     => new \stdClass(),
                 'layout'   => [
                     'type'     => 'SingleColumnLayout',
                     'children' => $children,
