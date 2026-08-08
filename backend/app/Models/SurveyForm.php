@@ -17,6 +17,8 @@ class SurveyForm extends Model
         'description',
         'fields',
         'is_active',
+        'flow_id',      // Meta's Flow ID once published as a native WhatsApp Flow
+        'flow_status',  // draft | published | deprecated — null until first publish
     ];
 
     protected $casts = [
@@ -35,15 +37,20 @@ class SurveyForm extends Model
         return $this->hasMany(SurveyFormResponse::class);
     }
 
-    // Flow nodes of type 'survey' that use this form
     public function flowNodes(): HasMany
     {
         return $this->hasMany(FlowNode::class, 'survey_form_id');
     }
 
-    // Convenience: look up a single field definition by its key
     public function field(string $key): ?array
     {
         return collect($this->fields ?? [])->firstWhere('key', $key);
+    }
+
+    // Whether this form is available to send as a native bottom-sheet Flow.
+    // Falls back to the sequential text-message survey when false.
+    public function isNativeFlowReady(): bool
+    {
+        return !empty($this->flow_id) && $this->flow_status === 'published';
     }
 }

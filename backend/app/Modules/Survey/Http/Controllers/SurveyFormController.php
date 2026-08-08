@@ -1,14 +1,18 @@
 <?php
+
 namespace App\Modules\Survey\Http\Controllers;
 
 use App\Http\Controllers\Controller;
 use App\Models\SurveyForm;
+use App\Modules\Survey\Services\WhatsAppFlowPublisher;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 
 class SurveyFormController extends Controller
 {
+    public function __construct(private readonly WhatsAppFlowPublisher $flowPublisher) {}
+
     public function index(Request $request): JsonResponse
     {
         $forms = SurveyForm::where('company_id', auth()->user()->company_id)
@@ -46,7 +50,6 @@ class SurveyFormController extends Controller
     {
         $d = $request->validate($this->rules());
 
-        // field keys must be unique within the form — collisions would overwrite answers
         $keys = array_column($d['fields'], 'key');
         if (count($keys) !== count(array_unique($keys))) {
             return response()->json(['message' => 'Field keys must be unique within the form.'], 422);
@@ -73,8 +76,13 @@ class SurveyFormController extends Controller
             return response()->json(['message' => 'Field keys must be unique within the form.'], 422);
         }
 
+        // Editing fields after the form has been published as a native Flow doesn't
+        // retroactively update Meta's copy — flag it so the UI can prompt a re-publish.
+        $needsRepublish = $form->flow_id && $form->flow_status === 'published' && $d['fields'] !== $form->fields;
+
         $form->update($d);
-        return response()->json(['form' => $form->fresh()]);
+
+        return response()->json(['form' => $form->fresh(), 'needs_republish' => $needsRepublish]);
     }
 
     public function destroy(int $id): JsonResponse
@@ -96,5 +104,29 @@ class SurveyFormController extends Controller
             ->paginate($request->integer('per_page', 30));
 
         return response()->json(['responses' => $responses->items(), 'total' => $responses->total()]);
+    }
+
+    // POST /survey-forms/{id}/publish-flow — build the Flow JSON from this form's
+    // fields and register/publish it as a native WhatsApp Flow (bottom-sheet form).
+    public function publishFlow(int $id): JsonResponse
+    {
+        $form = SurveyForm::where('id', $id)->where('company_id', auth()->user()->company_id)->firstOrFail();
+        $company = auth()->user()->company;
+
+        if (empty($form->fields)) {
+            return response()->json(['message' => 'Add at least one question before publishing.'], 422);
+        }
+
+        try {
+            $flowId = $this->flowPublisher->publish($company, $form);
+        } catch (\RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        return response()->json([
+            'message'  => 'Published as a native WhatsApp Flow.',
+            'flow_id'  => $flowId,
+            'form'     => $form->fresh(),
+        ]);
     }
 }

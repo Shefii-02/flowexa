@@ -1,20 +1,6 @@
 <?php
 namespace App\Modules\Webhook\Services;
 
-// use App\Models\Company;
-// use App\Models\Contact;
-// use App\Models\FlowBuilder;
-// use App\Models\FlowNode;
-// use App\Models\FlowSession;
-// use App\Models\MessageBlacklist;
-// use App\Models\MessageLog;
-// use App\Modules\Lead\DTOs\CreateLeadDTO;
-// use App\Modules\Lead\Repositories\Interfaces\LeadRepositoryInterface;
-// use App\Modules\Webhook\DTOs\InboundMessageDTO;
-// use App\Modules\Webhook\DTOs\StatusUpdateDTO;
-// use Illuminate\Support\Facades\Http;
-// use Illuminate\Support\Facades\Log;
-
 use App\Models\Company;
 use App\Models\Contact;
 use App\Models\FlowBuilder;
@@ -123,9 +109,17 @@ class WebhookService
             return;
         }
 
-        // 6. Active survey capture — checked BEFORE keyword/greeting/menu matching, so a
-        // customer's answer (which might literally be "hi", "1", "yes", etc.) is captured
-        // as survey data instead of being mistaken for a bot command.
+        // 6a. Native WhatsApp Flow submission — customer tapped Submit on a bottom-sheet
+        // form. This arrives as ONE message with all answers, not a stepped conversation,
+        // so it's checked before the sequential-survey-answer path below.
+        if ($dto->type === 'interactive' && ($dto->interactiveType ?? null) === 'nfm_reply') {
+            if ($this->handleNfmReply($company, $contact, $dto)) return;
+        }
+
+        // 6b. Active survey capture (sequential text-message mode) — checked BEFORE
+        // keyword/greeting/menu matching, so a customer's answer (which might literally
+        // be "hi", "1", "yes", etc.) is captured as survey data instead of being
+        // mistaken for a bot command.
         if ($dto->type === 'text' && $this->handleSurveyAnswerIfActive($company, $contact, $dto)) {
             return;
         }
@@ -260,6 +254,14 @@ class WebhookService
             ]
         );
 
+        // Native bottom-sheet Flow (published on Meta) — one message, one screen with
+        // all fields, single nfm_reply on submit. Preferred whenever it's available.
+        if ($form->isNativeFlowReady()) {
+            $this->sendSurveyFlowMessage($company, $phone, $form);
+            return;
+        }
+
+        // Fallback: sequential text-message survey (no Flow published for this form yet)
         if ($form->description) {
             $this->sendText($company, $phone, $form->description);
             usleep(150000);
@@ -294,8 +296,91 @@ class WebhookService
         $this->sendText($company, $phone, $questionText);
     }
 
-    // Called from handleInbound BEFORE any keyword/menu routing. Returns true if this
-    // message was consumed as a survey answer (caller should stop processing).
+    // Send the survey as a native WhatsApp Flow — one interactive message that opens
+    // a bottom-sheet form with all fields on one screen. No data-exchange endpoint
+    // needed here since the form is static (navigate mode, terminal screen).
+    private function sendSurveyFlowMessage(Company $company, string $phone, SurveyForm $form): void
+    {
+        $this->dispatch($company, [
+            'messaging_product' => 'whatsapp',
+            'to'                => $phone,
+            'type'              => 'interactive',
+            'interactive'       => [
+                'type' => 'flow',
+                'body' => ['text' => $form->description ?: "Please fill out this quick form: {$form->name}"],
+                'action' => [
+                    'name'       => 'flow',
+                    'parameters' => [
+                        'flow_message_version' => '3',
+                        'flow_token'            => 'survey_' . $form->id . '_' . now()->timestamp, // opaque token, not decoded — matching happens via FlowSession below
+                        'flow_id'               => $form->flow_id,
+                        'flow_cta'              => 'Start',
+                        'flow_action'           => 'navigate',
+                        'flow_action_payload'   => ['screen' => 'SURVEY', 'data' => []],
+                    ],
+                ],
+            ],
+        ]);
+    }
+
+    // Captures a native Flow submission (one message, all answers at once) instead of
+    // stepping through fields one by one. Returns true if this was a survey submission
+    // (caller should stop further routing); false if there's no matching survey in
+    // progress (e.g. a Flow message unrelated to a survey — safe to fall through).
+    private function handleNfmReply(Company $company, Contact $contact, InboundMessageDTO $dto): bool
+    {
+        $session = FlowSession::where('company_id', $company->id)
+            ->where('phone', $dto->phone)
+            ->where('expires_at', '>', now())
+            ->whereNotNull('active_survey_response_id')
+            ->first();
+
+        if (!$session) return false;
+
+        $response = SurveyFormResponse::where('id', $session->active_survey_response_id)
+            ->where('status', 'in_progress')
+            ->first();
+
+        if (!$response) {
+            $session->update(['active_survey_response_id' => null]);
+            return false;
+        }
+
+        $form = SurveyForm::find($response->survey_form_id);
+        if (!$form) {
+            $response->update(['status' => 'abandoned']);
+            $session->update(['active_survey_response_id' => null]);
+            return false;
+        }
+
+        // The raw nfm_reply payload's response_json is a JSON-encoded string containing
+        // {field_key: answer, ...} for every field on the screen — decode it directly
+        // rather than reconstructing it field-by-field like the sequential path does.
+        $raw = $dto->rawPayload['interactive']['nfm_reply']['response_json'] ?? null;
+        $answers = $raw ? (json_decode($raw, true) ?: []) : [];
+
+        if (empty($answers)) {
+            Log::warning('[survey-flow] nfm_reply had no parseable response_json', [
+                'company' => $company->id,
+                'form'    => $form->id,
+                'raw'     => $dto->rawPayload['interactive']['nfm_reply'] ?? null,
+            ]);
+        }
+
+        $response->update([
+            'answers'             => $answers,
+            'current_field_index' => count($form->fields ?? []),
+        ]);
+
+        $this->finishSurvey($company, $contact, $response, $form);
+        $session->update(['active_survey_response_id' => null]);
+
+        return true;
+    }
+
+    // Called from handleInbound BEFORE any keyword/menu routing (sequential text-message
+    // mode only — native Flow submissions are handled by handleNfmReply above instead).
+    // Returns true if this message was consumed as a survey answer.
     private function handleSurveyAnswerIfActive(Company $company, Contact $contact, InboundMessageDTO $dto): bool
     {
         $session = FlowSession::where('company_id', $company->id)
