@@ -1,4 +1,5 @@
 <?php
+
 namespace App\Modules\Flow\Http\Controllers;
 
 use App\Models\FlowBuilder;
@@ -155,7 +156,7 @@ class FlowNodeController extends Controller
             'parent_id'   => ['nullable', 'integer'],
             'title'       => ['required', 'string', 'max:100'],
             'message'     => ['nullable', 'string', 'max:4096'],
-            'type'        => ['required', Rule::in(['text', 'button', 'list', 'image', 'video', 'document', 'audio', 'location','survey','template'])],
+            'type'        => ['required', Rule::in(['text', 'button', 'list', 'image', 'video', 'document', 'audio', 'location', 'survey', 'template'])],
             'reply_id'    => ['required', 'string', 'max:200'],
             ...$this->sharedRules(),
         ]);
@@ -225,7 +226,9 @@ class FlowNodeController extends Controller
         $d = $request->validate([
             'title'    => ['sometimes', 'string', 'max:100'],
             'message'  => ['nullable', 'string', 'max:4096'],
-            'type'     => ['sometimes', Rule::in(['text', 'button', 'list', 'image', 'video', 'document', 'audio', 'location','survey','template'])],
+            'type'     => ['sometimes', Rule::in(['text', 'button', 'list', 'image', 'video', 'document', 'audio', 'location', 'survey', 'template'])],
+            'parent_id'   => ['nullable', 'integer'],
+            'reply_id'    => ['required', 'string', 'max:200'],
             ...$this->sharedRules(),
         ]);
 
