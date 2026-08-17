@@ -25,7 +25,6 @@ class FlowImportExportController extends Controller
             ->orderBy('sort_order')
             ->get();
 
-        // Map DB id → reply_id so parent_ref can be reconstructed on import
         $idToReplyId = $nodes->pluck('reply_id', 'id')->toArray();
 
         $exportNodes = $nodes->map(fn($n) => array_filter([
@@ -57,10 +56,10 @@ class FlowImportExportController extends Controller
         ], fn($v) => !is_null($v)))->values()->toArray();
 
         $payload = [
-            '_exported_at'  => now()->toIso8601String(),
-            '_exported_by'  => auth()->user()->name ?? 'System',
-            '_node_count'   => $nodes->count(),
-            '_version'      => '1.0',
+            '_exported_at' => now()->toIso8601String(),
+            '_exported_by' => auth()->user()->name ?? 'System',
+            '_node_count'  => $nodes->count(),
+            '_version'     => '1.0',
             'builder' => [
                 'name'             => $builder->name,
                 'description'      => $builder->description,
@@ -95,7 +94,6 @@ class FlowImportExportController extends Controller
             'activate' => ['nullable', 'boolean'],
         ]);
 
-        // Parse JSON
         $contents = file_get_contents($request->file('file')->getRealPath());
         $json     = json_decode($contents, true);
 
@@ -105,7 +103,6 @@ class FlowImportExportController extends Controller
             ], 422);
         }
 
-        // Validate top-level structure
         $v = Validator::make($json, [
             'builder.name'         => ['required', 'string', 'max:100'],
             'builder.trigger_type' => ['required', 'in:default,keyword,season'],
@@ -114,7 +111,6 @@ class FlowImportExportController extends Controller
             'nodes.*.reply_id'     => ['required', 'string', 'max:200'],
             'nodes.*.title'        => ['required', 'string'],
             'nodes.*.type'         => ['required', 'in:text,button,list,image,video,document,audio,location'],
-            'nodes.*.message'      => ['nullable', 'string'],
         ]);
 
         if ($v->fails()) {
@@ -124,23 +120,27 @@ class FlowImportExportController extends Controller
             ], 422);
         }
 
+        $cid         = auth()->user()->company_id;
         $nodesData   = $json['nodes'];
         $builderData = $json['builder'];
 
-        // Duplicate reply_id check within the import file itself
+        // ── Duplicate reply_id check within the import file itself ────────
         $replyIds = array_column($nodesData, 'reply_id');
         if (count($replyIds) !== count(array_unique($replyIds))) {
-            $dupes = array_diff_assoc($replyIds, array_unique($replyIds));
+            $dupes = array_values(array_unique(
+                array_diff_assoc($replyIds, array_unique($replyIds))
+            ));
             return response()->json([
-                'message' => 'Duplicate reply_id values in import file: ' . implode(', ', $dupes),
+                'message' => 'Duplicate reply_id inside the import file: ' . implode(', ', $dupes),
             ], 422);
         }
 
-        $cid = auth()->user()->company_id;
+        // ── Resolve reply_id conflicts against existing DB nodes ──────────
+        // ONE suffix applied to ALL nodes in this batch so parent_ref links stay intact
+        [$nodesData, $renamedMap] = $this->resolveReplyIdConflicts($nodesData, $cid);
 
-        $result = DB::transaction(function () use ($cid, $builderData, $nodesData, $request) {
+        $result = DB::transaction(function () use ($cid, $builderData, $nodesData, $renamedMap, $request) {
 
-            // Create the builder (always inactive first)
             $builder = FlowBuilder::create([
                 'company_id'       => $cid,
                 'created_by'       => auth()->id(),
@@ -153,74 +153,136 @@ class FlowImportExportController extends Controller
                 'is_active'        => false,
             ]);
 
-            $refToId  = [];
-            $created  = 0;
-            $skipped  = [];
+            $refToId = [];
+            $created = 0;
+            $skipped = [];
 
-            // Roots first (no parent_ref)
+            // Roots first
             $roots    = array_filter($nodesData, fn($n) => empty($n['parent_ref']));
-            $children = array_filter($nodesData, fn($n) => !empty($n['parent_ref']));
+            $children = array_values(array_filter($nodesData, fn($n) => !empty($n['parent_ref'])));
 
             foreach ($roots as $nodeData) {
-                try {
-                    $node = $this->createNode($cid, $builder->id, $nodeData, null);
-                    $refToId[$nodeData['_ref']] = $node->id;
-                    $created++;
-                } catch (\Exception $e) {
-                    $skipped[] = "[{$nodeData['_ref']}] " . $e->getMessage();
-                }
+                $node = $this->createNode($cid, $builder->id, $nodeData, null);
+                $refToId[$nodeData['_ref']] = $node->id;
+                $created++;
             }
 
-            // BFS for children — max 20 passes handles up to 20 levels deep
-            $remaining = array_values($children);
-            for ($pass = 0; $pass < 20 && !empty($remaining); $pass++) {
+            // BFS children
+            for ($pass = 0; $pass < 20 && !empty($children); $pass++) {
                 $nextRound = [];
-                foreach ($remaining as $nodeData) {
-                    if (!isset($refToId[$nodeData['parent_ref']])) {
+                foreach ($children as $nodeData) {
+                    if (!array_key_exists($nodeData['parent_ref'], $refToId)) {
                         $nextRound[] = $nodeData;
                         continue;
                     }
-                    try {
-                        $node = $this->createNode($cid, $builder->id, $nodeData, $refToId[$nodeData['parent_ref']]);
-                        $refToId[$nodeData['_ref']] = $node->id;
-                        $created++;
-                    } catch (\Exception $e) {
-                        $skipped[] = "[{$nodeData['_ref']}] " . $e->getMessage();
-                    }
+                    $node = $this->createNode($cid, $builder->id, $nodeData, $refToId[$nodeData['parent_ref']]);
+                    $refToId[$nodeData['_ref']] = $node->id;
+                    $created++;
                 }
-                $remaining = $nextRound;
+                $children = $nextRound;
             }
 
-            // Anything still remaining = orphaned (parent_ref never resolved)
-            foreach ($remaining as $n) {
-                $skipped[] = "[{$n['_ref']}] parent_ref '{$n['parent_ref']}' not found";
+            foreach ($children as $n) {
+                $skipped[] = "[{$n['_ref']}] parent_ref '{$n['parent_ref']}' not resolved";
             }
 
-            // Activate if requested
             if ($request->boolean('activate')) {
                 FlowBuilder::where('company_id', $cid)
                     ->where('trigger_type', $builder->trigger_type)
                     ->where('id', '!=', $builder->id)
                     ->update(['is_active' => false]);
-
                 $builder->update(['is_active' => true]);
             }
 
             return [
-                'builder_id' => $builder->id,
-                'name'       => $builder->name,
-                'created'    => $created,
-                'skipped'    => count($skipped),
-                'errors'     => $skipped,
-                'activated'  => $request->boolean('activate'),
+                'builder_id'  => $builder->id,
+                'name'        => $builder->name,
+                'created'     => $created,
+                'skipped'     => count($skipped),
+                'errors'      => $skipped,
+                'activated'   => $request->boolean('activate'),
+                'renamed'     => $renamedMap,   // tells caller which reply_ids were suffixed
+                'suffix_used' => !empty($renamedMap) ? $this->lastSuffix : null,
             ];
         });
 
         return response()->json([
             'message' => "Import complete. {$result['created']} nodes created" .
-                         ($result['skipped'] > 0 ? ", {$result['skipped']} skipped." : '.'),
+                         ($result['skipped']        > 0 ? ", {$result['skipped']} skipped"          : '') .
+                         (!empty($result['renamed']) ? ". {$result['renamed']} reply_id(s) renamed to avoid conflicts" : '') .
+                         '.',
             'result'  => $result,
         ], 201);
+    }
+
+    // ─── Resolve reply_id conflicts ───────────────────────────────────────────
+    // Checks all reply_ids in the batch against existing nodes for this company.
+    // If ANY conflict found → generates ONE suffix and applies it to ALL nodes
+    // in the batch (both reply_id and parent_ref). This keeps the tree intact.
+    //
+    // Suffix format: _{companyId}{unix_timestamp}  e.g. _6_1723000000
+    // Max reply_id length is 200 — suffix is trimmed from the left if needed.
+
+    private string $lastSuffix = '';
+
+    private function resolveReplyIdConflicts(array $nodesData, int $companyId): array
+    {
+        $incomingReplyIds = array_column($nodesData, 'reply_id');
+
+        // Fetch all existing reply_ids for this company in one query
+        $existingReplyIds = FlowNode::where('company_id', $companyId)
+            ->whereIn('reply_id', $incomingReplyIds)
+            ->pluck('reply_id')
+            ->toArray();
+
+        // No conflict at all — return unchanged
+        if (empty($existingReplyIds)) {
+            return [$nodesData, 0];
+        }
+
+        // Generate ONE suffix for the entire batch
+        $suffix          = '_' . $companyId . '_' . time();
+        $this->lastSuffix = $suffix;
+        $maxLen           = 200;
+
+        // Build a map: old reply_id → new reply_id (for logging)
+        $renamedCount = 0;
+
+        // Apply suffix to EVERY node's reply_id and parent_ref
+        // (apply to ALL, not just conflicting ones, so parent-child refs stay consistent)
+        $updatedNodes = array_map(function (array $node) use ($suffix, $maxLen, &$renamedCount, $existingReplyIds) {
+            $oldReplyId    = $node['reply_id'];
+            $newReplyId    = $this->applySuffix($oldReplyId, $suffix, $maxLen);
+            $node['reply_id'] = $newReplyId;
+
+            // _ref is what children use as parent_ref — must match new reply_id
+            $node['_ref'] = $newReplyId;
+
+            // Update parent_ref to point to the new suffixed _ref
+            if (!empty($node['parent_ref'])) {
+                $node['parent_ref'] = $this->applySuffix($node['parent_ref'], $suffix, $maxLen);
+            }
+
+            if (in_array($oldReplyId, $existingReplyIds)) {
+                $renamedCount++;
+            }
+
+            return $node;
+        }, $nodesData);
+
+        return [$updatedNodes, $renamedCount];
+    }
+
+    // ─── Apply suffix, trimming from left if reply_id would exceed max length ─
+    private function applySuffix(string $replyId, string $suffix, int $maxLen): string
+    {
+        $combined = $replyId . $suffix;
+        if (mb_strlen($combined) <= $maxLen) {
+            return $combined;
+        }
+        // Trim from left so suffix is always preserved at the end
+        $trimmed = mb_substr($replyId, 0, $maxLen - mb_strlen($suffix));
+        return $trimmed . $suffix;
     }
 
     // ─── Node factory ─────────────────────────────────────────────────────────
@@ -256,3 +318,12 @@ class FlowImportExportController extends Controller
         ]);
     }
 }
+
+
+// ════════════════════════════════════════════════════════════════════════════
+// ROUTES — routes/api.php
+// NOTE: import must be BEFORE {id} route
+// ════════════════════════════════════════════════════════════════════════════
+
+// Route::post('flow-builders/import',      [FlowImportExportController::class, 'import']);
+// Route::get ('flow-builders/{id}/export', [FlowImportExportController::class, 'export']);
