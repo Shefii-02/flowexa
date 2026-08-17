@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\ExtensionController;
 use App\Modules\Analytics\Http\Controllers\AdvancedAnalyticsController;
 use Illuminate\Support\Facades\Route;
 
@@ -16,6 +17,7 @@ use App\Modules\Conversation\Http\Controllers\ConversationController;
 use App\Modules\Flow\Http\Controllers\FlowAnalyticsController;
 use App\Modules\Flow\Http\Controllers\FlowBuilderController;
 use App\Modules\Flow\Http\Controllers\FlowController;
+use App\Modules\Flow\Http\Controllers\FlowImportExportController;
 use App\Modules\Flow\Http\Controllers\FlowNodeController;
 use App\Modules\Lead\Http\Controllers\LeadController;
 use App\Modules\Lead\Http\Controllers\LeadCategoryController;
@@ -506,6 +508,8 @@ Route::prefix('v1')->group(function () {
         // Flow Builders
         Route::get('flow-builders',                 [FlowBuilderController::class, 'index']);
         Route::post('flow-builders',                 [FlowBuilderController::class, 'store']);
+        Route::post('flow-builders/import',      [FlowImportExportController::class, 'import']);
+        Route::get('flow-builders/{id}/export', [FlowImportExportController::class, 'export']);
         Route::get('flow-builders/{id}',            [FlowBuilderController::class, 'show']);
         Route::put('flow-builders/{id}',            [FlowBuilderController::class, 'update']);
         Route::delete('flow-builders/{id}',            [FlowBuilderController::class, 'destroy']);
@@ -663,3 +667,16 @@ Route::prefix('v1')->group(function () {
     // Public webhook
     Route::post('/meta-ads/webhook', [MetaWebhookController::class, 'handle']);
 });
+
+
+
+// Route::prefix('extension')->group(function () {
+Route::post('/login', [ExtensionController::class, 'login']);
+// Route::middleware('auth:api')->group(function () {
+Route::get('/contacts', [ExtensionController::class, 'contacts']);
+Route::get('/labels', [ExtensionController::class, 'labels']);
+Route::get('/templates', [ExtensionController::class, 'templates']);
+Route::post('/contacts-by-labels', [ExtensionController::class, 'contactsByLabels']);
+Route::post('/send', [ExtensionController::class, 'send']); // calls Graph API, not DOM automation
+        // });
+    // });

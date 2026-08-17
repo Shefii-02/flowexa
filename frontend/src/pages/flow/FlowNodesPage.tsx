@@ -746,11 +746,11 @@ export default function FlowNodesPage() {
                   </span>
                 )}
 
-                {n.multi_messages?.length > 0 && (
-                  <span className="text-xs bg-teal-50 text-teal-600 border border-teal-200 px-2 py-0.5 rounded-full">
-                    📨 {n.multi_messages.length} msgs
-                  </span>
-                )}
+                {/* {n.multi_messages?.length > 0 && ( */}
+                  {/* // <span className="text-xs bg-teal-50 text-teal-600 border border-teal-200 px-2 py-0.5 rounded-full">
+                  //   📨 {n.multi_messages.length} msgs
+                  // </span> */}
+                {/* )} */}
 
                 {n.is_dynamic && (
                   <span className="text-xs bg-indigo-50 text-indigo-600 border border-indigo-200 px-2 py-0.5 rounded-full">

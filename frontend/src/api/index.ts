@@ -148,6 +148,22 @@ export const flowBuilderApi = {
   deactivate: (id: number) => api.post(`/flow-builders/${id}/deactivate`),
   duplicate: (id: number) => api.post(`/flow-builders/${id}/duplicate`),
   delete: (id: number) => api.delete(`/flow-builders/${id}`),
+
+  // ── Import / Export ────────────────────────────────────────────────────
+  // Export: returns a blob (JSON file download)
+  export: (id: number) =>
+    api.get(`/flow-builders/${id}/export`, { responseType: 'blob' }),
+ 
+  // Import: multipart/form-data with file + optional activate flag
+  import: (file: File, activate = false) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    if (activate) fd.append('activate', '1')
+    return api.post('/flow-builders/import', fd, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+  },
+  
 }
 
 
