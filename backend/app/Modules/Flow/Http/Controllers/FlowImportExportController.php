@@ -135,6 +135,23 @@ class FlowImportExportController extends Controller
             ], 422);
         }
 
+        // ── Duplicate _ref check within the import file itself ────────────
+        // _ref/parent_ref is an independent, file-scoped linking namespace
+        // used purely to stitch parent → child relationships together during
+        // import. It is NOT required to equal reply_id (customers may upload
+        // fully custom files where the two differ). If two nodes share an
+        // _ref, the parent/child tree becomes ambiguous, so reject it early
+        // instead of silently letting the last one win.
+        $refs = array_column($nodesData, '_ref');
+        if (count($refs) !== count(array_unique($refs))) {
+            $dupeRefs = array_values(array_unique(
+                array_diff_assoc($refs, array_unique($refs))
+            ));
+            return response()->json([
+                'message' => 'Duplicate _ref inside the import file: ' . implode(', ', $dupeRefs),
+            ], 422);
+        }
+
         // ── Resolve reply_id conflicts against existing DB nodes ──────────
         // ONE suffix applied to ALL nodes in this batch so parent_ref links stay intact
         [$nodesData, $renamedMap] = $this->resolveReplyIdConflicts($nodesData, $cid);
@@ -217,8 +234,15 @@ class FlowImportExportController extends Controller
 
     // ─── Resolve reply_id conflicts ───────────────────────────────────────────
     // Checks all reply_ids in the batch against existing nodes for this company.
-    // If ANY conflict found → generates ONE suffix and applies it to ALL nodes
-    // in the batch (both reply_id and parent_ref). This keeps the tree intact.
+    // If ANY conflict found → generates ONE suffix and applies it to the
+    // reply_id of EVERY node in the batch.
+    //
+    // IMPORTANT: _ref / parent_ref are a SEPARATE, file-scoped linking
+    // namespace used only to stitch parent → child relationships together
+    // while importing. They are independent of reply_id (a customer's file
+    // is free to use arbitrary _ref labels like "root", "lang_ml", etc. that
+    // don't match reply_id at all) and must be left completely untouched
+    // here. Only reply_id is renamed.
     //
     // Suffix format: _{companyId}{unix_timestamp}  e.g. _6_1723000000
     // Max reply_id length is 200 — suffix is trimmed from the left if needed.
@@ -241,29 +265,20 @@ class FlowImportExportController extends Controller
         }
 
         // Generate ONE suffix for the entire batch
-        $suffix          = '_' . $companyId . '_' . time();
+        $suffix           = '_' . $companyId . '_' . time();
         $this->lastSuffix = $suffix;
         $maxLen           = 200;
 
-        // Build a map: old reply_id → new reply_id (for logging)
         $renamedCount = 0;
 
-        // Apply suffix to EVERY node's reply_id and parent_ref
-        // (apply to ALL, not just conflicting ones, so parent-child refs stay consistent)
+        // Apply suffix to EVERY node's reply_id only.
+        // _ref and parent_ref are left exactly as-is so the parent/child
+        // tree (which is keyed off _ref, not reply_id) stays intact.
         $updatedNodes = array_map(function (array $node) use ($suffix, $maxLen, &$renamedCount, $existingReplyIds) {
-            $oldReplyId    = $node['reply_id'];
-            $newReplyId    = $this->applySuffix($oldReplyId, $suffix, $maxLen);
-            $node['reply_id'] = $newReplyId;
+            $oldReplyId       = $node['reply_id'];
+            $node['reply_id'] = $this->applySuffix($oldReplyId, $suffix, $maxLen);
 
-            // _ref is what children use as parent_ref — must match new reply_id
-            $node['_ref'] = $newReplyId;
-
-            // Update parent_ref to point to the new suffixed _ref
-            if (!empty($node['parent_ref'])) {
-                $node['parent_ref'] = $this->applySuffix($node['parent_ref'], $suffix, $maxLen);
-            }
-
-            if (in_array($oldReplyId, $existingReplyIds)) {
+            if (in_array($oldReplyId, $existingReplyIds, true)) {
                 $renamedCount++;
             }
 
