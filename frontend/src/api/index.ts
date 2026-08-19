@@ -190,6 +190,7 @@ export const flowNodeApi = {
       headers: { 'Content-Type': 'multipart/form-data' },
     }),
   toggle: (builderId: number, id: number) => api.post(`/flow-builders/${builderId}/nodes/${id}/toggle`),
+
 }
 
 // ── Leads ─────────────────────────────────────────────────────────────────────

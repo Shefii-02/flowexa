@@ -523,7 +523,6 @@ Route::prefix('v1')->group(function () {
         Route::delete('flow-builders/{bid}/nodes/{id}',       [FlowNodeController::class, 'destroy']);
         Route::post('flow-builders/{bid}/nodes/{id}/toggle', [FlowNodeController::class, 'toggle']);
         Route::post('flow-builders/{bid}/nodes/reorder',    [FlowNodeController::class, 'reorder']);
-
         Route::get('flow-builders/{builder}/nodes/check-reply-id', [FlowNodeController::class, 'checkReplyId']);
         Route::post('flow-builders/{builder}/nodes/upload-media', [FlowNodeController::class, 'uploadMedia']);
 

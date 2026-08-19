@@ -51,6 +51,7 @@ class FlowNodeController extends Controller
             'multi_messages.*.lng'       => ['nullable', 'numeric'],
             'multi_messages.*.name'      => ['nullable', 'string'],
             'multi_messages.*.address'   => ['nullable', 'string'],
+            'is_dead_end'                => ['nullable', 'boolean'],
 
             'lead_category'    => ['nullable', 'string', 'max:100'],
             'sort_order'       => ['nullable', 'integer'],
@@ -196,6 +197,7 @@ class FlowNodeController extends Controller
             'location_lng'     => $d['location_lng']     ?? null,
             'location_name'    => $d['location_name']    ?? null,
             'location_address' => $d['location_address'] ?? null,
+            'is_dead_end'      => $d['is_dead_end'] ?? false,
 
             'is_dynamic'                => $d['is_dynamic']                ?? false,
             'dynamic_api_url'           => $d['dynamic_api_url']           ?? null,
@@ -240,12 +242,43 @@ class FlowNodeController extends Controller
             $this->ensureLeadCategoryExists($node->company_id, $d['lead_category']);
         }
 
+
+        if (array_key_exists('parent_id', $d) && $d['parent_id'] !== null) {
+            // Prevent circular reference — node cannot become its own descendant
+            $this->assertNotCircular($node->id, $d['parent_id']);
+
+            $parentOk = FlowNode::where('id', $d['parent_id'])
+                ->where('flow_builder_id', $bid)
+                ->exists();
+            if (!$parentOk) {
+                return response()->json(['message' => 'Parent node not in this builder.'], 422);
+            }
+        }
+
+
         $node->update($d);
         $node = $node->fresh();
 
         $this->linkNodeMediaAssets($node);
 
         return response()->json(['node' => $node->load('children')]);
+    }
+
+
+    private function assertNotCircular(int $nodeId, int $newParentId): void
+    {
+        // Walk up the tree from newParentId — if we ever reach nodeId, it's circular
+        $current = $newParentId;
+        $visited = [];
+        while ($current !== null) {
+            if ($current === $nodeId) {
+                throw new \InvalidArgumentException("Cannot set parent — circular reference detected.");
+            }
+            if (in_array($current, $visited)) break; // safety
+            $visited[] = $current;
+            $parent = FlowNode::find($current);
+            $current = $parent?->parent_id;
+        }
     }
 
     // DELETE /flow-builders/{bid}/nodes/{id}

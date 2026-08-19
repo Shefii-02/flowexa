@@ -801,76 +801,181 @@ class WebhookService
     }
 
     // ─── Build and send node response ──────────────────────────────────────────
+    // private function sendNodeResponse(Company $company, string $phone, FlowNode $node): void
+    // {
+    //     if ($node->is_dynamic && $node->dynamic_api_url) {
+    //         if ($node->message) {
+    //             $this->sendText($company, $phone, $node->message);
+    //             usleep(100000);
+    //         }
+
+    //         $options = $this->resolveDynamicOptions($node);
+
+    //         if ($options === null) {
+    //             $this->sendFallbackMessage($company, $phone);
+    //             return;
+    //         }
+
+    //         $this->sendDynamicOptions($company, $phone, $node, $options);
+    //         return;
+    //     }
+
+    //     $children = $node->children()->where('is_active', true)->orderBy('sort_order')->get();
+
+    //     if ($node->hasMultipleMessages()) {
+    //         $this->sendMultipleMessages($company, $phone, $node->multi_messages);
+
+    //         if ($children->isNotEmpty()) {
+    //             usleep(100000);
+    //             if ($node->type === 'button' && $children->count() <= 3) {
+    //                 $this->sendButton($company, $phone, '👇 Please select an option:', $children);
+    //             } else {
+    //                 $this->sendList($company, $phone, '👇 Please select an option:', $children);
+    //             }
+    //         }
+
+    //         if ($node->message) {
+    //             usleep(100000);
+    //             $this->sendText($company, $phone, $node->message);
+    //         }
+
+    //         return;
+    //     }
+
+    //     if ($node->media_type === 'audio' && $node->media_url) {
+    //         $this->sendAudio($company, $phone, $node->media_url);
+    //         if ($node->message) {
+    //             usleep(100000);
+    //             $this->sendText($company, $phone, $node->message);
+    //         }
+    //         return;
+    //     }
+
+    //     if ($node->media_type === 'location' && $node->location_lat) {
+    //         $this->sendLocation($company, $phone, $node);
+    //         return;
+    //     }
+
+    //     if ($children->isEmpty()) {
+    //         if ($node->media_type && $node->media_url) {
+    //             $this->sendSingleMedia($company, $phone, $node->media_type, $node->media_url, $node->media_caption, $node->media_filename);
+    //         } else {
+    //             $this->sendText($company, $phone, $node->message ?: 'Thanks for your reply!');
+    //         }
+    //         return;
+    //     }
+
+    //     if ($node->type === 'button' && $children->count() <= 3) {
+    //         $this->sendButtonWithOptionalMedia($company, $phone, $node, $children);
+    //     } else {
+    //         $this->sendList($company, $phone, $node->message, $children);
+    //     }
+    // }
+
     private function sendNodeResponse(Company $company, string $phone, FlowNode $node): void
     {
+        // ── Dynamic node ──────────────────────────────────────────────────
         if ($node->is_dynamic && $node->dynamic_api_url) {
             if ($node->message) {
                 $this->sendText($company, $phone, $node->message);
-                usleep(100000);
+                usleep(300000);
             }
-
             $options = $this->resolveDynamicOptions($node);
-
-            if ($options === null) {
-                $this->sendFallbackMessage($company, $phone);
-                return;
-            }
-
+            if ($options === null) { $this->sendFallbackMessage($company, $phone); return; }
             $this->sendDynamicOptions($company, $phone, $node, $options);
             return;
         }
 
         $children = $node->children()->where('is_active', true)->orderBy('sort_order')->get();
 
+        // ── Multi-message ─────────────────────────────────────────────────
         if ($node->hasMultipleMessages()) {
             $this->sendMultipleMessages($company, $phone, $node->multi_messages);
-
             if ($children->isNotEmpty()) {
-                usleep(100000);
+                usleep(500000);
                 if ($node->type === 'button' && $children->count() <= 3) {
                     $this->sendButton($company, $phone, '👇 Please select an option:', $children);
                 } else {
                     $this->sendList($company, $phone, '👇 Please select an option:', $children);
                 }
-            }
-
-            if ($node->message) {
-                usleep(100000);
-                $this->sendText($company, $phone, $node->message);
-            }
-
-            return;
-        }
-
-        if ($node->media_type === 'audio' && $node->media_url) {
-            $this->sendAudio($company, $phone, $node->media_url);
-            if ($node->message) {
-                usleep(100000);
-                $this->sendText($company, $phone, $node->message);
+            } elseif (!$node->is_dead_end) {
+                // Has multi-messages but no children and NOT marked as terminal
+                // → treat as accidental dead end, send welcome menu again
+                $this->sendDeadEndRecovery($company, $phone);
             }
             return;
         }
 
-        if ($node->media_type === 'location' && $node->location_lat) {
-            $this->sendLocation($company, $phone, $node);
-            return;
-        }
-
+        // ── Single rich media (no children) ──────────────────────────────
         if ($children->isEmpty()) {
-            if ($node->media_type && $node->media_url) {
+            // Send the message or media
+            if ($node->media_type === 'audio' && $node->media_url) {
+                $this->sendAudio($company, $phone, $node->media_url);
+                if ($node->message) { usleep(300000); $this->sendText($company, $phone, $node->message); }
+            } elseif ($node->media_type === 'location' && $node->location_lat) {
+                $this->sendLocation($company, $phone, $node);
+            } elseif ($node->media_type && $node->media_url) {
                 $this->sendSingleMedia($company, $phone, $node->media_type, $node->media_url, $node->media_caption, $node->media_filename);
+                if ($node->message) { usleep(300000); $this->sendText($company, $phone, $node->message); }
             } else {
-                $this->sendText($company, $phone, $node->message ?: 'Thanks for your reply!');
+                $this->sendText($company, $phone, $node->message ?: '✅ Done!');
+            }
+
+            // ── Dead end recovery ─────────────────────────────────────────
+            // If node type expects children (list/button) but has none AND is not
+            // explicitly marked as a terminal node → customer is stuck → recover.
+            if (!$node->is_dead_end && in_array($node->type, ['list', 'button'])) {
+                usleep(600000);
+                $this->sendDeadEndRecovery($company, $phone);
             }
             return;
         }
 
+        // ── Normal button / list with children ────────────────────────────
         if ($node->type === 'button' && $children->count() <= 3) {
             $this->sendButtonWithOptionalMedia($company, $phone, $node, $children);
         } else {
             $this->sendList($company, $phone, $node->message, $children);
         }
     }
+
+    // ── Dead end recovery — sent when customer reaches a node with no options ──
+    // Sends a support message + re-sends the root welcome menu after a delay.
+      private function sendDeadEndRecovery(Company $company, string $phone): void
+    {
+        $this->sendText(
+            $company,
+            $phone,
+            "🙏 We're sorry if that was a dead end!\n\n" .
+            "For further assistance please contact our support team or reply *menu* to start over.\n\n" .
+            "📞 *Support:* " . ($company->support_phone ?? 'Contact us anytime') . "\n" .
+            "📧 *Email:* "   . ($company->support_email ?? 'support@company.com')
+        );
+
+        // Re-send welcome menu after 2 seconds so customer can restart
+        usleep(2000000);
+        $this->sendWelcomeMenu($company, $phone, null);
+
+        Log::warning("Dead end hit: company={$company->id} phone={$phone}");
+    }
+
+    // private function sendDeadEndRecovery(Company $company, string $phone): void
+    // {
+    //     $this->sendText(
+    //         $company,
+    //         $phone,
+    //         "🙏 We're sorry if that was a dead end!\n\n" .
+    //         "For further assistance please contact our support team or reply *menu* to start over.\n\n" .
+    //         "📞 *Support:* " . ($company->support_phone ?? 'Contact us anytime') . "\n" .
+    //         "📧 *Email:* "   . ($company->support_email ?? 'support@company.com')
+    //     );
+
+    //     // Re-send welcome menu after 2 seconds so customer can restart
+    //     usleep(2000000);
+    //     $this->sendWelcomeMenu($company, $phone, null);
+
+    //     Log::warning("Dead end hit: company={$company->id} phone={$phone}");
+    // }
 
     // ─── Fetch + normalize options for a dynamic node ──────────────────────────
     private function resolveDynamicOptions(FlowNode $node): ?array
@@ -1494,15 +1599,15 @@ class WebhookService
 //             return;
 //         }
 
-//         // 10. Text greeting OR new conversation → send welcome menu
-//         if ($dto->type === 'text' && $this->isGreeting($dto->text)) {
-//             $session?->delete();
-//             $this->sendWelcomeMenu($company, $dto->phone, $builder?->id);
-//             return;
-//         }
+        // // 10. Text greeting OR new conversation → send welcome menu
+        // if ($dto->type === 'text' && $this->isGreeting($dto->text)) {
+        //     $session?->delete();
+        //     $this->sendWelcomeMenu($company, $dto->phone, $builder?->id);
+        //     return;
+        // }
 
-//         // 11. Mid-session text → try to match current node's children
-//         if ($session && $dto->type === 'text') {
+        // // 11. Mid-session text → try to match current node's children
+        // if ($session && $dto->type === 'text') {
 //             $matched = $this->matchTextToNode($company, $contact, $dto, $session, $builder?->id);
 //             if ($matched) return;
 //         }

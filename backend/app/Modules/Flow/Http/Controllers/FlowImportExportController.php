@@ -53,6 +53,7 @@ class FlowImportExportController extends Controller
             'dynamic_label_field'      => $n->dynamic_label_field,
             'dynamic_value_field'      => $n->dynamic_value_field,
             'dynamic_description_field'=> $n->dynamic_description_field,
+            'is_dead_end'              => $n->is_dead_end,
         ], fn($v) => !is_null($v)))->values()->toArray();
 
         $payload = [
@@ -111,6 +112,7 @@ class FlowImportExportController extends Controller
             'nodes.*.reply_id'     => ['required', 'string', 'max:200'],
             'nodes.*.title'        => ['required', 'string'],
             'nodes.*.type'         => ['required', 'in:text,button,list,image,video,document,audio,location'],
+            'nodes.*.is_dead_end'  => ['nullable'],
         ]);
 
         if ($v->fails()) {
@@ -330,6 +332,7 @@ class FlowImportExportController extends Controller
             'dynamic_label_field'      => $d['dynamic_label_field']      ?? null,
             'dynamic_value_field'      => $d['dynamic_value_field']      ?? null,
             'dynamic_description_field'=> $d['dynamic_description_field']?? null,
+            'is_dead_end'              => $d['is_dead_end'] ?? false,
         ]);
     }
 }

@@ -41,6 +41,7 @@ class FlowNode extends Model
         'dynamic_image_field',
         'dynamic_subtitle_field',
         'trigger_count',
+        'is_dead_end',
     ];
 
     // protected $fillable = [
@@ -63,6 +64,7 @@ class FlowNode extends Model
         'multi_messages' => 'array',
         'location_lat'   => 'float',
         'location_lng'   => 'float',
+        'is_dead_end' => 'boolean',
     ];
 
 
