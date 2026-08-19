@@ -35,7 +35,7 @@ class WebhookService
 
     // ── Greeting keywords → send welcome menu ──────────────────────────────
     private const GREETING_KEYWORDS = [
-        'hi', 'hello', 'hey', 'start', 'menu', 'hai', 'helo', 'hii', 'hola', 'namaste', 'vanakkam', 'ഹലോ',
+        'hi', 'hello', 'hey', 'start', 'main menu', 'menu', 'hai', 'helo', 'hii', 'hola', 'namaste', 'vanakkam', 'ഹലോ',
     ];
 
     // Options row cap enforced by WhatsApp for interactive lists
