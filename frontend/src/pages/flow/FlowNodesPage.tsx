@@ -968,7 +968,22 @@ export default function FlowNodesPage() {
               <button onClick={() => setShowDupDrawer(false)} className="w-8 h-8 rounded-full hover:bg-gray-100 flex items-center justify-center text-gray-400 text-xl">×</button>
             </div>
 
+   {/* Target parent selector */}
+            <div className="p-4 border-t border-gray-100 space-y-3">
+              <ParentNodeSelect
+                nodes={nodes}
+                value={dupTarget}
+                onChange={setDupTarget}
+              />
+              <div className="flex gap-2">
+                <Button variant="secondary" onClick={() => setShowDupDrawer(false)} className="flex-1">Cancel</Button>
+                <Button onClick={handleDuplicate} loading={duplicating} className="flex-1">
+                  Duplicate & paste
+                </Button>
+              </div>
+            </div>
             {/* Accordion list of nodes to duplicate */}
+            
             <div className="flex-1 overflow-y-auto p-4 space-y-2">
               {dupNodes.map((dn, idx) => (
                 <div key={dn.id} className="border border-gray-200 rounded-xl overflow-hidden">
@@ -1006,20 +1021,7 @@ export default function FlowNodesPage() {
               ))}
             </div>
 
-            {/* Target parent selector */}
-            <div className="p-4 border-t border-gray-100 space-y-3">
-              <ParentNodeSelect
-                nodes={nodes}
-                value={dupTarget}
-                onChange={setDupTarget}
-              />
-              <div className="flex gap-2">
-                <Button variant="secondary" onClick={() => setShowDupDrawer(false)} className="flex-1">Cancel</Button>
-                <Button onClick={handleDuplicate} loading={duplicating} className="flex-1">
-                  Duplicate & paste
-                </Button>
-              </div>
-            </div>
+         
           </div>
         </>
       )}
