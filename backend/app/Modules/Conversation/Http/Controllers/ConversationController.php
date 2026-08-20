@@ -93,6 +93,10 @@ class ConversationController extends Controller
     // POST /conversations/{id}/messages — counsellor sends a reply
     public function send(Request $request, int $id): JsonResponse
     {
+
+
+     $graphVersion = config('services.whatsapp.graph_version', 'v21.0');
+
         $d = $request->validate(['body' => ['required', 'string', 'max:4096']]);
 
         $conversation = WaConversation::where('id', $id)
@@ -142,7 +146,7 @@ class ConversationController extends Controller
         try {
             $response = Http::withToken($company->decrypt_wa_access_token)
                 ->timeout(15)
-                ->post("https://graph.facebook.com/v25.0/{$phone->wa_phone_number_id}/messages", [
+                ->post("https://graph.facebook.com/{$graphVersion}/{$phone->wa_phone_number_id}/messages", [
                     'messaging_product' => 'whatsapp',
                     'to'                => $conversation->phone,
                     'type'              => 'text',
