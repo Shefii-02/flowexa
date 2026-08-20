@@ -161,6 +161,7 @@ class ConversationController extends Controller
         }
 
         if ($response->failed()) {
+               Log::info($response);
             $reason = $response->json('error.error_user_msg') ?? $response->json('error.message') ?? 'Meta API error';
             $message->update(['status' => 'failed', 'failure_reason' => $reason]);
             broadcast(new WaMessageReceived($message->fresh(['conversation', 'sentBy'])));
