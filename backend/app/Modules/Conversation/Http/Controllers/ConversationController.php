@@ -95,7 +95,7 @@ class ConversationController extends Controller
     {
 
 
-     $graphVersion = config('services.whatsapp.graph_version', 'v21.0');
+     $graphVersion = 'v21.0';
 
         $d = $request->validate(['body' => ['required', 'string', 'max:4096']]);
 
@@ -144,6 +144,7 @@ class ConversationController extends Controller
         broadcast(new WaMessageReceived($message->fresh(['conversation', 'sentBy'])));
 
         try {
+
             $response = Http::withToken($company->decrypt_wa_access_token)
                 ->timeout(15)
                 ->post("https://graph.facebook.com/{$graphVersion}/{$phone->wa_phone_number_id}/messages", [
