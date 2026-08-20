@@ -147,7 +147,7 @@ class ConversationController extends Controller
 
             $response = Http::withToken($company->decrypt_wa_access_token)
                 ->timeout(15)
-                ->post("https://graph.facebook.com/{$graphVersion}/{$phone->wa_phone_number_id}/messages", [
+                ->post("https://graph.facebook.com/{$graphVersion}/{$phone->phone_number_id}/messages", [
                     'messaging_product' => 'whatsapp',
                     'to'                => $conversation->phone,
                     'type'              => 'text',
