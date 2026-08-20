@@ -154,6 +154,7 @@ class ConversationController extends Controller
                     'text'              => ['body' => $d['body']],
                 ]);
         } catch (\Illuminate\Http\Client\ConnectionException $e) {
+            Log::info($e);
             $message->update(['status' => 'failed', 'failure_reason' => 'Timed out contacting Meta.']);
             broadcast(new WaMessageReceived($message->fresh(['conversation', 'sentBy'])));
             return response()->json(['message' => 'Timed out sending the message. It has been marked failed — you can retry.'], 422);
