@@ -51,6 +51,249 @@ const emptyBlock = (type = 'text') => ({
 const slugify = (str: string) =>
   str.toLowerCase().trim().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 200)
 
+const copyToClipboard = async (text: string, label: string) => {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text)
+    } else {
+      // Fallback for non-secure contexts / older browsers without Clipboard API
+      const ta = document.createElement('textarea')
+      ta.value = text
+      ta.style.position = 'fixed'
+      ta.style.opacity = '0'
+      document.body.appendChild(ta)
+      ta.select()
+      document.execCommand('copy')
+      document.body.removeChild(ta)
+    }
+    toast.success(`${label} copied!`)
+  } catch {
+    toast.error(`Couldn't copy ${label.toLowerCase()}`)
+  }
+}
+
+// ── Reserved navigation sentinels ───────────────────────────────────────────
+// A node whose reply_id starts with one of these prefixes isn't real content —
+// it's a navigation shortcut. Your production WhatsApp webhook handler must
+// special-case them BEFORE normal parent/child lookup:
+//   reply_id starts with "MAIN_MENU__" → jump the session to this builder's
+//     ROOT node (the trigger node), ignoring this row's own (nonexistent) children.
+//   reply_id starts with "BACK__"      → jump the session to the PARENT of
+//     whichever node the customer was actually on, not this row's own parent.
+// The prefix (not the full string) is what matters — each row still needs its
+// own unique reply_id suffix, e.g. "MAIN_MENU__EX_YES_EN".
+const MAIN_MENU_PREFIX = 'MAIN_MENU__'
+const BACK_PREFIX = 'BACK__'
+const isMainMenuNode = (replyId: string) => !!replyId?.startsWith(MAIN_MENU_PREFIX)
+const isBackNode = (replyId: string) => !!replyId?.startsWith(BACK_PREFIX)
+
+// Free-text keywords recognized at ANY point in ANY conversation, independent
+// of whichever node the customer is currently on — the primary safety net,
+// since it works even before you've wired up an explicit Main Menu button.
+const GLOBAL_MENU_KEYWORDS = ['menu', 'main menu', 'hi', 'hello', 'start', 'restart']
+const GLOBAL_BACK_KEYWORDS = ['back']
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Live WhatsApp-style preview — walks the REAL parent/child tree client-side,
+// so clicking through it is an actual test of whether your node relationships
+// are wired correctly (broken parent_ref/parent_id shows up immediately as a
+// node with no reachable children). Also simulates the two navigation paths
+// above, and flags unintentional dead ends the same way the list view does.
+// ─────────────────────────────────────────────────────────────────────────────
+type ChatMsg = { from: 'bot' | 'user'; text: string; id: string; time: string }
+
+const nowTime = () => new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+
+function FlowPreviewPanel({ nodes, startId, nonce, onRestart, builderName, onClose }: {
+  nodes: any[]; startId: number | null; nonce: number; onRestart: () => void
+  builderName?: string; onClose?: () => void
+}) {
+  const byId = useMemo(() => Object.fromEntries(nodes.map(n => [n.id, n])), [nodes])
+  const byParentId = useMemo(() => {
+    const m: Record<string, any[]> = {}
+    nodes.forEach(n => {
+      const k = String(n.parent_id ?? 'root')
+      m[k] = m[k] || []
+      m[k].push(n)
+    })
+    Object.values(m).forEach(arr => arr.sort((a: any, b: any) => (a.sort_order ?? 0) - (b.sort_order ?? 0)))
+    return m
+  }, [nodes])
+  const rootNode = (byParentId['root'] || [])[0] || null
+
+  const [currentId, setCurrentId] = useState<number | null>(null)
+  const [history, setHistory]     = useState<number[]>([]) // stack of visited ids, for Back
+  const [log, setLog]             = useState<ChatMsg[]>([])
+  const [typed, setTyped]         = useState('')
+  const [botTyping, setBotTyping] = useState(false)
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const msgId = useRef(0)
+  const nextId = () => String(msgId.current++)
+
+  const say = (from: ChatMsg['from'], text: string) =>
+    setLog(l => [...l, { from, text, id: nextId(), time: nowTime() }])
+
+  // Simulates the bot "typing" for a moment before its reply lands — small
+  // but it's what makes this read as a live chat instead of an instant swap.
+  const sayBotAfterDelay = (text: string, delay = 550) => {
+    setBotTyping(true)
+    setTimeout(() => { setBotTyping(false); say('bot', text) }, delay)
+  }
+
+  // (re)start the whole simulated conversation whenever the caller changes
+  // which node to preview from (defaults to root)
+  useEffect(() => {
+    const target = startId ?? rootNode?.id ?? null
+    setCurrentId(target)
+    setHistory([])
+    setBotTyping(false)
+    setLog(target && byId[target] ? [{ from: 'bot', text: byId[target].message || '[no message set]', id: nextId(), time: nowTime() }] : [])
+  }, [startId, nonce, rootNode?.id, nodes.length]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => { scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' }) }, [log, botTyping])
+
+  const current  = currentId ? byId[currentId] : null
+  const children = currentId ? (byParentId[String(currentId)] || []) : []
+  const isUnintentionalDeadEnd = !!current && children.length === 0 && !current.is_dead_end
+    && current.type !== 'text' && current.type !== 'survey' && current.type !== 'template'
+
+  const enterNode = (nodeId: number) => {
+    const node = byId[nodeId]
+    setCurrentId(nodeId)
+    sayBotAfterDelay(node?.message || '[no message set]')
+  }
+
+  const goToChild = (child: any) => {
+    say('user', child.title)
+    setHistory(h => currentId !== null ? [...h, currentId] : h)
+    enterNode(child.id)
+  }
+
+  const jumpToMainMenu = (viaLabel: string) => {
+    if (!rootNode) return
+    say('user', viaLabel)
+    setHistory([])
+    enterNode(rootNode.id)
+  }
+
+  const jumpBack = (viaLabel: string) => {
+    say('user', viaLabel)
+    setHistory(h => {
+      if (h.length === 0) { if (rootNode) enterNode(rootNode.id); return h }
+      const prev = h[h.length - 1]
+      enterNode(prev)
+      return h.slice(0, -1)
+    })
+  }
+
+  const handleOptionClick = (child: any) => {
+    if (isMainMenuNode(child.reply_id)) return jumpToMainMenu(child.title)
+    if (isBackNode(child.reply_id))     return jumpBack(child.title)
+    goToChild(child)
+  }
+
+  const handleTypedSend = () => {
+    const text = typed.trim()
+    if (!text) return
+    const lower = text.toLowerCase()
+    setTyped('')
+    if (GLOBAL_MENU_KEYWORDS.includes(lower)) return jumpToMainMenu(text)
+    if (GLOBAL_BACK_KEYWORDS.includes(lower)) return jumpBack(text)
+    const match = children.find((c: any) => c.title.toLowerCase() === lower || c.reply_id.toLowerCase() === lower)
+    if (match) return handleOptionClick(match)
+    say('user', text)
+    sayBotAfterDelay("🤖 No option matched this — a real customer would be stuck here unless a fallback or global keyword is configured.")
+  }
+
+  if (!rootNode) {
+    return (
+      <div className="h-full flex items-center justify-center text-center text-sm text-gray-400 p-6 border-2 border-dashed border-gray-200 rounded-2xl">
+        Add a root node to preview the flow.
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex flex-col h-full bg-[#e5ddd5] rounded-2xl overflow-hidden border border-gray-200 shadow-sm">
+      <div className="bg-[#075e54] text-white px-3 py-2.5 flex items-center gap-2 flex-shrink-0">
+        {onClose && (
+          <button onClick={onClose} className="text-white/90 hover:text-white text-lg leading-none px-1" title="Close preview">‹</button>
+        )}
+        <span className="w-9 h-9 rounded-full bg-white/20 flex items-center justify-center text-base flex-shrink-0">🤖</span>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold truncate">{builderName || 'Your WhatsApp Bot'}</p>
+          <p className="text-[11px] text-white/70 truncate">
+            {botTyping ? 'typing…' : `online · testing node #${current?.id ?? '—'}`}
+          </p>
+        </div>
+        <button onClick={onRestart} title="Restart from root"
+          className="text-xs bg-white/15 hover:bg-white/25 px-2 py-1 rounded-lg flex-shrink-0">🔄</button>
+      </div>
+
+      {isUnintentionalDeadEnd && (
+        <div className="bg-red-50 border-b border-red-200 text-red-600 text-[11px] px-3 py-1.5 flex-shrink-0">
+          ⚠️ Dead end — no children and not marked Terminal. A real customer has nothing to tap here.
+        </div>
+      )}
+      {current?.is_dead_end && (
+        <div className="bg-gray-100 border-b border-gray-200 text-gray-500 text-[11px] px-3 py-1.5 flex-shrink-0">
+          🔚 Marked terminal — make sure the message (or a Main Menu button) tells the customer how to continue.
+        </div>
+      )}
+
+      <div ref={scrollRef} className="flex-1 overflow-y-auto px-3 py-3 space-y-2 min-h-0"
+        style={{ backgroundImage: 'radial-gradient(#00000008 1px, transparent 1px)', backgroundSize: '14px 14px' }}>
+        {log.map(m => (
+          <div key={m.id} className={`flex ${m.from === 'user' ? 'justify-end' : 'justify-start'}`}>
+            <div className={`relative max-w-[85%] rounded-lg px-3 py-1.5 text-[13px] whitespace-pre-wrap shadow-sm ${m.from === 'user' ? 'bg-[#dcf8c6] rounded-tr-none' : 'bg-white rounded-tl-none'}`}>
+              <span>{m.text}</span>
+              <span className="block text-right text-[10px] text-gray-400 mt-0.5 select-none">
+                {m.time}{m.from === 'user' && <span className="text-[#4fc3f7] ml-1">✓✓</span>}
+              </span>
+            </div>
+          </div>
+        ))}
+
+        {botTyping && (
+          <div className="flex justify-start">
+            <div className="bg-white rounded-lg rounded-tl-none px-3 py-2 shadow-sm flex items-center gap-1">
+              <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+              <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '120ms' }} />
+              <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '240ms' }} />
+            </div>
+          </div>
+        )}
+
+        {!botTyping && current && children.length > 0 && (
+          <div className="flex justify-start">
+            <div className="max-w-[85%] bg-white rounded-lg shadow-sm overflow-hidden">
+              {children.map((c: any) => (
+                <button key={c.id} onClick={() => handleOptionClick(c)}
+                  className="w-full text-left px-3 py-2 text-[13px] text-[#128C7E] border-t first:border-t-0 border-gray-100 hover:bg-gray-50 flex items-center gap-1.5">
+                  <span>{isMainMenuNode(c.reply_id) ? '🏠' : isBackNode(c.reply_id) ? '🔙' : '▸'}</span> {c.title}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="p-2 border-t border-gray-200 bg-white flex items-center gap-1.5 flex-shrink-0">
+        <span className="text-gray-400 px-1 select-none">😊</span>
+        <span className="text-gray-400 px-1 select-none">📎</span>
+        <input value={typed} onChange={e => setTyped(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && handleTypedSend()}
+          placeholder='Message… try "menu" or "back"'
+          className="flex-1 text-sm px-3 py-1.5 rounded-full border border-gray-200 focus:outline-none focus:border-brand-400" />
+        <button onClick={handleTypedSend} disabled={!typed.trim()}
+          className="text-sm w-8 h-8 flex items-center justify-center rounded-full bg-[#128C7E] text-white flex-shrink-0 disabled:opacity-40">
+          {typed.trim() ? '➤' : '🎤'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
 const DEFAULT_FORM = {
   title: '', message: '', type: 'list',
   reply_id: '', reply_id_manual: false,
@@ -294,7 +537,10 @@ export default function FlowNodesPage() {
 
   // ── Drag & Drop state ─────────────────────────────────────────────────────
   const [dragging,   setDragging]   = useState<number | null>(null)   // node id being dragged
-  const [dragOver,   setDragOver]   = useState<number | 'root' | null>(null) // target parent id
+  // target zone under the cursor: a node id (= "reorder/move next to this
+  // card"), 'root', or one of the string keys `into-{id}` (nest as child)
+  // / `between-{id}` (insert as sibling at this position)
+  const [dragOver,   setDragOver]   = useState<number | 'root' | string | null>(null)
   const [dropping,   setDropping]   = useState(false)
 
   // ── Multi-select + duplicate drawer ──────────────────────────────────────
@@ -304,6 +550,17 @@ export default function FlowNodesPage() {
   const [dupNodes,      setDupNodes]      = useState<any[]>([])           // copies with editable content
   const [dupExpanded,   setDupExpanded]   = useState<number | null>(null)  // which accordion item is open
   const [duplicating,   setDuplicating]   = useState(false)
+
+  // ── Live preview ──────────────────────────────────────────────────────────
+  const [previewStartId, setPreviewStartId] = useState<number | null>(null)
+  const [previewNonce,   setPreviewNonce]   = useState(0) // bump to force-restart preview from the same node
+  const [showPreview,    setShowPreview]    = useState(false)
+
+  const openPreview = (fromNodeId: number | null = null) => {
+    setPreviewStartId(fromNodeId)
+    setPreviewNonce(x => x + 1)
+    setShowPreview(true)
+  }
 
   const set = (k: string, v: any) => setForm(f => ({ ...f, [k]: v }))
 
@@ -532,14 +789,22 @@ export default function FlowNodesPage() {
     e.dataTransfer.effectAllowed = 'move'
   }
 
-  const handleDragOver = (e: DragEvent, targetParentId: number | 'root') => {
+  const handleDragOver = (e: DragEvent, target: number | 'root' | string) => {
     e.preventDefault()
+    // Without this, hovering a nested node's card bubbles up through every
+    // ancestor's own onDragOver (card → "nest inside parent" zone → root
+    // container), and whichever fires LAST wins — so the highlight kept
+    // jumping to the wrong (outer) target instead of staying on the node
+    // actually under the cursor. Stopping propagation lets the innermost,
+    // most specific zone claim the hover.
+    e.stopPropagation()
     e.dataTransfer.dropEffect = 'move'
-    setDragOver(targetParentId)
+    setDragOver(target)
   }
 
   const handleDrop = async (e: DragEvent, newParentId: number | null) => {
     e.preventDefault()
+    e.stopPropagation() // otherwise this drop also bubbles to an ancestor's onDrop and double-fires
     setDragOver(null)
     if (dragging === null || dragging === newParentId) { setDragging(null); return }
 
@@ -606,10 +871,13 @@ export default function FlowNodesPage() {
                         n.type === 'template' ? '#ec4899' :
                         dead                  ? '#ef4444' : '#10b981'
 
+    const isBeingDragged = dragging === n.id
+    const showReorderBanner = isDraggingOver && dragging !== null && dragging !== n.id
+
     return (
       <div key={n.id} style={{ marginLeft: depth > 0 ? 28 : 0 }}>
         <div
-          className={`bg-white border border-gray-200 rounded-xl mb-2 overflow-hidden transition-all ${n.is_active ? '' : 'opacity-60'} ${isDraggingOver ? 'border-brand-400 bg-brand-50' : ''} ${selected.has(n.id) ? 'ring-2 ring-brand-300' : ''}`}
+          className={`relative bg-white border border-gray-200 rounded-xl mb-2 overflow-hidden transition-all ${n.is_active ? '' : 'opacity-60'} ${isBeingDragged ? 'opacity-40' : ''} ${isDraggingOver ? 'border-brand-400 ring-2 ring-brand-200' : ''} ${selected.has(n.id) ? 'ring-2 ring-brand-300' : ''}`}
           style={{ borderLeft: `3px solid ${borderColor}` }}
           draggable
           onDragStart={e => handleDragStart(e, n.id)}
@@ -617,6 +885,13 @@ export default function FlowNodesPage() {
           onDrop={e => handleReorderDrop(e, n.id)}
           onDragEnd={() => { setDragging(null); setDragOver(null) }}
         >
+          {showReorderBanner && (
+            <div className="absolute inset-0 z-10 flex items-center justify-center bg-brand-50/95 pointer-events-none">
+              <span className="text-xs font-semibold text-brand-600 flex items-center gap-1.5">
+                ↕️ Drop to place next to "{n.title}"
+              </span>
+            </div>
+          )}
           <div className="flex items-start gap-2 px-3 py-2.5">
             {/* Drag handle + select checkbox */}
             <div className="flex items-center gap-1 flex-shrink-0 mt-0.5">
@@ -658,14 +933,28 @@ export default function FlowNodesPage() {
               <p className="text-xs text-gray-400 mt-1 truncate max-w-xl">
                 {n.type==='survey'?`Survey #${n.survey_form_id}`:n.type==='template'?`Template #${n.wa_template_id}`:(n.message||'[multi-message]')}
               </p>
-              <p className="text-[11px] text-gray-300 font-mono mt-0.5">
-                reply_id: <span className="text-gray-400">{n.reply_id}</span>
-                {n.parent_id && <span className="ml-3">parent: #{n.parent_id}</span>}
+              <p className="text-[11px] text-gray-300 font-mono mt-0.5 flex items-center flex-wrap">
+                <span className="inline-flex items-center gap-0.5">
+                  reply_id: <span className="text-gray-400">{n.reply_id}</span>
+                  <button type="button" title="Copy reply_id" tabIndex={-1}
+                    onClick={e => { e.stopPropagation(); copyToClipboard(n.reply_id, 'Reply ID') }}
+                    className="text-gray-300 hover:text-brand-500 px-1 py-0.5 leading-none">📋</button>
+                </span>
+                {n.parent_id && (
+                  <span className="ml-3 inline-flex items-center gap-0.5">
+                    parent: #{n.parent_id}
+                    <button type="button" title="Copy parent ID" tabIndex={-1}
+                      onClick={e => { e.stopPropagation(); copyToClipboard(String(n.parent_id), 'Parent ID') }}
+                      className="text-gray-300 hover:text-brand-500 px-1 py-0.5 leading-none">📋</button>
+                  </span>
+                )}
               </p>
             </div>
 
             {/* Actions */}
             <div className="flex items-center gap-1 flex-shrink-0">
+              <button onClick={() => openPreview(n.id)}
+                className="text-xs text-teal-600 hover:bg-teal-50 px-2 py-1 rounded-lg" title="Test the flow starting from this node">👁 Preview</button>
               <button onClick={() => openCreate(n.id)}      className="text-xs text-brand-600 hover:bg-brand-50 px-2 py-1 rounded-lg">+ Child</button>
               <button onClick={() => openEdit(n)}           className="text-xs text-blue-600 hover:bg-blue-50 px-2 py-1 rounded-lg">Edit</button>
               <button onClick={() => toggleNode(n)}         className="text-xs text-gray-500 hover:bg-gray-100 px-2 py-1 rounded-lg">{n.is_active ? 'Deactivate' : 'Activate'}</button>
@@ -674,19 +963,33 @@ export default function FlowNodesPage() {
           </div>
         </div>
 
-        {/* Drop zone between siblings (for reordering / reparenting) */}
+        {/* Drop zone between siblings (insert next to this node, same parent) */}
         <div
-          className={`h-1.5 rounded-full mx-2 mb-1 transition-all ${dragOver === `between-${n.id}` ? 'bg-brand-400 h-3' : 'bg-transparent'}`}
-          onDragOver={e => { e.preventDefault(); setDragOver(`between-${n.id}` as any) }}
+          className={`flex items-center justify-center mx-2 mb-1.5 rounded-lg border-2 border-dashed transition-all overflow-hidden ${
+            dragOver === `between-${n.id}` && dragging !== null
+              ? 'h-7 border-brand-400 bg-brand-50'
+              : 'h-2 border-transparent'
+          }`}
+          onDragOver={e => handleDragOver(e, `between-${n.id}`)}
           onDrop={e => handleDrop(e, n.parent_id ?? null)}
-        />
+        >
+          {dragOver === `between-${n.id}` && dragging !== null && (
+            <span className="text-[11px] font-medium text-brand-600 pointer-events-none">⬇ Insert here</span>
+          )}
+        </div>
 
-        {/* Children */}
+        {/* Children — dropping in this area nests the dragged node INSIDE n */}
         {!isCollapsed && (
           <div
-            onDragOver={e => handleDragOver(e, n.id)}
+            className={`rounded-lg transition-all ${dragOver === `into-${n.id}` && dragging !== null && dragging !== n.id ? 'bg-brand-50 ring-2 ring-brand-300 ring-inset' : ''}`}
+            onDragOver={e => handleDragOver(e, `into-${n.id}`)}
             onDrop={e => handleDrop(e, n.id)}
           >
+            {dragOver === `into-${n.id}` && dragging !== null && dragging !== n.id && (
+              <div className="flex items-center justify-center mx-2 mb-1.5 h-7 rounded-lg border-2 border-dashed border-brand-400 bg-brand-50">
+                <span className="text-[11px] font-medium text-brand-600">📥 Drop to nest inside "{n.title}"</span>
+              </div>
+            )}
             {children.map((child: any) => renderNode(child, depth + 1))}
           </div>
         )}
@@ -716,6 +1019,7 @@ export default function FlowNodesPage() {
               📋 Duplicate {selected.size} selected
             </Button>
           )}
+          <Button variant="secondary" onClick={() => openPreview(null)}>👁 Test flow</Button>
           <Button onClick={() => openCreate(null)}>+ Root node</Button>
         </div>
       </div>
@@ -747,6 +1051,39 @@ export default function FlowNodesPage() {
             Drop here to make root node
           </div>
         </div>
+      )}
+
+      {/* Live preview — phone-mockup drawer, matches the Duplicate drawer pattern below */}
+      {showPreview && (
+        <>
+          <div className="fixed inset-0 bg-black/40 z-40" onClick={() => setShowPreview(false)} />
+          <div className="fixed right-0 top-0 bottom-0 w-[420px] max-w-full bg-gray-50 z-50 shadow-2xl flex flex-col">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 flex-shrink-0">
+              <div>
+                <h2 className="font-bold text-gray-900">Live preview</h2>
+                <p className="text-xs text-gray-400 mt-0.5">Test your flow the way a customer would experience it</p>
+              </div>
+              <button onClick={() => setShowPreview(false)} className="w-8 h-8 rounded-full hover:bg-gray-200 flex items-center justify-center text-gray-400 text-xl">×</button>
+            </div>
+
+            <div className="flex-1 min-h-0 flex items-center justify-center p-6">
+              {/* Phone bezel */}
+              <div className="bg-gray-900 rounded-[2.5rem] p-3 shadow-xl h-full max-h-[720px] w-full max-w-[360px] flex flex-col">
+                <div className="mx-auto w-24 h-5 bg-gray-900 rounded-b-2xl -mb-1 relative z-10 flex-shrink-0" />
+                <div className="flex-1 min-h-0 rounded-[1.75rem] overflow-hidden">
+                  <FlowPreviewPanel
+                    nodes={nodes}
+                    startId={previewStartId}
+                    nonce={previewNonce}
+                    onRestart={() => setPreviewNonce(x => x + 1)}
+                    builderName={builder?.name}
+                    onClose={() => setShowPreview(false)}
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        </>
       )}
 
       {/* Create / Edit Modal */}
