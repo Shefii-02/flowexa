@@ -74,7 +74,8 @@ class FlowBuilderController extends Controller
             'name'             => $d['name'],
             'description'      => $d['description']      ?? null,
             'trigger_type'     => $d['trigger_type'],
-            'trigger_keywords' => json_encode($d['trigger_keywords'] ?? []),
+            // 'trigger_keywords' => json_encode($d['trigger_keywords'] ?? []),
+            'trigger_keywords' => $d['trigger_keywords'] ?? [],
             'active_from'      => $d['active_from']      ?? null,
             'active_until'     => $d['active_until']     ?? null,
             'is_active'        => false,
@@ -111,8 +112,11 @@ class FlowBuilderController extends Controller
             'name'             => $data['name']           ?? $builder->name,
             'description'      => $data['description']    ?? $builder->description,
             'trigger_type'     => $data['trigger_type']   ?? $builder->trigger_type,
+            // 'trigger_keywords' => isset($data['trigger_keywords'])
+            //     ? json_encode($data['trigger_keywords'])
+            //     : $builder->trigger_keywords,
             'trigger_keywords' => isset($data['trigger_keywords'])
-                ? json_encode($data['trigger_keywords'])
+                ? $data['trigger_keywords']
                 : $builder->trigger_keywords,
             'active_from'      => $data['active_from']    ?? $builder->active_from,
             'active_until'     => $data['active_until']   ?? $builder->active_until,

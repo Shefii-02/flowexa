@@ -1,4 +1,5 @@
 <?php
+
 namespace App\Modules\Flow\Http\Requests;
 
 use Illuminate\Foundation\Http\FormRequest;
@@ -11,12 +12,27 @@ class FlowBuilderRequest extends FormRequest
         return true;
     }
 
+    // protected function prepareForValidation(): void
+    // {
+    //     // Handle trigger_keywords sent as "[]"
+    //     if (is_string($this->trigger_keywords)) {
+    //         $this->merge([
+    //             'trigger_keywords' => json_decode($this->trigger_keywords, true) ?? []
+    //         ]);
+    //     }
+    //     else{
+    //         $this->merge([
+    //             'trigger_keywords' => []
+    //         ]);
+    //     }
+    // }
     protected function prepareForValidation(): void
     {
-        // Handle trigger_keywords sent as "[]"
         if (is_string($this->trigger_keywords)) {
+            $decoded = json_decode($this->trigger_keywords, true);
+
             $this->merge([
-                'trigger_keywords' => json_decode($this->trigger_keywords, true) ?? []
+                'trigger_keywords' => is_array($decoded) ? $decoded : [],
             ]);
         }
     }
@@ -59,7 +75,7 @@ class FlowBuilderRequest extends FormRequest
                 'nullable',
                 'date',
                 Rule::requiredIf(
-                    fn () => $this->trigger_type === 'season'
+                    fn() => $this->trigger_type === 'season'
                 ),
             ],
 
@@ -68,7 +84,7 @@ class FlowBuilderRequest extends FormRequest
                 'date',
                 'after:active_from',
                 Rule::requiredIf(
-                    fn () => $this->trigger_type === 'season'
+                    fn() => $this->trigger_type === 'season'
                 ),
             ],
         ];
