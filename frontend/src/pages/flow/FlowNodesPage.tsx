@@ -925,7 +925,7 @@ export default function FlowNodesPage() {
                 <span className="font-semibold text-sm text-gray-900">{n.title}</span>
                 {n.lead_category && <span className="text-xs bg-orange-50 text-orange-600 border border-orange-200 px-2 py-0.5 rounded-full">🎯 {n.lead_category}</span>}
                 {n.is_dynamic && <span className="text-xs bg-indigo-50 text-indigo-600 border border-indigo-200 px-2 py-0.5 rounded-full">⚡ Dynamic</span>}
-                {!n.is_active && <span className="text-xs bg-gray-100 text-gray-400 px-2 py-0.5 rounded-full">Inactive</span>}
+                {!n.is_active ? <span className="text-xs bg-gray-100 text-gray-400 px-2 py-0.5 rounded-full">Inactive</span> : ''}
                 {dead && <span className="text-xs bg-red-50 text-red-500 border border-red-200 px-2 py-0.5 rounded-full" title="This node has no children — customer will be stuck. Add children or mark as Dead End.">⚠️ Dead end</span>}
                 {n.is_dead_end && <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">🔚 Terminal</span>}
                 <span className="text-[11px] text-gray-300 font-mono ml-auto flex-shrink-0">🔥 {n.trigger_count || 0}</span>
