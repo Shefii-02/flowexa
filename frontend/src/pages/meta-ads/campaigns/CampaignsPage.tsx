@@ -18,10 +18,10 @@ function TemplateSelector({ value, onChange }: {
   value: any | null
   onChange: (t: any | null) => void
 }) {
-  const [search,    setSearch]    = useState('')
+  const [search, setSearch] = useState('')
   const [templates, setTemplates] = useState<any[]>([])
-  const [loading,   setLoading]   = useState(false)
-  const [open,      setOpen]      = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -162,10 +162,10 @@ function PhoneNumberSelector({ value, onChange }: {
   value: any | null
   onChange: (p: any | null) => void
 }) {
-  const [search,  setSearch]  = useState('')
+  const [search, setSearch] = useState('')
   const [numbers, setNumbers] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
-  const [open,    setOpen]    = useState(false)
+  const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -176,12 +176,47 @@ function PhoneNumberSelector({ value, onChange }: {
 
   useEffect(() => {
     if (!open) return
+
     setLoading(true)
+
     phoneNumberApi.list({ search, per_page: 20 })
-      .then(r => setNumbers(r.data.numbers || r.data.data || []))
+      .then(r => {
+        const data = r.data.phone_numbers || r.data.data || []
+
+        const normalized = data.map((p: any) => ({
+          ...p,
+          display_phone_number: p.display_phone_number || p.display_number,
+          verified_name: p.verified_name || p.label,
+          status: p.status?.toUpperCase(),
+        }))
+        console.log(normalized);
+        setNumbers(normalized)
+      })
       .catch(() => setNumbers([]))
       .finally(() => setLoading(false))
   }, [search, open])
+
+
+   useEffect(() => {
+    if (!open) return
+    setLoading(true)
+    phoneNumberApi.list({ search, per_page: 20 })
+      .then(r => setNumbers(r.data.phone_numbers || r.data.data || []))
+      .catch(() => setNumbers([]))
+      .finally(() => setLoading(false))
+  }, [search, open])
+  
+
+
+  // useEffect(() => {
+  //   if (!open) return
+  //   setLoading(true)
+  //   phoneNumberApi.list({ search, per_page: 20 })
+  //     .then(r => setNumbers(r.data.numbers || r.data.data || []))
+  //     .catch(() => setNumbers([]))
+  //     .finally(() => setLoading(false))
+  // }, [search, open])
+
 
   const qualityColor: Record<string, string> = {
     GREEN: 'text-green-600', YELLOW: 'text-amber-600', RED: 'text-red-500', UNKNOWN: 'text-gray-400',
@@ -200,8 +235,8 @@ function PhoneNumberSelector({ value, onChange }: {
         {value ? (
           <div className="flex items-center gap-2 min-w-0 flex-1">
             <span className="text-base">📱</span>
-            <span className="text-sm font-medium truncate">{value.display_phone_number}</span>
-            {value.verified_name && <span className="text-xs text-gray-400 truncate">({value.verified_name})</span>}
+            <span className="text-sm font-medium truncate">{value.display_number}</span>
+            {value.label && <span className="text-xs text-gray-400 truncate">({value.label})</span>}
           </div>
         ) : (
           <span className="text-gray-400 text-sm">Search and select a WhatsApp number...</span>
@@ -235,13 +270,13 @@ function PhoneNumberSelector({ value, onChange }: {
               </div>
             ) : numbers.map(p => (
               <div key={p.id}
-                className={`px-4 py-3 cursor-pointer hover:bg-brand-50 border-b border-gray-50 last:border-0 ${value?.id === p.id ? 'bg-brand-50' : ''} ${p.status === 'DISCONNECTED' ? 'opacity-50' : ''}`}
-                onClick={() => { if (p.status === 'DISCONNECTED') return; onChange(p); setOpen(false); setSearch('') }}
+                className={`px-4 py-3 cursor-pointer hover:bg-brand-50 border-b border-gray-50 last:border-0 ${value?.id === p.id ? 'bg-brand-50' : ''} ${p.status?.toLowerCase() === 'disconnected' || p.status?.toLowerCase() === 'inactive' ? 'opacity-50' : ''}`}
+                onClick={() => { if (p.status?.toLowerCase() === 'disconnected' || p.status?.toLowerCase() === 'inactive') return; onChange(p); setOpen(false); setSearch('') }}
               >
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2 min-w-0">
                     <span>📱</span>
-                    <span className="text-sm font-medium text-gray-900">{p.display_phone_number}</span>
+                    <span className="text-sm font-medium text-gray-900">{p.display_number}</span>
                   </div>
                   <div className="flex gap-1 flex-shrink-0 items-center">
                     {p.quality_rating && (
@@ -252,7 +287,7 @@ function PhoneNumberSelector({ value, onChange }: {
                     <span className={`badge text-xs ${statusBadge[p.status] || 'badge-gray'}`}>{p.status}</span>
                   </div>
                 </div>
-                {p.verified_name && <p className="text-xs text-gray-400 mt-1 truncate">{p.verified_name}</p>}
+                {p.label && <p className="text-xs text-gray-400 mt-1 truncate">{p.label}</p>}
               </div>
             ))}
           </div>
@@ -273,7 +308,7 @@ function LabelMultiSelect({ labels, selected, onChange }: {
   onChange: (ids: number[]) => void
 }) {
   const [search, setSearch] = useState('')
-  const [open,   setOpen]   = useState(false)
+  const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -283,7 +318,7 @@ function LabelMultiSelect({ labels, selected, onChange }: {
   }, [])
 
   const filtered = labels.filter(l => !search || l.name.toLowerCase().includes(search.toLowerCase()))
-  const toggle   = (id: number) => onChange(selected.includes(id) ? selected.filter(x => x !== id) : [...selected, id])
+  const toggle = (id: number) => onChange(selected.includes(id) ? selected.filter(x => x !== id) : [...selected, id])
   const selLabels = labels.filter(l => selected.includes(l.id))
 
   return (
@@ -360,27 +395,27 @@ function LabelMultiSelect({ labels, selected, onChange }: {
 export default function CampaignsPage() {
   const dispatch = useAppDispatch()
   const { list, total, loading } = useAppSelector(s => s.campaigns)
-  const { list: labels }         = useAppSelector(s => s.labels)
+  const { list: labels } = useAppSelector(s => s.labels)
 
-  const [page,         setPage]         = useState(1)
+  const [page, setPage] = useState(1)
   const [statusFilter, setStatusFilter] = useState('')
-  const [showCreate,   setShowCreate]   = useState(false)
+  const [showCreate, setShowCreate] = useState(false)
   const [editCampaign, setEditCampaign] = useState<Campaign | null>(null)
-  const [selected,     setSelected]     = useState<Campaign | null>(null)
-  const [showStats,    setShowStats]    = useState(false)
-  const [stats,        setStats]        = useState<any>(null)
-  const [delCamp,      setDelCamp]      = useState<Campaign | null>(null)
-  const [saving,       setSaving]       = useState(false)
-  const [acting,       setActing]       = useState<number | null>(null)
+  const [selected, setSelected] = useState<Campaign | null>(null)
+  const [showStats, setShowStats] = useState(false)
+  const [stats, setStats] = useState<any>(null)
+  const [delCamp, setDelCamp] = useState<Campaign | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [acting, setActing] = useState<number | null>(null)
 
   const [form, setForm] = useState({
-    name: '', target_type: 'all' as 'all'|'labels'|'csv',
+    name: '', target_type: 'all' as 'all' | 'labels' | 'csv',
     throttle_per_minute: '60', description: '',
   })
-  const [selectedTemplate,    setSelectedTemplate]    = useState<any>(null)
+  const [selectedTemplate, setSelectedTemplate] = useState<any>(null)
   const [selectedPhoneNumber, setSelectedPhoneNumber] = useState<any>(null)
-  const [selectedLabels,      setSelectedLabels]      = useState<number[]>([])
-  const [csvFile,             setCsvFile]             = useState<File | null>(null)
+  const [selectedLabels, setSelectedLabels] = useState<number[]>([])
+  const [csvFile, setCsvFile] = useState<File | null>(null)
   const set = (k: string, v: any) => setForm(f => ({ ...f, [k]: v }))
 
   const load = useCallback(() => {
@@ -397,8 +432,10 @@ export default function CampaignsPage() {
 
   const openEdit = (c: Campaign) => {
     setEditCampaign(c)
-    setForm({ name: c.name, target_type: c.target_type as any,
-      throttle_per_minute: String(c.throttle_per_minute || 60), description: (c as any).description || '' })
+    setForm({
+      name: c.name, target_type: c.target_type as any,
+      throttle_per_minute: String(c.throttle_per_minute || 60), description: (c as any).description || ''
+    })
     setSelectedTemplate(c.template ? { id: c.template.id, name: c.template.name, body: c.template.body, components: (c.template as any).components } : null)
     // Backend should include the related phone number on the campaign resource
     // (e.g. as `wa_phone_number`) so editing a campaign shows what's already selected.
@@ -408,9 +445,9 @@ export default function CampaignsPage() {
   }
 
   const handleSave = async () => {
-    if (!form.name.trim())        { toast.error('Campaign name required'); return }
-    if (!selectedTemplate)        { toast.error('Select a template'); return }
-    if (!selectedPhoneNumber)     { toast.error('Select a sending number'); return }
+    if (!form.name.trim()) { toast.error('Campaign name required'); return }
+    if (!selectedTemplate) { toast.error('Select a template'); return }
+    if (!selectedPhoneNumber) { toast.error('Select a sending number'); return }
     if (selectedPhoneNumber.status === 'DISCONNECTED') { toast.error('That number is disconnected — choose a connected one'); return }
     if (form.target_type === 'labels' && selectedLabels.length === 0) { toast.error('Select at least one label'); return }
     if (form.target_type === 'csv' && !csvFile && !editCampaign) { toast.error('Upload a CSV file'); return }
@@ -426,20 +463,20 @@ export default function CampaignsPage() {
       if (form.target_type === 'labels') selectedLabels.forEach(id => fd.append('target_labels[]', String(id)))
       if (form.target_type === 'csv' && csvFile) fd.append('file', csvFile)
       if (editCampaign) { await campaignApi.update(editCampaign.id, fd); toast.success('Campaign updated.') }
-      else              { await campaignApi.create(fd); toast.success('Campaign created as draft.') }
+      else { await campaignApi.create(fd); toast.success('Campaign created as draft.') }
       setShowCreate(false); resetForm(); load()
     } catch (e) { toast.error(getError(e)) }
-    finally     { setSaving(false) }
+    finally { setSaving(false) }
   }
 
-  const handleAction = async (id: number, action: 'launch'|'pause'|'resume'|'resend-failed') => {
+  const handleAction = async (id: number, action: 'launch' | 'pause' | 'resume' | 'resend-failed') => {
     setActing(id)
     try {
       const fn = { launch: campaignApi.launch, pause: campaignApi.pause, resume: campaignApi.resume, 'resend-failed': campaignApi.resendFailed }[action]
       const { data } = await fn(id)
       toast.success(data.message || `Campaign ${action}ed.`); load()
     } catch (e) { toast.error(getError(e)) }
-    finally     { setActing(null) }
+    finally { setActing(null) }
   }
 
   const loadStats = async (c: Campaign) => {
@@ -453,7 +490,7 @@ export default function CampaignsPage() {
     catch (e) { toast.error(getError(e)) }
   }
 
-  const statusVariant: Record<string,any> = {
+  const statusVariant: Record<string, any> = {
     completed: 'green', failed: 'red', running: 'yellow', draft: 'gray', paused: 'gray',
   }
 
@@ -469,7 +506,7 @@ export default function CampaignsPage() {
           <select className="select max-w-[180px]" value={statusFilter}
             onChange={e => { setStatusFilter(e.target.value); setPage(1) }}>
             <option value="">All statuses</option>
-            {['draft','running','paused','completed','failed'].map(s => (
+            {['draft', 'running', 'paused', 'completed', 'failed'].map(s => (
               <option key={s} value={s}>{campaignStatusConfig[s]?.label || s}</option>
             ))}
           </select>
@@ -489,7 +526,7 @@ export default function CampaignsPage() {
                     <tr key={c.id}>
                       <td>
                         <p className="font-medium text-gray-900">{c.name}</p>
-                        <p className="text-xs text-gray-400">{c.created_at?.slice(0,10)}</p>
+                        <p className="text-xs text-gray-400">{c.created_at?.slice(0, 10)}</p>
                       </td>
                       <td>
                         <p className="text-xs text-gray-600 font-mono">{c.template?.name || '—'}</p>
@@ -518,14 +555,14 @@ export default function CampaignsPage() {
                       <td>
                         <div className="flex gap-1 flex-wrap">
                           <button onClick={() => loadStats(c)} className="text-xs text-blue-600 hover:underline">Stats</button>
-                          {['draft','paused'].includes(c.status) && <button onClick={() => openEdit(c)} className="text-xs text-gray-600 hover:underline">Edit</button>}
-                          {c.status === 'draft'   && <button onClick={() => handleAction(c.id,'launch')} disabled={isActing} className="text-xs text-green-600 hover:underline">Launch</button>}
-                          {c.status === 'running' && <button onClick={() => handleAction(c.id,'pause')}  disabled={isActing} className="text-xs text-yellow-600 hover:underline">Pause</button>}
-                          {c.status === 'paused'  && <button onClick={() => handleAction(c.id,'resume')} disabled={isActing} className="text-xs text-brand-600 hover:underline">Resume</button>}
+                          {['draft', 'paused'].includes(c.status) && <button onClick={() => openEdit(c)} className="text-xs text-gray-600 hover:underline">Edit</button>}
+                          {c.status === 'draft' && <button onClick={() => handleAction(c.id, 'launch')} disabled={isActing} className="text-xs text-green-600 hover:underline">Launch</button>}
+                          {c.status === 'running' && <button onClick={() => handleAction(c.id, 'pause')} disabled={isActing} className="text-xs text-yellow-600 hover:underline">Pause</button>}
+                          {c.status === 'paused' && <button onClick={() => handleAction(c.id, 'resume')} disabled={isActing} className="text-xs text-brand-600 hover:underline">Resume</button>}
                           {c.status === 'completed' && (c.stats?.failed || 0) > 0 && (
-                            <button onClick={() => handleAction(c.id,'resend-failed')} disabled={isActing} className="text-xs text-purple-600 hover:underline">Resend {c.stats?.failed}</button>
+                            <button onClick={() => handleAction(c.id, 'resend-failed')} disabled={isActing} className="text-xs text-purple-600 hover:underline">Resend {c.stats?.failed}</button>
                           )}
-                          {['draft','paused','completed'].includes(c.status) && (
+                          {['draft', 'paused', 'completed'].includes(c.status) && (
                             <button onClick={() => setDelCamp(c)} className="text-xs text-red-500 hover:underline">Delete</button>
                           )}
                         </div>
@@ -535,7 +572,7 @@ export default function CampaignsPage() {
                 })}
               </tbody>
             </table>
-            <Pagination page={page} lastPage={Math.ceil(total/20)} total={total} perPage={20} onChange={setPage} />
+            <Pagination page={page} lastPage={Math.ceil(total / 20)} total={total} perPage={20} onChange={setPage} />
           </div>
         )}
       </div>
@@ -562,17 +599,16 @@ export default function CampaignsPage() {
             <label className="label">Target type *</label>
             <div className="grid grid-cols-3 gap-2">
               {([
-                { value:'all',    label:'👥 All contacts', desc:'All opted-in' },
-                { value:'labels', label:'🏷️ By labels',    desc:'Filter by label' },
-                { value:'csv',    label:'📂 CSV upload',   desc:'Custom list' },
+                { value: 'all', label: '👥 All contacts', desc: 'All opted-in' },
+                { value: 'labels', label: '🏷️ By labels', desc: 'Filter by label' },
+                { value: 'csv', label: '📂 CSV upload', desc: 'Custom list' },
               ] as const).map(opt => (
                 <button key={opt.value} type="button"
                   onClick={() => { set('target_type', opt.value); setSelectedLabels([]) }}
-                  className={`p-3 rounded-xl border text-left transition-all ${
-                    form.target_type === opt.value
+                  className={`p-3 rounded-xl border text-left transition-all ${form.target_type === opt.value
                       ? 'border-brand-500 bg-brand-50'
                       : 'border-gray-200 hover:border-gray-300'
-                  }`}
+                    }`}
                 >
                   <p className="text-sm font-medium">{opt.label}</p>
                   <p className="text-xs text-gray-400 mt-0.5">{opt.desc}</p>
@@ -618,7 +654,7 @@ export default function CampaignsPage() {
                 <span className="text-brand-500">Target</span><span className="font-medium">
                   {form.target_type === 'all' ? 'All opted-in contacts'
                     : form.target_type === 'labels' ? `${selectedLabels.length} label(s) selected`
-                    : csvFile ? csvFile.name : 'CSV file'}
+                      : csvFile ? csvFile.name : 'CSV file'}
                 </span>
                 <span className="text-brand-500">Throttle</span><span className="font-medium">{form.throttle_per_minute} msgs/min</span>
               </div>
@@ -635,20 +671,20 @@ export default function CampaignsPage() {
         ) : (
           <div className="space-y-4">
             <div className="grid grid-cols-3 gap-3">
-              {[['Total','👥',stats.total_contacts],['Sent','📤',stats.sent],['Delivered',`✅ ${stats.delivery_rate}%`,stats.delivered],
-               ['Read',`👁️ ${stats.read_rate}%`,stats.read],['Failed',`❌ ${stats.fail_rate}%`,stats.failed],['Pending','⏳',stats.pending]]
-                .map(([l,i,v]) => <StatCard key={l as string} label={l as string} value={v as number} icon={i as string} />)}
+              {[['Total', '👥', stats.total_contacts], ['Sent', '📤', stats.sent], ['Delivered', `✅ ${stats.delivery_rate}%`, stats.delivered],
+              ['Read', `👁️ ${stats.read_rate}%`, stats.read], ['Failed', `❌ ${stats.fail_rate}%`, stats.failed], ['Pending', '⏳', stats.pending]]
+                .map(([l, i, v]) => <StatCard key={l as string} label={l as string} value={v as number} icon={i as string} />)}
             </div>
             <div className="bg-gray-50 rounded-xl p-4">
               <p className="text-xs font-semibold text-gray-500 mb-2">Delivery breakdown</p>
               <div className="flex rounded-full overflow-hidden h-4">
                 <div className="bg-green-500 h-full" style={{ width: `${stats.delivery_rate}%` }} />
-                <div className="bg-blue-400 h-full"  style={{ width: `${stats.read_rate}%` }} />
-                <div className="bg-red-400 h-full"   style={{ width: `${stats.fail_rate}%` }} />
+                <div className="bg-blue-400 h-full" style={{ width: `${stats.read_rate}%` }} />
+                <div className="bg-red-400 h-full" style={{ width: `${stats.fail_rate}%` }} />
                 <div className="bg-gray-200 h-full flex-1" />
               </div>
               <div className="flex gap-4 mt-2 text-xs text-gray-500">
-                {[['bg-green-500','Delivered'],['bg-blue-400','Read'],['bg-red-400','Failed'],['bg-gray-200','Pending']].map(([bg,l]) => (
+                {[['bg-green-500', 'Delivered'], ['bg-blue-400', 'Read'], ['bg-red-400', 'Failed'], ['bg-gray-200', 'Pending']].map(([bg, l]) => (
                   <span key={l} className="flex items-center gap-1"><span className={`w-2.5 h-2.5 rounded-full ${bg} inline-block`} />{l}</span>
                 ))}
               </div>
