@@ -1134,7 +1134,7 @@ export default function FlowNodesPage() {
                 Select all
               </button>
             )}
-
+            <Button variant="secondary" onClick={() => openPreview(null)}>👁 Test flow</Button>
             <Button onClick={() => openCreate(null)}>+ Root node</Button>
           </div>
         </div>
