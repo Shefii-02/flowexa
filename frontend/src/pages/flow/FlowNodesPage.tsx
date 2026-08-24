@@ -296,7 +296,7 @@ function ReplyIdSelect({ nodes, value, onChange }: { nodes: FlowNode[]; value: s
   const filtered = nodes.filter(n => !search || n.reply_id.toLowerCase().includes(search.toLowerCase()) || n.title.toLowerCase().includes(search.toLowerCase()))
   return (
     <div className="relative" ref={ref}>
-      
+
       <label className="label">
         Redirect to <span className="text-xs text-gray-400">(Back / Main Menu)</span>
         <span className="text-xs text-indigo-500 ml-1">optional</span>
@@ -379,8 +379,8 @@ function MediaInput({ block, builderId, onUpdate }: {
         <>
           <div
             className={`border-2 border-dashed rounded-lg p-3 text-center cursor-pointer transition-colors ${block.url && block.asset_id ? 'border-green-400 bg-green-50' :
-                uploading ? 'border-brand-300 bg-brand-50 cursor-wait' :
-                  'border-gray-200 hover:border-brand-300'
+              uploading ? 'border-brand-300 bg-brand-50 cursor-wait' :
+                'border-gray-200 hover:border-brand-300'
               }`}
             onClick={() => !uploading && document.getElementById(`up-${block._key}`)?.click()}>
             <input id={`up-${block._key}`} type="file" className="hidden"
@@ -447,8 +447,8 @@ function DupTreeItem({ dn, depth, expanded, onToggle, onUpdate }: {
             </button>
           )}
           <span className={`text-xs font-semibold px-1.5 py-0.5 rounded-full flex-shrink-0 ${dn.original.type === 'list' ? 'bg-blue-50 text-blue-600' :
-              dn.original.type === 'button' ? 'bg-purple-50 text-purple-600' :
-                'bg-green-50 text-green-600'}`}>
+            dn.original.type === 'button' ? 'bg-purple-50 text-purple-600' :
+              'bg-green-50 text-green-600'}`}>
             {dn.original.type}
           </span>
           <span className="text-sm font-medium text-gray-900 truncate flex-1">{dn.original.title}</span>
@@ -913,6 +913,27 @@ export default function FlowNodesPage() {
     finally { setDuplicating(false) }
   }
 
+  const copyToClipboard = async (text: string, label: string) => {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text)
+    } else {
+      // Fallback for non-secure contexts / older browsers without Clipboard API
+      const ta = document.createElement('textarea')
+      ta.value = text
+      ta.style.position = 'fixed'
+      ta.style.opacity = '0'
+      document.body.appendChild(ta)
+      ta.select()
+      document.execCommand('copy')
+      document.body.removeChild(ta)
+    }
+    toast.success(`${label} copied!`)
+  } catch {
+    toast.error(`Couldn't copy ${label.toLowerCase()}`)
+  }
+}
+
   // ── Render node row ────────────────────────────────────────────────────────
   const renderNode = (n: FlowNode, depth = 0) => {
     const children = (byParent[String(n.id)] || []).slice().sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
@@ -970,8 +991,8 @@ export default function FlowNodesPage() {
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-1.5 flex-wrap">
                 <span className={`text-xs font-semibold px-1.5 py-0.5 rounded-full ${n.type === 'list' ? 'bg-blue-50 text-blue-600' : n.type === 'button' ? 'bg-purple-50 text-purple-600' :
-                    n.type === 'survey' ? 'bg-amber-50 text-amber-600' : n.type === 'template' ? 'bg-pink-50 text-pink-600' :
-                      'bg-green-50 text-green-600'}`}>
+                  n.type === 'survey' ? 'bg-amber-50 text-amber-600' : n.type === 'template' ? 'bg-pink-50 text-pink-600' :
+                    'bg-green-50 text-green-600'}`}>
                   {n.type}
                 </span>
                 <span className="font-semibold text-sm text-gray-900 truncate">{n.title}</span>
@@ -994,9 +1015,28 @@ export default function FlowNodesPage() {
                   🔥{n.trigger_count || 0}
                 </span>
               </div>
-              <p className="text-[11px] text-gray-300 font-mono mt-0.5 truncate">
-                {n.reply_id}{n.parent_id ? ` · parent #${n.parent_id}` : ''}
+              <p className="text-xs text-gray-400 mt-1 truncate max-w-xl">
+                {n.type === 'survey' ? `Survey #${n.survey_form_id}` : n.type === 'template' ? `Template #${n.wa_template_id}` : (n.message || '[multi-message]')}
               </p>
+              <p className="text-[11px] text-gray-300 font-mono mt-0.5 flex items-center flex-wrap">
+                <span className="inline-flex items-center gap-0.5">
+                  reply_id: <span className="text-gray-400">{n.reply_id}</span>
+                  <button type="button" title="Copy reply_id" tabIndex={-1}
+                    onClick={e => { e.stopPropagation(); copyToClipboard(n.reply_id, 'Reply ID') }}
+                    className="text-gray-300 hover:text-brand-500 px-1 py-0.5 leading-none">📋</button>
+                </span>
+                {n.parent_id && (
+                  <span className="ml-3 inline-flex items-center gap-0.5">
+                    parent: #{n.parent_id}
+                    <button type="button" title="Copy parent ID" tabIndex={-1}
+                      onClick={e => { e.stopPropagation(); copyToClipboard(String(n.parent_id), 'Parent ID') }}
+                      className="text-gray-300 hover:text-brand-500 px-1 py-0.5 leading-none">📋</button>
+                  </span>
+                )}
+              </p>
+              {/* <p className="text-[11px] text-gray-300 font-mono mt-0.5 truncate">
+                {n.reply_id}{n.parent_id ? ` · parent #${n.parent_id}` : ''}
+              </p> */}
             </div>
 
             {/* Actions */}
@@ -1056,8 +1096,8 @@ export default function FlowNodesPage() {
             <button
               onClick={() => setDragEnabled(d => !d)}
               className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-xl border font-medium transition-all ${dragEnabled
-                  ? 'bg-brand-50 border-brand-300 text-brand-700'
-                  : 'bg-gray-100 border-gray-200 text-gray-500'
+                ? 'bg-brand-50 border-brand-300 text-brand-700'
+                : 'bg-gray-100 border-gray-200 text-gray-500'
                 }`}>
               {dragEnabled ? '🔓 Drag ON' : '🔒 Drag OFF'}
             </button>
@@ -1120,8 +1160,8 @@ export default function FlowNodesPage() {
             {dragEnabled && (
               <div
                 className={`h-10 rounded-xl border-2 border-dashed mt-3 flex items-center justify-center text-xs transition-all ${dragOver === 'root'
-                    ? 'border-brand-400 bg-brand-50 text-brand-600'
-                    : 'border-gray-200 text-gray-300'
+                  ? 'border-brand-400 bg-brand-50 text-brand-600'
+                  : 'border-gray-200 text-gray-300'
                   }`}
                 onDragOver={e => handleDragOver(e, 'root')}
                 onDrop={e => handleReparentDrop(e, null)}
@@ -1165,7 +1205,7 @@ export default function FlowNodesPage() {
                 <div className="relative">
                   <input
                     className={`form-control font-mono text-sm ${replyStatus === 'taken' ? 'border-red-400' :
-                        replyStatus === 'ok' ? 'border-green-400' : ''
+                      replyStatus === 'ok' ? 'border-green-400' : ''
                       }`}
                     value={form.reply_id}
                     onChange={e => { set('reply_id', e.target.value); set('reply_id_manual', true) }}
@@ -1189,8 +1229,8 @@ export default function FlowNodesPage() {
                 {NODE_TYPES.map(t => (
                   <button key={t.value} type="button" onClick={() => set('type', t.value)}
                     className={`p-2 rounded-xl border text-left text-xs transition-all ${form.type === t.value
-                        ? 'border-brand-500 bg-brand-50 text-brand-700'
-                        : 'border-gray-200 hover:border-gray-300 text-gray-600'
+                      ? 'border-brand-500 bg-brand-50 text-brand-700'
+                      : 'border-gray-200 hover:border-gray-300 text-gray-600'
                       }`}>
                     <div className="font-semibold">{t.icon} {t.label}</div>
                     <div className="text-gray-400 text-[10px] mt-0.5">{t.desc}</div>
@@ -1204,7 +1244,7 @@ export default function FlowNodesPage() {
 
             {/* Redirect to (Back / Main Menu) */}
             <ReplyIdSelect nodes={nodes} value={form.redirect_to_reply_id}
-              onChange={v=>set('redirect_to_reply_id',v)}/>
+              onChange={v => set('redirect_to_reply_id', v)} />
 
             {/* Message */}
             <div>
@@ -1219,7 +1259,7 @@ export default function FlowNodesPage() {
                 onChange={e => set('message', e.target.value)}
               />
             </div>
-             
+
 
             {/* Parent + Active + Dead end */}
             <div className="grid grid-cols-2 gap-4 items-start">
