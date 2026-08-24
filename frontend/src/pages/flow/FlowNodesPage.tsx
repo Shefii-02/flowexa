@@ -914,25 +914,25 @@ export default function FlowNodesPage() {
   }
 
   const copyToClipboard = async (text: string, label: string) => {
-  try {
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(text)
-    } else {
-      // Fallback for non-secure contexts / older browsers without Clipboard API
-      const ta = document.createElement('textarea')
-      ta.value = text
-      ta.style.position = 'fixed'
-      ta.style.opacity = '0'
-      document.body.appendChild(ta)
-      ta.select()
-      document.execCommand('copy')
-      document.body.removeChild(ta)
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text)
+      } else {
+        // Fallback for non-secure contexts / older browsers without Clipboard API
+        const ta = document.createElement('textarea')
+        ta.value = text
+        ta.style.position = 'fixed'
+        ta.style.opacity = '0'
+        document.body.appendChild(ta)
+        ta.select()
+        document.execCommand('copy')
+        document.body.removeChild(ta)
+      }
+      toast.success(`${label} copied!`)
+    } catch {
+      toast.error(`Couldn't copy ${label.toLowerCase()}`)
     }
-    toast.success(`${label} copied!`)
-  } catch {
-    toast.error(`Couldn't copy ${label.toLowerCase()}`)
   }
-}
 
   // ── Render node row ────────────────────────────────────────────────────────
   const renderNode = (n: FlowNode, depth = 0) => {
@@ -1011,9 +1011,6 @@ export default function FlowNodesPage() {
                     📨{n.multi_messages!.length}
                   </span>
                 )}
-                <span className="text-[10px] text-gray-300 font-mono ml-auto flex-shrink-0">
-                  🔥{n.trigger_count || 0}
-                </span>
               </div>
               <p className="text-xs text-gray-400 mt-1 truncate max-w-xl">
                 {n.type === 'survey' ? `Survey #${n.survey_form_id}` : n.type === 'template' ? `Template #${n.wa_template_id}` : (n.message || '[multi-message]')}
@@ -1033,6 +1030,9 @@ export default function FlowNodesPage() {
                       className="text-gray-300 hover:text-brand-500 px-1 py-0.5 leading-none">📋</button>
                   </span>
                 )}
+                <span className="text-[10px] text-gray-300 font-mono ml-auto flex-shrink-0">
+                  🔥{n.trigger_count || 0}
+                </span>
               </p>
               {/* <p className="text-[11px] text-gray-300 font-mono mt-0.5 truncate">
                 {n.reply_id}{n.parent_id ? ` · parent #${n.parent_id}` : ''}
