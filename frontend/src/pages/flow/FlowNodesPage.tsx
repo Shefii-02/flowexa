@@ -753,9 +753,9 @@ export default function FlowNodesPage() {
   const handleToggle = async (n: FlowNode) => {
     try {
       if (n.is_active) {
-        await flowNodeApi.deactivate(builderId, n.id)
+        await flowNodeApi.toggle(builderId, n.id)
       } else {
-        await flowNodeApi.activate(builderId, n.id)
+        await flowNodeApi.toggle(builderId, n.id)
       }
       load()
     } catch (e) { toast.error(getError(e)) }
