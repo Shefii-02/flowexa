@@ -158,7 +158,12 @@ class FlowNodeController extends Controller
             'title'       => ['required', 'string', 'max:100'],
             'message'     => ['nullable', 'string', 'max:4096'],
             'type'        => ['required', Rule::in(['text', 'button', 'list', 'image', 'video', 'document', 'audio', 'location', 'survey', 'template'])],
-            'reply_id'    => ['required', 'string', 'max:200'],
+            'reply_id'    => [
+                'required',
+                'string',
+                'max:200'
+            ],
+            'redirect_to_reply_id' => ['nullable', 'string', 'max:200'],
             ...$this->sharedRules(),
         ]);
 
@@ -198,6 +203,7 @@ class FlowNodeController extends Controller
             'location_name'    => $d['location_name']    ?? null,
             'location_address' => $d['location_address'] ?? null,
             'is_dead_end'      => $d['is_dead_end'] ?? false,
+            'redirect_to_reply_id' => $d['redirect_to_reply_id'] ?? null,
 
             'is_dynamic'                => $d['is_dynamic']                ?? false,
             'dynamic_api_url'           => $d['dynamic_api_url']           ?? null,
@@ -231,6 +237,7 @@ class FlowNodeController extends Controller
             'type'     => ['sometimes', Rule::in(['text', 'button', 'list', 'image', 'video', 'document', 'audio', 'location', 'survey', 'template'])],
             'parent_id'   => ['nullable', 'integer'],
             'reply_id'    => ['required', 'string', 'max:200'],
+            'redirect_to_reply_id' => ['nullable', 'string', 'max:200'],
             ...$this->sharedRules(),
         ]);
 
