@@ -91,8 +91,8 @@
 
 
 .form-control,input.form-control,textarea.form-control {
-    border: 1px solid #140c0c3d;
-    padding: 5px;
-    border-radius: 9px;
-    width: 100%;
+    border: 1px solid #140c0c3d !important;
+    padding: 5px !important;
+    border-radius: 9px !important;
+    width: 100% !important;
 }
