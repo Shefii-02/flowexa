@@ -1201,6 +1201,10 @@ export default function FlowNodesPage() {
             {/* Lead category */}
             <LeadCategorySelect value={form.lead_category} onChange={v => set('lead_category', v)} />
 
+            {/* Redirect to (Back / Main Menu) */}
+            <ReplyIdSelect nodes={nodes} value={form.redirect_to_reply_id}
+              onChange={v=>set('redirect_to_reply_id',v)}/>
+              
             {/* Message */}
             <div>
               <label className="label">
@@ -1214,10 +1218,7 @@ export default function FlowNodesPage() {
                 onChange={e => set('message', e.target.value)}
               />
             </div>
-             kklkkl
-            {/* Redirect to (Back / Main Menu) */}
-            <ReplyIdSelect nodes={nodes} value={form.redirect_to_reply_id}
-              onChange={v=>set('redirect_to_reply_id',v)}/>
+             
 
             {/* Parent + Active + Dead end */}
             <div className="grid grid-cols-2 gap-4 items-start">
