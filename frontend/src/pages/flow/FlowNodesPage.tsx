@@ -990,7 +990,7 @@ export default function FlowNodesPage() {
             {/* Info */}
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-1.5 flex-wrap">
-                <span className={`text-xs font-semibold px-1.5 py-0.5 rounded-full ${n.type === 'list' ? 'bg-blue-50 text-blue-600' : n.type === 'button' ? 'bg-purple-50 text-purple-600' :
+                <span className={`text-xs font-semibold px-1.5 capitalize py-0.5 rounded-full ${n.type === 'list' ? 'bg-blue-50 text-blue-600' : n.type === 'button' ? 'bg-purple-50 text-purple-600' :
                   n.type === 'survey' ? 'bg-amber-50 text-amber-600' : n.type === 'template' ? 'bg-pink-50 text-pink-600' :
                     'bg-green-50 text-green-600'}`}>
                   {n.type}
@@ -1005,7 +1005,7 @@ export default function FlowNodesPage() {
                 {dead && <span className="text-xs bg-red-50 text-red-500 border border-red-200 px-1.5 py-0.5 rounded-full">⚠️ Dead end</span>}
                 {n.is_dead_end ? <span className="text-xs bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full">🔚 Terminal</span> : ''}
                 {!n.is_active ? <span className="text-xs bg-gray-100 text-gray-400 px-1.5 py-0.5 rounded-full">Inactive</span> : ''}
-                {n.is_dynamic && <span className="text-xs bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded-full">⚡</span>}
+                {n.is_dynamic ? <span className="text-xs bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded-full">⚡</span> : ''}
                 {(n.multi_messages?.length || 0) > 0 && (
                   <span className="text-xs bg-teal-50 text-teal-600 px-1.5 py-0.5 rounded-full">
                     📨{n.multi_messages!.length}
