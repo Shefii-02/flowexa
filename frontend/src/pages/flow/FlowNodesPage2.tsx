@@ -1154,7 +1154,7 @@ export default function FlowNodesPage() {
           </div>
 
           {/* Parent + Active + Dead end */}
-          <div className="grid grid-cols-2 gap-4 items-end">
+          <div className="grid grid-cols-2 gap-4 items-center">
             <ParentNodeSelect nodes={nodes} value={form.parent_id} onChange={v => set('parent_id', v)} excludeId={editN?.id} />
             <div className="space-y-2">
               <div className="flex items-center gap-3 bg-gray-50 rounded-xl px-4 py-2.5">
