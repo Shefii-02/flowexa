@@ -87,3 +87,12 @@
   .modal-body { @apply px-6 py-5 space-y-4;    max-height: 70vh !important; overflow-x: auto; }
   .modal-footer { @apply px-6 py-4 border-t border-gray-100 flex gap-3 justify-end; }
 }
+
+
+
+.form-control,input.form-control,textarea.form-control {
+    border: 1px solid #140c0c3d;
+    padding: 5px;
+    border-radius: 9px;
+    width: 100%;
+}
