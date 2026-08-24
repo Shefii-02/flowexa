@@ -1091,7 +1091,7 @@ export default function FlowNodesPage() {
         open={showForm}
         onClose={() => setShowForm(false)}
         title={editN ? `Edit — ${editN.title}` : form.parent_id ? 'New child node' : 'New root node'}
-        size="2xl"
+        // size="2xl"
         footer={
           <>
             <Button variant="secondary" onClick={() => setShowForm(false)}>Cancel</Button>
