@@ -296,6 +296,7 @@ function ReplyIdSelect({ nodes, value, onChange }: { nodes: FlowNode[]; value: s
   const filtered = nodes.filter(n => !search || n.reply_id.toLowerCase().includes(search.toLowerCase()) || n.title.toLowerCase().includes(search.toLowerCase()))
   return (
     <div className="relative" ref={ref}>
+      dfffd
       <label className="label">
         Redirect to <span className="text-xs text-gray-400">(Back / Main Menu)</span>
         <span className="text-xs text-indigo-500 ml-1">optional</span>
@@ -1204,7 +1205,7 @@ export default function FlowNodesPage() {
             {/* Redirect to (Back / Main Menu) */}
             <ReplyIdSelect nodes={nodes} value={form.redirect_to_reply_id}
               onChange={v=>set('redirect_to_reply_id',v)}/>
-              
+
             {/* Message */}
             <div>
               <label className="label">
