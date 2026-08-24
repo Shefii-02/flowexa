@@ -80,10 +80,10 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(({ label, error
 Select.displayName = 'Select'
 
 // ── Modal ─────────────────────────────────────────────────────────────────────
-interface ModalProps { open: boolean; onClose: () => void; title: string; children: ReactNode; size?: 'sm'|'md'|'lg'|'xl'; footer?: ReactNode }
-export const Modal = ({ open, onClose, title, children, size = 'md', footer }: ModalProps) => {
+interface ModalProps { open: boolean; onClose: () => void; title: string; children: ReactNode; size?: 'sm'|'md'|'lg'|'xl'|'default'; footer?: ReactNode }
+export const Modal = ({ open, onClose, title, children, size = 'default', footer }: ModalProps) => {
   if (!open) return null
-  const maxW = { sm: 'max-w-sm', md: 'max-w-md', lg: 'max-w-lg', xl: 'max-w-2xl' }[size]
+  const maxW = { sm: 'max-w-sm', md: 'max-w-md', lg: 'max-w-lg', xl: 'max-w-2xl',default:'max-w-[85%]' }[size]
 
   return (
     <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
