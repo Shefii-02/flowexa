@@ -47,7 +47,7 @@ import PlanPurchasePage from '@/pages/plan-purchase/PlanPurchasePage'
 import BlacklistPage from '@/pages/blacklist/BlacklistPage'
 import LabelsPage from './pages/contacts/LabelsPage'
 import FlowBuildersPage from './pages/flow/FlowBuildersPage'
-import FlowNodesPage from '@/pages/flow/FlowNodesPage2'
+import FlowNodesPage from '@/pages/flow/FlowNodesPage'
 import InboxPage from './pages/inbox/InboxPage'
 import SurveyFormsPage from './pages/survey/SurveyFormsPage'
 
