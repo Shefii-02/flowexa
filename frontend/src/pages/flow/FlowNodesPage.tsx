@@ -1003,8 +1003,8 @@ export default function FlowNodesPage() {
                 )}
                 {n.redirect_to_reply_id && <span className="text-xs bg-indigo-50 text-indigo-600 border border-indigo-200 px-1.5 py-0.5 rounded-full" title={`Redirects to: ${n.redirect_to_reply_id}`}>↩ {n.redirect_to_reply_id === 'WELCOME' ? 'Menu' : n.redirect_to_reply_id.slice(0, 12)}</span>}
                 {dead && <span className="text-xs bg-red-50 text-red-500 border border-red-200 px-1.5 py-0.5 rounded-full">⚠️ Dead end</span>}
-                {n.is_dead_end && <span className="text-xs bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full">🔚 Terminal</span>}
-                {!n.is_active && <span className="text-xs bg-gray-100 text-gray-400 px-1.5 py-0.5 rounded-full">Inactive</span>}
+                {n.is_dead_end ? <span className="text-xs bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full">🔚 Terminal</span> : ''}
+                {!n.is_active ? <span className="text-xs bg-gray-100 text-gray-400 px-1.5 py-0.5 rounded-full">Inactive</span> : ''}
                 {n.is_dynamic && <span className="text-xs bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded-full">⚡</span>}
                 {(n.multi_messages?.length || 0) > 0 && (
                   <span className="text-xs bg-teal-50 text-teal-600 px-1.5 py-0.5 rounded-full">
