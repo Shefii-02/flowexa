@@ -216,10 +216,10 @@ export default function FlowNodesPage() {
         for (const id of ids) { try { await flowNodeApi.delete(builderId, id) } catch { } }
         toast.success(`${ids.length} node(s) deleted.`)
       } else if (bulkAction === 'activate') {
-        for (const id of ids) { try { await flowNodeApi.toggle(builderId, id) } catch { } }
+        for (const id of ids) { try { await flowNodeApi.activate(builderId, id) } catch { } }
         toast.success(`${ids.length} node(s) activated.`)
       } else if (bulkAction === 'deactivate') {
-        for (const id of ids) { try { await flowNodeApi.toggle(builderId, id) } catch { } }
+        for (const id of ids) { try { await flowNodeApi.deactivate(builderId, id) } catch { } }
         toast.success(`${ids.length} node(s) deactivated.`)
       }
       setSelected(new Set()); setBulkAction(null); load()

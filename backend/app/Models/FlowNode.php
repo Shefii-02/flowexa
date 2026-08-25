@@ -20,6 +20,7 @@ class FlowNode extends Model
         'multi_messages',
         'type',
         'reply_id',
+        'redirect_to_reply_id',
         'lead_category',
         'sort_order',
         'is_active',

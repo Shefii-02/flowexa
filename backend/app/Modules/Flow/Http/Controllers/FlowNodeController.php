@@ -329,6 +329,45 @@ class FlowNodeController extends Controller
         ]);
     }
 
+     // POST /flow-builders/{bid}/nodes/{id}/toggle — activate / deactivate
+    public function activate(int $bid, int $id): JsonResponse
+    {
+        $this->builder($bid);
+
+        $node = FlowNode::where('id', $id)
+            ->where('flow_builder_id', $bid)
+            ->where('company_id', auth()->user()->company_id)
+            ->firstOrFail();
+
+        $node->update(['is_active' => true]);
+
+        return response()->json([
+            'message' => 'Node ' . ($node->is_active ? 'activated' : 'deactivated') . '.',
+            'node'    => $node->fresh(),
+        ]);
+    }
+
+     // POST /flow-builders/{bid}/nodes/{id}/toggle — activate / deactivate
+    public function deactivate(int $bid, int $id): JsonResponse
+    {
+        $this->builder($bid);
+
+        $node = FlowNode::where('id', $id)
+            ->where('flow_builder_id', $bid)
+            ->where('company_id', auth()->user()->company_id)
+            ->firstOrFail();
+
+        $node->update(['is_active' => false]);
+
+        return response()->json([
+            'message' => 'Node ' . ($node->is_active ? 'activated' : 'deactivated') . '.',
+            'node'    => $node->fresh(),
+        ]);
+    }
+
+
+
+
     // POST /flow-builders/{bid}/nodes/reorder — drag-drop sort
     public function reorder(Request $request, int $bid): JsonResponse
     {
