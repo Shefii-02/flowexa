@@ -20,6 +20,7 @@ class FlowNodeResource extends JsonResource
             'has_multi_messages'=> !empty($this->multi_messages) && count($this->multi_messages) > 0,
             'type'              => $this->type,
             'reply_id'          => $this->reply_id,
+            'redirect_to_reply_id'=> $this->redirect_to_reply_id,
             'lead_category'     => $this->lead_category,
             'sort_order'        => $this->sort_order,
             'is_active'         => (bool) $this->is_active,
