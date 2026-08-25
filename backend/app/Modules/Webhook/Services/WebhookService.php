@@ -678,7 +678,7 @@ class WebhookService
         InboundMessageDTO $dto,
         ?int $builderId
     ): void {
-        Log::info("Handling flow reply: company={$company->id} contact={$contact->id} reply_id={$dto->replyId} builder_id={$builderId}");
+        // Log::info("Handling flow reply: company={$company->id} contact={$contact->id} reply_id={$dto->replyId} builder_id={$builderId}");
         $query = FlowNode::where('company_id', $company->id)
             ->where('reply_id', $dto->replyId)
             ->where('is_active', true);
@@ -699,6 +699,56 @@ class WebhookService
 
         Log::info("Flow node triggered: node={$node->id} reply_id={$dto->replyId} company={$company->id} type={$node->type}");
 
+         // ── REDIRECT support ──────────────────────────────────────────────
+        // If node has redirect_to_reply_id, jump to that node instead.
+        // Used for "Back" buttons and "Main Menu" buttons.
+        if ($node->redirect_to_reply_id) {
+            $targetQuery = FlowNode::where('company_id', $company->id)
+                ->where('reply_id', $node->redirect_to_reply_id)
+                ->where('is_active', true);
+
+            if ($builderId) {
+                $targetQuery->where('flow_builder_id', $builderId);
+            }
+
+            $target = $targetQuery->first();
+
+            if ($target) {
+                Log::info("Redirect: {$node->reply_id} → {$target->reply_id}");
+
+                // Update session to the target node
+                FlowSession::updateOrCreate(
+                    ['company_id' => $company->id, 'phone' => $dto->phone],
+                    [
+                        'contact_id'      => $contact->id,
+                        'current_node_id' => $target->id,
+                        'flow_builder_id' => $target->flow_builder_id,
+                        'expires_at'      => now()->addHours(24),
+                    ]
+                );
+
+                $target->increment('trigger_count');
+                $this->sendNodeResponse($company, $dto->phone, $target);
+
+                // Auto-lead if target has category
+                if ($target->lead_category) {
+                    $this->autoCreateLead($company, $contact, $target);
+                }
+                return;
+            }
+
+            // redirect_to_reply_id is 'WELCOME' → send welcome menu
+            if (strtoupper($node->redirect_to_reply_id) === 'WELCOME') {
+                FlowSession::where('company_id', $company->id)
+                    ->where('phone', $dto->phone)
+                    ->delete();
+                $this->sendWelcomeMenu($company, $dto->phone, $builderId);
+                return;
+            }
+
+            Log::warning("Redirect target '{$node->redirect_to_reply_id}' not found — sending node response");
+        }
+        // Normal flow — no redirect
         FlowSession::updateOrCreate(
             ['company_id' => $company->id, 'phone' => $dto->phone],
             [
