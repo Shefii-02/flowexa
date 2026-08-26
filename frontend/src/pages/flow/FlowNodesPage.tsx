@@ -508,7 +508,7 @@ export default function FlowNodesPage() {
               <span className="text-gray-400">{n.reply_id}</span>
               <button onClick={() => copyToClipboard(n.reply_id, 'Reply ID')} className="hover:text-brand-500 px-0.5" title="Copy reply_id">📋</button>
               {n.parent_id && <><span className="ml-2">parent #{n.parent_id}</span><button onClick={() => copyToClipboard(String(n.parent_id), 'Parent ID')} className="hover:text-brand-500 px-0.5">📋</button></>}
-              <span className="text-[10px] text-gray-300 font-mono ml-auto flex-shrink-0 ml-2">🔥{n.trigger_count || 0}</span>
+              <span className="text-[10px] text-gray-300 font-mono flex-shrink-0 ml-2">🔥{n.trigger_count || 0}</span>
             </div>
           </div>
           <div className="flex items-center gap-1 flex-shrink-0">
@@ -587,9 +587,9 @@ export default function FlowNodesPage() {
         <span><span className="font-semibold text-purple-500">button</span>≤3</span>
         <span><span className="font-semibold text-green-500">text</span>terminal</span>
         <span>⠿drag · ☐select · #order · ↩redirect · 🔥triggers</span>
-        {!dragEnabled && <span className="text-amber-500 font-medium">⚠️ Drag OFF</span>}
+        {/* {!dragEnabled && <span className="text-amber-500 font-medium">⚠️ Drag OFF</span>}
         {dragEnabled && <span className="text-brand-500 font-medium">🌿 Tree force-expanded while dragging</span>}
-        {moving && <span className="text-brand-600 font-medium">⏳ Moving…</span>}
+        {moving && <span className="text-brand-600 font-medium">⏳ Moving…</span>} */}
         {/* {!moving && dragEnabled && dragging !== null && <span className="text-brand-600 font-medium animate-pulse">Dragging "{nodes.find(n => n.id === dragging)?.title}" — drop on a node or zone</span>} */}
       </div>
     </div>
