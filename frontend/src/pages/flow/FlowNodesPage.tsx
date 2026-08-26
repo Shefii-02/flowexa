@@ -468,9 +468,9 @@ export default function FlowNodesPage() {
           <p className="page-sub">{nodes.length} nodes{selCount > 0 && <span className="ml-2 text-brand-600 font-medium">{selCount} selected</span>}</p>
         </div>
         <div className="flex gap-2 flex-wrap items-center">
-          <button onClick={() => setDragEnabled(d => !d)} className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-xl border font-medium transition-all ${dragEnabled ? 'bg-brand-50 border-brand-300 text-brand-700' : 'bg-gray-100 border-gray-200 text-gray-500'}`}>
+          {/* <button onClick={() => setDragEnabled(d => !d)} className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-xl border font-medium transition-all ${dragEnabled ? 'bg-brand-50 border-brand-300 text-brand-700' : 'bg-gray-100 border-gray-200 text-gray-500'}`}>
             {dragEnabled ? '🔓 Drag ON' : '🔒 Drag OFF'}
-          </button>
+          </button> */}
           {selCount > 0 && (<>
             <button onClick={() => setSelected(new Set())} className="text-xs text-gray-500 px-2 py-1.5 rounded-xl border border-gray-200 hover:bg-gray-50">Clear</button>
             {/* Bulk actions */}
