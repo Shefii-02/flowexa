@@ -50,6 +50,7 @@ import FlowBuildersPage from './pages/flow/FlowBuildersPage'
 import FlowNodesPage from '@/pages/flow/FlowNodesPage'
 import InboxPage from './pages/inbox/InboxPage'
 import SurveyFormsPage from './pages/survey/SurveyFormsPage'
+import TemplateDetailPage from './pages/template/TemplateDetailPage'
 
 
 
@@ -120,6 +121,7 @@ export default function App() {
             {/* V2 routes */}
             <Route path="phone-numbers" element={<PhoneNumbersPage />} />
             <Route path="templates" element={<TemplatesPage />} />
+            <Route path="templates/:templateId" element={<TemplateDetailPage />} />
             <Route path="plan-purchase" element={<PlanPurchasePage />} />
             <Route path="blacklist" element={<BlacklistPage />} />
 
