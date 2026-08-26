@@ -53,9 +53,14 @@ class LeadRepository implements LeadRepositoryInterface
         ])->where('id', $id)->where('company_id', $companyId)->first();
     }
 
-    public function findByContact(int $contactId, int $companyId): ?Lead
+    public function findByContact(int $contactId, int $companyId, string $category = null): ?Lead
     {
-        return Lead::where('contact_id', $contactId)->where('company_id', $companyId)->first();
+
+        $lead = Lead::where('contact_id', $contactId)->where('company_id', $companyId);
+        if($category != null){
+            $lead = $lead->where('category',$category);
+        }
+      return  $lead = $lead->first();
     }
 
     public function create(int $companyId, CreateLeadDTO $dto): Lead

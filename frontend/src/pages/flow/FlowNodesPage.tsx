@@ -493,21 +493,22 @@ export default function FlowNodesPage() {
           <span className="text-[10px] bg-gray-100 text-gray-400 font-mono px-1 py-0.5 rounded flex-shrink-0">#{n.sort_order ?? 0}</span>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-1.5 flex-wrap">
-              <span className={`text-xs font-semibold px-1.5 py-0.5 rounded-full ${n.type === 'list' ? 'bg-blue-50 text-blue-600' : n.type === 'button' ? 'bg-purple-50 text-purple-600' : n.type === 'survey' ? 'bg-amber-50 text-amber-600' : n.type === 'template' ? 'bg-pink-50 text-pink-600' : 'bg-green-50 text-green-600'}`}>{n.type}</span>
+              <span className={`text-xs font-semibold px-1.5 py-0.5 capitalize rounded-full ${n.type === 'list' ? 'bg-blue-50 text-blue-600' : n.type === 'button' ? 'bg-purple-50 text-purple-600' : n.type === 'survey' ? 'bg-amber-50 text-amber-600' : n.type === 'template' ? 'bg-pink-50 text-pink-600' : 'bg-green-50 text-green-600'}`}>{n.type}</span>
               <span className="font-semibold text-sm text-gray-900 truncate">{n.title}</span>
-              {n.lead_category && <span className="text-xs bg-orange-50 text-orange-600 border border-orange-200 px-1.5 py-0.5 rounded-full">🎯 {n.lead_category}</span>}
-              {n.redirect_to_reply_id && <span className="text-xs bg-indigo-50 text-indigo-600 border border-indigo-200 px-1.5 py-0.5 rounded-full" title={`→ ${n.redirect_to_reply_id}`}>↩ {n.redirect_to_reply_id === 'WELCOME' ? 'Menu' : n.redirect_to_reply_id.slice(0, 10)}</span>}
-              {dead && <span className="text-xs bg-red-50 text-red-500 border border-red-200 px-1.5 py-0.5 rounded-full">⚠️ Dead end</span>}
-              {n.is_dead_end && <span className="text-xs bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full">🔚</span>}
-              {!n.is_active && <span className="text-xs bg-gray-100 text-gray-400 px-1.5 py-0.5 rounded-full">Inactive</span>}
-              {n.is_dynamic && <span className="text-xs bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded-full">⚡</span>}
+              {n.lead_category ? <span className="text-xs bg-orange-50 text-orange-600 border border-orange-200 px-1.5 py-0.5 rounded-full">🎯 {n.lead_category}</span> : ''}
+              {n.redirect_to_reply_id ? <span className="text-xs bg-indigo-50 text-indigo-600 border border-indigo-200 px-1.5 py-0.5 rounded-full" title={`→ ${n.redirect_to_reply_id}`}>↩ {n.redirect_to_reply_id === 'WELCOME' ? 'Menu' : n.redirect_to_reply_id.slice(0, 10)}</span> : ''}
+              {dead ? <span className="text-xs bg-red-50 text-red-500 border border-red-200 px-1.5 py-0.5 rounded-full">⚠️ Dead end</span> : ''}
+              {n.is_dead_end ? <span className="text-xs bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full">🔚</span> : ''}
+              {!n.is_active ? <span className="text-xs bg-gray-100 text-gray-400 px-1.5 py-0.5 rounded-full">Inactive</span> : ''}
+              {n.is_dynamic ? <span className="text-xs bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded-full">⚡</span> : ''}
               {(n.multi_messages?.length || 0) > 0 && <span className="text-xs bg-teal-50 text-teal-600 px-1.5 py-0.5 rounded-full">📨{n.multi_messages!.length}</span>}
-              <span className="text-[10px] text-gray-300 font-mono ml-auto flex-shrink-0">🔥{n.trigger_count || 0}</span>
+
             </div>
             <div className="flex items-center gap-1 mt-0.5 text-[11px] text-gray-300 font-mono">
               <span className="text-gray-400">{n.reply_id}</span>
               <button onClick={() => copyToClipboard(n.reply_id, 'Reply ID')} className="hover:text-brand-500 px-0.5" title="Copy reply_id">📋</button>
               {n.parent_id && <><span className="ml-2">parent #{n.parent_id}</span><button onClick={() => copyToClipboard(String(n.parent_id), 'Parent ID')} className="hover:text-brand-500 px-0.5">📋</button></>}
+              <span className="text-[10px] text-gray-300 font-mono ml-auto flex-shrink-0 ml-2">🔥{n.trigger_count || 0}</span>
             </div>
           </div>
           <div className="flex items-center gap-1 flex-shrink-0">
@@ -589,7 +590,7 @@ export default function FlowNodesPage() {
         {!dragEnabled && <span className="text-amber-500 font-medium">⚠️ Drag OFF</span>}
         {dragEnabled && <span className="text-brand-500 font-medium">🌿 Tree force-expanded while dragging</span>}
         {moving && <span className="text-brand-600 font-medium">⏳ Moving…</span>}
-        {!moving && dragEnabled && dragging !== null && <span className="text-brand-600 font-medium animate-pulse">Dragging "{nodes.find(n => n.id === dragging)?.title}" — drop on a node or zone</span>}
+        {/* {!moving && dragEnabled && dragging !== null && <span className="text-brand-600 font-medium animate-pulse">Dragging "{nodes.find(n => n.id === dragging)?.title}" — drop on a node or zone</span>} */}
       </div>
     </div>
 
@@ -632,7 +633,7 @@ export default function FlowNodesPage() {
           <div><label className="label">Type *</label><div className="grid grid-cols-5 gap-1.5">{NODE_TYPES.map(t => (<button key={t.value} type="button" onClick={() => set('type', t.value)} className={`p-2 rounded-xl border text-left text-xs transition-all ${form.type === t.value ? 'border-brand-500 bg-brand-50 text-brand-700' : 'border-gray-200 hover:border-gray-300 text-gray-600'}`}><div className="font-semibold">{t.icon} {t.label}</div><div className="text-gray-400 text-[10px] mt-0.5">{t.desc}</div></button>))}</div></div>
 
           <LeadCategorySelect value={form.lead_category} onChange={v => set('lead_category', v)} />
-             {/* Survey node — pick a survey form; no message/buttons needed, the bot asks questions itself */}
+          {/* Survey node — pick a survey form; no message/buttons needed, the bot asks questions itself */}
           {isSurvey && (
             <div className="space-y-2">
               <SurveyFormSelect value={form.survey_form_id} onChange={id => set('survey_form_id', id)} />

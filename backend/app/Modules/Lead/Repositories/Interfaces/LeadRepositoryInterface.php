@@ -16,7 +16,7 @@ interface LeadRepositoryInterface
 {
     public function paginate(int $companyId, int $userId, bool $viewAll, LeadFilterDTO $filter): LengthAwarePaginator;
     public function findById(int $id, int $companyId): ?Lead;
-    public function findByContact(int $contactId, int $companyId): ?Lead;
+    public function findByContact(int $contactId, int $companyId, string $category = null): ?Lead;
     public function create(int $companyId, CreateLeadDTO $dto): Lead;
     public function update(Lead $lead, UpdateLeadDTO $dto): Lead;
     public function assign(Lead $lead, int $assignedTo, int $assignedBy): Lead;

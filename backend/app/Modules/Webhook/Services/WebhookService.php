@@ -1147,7 +1147,8 @@ class WebhookService
     // ─── Auto-create lead from flow ───────────────────────────────────────────
     private function autoCreateLead(Company $company, Contact $contact, FlowNode $node): void
     {
-        $existing = $this->leadRepository->findByContact($contact->id, $company->id);
+        $category  = $node->lead_category;
+        $existing = $this->leadRepository->findByContact($contact->id, $company->id, $category);
         if ($existing && !in_array($existing->stage, ['enrolled', 'lost'])) {
             Log::info("Lead already active for contact {$contact->id} — skipping auto-create");
             return;
