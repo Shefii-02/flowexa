@@ -289,27 +289,123 @@ class FlowNodeController extends Controller
     }
 
     // DELETE /flow-builders/{bid}/nodes/{id}
+    // ─── DELETE /flow-builders/{bid}/nodes/{id} ───────────────────────────────
+    // Recursively deletes the node + ALL descendants + their media assets.
+    // Uses a CTE (MySQL 8+) to fetch the full subtree in one query,
+    // then deletes media and nodes in the correct order (leaves first).
+
     public function destroy(int $bid, int $id): JsonResponse
     {
         $this->builder($bid);
+        $cid = auth()->user()->company_id;
 
         $node = FlowNode::where('id', $id)
             ->where('flow_builder_id', $bid)
-            ->where('company_id', auth()->user()->company_id)
+            ->where('company_id', $cid)
             ->firstOrFail();
 
-        $childCount = FlowNode::where('parent_id', $id)->count();
-        if ($childCount > 0) {
-            return response()->json([
-                'message' => "Delete {$childCount} child node(s) first before deleting this node.",
-            ], 422);
+        // Collect ALL descendant IDs (including the node itself) via recursive CTE
+        // Works on MySQL 8.0+ and MariaDB 10.2+
+        $allIds = $this->collectDescendantIds($id, $bid, $cid);
+
+        DB::transaction(function () use ($allIds, $node) {
+            // Delete all media assets for every node in the subtree
+            $assets = MediaAsset::whereIn('flow_node_id', $allIds)->get();
+            foreach ($assets as $asset) {
+                Storage::disk($asset->disk)->delete($asset->path);
+            }
+            if ($assets->isNotEmpty()) {
+                $totalBytes = $assets->sum('size');
+                $node->company()->decrement('storage_used_bytes', $totalBytes);
+                MediaAsset::whereIn('flow_node_id', $allIds)->delete();
+            }
+
+            // Delete all nodes (FK constraints: delete children before parents)
+            // Reversing allIds gives leaves-first order since we built it BFS top-down
+            FlowNode::whereIn('id', array_reverse($allIds))->delete();
+        });
+
+        $count = count($allIds);
+        return response()->json([
+            'message'       => "Node and {$count} descendant(s) deleted.",
+            'deleted_count' => $count,
+            'deleted_ids'   => $allIds,
+        ]);
+    }
+
+    // ─── Recursive subtree collector ──────────────────────────────────────────
+    // Returns flat array of IDs: [rootId, child1, child2, grandchild1, ...]
+    // Uses recursive CTE — single DB round-trip regardless of tree depth.
+    private function collectDescendantIds(int $rootId, int $bid, int $cid): array
+    {
+        // MySQL 8+ recursive CTE
+        $rows = DB::select("
+        WITH RECURSIVE subtree AS (
+            -- anchor: the node itself
+            SELECT id
+            FROM flow_nodes
+            WHERE id = ?
+              AND flow_builder_id = ?
+              AND company_id = ?
+
+            UNION ALL
+
+            -- recursive: children of nodes already in the CTE
+            SELECT fn.id
+            FROM flow_nodes fn
+            INNER JOIN subtree s ON fn.parent_id = s.id
+            WHERE fn.flow_builder_id = ?
+              AND fn.company_id = ?
+        )
+        SELECT id FROM subtree
+    ", [$rootId, $bid, $cid, $bid, $cid]);
+
+        return array_column($rows, 'id');
+    }
+
+
+    // ─── FALLBACK: PHP-side BFS (for MySQL 5.7 or MariaDB < 10.2) ────────────
+    // Use this instead of collectDescendantIds() if your DB doesn't support CTEs.
+    private function collectDescendantIdsBFS(int $rootId, int $bid, int $cid): array
+    {
+        $ids   = [$rootId];
+        $queue = [$rootId];
+
+        while (!empty($queue)) {
+            $children = FlowNode::whereIn('parent_id', $queue)
+                ->where('flow_builder_id', $bid)
+                ->where('company_id', $cid)
+                ->pluck('id')
+                ->toArray();
+
+            $ids   = array_merge($ids, $children);
+            $queue = $children;  // next level to expand
         }
 
-        $this->deleteNodeMediaAssets($node);
-
-        $node->delete();
-        return response()->json(['message' => 'Node deleted.']);
+        return $ids;
     }
+    // public function destroy(int $bid, int $id): JsonResponse
+    // {
+    //     $this->builder($bid);
+
+    //     $node = FlowNode::where('id', $id)
+    //         ->where('flow_builder_id', $bid)
+    //         ->where('company_id', auth()->user()->company_id)
+    //         ->firstOrFail();
+
+    //     $childCount = FlowNode::where('parent_id', $id)->count();
+    //     if ($childCount > 0) {
+    //         return response()->json([
+    //             'message' => "Delete {$childCount} child node(s) first before deleting this node.",
+    //         ], 422);
+    //     }
+
+    //     $this->deleteNodeMediaAssets($node);
+
+    //     $node->delete();
+
+    //     return response()->json(['message' => 'Node deleted.']);
+    // }
 
     // POST /flow-builders/{bid}/nodes/{id}/toggle — activate / deactivate
     public function toggle(int $bid, int $id): JsonResponse

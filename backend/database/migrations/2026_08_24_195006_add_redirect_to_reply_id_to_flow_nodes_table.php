@@ -18,7 +18,7 @@ return new class extends Migration
         Schema::table('flow_nodes', function (Blueprint $table) {
             // If set, webhook ignores this node's message and redirects to the
             // node matching this reply_id (within the same builder)
-            $table->string('redirect_to_reply_id', 200)->nullable()->after('reply_id');
+            $table->string('redirect_to_reply_id', 255)->nullable()->after('reply_id');
         });
     }
 

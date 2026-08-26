@@ -175,7 +175,7 @@ return new class extends Migration
             $t->string('title', 24);                        // WA button label limit
             $t->text('message')->nullable();
             $t->string('type', 15)->default('list');        // list | button | text
-            $t->string('reply_id', 60)->nullable();         // unique per company
+            $t->string('reply_id', 255)->nullable();         // unique per company
             $t->string('lead_category', 100)->nullable();   // triggers auto-lead
             $t->unsignedSmallInteger('sort_order')->default(0);
             $t->boolean('is_active')->default(true);
