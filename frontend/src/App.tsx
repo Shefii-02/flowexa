@@ -121,7 +121,7 @@ export default function App() {
             {/* V2 routes */}
             <Route path="phone-numbers" element={<PhoneNumbersPage />} />
             <Route path="templates" element={<TemplatesPage />} />
-            <Route path="templates/:templateId" element={<TemplateDetailPage />} />
+            <Route path="templates/:id" element={<TemplateDetailPage />} />
             <Route path="plan-purchase" element={<PlanPurchasePage />} />
             <Route path="blacklist" element={<BlacklistPage />} />
 
