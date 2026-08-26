@@ -524,7 +524,7 @@ Route::prefix('v1')->group(function () {
         Route::post('flow-builders/{bid}/nodes/{id}/toggle', [FlowNodeController::class, 'toggle']);
         Route::post('flow-builders/{bid}/nodes/{id}/activate', [FlowNodeController::class, 'activate']);
         Route::post('flow-builders/{bid}/nodes/{id}/deactivate', [FlowNodeController::class, 'deactivate']);
-
+        Route::post('flow-builders/{bid}/nodes/{id}/move', [FlowNodeController::class, 'move']);
 
 
         Route::post('flow-builders/{bid}/nodes/reorder',    [FlowNodeController::class, 'reorder']);

@@ -153,7 +153,7 @@ export const flowBuilderApi = {
   // Export: returns a blob (JSON file download)
   export: (id: number) =>
     api.get(`/flow-builders/${id}/export`, { responseType: 'blob' }),
- 
+
   // Import: multipart/form-data with file + optional activate flag
   import: (file: File, activate = false) => {
     const fd = new FormData()
@@ -163,7 +163,7 @@ export const flowBuilderApi = {
       headers: { 'Content-Type': 'multipart/form-data' },
     })
   },
-  
+
 }
 
 
@@ -176,6 +176,9 @@ export const flowNodeApi = {
   delete: (builderId: number, id: number) => api.delete(`/flow-builders/${builderId}/nodes/${id}`),
   activate: (builderId: number, id: number) => api.post(`/flow-builders/${builderId}/nodes/${id}/activate`),
   deactivate: (builderId: number, id: number) => api.post(`/flow-builders/${builderId}/nodes/${id}/deactivate`),
+  move: (builderId: number, nodeId: number, payload: { parent_id: number | null; before_id?: number; after_id?: number }) =>
+    api.post(`/flow-builders/${builderId}/nodes/${nodeId}/move`, payload),
+
   reorder: (builderId: number, order: { id: number; sort_order: number }[]) =>
     api.post(`/flow-builders/${builderId}/nodes/reorder`, { order }),
 

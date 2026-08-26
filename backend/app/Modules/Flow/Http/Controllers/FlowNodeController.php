@@ -329,7 +329,7 @@ class FlowNodeController extends Controller
         ]);
     }
 
-     // POST /flow-builders/{bid}/nodes/{id}/toggle — activate / deactivate
+    // POST /flow-builders/{bid}/nodes/{id}/toggle — activate / deactivate
     public function activate(int $bid, int $id): JsonResponse
     {
         $this->builder($bid);
@@ -347,7 +347,7 @@ class FlowNodeController extends Controller
         ]);
     }
 
-     // POST /flow-builders/{bid}/nodes/{id}/toggle — activate / deactivate
+    // POST /flow-builders/{bid}/nodes/{id}/toggle — activate / deactivate
     public function deactivate(int $bid, int $id): JsonResponse
     {
         $this->builder($bid);
@@ -369,27 +369,170 @@ class FlowNodeController extends Controller
 
 
     // POST /flow-builders/{bid}/nodes/reorder — drag-drop sort
+    // POST /flow-builders/{bid}/nodes/reorder — drag-drop sort
     public function reorder(Request $request, int $bid): JsonResponse
     {
         $this->builder($bid);
         $cid = auth()->user()->company_id;
 
-        $d = $request->validate([
-            'order'              => ['required', 'array'],
-            'order.*.id'         => ['required', 'integer'],
-            'order.*.sort_order' => ['required', 'integer'],
-        ]);
+        // The frontend's flowNodeApi.reorder(builderId, order) call sends `order`
+        // itself — an array of {id, sort_order} — as the JSON body. If the api
+        // client posts that array directly (rather than wrapping it as
+        // {order: [...]}), $request->validate(['order' => 'required|array'])
+        // fails every time because there's no top-level "order" key — the body
+        // IS the array. Accept both shapes here so a client-side wrapping
+        // mismatch doesn't silently break every drag-and-drop reorder.
+        $raw = $request->all();
+        $orderList = $raw['order'] ?? (array_is_list($raw) ? $raw : null);
 
-        DB::transaction(function () use ($d, $bid, $cid) {
-            foreach ($d['order'] as $item) {
-                FlowNode::where('id', $item['id'])
+        if (!is_array($orderList) || empty($orderList)) {
+            return response()->json([
+                'message' => 'Invalid payload: expected an "order" array of {id, sort_order} objects.',
+            ], 422);
+        }
+
+        foreach ($orderList as $i => $item) {
+            if (!isset($item['id'], $item['sort_order']) || !is_numeric($item['id']) || !is_numeric($item['sort_order'])) {
+                return response()->json([
+                    'message' => "order[{$i}] must have integer 'id' and 'sort_order'.",
+                ], 422);
+            }
+        }
+
+        $updated = DB::transaction(function () use ($orderList, $bid, $cid) {
+            $count = 0;
+            foreach ($orderList as $item) {
+                $count += FlowNode::where('id', (int) $item['id'])
                     ->where('flow_builder_id', $bid)
                     ->where('company_id', $cid)
-                    ->update(['sort_order' => $item['sort_order']]);
+                    ->update(['sort_order' => (int) $item['sort_order']]);
             }
+            return $count;
         });
 
-        return response()->json(['message' => 'Nodes reordered.']);
+        // If nothing matched, every id in the payload belonged to a different
+        // builder/company (or didn't exist) — that's worth surfacing rather
+        // than returning a false "success".
+        if ($updated === 0) {
+            return response()->json([
+                'message' => 'No matching nodes were updated — check that the node ids belong to this builder.',
+            ], 422);
+        }
+
+        return response()->json(['message' => 'Nodes reordered.', 'updated' => $updated]);
+    }
+    // public function reorder(Request $request, int $bid): JsonResponse
+    // {
+    //     $this->builder($bid);
+    //     $cid = auth()->user()->company_id;
+
+    //     $d = $request->validate([
+    //         'order'              => ['required', 'array'],
+    //         'order.*.id'         => ['required', 'integer'],
+    //         'order.*.sort_order' => ['required', 'integer'],
+    //     ]);
+
+    //     DB::transaction(function () use ($d, $bid, $cid) {
+    //         foreach ($d['order'] as $item) {
+    //             FlowNode::where('id', $item['id'])
+    //                 ->where('flow_builder_id', $bid)
+    //                 ->where('company_id', $cid)
+    //                 ->update(['sort_order' => $item['sort_order']]);
+    //         }
+    //     });
+
+    //     return response()->json(['message' => 'Nodes reordered.']);
+    // }
+
+    // POST /flow-builders/{bid}/nodes/{id}/move — drag-and-drop: reparent AND
+    // reposition among the new siblings in ONE atomic call.
+    //
+    // Why this exists instead of reusing update() + reorder(): the frontend's
+    // drag-and-drop previously called update() alone for a "before"/"after"
+    // drop onto a node under a DIFFERENT parent — it reparented correctly but
+    // never actually positioned the node next to the drop target (reorder()
+    // was only ever called for the same-parent case). That gap existed at
+    // every depth in the tree, not just root level, since it's driven by
+    // whatever parent_id the drop zone resolves to. This endpoint always does
+    // both steps together so there's no path that reparents without
+    // positioning, however deep the node being moved is.
+    //
+    // Body: { parent_id: number|null, before_id?: number, after_id?: number }
+    // At most one of before_id/after_id should be sent; if neither is given,
+    // the node is appended to the end of its new parent's children.
+    public function move(Request $request, int $bid, int $id): JsonResponse
+    {
+        $this->builder($bid);
+        $cid = auth()->user()->company_id;
+
+        $node = FlowNode::where('id', $id)
+            ->where('flow_builder_id', $bid)
+            ->where('company_id', $cid)
+            ->firstOrFail();
+
+        $d = $request->validate([
+            'parent_id' => ['nullable', 'integer'],
+            'before_id' => ['nullable', 'integer'],
+            'after_id'  => ['nullable', 'integer'],
+        ]);
+
+        $newParentId = $d['parent_id'] ?? null;
+
+        if ($newParentId === $node->id) {
+            return response()->json(['message' => "A node can't be its own parent."], 422);
+        }
+
+        if ($newParentId !== null) {
+            // Reuses the same circular-reference guard update() already has —
+            // a node can't be moved into its own descendant.
+            $this->assertNotCircular($node->id, $newParentId);
+
+            $parentOk = FlowNode::where('id', $newParentId)
+                ->where('flow_builder_id', $bid)
+                ->where('company_id', $cid)
+                ->exists();
+            if (!$parentOk) {
+                return response()->json(['message' => 'Target parent not found in this builder.'], 422);
+            }
+        }
+
+        $result = DB::transaction(function () use ($node, $newParentId, $d, $bid, $cid) {
+            $node->update(['parent_id' => $newParentId]);
+
+            // Recompute sort_order for every sibling under the (new) parent,
+            // inserting $node at the requested position. Same single
+            // source of truth as reorder() — sequential 0..N — so a
+            // drag-drop move and a manual reorder can never disagree about
+            // how sort_order is assigned.
+            $siblings = FlowNode::where('flow_builder_id', $bid)
+                ->where('company_id', $cid)
+                ->where('parent_id', $newParentId)
+                ->orderBy('sort_order')
+                ->get();
+
+            $ordered = $siblings->reject(fn($n) => $n->id === $node->id)->values();
+
+            $insertAt = $ordered->count(); // default: append at the end
+            if (!empty($d['before_id'])) {
+                $idx = $ordered->search(fn($n) => $n->id === (int) $d['before_id']);
+                if ($idx !== false) $insertAt = $idx;
+            } elseif (!empty($d['after_id'])) {
+                $idx = $ordered->search(fn($n) => $n->id === (int) $d['after_id']);
+                if ($idx !== false) $insertAt = $idx + 1;
+            }
+
+            $ordered->splice($insertAt, 0, [$node]);
+
+            foreach ($ordered->values() as $i => $n) {
+                if ($n->sort_order !== $i) {
+                    FlowNode::where('id', $n->id)->update(['sort_order' => $i]);
+                }
+            }
+
+            return $node->fresh();
+        });
+
+        return response()->json(['message' => 'Node moved.', 'node' => $result]);
     }
 
     // GET /flow-builders/{builder}/nodes/check-reply-id

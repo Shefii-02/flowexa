@@ -177,6 +177,9 @@ export default function FlowNodesPage() {
   const [bulkAction, setBulkAction] = useState<'delete' | 'activate' | 'deactivate' | null>(null); const [bulkLoading, setBulkLoading] = useState(false)
   const [delN, setDelN] = useState<FlowNode | null>(null)
   const [showTestPreview, setShowTestPreview] = useState(false); const [previewStartId, setPreviewStartId] = useState<number | null>(null); const [previewNonce, setPreviewNonce] = useState(0)
+  const [moving, setMoving] = useState(false) // in-flight guard for drag-and-drop moves
+  const [togglingIds, setTogglingIds] = useState<Set<number>>(new Set()) // per-node in-flight guard for activate/deactivate
+  const [deleting, setDeleting] = useState(false) // in-flight guard for single-node delete
   const set = (k: string, v: any) => setForm(f => ({ ...f, [k]: v }))
 
   const load = useCallback(() => { if (!builderId) return; setLoading(true); Promise.all([flowBuilderApi.show(builderId), flowNodeApi.list(builderId)]).then(([b, n]) => { setBuilder(b.data.builder); setNodes(n.data.nodes || []) }).catch(e => toast.error(getError(e))).finally(() => setLoading(false)) }, [builderId])
@@ -202,13 +205,13 @@ export default function FlowNodesPage() {
 
   const buildPayload = (f = form, mm = form.multi_messages) => { const p: any = { title: f.title.slice(0, 24), message: f.message, type: f.type, reply_id: f.reply_id, redirect_to_reply_id: f.redirect_to_reply_id || null, lead_category: f.lead_category || null, parent_id: f.parent_id, sort_order: f.sort_order ?? 0, is_active: f.is_active, is_dead_end: f.is_dead_end, is_dynamic: f.is_dynamic, dynamic_api_url: f.is_dynamic ? f.dynamic_api_url : null, dynamic_api_method: f.is_dynamic ? f.dynamic_api_method : null, dynamic_api_headers: f.is_dynamic ? f.dynamic_api_headers : null, dynamic_label_field: f.is_dynamic ? f.dynamic_label_field : null, dynamic_value_field: f.is_dynamic ? f.dynamic_value_field : null, dynamic_description_field: f.is_dynamic ? f.dynamic_description_field : null, survey_form_id: isSurvey ? f.survey_form_id : null, wa_template_id: isTpl ? f.wa_template_id : null }; if (multiMode && mm.length > 0 && !isSurvey && !isTpl) { p.multi_messages = mm.map(({ _key, upload, uploadName, original_url, ...b }: any) => { const c: any = { type: b.type }; if (b.type === 'text') c.content = b.content; if (['image', 'video', 'document', 'audio'].includes(b.type)) { c.url = b.url; if (b.caption) c.caption = b.caption; if (b.type === 'document') c.filename = b.filename || uploadName || ''; if (b.size) c.size = b.size; if (b.mime_type) c.mime_type = b.mime_type }; if (b.type === 'location') { c.lat = Number(b.lat); c.lng = Number(b.lng); c.name = b.name; c.address = b.address }; return c }) } else p.multi_messages = null; return p }
 
-  const handleSave = async () => { if (!form.title.trim()) { toast.error('Title required'); return }; if (!form.reply_id.trim()) { toast.error('Reply ID required'); return }; if (replyStatus === 'taken') { toast.error('Reply ID already used'); return }; if (replyStatus === 'checking') { toast.error('Still checking…'); return }; if (!isSurvey && !isTpl && !multiMode && !form.message.trim()) { toast.error('Message required'); return }; if (!isSurvey && !isTpl && multiMode && form.multi_messages.length === 0) { toast.error('Add at least one block'); return }; setSaving(true); try { const blocks = [...form.multi_messages]; for (let i = 0; i < blocks.length; i++) { if (blocks[i].upload) { const fd = new FormData(); fd.append('file', blocks[i].upload); if (editN?.id) fd.append('node_id', String(editN.id)); const { data } = await flowNodeApi.uploadMedia(builderId, fd); blocks[i] = { ...blocks[i], url: data.url, original_url: data.url, size: data.size, mime_type: data.mime_type, upload: null } } }; const payload = buildPayload(form, blocks); if (editN) { await flowNodeApi.update(builderId, editN.id, payload); toast.success('Node updated.') } else { await flowNodeApi.create(builderId, payload); toast.success('Node created.') }; setShowForm(false); load() } catch (e) { toast.error(getError(e)) } finally { setSaving(false) } }
-  const handleDelete = async () => { if (!delN) return; try { await flowNodeApi.delete(builderId, delN.id); toast.success('Deleted.'); setDelN(null); load() } catch (e) { toast.error(getError(e)) } }
-  const handleToggle = async (n: FlowNode) => { try { n.is_active ? await flowNodeApi.deactivate(builderId, n.id) : await flowNodeApi.activate(builderId, n.id); load() } catch (e) { toast.error(getError(e)) } }
+  const handleSave = async () => { if (saving) return; if (!form.title.trim()) { toast.error('Title required'); return }; if (!form.reply_id.trim()) { toast.error('Reply ID required'); return }; if (replyStatus === 'taken') { toast.error('Reply ID already used'); return }; if (replyStatus === 'checking') { toast.error('Still checking…'); return }; if (!isSurvey && !isTpl && !multiMode && !form.message.trim()) { toast.error('Message required'); return }; if (!isSurvey && !isTpl && multiMode && form.multi_messages.length === 0) { toast.error('Add at least one block'); return }; setSaving(true); try { const blocks = [...form.multi_messages]; for (let i = 0; i < blocks.length; i++) { if (blocks[i].upload) { const fd = new FormData(); fd.append('file', blocks[i].upload); if (editN?.id) fd.append('node_id', String(editN.id)); const { data } = await flowNodeApi.uploadMedia(builderId, fd); blocks[i] = { ...blocks[i], url: data.url, original_url: data.url, size: data.size, mime_type: data.mime_type, upload: null } } }; const payload = buildPayload(form, blocks); if (editN) { await flowNodeApi.update(builderId, editN.id, payload); toast.success('Node updated.') } else { await flowNodeApi.create(builderId, payload); toast.success('Node created.') }; setShowForm(false); load() } catch (e) { toast.error(getError(e)) } finally { setSaving(false) } }
+  const handleDelete = async () => { if (!delN || deleting) return; setDeleting(true); try { await flowNodeApi.delete(builderId, delN.id); toast.success('Deleted.'); setDelN(null); load() } catch (e) { toast.error(getError(e)) } finally { setDeleting(false) } }
+  const handleToggle = async (n: FlowNode) => { if (togglingIds.has(n.id)) return; setTogglingIds(prev => new Set(prev).add(n.id)); try { n.is_active ? await flowNodeApi.deactivate(builderId, n.id) : await flowNodeApi.activate(builderId, n.id); load() } catch (e) { toast.error(getError(e)) } finally { setTogglingIds(prev => { const s = new Set(prev); s.delete(n.id); return s }) } }
 
   // ── Bulk actions ─────────────────────────────────────────────────────────
   const handleBulkAction = async () => {
-    if (!bulkAction || selected.size === 0) return
+    if (!bulkAction || selected.size === 0 || bulkLoading) return
     setBulkLoading(true)
     const ids = [...selected]
     try {
@@ -230,60 +233,67 @@ export default function FlowNodesPage() {
   // ── Drag & Drop ───────────────────────────────────────────────────────────
   const isDescendant = useCallback((nid: number, anc: number | null): boolean => { if (anc === null) return false; if (nid === anc) return true; const n = nodes.find(x => x.id === anc); return n ? isDescendant(nid, n.parent_id) : false }, [nodes])
 
-  const handleDragStart = (e: DragEvent, id: number) => { if (!dragEnabled) return; setDragging(id); e.dataTransfer.effectAllowed = 'move' }
+  const handleDragStart = (e: DragEvent, id: number) => { if (!dragEnabled || moving) { e.preventDefault(); return }; setDragging(id); e.dataTransfer.effectAllowed = 'move' }
 
   // Drop zone key helpers
   const dz = (zone: string) => (e: DragEvent) => { if (!dragEnabled || dragging === null) return; e.preventDefault(); e.stopPropagation(); setDropZone(zone) }
 
   const handleDrop = async (e: DragEvent, zone: string) => {
     e.preventDefault(); e.stopPropagation(); setDropZone(null)
-    if (!dragEnabled || dragging === null) return
+    if (!dragEnabled || dragging === null || moving) { setDragging(null); return }
 
-    const dragNode = nodes.find(n => n.id === dragging); if (!dragNode) return
+    const dragNode = nodes.find(n => n.id === dragging)
+    if (!dragNode) { setDragging(null); return }
 
-    // Parse zone
+    // Resolve every zone (root / into / before / after — at ANY depth) down
+    // to a single { parent_id, before_id?, after_id? } payload for the one
+    // move endpoint. Previously "before"/"after" only actually repositioned
+    // the node when the target happened to already be a sibling (same
+    // parent) — reorder() was called for that case, but a drop onto a
+    // before/after zone under a DIFFERENT parent only ever called update()
+    // with just { parent_id }, silently dropping the "before/after" part
+    // entirely. That bug applied at every depth, not just root — a child
+    // three levels deep dropped "before" a node under a different branch
+    // would reparent but land wherever its old sort_order happened to be,
+    // not next to the node you dropped it on.
+    let payload: { parent_id: number | null; before_id?: number; after_id?: number }
+
     if (zone === 'root') {
-      // Drop to root level
-      const fromTitle = dragNode.title
-      await flowNodeApi.update(builderId, dragging, { parent_id: null } as any)
-      toast.success(`"${fromTitle}" moved to root level`)
-      setDragging(null); load(); return
-    }
+      payload = { parent_id: null }
+    } else {
+      const [action, targetIdStr] = zone.split('-')
+      const targetId = parseInt(targetIdStr)
+      const targetNode = nodes.find(n => n.id === targetId)
+      if (!targetNode) { setDragging(null); return }
 
-    const [action, targetIdStr] = zone.split('-')
-    const targetId = parseInt(targetIdStr)
-    const targetNode = nodes.find(n => n.id === targetId)
-    if (!targetNode) { setDragging(null); return }
-
-    if (action === 'into') {
-      // Reparent into target node
-      if (dragging === targetId) { setDragging(null); return }
-      if (isDescendant(dragging, targetId)) { toast.error("Can't drop onto own descendant"); setDragging(null); return }
-      await flowNodeApi.update(builderId, dragging, { parent_id: targetId } as any)
-      toast.success(`"${dragNode.title}" → child of "${targetNode.title}"`)
-      setDragging(null); load(); return
-    }
-
-    if (action === 'before' || action === 'after') {
-      // Reorder among siblings (same parent)
-      const parentId = targetNode.parent_id
-      if (dragNode.parent_id !== parentId) {
-        // Different parent → reparent AND reorder
-        await flowNodeApi.update(builderId, dragging, { parent_id: parentId } as any)
-        toast.success(`"${dragNode.title}" moved to "${targetNode.title}" siblings`)
-        setDragging(null); load(); return
+      if (action === 'into') {
+        if (dragging === targetId) { setDragging(null); return }
+        payload = { parent_id: targetId }
+      } else if (action === 'before') {
+        payload = { parent_id: targetNode.parent_id, before_id: targetId }
+      } else if (action === 'after') {
+        payload = { parent_id: targetNode.parent_id, after_id: targetId }
+      } else {
+        setDragging(null); return
       }
-      // Same parent → reorder only
-      const siblings = [...(byParent[String(parentId ?? 'root')] || [])].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
-      const withoutDrag = siblings.filter(n => n.id !== dragging)
-      const insertIdx = withoutDrag.findIndex(n => n.id === targetId) + (action === 'after' ? 1 : 0)
-      withoutDrag.splice(insertIdx, 0, dragNode)
-      const order = withoutDrag.map((n, i) => ({ id: n.id, sort_order: i }))
-      await flowNodeApi.reorder(builderId, order)
-      toast(`Reordered: "${dragNode.title}" is now #${insertIdx}`, { icon: '↕️' })
-      setDragging(null); load(); return
     }
-    setDragging(null)
+
+    if (payload.parent_id !== null && (dragging === payload.parent_id || isDescendant(dragging, payload.parent_id))) {
+      toast.error("Can't drop a node onto its own descendant")
+      setDragging(null); return
+    }
+
+    setMoving(true)
+    try {
+      await flowNodeApi.move(builderId, dragging, payload)
+      toast.success(`"${dragNode.title}" moved.`)
+      load()
+    } catch (err) {
+      toast.error(getError(err))
+    } finally {
+      setMoving(false)
+      setDragging(null)
+    }
   }
 
   // ── Duplicate ─────────────────────────────────────────────────────────────
@@ -296,6 +306,7 @@ export default function FlowNodesPage() {
   const updateDupTarget = (key: string, parentId: number | null) => setDupTargets(prev => prev.map(t => t._key === key ? { ...t, parentId } : t))
 
   const handleDuplicate = async () => {
+    if (duplicating) return
     const included = collectIncluded(dupTree); if (included.length === 0) { toast.error('No nodes checked'); return }
     setDuplicating(true); let total = 0
     try {
@@ -333,7 +344,7 @@ export default function FlowNodesPage() {
 
       <div className={`bg-white border border-gray-200 rounded-xl mb-1 overflow-hidden transition-all ${n.is_active ? '' : 'opacity-60'} ${selected.has(n.id) ? 'ring-2 ring-brand-400' : ''} ${isDraggingThis ? 'opacity-30 scale-95' : ''} ${dropZone === intoZone ? 'border-brand-400 bg-brand-50 shadow-md' : ''}`}
         style={{ borderLeft: `3px solid ${bc}` }}
-        draggable={dragEnabled}
+        draggable={dragEnabled && !moving}
         onDragStart={e => handleDragStart(e, n.id)}
         onDragOver={e => { if (!dragEnabled || dragging === null) return; e.preventDefault(); e.stopPropagation(); setDropZone(intoZone) }}
         onDrop={e => handleDrop(e, intoZone)}
@@ -366,7 +377,7 @@ export default function FlowNodesPage() {
             <button onClick={() => { setPreviewStartId(n.id); setPreviewNonce(x => x + 1); setShowTestPreview(true) }} className="text-xs text-gray-400 hover:bg-gray-50 px-1.5 py-1 rounded-lg" title="Preview from this node">👁</button>
             <button onClick={() => openCreate(n.id)} className="text-xs text-brand-600 hover:bg-brand-50 px-2 py-1 rounded-lg whitespace-nowrap">+Child</button>
             <button onClick={() => openEdit(n)} className="text-xs text-blue-600 hover:bg-blue-50 px-2 py-1 rounded-lg">Edit</button>
-            <button onClick={() => handleToggle(n)} className="text-xs text-gray-500 hover:bg-gray-100 px-2 py-1 rounded-lg">{n.is_active ? 'Off' : 'On'}</button>
+            <button onClick={() => handleToggle(n)} disabled={togglingIds.has(n.id)} className="text-xs text-gray-500 hover:bg-gray-100 px-2 py-1 rounded-lg disabled:opacity-40 disabled:cursor-wait">{togglingIds.has(n.id) ? '…' : (n.is_active ? 'Off' : 'On')}</button>
             <button onClick={() => setDelN(n)} className="text-xs text-red-500 hover:bg-red-50 px-2 py-1 rounded-lg">Del</button>
           </div>
         </div>
@@ -439,7 +450,8 @@ export default function FlowNodesPage() {
         <span><span className="font-semibold text-green-500">text</span>terminal</span>
         <span>⠿drag · ☐select · #order · ↩redirect · 🔥triggers</span>
         {!dragEnabled && <span className="text-amber-500 font-medium">⚠️ Drag OFF</span>}
-        {dragEnabled && dragging !== null && <span className="text-brand-600 font-medium animate-pulse">Dragging "{nodes.find(n => n.id === dragging)?.title}" — drop on a node or zone</span>}
+        {moving && <span className="text-brand-600 font-medium">⏳ Moving…</span>}
+        {!moving && dragEnabled && dragging !== null && <span className="text-brand-600 font-medium animate-pulse">Dragging "{nodes.find(n => n.id === dragging)?.title}" — drop on a node or zone</span>}
       </div>
     </div>
 
@@ -579,6 +591,7 @@ export default function FlowNodesPage() {
     />
   </div>)
 }
+
 // import {
 //   useEffect, useState, useCallback, useMemo, useRef, DragEvent,
 // } from 'react'
