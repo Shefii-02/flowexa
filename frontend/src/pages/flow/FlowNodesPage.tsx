@@ -1,17 +1,10 @@
-// src/pages/flow/FlowNodesPage.tsx — v5
+// src/pages/flow/FlowNodesPage.tsx — FINAL v4
 // ✅ Drag & drop with visual drop zones + toast showing from/to node info
 // ✅ Reorder (same parent) → flowNodeApi.reorder()
 // ✅ Reparent (different parent) → flowNodeApi.update({parent_id})
 // ✅ Sort order managed in create/edit form (sort_order field)
 // ✅ Dashed drop zone border shown between siblings and under each parent
 // ✅ Multi-select → bulk delete, bulk activate, bulk deactivate
-// ✅ FIX: entering drag mode force-expands every node (and reload resets
-//         collapse state) so collapsed subtrees are never unreachable as
-//         drop targets — collapsed children were never in the DOM, so they
-//         had no onDragOver/onDrop handlers even though their data was
-//         fully loaded. Collapse toggle is disabled while drag mode is on
-//         so a stray click can't re-hide a subtree mid-drag.
-// ✅ Tree starts fully expanded by default (collapsed state starts empty)
 // ✅ All previous features retained
 
 import {
@@ -170,7 +163,6 @@ function FlowTestPreview({ nodes, startId, nonce, onRestart, builderName, onClos
 export default function FlowNodesPage() {
   const [params] = useSearchParams(); const builderId = Number(params.get('builder'))
   const [builder, setBuilder] = useState<any>(null); const [nodes, setNodes] = useState<FlowNode[]>([]); const [loading, setLoading] = useState(true)
-  // Starts empty — tree is fully expanded by default.
   const [collapsed, setCollapsed] = useState<Set<number>>(new Set())
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [dragEnabled, setDragEnabled] = useState(false)
@@ -190,31 +182,8 @@ export default function FlowNodesPage() {
   const [deleting, setDeleting] = useState(false) // in-flight guard for single-node delete
   const set = (k: string, v: any) => setForm(f => ({ ...f, [k]: v }))
 
-  const load = useCallback(() => {
-    if (!builderId) return
-    setLoading(true)
-    Promise.all([flowBuilderApi.show(builderId), flowNodeApi.list(builderId)])
-      .then(([b, n]) => {
-        setBuilder(b.data.builder)
-        setNodes(n.data.nodes || [])
-        // Always reload with the tree fully expanded — don't carry stale
-        // collapse state across reloads (e.g. after create/delete/move).
-        setCollapsed(new Set())
-      })
-      .catch(e => toast.error(getError(e)))
-      .finally(() => setLoading(false))
-  }, [builderId])
+  const load = useCallback(() => { if (!builderId) return; setLoading(true); Promise.all([flowBuilderApi.show(builderId), flowNodeApi.list(builderId)]).then(([b, n]) => { setBuilder(b.data.builder); setNodes(n.data.nodes || []) }).catch(e => toast.error(getError(e))).finally(() => setLoading(false)) }, [builderId])
   useEffect(() => { load() }, [load])
-
-  // Force-expand everything the moment drag mode turns on. A collapsed
-  // node's children are never rendered at all (see `!isCol &&` in
-  // renderNode below), so they have no onDragOver/onDrop handlers and are
-  // completely unreachable as drag sources or drop targets even though
-  // their data is fully loaded. Re-collapsing while dragging is disabled
-  // via the collapse button below, so a subtree can't vanish mid-drag.
-  useEffect(() => {
-    if (dragEnabled) setCollapsed(new Set())
-  }, [dragEnabled])
 
   const byParent = useMemo<Record<string, FlowNode[]>>(() => { const map: Record<string, FlowNode[]> = {}; nodes.forEach(n => { const k = String(n.parent_id ?? 'root'); if (!map[k]) map[k] = []; map[k].push(n) }); return map }, [nodes])
   const isDeadEnd = (n: FlowNode) => { if (n.is_dead_end) return false; return (byParent[String(n.id)] || []).length === 0 && ['list', 'button'].includes(n.type) }
@@ -278,7 +247,15 @@ export default function FlowNodesPage() {
 
     // Resolve every zone (root / into / before / after — at ANY depth) down
     // to a single { parent_id, before_id?, after_id? } payload for the one
-    // move endpoint.
+    // move endpoint. Previously "before"/"after" only actually repositioned
+    // the node when the target happened to already be a sibling (same
+    // parent) — reorder() was called for that case, but a drop onto a
+    // before/after zone under a DIFFERENT parent only ever called update()
+    // with just { parent_id }, silently dropping the "before/after" part
+    // entirely. That bug applied at every depth, not just root — a child
+    // three levels deep dropped "before" a node under a different branch
+    // would reparent but land wherever its old sort_order happened to be,
+    // not next to the node you dropped it on.
     let payload: { parent_id: number | null; before_id?: number; after_id?: number }
 
     if (zone === 'root') {
@@ -357,9 +334,6 @@ export default function FlowNodesPage() {
     const bc = n.type === 'list' ? '#3b82f6' : n.type === 'button' ? '#8b5cf6' : n.type === 'survey' ? '#f59e0b' : n.type === 'template' ? '#ec4899' : dead ? '#ef4444' : '#10b981'
     const isDraggingThis = dragEnabled && dragging === n.id
     const intoZone = `into-${n.id}`, beforeZone = `before-${n.id}`, afterZone = `after-${n.id}`
-    // Collapse control is disabled while drag mode is on — every node must
-    // stay expanded so its drop zones exist. See the useEffect above.
-    const collapseLocked = dragEnabled && children.length > 0
 
     return (<div key={n.id} style={{ marginLeft: depth > 0 ? 24 : 0 }}>
       {/* DROP ZONE — before this node (between siblings) */}
@@ -378,13 +352,7 @@ export default function FlowNodesPage() {
         <div className="flex items-center gap-2 px-3 py-2.5">
           <span className={`text-gray-300 text-sm select-none flex-shrink-0 ${dragEnabled ? 'cursor-grab active:cursor-grabbing' : 'cursor-not-allowed opacity-30'}`}>⠿</span>
           <input type="checkbox" checked={selected.has(n.id)} onChange={() => toggleSelect(n.id)} className="w-3.5 h-3.5 rounded text-brand-500 flex-shrink-0 cursor-pointer" />
-          <button
-            onClick={() => !collapseLocked && children.length && toggleCollapse(n.id)}
-            disabled={collapseLocked}
-            title={collapseLocked ? 'Collapse disabled while drag mode is on' : undefined}
-            className={`text-xs w-4 flex-shrink-0 ${children.length ? (collapseLocked ? 'text-gray-200 cursor-not-allowed' : 'text-gray-400 hover:text-gray-600') : 'text-transparent'}`}>
-            {children.length ? (isCol ? '▶' : '▼') : '·'}
-          </button>
+          <button onClick={() => children.length && toggleCollapse(n.id)} className={`text-xs w-4 flex-shrink-0 ${children.length ? 'text-gray-400 hover:text-gray-600' : 'text-transparent'}`}>{children.length ? (isCol ? '▶' : '▼') : '·'}</button>
           <span className="text-[10px] bg-gray-100 text-gray-400 font-mono px-1 py-0.5 rounded flex-shrink-0">#{n.sort_order ?? 0}</span>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-1.5 flex-wrap">
@@ -482,7 +450,6 @@ export default function FlowNodesPage() {
         <span><span className="font-semibold text-green-500">text</span>terminal</span>
         <span>⠿drag · ☐select · #order · ↩redirect · 🔥triggers</span>
         {!dragEnabled && <span className="text-amber-500 font-medium">⚠️ Drag OFF</span>}
-        {dragEnabled && <span className="text-brand-500 font-medium">🌿 Tree force-expanded while dragging</span>}
         {moving && <span className="text-brand-600 font-medium">⏳ Moving…</span>}
         {!moving && dragEnabled && dragging !== null && <span className="text-brand-600 font-medium animate-pulse">Dragging "{nodes.find(n => n.id === dragging)?.title}" — drop on a node or zone</span>}
       </div>
