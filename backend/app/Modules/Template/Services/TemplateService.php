@@ -11,9 +11,11 @@ class TemplateService
     public function list(int $companyId, array $filters = []): LengthAwarePaginator
     {
         return WaTemplate::where('company_id', $companyId)
-            ->when($filters['search'] ?? null, fn($q) =>
+            ->when(
+                $filters['search'] ?? null,
+                fn($q) =>
                 $q->where('name', 'like', "%{$filters['search']}%")
-                  ->orWhere('body', 'like', "%{$filters['search']}%")
+                    ->orWhere('body', 'like', "%{$filters['search']}%")
             )
             ->when($filters['status'] ?? null, fn($q) => $q->where('status', $filters['status']))
             ->when($filters['category'] ?? null, fn($q) => $q->where('category', $filters['category']))
@@ -187,17 +189,19 @@ class TemplateService
     public function syncSingleFromMeta(int $id, int $companyId): WaTemplate
     {
         $template = $this->show($id, $companyId);
+        $company = auth()->user()->company;
 
         if (!$template->wa_template_id) {
             throw new \Exception('No Meta template ID set. Add wa_template_id first.');
         }
 
-        $phone = $template->waPhoneNumber;
-        if (!$phone) {
-            throw new \Exception('No phone number linked to this template.');
-        }
+        // $phone =
+        //  $template->waPhoneNumber;
+        // if (!$phone) {
+        //     throw new \Exception('No phone number linked to this template.');
+        // }
 
-        $response = Http::withToken(decrypt($phone->access_token))
+        $response = Http::withToken(decrypt($company->decrypt_wa_access_token))
             ->timeout(10)
             ->get("https://graph.facebook.com/v25.0/{$template->wa_template_id}");
 
