@@ -18,7 +18,7 @@ import {
   useEffect, useState, useCallback, useMemo, useRef, DragEvent,
 } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { flowBuilderApi, flowNodeApi } from '@/api'
+import { flowBuilderApi, flowNodeApi, surveyFormApi } from '@/api'
 import { Button, Modal, ConfirmModal, EmptyState } from '@/components/ui'
 import { getError } from '@/utils'
 import toast from 'react-hot-toast'
@@ -48,7 +48,7 @@ const NODE_TYPES = [
   { value: 'button', label: 'Button', desc: '≤3 options', icon: '🔘' },
   { value: 'text', label: 'Text', desc: 'Terminal', icon: '💬' },
   { value: 'survey', label: 'Survey', desc: 'Form', icon: '📝' },
-  { value: 'template', label: 'Template', desc: 'WA tpl', icon: '📨' },
+  // { value: 'template', label: 'Template', desc: 'WA tpl', icon: '📨' },
 ]
 const MSG_TYPES = [
   { value: 'text', label: 'Text', icon: '💬' }, { value: 'image', label: 'Image', icon: '🖼️' },
@@ -107,6 +107,100 @@ function ReplyIdSelect({ nodes, value, onChange }: { nodes: FlowNode[]; value: s
   const filtered = nodes.filter(n => !search || n.reply_id.toLowerCase().includes(search.toLowerCase()) || n.title.toLowerCase().includes(search.toLowerCase()))
   return (<div className="relative" ref={ref}><label className="label">Redirect to <span className="text-xs text-gray-400">(Back / Main Menu — optional)</span></label><div className="relative"><input className="form-control pr-8 font-mono text-sm" placeholder="WELCOME or reply_id of target node" value={search} onFocus={() => setOpen(true)} onChange={e => { setSearch(e.target.value); onChange(e.target.value); setOpen(true) }} />{search && <button type="button" onClick={() => { setSearch(''); onChange(''); setOpen(false) }} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 text-lg">×</button>}</div>{open && (<div className="absolute z-50 top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-xl overflow-hidden max-h-48 overflow-y-auto"><div className="px-4 py-2.5 cursor-pointer hover:bg-green-50 text-green-700 font-medium text-sm border-b" onClick={() => { onChange('WELCOME'); setSearch('WELCOME'); setOpen(false) }}>🏠 WELCOME — restart from welcome menu</div>{filtered.map(n => (<div key={n.id} className={`px-4 py-2.5 cursor-pointer hover:bg-brand-50 border-b last:border-0 ${value === n.reply_id ? 'bg-brand-50' : ''}`} onClick={() => { onChange(n.reply_id); setSearch(n.reply_id); setOpen(false) }}><div className="flex items-center justify-between gap-2"><span className="text-xs font-mono text-brand-600">{n.reply_id}</span><span className="text-xs text-gray-400 truncate">{n.title}</span></div></div>))}</div>)}{search && <p className="text-[11px] text-indigo-500 mt-1">Tapping this node → jumps to <span className="font-mono font-bold">{search}</span></p>}</div>)
 }
+
+
+// // ── Survey form searchable select ─────────────────────────────────────────────
+function SurveyFormSelect({ value, onChange }: {
+  value: number | null
+  onChange: (id: number | null, form?: any) => void
+}) {
+  const [search, setSearch] = useState('')
+  const [options, setOptions] = useState<any[]>([])
+  const [selected, setSelected] = useState<any>(null)
+  const [loading, setLoading] = useState(false)
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const h = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false) }
+    document.addEventListener('mousedown', h)
+    return () => document.removeEventListener('mousedown', h)
+  }, [])
+
+  useEffect(() => {
+    if (!open) return
+    setLoading(true)
+    surveyFormApi.list({ search, per_page: 20 })
+      .then(r => setOptions(r.data.forms || []))
+      .catch(() => setOptions([]))
+      .finally(() => setLoading(false))
+  }, [search, open])
+
+  // If we only have the id (editing an existing node), fetch the form once for the label
+  useEffect(() => {
+    if (value && (!selected || selected.id !== value)) {
+      surveyFormApi.show(value).then(r => setSelected(r.data.form)).catch(() => { })
+    }
+    if (!value) setSelected(null)
+  }, [value]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  return (
+    <div className="relative" ref={ref}>
+      <label className="label">Survey form *</label>
+      <div
+        className={`form-control border px-3 rounded flex items-center justify-between cursor-pointer min-h-[42px] ${open ? 'border-brand-400 ring-2 ring-brand-100' : ''}`}
+        onClick={() => setOpen(o => !o)}
+      >
+        {selected ? (
+          <div className="flex items-center gap-2 min-w-0">
+            <span>📝</span>
+            <span className="text-sm font-medium truncate">{selected.name}</span>
+            <span className="text-xs text-gray-400 flex-shrink-0">{(selected.fields || []).length} questions</span>
+          </div>
+        ) : (
+          <span className="text-gray-400 text-sm">Search and select a survey form...</span>
+        )}
+        <div className="flex items-center gap-1 flex-shrink-0 ml-2">
+          {selected && (
+            <span onClick={e => { e.stopPropagation(); onChange(null); setSelected(null) }}
+              className="text-gray-400 hover:text-gray-600 text-xl leading-none px-1">×</span>
+          )}
+          <span className="text-gray-400 text-xs">▾</span>
+        </div>
+      </div>
+
+      {open && (
+        <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
+          <div className="p-2 border-b border-gray-100">
+            <input autoFocus className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:border-brand-400"
+              placeholder="Search survey forms..." value={search}
+              onChange={e => setSearch(e.target.value)} onClick={e => e.stopPropagation()} />
+          </div>
+          <div className="max-h-52 overflow-y-auto">
+            {loading ? (
+              <div className="text-center py-6 text-sm text-gray-400">Searching...</div>
+            ) : options.length === 0 ? (
+              <div className="text-center py-6 text-sm text-gray-400">
+                No survey forms found. <a href="/survey-forms" className="text-brand-600 hover:underline">Create one →</a>
+              </div>
+            ) : options.map(f => (
+              <div key={f.id}
+                className={`px-4 py-2.5 cursor-pointer hover:bg-brand-50 border-b border-gray-50 last:border-0 ${value === f.id ? 'bg-brand-50' : ''}`}
+                onClick={() => { onChange(f.id, f); setSelected(f); setOpen(false); setSearch('') }}>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium">{f.name}</span>
+                  <span className="text-xs text-gray-400">{(f.fields || []).length} questions</span>
+                </div>
+                {f.description && <p className="text-xs text-gray-400 mt-0.5 truncate">{f.description}</p>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 
 // ─── MediaInput ───────────────────────────────────────────────────────────────
 function MediaInput({ block, builderId, onUpdate }: { block: any; builderId: number; onUpdate: (p: any) => void }) {
@@ -348,7 +442,7 @@ export default function FlowNodesPage() {
       }
       toast.success(`${total} nodes created across ${dupTargets.length} parent(s).`);
       setShowDup(false);
-      setSelected(new Set()); 
+      setSelected(new Set());
       load()
     } catch (e) {
       toast.error('Duplicate failed: ' + getError(e))
@@ -538,6 +632,15 @@ export default function FlowNodesPage() {
           <div><label className="label">Type *</label><div className="grid grid-cols-5 gap-1.5">{NODE_TYPES.map(t => (<button key={t.value} type="button" onClick={() => set('type', t.value)} className={`p-2 rounded-xl border text-left text-xs transition-all ${form.type === t.value ? 'border-brand-500 bg-brand-50 text-brand-700' : 'border-gray-200 hover:border-gray-300 text-gray-600'}`}><div className="font-semibold">{t.icon} {t.label}</div><div className="text-gray-400 text-[10px] mt-0.5">{t.desc}</div></button>))}</div></div>
 
           <LeadCategorySelect value={form.lead_category} onChange={v => set('lead_category', v)} />
+             {/* Survey node — pick a survey form; no message/buttons needed, the bot asks questions itself */}
+          {isSurvey && (
+            <div className="space-y-2">
+              <SurveyFormSelect value={form.survey_form_id} onChange={id => set('survey_form_id', id)} />
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-700">
+                When this node triggers, the bot asks each question in the form one at a time, in plain WhatsApp messages, and saves the customer's replies. No message/buttons to configure here — that's driven entirely by the survey form.
+              </div>
+            </div>
+          )}
           <ReplyIdSelect nodes={nodes} value={form.redirect_to_reply_id} onChange={v => set('redirect_to_reply_id', v)} />
 
           <div><label className="label">Message {multiMode || isSurvey || isTpl ? '(optional intro)' : '*'} <span className="text-xs text-gray-400">{form.message.length}/4096</span></label><textarea className="form-control" rows={multiMode || isSurvey || isTpl ? 2 : 4} maxLength={4096} placeholder={multiMode ? 'Intro before blocks…' : isSurvey ? 'Intro before survey…' : isTpl ? 'Intro before template…' : 'Message shown to customer…'} value={form.message} onChange={e => set('message', e.target.value)} /></div>
