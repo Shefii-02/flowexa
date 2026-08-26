@@ -1,11 +1,3 @@
-// src/pages/flow/FlowNodesPage.tsx — FINAL v4
-// ✅ Drag & drop with visual drop zones + toast showing from/to node info
-// ✅ Reorder (same parent) → flowNodeApi.reorder()
-// ✅ Reparent (different parent) → flowNodeApi.update({parent_id})
-// ✅ Sort order managed in create/edit form (sort_order field)
-// ✅ Dashed drop zone border shown between siblings and under each parent
-// ✅ Multi-select → bulk delete, bulk activate, bulk deactivate
-// ✅ All previous features retained
 // src/pages/flow/FlowNodesPage.tsx — v5
 // ✅ Drag & drop with visual drop zones + toast showing from/to node info
 // ✅ Reorder (same parent) → flowNodeApi.reorder()
@@ -189,7 +181,7 @@ export default function FlowNodesPage() {
   const [saving, setSaving] = useState(false); const [form, setForm] = useState(DEFAULT_FORM); const [multiMode, setMultiMode] = useState(false)
   const [replyStatus, setReplyStatus] = useState<'idle' | 'checking' | 'ok' | 'taken'>('idle')
   const [showDup, setShowDup] = useState(false); const [dupTree, setDupTree] = useState<DupNode[]>([]); const [dupExp, setDupExp] = useState<Set<number>>(new Set())
-  const [dupTargets, setDupTargets] = useState<DupTarget[]>([{ _key: uid(), parentId: null }]); 
+  const [dupTargets, setDupTargets] = useState<DupTarget[]>([{ _key: uid(), parentId: null }]);
   const [duplicating, setDuplicating] = useState(false)
   const [updatingProcess, setUpdatingProcess] = useState(false)
   const [bulkAction, setBulkAction] = useState<'delete' | 'activate' | 'deactivate' | null>(null); const [bulkLoading, setBulkLoading] = useState(false)
@@ -350,12 +342,21 @@ export default function FlowNodesPage() {
           const origPid = dn.original.parent_id
           const newPid = origPid !== null && includedIds.has(origPid) && oldToNew[origPid] !== undefined ? oldToNew[origPid] : target.parentId
           const finalId = (dn.newReplyId + tSfx).slice(0, 200)
-          const { data } = await flowNodeApi.create(builderId, { title: dn.newTitle.slice(0, 24), message: dn.newMessage, type: dn.original.type, reply_id: finalId, redirect_to_reply_id: dn.original.redirect_to_reply_id || null, lead_category: dn.original.lead_category, parent_id: newPid, is_active:  dn.original.is_active, multi_messages: dn.original.multi_messages || null, is_dead_end: dn.original.is_dead_end, sort_order: dn.original.sort_order } as any)
+          const { data } = await flowNodeApi.create(builderId, { title: dn.newTitle.slice(0, 24), message: dn.newMessage, type: dn.original.type, reply_id: finalId, redirect_to_reply_id: dn.original.redirect_to_reply_id || null, lead_category: dn.original.lead_category, parent_id: newPid, is_active: dn.original.is_active, multi_messages: dn.original.multi_messages || null, is_dead_end: dn.original.is_dead_end, sort_order: dn.original.sort_order } as any)
           oldToNew[dn.original.id] = data.node.id; total++
         }
       }
-      toast.success(`${total} nodes created across ${dupTargets.length} parent(s).`); setShowDup(false); setSelected(new Set()); load()
-    } catch (e) { toast.error('Duplicate failed: ' + getError(e)) } finally { setDuplicating(false) }
+      toast.success(`${total} nodes created across ${dupTargets.length} parent(s).`);
+      setShowDup(false);
+      setSelected(new Set()); 
+      load()
+    } catch (e) {
+      toast.error('Duplicate failed: ' + getError(e))
+      setShowDup(false);
+    }
+    finally {
+      setDuplicating(false)
+    }
   }
 
   const copyToClipboard = async (text: string, label: string) => { try { await navigator.clipboard.writeText(text); toast.success(`${label} copied!`) } catch { } }
@@ -594,7 +595,7 @@ export default function FlowNodesPage() {
         <div className="px-5 py-2.5 bg-brand-50 border-b border-brand-100 text-xs text-brand-700 flex-shrink-0"><p>☑️ Check/uncheck branches. Click <strong>edit</strong> to rename. × removes a node+subtree from list. reply_ids auto-suffixed per target to prevent conflicts.</p></div>
         <div className="border-t border-gray-100 bg-gray-50 p-4 space-y-3 flex-shrink-0">
           <div className="flex items-center justify-between"><p className="text-sm font-semibold text-gray-700">Paste under (target parents)</p><button onClick={addDupTarget} className="text-xs text-brand-600 hover:underline font-medium">+ Add parent</button></div>
-          <div className="space-y-2 max-h-80 overflow-y-auto">{dupTargets.map((t, i) => (<div key={t._key} className="flex items-end gap-2"><div className="flex-1"><ParentNodeSelect nodes={nodes} value={t.parentId} onChange={pid => updateDupTarget(t._key, pid)} excludeIds={[...selected]} label={i === 0 ? 'Parent node' : undefined} /></div>{dupTargets.length > 1 && <button onClick={() => removeDupTarget(t._key)} className="mb-0.5 text-red-400 hover:text-red-600 hover:bg-red-50 w-8 h-9 flex items-center justify-center rounded-xl border border-red-200 flex-shrink-0">×</button>}</div>))}</div>
+          <div className="space-y-2 overflow-y-auto h-100" >{dupTargets.map((t, i) => (<div key={t._key} className="flex items-end gap-2"><div className="flex-1"><ParentNodeSelect nodes={nodes} value={t.parentId} onChange={pid => updateDupTarget(t._key, pid)} excludeIds={[...selected]} label={i === 0 ? 'Parent node' : undefined} /></div>{dupTargets.length > 1 && <button onClick={() => removeDupTarget(t._key)} className="mb-0.5 text-red-400 hover:text-red-600 hover:bg-red-50 w-8 h-9 flex items-center justify-center rounded-xl border border-red-200 flex-shrink-0">×</button>}</div>))}</div>
           <div className="bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-xs text-blue-700">{dupTargets.length === 1 ? (dupTargets[0].parentId ? <>Copies → under <strong>{nodes.find(n => n.id === dupTargets[0].parentId)?.title}</strong></> : <>Copies → root level</>) : <>{incCount} × {dupTargets.length} = <strong>{incCount * dupTargets.length} nodes</strong>. Each set gets unique reply_ids.</>}</div>
           <div className="flex gap-2"><Button variant="secondary" onClick={() => setShowDup(false)} className="flex-1" disabled={duplicating}>Cancel</Button><Button onClick={handleDuplicate} loading={duplicating} className="flex-1" disabled={incCount === 0}>Clone {incCount}×{dupTargets.length} = {incCount * dupTargets.length}</Button></div>
         </div>
