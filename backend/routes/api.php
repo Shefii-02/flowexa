@@ -48,6 +48,8 @@ use App\Modules\MetaAds\Http\Controllers\{
     MetaWebhookController,
 };
 use App\Modules\Survey\Http\Controllers\SurveyFormController;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 
 /*
 |--------------------------------------------------------------------------
@@ -660,6 +662,13 @@ Route::prefix('v1')->group(function () {
         Route::get('whatsapp',  [WebhookController::class, 'verify'])->name('verify');
         // Inbound events from Meta
         Route::post('whatsapp', [WebhookController::class, 'handle'])->name('handle');
+
+
+
+            Route::get('/dummy-whatsapp', function (Request $request) {
+                Log::info($request->all());
+            });
+
     });
 
 
