@@ -97,6 +97,8 @@ class CampaignService
     {
         $campaign = $this->show($id, $companyId);
 
+        $company = auth()->user()->company;
+
         if (!in_array($campaign->status, self::LAUNCHABLE_STATUSES)) {
             throw CampaignException::notLaunchable($campaign->status);
         }
@@ -109,13 +111,17 @@ class CampaignService
         }
 
         $total  = $contacts->count();
-        $wallet = $this->walletService->getWallet($companyId);
 
-        if ($wallet->balance < $total) {
-            throw CampaignException::insufficientBalance($wallet->balance, $total);
+        if ($company->wa_config == 'wallet') {
+
+            $wallet = $this->walletService->getWallet($companyId);
+
+            if ($wallet->balance < $total) {
+                throw CampaignException::insufficientBalance($wallet->balance, $total);
+            }
         }
 
-        DB::transaction(function () use ($campaign, $contacts, $total, $companyId) {
+        DB::transaction(function () use ($campaign, $contacts, $total, $companyId, $company) {
             // Clear any leftover pending rows
             $this->campaignRepository->clearPendingContacts($campaign->id);
 
@@ -143,14 +149,17 @@ class CampaignService
                 'started_at'     => now(),
             ]);
 
-            // Debit wallet upfront
-            $this->walletService->debit(
-                companyId:   $companyId,
-                amount:      $total,
-                description: "Campaign '{$campaign->name}' — {$total} messages",
-                refId:       (string) $campaign->id,
-                refType:     'campaign',
-            );
+
+            if ($company->wa_config == 'wallet') {
+                // Debit wallet upfront
+                $this->walletService->debit(
+                    companyId: $companyId,
+                    amount: $total,
+                    description: "Campaign '{$campaign->name}' — {$total} messages",
+                    refId: (string) $campaign->id,
+                    refType: 'campaign',
+                );
+            }
 
             // Update wallet_debited field
             $this->campaignRepository->updateStats($campaign->id, [
@@ -165,8 +174,8 @@ class CampaignService
         $wallet->refresh();
 
         return new LaunchResultDTO(
-            totalContacts:    $total,
-            walletDebited:    $total,
+            totalContacts: $total,
+            walletDebited: $total,
             remainingBalance: $wallet->balance,
         );
     }

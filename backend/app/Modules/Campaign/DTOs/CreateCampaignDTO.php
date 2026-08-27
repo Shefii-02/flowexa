@@ -8,6 +8,7 @@ readonly class CreateCampaignDTO
     public function __construct(
         public string  $name,
         public int     $templateId,
+        public int     $waPhoneNumberId,
         public string  $targetType,        // csv | labels | all
         public ?string $description        = null,
         public ?array  $templateVariables  = null,
@@ -22,6 +23,7 @@ readonly class CreateCampaignDTO
         return new self(
             name:               $data['name'],
             templateId:         (int) $data['template_id'],
+            waPhoneNumberId:    (int) $data['wa_phone_number_id'],
             targetType:         $data['target_type'],
             description:        $data['description']         ?? null,
             templateVariables:  $data['template_variables']  ?? null,

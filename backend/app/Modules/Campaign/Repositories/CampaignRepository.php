@@ -42,6 +42,7 @@ class CampaignRepository implements CampaignRepositoryInterface
             'company_id'          => $companyId,
             'created_by'          => $userId,
             'template_id'         => $dto->templateId,
+            'wa_phone_number_id'  => $dto->waPhoneNumberId,
             'name'                => $dto->name,
             'description'         => $dto->description,
             'template_variables'  => $dto->templateVariables,

@@ -32,7 +32,9 @@ export const Sidebar = () => {
   const canViewAnalyt = usePermission('analytics.view_all')
   const walletBal = user?.company?.wallet?.balance ?? 0
   const isLow = user?.company?.wallet?.is_low ?? false
+  const waConfig = user?.company?.wa_config ?? 'wallet';
 
+ 
   const handleLogout = async () => {
     await dispatch(logoutThunk())
     navigate('/login')
@@ -70,7 +72,7 @@ export const Sidebar = () => {
       </div>
 
       {/* Wallet badge */}
-      {!isSuperAdmin && (
+      {!isSuperAdmin && waConfig == 'wallet' && (
         <div
           className={cn(
             'mx-3 mt-3 px-3 py-2 rounded-lg flex items-center justify-between cursor-pointer transition-colors',
@@ -115,7 +117,7 @@ export const Sidebar = () => {
 
             <p className="text-xs font-medium text-gray-400 uppercase tracking-wide px-2 pt-3 pb-1">Manage</p>
             {canViewStaff && <NavItem to="/staff" icon="👤" label="Staff" />}
-            {canViewBill && <NavItem to="/wallet" icon="💳" label="Wallet" />}
+            {canViewBill && waConfig == 'wallet' && <NavItem to="/wallet" icon="💳" label="Wallet" />}
             <NavItem to="/otp" icon="🔐" label="OTP service" />
             <NavItem to="/phone-numbers" icon="📱" label="Phone numbers" />
 

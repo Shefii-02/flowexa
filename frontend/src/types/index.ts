@@ -42,6 +42,7 @@ export interface Company {
   settings: Record<string, unknown> | null
   plan: Plan | null
   wallet: Wallet | null
+  wa_config : string
   plan_expires_at: string | null
   created_at: string
   updated_at: string
@@ -65,6 +66,7 @@ export interface User {
   company: Company | null
   language: string
   permissions: string[]
+
 }
 
 export interface ContactLabel {
