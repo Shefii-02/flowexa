@@ -665,7 +665,7 @@ Route::prefix('v1')->group(function () {
 
 
 
-            Route::get('/dummy-whatsapp', function (Request $request) {
+            Route::any('/dummy-whatsapp', function (Request $request) {
                 Log::info($request->all());
             });
 
