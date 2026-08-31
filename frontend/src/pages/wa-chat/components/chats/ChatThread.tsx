@@ -182,7 +182,20 @@ function ChatThread({
             // location/call have no downloadable media payload — render them before the
             // mediaInfo gate. The raw body (a base64 thumbnail / empty token) is suppressed below.
             if (msg.type === 'location') {
-              // WhatsApp location messages carry a base64 JPEG map-preview thumbnail in `body`.
+              // Prefer lat/lng from metadata for an interactive OSM embed; fall back to the base64 thumbnail.
+              const loc = (msg.metadata as any)?.location as { lat?: number; lng?: number; name?: string; address?: string } | undefined;
+              if (loc?.lat !== undefined && loc?.lng !== undefined) {
+                const mapUrl = `https://www.openstreetmap.org/export/embed.html?bbox=${loc.lng - 0.01},${loc.lat - 0.01},${loc.lng + 0.01},${loc.lat + 0.01}&layer=mapnik&marker=${loc.lat},${loc.lng}`;
+                const label = loc.name || loc.address || t('chats.media.location');
+                return (
+                  <div className="message-location">
+                    <iframe src={mapUrl} width="220" height="150" style={{ border: 'none', borderRadius: 8, display: 'block' }} loading="lazy" title={label} />
+                    <a href={`https://www.openstreetmap.org/?mlat=${loc.lat}&mlon=${loc.lng}`} target="_blank" rel="noopener noreferrer" className="message-media-omitted" style={{ display: 'block', marginTop: 4 }}>
+                      📍 {label}
+                    </a>
+                  </div>
+                );
+              }
               const thumb = msg.body && msg.body.length > 100 ? `data:image/jpeg;base64,${msg.body}` : '';
               return (
                 <div className="message-location">
@@ -203,6 +216,31 @@ function ChatThread({
               return (
                 <div className="message-media-omitted">
                   {`${call?.video ? '📹' : '📞'} ${t(`chats.media.${callKey}`)}`}
+                </div>
+              );
+            }
+            // Poll messages: render the question + options bar chart (vote counts from metadata).
+            if (msg.type === 'poll') {
+              const poll = (msg.metadata as any)?.poll as { question?: string; options?: { name: string; votes?: number }[] } | undefined;
+              const totalVotes = (poll?.options ?? []).reduce((s, o) => s + (o.votes ?? 0), 0);
+              return (
+                <div style={{ minWidth: 180 }}>
+                  <p style={{ fontWeight: 600, fontSize: 13, marginBottom: 8 }}>📊 {poll?.question || msg.body}</p>
+                  {(poll?.options ?? []).map((opt, i) => {
+                    const pct = totalVotes > 0 ? Math.round(((opt.votes ?? 0) / totalVotes) * 100) : 0;
+                    return (
+                      <div key={i} style={{ marginBottom: 6 }}>
+                        <div style={{ position: 'relative', background: '#f3f4f6', borderRadius: 4, overflow: 'hidden', height: 28 }}>
+                          <div style={{ position: 'absolute', top: 0, left: 0, bottom: 0, background: 'rgba(59,130,246,0.15)', width: `${pct}%`, transition: 'width 0.3s' }} />
+                          <div style={{ position: 'relative', display: 'flex', justifyContent: 'space-between', padding: '4px 8px', fontSize: 12 }}>
+                            <span>{opt.name}</span>
+                            <span style={{ color: '#6b7280' }}>{opt.votes ?? 0} ({pct}%)</span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {totalVotes > 0 && <p style={{ fontSize: 11, color: '#9ca3af', marginTop: 4 }}>{totalVotes} vote{totalVotes !== 1 ? 's' : ''}</p>}
                 </div>
               );
             }
@@ -257,14 +295,23 @@ function ChatThread({
                   </div>
                 );
               case 'document':
-              default:
+              default: {
+                const ext = (mediaInfo.filename || '').split('.').pop()?.toLowerCase() ?? '';
+                const fileIcon = ext === 'pdf' ? '📄' : ['doc', 'docx'].includes(ext) ? '📝' : ['xls', 'xlsx'].includes(ext) ? '📊' : ['zip', 'rar', '7z'].includes(ext) ? '🗜️' : ext === 'txt' ? '📃' : '📎';
+                const sizeBytes = (mediaInfo as unknown as Record<string, number>).filesize;
+                const sizeLabel = sizeBytes ? (sizeBytes >= 1048576 ? `${(sizeBytes / 1048576).toFixed(1)} MB` : `${(sizeBytes / 1024).toFixed(0)} KB`) : '';
                 return (
                   <div className="message-media-document">
-                    <a href={mediaSrc} download={mediaInfo.filename || 'document'} className="chat-document-media">
-                      📎 {mediaInfo.filename || t('chats.downloadDocument')}
+                    <a href={mediaSrc} download={mediaInfo.filename || 'document'} className="chat-document-media" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', background: 'rgba(0,0,0,0.04)', borderRadius: 8, textDecoration: 'none', color: 'inherit' }}>
+                      <span style={{ fontSize: 28 }}>{fileIcon}</span>
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 500, lineHeight: 1.3 }}>{mediaInfo.filename || t('chats.downloadDocument')}</div>
+                        {sizeLabel && <div style={{ fontSize: 11, color: '#6b7280', marginTop: 2 }}>{sizeLabel}</div>}
+                      </div>
                     </a>
                   </div>
                 );
+              }
             }
           };
 

@@ -12,6 +12,9 @@ return Application::configure(basePath: dirname(__DIR__))
         commands: __DIR__ . '/../routes/console.php',
         health: '/up',
     )
+    ->withCommands([
+        \App\Modules\WaChat\Console\Commands\ProcessScheduledMessages::class,
+    ])
     ->withMiddleware(function (Middleware $middleware): void {
         //
         // ── Global API middleware ──────────────────────────────────────────────

@@ -48,6 +48,14 @@ use App\Modules\MetaAds\Http\Controllers\{
     MetaWebhookController,
 };
 use App\Modules\Survey\Http\Controllers\SurveyFormController;
+use App\Modules\WaChat\Http\Controllers\WahaSessionController;
+use App\Modules\WaChat\Http\Controllers\WahaWebhookConfigController;
+use App\Modules\WaChat\Http\Controllers\MessageSenderController;
+use App\Modules\WaChat\Http\Controllers\MediaLibraryController;
+use App\Modules\WaChat\Http\Controllers\WaChatTemplateController;
+use App\Modules\WaChat\Http\Controllers\WaOtpServiceController;
+use App\Modules\WaChat\Http\Controllers\WaOtpPublicController;
+use App\Modules\WaChat\Http\Controllers\WaExportController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
@@ -324,9 +332,10 @@ Route::prefix('v1')->group(function () {
         Route::prefix('contacts')->name('contacts.')->group(function () {
 
             Route::middleware('permission:contacts.view')->group(function () {
-                Route::get('/',           [ContactController::class, 'index'])->name('index');
-                Route::get('/export',     [ContactController::class, 'export'])->name('export');
-                Route::get('/{contact}',  [ContactController::class, 'show'])->name('show');
+                Route::get('/',               [ContactController::class, 'index'])->name('index');
+                Route::get('/export',         [ContactController::class, 'export'])->name('export');
+                Route::post('/by-labels',     [ContactController::class, 'byLabels'])->name('by-labels');
+                Route::get('/{contact}',      [ContactController::class, 'show'])->name('show');
             });
 
             Route::post('/import', [ContactController::class, 'import'])
@@ -693,3 +702,92 @@ Route::post('/contacts-by-labels', [ExtensionController::class, 'contactsByLabel
 Route::post('/send', [ExtensionController::class, 'send']); // calls Graph API, not DOM automation
         // });
     // });
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+// WA Chat Module Routes (unichatwa)
+// API_SEPARATION: these are Project B routes — unichatwa.univexa.in
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ── Public OTP API (no auth — validated by Bearer token against wa_otp_services) ──
+Route::prefix('v1/otp')->group(function () {
+    Route::post('send',   [WaOtpPublicController::class, 'publicSend']);
+    Route::post('verify', [WaOtpPublicController::class, 'publicVerify']);
+    Route::post('resend', [WaOtpPublicController::class, 'publicResend']);
+});
+
+// ── WAHA session webhook receiver (public — called by WAHA server) ──
+Route::post('v1/waha/webhook', [WahaSessionController::class, 'webhook']);
+
+// ── Protected WA Chat routes ─────────────────────────────────────────────
+Route::prefix('v1')->middleware(['jwt.auth'])->group(function () {
+
+    // Sessions
+    Route::prefix('waha/sessions')->group(function () {
+        Route::get('/',              [WahaSessionController::class, 'index']);
+        Route::post('/',             [WahaSessionController::class, 'store']);
+        Route::get('/{id}',          [WahaSessionController::class, 'show']);
+        Route::post('/{id}/start',   [WahaSessionController::class, 'start']);
+        Route::post('/{id}/stop',    [WahaSessionController::class, 'stop']);
+        Route::post('/{id}/logout',  [WahaSessionController::class, 'logout']);
+        Route::get('/{id}/qr',       [WahaSessionController::class, 'qr']);
+        Route::delete('/{id}',       [WahaSessionController::class, 'destroy']);
+    });
+
+    // Webhook configs
+    Route::prefix('waha/webhooks')->group(function () {
+        Route::get('/',          [WahaWebhookConfigController::class, 'index']);
+        Route::post('/',         [WahaWebhookConfigController::class, 'store']);
+        Route::patch('/{id}',    [WahaWebhookConfigController::class, 'update']);
+        Route::delete('/{id}',   [WahaWebhookConfigController::class, 'destroy']);
+        Route::post('/{id}/test',[WahaWebhookConfigController::class, 'test']);
+    });
+
+    // Message Sender
+    Route::prefix('message-sender')->group(function () {
+        Route::get('/',              [MessageSenderController::class, 'index']);
+        Route::post('/',             [MessageSenderController::class, 'store']);
+        Route::get('/stats',         [MessageSenderController::class, 'stats']);
+        Route::get('/{id}',          [MessageSenderController::class, 'show']);
+        Route::post('/{id}/pause',   [MessageSenderController::class, 'pause']);
+        Route::post('/{id}/resume',  [MessageSenderController::class, 'resume']);
+        Route::post('/{id}/stop',    [MessageSenderController::class, 'stop']);
+    });
+
+    // Media Library
+    Route::prefix('media-library')->group(function () {
+        Route::get('/',              [MediaLibraryController::class, 'index']);
+        Route::post('/upload',       [MediaLibraryController::class, 'upload']);
+        Route::patch('/{id}/rename', [MediaLibraryController::class, 'rename']);
+        Route::delete('/{id}',       [MediaLibraryController::class, 'destroy']);
+    });
+
+    // WA Chat Templates
+    Route::prefix('wa-chat-templates')->group(function () {
+        Route::get('/',        [WaChatTemplateController::class, 'index']);
+        Route::post('/',       [WaChatTemplateController::class, 'store']);
+        Route::get('/{id}',    [WaChatTemplateController::class, 'show']);
+        Route::patch('/{id}',  [WaChatTemplateController::class, 'update']);
+        Route::delete('/{id}', [WaChatTemplateController::class, 'destroy']);
+    });
+
+    // OTP Service (management — protected)
+    Route::prefix('otp-service')->group(function () {
+        Route::get('/',                         [WaOtpServiceController::class, 'show']);
+        Route::post('/',                        [WaOtpServiceController::class, 'storeOrUpdate']);
+        Route::post('/reset-token',             [WaOtpServiceController::class, 'resetToken']);
+        Route::post('/stop-token',              [WaOtpServiceController::class, 'stopToken']);
+        Route::get('/auth-messages',            [WaOtpServiceController::class, 'listAuthMessages']);
+        Route::post('/auth-messages',           [WaOtpServiceController::class, 'createAuthMessage']);
+        Route::patch('/auth-messages/{id}',     [WaOtpServiceController::class, 'updateAuthMessage']);
+        Route::get('/logs',                     [WaOtpServiceController::class, 'logs']);
+    });
+
+    // Data Export
+    Route::prefix('wa-export')->group(function () {
+        Route::get('/',                  [WaExportController::class, 'listJobs']);
+        Route::post('/chats',            [WaExportController::class, 'exportChats']);
+        Route::post('/groups',           [WaExportController::class, 'exportGroups']);
+        Route::get('/{id}/download',     [WaExportController::class, 'download']);
+    });
+});

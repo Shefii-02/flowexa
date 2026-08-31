@@ -4,7 +4,8 @@ import { Trans, useTranslation } from 'react-i18next';
 import { nextReconnectState } from '../utils/reconnectState';
 import { applyIncomingToChatList } from '../utils/chatList';
 import { filterChats, filterChannels, groupStatusesByContact } from '../utils/chatFilters';
-import { ArrowLeft, Loader2, Megaphone, CircleDashed, AlertCircle, MessageSquare } from 'lucide-react';
+import { ArrowLeft, Loader2, Megaphone, CircleDashed, AlertCircle, MessageSquare, X, Users } from 'lucide-react';
+import api from '@/api/client';
 import { useProfilePicture } from '../hooks/useProfilePicture';
 import { useProfilePictures } from '../hooks/useProfilePictures';
 import { useResolvedPhone } from '../hooks/useResolvedPhone';
@@ -128,6 +129,12 @@ export function Chats() {
   // pinned to the snapshot captured at click time. A group that disappears (all items expired)
   // simply closes the viewer.
   const [activeStatusContactId, setActiveStatusContactId] = useState<string | null>(null);
+
+  // Profile card state — opened by clicking the contact avatar/name in the room header.
+  const [showProfileCard, setShowProfileCard] = useState(false);
+  const [profileContact, setProfileContact] = useState<{ id: number; name: string | null; phone: string; labels?: { id: number; name: string; color?: string }[] } | null>(null);
+  const [profileGroups, setProfileGroups] = useState<{ id: string; name: string }[]>([]);
+  const [profileCardLoading, setProfileCardLoading] = useState(false);
 
   // Chats/Channels/Status tab selection. Switching tabs closes whatever conversation is open so a
   // press on another tab doesn't leave a Chats-tab room rendered underneath a Channels/Status list.
@@ -788,6 +795,25 @@ export function Chats() {
     if (el) el.scrollTop = el.scrollHeight;
   }, [activeStatusGroup?.contact.id, activeStatusGroup?.items]);
 
+  // Profile card: load contact labels from Laravel + session groups from WAHA when card opens.
+  useEffect(() => {
+    if (!showProfileCard || !activeChat || activeChat.isGroup) {
+      if (!showProfileCard || activeChat?.isGroup) { setProfileContact(null); setProfileGroups([]); }
+      return;
+    }
+    setProfileCardLoading(true);
+    const phone = activeChat.id.split('@')[0];
+    Promise.all([
+      api.get(`/contacts?search=${encodeURIComponent(phone)}&per_page=1`).catch(() => null),
+      selectedSessionId ? sessionApi.getGroups(selectedSessionId).catch(() => [] as { id: string; name: string }[]) : Promise.resolve([] as { id: string; name: string }[]),
+    ]).then(([contactRes, groups]) => {
+      const contacts = contactRes?.data?.data ?? contactRes?.data ?? [];
+      setProfileContact(contacts.length > 0 ? contacts[0] : null);
+      setProfileGroups(groups ?? []);
+      setProfileCardLoading(false);
+    });
+  }, [showProfileCard, activeChat?.id, selectedSessionId]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Image media items for the lightbox, in render order. `getMediaSrc` reconstructs a usable src
   // from either a base64 payload or a URL — the ChatMessageView shape stores both in `data`.
   const imageMedia = useMemo<LightboxItem[]>(
@@ -879,44 +905,49 @@ export function Chats() {
           {/* RIGHT VIEW: active chat room */}
           <main className="chats-room">
             {activeChat ? (
-              <div className="room-container">
+              <div className="room-container" style={showProfileCard ? { flexDirection: 'row' } : undefined}>
+                {/* Main chat column */}
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'hidden' }}>
                 {/* Room header */}
                 <header className="room-header">
                   <button className="room-back" onClick={() => setActiveChat(null)} aria-label={t('common.back')}>
                     <ArrowLeft size={20} />
                   </button>
-                  <div className="room-avatar">
+                  {/* Clickable avatar + contact info opens the profile card panel */}
+                  <div
+                    className="room-avatar"
+                    style={{ cursor: 'pointer' }}
+                    onClick={() => setShowProfileCard(v => !v)}
+                    title="View contact profile"
+                  >
                     {activePp.data ? (
                       <img
                         src={activePp.data}
                         alt=""
-                        // Signed CDN URLs rotate every few hours; refetch the slice on a stale load.
                         onError={() => activePp.refetch()}
                       />
                     ) : (
                       <KindIcon kind={activeChat.kind} />
                     )}
                   </div>
-                  <div className="room-contact-info">
+                  <div
+                    className="room-contact-info"
+                    style={{ cursor: 'pointer', flex: 1 }}
+                    onClick={() => setShowProfileCard(v => !v)}
+                    title="View contact profile"
+                  >
                     <h3>{activeChat.name || activeChat.id.split('@')[0]}</h3>
-                    {/* Personal chats show the prettified phone number — local formatting for
-                        @c.us ids, engine-resolved for @lid privacy ids (which are NOT phones and
-                        must never be formatted as one). Groups fall back to a semantic label;
-                        the raw JID follows below for the technical case. */}
                     <span className="room-contact-phone">
                       {activePhoneText ??
                         (activeChat.isGroup ? t('chats.groupSubtitle') : t('chats.privateContactSubtitle'))}
                     </span>
-                    {/* Raw JID preserved for the technical case (the gateway speaks JIDs everywhere:
-                        webhooks, message rows, lid resolution). Monospace + muted so it doesn't compete
-                        with the human-facing name/number. */}
                     <span className="room-contact-jid" title={activeChat.id}>
                       {activeChat.id}
                     </span>
                   </div>
                 </header>
 
-                {/* Messages body (list, media, reactions, scroll-to-bottom) — components/chats/ChatThread. */}
+                {/* Messages body */}
                 <ChatThread
                   sessionId={selectedSessionId}
                   activeChat={activeChat}
@@ -934,8 +965,7 @@ export function Chats() {
                   onDelete={handleDeleteMessage}
                 />
 
-                {/* Composer: attachment preview, emoji panel, reply banner, input bar —
-                    components/chats/ChatComposer. */}
+                {/* Composer */}
                 <ChatComposer
                   selectedSessionId={selectedSessionId}
                   activeChat={activeChat}
@@ -950,6 +980,80 @@ export function Chats() {
                   previewUrl={previewUrl}
                   setPreviewUrl={setPreviewUrl}
                 />
+                </div>
+
+                {/* Profile card panel — opens when avatar/name is clicked */}
+                {showProfileCard && (
+                  <div style={{ width: 280, flexShrink: 0, borderLeft: '1px solid var(--border, #e5e7eb)', overflowY: 'auto', background: '#fff', display: 'flex', flexDirection: 'column' }}>
+                    {/* Header */}
+                    <div style={{ padding: '16px', borderBottom: '1px solid var(--border, #e5e7eb)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span style={{ fontWeight: 600, fontSize: 14 }}>Contact Info</span>
+                      <button onClick={() => setShowProfileCard(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#6b7280', padding: 4 }}>
+                        <X size={16} />
+                      </button>
+                    </div>
+
+                    {/* Avatar + name */}
+                    <div style={{ padding: '20px 16px', textAlign: 'center', borderBottom: '1px solid var(--border, #e5e7eb)' }}>
+                      <div style={{ width: 72, height: 72, borderRadius: '50%', background: '#f3f4f6', margin: '0 auto 12px', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        {activePp.data
+                          ? <img src={activePp.data} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                          : <KindIcon kind={activeChat.kind} />
+                        }
+                      </div>
+                      <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 4 }}>{activeChat.name || activeChat.id.split('@')[0]}</div>
+                      {activePhoneText && <div style={{ fontSize: 13, color: '#6b7280' }}>{activePhoneText}</div>}
+                      <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 4, fontFamily: 'monospace', wordBreak: 'break-all' }}>{activeChat.id}</div>
+                    </div>
+
+                    {profileCardLoading ? (
+                      <div style={{ display: 'flex', justifyContent: 'center', padding: 24 }}>
+                        <Loader2 size={20} className="animate-spin" style={{ color: '#6b7280' }} />
+                      </div>
+                    ) : (
+                      <>
+                        {/* Labels */}
+                        {!activeChat.isGroup && (
+                          <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border, #e5e7eb)' }}>
+                            <div style={{ fontSize: 11, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 10 }}>Labels</div>
+                            {profileContact?.labels && profileContact.labels.length > 0 ? (
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                                {profileContact.labels.map((lbl: { id: number; name: string; color?: string }) => (
+                                  <span key={lbl.id} style={{ fontSize: 12, padding: '3px 10px', borderRadius: 12, background: (lbl.color ?? '#6b7280') + '20', color: lbl.color ?? '#374151', fontWeight: 500 }}>
+                                    🏷️ {lbl.name}
+                                  </span>
+                                ))}
+                              </div>
+                            ) : (
+                              <p style={{ fontSize: 13, color: '#9ca3af' }}>{profileContact ? 'No labels' : 'Contact not in CRM'}</p>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Groups */}
+                        <div style={{ padding: '14px 16px' }}>
+                          <div style={{ fontSize: 11, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <Users size={12} /> Groups in this session
+                          </div>
+                          {profileGroups.length > 0 ? (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                              {profileGroups.slice(0, 8).map(g => (
+                                <div key={g.id} style={{ fontSize: 13, color: '#374151', padding: '4px 8px', background: '#f9fafb', borderRadius: 6 }}>
+                                  👥 {g.name}
+                                </div>
+                              ))}
+                              {profileGroups.length > 8 && (
+                                <p style={{ fontSize: 12, color: '#9ca3af' }}>+{profileGroups.length - 8} more groups</p>
+                              )}
+                            </div>
+                          ) : (
+                            <p style={{ fontSize: 13, color: '#9ca3af' }}>No groups found</p>
+                          )}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                )}
               </div>
             ) : activeChannel ? (
               // Read-only channel pane: no send footer, reactions, delete, reply, or markChatRead —

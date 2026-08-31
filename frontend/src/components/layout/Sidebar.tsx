@@ -161,12 +161,17 @@ export const Sidebar = () => {
               label="WA Chat"
               basePath="/wa-chat"
               children={[
-                { to: '/wa-chat/sessions', label: 'Sessions' },
-                { to: '/wa-chat/chats', label: 'Chats' },
-                { to: '/wa-chat/webhooks', label: 'Webhooks' },
-                { to: '/wa-chat/templates', label: 'Templates' },
-                { to: '/wa-chat/logs', label: 'Logs' },
-                { to: '/wa-chat/api-keys', label: 'API Keys' },
+                { to: '/wa-chat/dashboard', label: '📊 Dashboard' },
+                { to: '/wa-chat/sessions', label: '📱 Sessions' },
+                { to: '/wa-chat/chats', label: '💬 Chats' },
+                { to: '/wa-chat/message-sender', label: '📨 Message Sender' },
+                { to: '/wa-chat/plugins', label: '🔌 Plugin' },
+                { to: '/wa-chat/webhooks', label: '🔗 Webhooks' },
+                { to: '/wa-chat/templates', label: '📋 Templates' },
+                { to: '/wa-chat/logs', label: '📜 Logs' },
+                { to: '/wa-chat/otp-service', label: '🔐 OTP Service' },
+                { to: '/wa-chat/export', label: '📥 Data Export' },
+                { to: '/wa-chat/api-keys', label: '🔑 API Keys' },
               ]}
             />
             <NavItem to="/wa-agent" icon="🤖" label="WA Agent" />

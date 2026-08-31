@@ -57,9 +57,14 @@ import WaChatShell, { RequireWaAdmin } from '@/pages/wa-chat/WaChatShell'
 import { Sessions as WaChatSessions } from '@/pages/wa-chat/pages/Sessions'
 import { Chats as WaChatChats } from '@/pages/wa-chat/pages/Chats'
 import { Webhooks as WaChatWebhooks } from '@/pages/wa-chat/pages/Webhooks'
-import { Templates as WaChatTemplates } from '@/pages/wa-chat/pages/Templates'
 import { Logs as WaChatLogs } from '@/pages/wa-chat/pages/Logs'
 import { ApiKeys as WaChatApiKeys } from '@/pages/wa-chat/pages/ApiKeys'
+import WaChatDashboard from '@/pages/wa-chat/pages/Dashboard'
+import WaChatPlugins from '@/pages/wa-chat/pages/Plugins'
+import MessageSender from '@/pages/wa-chat/pages/message-sender'
+import WaChatTemplatesPage from '@/pages/wa-chat/pages/WaChatTemplates'
+import WaOtpServicePage from '@/pages/wa-chat/pages/WaOtpService'
+import WaDataExportPage from '@/pages/wa-chat/pages/WaDataExport'
 
 // WA Agent (placeholder module)
 import WaAgentPage from '@/pages/wa-agent'
@@ -115,12 +120,17 @@ export default function App() {
 
             {/* WA Chat module (embedded WAHA dashboard → unichatwa.univexa.in) */}
             <Route path="wa-chat" element={<WaChatShell />}>
-              <Route index element={<Navigate to="sessions" replace />} />
+              <Route index element={<Navigate to="dashboard" replace />} />
+              <Route path="dashboard" element={<WaChatDashboard />} />
               <Route path="sessions" element={<WaChatSessions />} />
               <Route path="chats" element={<WaChatChats />} />
+              <Route path="message-sender" element={<MessageSender />} />
+              <Route path="plugins" element={<WaChatPlugins />} />
               <Route path="webhooks" element={<WaChatWebhooks />} />
-              <Route path="templates" element={<WaChatTemplates />} />
+              <Route path="templates" element={<WaChatTemplatesPage />} />
               <Route path="logs" element={<WaChatLogs />} />
+              <Route path="otp-service" element={<WaOtpServicePage />} />
+              <Route path="export" element={<WaDataExportPage />} />
               <Route path="api-keys" element={<RequireWaAdmin><WaChatApiKeys /></RequireWaAdmin>} />
             </Route>
 

@@ -17,6 +17,7 @@ use App\Modules\Contact\Http\Resources\ContactResource;
 use App\Modules\Contact\Http\Resources\ImportResultResource;
 use App\Modules\Contact\Services\ContactService;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -152,6 +153,28 @@ class ContactController extends Controller
             'message' => "Import complete: {$result->imported} imported, {$result->skipped} skipped.",
             'result'  => ImportResultResource::toArray($result),
         ]);
+    }
+
+    // ─── POST /contacts/by-labels ─────────────────────────────────────────────
+    // Returns contacts that have ANY of the given label IDs, with their phone numbers.
+    // Used by Message Sender to expand label recipients into individual contacts.
+    public function byLabels(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'label_ids' => 'required|array',
+            'label_ids.*' => 'integer',
+        ]);
+
+        $companyId = auth()->user()->company_id;
+        $labelIds  = $data['label_ids'];
+
+        // Contacts → labels is a many-to-many through contact_labels pivot table.
+        $contacts = \App\Modules\Contact\Models\Contact::where('company_id', $companyId)
+            ->whereHas('labels', fn($q) => $q->whereIn('labels.id', $labelIds))
+            ->select('id', 'name', 'phone')
+            ->get();
+
+        return response()->json(['data' => $contacts]);
     }
 
     // ─── GET /contacts/export ─────────────────────────────────────────────────
