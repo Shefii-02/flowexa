@@ -25,6 +25,7 @@ dist-ssr
 
 
 # Logs
+frontend/.env
 /frontend/.env
 /frontend/logs
 /frontend/*.log
@@ -44,7 +45,7 @@ dist-ssr
 /frontend/deploy.sh
 
 
-
+backend/.env
 /backend/*.log
 /backend/.DS_Store
 /backend/.env
@@ -74,3 +75,4 @@ dist-ssr
 /backend/Thumbs.db
 
 /backend-node
+backend-node

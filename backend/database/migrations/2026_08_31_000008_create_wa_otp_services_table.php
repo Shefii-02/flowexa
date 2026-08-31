@@ -17,7 +17,7 @@ return new class extends Migration {
             $table->json('allowed_packages')->nullable();
             $table->integer('otp_expiry_minutes')->default(10);
             $table->integer('otp_length')->default(6);
-            $table->text('otp_message_template')->default('Your OTP is {{otp}}. Valid for {{expiry}} minutes. Do not share.');
+            $table->text('otp_message_template')->comment('Your OTP is {{otp}}. Valid for {{expiry}} minutes. Do not share.')->nullable();
             $table->string('session_id', 100)->nullable();
             $table->timestamps();
 
