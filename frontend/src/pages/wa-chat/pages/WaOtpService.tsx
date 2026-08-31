@@ -3,6 +3,7 @@ import { Copy, Loader2, RefreshCw, Shield, FileText, Activity } from 'lucide-rea
 import { api } from '@/api/client';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { PageHeader } from '../components/PageHeader';
+import { useSessionsQuery } from '../hooks/queries';
 
 type OtpService = {
   id: number;
@@ -63,6 +64,8 @@ function useOtpLogs() {
 export default function WaOtpServicePage() {
   const [activeTab, setActiveTab] = useState<Tab>('Overview');
   const qc = useQueryClient();
+  const { data: sessions = [] } = useSessionsQuery();
+  const readySessions = sessions.filter(s => s.status === 'ready');
 
   const { data: service, isLoading } = useOtpService();
   const { data: authMessages = [], isLoading: loadingMsgs } = useAuthMessages();
@@ -229,11 +232,24 @@ export default function WaOtpServicePage() {
               </label>
             </div>
             <label>
-              <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 6 }}>WhatsApp Session ID</div>
-              <input value={settingsForm.session_id}
-                onChange={e => setSettingsForm(s => ({ ...s, session_id: e.target.value }))}
-                placeholder="default"
-                style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--border, #e5e7eb)', borderRadius: 8 }} />
+              <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 6 }}>WhatsApp Session</div>
+              {readySessions.length > 0 ? (
+                <select
+                  value={settingsForm.session_id}
+                  onChange={e => setSettingsForm(s => ({ ...s, session_id: e.target.value }))}
+                  style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--border, #e5e7eb)', borderRadius: 8, fontSize: 14 }}>
+                  <option value="">Select session…</option>
+                  {readySessions.map(s => (
+                    <option key={s.id} value={s.id}>{s.name}{s.phone ? ` (${s.phone})` : ''}</option>
+                  ))}
+                </select>
+              ) : (
+                <input value={settingsForm.session_id}
+                  onChange={e => setSettingsForm(s => ({ ...s, session_id: e.target.value }))}
+                  placeholder="default"
+                  style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--border, #e5e7eb)', borderRadius: 8 }} />
+              )}
+              <div style={{ fontSize: 12, color: '#6b7280', marginTop: 4 }}>OTP messages are sent from this session.</div>
             </label>
             <label>
               <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 6 }}>OTP Message Template</div>

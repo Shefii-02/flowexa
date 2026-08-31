@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { Download, FileText, Loader2, RefreshCw, Users } from 'lucide-react';
+import { Download, FileText, Loader2, RefreshCw, Users, Eye, EyeOff } from 'lucide-react';
 import { api } from '@/api/client';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { PageHeader } from '../components/PageHeader';
+import { useSessionsQuery, useSessionGroupsQuery } from '../hooks/queries';
 
 type ExportJob = {
   id: number;
@@ -38,14 +39,30 @@ export default function WaDataExportPage() {
   const { data: jobsRes, isLoading } = useExportJobs();
   const jobs = jobsRes?.data ?? [];
 
+  const { data: sessions = [] } = useSessionsQuery();
+  const readySessions = sessions.filter(s => s.status === 'ready');
+
   const [sessionId, setSessionId] = useState('');
   const [exportType, setExportType] = useState<'chats' | 'groups'>('chats');
   const [includeParticipants, setIncludeParticipants] = useState(false);
+  const [showGroupPreview, setShowGroupPreview] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState('');
 
+  // fetch groups for preview when session is selected and type=groups
+  const { data: groupsRaw = [], isLoading: groupsLoading } = useSessionGroupsQuery(
+    sessionId,
+    exportType === 'groups' && showGroupPreview && !!sessionId,
+  );
+  const groups = groupsRaw as { id: string; name: string }[];
+
+  // Seed first available session
+  useState(() => {
+    if (readySessions.length > 0 && !sessionId) setSessionId(readySessions[0].id);
+  });
+
   const doExport = async () => {
-    if (!sessionId.trim()) { setError('Session ID is required.'); return; }
+    if (!sessionId.trim()) { setError('Select a session first.'); return; }
     setError('');
     setExporting(true);
     try {
@@ -56,7 +73,7 @@ export default function WaDataExportPage() {
       }
       qc.invalidateQueries({ queryKey: ['wa-export-jobs'] });
     } catch {
-      setError('Export failed. Check session ID and try again.');
+      setError('Export failed. Check session and try again.');
     } finally {
       setExporting(false);
     }
@@ -82,16 +99,30 @@ export default function WaDataExportPage() {
         {error && <div style={{ color: '#ef4444', fontSize: 13, marginBottom: 12 }}>{error}</div>}
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+
+          {/* Session dropdown */}
           <label>
-            <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 6 }}>Session ID</div>
-            <input value={sessionId} onChange={e => setSessionId(e.target.value)}
-              placeholder="default"
-              style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--border, #e5e7eb)', borderRadius: 8, fontSize: 14, boxSizing: 'border-box' }} />
+            <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 6 }}>WhatsApp Session</div>
+            {readySessions.length === 0 ? (
+              <div style={{ fontSize: 13, color: '#ef4444' }}>No active sessions. Connect a session first.</div>
+            ) : (
+              <select
+                value={sessionId}
+                onChange={e => { setSessionId(e.target.value); setShowGroupPreview(false); }}
+                style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--border, #e5e7eb)', borderRadius: 8, fontSize: 14 }}>
+                <option value="">Select session…</option>
+                {readySessions.map(s => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}{s.phone ? ` (${s.phone})` : ''}
+                  </option>
+                ))}
+              </select>
+            )}
           </label>
 
           <label>
             <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 6 }}>Export Type</div>
-            <select value={exportType} onChange={e => setExportType(e.target.value as typeof exportType)}
+            <select value={exportType} onChange={e => { setExportType(e.target.value as typeof exportType); setShowGroupPreview(false); }}
               style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--border, #e5e7eb)', borderRadius: 8, fontSize: 14 }}>
               <option value="chats">Chat List</option>
               <option value="groups">Groups</option>
@@ -99,13 +130,54 @@ export default function WaDataExportPage() {
           </label>
 
           {exportType === 'groups' && (
-            <label style={{ display: 'flex', gap: 10, alignItems: 'center', cursor: 'pointer' }}>
-              <input type="checkbox" checked={includeParticipants} onChange={e => setIncludeParticipants(e.target.checked)} />
-              <span style={{ fontSize: 14 }}>Include group participants</span>
-            </label>
+            <>
+              <label style={{ display: 'flex', gap: 10, alignItems: 'center', cursor: 'pointer' }}>
+                <input type="checkbox" checked={includeParticipants} onChange={e => setIncludeParticipants(e.target.checked)} />
+                <span style={{ fontSize: 14 }}>Include group participants</span>
+              </label>
+
+              {/* Group preview */}
+              {sessionId && (
+                <div>
+                  <button
+                    onClick={() => setShowGroupPreview(v => !v)}
+                    style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 13, color: '#2563eb', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+                    {showGroupPreview ? <EyeOff size={14} /> : <Eye size={14} />}
+                    {showGroupPreview ? 'Hide' : 'Preview'} groups in this session
+                  </button>
+
+                  {showGroupPreview && (
+                    <div style={{ marginTop: 8, border: '1px solid var(--border, #e5e7eb)', borderRadius: 8, overflow: 'hidden' }}>
+                      {groupsLoading ? (
+                        <div style={{ display: 'flex', justifyContent: 'center', padding: 16 }}>
+                          <Loader2 className="animate-spin" size={20} />
+                        </div>
+                      ) : groups.length === 0 ? (
+                        <div style={{ padding: 12, fontSize: 13, color: '#6b7280', textAlign: 'center' }}>No groups found for this session.</div>
+                      ) : (
+                        <>
+                          <div style={{ padding: '8px 12px', background: 'var(--surface-2, #f9fafb)', fontSize: 12, color: '#6b7280', borderBottom: '1px solid var(--border, #e5e7eb)' }}>
+                            {groups.length} group{groups.length !== 1 ? 's' : ''} found — all will be exported
+                          </div>
+                          <div style={{ maxHeight: 160, overflowY: 'auto' }}>
+                            {groups.map(g => (
+                              <div key={g.id} style={{ padding: '8px 12px', borderBottom: '1px solid var(--border, #f3f4f6)', fontSize: 13, display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <Users size={13} color="#6b7280" />
+                                <span style={{ flex: 1 }}>{g.name}</span>
+                                <span style={{ fontSize: 11, color: '#9ca3af', fontFamily: 'monospace' }}>{g.id.split('@')[0]}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </>
           )}
 
-          <button className="btn-primary" onClick={doExport} disabled={exporting}
+          <button className="btn-primary" onClick={doExport} disabled={exporting || !sessionId}
             style={{ alignSelf: 'flex-start', display: 'flex', gap: 8, alignItems: 'center' }}>
             {exporting ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
             {exporting ? 'Exporting…' : 'Start Export'}

@@ -80,6 +80,7 @@ type ExtraPayload =
   | { kind: 'location'; lat: number; lng: number; name?: string; address?: string }
   | { kind: 'contact'; contactName: string; contactNumber: string }
   | { kind: 'audio'; url: string }
+  | { kind: 'media'; blocks: MessageBlock[] }
   | undefined
 
 // ── ITEM 2 — Variable substitution ───────────────────────────────────────────
@@ -255,6 +256,7 @@ export function MessageSender() {
   const [recording, setRecording] = useState(false)
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null)
   const [audioUrl, setAudioUrl] = useState<string | null>(null)
+  const [audioUploading, setAudioUploading] = useState(false)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const audioChunksRef = useRef<Blob[]>([])
 
@@ -546,17 +548,27 @@ export function MessageSender() {
   // ── Audio recorder (MediaRecorder API) ───────────────────────────────────
 
   const startRecording = async () => {
+    if (recording) return
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
       const mr = new MediaRecorder(stream)
       audioChunksRef.current = []
       mr.ondataavailable = (e) => { if (e.data.size > 0) audioChunksRef.current.push(e.data) }
-      mr.onstop = () => {
+      mr.onstop = async () => {
         const blob = new Blob(audioChunksRef.current, { type: 'audio/ogg; codecs=opus' })
         setAudioBlob(blob)
-        const url = URL.createObjectURL(blob)
-        setAudioUrl(url)
+        setAudioUrl(URL.createObjectURL(blob)) // show preview immediately
         stream.getTracks().forEach(t => t.stop())
+        // Upload to media library so WAHA can fetch the URL server-side
+        setAudioUploading(true)
+        try {
+          const fd = new FormData()
+          fd.append('file', new File([blob], `voice-note-${Date.now()}.ogg`, { type: 'audio/ogg; codecs=opus' }))
+          const res = await api.post('/media-library/upload', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+          const serverUrl = res.data?.url ?? res.data?.data?.url ?? ''
+          if (serverUrl) setAudioUrl(serverUrl)
+        } catch { /* keep blob URL as playback-only fallback */ }
+        setAudioUploading(false)
       }
       mediaRecorderRef.current = mr
       mr.start()
@@ -637,6 +649,22 @@ export function MessageSender() {
           await messageApi.sendContact(sess, { chatId, contactName: extraPayload.contactName, contactNumber: extraPayload.contactNumber })
         } else if (extraPayload?.kind === 'audio') {
           await messageApi.sendMedia(sess, chatId, 'audio', { url: extraPayload.url })
+        } else if (extraPayload?.kind === 'media') {
+          for (let bi = 0; bi < extraPayload.blocks.length; bi++) {
+            const block = extraPayload.blocks[bi]
+            if (block.type === 'text') {
+              const personalized = personalizeMessage(block.text ?? '', { name: recipient.name, phone: recipient.phone })
+              const bdy = uniq ? personalized + uniqueSig(recipient.phone) : personalized
+              await messageApi.sendText(sess, chatId, bdy)
+            } else {
+              await messageApi.sendMedia(sess, chatId, block.type as 'image' | 'video' | 'audio' | 'document', {
+                url: block.mediaUrl,
+                ...(block.caption ? { caption: block.caption } : {}),
+                ...(block.filename ? { filename: block.filename } : {}),
+              })
+            }
+            if (bi < extraPayload.blocks.length - 1) await new Promise(r => setTimeout(r, 600))
+          }
         } else {
           await messageApi.sendText(sess, chatId, body)
         }
@@ -703,12 +731,18 @@ export function MessageSender() {
       templateText = `👤 ${selectedContact2.name ?? selectedContact2.phone}`
       extraPayload = { kind: 'contact', contactName: selectedContact2.name ?? selectedContact2.phone, contactNumber: selectedContact2.phone }
     } else if (composerTab === 'audio') {
-      if (!audioUrl) return
+      if (!audioUrl || audioUploading) return
       templateText = '🎤 Audio message'
       extraPayload = { kind: 'audio', url: audioUrl }
+    } else if (composerTab === 'media') {
+      const validBlocks = mediaBlocks.filter(b =>
+        (b.type === 'text' && b.text?.trim()) || (b.type !== 'text' && b.mediaUrl?.trim())
+      )
+      if (validBlocks.length === 0) return
+      templateText = `📎 ${validBlocks.length} block${validBlocks.length !== 1 ? 's' : ''}`
+      extraPayload = { kind: 'media', blocks: validBlocks }
     } else {
-      templateText = mediaBlocks.find(b => b.text)?.text ?? mediaBlocks.find(b => b.mediaUrl)?.mediaUrl ?? ''
-      if (!templateText.trim()) return
+      return
     }
 
     // ITEM 4 — Check if schedule is set and in the future
@@ -1341,9 +1375,20 @@ export function MessageSender() {
                     )}
                     {recording && <span className="text-xs text-red-500 font-medium">● Recording…</span>}
                   </div>
+                  {audioUploading && (
+                    <div className="flex items-center gap-2 text-xs text-blue-600 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
+                      <Loader2 size={12} className="animate-spin" /> Uploading audio to server…
+                    </div>
+                  )}
                   {audioUrl && (
                     <div className="space-y-2">
                       <audio controls src={audioUrl} className="w-full h-10" />
+                      {!audioUploading && !audioUrl.startsWith('blob:') && (
+                        <div className="text-xs text-green-600">✓ Uploaded — ready to send</div>
+                      )}
+                      {!audioUploading && audioUrl.startsWith('blob:') && (
+                        <div className="text-xs text-amber-600">⚠ Upload failed — send may not work on remote sessions</div>
+                      )}
                       <div className="flex gap-2">
                         <button onClick={() => { setAudioBlob(null); setAudioUrl(null) }}
                           className="text-xs text-red-500 hover:underline flex items-center gap-1">
@@ -1352,13 +1397,13 @@ export function MessageSender() {
                         {audioBlob && (
                           <a href={audioUrl} download="voice-note.ogg"
                             className="text-xs text-brand-600 hover:underline flex items-center gap-1">
-                            <Download size={12} /> Save
+                            <Download size={12} /> Save locally
                           </a>
                         )}
                       </div>
                     </div>
                   )}
-                  {!audioUrl && !recording && (
+                  {!audioUrl && !recording && !audioUploading && (
                     <p className="text-xs text-gray-400">No recording yet. Press Start Recording to begin.</p>
                   )}
                 </div>
@@ -1476,7 +1521,8 @@ export function MessageSender() {
                       (composerTab === 'poll' && (!pollQuestion.trim() || pollOptions.filter(o => o.trim()).length < 2)) ||
                       (composerTab === 'location' && (isNaN(parseFloat(locLat)) || isNaN(parseFloat(locLng)))) ||
                       (composerTab === 'contact' && !selectedContact2) ||
-                      (composerTab === 'audio' && !audioUrl)
+                      (composerTab === 'audio' && (!audioUrl || audioUploading)) ||
+                      (composerTab === 'media' && !mediaBlocks.some(b => (b.type === 'text' && !!b.text?.trim()) || (b.type !== 'text' && !!b.mediaUrl?.trim())))
                     }
                     className="flex items-center gap-2 flex-1 justify-center px-4 py-2 bg-brand-500 text-white rounded-lg text-sm font-medium disabled:opacity-50 hover:bg-brand-600 transition-colors">
                     <Send size={14} />
@@ -1578,6 +1624,44 @@ export function MessageSender() {
             </div>
           </div>
 
+          {/* Live active campaign - controllable from history tab */}
+          {(isRunning || isPaused) && (
+            <div className="mb-4 border border-blue-200 rounded-xl bg-blue-50 p-4">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-3 flex-wrap">
+                  <StatusBadge status={job.status} />
+                  <span className="text-sm font-semibold text-blue-800">Active Campaign</span>
+                  <span className="text-xs text-blue-600">
+                    {job.progress.sent} sent · {job.progress.failed} failed · {job.progress.pending} pending
+                  </span>
+                  {job.sessionId && <span className="text-xs text-blue-400">Session: {job.sessionId}</span>}
+                </div>
+                <div className="flex gap-2">
+                  {isRunning && (
+                    <button onClick={handlePause}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-yellow-500 text-white rounded-lg text-xs font-medium hover:bg-yellow-600">
+                      <Pause size={12} /> Pause
+                    </button>
+                  )}
+                  {isPaused && (
+                    <button onClick={handleResume}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-green-500 text-white rounded-lg text-xs font-medium hover:bg-green-600">
+                      <Play size={12} /> Resume
+                    </button>
+                  )}
+                  <button onClick={handleStop}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-red-500 text-white rounded-lg text-xs font-medium hover:bg-red-600">
+                    <Square size={12} /> Stop
+                  </button>
+                </div>
+              </div>
+              <div className="h-1.5 bg-blue-200 rounded-full overflow-hidden">
+                <div className="h-full bg-blue-500 transition-all duration-300 rounded-full" style={{ width: `${progressPct}%` }} />
+              </div>
+              <div className="mt-1.5 text-xs text-blue-400">{progressPct}% complete · {job.progress.total} total recipients</div>
+            </div>
+          )}
+
           {historyLoading ? (
             <div className="flex justify-center py-8"><Loader2 size={20} className="animate-spin text-gray-400" /></div>
           ) : serverHistory.length === 0 && history.length === 0 ? (
@@ -1591,11 +1675,15 @@ export function MessageSender() {
                   <div key={`srv-${h.id}`} className="border border-gray-100 rounded-lg overflow-hidden">
                     <button onClick={() => setExpandedHistory(expandedHistory === idx ? null : idx)}
                       className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-50 text-left">
-                      <div className="flex items-center gap-4">
+                      <div className="flex items-center gap-3 flex-wrap">
                         <StatusBadge status={h.status} />
-                        <span className="text-sm font-medium text-gray-800">{h.total} recipients</span>
-                        <span className="text-xs text-gray-400">{h.sent} sent · {h.failed} failed</span>
+                        {h.type && <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full capitalize">{h.type}</span>}
+                        <span className="text-xs font-semibold text-gray-700">{h.total} total</span>
+                        <span className="text-xs text-green-600 font-medium">✓ {h.sent} sent</span>
+                        {h.failed > 0 && <span className="text-xs text-red-500 font-medium">✗ {h.failed} failed</span>}
+                        {(h.total - h.sent - h.failed) > 0 && <span className="text-xs text-gray-400">{h.total - h.sent - h.failed} pending</span>}
                         <span className="text-xs text-gray-300">{new Date(h.started_at).toLocaleString('en-IN')}</span>
+                        {h.session_id && <span className="text-xs text-gray-400">· {h.session_id}</span>}
                       </div>
                       <div className="flex items-center gap-2">
                         {expandedHistory === idx ? <ChevronDown size={14} className="text-gray-400" /> : <ChevronRight size={14} className="text-gray-400" />}
