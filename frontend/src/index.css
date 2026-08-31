@@ -66,6 +66,11 @@
   .page-title { @apply text-xl font-semibold text-gray-900; }
   .page-sub { @apply text-sm text-gray-500 mt-0.5; }
 
+  /* Horizontal sub-tab bar (used inside a page, e.g. WA Chat) */
+  .subtab-bar { @apply flex items-center gap-1 border-b border-gray-200 overflow-x-auto; }
+  .subtab { @apply inline-flex items-center gap-1.5 px-3.5 py-2.5 text-sm font-medium text-gray-500 border-b-2 border-transparent hover:text-gray-800 transition-colors whitespace-nowrap; }
+  .subtab-active { @apply text-brand-700 border-brand-500; }
+
   /* Status dots */
   .dot { @apply w-2 h-2 rounded-full flex-shrink-0; }
   .dot-green  { @apply dot bg-green-500; }

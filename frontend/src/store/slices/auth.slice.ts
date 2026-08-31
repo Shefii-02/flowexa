@@ -1,7 +1,37 @@
 // src/store/slices/auth.slice.ts
 import { createAsyncThunk, createSlice, PayloadAction } from '@reduxjs/toolkit'
 import { authApi } from '@/api'
-import type { AuthState, Wallet } from '@/types'
+import type { AuthState, User, Wallet } from '@/types'
+
+// ── WA Chat session bootstrap ─────────────────────────────────────────────────
+// Maps Project A's user role to the WA Chat RBAC role so RequireWaAdmin gates
+// correctly (API Keys page) without a separate WA login flow.
+function resolveWaChatRole(user: User | null): 'admin' | 'operator' | 'viewer' {
+  const name = user?.role?.name
+  if (name === 'superadmin' || name === 'owner' || name === 'admin') return 'admin'
+  if (name === 'team_lead' || name === 'counsellor') return 'operator'
+  return 'viewer'
+}
+
+// Called after every successful user load (login + page-refresh via fetchMeThunk).
+// Writes the company-scoped WA Chat API key into sessionStorage so the ported
+// WA Chat pages can authenticate against unichatwa.univexa.in without a second
+// login flow. Also persists the resolved RBAC role.
+function syncWaChatSession(user: User | null) {
+  const token = user?.company?.wa_chat_token
+  if (token) {
+    sessionStorage.setItem('openwa_api_key', token)
+    localStorage.setItem('openwa_user_role', resolveWaChatRole(user))
+  } else {
+    clearWaChatSession()
+  }
+}
+
+// Called on logout — clears both keys so the WA Chat module is fully de-authed.
+function clearWaChatSession() {
+  sessionStorage.removeItem('openwa_api_key')
+  localStorage.removeItem('openwa_user_role')
+}
 
 const initialAuth: AuthState = {
     user: null,
@@ -58,6 +88,7 @@ export const authSlice = createSlice({
         logout: (s) => {
             s.user = null; s.token = null; s.isAuthenticated = false
             localStorage.removeItem('wa_token')
+            clearWaChatSession()
         },
         clearError: (s) => { s.error = null },
         updateWallet: (s, a: PayloadAction<Wallet>) => {
@@ -76,12 +107,22 @@ export const authSlice = createSlice({
                 state.error = null
 
                 localStorage.setItem('wa_token', action.payload.token)
+                syncWaChatSession(action.payload.user)
             })
             .addCase(loginThunk.rejected, (s, a) => { s.loading = false; s.error = a.payload as string })
             .addCase(fetchMeThunk.pending, (s) => { s.loading = true })
-            .addCase(fetchMeThunk.fulfilled, (s, a) => { s.user = a.payload; s.isAuthenticated = true, s.error = null, s.loading = false})
-            .addCase(fetchMeThunk.rejected, (s) => { s.user = null; s.isAuthenticated = false; localStorage.removeItem('wa_token'), s.loading = false })
-            .addCase(logoutThunk.fulfilled, (s) => { s.user = null; s.token = null; s.isAuthenticated = false; localStorage.removeItem('wa_token') })
+            .addCase(fetchMeThunk.fulfilled, (s, a) => {
+                s.user = a.payload; s.isAuthenticated = true; s.error = null; s.loading = false
+                syncWaChatSession(a.payload)
+            })
+            .addCase(fetchMeThunk.rejected, (s) => {
+                s.user = null; s.isAuthenticated = false; localStorage.removeItem('wa_token'); s.loading = false
+                clearWaChatSession()
+            })
+            .addCase(logoutThunk.fulfilled, (s) => {
+                s.user = null; s.token = null; s.isAuthenticated = false; localStorage.removeItem('wa_token')
+                clearWaChatSession()
+            })
     },
 })
 export const { setToken,setUser, logout, clearError: clearAuthError, updateWallet } = authSlice.actions

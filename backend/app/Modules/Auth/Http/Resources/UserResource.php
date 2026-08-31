@@ -32,6 +32,7 @@ class UserResource extends JsonResource
             'company' => $this->whenLoaded('company', fn() =>
                 new CompanyResource($this->company)
             ),
+
         ];
     }
 }

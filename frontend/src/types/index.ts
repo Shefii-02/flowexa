@@ -46,6 +46,7 @@ export interface Company {
   plan_expires_at: string | null
   created_at: string
   updated_at: string
+  wa_chat_token?: string | null
 }
 
 export interface User {

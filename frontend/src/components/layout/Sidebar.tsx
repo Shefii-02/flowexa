@@ -1,5 +1,6 @@
 // src/components/layout/Sidebar.tsx
-import { NavLink, useNavigate } from 'react-router-dom'
+import { useState } from 'react'
+import { NavLink, useNavigate, useLocation } from 'react-router-dom'
 import { useAppDispatch, useAppSelector, useIsSuperAdmin, usePermission } from '@/store'
 import { logoutThunk, toggleSidebar } from '@/store/slices'
 import { cn, fmt } from '@/utils'
@@ -18,6 +19,57 @@ const NavItem = ({ to, icon, label, badge, end = false, }: { to: string; icon: s
     )}
   </NavLink>
 )
+
+// Collapsible nav group. Auto-opens when the current route is under `basePath`.
+const NavGroup = ({
+  icon,
+  label,
+  basePath,
+  children,
+}: {
+  icon: string
+  label: string
+  basePath: string
+  children: { to: string; label: string }[]
+}) => {
+  const location = useLocation()
+  const isSectionActive = location.pathname.startsWith(basePath)
+  const [open, setOpen] = useState(isSectionActive)
+
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className={cn('nav-link w-full', isSectionActive && !open && 'nav-link-active')}
+      >
+        <span className="text-base leading-none">{icon}</span>
+        <span className="flex-1 text-left">{label}</span>
+        <svg
+          className={cn('w-3.5 h-3.5 text-gray-400 transition-transform', open && 'rotate-90')}
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+        </svg>
+      </button>
+      {open && (
+        <div className="ml-4 pl-2 border-l border-gray-100 space-y-0.5 mt-0.5">
+          {children.map((c) => (
+            <NavLink
+              key={c.to}
+              to={c.to}
+              className={({ isActive }) => cn('nav-link', isActive && 'nav-link-active')}
+            >
+              <span className="flex-1">{c.label}</span>
+            </NavLink>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
 
 export const Sidebar = () => {
   const dispatch = useAppDispatch()
@@ -104,6 +156,20 @@ export const Sidebar = () => {
         {!isSuperAdmin && (
           <>
             <NavItem to="/dashboard" icon="📊" label="Dashboard" />
+            <NavGroup
+              icon="💬"
+              label="WA Chat"
+              basePath="/wa-chat"
+              children={[
+                { to: '/wa-chat/sessions', label: 'Sessions' },
+                { to: '/wa-chat/chats', label: 'Chats' },
+                { to: '/wa-chat/webhooks', label: 'Webhooks' },
+                { to: '/wa-chat/templates', label: 'Templates' },
+                { to: '/wa-chat/logs', label: 'Logs' },
+                { to: '/wa-chat/api-keys', label: 'API Keys' },
+              ]}
+            />
+            <NavItem to="/wa-agent" icon="🤖" label="WA Agent" />
             <p className="text-xs font-medium text-gray-400 uppercase tracking-wide px-2 pt-3 pb-1">Engage</p>
             <NavItem to="/contacts" icon="👥" label="Contacts" />
             <NavItem to="/labels" icon="🏷️" label="Labels" />

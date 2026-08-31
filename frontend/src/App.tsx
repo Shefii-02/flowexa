@@ -52,7 +52,17 @@ import InboxPage from './pages/inbox/InboxPage'
 import SurveyFormsPage from './pages/survey/SurveyFormsPage'
 import TemplateDetailPage from './pages/template/TemplateDetailPage'
 
+// WA Chat (embedded from the WAHA dashboard project)
+import WaChatShell, { RequireWaAdmin } from '@/pages/wa-chat/WaChatShell'
+import { Sessions as WaChatSessions } from '@/pages/wa-chat/pages/Sessions'
+import { Chats as WaChatChats } from '@/pages/wa-chat/pages/Chats'
+import { Webhooks as WaChatWebhooks } from '@/pages/wa-chat/pages/Webhooks'
+import { Templates as WaChatTemplates } from '@/pages/wa-chat/pages/Templates'
+import { Logs as WaChatLogs } from '@/pages/wa-chat/pages/Logs'
+import { ApiKeys as WaChatApiKeys } from '@/pages/wa-chat/pages/ApiKeys'
 
+// WA Agent (placeholder module)
+import WaAgentPage from '@/pages/wa-agent'
 
 
 export const DashboardRouter = () => {
@@ -102,6 +112,21 @@ export default function App() {
 
             {/* Main app */}
             <Route path="dashboard" element={<SuperAdminRoute><DashboardRouter /></SuperAdminRoute>} />
+
+            {/* WA Chat module (embedded WAHA dashboard → unichatwa.univexa.in) */}
+            <Route path="wa-chat" element={<WaChatShell />}>
+              <Route index element={<Navigate to="sessions" replace />} />
+              <Route path="sessions" element={<WaChatSessions />} />
+              <Route path="chats" element={<WaChatChats />} />
+              <Route path="webhooks" element={<WaChatWebhooks />} />
+              <Route path="templates" element={<WaChatTemplates />} />
+              <Route path="logs" element={<WaChatLogs />} />
+              <Route path="api-keys" element={<RequireWaAdmin><WaChatApiKeys /></RequireWaAdmin>} />
+            </Route>
+
+            {/* WA Agent (placeholder) */}
+            <Route path="wa-agent" element={<WaAgentPage />} />
+
             <Route path="staff" element={<StaffPage />} />
             <Route path="contacts" element={<ContactsPage />} />
             <Route path="labels" element={<LabelsPage />} />
