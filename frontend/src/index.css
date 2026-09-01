@@ -4,6 +4,11 @@
 @tailwind components;
 @tailwind utilities;
 
+
+:root {
+  --border: #00000016;
+}
+
 @layer base {
   * { @apply border-gray-200; }
   body { @apply bg-gray-50 text-gray-900 font-sans antialiased; }
