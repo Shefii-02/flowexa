@@ -723,6 +723,12 @@ Route::prefix('v1/otp')->group(function () {
     Route::post('resend', [WaOtpPublicController::class, 'publicResend']);
 });
 
+// ── Public Api Service (Bearer token — utility message + invoice share for external platforms) ──
+Route::prefix('v1/api-service')->group(function () {
+    Route::post('utility-send',   [WaOtpPublicController::class, 'publicUtilitySend']);
+    Route::post('invoice-share',  [WaOtpPublicController::class, 'publicInvoiceShare']);
+});
+
 // ── WAHA session webhook receiver (public — called by WAHA server) ──
 Route::post('v1/waha/webhook', [WahaSessionController::class, 'webhook']);
 
@@ -759,6 +765,7 @@ Route::prefix('v1')->middleware(['jwt.auth'])->group(function () {
         Route::post('/{id}/pause',   [MessageSenderController::class, 'pause']);
         Route::post('/{id}/resume',  [MessageSenderController::class, 'resume']);
         Route::post('/{id}/stop',    [MessageSenderController::class, 'stop']);
+        Route::delete('/{id}',       [MessageSenderController::class, 'destroy']);
     });
 
     // Media Library
@@ -795,6 +802,9 @@ Route::prefix('v1')->middleware(['jwt.auth'])->group(function () {
         Route::post('/auth-messages',           [WaOtpServiceController::class, 'createAuthMessage']);
         Route::patch('/auth-messages/{id}',     [WaOtpServiceController::class, 'updateAuthMessage']);
         Route::get('/logs',                     [WaOtpServiceController::class, 'logs']);
+        Route::get('/utility-templates',        [WaOtpServiceController::class, 'listUtilityTemplates']);
+        Route::post('/utility-send',            [WaOtpServiceController::class, 'utilityMessageSend']);
+        Route::post('/invoice-share',           [WaOtpServiceController::class, 'invoiceShare']);
     });
 
     // Data Export

@@ -237,11 +237,12 @@ export const Sidebar = () => {
                 { to: '/wa-chat/webhooks',       label: '🔗 Webhooks' },
                 { to: '/wa-chat/templates',      label: '📋 Templates' },
                 { to: '/wa-chat/logs',           label: '📜 Logs' },
-                { to: '/wa-chat/otp-service',    label: '🔐 OTP Service' },
+                { to: '/wa-chat/otp-service',    label: '🔌 Api Service' },
                 { to: '/wa-chat/export',         label: '📥 Data Export' },
                 { to: '/wa-chat/media-library',  label: '🗂️ Media Library' },
                 { to: '/wa-chat/api-keys',       label: '🔑 API Keys' },
                 { to: '/wa-chat/automation',     label: '⚡ Automation' },
+                { to: '/wa-chat/groups',         label: '👥 Groups' },
                 // ── WA Agent ──
                 { to: '', label: '', divider: true },
                 { to: '/wa-agent/automations',        label: '⚡ Automations' },

@@ -65,6 +65,7 @@ interface ServerJob {
   sent: number
   failed: number
   type: string
+  campaign_name?: string
   session_id: string
   started_at: string
   completed_at: string
@@ -139,14 +140,16 @@ function parseCSV(text: string): { valid: Recipient[]; invalid: string[] } {
 
 function StatusBadge({ status }: { status: SendStatus | string }) {
   const map: Record<string, { label: string; cls: string }> = {
-    pending:   { label: 'Pending',      cls: 'bg-gray-100 text-gray-600' },
-    sending:   { label: 'Sending…',     cls: 'bg-blue-100 text-blue-700' },
-    sent:      { label: '✓ Sent',       cls: 'bg-green-100 text-green-700' },
-    failed:    { label: '✗ Failed',     cls: 'bg-red-100 text-red-700' },
-    paused:    { label: '⏸ Paused',    cls: 'bg-yellow-100 text-yellow-700' },
-    scheduled: { label: '🕐 Scheduled', cls: 'bg-purple-100 text-purple-700' },
-    done:      { label: '✓ Done',       cls: 'bg-green-100 text-green-700' },
-    stopped:   { label: '■ Stopped',    cls: 'bg-red-100 text-red-700' },
+    pending:    { label: 'Pending',       cls: 'bg-gray-100 text-gray-600' },
+    sending:    { label: 'Sending…',      cls: 'bg-blue-100 text-blue-700' },
+    running:    { label: '▶ Running',     cls: 'bg-blue-100 text-blue-700' },
+    processing: { label: '⚙ Processing', cls: 'bg-blue-100 text-blue-700' },
+    sent:       { label: '✓ Sent',        cls: 'bg-green-100 text-green-700' },
+    failed:     { label: '✗ Failed',      cls: 'bg-red-100 text-red-700' },
+    paused:     { label: '⏸ Paused',     cls: 'bg-yellow-100 text-yellow-700' },
+    scheduled:  { label: '🕐 Scheduled',  cls: 'bg-purple-100 text-purple-700' },
+    done:       { label: '✓ Done',        cls: 'bg-green-100 text-green-700' },
+    stopped:    { label: '■ Stopped',     cls: 'bg-red-100 text-red-700' },
   }
   const { label, cls } = map[status] ?? { label: status, cls: 'bg-gray-100 text-gray-500' }
   return <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${cls}`}>{label}</span>
@@ -528,7 +531,7 @@ export function MessageSender() {
     const fd = new FormData()
     fd.append('file', file)
     try {
-      const res = await api.post('/media-library/upload', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+      const res = await api.post('/media-library/upload', fd)
       const url = res.data?.url ?? res.data?.data?.url ?? ''
       updateBlock(blockId, { mediaUrl: url })
     } catch { /* silent */ }
@@ -576,7 +579,7 @@ export function MessageSender() {
         try {
           const fd = new FormData()
           fd.append('file', new File([blob], `voice-note-${Date.now()}.ogg`, { type: 'audio/ogg; codecs=opus' }))
-          const res = await api.post('/media-library/upload', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+          const res = await api.post('/media-library/upload', fd)
           const serverUrl = res.data?.url ?? res.data?.data?.url ?? ''
           if (serverUrl) setAudioUrl(serverUrl)
         } catch { /* keep blob URL as playback-only fallback */ }
@@ -705,7 +708,6 @@ export function MessageSender() {
 
     setJob(prev => {
       const done: JobState = { ...prev, status: finalStatus, completedAt, sessionId: sess }
-      // ITEM 3 — persist to backend + localStorage
       persistJobToBackend(done, sess)
       saveToLocalStorage(done)
       try {
@@ -713,6 +715,21 @@ export function MessageSender() {
       } catch { /* ignore */ }
       return done
     })
+
+    // Reset sender form fields after completion
+    if (finalStatus === 'done') {
+      setSelectedRecipients([])
+      setTextBody('')
+      setMediaBlocks([{ id: '1', type: 'text', text: '' }])
+      setSelectedTemplate(null)
+      setCampaignName('')
+      setPollQuestion('')
+      setPollOptions(['', ''])
+      setLocLat(''); setLocLng(''); setLocName(''); setLocAddress('')
+      setSelectedContact2(null)
+      setAudioBlob(null); setAudioUrl(null)
+      setScheduledAt('')
+    }
   }, [])
 
   // ── ITEM 4 — handleSend with schedule check ────────────────────────────────
@@ -864,6 +881,16 @@ export function MessageSender() {
     setHistoryActionLoading(id)
     try {
       await api.post(`/message-sender/${id}/stop`)
+      refreshServerHistory()
+    } catch { /* silent */ }
+    finally { setHistoryActionLoading(null) }
+  }
+
+  const handleHistoryDelete = async (id: number) => {
+    if (!confirm('Delete this job from history?')) return
+    setHistoryActionLoading(id)
+    try {
+      await api.delete(`/message-sender/${id}`)
       refreshServerHistory()
     } catch { /* silent */ }
     finally { setHistoryActionLoading(null) }
@@ -1757,22 +1784,27 @@ export function MessageSender() {
                 .filter(h => !historyFilter.status || h.status === historyFilter.status)
                 .map((h, idx) => {
                   const isActioning = historyActionLoading === h.id
-                  const canPause = h.status === 'running' || h.status === 'sending'
+                  const canPause = h.status === 'running' || h.status === 'sending' || h.status === 'processing'
                   const canResume = h.status === 'paused'
                   const canStop = h.status !== 'stopped' && h.status !== 'done'
+                  const canDelete = h.status === 'stopped' || h.status === 'done' || h.status === 'failed'
                   return (
                     <div key={`srv-${h.id}`} className="border border-gray-100 rounded-lg overflow-hidden">
                       <div className="flex items-center justify-between px-4 py-3 hover:bg-gray-50">
                         <button onClick={() => setExpandedHistory(expandedHistory === idx ? null : idx)}
                           className="flex items-center gap-3 flex-wrap text-left flex-1 min-w-0">
                           <StatusBadge status={h.status} />
+                          {h.campaign_name && (
+                            <span className="text-xs font-semibold text-gray-800 truncate max-w-[140px]" title={h.campaign_name}>
+                              📢 {h.campaign_name}
+                            </span>
+                          )}
                           {h.type && <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full capitalize">{h.type}</span>}
-                          <span className="text-xs font-semibold text-gray-700">{h.total} total</span>
-                          <span className="text-xs text-green-600 font-medium">✓ {h.sent} sent</span>
-                          {h.failed > 0 && <span className="text-xs text-red-500 font-medium">✗ {h.failed} failed</span>}
+                          <span className="text-xs font-semibold text-gray-700">👥 {h.total}</span>
+                          <span className="text-xs text-green-600 font-medium">✓ {h.sent}</span>
+                          {h.failed > 0 && <span className="text-xs text-red-500 font-medium">✗ {h.failed}</span>}
                           {(h.total - h.sent - h.failed) > 0 && <span className="text-xs text-gray-400">{h.total - h.sent - h.failed} pending</span>}
                           <span className="text-xs text-gray-300">{new Date(h.started_at).toLocaleString('en-IN')}</span>
-                          {h.session_id && <span className="text-xs text-gray-400">· {h.session_id}</span>}
                         </button>
                         <div className="flex items-center gap-1.5 ml-3 flex-shrink-0">
                           {/* Detail drawer button */}
@@ -1810,6 +1842,16 @@ export function MessageSender() {
                               title="Stop permanently"
                               className="flex items-center gap-1 px-2 py-1 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200 disabled:opacity-50">
                               <Square size={11} /> Stop
+                            </button>
+                          )}
+                          {/* Delete (only for terminal states) */}
+                          {canDelete && (
+                            <button
+                              disabled={isActioning}
+                              onClick={() => handleHistoryDelete(h.id)}
+                              title="Delete from history"
+                              className="flex items-center gap-1 px-2 py-1 text-xs bg-gray-100 text-gray-500 rounded hover:bg-red-100 hover:text-red-600 disabled:opacity-50">
+                              <Square size={11} /> Delete
                             </button>
                           )}
                           {isActioning && <Loader2 size={14} className="animate-spin text-gray-400" />}

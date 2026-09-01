@@ -6,6 +6,7 @@ import {
 } from 'lucide-react'
 import { api } from '@/api/client'
 import { toast } from 'react-hot-toast'
+import { useAppSelector } from '@/store'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -249,10 +250,11 @@ const RESPONSE_MODE_OPTS: { id: ResponseMode; label: string; icon: React.ReactNo
 
 // ── Live Chat Drawer ───────────────────────────────────────────────────────────
 
-function LiveChatDrawer({ open, onClose, waSessions }: {
+function LiveChatDrawer({ open, onClose, waSessions, companyName }: {
   open: boolean
   onClose: () => void
   waSessions: WaSession[]
+  companyName?: string
 }) {
   const [sessionId, setSessionId]       = useState('')
   const [phone, setPhone]               = useState('919999999999')
@@ -308,6 +310,7 @@ function LiveChatDrawer({ open, onClose, waSessions }: {
       mr.onstop = () => {
         stream.getTracks().forEach(t => t.stop())
         const blob = new Blob(chunksRef.current, { type: mimeType })
+        setResponseMode('voice') // auto-detect: customer sent voice → respond in voice
         processVoiceMessage(blob, mimeType)
       }
       mr.start(200)
@@ -343,9 +346,7 @@ function LiveChatDrawer({ open, onClose, waSessions }: {
       form.append('contact_phone', phone)
       form.append('session_id', sessionId)
       form.append('response_mode', responseMode)
-      const res = await api.post('/wa-agent/voice-test', form, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      })
+      const res = await api.post('/wa-agent/voice-test', form)
       const d = res.data
       // update voice msg with transcript
       if (d.transcript) {
@@ -456,16 +457,19 @@ function LiveChatDrawer({ open, onClose, waSessions }: {
                 className="w-full px-3 py-1.5 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400" />
             </div>
 
-            {/* Response mode */}
+            {/* Auto-detected response mode indicator */}
             <div>
-              <label className="text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-1 block">Response mode</label>
-              <div className="flex gap-1">
-                {RESPONSE_MODE_OPTS.map(m => (
-                  <button key={m.id} onClick={() => setResponseMode(m.id)} title={m.label}
-                    className={`p-1.5 rounded-lg border transition-colors ${responseMode === m.id ? 'bg-indigo-600 text-white border-indigo-600' : 'border-gray-200 text-gray-500 hover:border-indigo-400 bg-white'}`}>
-                    {m.icon}
-                  </button>
-                ))}
+              <label className="text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-1 block">Auto mode</label>
+              <div className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-medium ${
+                responseMode === 'voice' ? 'bg-purple-50 border-purple-200 text-purple-700' :
+                responseMode === 'document' ? 'bg-blue-50 border-blue-200 text-blue-700' :
+                responseMode === 'video' ? 'bg-red-50 border-red-200 text-red-700' :
+                'bg-green-50 border-green-200 text-green-700'
+              }`}>
+                {responseMode === 'voice' ? <><Volume2 size={11} /> Voice</> :
+                 responseMode === 'document' ? <><FileText size={11} /> Doc</> :
+                 responseMode === 'video' ? <><Video size={11} /> Video</> :
+                 <><MessageSquare size={11} /> Text</>}
               </div>
             </div>
           </div>
@@ -474,8 +478,8 @@ function LiveChatDrawer({ open, onClose, waSessions }: {
             <div className="flex items-start gap-1.5 p-2 bg-indigo-50 border border-indigo-200 rounded-lg">
               <Volume2 size={12} className="text-indigo-500 mt-0.5 flex-shrink-0" />
               <p className="text-[11px] text-indigo-700">
-                Voice mode: AI text responses will be spoken aloud via browser TTS.
-                In production, the backend generates an audio file via TTS service.
+                Voice mode auto-detected: AI responses spoken via browser TTS.
+                Mode auto-resets to text when you type.
               </p>
             </div>
           )}
@@ -592,7 +596,7 @@ function LiveChatDrawer({ open, onClose, waSessions }: {
                 className="p-2.5 rounded-xl border border-gray-200 text-gray-500 hover:border-indigo-400 hover:text-indigo-600 disabled:opacity-30 disabled:cursor-not-allowed transition-colors flex-shrink-0">
                 <Mic size={16} />
               </button>
-              <textarea value={input} onChange={e => setInput(e.target.value)} onKeyDown={onKeyDown}
+              <textarea value={input} onChange={e => { setInput(e.target.value); if (responseMode !== 'text') setResponseMode('text') }} onKeyDown={onKeyDown}
                 disabled={!sessionId || thinking} rows={1}
                 placeholder={sessionId ? 'Message… (Enter to send)' : 'Select a session first'}
                 className="flex-1 resize-none px-3 py-2.5 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-400 disabled:bg-gray-50 disabled:text-gray-400 max-h-28 overflow-y-auto" />
@@ -773,6 +777,7 @@ export default function AiAgentPage() {
   const [wahaFilter, setWahaFilter] = useState('')
   const [chatOpen, setChatOpen]     = useState(false)
   const [waSessions, setWaSessions] = useState<WaSession[]>([])
+  const companyName = useAppSelector(s => s.auth.user?.company?.name ?? '')
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -936,7 +941,7 @@ export default function AiAgentPage() {
         )}
       </div>
 
-      <LiveChatDrawer open={chatOpen} onClose={() => setChatOpen(false)} waSessions={waSessions} />
+      <LiveChatDrawer open={chatOpen} onClose={() => setChatOpen(false)} waSessions={waSessions} companyName={companyName} />
     </div>
   )
 }

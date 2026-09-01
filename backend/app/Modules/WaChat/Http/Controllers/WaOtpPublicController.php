@@ -190,4 +190,91 @@ class WaOtpPublicController extends Controller
         $this->logAction($service, $phone, 'resend', $request, (int)((microtime(true) - $start) * 1000));
         return response()->json(['success' => true, 'expires_at' => $expires->toISOString()]);
     }
+
+    // ── Public Utility Message Send ────────────────────────────────────────────
+    public function publicUtilitySend(Request $request): JsonResponse
+    {
+        $start = microtime(true);
+        $service = $this->resolveService($request);
+        if (!$service) return response()->json(['error' => 'Invalid or missing API token.'], 401);
+        if (!$this->checkOrigin($request, $service)) return response()->json(['error' => 'Origin not allowed.'], 403);
+        if (!$this->checkPackage($request, $service)) return response()->json(['error' => 'App package not allowed.'], 403);
+        if (!$service->session_id) return response()->json(['error' => 'No WhatsApp session configured on this service.'], 422);
+
+        $data = $request->validate([
+            'phone'   => 'required|string|max:20',
+            'message' => 'required|string|max:2000',
+        ]);
+
+        $phone  = preg_replace('/[^0-9]/', '', $data['phone']);
+        $chatId = $phone . '@c.us';
+
+        $wahaBase = rtrim(config('services.waha.base_url', env('WAHA_BASE_URL', 'http://localhost:3000')), '/');
+        $wahaKey  = config('services.waha.api_key', env('WAHA_API_KEY', ''));
+
+        try {
+            $res = Http::withHeaders(['X-API-Key' => $wahaKey])
+                ->timeout(10)
+                ->post("{$wahaBase}/api/sendText", [
+                    'session' => $service->session_id,
+                    'chatId'  => $chatId,
+                    'text'    => $data['message'],
+                ]);
+
+            $ms = (int)((microtime(true) - $start) * 1000);
+            $this->logAction($service, $phone, 'utility', $request, $ms);
+
+            if ($res->successful()) {
+                return response()->json(['success' => true, 'phone' => $phone, 'ms' => $ms]);
+            }
+            return response()->json(['error' => 'WAHA returned ' . $res->status()], 422);
+        } catch (\Exception $e) {
+            return response()->json(['error' => $e->getMessage()], 500);
+        }
+    }
+
+    // ── Public Invoice Share ───────────────────────────────────────────────────
+    public function publicInvoiceShare(Request $request): JsonResponse
+    {
+        $start = microtime(true);
+        $service = $this->resolveService($request);
+        if (!$service) return response()->json(['error' => 'Invalid or missing API token.'], 401);
+        if (!$this->checkOrigin($request, $service)) return response()->json(['error' => 'Origin not allowed.'], 403);
+        if (!$this->checkPackage($request, $service)) return response()->json(['error' => 'App package not allowed.'], 403);
+        if (!$service->session_id) return response()->json(['error' => 'No WhatsApp session configured on this service.'], 422);
+
+        $data = $request->validate([
+            'phone'    => 'required|string|max:20',
+            'file_url' => 'required|string',
+            'filename' => 'nullable|string|max:200',
+            'caption'  => 'nullable|string|max:500',
+        ]);
+
+        $phone  = preg_replace('/[^0-9]/', '', $data['phone']);
+        $chatId = $phone . '@c.us';
+
+        $wahaBase = rtrim(config('services.waha.base_url', env('WAHA_BASE_URL', 'http://localhost:3000')), '/');
+        $wahaKey  = config('services.waha.api_key', env('WAHA_API_KEY', ''));
+
+        try {
+            $res = Http::withHeaders(['X-API-Key' => $wahaKey])
+                ->timeout(30)
+                ->post("{$wahaBase}/api/sendFile", [
+                    'session' => $service->session_id,
+                    'chatId'  => $chatId,
+                    'file'    => ['url' => $data['file_url'], 'filename' => $data['filename'] ?? 'document.pdf'],
+                    'caption' => $data['caption'] ?? '',
+                ]);
+
+            $ms = (int)((microtime(true) - $start) * 1000);
+            $this->logAction($service, $phone, 'invoice_share', $request, $ms);
+
+            if ($res->successful()) {
+                return response()->json(['success' => true, 'phone' => $phone, 'ms' => $ms]);
+            }
+            return response()->json(['error' => 'WAHA returned ' . $res->status()], 422);
+        } catch (\Exception $e) {
+            return response()->json(['error' => $e->getMessage()], 500);
+        }
+    }
 }

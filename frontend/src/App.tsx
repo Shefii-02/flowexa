@@ -67,6 +67,7 @@ import WaOtpServicePage from '@/pages/wa-chat/pages/WaOtpService'
 import WaDataExportPage from '@/pages/wa-chat/pages/WaDataExport'
 import WaMediaLibraryPage from '@/pages/wa-chat/pages/WaMediaLibrary'
 import WaAutomationPage from '@/pages/wa-chat/pages/WaAutomation'
+import WaGroupsPage from '@/pages/wa-chat/pages/WaGroups'
 
 // Settings pages
 import ApiKeysPage from '@/pages/settings/ApiKeysPage'
@@ -143,6 +144,7 @@ export default function App() {
               <Route path="media-library" element={<WaMediaLibraryPage />} />
               <Route path="api-keys" element={<RequireWaAdmin><WaChatApiKeys /></RequireWaAdmin>} />
               <Route path="automation" element={<WaAutomationPage />} />
+              <Route path="groups" element={<WaGroupsPage />} />
             </Route>
 
             {/* WA Agent module */}

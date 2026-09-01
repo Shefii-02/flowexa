@@ -181,4 +181,171 @@ class WaOtpServiceController extends Controller
             ->paginate(50);
         return response()->json($logs);
     }
+
+    /** List utility / general-purpose templates (non-OTP types). Seeds defaults on first call. */
+    public function listUtilityTemplates(): JsonResponse
+    {
+        $companyId = auth()->user()->company_id;
+        $company   = auth()->user()->company;
+
+        $templates = WaAuthMessage::where('company_id', $companyId)
+            ->whereIn('type', ['utility', 'welcome', 'payment_reminder', 'appointment', 'custom'])
+            ->where('is_active', true)
+            ->orderBy('sort_order')
+            ->get();
+
+        if ($templates->isEmpty()) {
+            $defaults = WaAuthMessage::defaultUtilityTemplates($companyId, $company->name ?? 'Us');
+            foreach ($defaults as $d) {
+                WaAuthMessage::create($d);
+            }
+            $templates = WaAuthMessage::where('company_id', $companyId)
+                ->whereIn('type', ['utility', 'welcome', 'payment_reminder', 'appointment', 'custom'])
+                ->where('is_active', true)
+                ->orderBy('sort_order')
+                ->get();
+        }
+
+        return response()->json(['data' => $templates]);
+    }
+
+    /** Send a pre-built utility / transactional message to a phone number. */
+    public function utilityMessageSend(Request $request): JsonResponse
+    {
+        $request->validate([
+            'phone'       => 'required|string',
+            'template_id' => 'nullable|integer',
+            'message'     => 'nullable|string|max:2000',
+            'session_id'  => 'nullable|string|max:100',
+        ]);
+
+        $service = WaOtpService::where('company_id', auth()->user()->company_id)->first();
+        $sessionId = $request->session_id ?? ($service?->session_id ?? null);
+        if (!$service || !$sessionId) {
+            return response()->json(['success' => false, 'error' => 'No WhatsApp session configured. Set one in Settings.'], 422);
+        }
+
+        $message = $request->message;
+        if (!$message && $request->template_id) {
+            $template = WaAuthMessage::where('company_id', auth()->user()->company_id)
+                ->where('id', $request->template_id)->first();
+            if ($template) {
+                $company = auth()->user()->company;
+                $message = str_replace(
+                    ['{{company}}', '{{company_name}}', '{{website/app_name}}', '{{time}}', '{{date}}'],
+                    [$company->name ?? 'Us', $company->name ?? 'Us', $company->name ?? 'Us', now()->format('h:i A'), now()->format('d M Y')],
+                    $template->message_template
+                );
+            }
+        }
+
+        if (!$message) {
+            return response()->json(['success' => false, 'error' => 'No message content.'], 422);
+        }
+
+        $phone  = preg_replace('/[^0-9]/', '', $request->phone);
+        $chatId = $phone . '@c.us';
+
+        $wahaBase = rtrim(config('services.waha.base_url', env('WAHA_BASE_URL', 'http://localhost:3000')), '/');
+        $wahaKey  = config('services.waha.api_key', env('WAHA_API_KEY', ''));
+
+        $start = microtime(true);
+        try {
+            $res = Http::withHeaders(['X-API-Key' => $wahaKey])
+                ->timeout(10)
+                ->post("{$wahaBase}/api/sendText", [
+                    'session' => $sessionId,
+                    'chatId'  => $chatId,
+                    'text'    => $message,
+                ]);
+
+            $ms = (int) ((microtime(true) - $start) * 1000);
+
+            if ($res->successful()) {
+                WaOtpLog::create([
+                    'company_id'  => $service->company_id,
+                    'service_id'  => $service->id,
+                    'phone'       => $phone,
+                    'action'      => 'utility',
+                    'ip_address'  => $request->ip(),
+                    'domain'      => 'dashboard-utility',
+                    'response_ms' => $ms,
+                ]);
+                return response()->json(['success' => true, 'phone' => $phone, 'message' => $message, 'ms' => $ms]);
+            }
+
+            return response()->json(['success' => false, 'error' => 'WAHA returned ' . $res->status() . ': ' . $res->body()], 422);
+        } catch (\Exception $e) {
+            return response()->json(['success' => false, 'error' => $e->getMessage()], 500);
+        }
+    }
+
+    /** Share an invoice / document file to a customer's WhatsApp number. */
+    public function invoiceShare(Request $request): JsonResponse
+    {
+        $request->validate([
+            'phone'      => 'required|string',
+            'file_url'   => 'nullable|string',
+            'file'       => 'nullable|file|max:20480',
+            'caption'    => 'nullable|string|max:500',
+            'filename'   => 'nullable|string|max:200',
+            'session_id' => 'nullable|string|max:100',
+        ]);
+
+        $service = WaOtpService::where('company_id', auth()->user()->company_id)->first();
+        $sessionId = $request->session_id ?? ($service?->session_id ?? null);
+        if (!$service || !$sessionId) {
+            return response()->json(['success' => false, 'error' => 'No WhatsApp session configured. Set one in Settings.'], 422);
+        }
+
+        $phone    = preg_replace('/[^0-9]/', '', $request->phone);
+        $chatId   = $phone . '@c.us';
+        $fileUrl  = $request->file_url;
+        $filename = $request->filename ?? 'document.pdf';
+
+        if ($request->hasFile('file')) {
+            $file     = $request->file('file');
+            $filename = $request->filename ?? $file->getClientOriginalName();
+            $path     = $file->store("invoices/{$service->company_id}", 'public');
+            $fileUrl  = \Illuminate\Support\Facades\Storage::disk('public')->url($path);
+        }
+
+        if (!$fileUrl) {
+            return response()->json(['success' => false, 'error' => 'No file or file URL provided.'], 422);
+        }
+
+        $wahaBase = rtrim(config('services.waha.base_url', env('WAHA_BASE_URL', 'http://localhost:3000')), '/');
+        $wahaKey  = config('services.waha.api_key', env('WAHA_API_KEY', ''));
+
+        $start = microtime(true);
+        try {
+            $res = Http::withHeaders(['X-API-Key' => $wahaKey])
+                ->timeout(30)
+                ->post("{$wahaBase}/api/sendFile", [
+                    'session' => $sessionId,
+                    'chatId'  => $chatId,
+                    'file'    => ['url' => $fileUrl, 'filename' => $filename],
+                    'caption' => $request->caption ?? '',
+                ]);
+
+            $ms = (int) ((microtime(true) - $start) * 1000);
+
+            if ($res->successful()) {
+                WaOtpLog::create([
+                    'company_id'  => $service->company_id,
+                    'service_id'  => $service->id,
+                    'phone'       => $phone,
+                    'action'      => 'invoice_share',
+                    'ip_address'  => $request->ip(),
+                    'domain'      => 'dashboard-invoice',
+                    'response_ms' => $ms,
+                ]);
+                return response()->json(['success' => true, 'phone' => $phone, 'file_url' => $fileUrl, 'ms' => $ms]);
+            }
+
+            return response()->json(['success' => false, 'error' => 'WAHA returned ' . $res->status() . ': ' . $res->body()], 422);
+        } catch (\Exception $e) {
+            return response()->json(['success' => false, 'error' => $e->getMessage()], 500);
+        }
+    }
 }

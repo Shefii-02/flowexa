@@ -83,6 +83,13 @@ class MessageSenderController extends Controller
         return response()->json(['message' => 'Job stopped.']);
     }
 
+    public function destroy(int $id): JsonResponse
+    {
+        $job = MessageSenderJob::where('company_id', auth()->user()->company_id)->findOrFail($id);
+        $job->delete();
+        return response()->json(['message' => 'Job deleted.']);
+    }
+
     public function stats(): JsonResponse
     {
         $companyId = auth()->user()->company_id;

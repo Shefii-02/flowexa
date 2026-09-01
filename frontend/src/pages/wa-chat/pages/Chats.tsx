@@ -4,7 +4,7 @@ import { Trans, useTranslation } from 'react-i18next';
 import { nextReconnectState } from '../utils/reconnectState';
 import { applyIncomingToChatList } from '../utils/chatList';
 import { filterChats, filterChannels, groupStatusesByContact } from '../utils/chatFilters';
-import { ArrowLeft, Loader2, Megaphone, CircleDashed, AlertCircle, MessageSquare, X, Users } from 'lucide-react';
+import { ArrowLeft, Loader2, Megaphone, CircleDashed, AlertCircle, MessageSquare, X, Users, Tag, UserCheck, Activity, ChevronRight } from 'lucide-react';
 import api from '@/api/client';
 import { useProfilePicture } from '../hooks/useProfilePicture';
 import { useProfilePictures } from '../hooks/useProfilePictures';
@@ -105,6 +105,293 @@ const statusFontStyle = (font?: number): { fontFamily?: string; fontWeight?: num
     ...(slot.weight ? { fontWeight: slot.weight } : {}),
   };
 };
+
+// ── ProfileCardPanel ───────────────────────────────────────────────────────────
+
+function ProfileCardPanel({
+  activeChat, activePp, activePhoneText, profileContact, profileGroups, profileCardLoading, onClose,
+}: {
+  activeChat: { id: string; name?: string; isGroup?: boolean; kind?: string };
+  activePp?: string;
+  activePhoneText?: string | null;
+  profileContact: any;
+  profileGroups: { id: string; name: string }[];
+  profileCardLoading: boolean;
+  onClose: () => void;
+}) {
+  const [panelTab, setPanelTab] = useState<'info' | 'leads' | 'groups'>('info')
+  const [allLabels, setAllLabels] = useState<{ id: number; name: string; color?: string }[]>([])
+  const [addingLabel, setAddingLabel] = useState(false)
+  const [labelAdding, setLabelAdding] = useState(false)
+  const [leads, setLeads] = useState<any[]>([])
+  const [leadsLoading, setLeadsLoading] = useState(false)
+
+  // Load labels list
+  useEffect(() => {
+    api.get('/contact-labels').then(r => setAllLabels(r.data?.data ?? r.data ?? [])).catch(() => {})
+  }, [])
+
+  // Load lead history when tab opens
+  useEffect(() => {
+    if (panelTab !== 'leads' || !profileContact?.id) return
+    setLeadsLoading(true)
+    api.get(`/leads?contact_id=${profileContact.id}&per_page=10`)
+      .then(r => setLeads(r.data?.data ?? []))
+      .catch(() => setLeads([]))
+      .finally(() => setLeadsLoading(false))
+  }, [panelTab, profileContact?.id])
+
+  const addLabelToContact = async (labelId: number) => {
+    if (!profileContact?.id) return
+    setLabelAdding(true)
+    try {
+      await api.post(`/contacts/${profileContact.id}/labels`, { label_id: labelId })
+      setAddingLabel(false)
+    } catch { /* silent */ }
+    finally { setLabelAdding(false) }
+  }
+
+  const hasContact = !!profileContact
+
+  return (
+    <div style={{ width: 290, flexShrink: 0, borderLeft: '1px solid var(--border, #e5e7eb)', background: '#fff', display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
+      {/* Header */}
+      <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border, #e5e7eb)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+        <span style={{ fontWeight: 600, fontSize: 14 }}>Contact Info</span>
+        <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#6b7280', padding: 4 }}>
+          <X size={16} />
+        </button>
+      </div>
+
+      {/* Avatar + name */}
+      <div style={{ padding: '18px 16px', textAlign: 'center', borderBottom: '1px solid var(--border, #e5e7eb)', flexShrink: 0 }}>
+        <div style={{ width: 64, height: 64, borderRadius: '50%', background: '#f3f4f6', margin: '0 auto 10px', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          {activePp
+            ? <img src={activePp} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            : <Users size={28} color="#9ca3af" />
+          }
+        </div>
+        <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 3 }}>{activeChat.name || activeChat.id.split('@')[0]}</div>
+        {activePhoneText && <div style={{ fontSize: 12, color: '#6b7280' }}>{activePhoneText}</div>}
+        <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 3, fontFamily: 'monospace', wordBreak: 'break-all' }}>{activeChat.id}</div>
+        {hasContact && (
+          <div style={{ marginTop: 8, display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px', background: '#dcfce7', borderRadius: 10, fontSize: 11, color: '#16a34a' }}>
+            <UserCheck size={10} /> In CRM
+          </div>
+        )}
+      </div>
+
+      {/* Tabs */}
+      <div style={{ display: 'flex', borderBottom: '1px solid var(--border, #e5e7eb)', flexShrink: 0 }}>
+        {([
+          { id: 'info',   label: '🏷️ Info' },
+          { id: 'leads',  label: '🎯 Leads' },
+          { id: 'groups', label: '👥 Groups' },
+        ] as { id: 'info' | 'leads' | 'groups'; label: string }[]).map(tab => (
+          <button key={tab.id} onClick={() => setPanelTab(tab.id)}
+            style={{
+              flex: 1, padding: '8px 4px', fontSize: 11, fontWeight: panelTab === tab.id ? 600 : 400,
+              background: 'none', border: 'none', borderBottom: `2px solid ${panelTab === tab.id ? '#2563eb' : 'transparent'}`,
+              color: panelTab === tab.id ? '#2563eb' : '#6b7280', cursor: 'pointer',
+            }}>
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Tab content */}
+      <div style={{ flex: 1, overflowY: 'auto' }}>
+
+        {/* ── INFO TAB ── */}
+        {panelTab === 'info' && (
+          profileCardLoading ? (
+            <div style={{ display: 'flex', justifyContent: 'center', padding: 24 }}>
+              <Loader2 size={20} className="animate-spin" style={{ color: '#6b7280' }} />
+            </div>
+          ) : (
+            <>
+              {/* Assigned Staff */}
+              {hasContact && profileContact.assigned_to && (
+                <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border, #e5e7eb)' }}>
+                  <div style={{ fontSize: 10, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>
+                    Assigned Staff
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <div style={{ width: 28, height: 28, borderRadius: '50%', background: '#ede9fe', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: '#7c3aed' }}>
+                      {(profileContact.assigned_to?.name ?? 'S').charAt(0).toUpperCase()}
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 500, color: '#374151' }}>{profileContact.assigned_to?.name ?? 'Staff'}</div>
+                      <div style={{ fontSize: 11, color: '#9ca3af' }}>{profileContact.assigned_to?.email ?? ''}</div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Labels */}
+              {!activeChat.isGroup && (
+                <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border, #e5e7eb)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                    <div style={{ fontSize: 10, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Labels</div>
+                    {hasContact && (
+                      <button onClick={() => setAddingLabel(v => !v)}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: '#2563eb', display: 'flex', alignItems: 'center', gap: 3 }}>
+                        <Tag size={10} /> {addingLabel ? 'Cancel' : '+ Add'}
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Add label picker */}
+                  {addingLabel && (
+                    <div style={{ marginBottom: 8, maxHeight: 120, overflowY: 'auto' }}>
+                      {allLabels.map(lbl => (
+                        <button key={lbl.id} onClick={() => addLabelToContact(lbl.id)} disabled={labelAdding}
+                          style={{ display: 'block', width: '100%', textAlign: 'left', padding: '5px 8px', background: 'none', border: 'none', cursor: 'pointer', borderRadius: 6, fontSize: 12, color: '#374151' }}
+                          onMouseEnter={e => (e.currentTarget.style.background = '#f3f4f6')}
+                          onMouseLeave={e => (e.currentTarget.style.background = 'none')}>
+                          <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: lbl.color ?? '#6b7280', marginRight: 6 }} />
+                          {lbl.name}
+                        </button>
+                      ))}
+                      {allLabels.length === 0 && <p style={{ fontSize: 11, color: '#9ca3af', padding: '4px 8px' }}>No labels created yet</p>}
+                    </div>
+                  )}
+
+                  {profileContact?.labels && profileContact.labels.length > 0 ? (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+                      {profileContact.labels.map((lbl: { id: number; name: string; color?: string }) => (
+                        <span key={lbl.id} style={{ fontSize: 11, padding: '2px 8px', borderRadius: 10, background: (lbl.color ?? '#6b7280') + '22', color: lbl.color ?? '#374151', fontWeight: 500 }}>
+                          🏷️ {lbl.name}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <p style={{ fontSize: 12, color: '#9ca3af' }}>{hasContact ? 'No labels assigned' : 'Contact not in CRM'}</p>
+                  )}
+                </div>
+              )}
+
+              {/* Contact details */}
+              {hasContact && (
+                <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border, #e5e7eb)' }}>
+                  <div style={{ fontSize: 10, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>CRM Details</div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 5, fontSize: 12 }}>
+                    {profileContact.email && (
+                      <div style={{ color: '#374151' }}>📧 {profileContact.email}</div>
+                    )}
+                    {profileContact.company_name && (
+                      <div style={{ color: '#374151' }}>🏢 {profileContact.company_name}</div>
+                    )}
+                    {profileContact.lead_stage && (
+                      <div style={{ color: '#374151' }}>🎯 Stage: <b>{profileContact.lead_stage}</b></div>
+                    )}
+                    {profileContact.lead_score !== undefined && profileContact.lead_score !== null && (
+                      <div style={{ color: '#374151' }}>
+                        📊 Lead Score: <b style={{ color: profileContact.lead_score >= 76 ? '#dc2626' : profileContact.lead_score >= 51 ? '#d97706' : '#6b7280' }}>
+                          {profileContact.lead_score}/100
+                        </b>
+                      </div>
+                    )}
+                    {profileContact.conversation_summary && (
+                      <div style={{ marginTop: 6, padding: '6px 8px', background: '#f8fafc', borderRadius: 6, fontSize: 11, color: '#475569', lineHeight: 1.5 }}>
+                        💬 {profileContact.conversation_summary}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {!hasContact && (
+                <div style={{ padding: '16px', textAlign: 'center' }}>
+                  <div style={{ fontSize: 13, color: '#9ca3af', marginBottom: 8 }}>Contact not in CRM yet</div>
+                  <div style={{ fontSize: 12, color: '#d1d5db' }}>Messages will create a contact automatically when the AI Agent responds</div>
+                </div>
+              )}
+            </>
+          )
+        )}
+
+        {/* ── LEADS TAB ── */}
+        {panelTab === 'leads' && (
+          <div style={{ padding: '12px 16px' }}>
+            <div style={{ fontSize: 10, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 10 }}>
+              Lead History &amp; Activity
+            </div>
+            {!hasContact ? (
+              <p style={{ fontSize: 12, color: '#9ca3af' }}>Contact not in CRM — no lead history available.</p>
+            ) : leadsLoading ? (
+              <div style={{ display: 'flex', justifyContent: 'center', padding: 20 }}>
+                <Loader2 size={18} className="animate-spin" style={{ color: '#6b7280' }} />
+              </div>
+            ) : leads.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '16px 0', color: '#9ca3af', fontSize: 12 }}>
+                <Activity size={24} style={{ margin: '0 auto 8px', opacity: 0.3 }} />
+                No leads for this contact yet.
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {leads.map((lead: any) => (
+                  <div key={lead.id} style={{ padding: '10px 12px', border: '1px solid var(--border, #e5e7eb)', borderRadius: 8, fontSize: 12 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                      <span style={{ fontWeight: 600, color: '#374151' }}>{lead.title ?? `Lead #${lead.id}`}</span>
+                      <span style={{ padding: '1px 6px', borderRadius: 8, fontSize: 10, background:
+                        lead.status === 'won' ? '#dcfce7' : lead.status === 'lost' ? '#fee2e2' : '#e0f2fe',
+                        color: lead.status === 'won' ? '#16a34a' : lead.status === 'lost' ? '#dc2626' : '#0369a1' }}>
+                        {lead.status ?? 'open'}
+                      </span>
+                    </div>
+                    {lead.category?.name && (
+                      <div style={{ color: '#6b7280' }}>🏷️ {lead.category.name}</div>
+                    )}
+                    {lead.value && (
+                      <div style={{ color: '#16a34a', fontWeight: 600 }}>₹{Number(lead.value).toLocaleString()}</div>
+                    )}
+                    <div style={{ color: '#9ca3af', marginTop: 3 }}>
+                      {new Date(lead.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── GROUPS TAB ── */}
+        {panelTab === 'groups' && (
+          <div style={{ padding: '12px 16px' }}>
+            <div style={{ fontSize: 10, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 5 }}>
+              <Users size={11} /> Shared WhatsApp Groups
+            </div>
+            {profileCardLoading ? (
+              <div style={{ display: 'flex', justifyContent: 'center', padding: 20 }}>
+                <Loader2 size={18} className="animate-spin" style={{ color: '#6b7280' }} />
+              </div>
+            ) : profileGroups.length > 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {profileGroups.map(g => (
+                  <div key={g.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8 }}>
+                    <div style={{ width: 28, height: 28, borderRadius: '50%', background: '#dcfce7', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, flexShrink: 0 }}>
+                      👥
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 12, fontWeight: 500, color: '#166534', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{g.name}</div>
+                      <div style={{ fontSize: 10, color: '#6b7280', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{g.id}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{ textAlign: 'center', padding: '16px 0', color: '#9ca3af', fontSize: 12 }}>
+                <Users size={24} style={{ margin: '0 auto 8px', opacity: 0.3 }} />
+                Not in any shared groups
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
 
 export function Chats() {
   const { t } = useTranslation();
@@ -1005,75 +1292,15 @@ export function Chats() {
 
                 {/* Profile card panel — opens when avatar/name is clicked */}
                 {showProfileCard && (
-                  <div style={{ width: 280, flexShrink: 0, borderLeft: '1px solid var(--border, #e5e7eb)', overflowY: 'auto', background: '#fff', display: 'flex', flexDirection: 'column' }}>
-                    {/* Header */}
-                    <div style={{ padding: '16px', borderBottom: '1px solid var(--border, #e5e7eb)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <span style={{ fontWeight: 600, fontSize: 14 }}>Contact Info</span>
-                      <button onClick={() => setShowProfileCard(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#6b7280', padding: 4 }}>
-                        <X size={16} />
-                      </button>
-                    </div>
-
-                    {/* Avatar + name */}
-                    <div style={{ padding: '20px 16px', textAlign: 'center', borderBottom: '1px solid var(--border, #e5e7eb)' }}>
-                      <div style={{ width: 72, height: 72, borderRadius: '50%', background: '#f3f4f6', margin: '0 auto 12px', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        {activePp.data
-                          ? <img src={activePp.data} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                          : <KindIcon kind={activeChat.kind} />
-                        }
-                      </div>
-                      <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 4 }}>{activeChat.name || activeChat.id.split('@')[0]}</div>
-                      {activePhoneText && <div style={{ fontSize: 13, color: '#6b7280' }}>{activePhoneText}</div>}
-                      <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 4, fontFamily: 'monospace', wordBreak: 'break-all' }}>{activeChat.id}</div>
-                    </div>
-
-                    {profileCardLoading ? (
-                      <div style={{ display: 'flex', justifyContent: 'center', padding: 24 }}>
-                        <Loader2 size={20} className="animate-spin" style={{ color: '#6b7280' }} />
-                      </div>
-                    ) : (
-                      <>
-                        {/* Labels */}
-                        {!activeChat.isGroup && (
-                          <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border, #e5e7eb)' }}>
-                            <div style={{ fontSize: 11, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 10 }}>Labels</div>
-                            {profileContact?.labels && profileContact.labels.length > 0 ? (
-                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                                {profileContact.labels.map((lbl: { id: number; name: string; color?: string }) => (
-                                  <span key={lbl.id} style={{ fontSize: 12, padding: '3px 10px', borderRadius: 12, background: (lbl.color ?? '#6b7280') + '20', color: lbl.color ?? '#374151', fontWeight: 500 }}>
-                                    🏷️ {lbl.name}
-                                  </span>
-                                ))}
-                              </div>
-                            ) : (
-                              <p style={{ fontSize: 13, color: '#9ca3af' }}>{profileContact ? 'No labels' : 'Contact not in CRM'}</p>
-                            )}
-                          </div>
-                        )}
-
-                        {/* Joined Groups */}
-                        <div style={{ padding: '14px 16px' }}>
-                          <div style={{ fontSize: 11, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
-                            <Users size={12} /> Joined Groups
-                          </div>
-                          {profileGroups.length > 0 ? (
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                              {profileGroups.slice(0, 10).map(g => (
-                                <div key={g.id} style={{ fontSize: 13, color: '#374151', padding: '5px 8px', background: '#f0fdf4', borderRadius: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
-                                  <span style={{ color: '#16a34a' }}>👥</span> {g.name}
-                                </div>
-                              ))}
-                              {profileGroups.length > 10 && (
-                                <p style={{ fontSize: 12, color: '#9ca3af' }}>+{profileGroups.length - 10} more</p>
-                              )}
-                            </div>
-                          ) : (
-                            <p style={{ fontSize: 13, color: '#9ca3af' }}>Not in any shared groups</p>
-                          )}
-                        </div>
-                      </>
-                    )}
-                  </div>
+                  <ProfileCardPanel
+                    activeChat={activeChat}
+                    activePp={activePp.data ?? undefined}
+                    activePhoneText={activePhoneText}
+                    profileContact={profileContact}
+                    profileGroups={profileGroups}
+                    profileCardLoading={profileCardLoading}
+                    onClose={() => setShowProfileCard(false)}
+                  />
                 )}
               </div>
             ) : activeChannel ? (
