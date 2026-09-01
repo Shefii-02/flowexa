@@ -75,4 +75,4 @@ backend/.env
 /backend/Thumbs.db
 
 /backend-node
-backend-node
+backend-nodenode_modules/
