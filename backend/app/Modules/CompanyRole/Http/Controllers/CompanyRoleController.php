@@ -1,4 +1,5 @@
 <?php
+namespace App\Modules\CompanyRole\Http\Controllers;
 use App\Http\Controllers\Controller;
 use App\Models\CompanyRole;
 use Illuminate\Http\JsonResponse;

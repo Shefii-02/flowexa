@@ -63,6 +63,7 @@ use App\Modules\WaChat\Http\Controllers\PipelineController;
 use App\Modules\WaChat\Http\Controllers\AiAgentController;
 use App\Http\Controllers\CompanyApiKeyController;
 use App\Http\Controllers\MetaAiController;
+use App\Modules\CompanyRole\Http\Controllers\CompanyRoleController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
