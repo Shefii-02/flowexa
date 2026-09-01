@@ -164,10 +164,22 @@ class StaffRepository implements StaffRepositoryInterface
             ->pluck('department');
     }
 
-    // ─── All assignable roles (exclude superadmin + owner) ────────────────────
-    public function getRoles(): Collection
+    // ─── All assignable roles (system roles excl. superadmin/owner + company-specific) ──
+    public function getRoles(?int $companyId = null): Collection
     {
-        return Role::whereNotIn('name', ['superadmin', 'owner'])
+        return Role::withCount('users')
+            ->where(function ($q) use ($companyId) {
+                // System roles visible to everyone (except superadmin / owner)
+                $q->where(function ($inner) {
+                    $inner->whereNull('company_id')
+                          ->whereNotIn('name', ['superadmin', 'owner']);
+                });
+                // Company-specific roles for this company
+                if ($companyId) {
+                    $q->orWhere('company_id', $companyId);
+                }
+            })
+            ->orderBy('sort_order')
             ->orderBy('id')
             ->get();
     }

@@ -108,8 +108,11 @@ const statusFontStyle = (font?: number): { fontFamily?: string; fontWeight?: num
 
 // ── ProfileCardPanel ───────────────────────────────────────────────────────────
 
+type IndividualTab = 'info' | 'labels' | 'groups' | 'leads'
+type GroupTab = 'members' | 'info'
+
 function ProfileCardPanel({
-  activeChat, activePp, activePhoneText, profileContact, profileGroups, profileCardLoading, onClose,
+  activeChat, activePp, activePhoneText, profileContact, profileGroups, profileCardLoading, onClose, sessionId,
 }: {
   activeChat: { id: string; name?: string; isGroup?: boolean; kind?: string };
   activePp?: string;
@@ -118,28 +121,63 @@ function ProfileCardPanel({
   profileGroups: { id: string; name: string }[];
   profileCardLoading: boolean;
   onClose: () => void;
+  sessionId?: string;
 }) {
-  const [panelTab, setPanelTab] = useState<'info' | 'leads' | 'groups'>('info')
+  const isGroup = !!activeChat.isGroup
+
+  const [indTab, setIndTab] = useState<IndividualTab>('info')
+  const [grpTab, setGrpTab] = useState<GroupTab>('members')
+
   const [allLabels, setAllLabels] = useState<{ id: number; name: string; color?: string }[]>([])
   const [addingLabel, setAddingLabel] = useState(false)
   const [labelAdding, setLabelAdding] = useState(false)
+
   const [leads, setLeads] = useState<any[]>([])
   const [leadsLoading, setLeadsLoading] = useState(false)
+  const [creatingLead, setCreatingLead] = useState(false)
 
-  // Load labels list
+  const [staffList, setStaffList] = useState<{ id: number; name: string; email: string }[]>([])
+  const [showStaffPicker, setShowStaffPicker] = useState(false)
+  const [assigningStaff, setAssigningStaff] = useState(false)
+
+  const [members, setMembers] = useState<{ id: string; isAdmin: boolean; isSuperAdmin: boolean }[]>([])
+  const [membersLoading, setMembersLoading] = useState(false)
+
+  // Reset tabs when chat changes
+  useEffect(() => { setIndTab('info'); setGrpTab('members') }, [activeChat.id])
+
+  // Load labels list for individual contacts
   useEffect(() => {
+    if (isGroup) return
     api.get('/contact-labels').then(r => setAllLabels(r.data?.data ?? r.data ?? [])).catch(() => {})
-  }, [])
+  }, [isGroup])
 
-  // Load lead history when tab opens
+  // Load group members when viewing a group chat
   useEffect(() => {
-    if (panelTab !== 'leads' || !profileContact?.id) return
+    if (!isGroup || !sessionId) return
+    setMembersLoading(true)
+    setMembers([])
+    api.get('/waha/group/participants', { params: { session_id: sessionId, group_id: activeChat.id } })
+      .then(r => setMembers(r.data?.participants ?? r.data ?? []))
+      .catch(() => setMembers([]))
+      .finally(() => setMembersLoading(false))
+  }, [isGroup, activeChat.id, sessionId])
+
+  // Load leads when tab opens
+  useEffect(() => {
+    if (indTab !== 'leads' || !profileContact?.id) return
     setLeadsLoading(true)
     api.get(`/leads?contact_id=${profileContact.id}&per_page=10`)
       .then(r => setLeads(r.data?.data ?? []))
       .catch(() => setLeads([]))
       .finally(() => setLeadsLoading(false))
-  }, [panelTab, profileContact?.id])
+  }, [indTab, profileContact?.id])
+
+  // Load staff list when picker opens
+  useEffect(() => {
+    if (!showStaffPicker || staffList.length > 0) return
+    api.get('/staff').then(r => setStaffList(r.data?.data ?? r.data ?? [])).catch(() => {})
+  }, [showStaffPicker]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const addLabelToContact = async (labelId: number) => {
     if (!profileContact?.id) return
@@ -147,8 +185,29 @@ function ProfileCardPanel({
     try {
       await api.post(`/contacts/${profileContact.id}/labels`, { label_id: labelId })
       setAddingLabel(false)
-    } catch { /* silent */ }
+    } catch { }
     finally { setLabelAdding(false) }
+  }
+
+  const assignStaff = async (staffId: number) => {
+    if (!profileContact?.id) return
+    setAssigningStaff(true)
+    try {
+      await api.patch(`/contacts/${profileContact.id}`, { assigned_to: staffId })
+      setShowStaffPicker(false)
+    } catch { }
+    finally { setAssigningStaff(false) }
+  }
+
+  const createLead = async () => {
+    if (!profileContact?.id) return
+    setCreatingLead(true)
+    try {
+      await api.post('/leads', { contact_id: profileContact.id, source: 'whatsapp_chat', stage: 'new' })
+      const r = await api.get(`/leads?contact_id=${profileContact.id}&per_page=10`)
+      setLeads(r.data?.data ?? [])
+    } catch { }
+    finally { setCreatingLead(false) }
   }
 
   const hasContact = !!profileContact
@@ -157,7 +216,7 @@ function ProfileCardPanel({
     <div style={{ width: 290, flexShrink: 0, borderLeft: '1px solid var(--border, #e5e7eb)', background: '#fff', display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
       {/* Header */}
       <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border, #e5e7eb)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
-        <span style={{ fontWeight: 600, fontSize: 14 }}>Contact Info</span>
+        <span style={{ fontWeight: 600, fontSize: 14 }}>{isGroup ? 'Group Info' : 'Contact Info'}</span>
         <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#6b7280', padding: 4 }}>
           <X size={16} />
         </button>
@@ -174,99 +233,161 @@ function ProfileCardPanel({
         <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 3 }}>{activeChat.name || activeChat.id.split('@')[0]}</div>
         {activePhoneText && <div style={{ fontSize: 12, color: '#6b7280' }}>{activePhoneText}</div>}
         <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 3, fontFamily: 'monospace', wordBreak: 'break-all' }}>{activeChat.id}</div>
-        {hasContact && (
+        {isGroup ? (
+          <div style={{ marginTop: 8, display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px', background: '#dbeafe', borderRadius: 10, fontSize: 11, color: '#1d4ed8' }}>
+            <Users size={10} /> Group Chat
+          </div>
+        ) : hasContact ? (
           <div style={{ marginTop: 8, display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px', background: '#dcfce7', borderRadius: 10, fontSize: 11, color: '#16a34a' }}>
             <UserCheck size={10} /> In CRM
           </div>
-        )}
+        ) : null}
       </div>
 
       {/* Tabs */}
       <div style={{ display: 'flex', borderBottom: '1px solid var(--border, #e5e7eb)', flexShrink: 0 }}>
-        {([
-          { id: 'info',   label: '🏷️ Info' },
-          { id: 'leads',  label: '🎯 Leads' },
-          { id: 'groups', label: '👥 Groups' },
-        ] as { id: 'info' | 'leads' | 'groups'; label: string }[]).map(tab => (
-          <button key={tab.id} onClick={() => setPanelTab(tab.id)}
-            style={{
-              flex: 1, padding: '8px 4px', fontSize: 11, fontWeight: panelTab === tab.id ? 600 : 400,
-              background: 'none', border: 'none', borderBottom: `2px solid ${panelTab === tab.id ? '#2563eb' : 'transparent'}`,
-              color: panelTab === tab.id ? '#2563eb' : '#6b7280', cursor: 'pointer',
-            }}>
-            {tab.label}
-          </button>
-        ))}
+        {isGroup
+          ? ([
+              { id: 'members', label: '👥 Members' },
+              { id: 'info',    label: '🏷️ Info' },
+            ] as { id: GroupTab; label: string }[]).map(tab => (
+              <button key={tab.id} onClick={() => setGrpTab(tab.id)}
+                style={{ flex: 1, padding: '8px 4px', fontSize: 11, fontWeight: grpTab === tab.id ? 600 : 400, background: 'none', border: 'none', borderBottom: `2px solid ${grpTab === tab.id ? '#2563eb' : 'transparent'}`, color: grpTab === tab.id ? '#2563eb' : '#6b7280', cursor: 'pointer' }}>
+                {tab.label}
+              </button>
+            ))
+          : ([
+              { id: 'info',   label: '🏷️ Info' },
+              { id: 'labels', label: '🔖 Labels' },
+              { id: 'groups', label: '👥 Groups' },
+              { id: 'leads',  label: '🎯 Leads' },
+            ] as { id: IndividualTab; label: string }[]).map(tab => (
+              <button key={tab.id} onClick={() => setIndTab(tab.id)}
+                style={{ flex: 1, padding: '8px 2px', fontSize: 10, fontWeight: indTab === tab.id ? 600 : 400, background: 'none', border: 'none', borderBottom: `2px solid ${indTab === tab.id ? '#2563eb' : 'transparent'}`, color: indTab === tab.id ? '#2563eb' : '#6b7280', cursor: 'pointer' }}>
+                {tab.label}
+              </button>
+            ))
+        }
       </div>
 
       {/* Tab content */}
       <div style={{ flex: 1, overflowY: 'auto' }}>
 
-        {/* ── INFO TAB ── */}
-        {panelTab === 'info' && (
+        {/* ── GROUP: MEMBERS TAB ── */}
+        {isGroup && grpTab === 'members' && (
+          <div style={{ padding: '12px 16px' }}>
+            <div style={{ fontSize: 10, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 10 }}>
+              Members {members.length > 0 ? `(${members.length})` : ''}
+            </div>
+            {membersLoading ? (
+              <div style={{ display: 'flex', justifyContent: 'center', padding: 24 }}>
+                <Loader2 size={20} className="animate-spin" style={{ color: '#6b7280' }} />
+              </div>
+            ) : members.length === 0 ? (
+              <p style={{ fontSize: 12, color: '#9ca3af', textAlign: 'center', padding: '16px 0' }}>
+                {sessionId ? 'No members found' : 'No session selected'}
+              </p>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                {members.map(p => {
+                  const phone = p.id.replace(/@.*/, '')
+                  return (
+                    <div key={p.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 10px', borderRadius: 8, background: '#f9fafb' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <div style={{ width: 28, height: 28, borderRadius: '50%', background: (p.isAdmin || p.isSuperAdmin) ? '#dbeafe' : '#f3f4f6', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: p.isAdmin ? '#1d4ed8' : '#6b7280' }}>
+                          {phone.charAt(0)}
+                        </div>
+                        <div style={{ fontSize: 13, color: '#374151' }}>{phone}</div>
+                      </div>
+                      {(p.isAdmin || p.isSuperAdmin) && (
+                        <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 10, background: p.isSuperAdmin ? '#fef3c7' : '#dbeafe', color: p.isSuperAdmin ? '#92400e' : '#1d4ed8', fontWeight: 600 }}>
+                          {p.isSuperAdmin ? 'Owner' : 'Admin'}
+                        </span>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── GROUP: INFO TAB ── */}
+        {isGroup && grpTab === 'info' && (
+          <div style={{ padding: '12px 16px' }}>
+            <div style={{ fontSize: 10, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 10 }}>
+              Group Details
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 12 }}>
+              <div style={{ color: '#374151' }}>
+                <span style={{ color: '#9ca3af' }}>Group ID</span><br />
+                <code style={{ fontSize: 10, background: '#f3f4f6', padding: '2px 6px', borderRadius: 4, wordBreak: 'break-all' }}>{activeChat.id}</code>
+              </div>
+              <div style={{ color: '#374151' }}>
+                <span style={{ color: '#9ca3af' }}>Members:</span> {membersLoading ? '…' : members.length}
+              </div>
+              {members.filter(m => m.isAdmin || m.isSuperAdmin).length > 0 && (
+                <div style={{ color: '#374151' }}>
+                  <span style={{ color: '#9ca3af' }}>Admins:</span>{' '}
+                  {members.filter(m => m.isAdmin || m.isSuperAdmin).map(m => m.id.replace(/@.*/, '')).join(', ')}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ── INDIVIDUAL: INFO TAB ── */}
+        {!isGroup && indTab === 'info' && (
           profileCardLoading ? (
             <div style={{ display: 'flex', justifyContent: 'center', padding: 24 }}>
               <Loader2 size={20} className="animate-spin" style={{ color: '#6b7280' }} />
             </div>
           ) : (
             <>
-              {/* Assigned Staff */}
-              {hasContact && profileContact.assigned_to && (
-                <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border, #e5e7eb)' }}>
-                  <div style={{ fontSize: 10, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>
-                    Assigned Staff
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <div style={{ width: 28, height: 28, borderRadius: '50%', background: '#ede9fe', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: '#7c3aed' }}>
-                      {(profileContact.assigned_to?.name ?? 'S').charAt(0).toUpperCase()}
-                    </div>
-                    <div>
-                      <div style={{ fontSize: 13, fontWeight: 500, color: '#374151' }}>{profileContact.assigned_to?.name ?? 'Staff'}</div>
-                      <div style={{ fontSize: 11, color: '#9ca3af' }}>{profileContact.assigned_to?.email ?? ''}</div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Labels */}
-              {!activeChat.isGroup && (
+              {/* Assign Staff */}
+              {hasContact && (
                 <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border, #e5e7eb)' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                    <div style={{ fontSize: 10, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Labels</div>
-                    {hasContact && (
-                      <button onClick={() => setAddingLabel(v => !v)}
-                        style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: '#2563eb', display: 'flex', alignItems: 'center', gap: 3 }}>
-                        <Tag size={10} /> {addingLabel ? 'Cancel' : '+ Add'}
-                      </button>
-                    )}
-                  </div>
-
-                  {/* Add label picker */}
-                  {addingLabel && (
-                    <div style={{ marginBottom: 8, maxHeight: 120, overflowY: 'auto' }}>
-                      {allLabels.map(lbl => (
-                        <button key={lbl.id} onClick={() => addLabelToContact(lbl.id)} disabled={labelAdding}
-                          style={{ display: 'block', width: '100%', textAlign: 'left', padding: '5px 8px', background: 'none', border: 'none', cursor: 'pointer', borderRadius: 6, fontSize: 12, color: '#374151' }}
-                          onMouseEnter={e => (e.currentTarget.style.background = '#f3f4f6')}
-                          onMouseLeave={e => (e.currentTarget.style.background = 'none')}>
-                          <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: lbl.color ?? '#6b7280', marginRight: 6 }} />
-                          {lbl.name}
-                        </button>
-                      ))}
-                      {allLabels.length === 0 && <p style={{ fontSize: 11, color: '#9ca3af', padding: '4px 8px' }}>No labels created yet</p>}
+                    <div style={{ fontSize: 10, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                      Assigned Staff
                     </div>
-                  )}
-
-                  {profileContact?.labels && profileContact.labels.length > 0 ? (
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
-                      {profileContact.labels.map((lbl: { id: number; name: string; color?: string }) => (
-                        <span key={lbl.id} style={{ fontSize: 11, padding: '2px 8px', borderRadius: 10, background: (lbl.color ?? '#6b7280') + '22', color: lbl.color ?? '#374151', fontWeight: 500 }}>
-                          🏷️ {lbl.name}
-                        </span>
-                      ))}
+                    <button onClick={() => setShowStaffPicker(v => !v)}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: '#2563eb' }}>
+                      {showStaffPicker ? 'Cancel' : '+ Assign'}
+                    </button>
+                  </div>
+                  {!showStaffPicker && (profileContact.assigned_to ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <div style={{ width: 28, height: 28, borderRadius: '50%', background: '#ede9fe', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: '#7c3aed' }}>
+                        {(profileContact.assigned_to?.name ?? 'S').charAt(0).toUpperCase()}
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 500, color: '#374151' }}>{profileContact.assigned_to?.name ?? 'Staff'}</div>
+                        <div style={{ fontSize: 11, color: '#9ca3af' }}>{profileContact.assigned_to?.email ?? ''}</div>
+                      </div>
                     </div>
                   ) : (
-                    <p style={{ fontSize: 12, color: '#9ca3af' }}>{hasContact ? 'No labels assigned' : 'Contact not in CRM'}</p>
+                    <p style={{ fontSize: 12, color: '#9ca3af' }}>Not assigned to any staff</p>
+                  ))}
+                  {showStaffPicker && (
+                    <div style={{ maxHeight: 150, overflowY: 'auto', border: '1px solid #e5e7eb', borderRadius: 8, padding: 4 }}>
+                      {staffList.length === 0 ? (
+                        <p style={{ fontSize: 11, color: '#9ca3af', padding: '6px 8px' }}>Loading staff…</p>
+                      ) : staffList.map(s => (
+                        <button key={s.id} onClick={() => assignStaff(s.id)} disabled={assigningStaff}
+                          style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '7px 8px', background: 'none', border: 'none', cursor: 'pointer', borderRadius: 6, textAlign: 'left' }}
+                          onMouseEnter={e => (e.currentTarget.style.background = '#f3f4f6')}
+                          onMouseLeave={e => (e.currentTarget.style.background = 'none')}>
+                          <div style={{ width: 24, height: 24, borderRadius: '50%', background: '#ede9fe', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: '#7c3aed', flexShrink: 0 }}>
+                            {s.name.charAt(0).toUpperCase()}
+                          </div>
+                          <div>
+                            <div style={{ fontSize: 12, fontWeight: 500, color: '#374151' }}>{s.name}</div>
+                            <div style={{ fontSize: 10, color: '#9ca3af' }}>{s.email}</div>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
                   )}
                 </div>
               )}
@@ -276,15 +397,9 @@ function ProfileCardPanel({
                 <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border, #e5e7eb)' }}>
                   <div style={{ fontSize: 10, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>CRM Details</div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 5, fontSize: 12 }}>
-                    {profileContact.email && (
-                      <div style={{ color: '#374151' }}>📧 {profileContact.email}</div>
-                    )}
-                    {profileContact.company_name && (
-                      <div style={{ color: '#374151' }}>🏢 {profileContact.company_name}</div>
-                    )}
-                    {profileContact.lead_stage && (
-                      <div style={{ color: '#374151' }}>🎯 Stage: <b>{profileContact.lead_stage}</b></div>
-                    )}
+                    {profileContact.email && <div style={{ color: '#374151' }}>📧 {profileContact.email}</div>}
+                    {profileContact.company_name && <div style={{ color: '#374151' }}>🏢 {profileContact.company_name}</div>}
+                    {profileContact.lead_stage && <div style={{ color: '#374151' }}>🎯 Stage: <b>{profileContact.lead_stage}</b></div>}
                     {profileContact.lead_score !== undefined && profileContact.lead_score !== null && (
                       <div style={{ color: '#374151' }}>
                         📊 Lead Score: <b style={{ color: profileContact.lead_score >= 76 ? '#dc2626' : profileContact.lead_score >= 51 ? '#d97706' : '#6b7280' }}>
@@ -311,53 +426,69 @@ function ProfileCardPanel({
           )
         )}
 
-        {/* ── LEADS TAB ── */}
-        {panelTab === 'leads' && (
+        {/* ── INDIVIDUAL: LABELS TAB ── */}
+        {!isGroup && indTab === 'labels' && (
           <div style={{ padding: '12px 16px' }}>
-            <div style={{ fontSize: 10, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 10 }}>
-              Lead History &amp; Activity
+            {/* System / CRM labels */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+              <div style={{ fontSize: 10, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em' }}>System Labels</div>
+              {hasContact && (
+                <button onClick={() => setAddingLabel(v => !v)}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: '#2563eb', display: 'flex', alignItems: 'center', gap: 3 }}>
+                  <Tag size={10} /> {addingLabel ? 'Cancel' : '+ Add'}
+                </button>
+              )}
             </div>
-            {!hasContact ? (
-              <p style={{ fontSize: 12, color: '#9ca3af' }}>Contact not in CRM — no lead history available.</p>
-            ) : leadsLoading ? (
-              <div style={{ display: 'flex', justifyContent: 'center', padding: 20 }}>
-                <Loader2 size={18} className="animate-spin" style={{ color: '#6b7280' }} />
+
+            {addingLabel && (
+              <div style={{ marginBottom: 10, maxHeight: 130, overflowY: 'auto', border: '1px solid #e5e7eb', borderRadius: 8, padding: 4 }}>
+                {allLabels.length === 0
+                  ? <p style={{ fontSize: 11, color: '#9ca3af', padding: '4px 8px' }}>No labels created yet</p>
+                  : allLabels.map(lbl => (
+                    <button key={lbl.id} onClick={() => addLabelToContact(lbl.id)} disabled={labelAdding}
+                      style={{ display: 'block', width: '100%', textAlign: 'left', padding: '5px 8px', background: 'none', border: 'none', cursor: 'pointer', borderRadius: 6, fontSize: 12, color: '#374151' }}
+                      onMouseEnter={e => (e.currentTarget.style.background = '#f3f4f6')}
+                      onMouseLeave={e => (e.currentTarget.style.background = 'none')}>
+                      <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: lbl.color ?? '#6b7280', marginRight: 6 }} />
+                      {lbl.name}
+                    </button>
+                  ))
+                }
               </div>
-            ) : leads.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '16px 0', color: '#9ca3af', fontSize: 12 }}>
-                <Activity size={24} style={{ margin: '0 auto 8px', opacity: 0.3 }} />
-                No leads for this contact yet.
-              </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {leads.map((lead: any) => (
-                  <div key={lead.id} style={{ padding: '10px 12px', border: '1px solid var(--border, #e5e7eb)', borderRadius: 8, fontSize: 12 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                      <span style={{ fontWeight: 600, color: '#374151' }}>{lead.title ?? `Lead #${lead.id}`}</span>
-                      <span style={{ padding: '1px 6px', borderRadius: 8, fontSize: 10, background:
-                        lead.status === 'won' ? '#dcfce7' : lead.status === 'lost' ? '#fee2e2' : '#e0f2fe',
-                        color: lead.status === 'won' ? '#16a34a' : lead.status === 'lost' ? '#dc2626' : '#0369a1' }}>
-                        {lead.status ?? 'open'}
-                      </span>
-                    </div>
-                    {lead.category?.name && (
-                      <div style={{ color: '#6b7280' }}>🏷️ {lead.category.name}</div>
-                    )}
-                    {lead.value && (
-                      <div style={{ color: '#16a34a', fontWeight: 600 }}>₹{Number(lead.value).toLocaleString()}</div>
-                    )}
-                    <div style={{ color: '#9ca3af', marginTop: 3 }}>
-                      {new Date(lead.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-                    </div>
-                  </div>
+            )}
+
+            {profileContact?.labels && profileContact.labels.length > 0 ? (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 12 }}>
+                {profileContact.labels.map((lbl: { id: number; name: string; color?: string }) => (
+                  <span key={lbl.id} style={{ fontSize: 11, padding: '2px 8px', borderRadius: 10, background: (lbl.color ?? '#6b7280') + '22', color: lbl.color ?? '#374151', fontWeight: 500 }}>
+                    🏷️ {lbl.name}
+                  </span>
                 ))}
               </div>
+            ) : (
+              <p style={{ fontSize: 12, color: '#9ca3af', marginBottom: 12 }}>{hasContact ? 'No labels assigned' : 'Contact not in CRM'}</p>
+            )}
+
+            {/* WhatsApp native labels */}
+            {profileContact?.wa_labels && profileContact.wa_labels.length > 0 && (
+              <>
+                <div style={{ fontSize: 10, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6, marginTop: 4, paddingTop: 10, borderTop: '1px solid #f3f4f6' }}>
+                  WhatsApp Labels
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+                  {profileContact.wa_labels.map((lbl: string, i: number) => (
+                    <span key={i} style={{ fontSize: 11, padding: '2px 8px', borderRadius: 10, background: '#fef3c7', color: '#92400e', fontWeight: 500 }}>
+                      📱 {lbl}
+                    </span>
+                  ))}
+                </div>
+              </>
             )}
           </div>
         )}
 
-        {/* ── GROUPS TAB ── */}
-        {panelTab === 'groups' && (
+        {/* ── INDIVIDUAL: GROUPS TAB ── */}
+        {!isGroup && indTab === 'groups' && (
           <div style={{ padding: '12px 16px' }}>
             <div style={{ fontSize: 10, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 5 }}>
               <Users size={11} /> Shared WhatsApp Groups
@@ -388,6 +519,57 @@ function ProfileCardPanel({
             )}
           </div>
         )}
+
+        {/* ── INDIVIDUAL: LEADS TAB ── */}
+        {!isGroup && indTab === 'leads' && (
+          <div style={{ padding: '12px 16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+              <div style={{ fontSize: 10, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                Lead History
+              </div>
+              {hasContact && (
+                <button onClick={createLead} disabled={creatingLead}
+                  style={{ background: '#2563eb', color: '#fff', border: 'none', borderRadius: 6, padding: '4px 10px', fontSize: 11, cursor: 'pointer', opacity: creatingLead ? 0.7 : 1 }}>
+                  {creatingLead ? '…' : '+ Lead'}
+                </button>
+              )}
+            </div>
+            {!hasContact ? (
+              <p style={{ fontSize: 12, color: '#9ca3af' }}>Contact not in CRM — no lead history available.</p>
+            ) : leadsLoading ? (
+              <div style={{ display: 'flex', justifyContent: 'center', padding: 20 }}>
+                <Loader2 size={18} className="animate-spin" style={{ color: '#6b7280' }} />
+              </div>
+            ) : leads.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '16px 0', color: '#9ca3af', fontSize: 12 }}>
+                <Activity size={24} style={{ margin: '0 auto 8px', opacity: 0.3 }} />
+                No leads yet.
+                <br /><span style={{ fontSize: 11 }}>Click "+ Lead" to create one.</span>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {leads.map((lead: any) => (
+                  <div key={lead.id} style={{ padding: '10px 12px', border: '1px solid var(--border, #e5e7eb)', borderRadius: 8, fontSize: 12 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                      <span style={{ fontWeight: 600, color: '#374151' }}>{lead.title ?? `Lead #${lead.id}`}</span>
+                      <span style={{ padding: '1px 6px', borderRadius: 8, fontSize: 10,
+                        background: lead.stage === 'won' ? '#dcfce7' : lead.stage === 'lost' ? '#fee2e2' : '#e0f2fe',
+                        color: lead.stage === 'won' ? '#16a34a' : lead.stage === 'lost' ? '#dc2626' : '#0369a1' }}>
+                        {lead.stage ?? 'new'}
+                      </span>
+                    </div>
+                    {lead.category?.name && <div style={{ color: '#6b7280' }}>🏷️ {lead.category.name}</div>}
+                    {lead.value && <div style={{ color: '#16a34a', fontWeight: 600 }}>₹{Number(lead.value).toLocaleString()}</div>}
+                    <div style={{ color: '#9ca3af', marginTop: 3 }}>
+                      {new Date(lead.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
       </div>
     </div>
   )
@@ -1082,12 +1264,16 @@ export function Chats() {
     if (el) el.scrollTop = el.scrollHeight;
   }, [activeStatusGroup?.contact.id, activeStatusGroup?.items]);
 
-  // Profile card: load contact labels from Laravel + session groups from WAHA when card opens.
+  // Profile card: load contact info + joined groups for individual chats.
+  // Group chats fetch their own members inside ProfileCardPanel.
   useEffect(() => {
-    if (!showProfileCard || !activeChat || activeChat.isGroup) {
-      if (!showProfileCard || activeChat?.isGroup) { setProfileContact(null); setProfileGroups([]); }
-      return;
-    }
+    if (!showProfileCard || !activeChat) { setProfileContact(null); setProfileGroups([]); return; }
+    if (activeChat.isGroup) { setProfileContact(null); setProfileGroups([]); return; }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showProfileCard, activeChat?.id]);
+
+  useEffect(() => {
+    if (!showProfileCard || !activeChat || activeChat.isGroup) return;
     setProfileCardLoading(true);
     const phone = activeChat.id.split('@')[0];
     // Fetch contact info and all session groups in parallel, then for each group
@@ -1299,6 +1485,7 @@ export function Chats() {
                     profileContact={profileContact}
                     profileGroups={profileGroups}
                     profileCardLoading={profileCardLoading}
+                    sessionId={selectedSessionId}
                     onClose={() => setShowProfileCard(false)}
                   />
                 )}

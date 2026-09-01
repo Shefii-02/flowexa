@@ -20,6 +20,7 @@ return Application::configure(basePath: dirname(__DIR__))
         \App\Console\Commands\UpdateConversationSummaries::class,
         \App\Console\Commands\RecalculateLeadScores::class,
         \App\Console\Commands\CleanupOldAnalyses::class,
+        \App\Console\Commands\SetupExistingCompanies::class,
     ])
     ->withSchedule(function (\Illuminate\Console\Scheduling\Schedule $schedule): void {
         $schedule->command('wachat:process-scheduled-messages')->everyMinute();

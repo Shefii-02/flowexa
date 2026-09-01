@@ -13,6 +13,7 @@ import RegisterPage from '@/pages/auth/RegisterPage'
 // Main pages
 import DashboardPage from '@/pages/dashboard/DashboardPage'
 import StaffPage from '@/pages/staff/StaffPage'
+import RolesPage from '@/pages/staff/RolesPage'
 import ContactsPage from '@/pages/contacts/ContactsPage'
 // import FlowPage from '@/pages/flow/FlowPage'
 import CampaignsPage from '@/pages/meta-ads/campaigns/CampaignsPage'
@@ -162,6 +163,7 @@ export default function App() {
             </Route>
 
             <Route path="staff" element={<StaffPage />} />
+            <Route path="staff/roles" element={<RolesPage />} />
             <Route path="contacts" element={<ContactsPage />} />
             <Route path="labels" element={<LabelsPage />} />
             {/* <Route path="flow" element={<FlowPage />} /> */}

@@ -31,7 +31,7 @@ interface StaffRepositoryInterface
 
     public function getDepartments(int $companyId): Collection;
 
-    public function getRoles(): Collection;
+    public function getRoles(?int $companyId = null): Collection;
 
     public function findRole(int $roleId): ?Role;
 

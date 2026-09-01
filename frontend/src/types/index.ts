@@ -2,9 +2,29 @@
 
 export interface Role {
   id: number
-  name: 'superadmin' | 'owner' | 'admin' | 'team_lead' | 'counsellor' | 'viewer'
+  name: string
   label: string
+  description: string | null
+  color: string
+  is_system: boolean
+  is_active: boolean
+  sort_order: number
+  company_id: number | null
+  users_count: number
   permissions: string[]
+  permission_ids: number[]
+}
+
+export interface PermissionDef {
+  id: number
+  key: string
+  label: string
+  type: 'viewer' | 'manage'
+}
+
+export interface PermissionGroup {
+  group: string
+  permissions: PermissionDef[]
 }
 
 export interface Plan {

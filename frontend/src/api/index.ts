@@ -120,6 +120,12 @@ export const campaignApi = {
 // ── Role ─────────────────────────────────────────────────────────────────────
 
 export const roleApi = {
+  list: () => api.get('/roles'),
+  allPermissions: () => api.get('/roles/permissions'),
+  create: (d: Record<string, unknown>) => api.post('/roles', d),
+  update: (id: number, d: Record<string, unknown>) => api.put(`/roles/${id}`, d),
+  delete: (id: number) => api.delete(`/roles/${id}`),
+  // Legacy aliases kept so existing callers don't break
   companyRoles: () => api.get('/roles'),
   createCompanyRole: (d: { label: string; permissions: string[] }) => api.post('/roles', d),
   updateCompanyRole: (id: number, d: { label: string; permissions: string[] }) => api.put(`/roles/${id}`, d),

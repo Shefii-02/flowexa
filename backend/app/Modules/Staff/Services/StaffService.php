@@ -142,8 +142,8 @@ class StaffService
     }
 
     // ─── Available roles ──────────────────────────────────────────────────────
-    public function roles(): Collection
+    public function roles(?int $companyId = null): Collection
     {
-        return $this->staffRepository->getRoles();
+        return $this->staffRepository->getRoles($companyId);
     }
 }

@@ -20,11 +20,17 @@ class UserResource extends JsonResource
             'last_login' => $this->last_login_at?->toIso8601String(),
             'created_at' => $this->created_at->toIso8601String(),
 
+            // Flat permissions array for fast frontend checks
+            'permissions' => $this->role?->permissions ?? [],
+
             // Role with permissions
             'role' => $this->whenLoaded('role', fn() => [
                 'id'          => $this->role->id,
                 'name'        => $this->role->name,
                 'label'       => $this->role->label,
+                'description' => $this->role->description,
+                'color'       => $this->role->color ?? '#6366f1',
+                'is_system'   => $this->role->is_system,
                 'permissions' => $this->role->permissions,
             ]),
 

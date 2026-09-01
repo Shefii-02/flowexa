@@ -167,10 +167,20 @@ Route::prefix('v1')->group(function () {
         // ── Message Logs ─────────────────────────────────────────────────────────
         Route::get('message-logs', [MessageLogController::class, 'index'])->name('message-logs.index');
         Route::get('message-logs/{log}', [MessageLogController::class, 'show'])->name('message-logs.show');
-        // ── Roles (read-only for company users) ──────────────────────────────────
+        // ── Roles ─────────────────────────────────────────────────────────────────
         Route::prefix('roles')->name('roles.')->group(function () {
-            Route::get('/', [RoleController::class, 'index'])->name('index');
-            Route::get('/{role}', [RoleController::class, 'show'])->name('show');
+            // READ — available to all authenticated users
+            Route::get('/',           [RoleController::class, 'index'])->name('index');
+            // /permissions MUST come before /{role} to avoid route conflict
+            Route::get('/permissions',[RoleController::class, 'allPermissions'])->name('permissions');
+            Route::get('/{role}',     [RoleController::class, 'show'])->name('show');
+
+            // WRITE — restricted to role managers
+            Route::middleware('permission:role_management.manage')->group(function () {
+                Route::post('/',         [RoleController::class, 'store'])->name('store');
+                Route::put('/{role}',    [RoleController::class, 'update'])->name('update');
+                Route::delete('/{role}', [RoleController::class, 'destroy'])->name('destroy');
+            });
         });
 
         // ── Staff ────────────────────────────────────────────────────────────────

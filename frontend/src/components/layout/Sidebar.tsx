@@ -144,6 +144,7 @@ export const Sidebar = () => {
   const sidebarOpen = useAppSelector((s) => s.ui.sidebarOpen)
   const isSuperAdmin = useIsSuperAdmin()
   const canViewStaff = usePermission('staff.view')
+  const canManageRoles = usePermission('role_management.manage')
   const canViewFlow = usePermission('flow.view')
   const canViewCamp = usePermission('campaigns.view')
   const canViewBill = usePermission('billing.view')
@@ -267,6 +268,7 @@ export const Sidebar = () => {
 
             <p className="text-xs font-medium text-gray-400 uppercase tracking-wide px-2 pt-3 pb-1">Manage</p>
             {canViewStaff && <NavItem to="/staff" icon="👤" label="Staff" />}
+            {canManageRoles && <NavItem to="/staff/roles" icon="🛡️" label="Roles" />}
             {canViewBill && waConfig == 'wallet' && <NavItem to="/wallet" icon="💳" label="Wallet" />}
             <NavItem to="/otp" icon="🔐" label="OTP service" />
             <NavItem to="/phone-numbers" icon="📱" label="Phone numbers" />
