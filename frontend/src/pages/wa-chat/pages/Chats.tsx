@@ -803,13 +803,34 @@ export function Chats() {
     }
     setProfileCardLoading(true);
     const phone = activeChat.id.split('@')[0];
+    // Fetch contact info and all session groups in parallel, then for each group
+    // check if this contact is a participant (joined groups only).
     Promise.all([
       api.get(`/contacts?search=${encodeURIComponent(phone)}&per_page=1`).catch(() => null),
       selectedSessionId ? sessionApi.getGroups(selectedSessionId).catch(() => [] as { id: string; name: string }[]) : Promise.resolve([] as { id: string; name: string }[]),
-    ]).then(([contactRes, groups]) => {
+    ]).then(async ([contactRes, groups]) => {
       const contacts = contactRes?.data?.data ?? contactRes?.data ?? [];
       setProfileContact(contacts.length > 0 ? contacts[0] : null);
-      setProfileGroups(groups ?? []);
+
+      if (!groups || groups.length === 0) {
+        setProfileGroups([]);
+        setProfileCardLoading(false);
+        return;
+      }
+
+      // Cap at 40 groups to avoid flooding WAHA with requests
+      const capped = (groups as { id: string; name: string }[]).slice(0, 40);
+      const infos = await Promise.allSettled(
+        capped.map(g => sessionApi.getGroupInfo(selectedSessionId!, g.id).catch(() => null))
+      );
+
+      const joinedGroups = capped.filter((g, i) => {
+        const res = infos[i];
+        if (res.status !== 'fulfilled' || !res.value) return false;
+        return res.value.participants?.some((p: { number: string }) => p.number === phone);
+      });
+
+      setProfileGroups(joinedGroups);
       setProfileCardLoading(false);
     });
   }, [showProfileCard, activeChat?.id, selectedSessionId]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -1030,24 +1051,24 @@ export function Chats() {
                           </div>
                         )}
 
-                        {/* Groups */}
+                        {/* Joined Groups */}
                         <div style={{ padding: '14px 16px' }}>
                           <div style={{ fontSize: 11, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
-                            <Users size={12} /> Groups in this session
+                            <Users size={12} /> Joined Groups
                           </div>
                           {profileGroups.length > 0 ? (
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                              {profileGroups.slice(0, 8).map(g => (
-                                <div key={g.id} style={{ fontSize: 13, color: '#374151', padding: '4px 8px', background: '#f9fafb', borderRadius: 6 }}>
-                                  👥 {g.name}
+                              {profileGroups.slice(0, 10).map(g => (
+                                <div key={g.id} style={{ fontSize: 13, color: '#374151', padding: '5px 8px', background: '#f0fdf4', borderRadius: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
+                                  <span style={{ color: '#16a34a' }}>👥</span> {g.name}
                                 </div>
                               ))}
-                              {profileGroups.length > 8 && (
-                                <p style={{ fontSize: 12, color: '#9ca3af' }}>+{profileGroups.length - 8} more groups</p>
+                              {profileGroups.length > 10 && (
+                                <p style={{ fontSize: 12, color: '#9ca3af' }}>+{profileGroups.length - 10} more</p>
                               )}
                             </div>
                           ) : (
-                            <p style={{ fontSize: 13, color: '#9ca3af' }}>No groups found</p>
+                            <p style={{ fontSize: 13, color: '#9ca3af' }}>Not in any shared groups</p>
                           )}
                         </div>
                       </>

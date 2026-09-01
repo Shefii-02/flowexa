@@ -1,10 +1,11 @@
 // src/components/layout/Sidebar.tsx
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { NavLink, useNavigate, useLocation } from 'react-router-dom'
 import { useAppDispatch, useAppSelector, useIsSuperAdmin, usePermission } from '@/store'
 import { logoutThunk, toggleSidebar } from '@/store/slices'
 import { cn, fmt } from '@/utils'
 import { toast } from 'react-hot-toast'
+import { api } from '@/api/client'
 
 const NavItem = ({ to, icon, label, badge, end = false, }: { to: string; icon: string; label: string; badge?: number; end?: boolean }) => (
   <NavLink
@@ -20,21 +21,79 @@ const NavItem = ({ to, icon, label, badge, end = false, }: { to: string; icon: s
   </NavLink>
 )
 
-// Collapsible nav group. Auto-opens when the current route is under `basePath`.
+// ── WA Session picker ──────────────────────────────────────────────────────────
+
+type WaSessionItem = { id: string; name: string; status?: string }
+
+function WaSessionSelector() {
+  const [sessions, setSessions] = useState<WaSessionItem[]>([])
+  const [selected, setSelected] = useState(() => localStorage.getItem('wa_session_id') ?? '')
+
+  useEffect(() => {
+    api.get('/waha/sessions').then(r => {
+      const raw: unknown[] = r.data?.data ?? r.data ?? []
+      setSessions(
+        (raw as Record<string, string>[]).map(s => ({
+          id:     s.session_id ?? s.name ?? '',
+          name:   s.session_name ?? s.name ?? s.session_id ?? '',
+          status: s.status,
+        })).filter(s => s.id)
+      )
+    }).catch(() => {})
+  }, [])
+
+  const onChange = (id: string) => {
+    setSelected(id)
+    localStorage.setItem('wa_session_id', id)
+    window.dispatchEvent(new Event('wa-session-change'))
+  }
+
+  if (sessions.length === 0) return null
+
+  return (
+    <div className="px-1 py-1.5">
+      <div className="text-[10px] font-medium text-gray-400 uppercase tracking-wide mb-1 px-1">Active session</div>
+      <select
+        value={selected}
+        onChange={e => onChange(e.target.value)}
+        className="w-full text-xs px-2 py-1.5 border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-1 focus:ring-brand-300 text-gray-700"
+      >
+        <option value="">All sessions</option>
+        {sessions.map(s => (
+          <option key={s.id} value={s.id}>
+            📱 {s.name}{s.status ? ` · ${s.status}` : ''}
+          </option>
+        ))}
+      </select>
+    </div>
+  )
+}
+
+// ── Collapsible nav group ───────────────────────────────────────────────────────
+// Auto-opens when the current route starts with basePath OR any extraBasePaths.
+
 const NavGroup = ({
   icon,
   label,
   basePath,
+  extraBasePaths = [],
+  extra,
   children,
 }: {
   icon: string
   label: string
   basePath: string
-  children: { to: string; label: string }[]
+  extraBasePaths?: string[]
+  extra?: React.ReactNode
+  children: { to: string; label: string; divider?: boolean }[]
 }) => {
   const location = useLocation()
-  const isSectionActive = location.pathname.startsWith(basePath)
+  const isSectionActive = [basePath, ...extraBasePaths].some(p => location.pathname.startsWith(p))
   const [open, setOpen] = useState(isSectionActive)
+
+  useEffect(() => {
+    if (isSectionActive) setOpen(true)
+  }, [isSectionActive])
 
   return (
     <div>
@@ -56,15 +115,22 @@ const NavGroup = ({
       </button>
       {open && (
         <div className="ml-4 pl-2 border-l border-gray-100 space-y-0.5 mt-0.5">
-          {children.map((c) => (
-            <NavLink
-              key={c.to}
-              to={c.to}
-              className={({ isActive }) => cn('nav-link', isActive && 'nav-link-active')}
-            >
-              <span className="flex-1">{c.label}</span>
-            </NavLink>
-          ))}
+          {extra && <div className="pb-1">{extra}</div>}
+          {children.map((c, i) =>
+            c.divider ? (
+              <div key={i} className="pt-1.5 pb-0.5">
+                <div className="text-[10px] font-medium text-gray-400 uppercase tracking-wide px-1">WA Agent</div>
+              </div>
+            ) : (
+              <NavLink
+                key={c.to}
+                to={c.to}
+                className={({ isActive }) => cn('nav-link', isActive && 'nav-link-active')}
+              >
+                <span className="flex-1">{c.label}</span>
+              </NavLink>
+            )
+          )}
         </div>
       )}
     </div>
@@ -160,21 +226,33 @@ export const Sidebar = () => {
               icon="💬"
               label="WA Chat"
               basePath="/wa-chat"
+              extraBasePaths={['/wa-agent']}
+              extra={<WaSessionSelector />}
               children={[
-                { to: '/wa-chat/dashboard', label: '📊 Dashboard' },
-                { to: '/wa-chat/sessions', label: '📱 Sessions' },
-                { to: '/wa-chat/chats', label: '💬 Chats' },
+                { to: '/wa-chat/dashboard',      label: '📊 Dashboard' },
+                { to: '/wa-chat/sessions',       label: '📱 Sessions' },
+                { to: '/wa-chat/chats',          label: '💬 Chats' },
                 { to: '/wa-chat/message-sender', label: '📨 Message Sender' },
-                { to: '/wa-chat/plugins', label: '🔌 Plugin' },
-                { to: '/wa-chat/webhooks', label: '🔗 Webhooks' },
-                { to: '/wa-chat/templates', label: '📋 Templates' },
-                { to: '/wa-chat/logs', label: '📜 Logs' },
-                { to: '/wa-chat/otp-service', label: '🔐 OTP Service' },
-                { to: '/wa-chat/export', label: '📥 Data Export' },
-                { to: '/wa-chat/api-keys', label: '🔑 API Keys' },
+                { to: '/wa-chat/plugins',        label: '🔌 Plugin' },
+                { to: '/wa-chat/webhooks',       label: '🔗 Webhooks' },
+                { to: '/wa-chat/templates',      label: '📋 Templates' },
+                { to: '/wa-chat/logs',           label: '📜 Logs' },
+                { to: '/wa-chat/otp-service',    label: '🔐 OTP Service' },
+                { to: '/wa-chat/export',         label: '📥 Data Export' },
+                { to: '/wa-chat/media-library',  label: '🗂️ Media Library' },
+                { to: '/wa-chat/api-keys',       label: '🔑 API Keys' },
+                { to: '/wa-chat/automation',     label: '⚡ Automation' },
+                // ── WA Agent ──
+                { to: '', label: '', divider: true },
+                { to: '/wa-agent/automations',        label: '⚡ Automations' },
+                { to: '/wa-agent/knowledge-base',     label: '📚 Knowledge Base' },
+                { to: '/wa-agent/pipelines',          label: '🔗 Pipelines' },
+                { to: '/wa-agent/ai-agent',           label: '🤖 AI Agent' },
+                { to: '/wa-agent/lead-intelligence',  label: '🔥 Lead Intelligence' },
+                { to: '/wa-agent/meta-ai',            label: '🧠 AI Config' },
+                { to: '/wa-agent/logs',               label: '📋 Logs' },
               ]}
             />
-            <NavItem to="/wa-agent" icon="🤖" label="WA Agent" />
             <p className="text-xs font-medium text-gray-400 uppercase tracking-wide px-2 pt-3 pb-1">Engage</p>
             <NavItem to="/contacts" icon="👥" label="Contacts" />
             <NavItem to="/labels" icon="🏷️" label="Labels" />
@@ -208,6 +286,7 @@ export const Sidebar = () => {
 
             <p className="text-xs font-medium text-gray-400 uppercase tracking-wide px-2 pt-3 pb-1">Account</p>
             <NavItem to="/settings" icon="⚙️" label="Settings" />
+            <NavItem to="/settings/api-keys" icon="🔑" label="AI API Keys" />
 
 
 

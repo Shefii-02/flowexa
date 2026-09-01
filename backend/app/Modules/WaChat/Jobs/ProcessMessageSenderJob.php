@@ -27,27 +27,22 @@ class ProcessMessageSenderJob implements ShouldQueue
 
         $job->update(['status' => 'running', 'started_at' => $job->started_at ?? now()]);
 
-        $wahaBase = rtrim(config('services.waha.base_url', env('WAHA_BASE_URL', 'http://localhost:3000')), '/');
-        $wahaKey  = config('services.waha.api_key', env('WAHA_API_KEY', ''));
-        $payload  = $job->message_payload ?? [];
+        $wahaBase   = rtrim(config('services.waha.base_url', env('WAHA_BASE_URL', 'http://localhost:3000')), '/');
+        $wahaKey    = config('services.waha.api_key', env('WAHA_API_KEY', ''));
+        $payload    = $job->message_payload ?? [];
         $recipients = $payload['recipients'] ?? [];
-        $delayMs  = max((int)($job->delay_ms ?? 1000), 500);
+        $delayMs    = max((int)($job->delay_ms ?? 1000), 500);
+        $msgType    = $payload['type'] ?? 'text';
 
         foreach ($recipients as $index => $recipient) {
-            // Reload job to check for pause/stop
             $job->refresh();
             if (in_array($job->status, ['stopped', 'paused'])) break;
 
             $phone   = $recipient['phone'] ?? '';
             $name    = $recipient['name']  ?? '';
-            $message = $this->personalizeMessage($payload['text'] ?? '', $recipient);
+            $chatId  = str_contains($phone, '@') ? $phone : $phone . '@c.us';
 
-            // Append unique anti-spam signature if enabled
-            if ($job->unique_signature) {
-                $message .= $this->buildSignature($phone);
-            }
-
-            $logData = [
+            $logBase = [
                 'company_id'      => $job->company_id,
                 'job_id'          => $job->id,
                 'campaign_name'   => $job->campaign_name,
@@ -55,41 +50,71 @@ class ProcessMessageSenderJob implements ShouldQueue
                 'recipient_name'  => $name,
                 'recipient_phone' => $phone,
                 'recipient_type'  => str_ends_with($phone, '@g.us') ? 'group' : 'contact',
-                'message_type'    => $payload['type'] ?? 'text',
+                'message_type'    => $msgType,
                 'status'          => 'pending',
             ];
 
             try {
-                $wahaPayload = $this->buildWahaPayload($job->session_id, $phone, $message, $payload);
-                $res = Http::withHeaders(['X-API-Key' => $wahaKey])
-                    ->timeout(30)
-                    ->post("{$wahaBase}/api/sendText", $wahaPayload);
-
-                if ($res->successful()) {
-                    $wahaId = $res->json('id') ?? null;
-                    WahaMessageLog::create(array_merge($logData, [
-                        'status'          => 'sent',
-                        'waha_message_id' => $wahaId,
-                        'sent_at'         => now(),
-                    ]));
-                    $job->increment('sent');
+                if ($msgType === 'media' && !empty($payload['blocks'])) {
+                    // Send each media block sequentially
+                    $this->sendMediaBlocks(
+                        $wahaBase, $wahaKey, $job->session_id,
+                        $chatId, $payload['blocks'], $recipient,
+                        $job->unique_signature ?? false, $logBase, $job
+                    );
                 } else {
-                    WahaMessageLog::create(array_merge($logData, [
-                        'status'        => 'failed',
-                        'error_message' => $res->body(),
-                    ]));
-                    $job->increment('failed');
+                    // Plain text (or template body)
+                    $message = $this->personalizeMessage($payload['text'] ?? '', $recipient);
+                    if ($job->unique_signature) {
+                        $message .= $this->buildSignature($phone);
+                    }
+
+                    // If there is a single media header, send it first
+                    if (!empty($payload['header_type']) && $payload['header_type'] !== 'none' && !empty($payload['header_url'])) {
+                        $this->sendSingleMedia(
+                            $wahaBase, $wahaKey, $job->session_id,
+                            $chatId, $payload['header_type'], $payload['header_url'],
+                            $message
+                        );
+                        WahaMessageLog::create(array_merge($logBase, [
+                            'status'  => 'sent',
+                            'sent_at' => now(),
+                        ]));
+                        $job->increment('sent');
+                    } else {
+                        $res = Http::withHeaders(['X-API-Key' => $wahaKey])
+                            ->timeout(30)
+                            ->post("{$wahaBase}/api/sendText", [
+                                'session' => $job->session_id,
+                                'chatId'  => $chatId,
+                                'text'    => $message,
+                            ]);
+
+                        if ($res->successful()) {
+                            WahaMessageLog::create(array_merge($logBase, [
+                                'status'          => 'sent',
+                                'waha_message_id' => $res->json('id') ?? null,
+                                'sent_at'         => now(),
+                            ]));
+                            $job->increment('sent');
+                        } else {
+                            WahaMessageLog::create(array_merge($logBase, [
+                                'status'        => 'failed',
+                                'error_message' => $res->body(),
+                            ]));
+                            $job->increment('failed');
+                        }
+                    }
                 }
             } catch (\Exception $e) {
                 Log::error("ProcessMessageSenderJob #{$job->id}: " . $e->getMessage());
-                WahaMessageLog::create(array_merge($logData, [
+                WahaMessageLog::create(array_merge($logBase, [
                     'status'        => 'failed',
                     'error_message' => $e->getMessage(),
                 ]));
                 $job->increment('failed');
             }
 
-            // Delay between messages (convert ms to microseconds)
             if ($index < count($recipients) - 1) {
                 usleep($delayMs * 1000);
             }
@@ -99,6 +124,102 @@ class ProcessMessageSenderJob implements ShouldQueue
         if ($job->status === 'running') {
             $job->update(['status' => 'completed', 'completed_at' => now()]);
         }
+    }
+
+    private function sendMediaBlocks(
+        string $wahaBase, string $wahaKey, string $session,
+        string $chatId, array $blocks, array $recipient,
+        bool $uniqueSig, array $logBase, MessageSenderJob $job
+    ): void {
+        $phone = $recipient['phone'] ?? '';
+        $sent  = false;
+
+        foreach ($blocks as $i => $block) {
+            $type = $block['type'] ?? 'text';
+
+            if ($type === 'text') {
+                $text = $this->personalizeMessage($block['text'] ?? '', $recipient);
+                if ($uniqueSig && $i === 0) $text .= $this->buildSignature($phone);
+                $res = Http::withHeaders(['X-API-Key' => $wahaKey])
+                    ->timeout(30)
+                    ->post("{$wahaBase}/api/sendText", [
+                        'session' => $session,
+                        'chatId'  => $chatId,
+                        'text'    => $text,
+                    ]);
+                $sent = $res->successful();
+            } else {
+                $url  = $block['mediaUrl'] ?? $block['url'] ?? '';
+                if (!$url) continue;
+
+                $endpoint = match($type) {
+                    'image'    => 'sendImage',
+                    'video'    => 'sendVideo',
+                    'audio'    => 'sendVoice',
+                    'document' => 'sendDocument',
+                    default    => 'sendImage',
+                };
+
+                $mediaPayload = [
+                    'session' => $session,
+                    'chatId'  => $chatId,
+                    'file'    => ['url' => $url],
+                ];
+
+                if (!empty($block['caption'])) {
+                    $mediaPayload['caption'] = $this->personalizeMessage($block['caption'], $recipient);
+                }
+                if (!empty($block['filename'])) {
+                    $mediaPayload['filename'] = $block['filename'];
+                }
+
+                $res  = Http::withHeaders(['X-API-Key' => $wahaKey])
+                    ->timeout(60)
+                    ->post("{$wahaBase}/api/{$endpoint}", $mediaPayload);
+                $sent = $res->successful();
+            }
+
+            // Small inter-block delay
+            if ($i < count($blocks) - 1) {
+                usleep(600_000);
+            }
+        }
+
+        if ($sent) {
+            WahaMessageLog::create(array_merge($logBase, [
+                'status'  => 'sent',
+                'sent_at' => now(),
+            ]));
+            $job->increment('sent');
+        } else {
+            WahaMessageLog::create(array_merge($logBase, [
+                'status'        => 'failed',
+                'error_message' => 'No blocks sent successfully.',
+            ]));
+            $job->increment('failed');
+        }
+    }
+
+    private function sendSingleMedia(
+        string $wahaBase, string $wahaKey, string $session,
+        string $chatId, string $mediaType, string $url, string $caption = ''
+    ): void {
+        $endpoint = match($mediaType) {
+            'image'    => 'sendImage',
+            'video'    => 'sendVideo',
+            'audio'    => 'sendVoice',
+            'document' => 'sendDocument',
+            default    => 'sendImage',
+        };
+
+        $body = [
+            'session' => $session,
+            'chatId'  => $chatId,
+            'file'    => ['url' => $url],
+        ];
+        if ($caption) $body['caption'] = $caption;
+
+        Http::withHeaders(['X-API-Key' => $wahaKey])->timeout(60)->post("{$wahaBase}/api/{$endpoint}", $body);
     }
 
     private function personalizeMessage(string $text, array $recipient): string
@@ -117,15 +238,5 @@ class ProcessMessageSenderJob implements ShouldQueue
             $sig .= (ord($phone[$i]) % 2 === 0) ? "\u{200B}" : "\u{200C}";
         }
         return $sig;
-    }
-
-    private function buildWahaPayload(string $session, string $phone, string $message, array $payload): array
-    {
-        $chatId = str_contains($phone, '@') ? $phone : $phone . '@c.us';
-        return [
-            'session' => $session,
-            'chatId'  => $chatId,
-            'text'    => $message,
-        ];
     }
 }

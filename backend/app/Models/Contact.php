@@ -20,13 +20,24 @@ class Contact extends Model
         'company_id', 'phone', 'name', 'email', 'wa_id',
         'custom_fields', 'opted_in', 'opted_out_at',
         'last_message_at', 'crm_id',
+        // AI / lead intelligence fields
+        'lead_score', 'lead_score_updated_at', 'lead_stage',
+        'last_sentiment', 'detected_intent',
+        'buying_signals_count', 'objections_count',
+        'meta_ai_profile', 'conversation_summary', 'summary_updated_at',
     ];
 
     protected $casts = [
-        'custom_fields'   => 'array',
-        'opted_in'        => 'boolean',
-        'opted_out_at'    => 'datetime',
-        'last_message_at' => 'datetime',
+        'custom_fields'        => 'array',
+        'opted_in'             => 'boolean',
+        'opted_out_at'         => 'datetime',
+        'last_message_at'      => 'datetime',
+        'lead_score_updated_at'=> 'datetime',
+        'summary_updated_at'   => 'datetime',
+        'meta_ai_profile'      => 'array',
+        'lead_score'           => 'integer',
+        'buying_signals_count' => 'integer',
+        'objections_count'     => 'integer',
     ];
 
     // ── Relationships ─────────────────────────────────────────────────────────

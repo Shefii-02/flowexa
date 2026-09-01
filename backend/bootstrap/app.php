@@ -14,7 +14,22 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withCommands([
         \App\Modules\WaChat\Console\Commands\ProcessScheduledMessages::class,
+        \App\Modules\WaChat\Console\Commands\ProcessAutomations::class,
+        \App\Modules\WaChat\Console\Commands\ProcessFollowUps::class,
+        \App\Modules\WaChat\Console\Commands\ResetMonthlyUsage::class,
+        \App\Console\Commands\UpdateConversationSummaries::class,
+        \App\Console\Commands\RecalculateLeadScores::class,
+        \App\Console\Commands\CleanupOldAnalyses::class,
     ])
+    ->withSchedule(function (\Illuminate\Console\Scheduling\Schedule $schedule): void {
+        $schedule->command('wachat:process-scheduled-messages')->everyMinute();
+        $schedule->command('wachat:process-automations')->everyFiveMinutes();
+        $schedule->command('wachat:process-followups')->everyFifteenMinutes();
+        $schedule->command('ai:reset-monthly-tokens')->monthlyOn(1, '00:00');
+        $schedule->command('ai:update-summaries')->everySixHours();
+        $schedule->command('ai:recalculate-scores')->dailyAt('02:00');
+        $schedule->command('ai:cleanup-analyses')->weeklyOn(0, '03:00');
+    })
     ->withMiddleware(function (Middleware $middleware): void {
         //
         // ── Global API middleware ──────────────────────────────────────────────

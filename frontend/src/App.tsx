@@ -65,9 +65,21 @@ import MessageSender from '@/pages/wa-chat/pages/message-sender'
 import WaChatTemplatesPage from '@/pages/wa-chat/pages/WaChatTemplates'
 import WaOtpServicePage from '@/pages/wa-chat/pages/WaOtpService'
 import WaDataExportPage from '@/pages/wa-chat/pages/WaDataExport'
+import WaMediaLibraryPage from '@/pages/wa-chat/pages/WaMediaLibrary'
+import WaAutomationPage from '@/pages/wa-chat/pages/WaAutomation'
 
-// WA Agent (placeholder module)
-import WaAgentPage from '@/pages/wa-agent'
+// Settings pages
+import ApiKeysPage from '@/pages/settings/ApiKeysPage'
+
+// WA Agent module
+import WaAgentShell from '@/pages/wa-agent/WaAgentShell'
+import WaAgentAutomations from '@/pages/wa-agent/automations'
+import WaAgentKnowledgeBase from '@/pages/wa-agent/knowledge-base'
+import WaAgentPipelines from '@/pages/wa-agent/pipelines'
+import WaAgentAiAgent from '@/pages/wa-agent/ai-agent'
+import WaAgentLogs from '@/pages/wa-agent/logs'
+import LeadIntelligencePage from '@/pages/wa-agent/lead-intelligence'
+import MetaAiConfigPage from '@/pages/wa-agent/meta-ai-config'
 
 
 export const DashboardRouter = () => {
@@ -81,9 +93,6 @@ const SuperAdminRoute = ({ children }: { children: React.ReactNode }) => {
   const isSuperAdmin = useIsSuperAdmin()
   if (!isSuperAdmin) {
     return <Navigate to="/dashboard" replace />
-  }
-  else {
-    return <Navigate to="/superadmin" replace />
   }
   return <>{children}</>
 }
@@ -116,7 +125,7 @@ export default function App() {
             <Route index element={<RoleBasedRedirect />} />
 
             {/* Main app */}
-            <Route path="dashboard" element={<SuperAdminRoute><DashboardRouter /></SuperAdminRoute>} />
+            <Route path="dashboard" element={<DashboardRouter />} />
 
             {/* WA Chat module (embedded WAHA dashboard → unichatwa.univexa.in) */}
             <Route path="wa-chat" element={<WaChatShell />}>
@@ -131,11 +140,22 @@ export default function App() {
               <Route path="logs" element={<WaChatLogs />} />
               <Route path="otp-service" element={<WaOtpServicePage />} />
               <Route path="export" element={<WaDataExportPage />} />
+              <Route path="media-library" element={<WaMediaLibraryPage />} />
               <Route path="api-keys" element={<RequireWaAdmin><WaChatApiKeys /></RequireWaAdmin>} />
+              <Route path="automation" element={<WaAutomationPage />} />
             </Route>
 
-            {/* WA Agent (placeholder) */}
-            <Route path="wa-agent" element={<WaAgentPage />} />
+            {/* WA Agent module */}
+            <Route path="wa-agent" element={<WaAgentShell />}>
+              <Route index element={<Navigate to="automations" replace />} />
+              <Route path="automations"       element={<WaAgentAutomations />} />
+              <Route path="knowledge-base"  element={<WaAgentKnowledgeBase />} />
+              <Route path="pipelines"       element={<WaAgentPipelines />} />
+              <Route path="ai-agent"        element={<WaAgentAiAgent />} />
+              <Route path="lead-intelligence" element={<LeadIntelligencePage />} />
+              <Route path="meta-ai"         element={<MetaAiConfigPage />} />
+              <Route path="logs"            element={<WaAgentLogs />} />
+            </Route>
 
             <Route path="staff" element={<StaffPage />} />
             <Route path="contacts" element={<ContactsPage />} />
@@ -148,6 +168,7 @@ export default function App() {
             <Route path="wallet" element={<WalletPage />} />
             <Route path="analytics" element={<AnalyticsPage />} />
             <Route path="settings" element={<SettingsPage />} />
+            <Route path="settings/api-keys" element={<ApiKeysPage />} />
             <Route path="otp" element={<OtpPage />} />
             <Route path="message-logs" element={<MessageLogsPage />} />
             <Route path='inbox' element={<InboxPage />} />

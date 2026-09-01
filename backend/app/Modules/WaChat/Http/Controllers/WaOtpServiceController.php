@@ -8,6 +8,7 @@ use App\Modules\WaChat\Models\WaAuthMessage;
 use App\Modules\WaChat\Models\WaOtpLog;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 
 class WaOtpServiceController extends Controller
@@ -98,6 +99,78 @@ class WaOtpServiceController extends Controller
         ]);
         $msg->update($data);
         return response()->json(['message' => 'Auth message updated.', 'data' => $msg]);
+    }
+
+    public function testSend(Request $request): JsonResponse
+    {
+        $request->validate([
+            'phone' => 'required|string',
+        ]);
+
+        $service = WaOtpService::where('company_id', auth()->user()->company_id)
+            ->first();
+
+        if (!$service) {
+            return response()->json(['success' => false, 'error' => 'OTP service not configured yet.'], 422);
+        }
+        if (!$service->session_id) {
+            return response()->json(['success' => false, 'error' => 'No WhatsApp session configured. Set one in Settings.'], 422);
+        }
+
+        // Generate test OTP
+        $length = $service->otp_length ?? 6;
+        $otp    = str_pad((string) random_int(0, (int) pow(10, $length) - 1), $length, '0', STR_PAD_LEFT);
+
+        // Build message
+        $template = $service->otp_message_template ?? 'Your OTP is {{otp}}. Valid for {{expiry}} minutes.';
+        $message  = str_replace(['{{otp}}', '{{expiry}}'], [$otp, $service->otp_expiry_minutes ?? 10], $template);
+
+        // Format phone → WhatsApp chat ID
+        $phone  = preg_replace('/[^0-9]/', '', $request->phone);
+        $chatId = $phone . '@c.us';
+
+        $wahaBase = rtrim(config('services.waha.base_url', env('WAHA_BASE_URL', 'http://localhost:3000')), '/');
+        $wahaKey  = config('services.waha.api_key', env('WAHA_API_KEY', ''));
+
+        $start = microtime(true);
+        try {
+            $res = Http::withHeaders(['X-API-Key' => $wahaKey])
+                ->timeout(10)
+                ->post("{$wahaBase}/api/sendText", [
+                    'session' => $service->session_id,
+                    'chatId'  => $chatId,
+                    'text'    => $message,
+                ]);
+
+            $ms = (int) ((microtime(true) - $start) * 1000);
+
+            if ($res->successful()) {
+                // Log the test send
+                WaOtpLog::create([
+                    'company_id'  => $service->company_id,
+                    'service_id'  => $service->id,
+                    'phone'       => $phone,
+                    'action'      => 'sent',
+                    'ip_address'  => $request->ip(),
+                    'domain'      => 'dashboard-test',
+                    'response_ms' => $ms,
+                ]);
+                return response()->json([
+                    'success' => true,
+                    'otp'     => $otp,
+                    'phone'   => $phone,
+                    'message' => $message,
+                    'ms'      => $ms,
+                ]);
+            }
+
+            return response()->json([
+                'success' => false,
+                'error'   => 'WAHA returned ' . $res->status() . ': ' . $res->body(),
+            ], 422);
+        } catch (\Exception $e) {
+            return response()->json(['success' => false, 'error' => $e->getMessage()], 500);
+        }
     }
 
     public function logs(Request $request): JsonResponse

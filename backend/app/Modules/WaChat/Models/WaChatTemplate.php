@@ -14,10 +14,10 @@ class WaChatTemplate extends Model
     protected $fillable = [
         'company_id', 'name', 'category', 'language',
         'header_type', 'header_content', 'body', 'footer',
-        'buttons', 'status', 'created_by',
+        'buttons', 'media_blocks', 'status', 'created_by',
     ];
 
-    protected $casts = ['buttons' => 'array'];
+    protected $casts = ['buttons' => 'array', 'media_blocks' => 'array'];
 
     public function company(): BelongsTo { return $this->belongsTo(Company::class); }
     public function creator(): BelongsTo { return $this->belongsTo(User::class, 'created_by'); }

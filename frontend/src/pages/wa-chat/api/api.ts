@@ -772,7 +772,9 @@ export const sessionApi = {
     }),
   getStats: () => request<SessionStats>('/sessions/stats/overview'),
   getGroups: (id: string) =>
-    request<{ id: string; name: string; linkedParentJID?: string | null }[]>(`/sessions/${id}/groups`),
+    request<{ id: string; name: string; participantsCount?: number; linkedParentJID?: string | null }[]>(`/sessions/${id}/groups`),
+  getGroupInfo: (sessionId: string, groupId: string) =>
+    request<{ id: string; name: string; participants: { id: string; number: string; name?: string; isAdmin: boolean; isSuperAdmin: boolean }[] }>(`/sessions/${sessionId}/groups/${encodeURIComponent(groupId)}`),
   getChats: (id: string) => request<Chat[]>(`/sessions/${id}/chats`),
   markChatRead: (id: string, chatId: string) =>
     request<{ success: boolean }>(`/sessions/${id}/chats/read`, {

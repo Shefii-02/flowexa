@@ -4,9 +4,12 @@ namespace App\Modules\WaChat\Http\Controllers;
 
 use App\Http\Controllers\Controller;
 use App\Modules\WaChat\Models\WahaSession;
+use App\Modules\WaChat\Services\AutomationEngine;
+use App\Modules\WaChat\Services\Rag\RagOrchestrator;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 
 class WahaSessionController extends Controller
 {
@@ -110,10 +113,29 @@ class WahaSessionController extends Controller
         $payload = $request->input('payload', []);
 
         $session = WahaSession::where('session_name', $name)->first();
+
         if ($session && $event === 'session.status') {
             $status = $payload['status'] ?? 'disconnected';
             $phone  = $payload['phone'] ?? $session->phone;
             $session->update(['status' => $status, 'phone' => $phone, 'last_seen_at' => now()]);
+        }
+
+        // Run automation rules on inbound messages
+        if ($session && in_array($event, ['message', 'message.any', 'messages.upsert'])) {
+            $fromMe = $payload['fromMe'] ?? false;
+            if (!$fromMe) {
+                try {
+                    $eventData = [
+                        'session' => $name,
+                        'from'    => $payload['from'] ?? ($payload['chatId'] ?? null),
+                        'body'    => $payload['body'] ?? ($payload['text'] ?? ''),
+                        'type'    => $payload['type'] ?? 'text',
+                    ];
+                    app(AutomationEngine::class)->handleIncomingMessage($eventData);
+                } catch (\Exception $e) {
+                    Log::error('Webhook AutomationEngine error: ' . $e->getMessage());
+                }
+            }
         }
 
         return response()->json(['ok' => true]);

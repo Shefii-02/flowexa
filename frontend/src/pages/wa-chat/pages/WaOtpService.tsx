@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Copy, Loader2, RefreshCw, Shield, FileText, Activity } from 'lucide-react';
+import { Copy, Loader2, RefreshCw, Shield, FileText, Activity, Send, CheckCircle, XCircle } from 'lucide-react';
 import { api } from '@/api/client';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { PageHeader } from '../components/PageHeader';
@@ -37,7 +37,7 @@ type OtpLog = {
   created_at: string;
 };
 
-const TABS = ['Overview', 'Settings', 'Auth Messages', 'Logs'] as const;
+const TABS = ['Overview', 'Test Send', 'Settings', 'Auth Messages', 'Logs'] as const;
 type Tab = typeof TABS[number];
 
 function useOtpService() {
@@ -125,6 +125,24 @@ export default function WaOtpServicePage() {
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['otp-auth-messages'] }); setEditingMsg(null); },
   });
 
+  const [testPhone, setTestPhone] = useState('');
+  const [testResult, setTestResult] = useState<{ success: boolean; otp?: string; message?: string; ms?: number; error?: string } | null>(null);
+  const [testLoading, setTestLoading] = useState(false);
+
+  const runTestSend = async () => {
+    if (!testPhone.trim()) return;
+    setTestLoading(true);
+    setTestResult(null);
+    try {
+      const r = await api.post('/otp-service/test-send', { phone: testPhone });
+      setTestResult(r.data);
+    } catch (e: any) {
+      setTestResult({ success: false, error: e.response?.data?.error ?? 'Send failed' });
+    } finally {
+      setTestLoading(false);
+    }
+  };
+
   const copyToken = () => {
     if (service?.api_token) navigator.clipboard.writeText(service.api_token);
   };
@@ -209,6 +227,77 @@ export default function WaOtpServicePage() {
             <div style={{ fontSize: 12, color: '#6b7280', marginTop: 8 }}>
               Use <code>Authorization: Bearer &lt;api_token&gt;</code> header in your app.
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Test Send ── */}
+      {activeTab === 'Test Send' && (
+        <div style={{ maxWidth: 520 }}>
+          <div style={{ border: '1px solid var(--border, #e5e7eb)', borderRadius: 12, padding: 24, marginBottom: 20 }}>
+            <div style={{ fontWeight: 600, marginBottom: 4 }}>Send a Test OTP</div>
+            <div style={{ fontSize: 13, color: '#6b7280', marginBottom: 20 }}>
+              Sends a real OTP message to the entered number using the configured WhatsApp session.
+              {service?.session_id
+                ? <span style={{ color: '#16a34a' }}> Session: <b>{service.session_id}</b></span>
+                : <span style={{ color: '#ef4444' }}> No session configured — go to Settings first.</span>}
+            </div>
+
+            <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 6 }}>Phone Number</div>
+                <input
+                  type="tel"
+                  value={testPhone}
+                  onChange={e => { setTestPhone(e.target.value); setTestResult(null); }}
+                  placeholder="e.g. 919876543210 (with country code)"
+                  style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--border, #e5e7eb)', borderRadius: 8, fontSize: 14, boxSizing: 'border-box' }}
+                />
+              </div>
+              <button
+                className="btn-primary"
+                onClick={runTestSend}
+                disabled={testLoading || !testPhone.trim() || !service?.session_id}
+                style={{ display: 'flex', gap: 6, alignItems: 'center', whiteSpace: 'nowrap' }}>
+                {testLoading ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
+                {testLoading ? 'Sending…' : 'Send OTP'}
+              </button>
+            </div>
+
+            {testResult && (
+              <div style={{
+                marginTop: 16, padding: 16, borderRadius: 10,
+                background: testResult.success ? '#f0fdf4' : '#fef2f2',
+                border: `1px solid ${testResult.success ? '#bbf7d0' : '#fecaca'}`,
+              }}>
+                {testResult.success ? (
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 600, color: '#16a34a', marginBottom: 10 }}>
+                      <CheckCircle size={18} /> OTP Sent Successfully!
+                    </div>
+                    <div style={{ display: 'grid', gap: 6, fontSize: 13 }}>
+                      <div><span style={{ color: '#6b7280' }}>OTP Code: </span>
+                        <code style={{ fontWeight: 700, fontSize: 16, letterSpacing: 3, color: '#111' }}>{testResult.otp}</code>
+                      </div>
+                      <div><span style={{ color: '#6b7280' }}>Message sent: </span><em>{testResult.message}</em></div>
+                      <div><span style={{ color: '#6b7280' }}>Response time: </span>{testResult.ms}ms</div>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, color: '#ef4444' }}>
+                    <XCircle size={18} style={{ flexShrink: 0, marginTop: 1 }} />
+                    <div>
+                      <div style={{ fontWeight: 600 }}>Send Failed</div>
+                      <div style={{ fontSize: 13, marginTop: 4 }}>{testResult.error}</div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div style={{ background: '#f3f4f6', borderRadius: 10, padding: 14, fontSize: 12, color: '#6b7280' }}>
+            <b>Note:</b> This sends a real WhatsApp message using your WAHA session. The OTP shown is for verification only — it is not saved to the database.
           </div>
         </div>
       )}

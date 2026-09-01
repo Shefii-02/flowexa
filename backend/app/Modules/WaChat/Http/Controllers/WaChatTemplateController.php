@@ -27,6 +27,7 @@ class WaChatTemplateController extends Controller
             'body'           => 'required|string',
             'footer'         => 'nullable|string|max:500',
             'buttons'        => 'nullable|array',
+            'media_blocks'   => 'nullable|array',
             'status'         => 'nullable|in:draft,active,archived',
         ]);
 
@@ -56,6 +57,7 @@ class WaChatTemplateController extends Controller
             'body'           => 'sometimes|string',
             'footer'         => 'nullable|string|max:500',
             'buttons'        => 'nullable|array',
+            'media_blocks'   => 'nullable|array',
             'status'         => 'nullable|in:draft,active,archived',
         ]);
         $template->update($data);

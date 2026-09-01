@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use App\Models\CompanyApiKey;
 
 class Company extends Model
 {
@@ -31,6 +32,11 @@ class Company extends Model
         'meta_app_id',
         'wa_profile_id',
         'wa_webhook_token',
+        // AI provider config
+        'openai_key_id',
+        'anthropic_key_id',
+        'ai_provider',
+        'ai_model',
     ];
 
     protected $hidden = ['private_token', 'wa_access_token'];
@@ -144,5 +150,21 @@ class Company extends Model
     public function mediaAssets()
     {
         return $this->hasMany(MediaAsset::class);
+    }
+
+    // ── AI key relationships ───────────────────────────────────────────────────
+    public function apiKeys(): HasMany
+    {
+        return $this->hasMany(CompanyApiKey::class);
+    }
+
+    public function openaiKey(): BelongsTo
+    {
+        return $this->belongsTo(CompanyApiKey::class, 'openai_key_id');
+    }
+
+    public function anthropicKey(): BelongsTo
+    {
+        return $this->belongsTo(CompanyApiKey::class, 'anthropic_key_id');
     }
 }

@@ -9,6 +9,7 @@ import {
 import { useSessionsQuery, useSessionGroupsQuery, useSessionChatsQuery } from '../../hooks/queries'
 import { messageApi, contactApi } from '../../api/api'
 import api from '@/api/client'
+import MediaPickerModal from '@/components/MediaPickerModal'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -71,9 +72,18 @@ interface ServerJob {
   log: { recipient_name: string; phone: string; status: string; sent_at?: string; error?: string }[]
 }
 
-interface WaTemplate { id: number; name: string; body: string; header?: string | null; footer?: string | null; category?: string }
+interface WaTemplate {
+  id: number
+  name: string
+  body: string
+  header_type?: 'none' | 'text' | 'image' | 'video' | 'audio' | 'document' | null
+  header_content?: string | null
+  media_blocks?: MessageBlock[] | null
+  footer?: string | null
+  category?: string
+  status?: string
+}
 interface PaContact { id: number; name: string | null; phone: string }
-interface MediaFile { id: string; name: string; url: string; type: string; folder: string }
 
 type ExtraPayload =
   | { kind: 'poll'; question: string; options: string[] }
@@ -225,8 +235,7 @@ export function MessageSender() {
   const [mediaBlocks, setMediaBlocks] = useState<MessageBlock[]>([{ id: '1', type: 'text', text: '' }])
   const [waTemplates, setWaTemplates] = useState<WaTemplate[]>([])
   const [selectedTemplate, setSelectedTemplate] = useState<WaTemplate | null>(null)
-  const [mediaLibrary, setMediaLibrary] = useState<MediaFile[]>([])
-  const [mediaLibOpen, setMediaLibOpen] = useState(false)
+  const [pickerBlockId, setPickerBlockId] = useState<string | null>(null)
 
   // ITEM 1 — Emoji picker
   const [showEmoji, setShowEmoji] = useState(false)
@@ -289,6 +298,8 @@ export function MessageSender() {
   const [historyLoading, setHistoryLoading] = useState(false)
   const [historyFilter, setHistoryFilter] = useState({ status: '', dateFrom: '', dateTo: '' })
   const [expandedHistory, setExpandedHistory] = useState<number | null>(null)
+  const [drawerJob, setDrawerJob] = useState<ServerJob | null>(null)
+  const [historyActionLoading, setHistoryActionLoading] = useState<number | null>(null)
 
   // --- Queries ---
   const { data: sessions = [] } = useSessionsQuery()
@@ -307,10 +318,12 @@ export function MessageSender() {
     if (activeSessions.length > 0 && !session) setSession(activeSessions[0].id)
   }, [activeSessions, session])
 
-  // WA templates + media library from Project A
+  // WA Chat templates from Project A (wa-chat-templates endpoint, includes media_blocks)
   useEffect(() => {
-    api.get('/wa-templates').then(r => setWaTemplates(r.data?.data ?? r.data ?? [])).catch(() => {})
-    api.get('/media-library').then(r => setMediaLibrary(r.data?.data ?? r.data ?? [])).catch(() => {})
+    api.get('/wa-chat-templates').then(r => {
+      const all: WaTemplate[] = r.data?.data ?? r.data ?? []
+      setWaTemplates(all.filter(t => t.status !== 'archived'))
+    }).catch(() => {})
   }, [])
 
   // Contact search
@@ -518,7 +531,6 @@ export function MessageSender() {
       const res = await api.post('/media-library/upload', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
       const url = res.data?.url ?? res.data?.data?.url ?? ''
       updateBlock(blockId, { mediaUrl: url })
-      setMediaLibrary(prev => [...prev, res.data?.data ?? { id: Date.now().toString(), name: file.name, url, type: file.type, folder: 'uploads' }])
     } catch { /* silent */ }
   }
 
@@ -716,6 +728,22 @@ export function MessageSender() {
       if (!templateText.trim()) return
     } else if (composerTab === 'template' && selectedTemplate) {
       templateText = selectedTemplate.body
+      // If template has media blocks, treat it as a media send
+      const tplBlocks: MessageBlock[] = []
+      // 1. Header media (image/video/document)
+      const ht = selectedTemplate.header_type
+      if (ht && ht !== 'none' && ht !== 'text' && selectedTemplate.header_content) {
+        tplBlocks.push({ id: 'h', type: ht as MessageBlock['type'], mediaUrl: selectedTemplate.header_content, caption: selectedTemplate.body })
+      }
+      // 2. Body as text if there are extra media blocks
+      if ((selectedTemplate.media_blocks ?? []).length > 0) {
+        if (!tplBlocks.length) tplBlocks.push({ id: 'b', type: 'text', text: selectedTemplate.body })
+        tplBlocks.push(...(selectedTemplate.media_blocks ?? []))
+      }
+      if (tplBlocks.length > 0) {
+        templateText = `📋 ${selectedTemplate.name}`
+        extraPayload = { kind: 'media', blocks: tplBlocks }
+      }
     } else if (composerTab === 'poll') {
       const opts = pollOptions.filter(o => o.trim())
       if (!pollQuestion.trim() || opts.length < 2) return
@@ -807,6 +835,39 @@ export function MessageSender() {
   const handlePause = () => { pauseRef.current = true }
   const handleResume = () => { pauseRef.current = false }
   const handleStop = () => { abortRef.current = true; pauseRef.current = false }
+
+  const refreshServerHistory = () => {
+    api.get('/message-sender/jobs')
+      .then(r => setServerHistory(r.data?.data ?? r.data ?? []))
+      .catch(() => {})
+  }
+
+  const handleHistoryPause = async (id: number) => {
+    setHistoryActionLoading(id)
+    try {
+      await api.post(`/message-sender/${id}/pause`)
+      refreshServerHistory()
+    } catch { /* silent */ }
+    finally { setHistoryActionLoading(null) }
+  }
+
+  const handleHistoryResume = async (id: number) => {
+    setHistoryActionLoading(id)
+    try {
+      await api.post(`/message-sender/${id}/resume`)
+      refreshServerHistory()
+    } catch { /* silent */ }
+    finally { setHistoryActionLoading(null) }
+  }
+
+  const handleHistoryStop = async (id: number) => {
+    setHistoryActionLoading(id)
+    try {
+      await api.post(`/message-sender/${id}/stop`)
+      refreshServerHistory()
+    } catch { /* silent */ }
+    finally { setHistoryActionLoading(null) }
+  }
 
   const isRunning = job.status === 'running'
   const isPaused = job.status === 'paused'
@@ -1176,23 +1237,12 @@ export function MessageSender() {
                                 accept={block.type === 'image' ? 'image/*' : block.type === 'video' ? 'video/*' : block.type === 'audio' ? 'audio/*' : '*/*'}
                                 onChange={e => { const f = e.target.files?.[0]; if (f) handleMediaUpload(block.id, f) }} />
                             </label>
-                            <button onClick={() => setMediaLibOpen(v => !v)} className="flex items-center gap-1 px-2 py-1 bg-gray-100 rounded text-xs hover:bg-gray-200">
-                              📁 Media Library
+                            <button
+                              onClick={() => setPickerBlockId(block.id)}
+                              className="flex items-center gap-1 px-2 py-1 bg-indigo-50 border border-indigo-200 text-indigo-700 rounded text-xs hover:bg-indigo-100 font-medium">
+                              🗂️ Browse Library
                             </button>
                           </div>
-                          {mediaLibOpen && (
-                            <div className="border border-gray-200 rounded-lg p-2 max-h-36 overflow-y-auto">
-                              {mediaLibrary.length === 0
-                                ? <p className="text-xs text-gray-400">No media uploaded yet.</p>
-                                : mediaLibrary.map(m => (
-                                  <button key={m.id} onClick={() => { updateBlock(block.id, { mediaUrl: m.url }); setMediaLibOpen(false) }}
-                                    className="flex items-center gap-2 w-full text-left px-2 py-1 hover:bg-gray-50 rounded text-xs">
-                                    <span className="flex-1 truncate">{m.name}</span>
-                                    <span className="text-gray-400">{m.folder}</span>
-                                  </button>
-                                ))}
-                            </div>
-                          )}
                           {block.type !== 'audio' && (
                             <input type="text" value={block.caption ?? ''} onChange={e => updateBlock(block.id, { caption: e.target.value })}
                               placeholder="Caption (optional)"
@@ -1220,16 +1270,50 @@ export function MessageSender() {
               {/* Template sub-tab */}
               {composerTab === 'template' && (
                 <div className="space-y-3">
-                  <select value={selectedTemplate?.id ?? ''} onChange={e => setSelectedTemplate(waTemplates.find(t => t.id === +e.target.value) ?? null)}
-                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-300">
-                    <option value="">Select a WA template…</option>
-                    {waTemplates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                  </select>
+                  {waTemplates.length === 0 ? (
+                    <p className="text-xs text-gray-400 py-2">No templates yet — create some in WA Chat → Templates.</p>
+                  ) : (
+                    <select value={selectedTemplate?.id ?? ''} onChange={e => setSelectedTemplate(waTemplates.find(t => t.id === +e.target.value) ?? null)}
+                      className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-300">
+                      <option value="">Select a template…</option>
+                      {waTemplates.map(t => (
+                        <option key={t.id} value={t.id}>
+                          {t.name}
+                          {t.header_type && t.header_type !== 'none' ? ` [${t.header_type}]` : ''}
+                          {t.media_blocks && t.media_blocks.length > 0 ? ` +${t.media_blocks.length} blocks` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  )}
                   {selectedTemplate && (
-                    <div className="bg-gray-50 rounded-lg p-3 text-sm space-y-1">
-                      {selectedTemplate.header && <p className="font-semibold text-gray-800">{selectedTemplate.header}</p>}
+                    <div className="bg-gray-50 rounded-lg p-3 text-sm space-y-2">
+                      {/* Header media badge */}
+                      {selectedTemplate.header_type && selectedTemplate.header_type !== 'none' && selectedTemplate.header_type !== 'text' && (
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs px-2 py-0.5 bg-indigo-50 text-indigo-700 rounded-full font-medium">
+                            {selectedTemplate.header_type === 'image' ? '🖼️' : selectedTemplate.header_type === 'video' ? '🎬' : selectedTemplate.header_type === 'audio' ? '🎵' : '📄'}
+                            {' '}{selectedTemplate.header_type} header
+                          </span>
+                          {selectedTemplate.header_content && selectedTemplate.header_type === 'image' && (
+                            <img src={selectedTemplate.header_content} alt="" className="h-8 w-8 object-cover rounded" />
+                          )}
+                        </div>
+                      )}
+                      {selectedTemplate.header_type === 'text' && selectedTemplate.header_content && (
+                        <p className="font-semibold text-gray-800">{selectedTemplate.header_content}</p>
+                      )}
                       <p className="text-gray-700 whitespace-pre-wrap">{selectedTemplate.body}</p>
                       {selectedTemplate.footer && <p className="text-xs text-gray-400">{selectedTemplate.footer}</p>}
+                      {/* Media blocks summary */}
+                      {selectedTemplate.media_blocks && selectedTemplate.media_blocks.length > 0 && (
+                        <div className="flex flex-wrap gap-1 pt-1 border-t border-gray-200">
+                          {selectedTemplate.media_blocks.map((b, i) => (
+                            <span key={i} className="text-xs px-2 py-0.5 bg-gray-100 rounded-full text-gray-600">
+                              {b.type === 'text' ? '💬' : b.type === 'image' ? '🖼️' : b.type === 'video' ? '🎬' : b.type === 'audio' ? '🎵' : '📄'} {b.type}
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   )}
                   {selectedTemplate && selectedRecipients.length > 0 && (
@@ -1671,47 +1755,93 @@ export function MessageSender() {
               {/* ITEM 3 — Server jobs (primary) */}
               {serverHistory
                 .filter(h => !historyFilter.status || h.status === historyFilter.status)
-                .map((h, idx) => (
-                  <div key={`srv-${h.id}`} className="border border-gray-100 rounded-lg overflow-hidden">
-                    <button onClick={() => setExpandedHistory(expandedHistory === idx ? null : idx)}
-                      className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-50 text-left">
-                      <div className="flex items-center gap-3 flex-wrap">
-                        <StatusBadge status={h.status} />
-                        {h.type && <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full capitalize">{h.type}</span>}
-                        <span className="text-xs font-semibold text-gray-700">{h.total} total</span>
-                        <span className="text-xs text-green-600 font-medium">✓ {h.sent} sent</span>
-                        {h.failed > 0 && <span className="text-xs text-red-500 font-medium">✗ {h.failed} failed</span>}
-                        {(h.total - h.sent - h.failed) > 0 && <span className="text-xs text-gray-400">{h.total - h.sent - h.failed} pending</span>}
-                        <span className="text-xs text-gray-300">{new Date(h.started_at).toLocaleString('en-IN')}</span>
-                        {h.session_id && <span className="text-xs text-gray-400">· {h.session_id}</span>}
+                .map((h, idx) => {
+                  const isActioning = historyActionLoading === h.id
+                  const canPause = h.status === 'running' || h.status === 'sending'
+                  const canResume = h.status === 'paused'
+                  const canStop = h.status !== 'stopped' && h.status !== 'done'
+                  return (
+                    <div key={`srv-${h.id}`} className="border border-gray-100 rounded-lg overflow-hidden">
+                      <div className="flex items-center justify-between px-4 py-3 hover:bg-gray-50">
+                        <button onClick={() => setExpandedHistory(expandedHistory === idx ? null : idx)}
+                          className="flex items-center gap-3 flex-wrap text-left flex-1 min-w-0">
+                          <StatusBadge status={h.status} />
+                          {h.type && <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full capitalize">{h.type}</span>}
+                          <span className="text-xs font-semibold text-gray-700">{h.total} total</span>
+                          <span className="text-xs text-green-600 font-medium">✓ {h.sent} sent</span>
+                          {h.failed > 0 && <span className="text-xs text-red-500 font-medium">✗ {h.failed} failed</span>}
+                          {(h.total - h.sent - h.failed) > 0 && <span className="text-xs text-gray-400">{h.total - h.sent - h.failed} pending</span>}
+                          <span className="text-xs text-gray-300">{new Date(h.started_at).toLocaleString('en-IN')}</span>
+                          {h.session_id && <span className="text-xs text-gray-400">· {h.session_id}</span>}
+                        </button>
+                        <div className="flex items-center gap-1.5 ml-3 flex-shrink-0">
+                          {/* Detail drawer button */}
+                          <button
+                            onClick={() => setDrawerJob(h)}
+                            title="View delivery details"
+                            className="flex items-center gap-1 px-2 py-1 text-xs bg-gray-100 text-gray-600 rounded hover:bg-gray-200">
+                            <Users size={11} /> Details
+                          </button>
+                          {/* Pause */}
+                          {canPause && (
+                            <button
+                              disabled={isActioning}
+                              onClick={() => handleHistoryPause(h.id)}
+                              title="Pause sending"
+                              className="flex items-center gap-1 px-2 py-1 text-xs bg-yellow-100 text-yellow-700 rounded hover:bg-yellow-200 disabled:opacity-50">
+                              <Pause size={11} /> Pause
+                            </button>
+                          )}
+                          {/* Resume */}
+                          {canResume && (
+                            <button
+                              disabled={isActioning}
+                              onClick={() => handleHistoryResume(h.id)}
+                              title="Resume sending"
+                              className="flex items-center gap-1 px-2 py-1 text-xs bg-green-100 text-green-700 rounded hover:bg-green-200 disabled:opacity-50">
+                              <Play size={11} /> Resume
+                            </button>
+                          )}
+                          {/* Stop */}
+                          {canStop && (
+                            <button
+                              disabled={isActioning}
+                              onClick={() => handleHistoryStop(h.id)}
+                              title="Stop permanently"
+                              className="flex items-center gap-1 px-2 py-1 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200 disabled:opacity-50">
+                              <Square size={11} /> Stop
+                            </button>
+                          )}
+                          {isActioning && <Loader2 size={14} className="animate-spin text-gray-400" />}
+                          {expandedHistory === idx
+                            ? <ChevronDown size={14} className="text-gray-400 cursor-pointer" onClick={() => setExpandedHistory(null)} />
+                            : <ChevronRight size={14} className="text-gray-400 cursor-pointer" onClick={() => setExpandedHistory(idx)} />}
+                        </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        {expandedHistory === idx ? <ChevronDown size={14} className="text-gray-400" /> : <ChevronRight size={14} className="text-gray-400" />}
-                      </div>
-                    </button>
-                    {expandedHistory === idx && (
-                      <div className="px-4 pb-3 border-t border-gray-100 overflow-x-auto">
-                        <table className="w-full text-xs mt-2">
-                          <thead><tr className="text-left text-gray-400">
-                            <th className="pb-1 pr-3">#</th><th className="pb-1 pr-3">Name</th><th className="pb-1 pr-3">Phone</th>
-                            <th className="pb-1 pr-3">Status</th><th className="pb-1">Sent At</th>
-                          </tr></thead>
-                          <tbody className="divide-y divide-gray-50">
-                            {(h.log ?? []).map((e, i) => (
-                              <tr key={i}>
-                                <td className="py-1.5 pr-3 text-gray-400">{i + 1}</td>
-                                <td className="py-1.5 pr-3 text-gray-800">{e.recipient_name}</td>
-                                <td className="py-1.5 pr-3 text-gray-500 font-mono">{e.phone}</td>
-                                <td className="py-1.5 pr-3"><StatusBadge status={e.status} /></td>
-                                <td className="py-1.5 text-gray-400">{e.sent_at ? new Date(e.sent_at).toLocaleTimeString() : '–'}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
-                  </div>
-                ))}
+                      {expandedHistory === idx && (
+                        <div className="px-4 pb-3 border-t border-gray-100 overflow-x-auto">
+                          <table className="w-full text-xs mt-2">
+                            <thead><tr className="text-left text-gray-400">
+                              <th className="pb-1 pr-3">#</th><th className="pb-1 pr-3">Name</th><th className="pb-1 pr-3">Phone</th>
+                              <th className="pb-1 pr-3">Status</th><th className="pb-1">Sent At</th>
+                            </tr></thead>
+                            <tbody className="divide-y divide-gray-50">
+                              {(h.log ?? []).map((e, i) => (
+                                <tr key={i} className="hover:bg-blue-50 cursor-pointer" onClick={() => setDrawerJob(h)}>
+                                  <td className="py-1.5 pr-3 text-gray-400">{i + 1}</td>
+                                  <td className="py-1.5 pr-3 text-gray-800">{e.recipient_name}</td>
+                                  <td className="py-1.5 pr-3 text-gray-500 font-mono">{e.phone}</td>
+                                  <td className="py-1.5 pr-3"><StatusBadge status={e.status} /></td>
+                                  <td className="py-1.5 text-gray-400">{e.sent_at ? new Date(e.sent_at).toLocaleTimeString() : '–'}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
 
               {/* localStorage fallback jobs (shown only if not already in server results) */}
               {history
@@ -1766,6 +1896,124 @@ export function MessageSender() {
           )}
         </div>
       )}
+
+      {/* ─── DELIVERY DETAILS DRAWER ──────────────────────────────────────────── */}
+      {drawerJob && (
+        <div className="fixed inset-0 z-50 flex">
+          {/* Backdrop */}
+          <div className="flex-1 bg-black/40" onClick={() => setDrawerJob(null)} />
+          {/* Panel */}
+          <div className="w-full max-w-lg bg-white shadow-xl flex flex-col h-full overflow-hidden">
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 bg-gray-50">
+              <div>
+                <h2 className="text-sm font-semibold text-gray-900">Delivery Details</h2>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  {new Date(drawerJob.started_at).toLocaleString('en-IN')}
+                  {drawerJob.session_id && ` · ${drawerJob.session_id}`}
+                </p>
+              </div>
+              <button onClick={() => setDrawerJob(null)} className="text-gray-400 hover:text-gray-700">
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Summary stats */}
+            <div className="grid grid-cols-4 gap-3 px-5 py-3 border-b border-gray-100">
+              {[
+                { label: 'Total', value: drawerJob.total, cls: 'text-gray-700' },
+                { label: 'Sent', value: drawerJob.sent, cls: 'text-green-600' },
+                { label: 'Failed', value: drawerJob.failed, cls: 'text-red-500' },
+                { label: 'Pending', value: Math.max(0, drawerJob.total - drawerJob.sent - drawerJob.failed), cls: 'text-yellow-600' },
+              ].map(s => (
+                <div key={s.label} className="text-center bg-gray-50 rounded-lg py-2">
+                  <div className={`text-base font-bold ${s.cls}`}>{s.value}</div>
+                  <div className="text-xs text-gray-400">{s.label}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* Status + action bar */}
+            <div className="flex items-center gap-2 px-5 py-2.5 border-b border-gray-100">
+              <StatusBadge status={drawerJob.status} />
+              <div className="flex-1" />
+              {(drawerJob.status === 'running' || drawerJob.status === 'sending') && (
+                <button
+                  disabled={historyActionLoading === drawerJob.id}
+                  onClick={() => handleHistoryPause(drawerJob.id)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 disabled:opacity-50">
+                  <Pause size={12} /> Pause
+                </button>
+              )}
+              {drawerJob.status === 'paused' && (
+                <button
+                  disabled={historyActionLoading === drawerJob.id}
+                  onClick={() => handleHistoryResume(drawerJob.id)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-green-500 text-white rounded-lg hover:bg-green-600 disabled:opacity-50">
+                  <Play size={12} /> Resume
+                </button>
+              )}
+              {drawerJob.status !== 'stopped' && drawerJob.status !== 'done' && (
+                <button
+                  disabled={historyActionLoading === drawerJob.id}
+                  onClick={() => handleHistoryStop(drawerJob.id)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-red-500 text-white rounded-lg hover:bg-red-600 disabled:opacity-50">
+                  <Square size={12} /> Stop
+                </button>
+              )}
+              {historyActionLoading === drawerJob.id && <Loader2 size={14} className="animate-spin text-gray-400" />}
+            </div>
+
+            {/* Per-recipient list */}
+            <div className="flex-1 overflow-y-auto">
+              {(drawerJob.log ?? []).length === 0 ? (
+                <p className="text-sm text-gray-400 text-center py-10">No recipient log available.</p>
+              ) : (
+                <table className="w-full text-xs">
+                  <thead className="sticky top-0 bg-white border-b border-gray-100 z-10">
+                    <tr className="text-left text-gray-400">
+                      <th className="px-5 py-2 font-medium">#</th>
+                      <th className="px-2 py-2 font-medium">Name</th>
+                      <th className="px-2 py-2 font-medium">Phone</th>
+                      <th className="px-2 py-2 font-medium">Status</th>
+                      <th className="px-2 py-2 font-medium">Sent At</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {(drawerJob.log ?? []).map((e, i) => (
+                      <tr key={i} className="hover:bg-gray-50">
+                        <td className="px-5 py-2.5 text-gray-400">{i + 1}</td>
+                        <td className="px-2 py-2.5 text-gray-800 font-medium">{e.recipient_name || '—'}</td>
+                        <td className="px-2 py-2.5 text-gray-500 font-mono">{e.phone}</td>
+                        <td className="px-2 py-2.5">
+                          <div className="space-y-0.5">
+                            <StatusBadge status={e.status} />
+                            {e.error && <div className="text-red-500 text-xs leading-tight mt-0.5 max-w-[140px] truncate" title={e.error}>{e.error}</div>}
+                          </div>
+                        </td>
+                        <td className="px-2 py-2.5 text-gray-400 whitespace-nowrap">
+                          {e.sent_at ? new Date(e.sent_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '—'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Media library picker — opens when user clicks "Browse Library" on any block */}
+      <MediaPickerModal
+        open={!!pickerBlockId}
+        onClose={() => setPickerBlockId(null)}
+        onSelect={(url) => {
+          if (pickerBlockId) updateBlock(pickerBlockId, { mediaUrl: url })
+          setPickerBlockId(null)
+        }}
+        title="Pick from Media Library"
+      />
     </div>
   )
 }

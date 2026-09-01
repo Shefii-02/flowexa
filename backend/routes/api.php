@@ -52,10 +52,17 @@ use App\Modules\WaChat\Http\Controllers\WahaSessionController;
 use App\Modules\WaChat\Http\Controllers\WahaWebhookConfigController;
 use App\Modules\WaChat\Http\Controllers\MessageSenderController;
 use App\Modules\WaChat\Http\Controllers\MediaLibraryController;
+use App\Modules\WaChat\Http\Controllers\MediaFolderController;
 use App\Modules\WaChat\Http\Controllers\WaChatTemplateController;
 use App\Modules\WaChat\Http\Controllers\WaOtpServiceController;
 use App\Modules\WaChat\Http\Controllers\WaOtpPublicController;
 use App\Modules\WaChat\Http\Controllers\WaExportController;
+use App\Modules\WaChat\Http\Controllers\AutomationController;
+use App\Modules\WaChat\Http\Controllers\KnowledgeBaseController;
+use App\Modules\WaChat\Http\Controllers\PipelineController;
+use App\Modules\WaChat\Http\Controllers\AiAgentController;
+use App\Http\Controllers\CompanyApiKeyController;
+use App\Http\Controllers\MetaAiController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
@@ -756,10 +763,16 @@ Route::prefix('v1')->middleware(['jwt.auth'])->group(function () {
 
     // Media Library
     Route::prefix('media-library')->group(function () {
-        Route::get('/',              [MediaLibraryController::class, 'index']);
-        Route::post('/upload',       [MediaLibraryController::class, 'upload']);
-        Route::patch('/{id}/rename', [MediaLibraryController::class, 'rename']);
-        Route::delete('/{id}',       [MediaLibraryController::class, 'destroy']);
+        Route::get('/',               [MediaLibraryController::class, 'index']);
+        Route::post('/upload',        [MediaLibraryController::class, 'upload']);
+        Route::patch('/{id}/rename',  [MediaLibraryController::class, 'rename']);
+        Route::patch('/{id}/move',    [MediaLibraryController::class, 'move']);
+        Route::delete('/{id}',        [MediaLibraryController::class, 'destroy']);
+        // Folder management
+        Route::get('/folders',        [MediaFolderController::class, 'index']);
+        Route::post('/folders',       [MediaFolderController::class, 'store']);
+        Route::patch('/folders/{id}', [MediaFolderController::class, 'update']);
+        Route::delete('/folders/{id}',[MediaFolderController::class, 'destroy']);
     });
 
     // WA Chat Templates
@@ -777,6 +790,7 @@ Route::prefix('v1')->middleware(['jwt.auth'])->group(function () {
         Route::post('/',                        [WaOtpServiceController::class, 'storeOrUpdate']);
         Route::post('/reset-token',             [WaOtpServiceController::class, 'resetToken']);
         Route::post('/stop-token',              [WaOtpServiceController::class, 'stopToken']);
+        Route::post('/test-send',               [WaOtpServiceController::class, 'testSend']);
         Route::get('/auth-messages',            [WaOtpServiceController::class, 'listAuthMessages']);
         Route::post('/auth-messages',           [WaOtpServiceController::class, 'createAuthMessage']);
         Route::patch('/auth-messages/{id}',     [WaOtpServiceController::class, 'updateAuthMessage']);
@@ -789,5 +803,79 @@ Route::prefix('v1')->middleware(['jwt.auth'])->group(function () {
         Route::post('/chats',            [WaExportController::class, 'exportChats']);
         Route::post('/groups',           [WaExportController::class, 'exportGroups']);
         Route::get('/{id}/download',     [WaExportController::class, 'download']);
+    });
+
+    // WA Agent — Automation Rules
+    Route::prefix('wa-agent/automations')->group(function () {
+        Route::get('/',                  [AutomationController::class, 'index']);
+        Route::post('/',                 [AutomationController::class, 'store']);
+        Route::get('/logs',              [AutomationController::class, 'logs']);
+        Route::get('/{id}',              [AutomationController::class, 'show']);
+        Route::patch('/{id}',            [AutomationController::class, 'update']);
+        Route::delete('/{id}',           [AutomationController::class, 'destroy']);
+        Route::post('/{id}/toggle',      [AutomationController::class, 'toggleActive']);
+    });
+
+    // WA Agent — Knowledge Base
+    Route::prefix('wa-agent/knowledge-base')->group(function () {
+        Route::get('/',                  [KnowledgeBaseController::class, 'index']);
+        Route::post('/',                 [KnowledgeBaseController::class, 'store']);
+        Route::post('/upload',           [KnowledgeBaseController::class, 'upload']);
+        Route::get('/{id}',              [KnowledgeBaseController::class, 'show']);
+        Route::patch('/{id}',            [KnowledgeBaseController::class, 'update']);
+        Route::delete('/{id}',           [KnowledgeBaseController::class, 'destroy']);
+        Route::post('/{id}/reprocess',   [KnowledgeBaseController::class, 'reprocess']);
+    });
+
+    // WA Agent — Pipelines
+    Route::prefix('wa-agent/pipelines')->group(function () {
+        Route::get('/',                  [PipelineController::class, 'index']);
+        Route::post('/',                 [PipelineController::class, 'store']);
+        Route::get('/{id}',              [PipelineController::class, 'show']);
+        Route::patch('/{id}',            [PipelineController::class, 'update']);
+        Route::delete('/{id}',           [PipelineController::class, 'destroy']);
+        Route::post('/{id}/run',         [PipelineController::class, 'run']);
+        Route::get('/{id}/runs',         [PipelineController::class, 'runs']);
+    });
+
+    // WA Agent — AI Agent
+    Route::prefix('wa-agent')->group(function () {
+        Route::post('/ask',              [AiAgentController::class, 'ask']);
+        Route::post('/voice-test',       [AiAgentController::class, 'voiceTest']);
+        Route::get('/available-models',  [AiAgentController::class, 'availableModels']);
+        Route::post('/config',           [AiAgentController::class, 'saveConfig']);
+        Route::get('/sessions',          [AiAgentController::class, 'sessions']);
+        Route::get('/sessions/{id}',     [AiAgentController::class, 'sessionDetail']);
+        Route::post('/sessions/{id}/close',    [AiAgentController::class, 'closeSession']);
+        Route::post('/sessions/{id}/transfer', [AiAgentController::class, 'transferSession']);
+        Route::get('/stats',             [AiAgentController::class, 'stats']);
+    });
+
+    // Meta AI / Conversation Intelligence
+    Route::prefix('meta-ai')->group(function () {
+        Route::get('/config',                     [MetaAiController::class, 'getConfig']);
+        Route::post('/config',                    [MetaAiController::class, 'saveConfig']);
+        Route::get('/analyses',                   [MetaAiController::class, 'index']);
+        Route::get('/analyses/{contactId}',       [MetaAiController::class, 'byContact']);
+        Route::get('/lead-scores',                [MetaAiController::class, 'leadScores']);
+        Route::get('/conversion-events',          [MetaAiController::class, 'conversionEvents']);
+        Route::post('/analyze-now/{contactId}',   [MetaAiController::class, 'analyzeNow']);
+        Route::post('/test-analysis',             [MetaAiController::class, 'testAnalysis']);
+        Route::get('/stats',                      [MetaAiController::class, 'stats']);
+        Route::get('/hot-lead-alerts',            [MetaAiController::class, 'hotLeadAlerts']);
+    });
+
+    // Contact intelligence profile
+    Route::get('/contacts/{id}/intelligence',     [MetaAiController::class, 'contactProfile']);
+
+    // Settings — Company API Keys
+    Route::prefix('settings/api-keys')->group(function () {
+        Route::get('/',                      [CompanyApiKeyController::class, 'index']);
+        Route::post('/test',                 [CompanyApiKeyController::class, 'testKey']);
+        Route::post('/',                     [CompanyApiKeyController::class, 'store']);
+        Route::patch('/{id}',                [CompanyApiKeyController::class, 'update']);
+        Route::delete('/{id}',               [CompanyApiKeyController::class, 'destroy']);
+        Route::post('/{id}/verify',          [CompanyApiKeyController::class, 'verify']);
+        Route::post('/{id}/set-active',      [CompanyApiKeyController::class, 'setActive']);
     });
 });

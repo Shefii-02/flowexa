@@ -164,7 +164,7 @@ export default function DashboardPage() {
     : []
 
   // Campaign monthly trend
-  const campTrendData = campaigns?.monthly.map(m => ({
+  const campTrendData = campaigns?.monthly?.map(m => ({
     month: m.month,
     Sent: m.messages_sent,
     Delivered: m.delivered,
@@ -235,8 +235,8 @@ export default function DashboardPage() {
               subColor={overview.wallet.balance < 500 ? 'text-red-500' : 'text-gray-400'} />
           ) : (
             <StatCard icon="📢" label="Campaigns"
-              value={fmt.number(overview.campaigns.total)}
-              sub={`${overview.campaigns.running} running · ${overview.campaigns.completed} completed`} />
+              value={fmt.number(overview.campaigns?.total ?? 0)}
+              sub={`${overview.campaigns?.running ?? 0} running · ${overview.campaigns?.completed ?? 0} completed`} />
           )}
         </div>
       )}
@@ -305,14 +305,14 @@ export default function DashboardPage() {
 
           {/* Status summary pills */}
           <div className="flex gap-2 mb-4 flex-wrap">
-            {Object.entries(campaigns.by_status).map(([status, count]) => (
+            {Object.entries(campaigns.by_status ?? {}).map(([status, count]) => (
               <span key={status} className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
                 {status === 'running' ? '🟢' : status === 'completed' ? '✅' : status === 'draft' ? '📝' : '⏸️'} {status} <strong>{count as number}</strong>
               </span>
             ))}
           </div>
 
-          {campaigns.recent.length > 0 ? (
+          {(campaigns.recent?.length ?? 0) > 0 ? (
             <div className="overflow-x-auto">
               <table className="w-full text-xs">
                 <thead>
