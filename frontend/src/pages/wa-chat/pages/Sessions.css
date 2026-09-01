@@ -1,5 +1,5 @@
 .sessions-page {
-  padding: 2rem;
+  /* padding: 2rem; */
   width: 100%;
   box-sizing: border-box;
 }
@@ -72,7 +72,7 @@
 }
 
 .sessions-page .session-card {
-  background: var(--bg-white);
+  background: #4738381a;
   border-radius: 12px;
   padding: 1.5rem;
   box-shadow: var(--shadow-sm);
@@ -93,6 +93,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 180px;
+  font-weight: 800;
 }
 
 .sessions-page .qr-placeholder {
@@ -295,7 +296,7 @@
 
 /* Modal Card */
 .sessions-page .modal {
-  background: var(--bg-white);
+  background: #fff;
   border-radius: 16px;
   box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
   width: 90%;

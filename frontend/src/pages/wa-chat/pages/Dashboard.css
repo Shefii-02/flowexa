@@ -1,5 +1,5 @@
 .dashboard {
-  padding: 2rem;
+  /* padding: 2rem; */
   width: 100%;
   box-sizing: border-box;
 }
@@ -54,11 +54,11 @@
 
 .dashboard .stat-card {
   position: relative;
-  background: var(--bg-white);
+  /* background: var(--bg-white); */
   border-radius: 12px;
   padding: 1.5rem;
   box-shadow: var(--shadow-sm);
-  border: 1px solid var(--border);
+  border: 1px solid #00000044;
   min-width: 0;
   overflow: hidden;
   transition:
@@ -172,11 +172,11 @@
   color: var(--text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid #00000044;
 }
 
 .dashboard .sessions-table .table-row {
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid #00000044;
 }
 
 .dashboard .sessions-table .table-row:last-child {

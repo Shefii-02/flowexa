@@ -408,7 +408,7 @@ export function Sessions() {
       <div className="filters-bar">
         <div className="search-input">
           <Search size={18} />
-          <input
+          <input className='form-control'
             type="text"
             placeholder={t('sessions.searchPlaceholder')}
             value={searchQuery}
@@ -418,7 +418,7 @@ export function Sessions() {
 
         <div className="filter-group">
           <Filter size={16} />
-          <CustomSelect
+          <CustomSelect 
             value={statusFilter}
             onChange={setStatusFilter}
             options={[
