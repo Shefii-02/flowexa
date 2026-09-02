@@ -158,7 +158,7 @@ export default function App() {
             <Route path="wa-agent" element={<WaAgentShell />}>
               <Route path="automation" element={<WaAutomationPage />} />
               <Route index element={<Navigate to="automations" replace />} />
-              <Route path="automation-rules"       element={<WaAgentAutomations />} />
+              <Route path="automation"       element={<WaAgentAutomations />} />
               <Route path="knowledge-base"  element={<WaAgentKnowledgeBase />} />
               <Route path="pipelines"       element={<WaAgentPipelines />} />
               <Route path="ai-agent"        element={<WaAgentAiAgent />} />

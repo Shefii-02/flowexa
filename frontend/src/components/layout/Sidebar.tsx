@@ -242,11 +242,12 @@ export const Sidebar = () => {
                 { to: '/wa-chat/export',         label: '📥 Data Export' },
                 { to: '/wa-chat/media-library',  label: '🗂️ Media Library' },
                 { to: '/wa-chat/api-keys',       label: '🔑 API Keys' },
-                { to: '/wa-chat/automation',     label: '⚡ Automation' },
-                { to: '/wa-chat/groups',         label: '👥 Groups' },
+                
+                // { to: '/wa-chat/groups',         label: '👥 Groups' },
                 // ── WA Agent ──
                 { to: '', label: '', divider: true },
-                { to: '/wa-agent/automations',        label: '⚡ Automations' },
+                { to: '/wa-chat/automation',     label: '⚡ Automation' },
+                { to: '/wa-agent/automations',        label: '⚡ Automation Rules' },
                 { to: '/wa-agent/knowledge-base',     label: '📚 Knowledge Base' },
                 { to: '/wa-agent/pipelines',          label: '🔗 Pipelines' },
                 { to: '/wa-agent/ai-agent',           label: '🤖 AI Agent' },
