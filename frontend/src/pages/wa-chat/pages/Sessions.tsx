@@ -125,8 +125,13 @@ export function Sessions() {
     dismissQrForSession,
   } = useSessionPairing({ sessions, sessionsRef, reloadSessions: fetchSessions });
 
-  const { showCreateModal, setShowCreateModal, newSessionName, setNewSessionName, creating, handleCreate } =
-    useSessionCreateForm({
+  const {
+    showCreateModal, setShowCreateModal,
+    newSessionName, setNewSessionName,
+    newDisplayName, setNewDisplayName,
+    newPhone, setNewPhone,
+    creating, handleCreate,
+  } = useSessionCreateForm({
       onCreated: newSession => {
         // Functional append: never capture a stale `sessions` (a WS or fetch between the await and the
         // setState would otherwise drop a row). Then invalidate the prefix so stats/groups/chats refresh.
@@ -486,6 +491,30 @@ export function Sessions() {
             <p className="input-error">{t('sessions.create.tooLong', { length: newSessionName.length })}</p>
           )}
           {nameIssues.includes('duplicate') && <p className="input-error">{t('sessions.create.duplicate')}</p>}
+
+          <label htmlFor="sess-display" style={{ marginTop: '1rem', display: 'block' }}>
+            Display Name <span style={{ fontWeight: 400, color: 'var(--text-muted, #6b7280)' }}>(optional)</span>
+          </label>
+          <input
+            id="sess-display"
+            type="text"
+            placeholder="e.g. Customer Support"
+            value={newDisplayName}
+            onChange={e => setNewDisplayName(e.target.value)}
+          />
+          <p className="input-hint">Friendly label shown in the sidebar and session picker.</p>
+
+          <label htmlFor="sess-phone" style={{ marginTop: '0.75rem', display: 'block' }}>
+            Phone Number <span style={{ fontWeight: 400, color: 'var(--text-muted, #6b7280)' }}>(optional)</span>
+          </label>
+          <input
+            id="sess-phone"
+            type="tel"
+            placeholder="e.g. 919876543210"
+            value={newPhone}
+            onChange={e => setNewPhone(e.target.value.replace(/[^0-9+]/g, ''))}
+          />
+          <p className="input-hint">Pre-fill if known; auto-populated when WhatsApp connects.</p>
         </Modal>
       )}
 

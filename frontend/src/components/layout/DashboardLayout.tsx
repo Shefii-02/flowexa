@@ -1,12 +1,24 @@
 import { Outlet, useNavigate } from 'react-router-dom'
 import { Toaster } from 'react-hot-toast'
+import { useEffect } from 'react'
 import { useAppDispatch, useAppSelector } from '@/store'
 import { toggleSidebar } from '@/store/slices'
 import { Sidebar } from './Sidebar'
+import LeadNotificationPopup from '@/components/leads/LeadNotificationPopup'
+import AiHandoffOfferPopup from '@/components/leads/AiHandoffOfferPopup'
+import { connectStaffSocket, disconnectStaffSocket } from '@/socket/staffSocket'
 
 export const DashboardLayout = () => {
   const dispatch    = useAppDispatch()
   const sidebarOpen = useAppSelector((s) => s.ui.sidebarOpen)
+  const user        = useAppSelector((s) => s.auth.user)
+
+  useEffect(() => {
+    if (user?.id && user.company?.id) {
+      connectStaffSocket(user.id, user.company.id)
+      return () => disconnectStaffSocket(user.id)
+    }
+  }, [user?.id, user?.company?.id])
 
   return (
     <div className="flex h-screen overflow-hidden bg-gray-50">
@@ -37,6 +49,10 @@ export const DashboardLayout = () => {
           <Outlet />
         </main>
       </div>
+
+      {/* Real-time lead notification popups */}
+      <LeadNotificationPopup />
+      <AiHandoffOfferPopup />
     </div>
   )
 }

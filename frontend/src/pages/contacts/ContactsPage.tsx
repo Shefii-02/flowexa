@@ -2,7 +2,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useAppDispatch, useAppSelector } from '@/store'
 import { fetchContactsThunk, fetchLabelsThunk } from '@/store/slices'
-import { contactApi, labelApi, leadApi } from '@/api'
+import { contactApi, labelApi, leadApi, leadAssignmentApi } from '@/api'
 import {
   Button, Input, Modal, ConfirmModal, Badge, ColorDot,
   EmptyState, Pagination, TableSkeleton,
@@ -134,10 +134,11 @@ function ContactDetailModal({
 }: {
   contact: any, onClose: () => void, onOptIn: () => void, onOptOut: () => void, onBlacklist: () => void,
 }) {
-  const [leads,    setLeads]    = useState<any[]>([])
-  const [messages, setMessages] = useState<any[]>([])
-  const [tab,      setTab]      = useState<'overview'|'leads'|'messages'>('overview')
-  const [loading,  setLoading]  = useState(false)
+  const [leads,       setLeads]       = useState<any[]>([])
+  const [messages,    setMessages]    = useState<any[]>([])
+  const [assignments, setAssignments] = useState<any[]>([])
+  const [tab,         setTab]         = useState<'overview'|'leads'|'messages'|'assignments'>('overview')
+  const [loading,     setLoading]     = useState(false)
   const STAGES = ['new','contacted','follow_up','enrolled','lost']
 
   useEffect(() => {
@@ -145,16 +146,19 @@ function ContactDetailModal({
     Promise.all([
       contactApi.leads?.(contact.id).catch(() => ({ data: { leads: [] } })),
       contactApi.messages?.(contact.id).catch(() => ({ data: { logs: [] } })),
-    ]).then(([l, m]) => {
+      leadAssignmentApi.list({ contact_id: contact.id, per_page: 50 }).catch(() => ({ data: { data: [] } })),
+    ]).then(([l, m, a]) => {
       setLeads(l.data.leads || [])
       setMessages(m.data.logs || [])
+      setAssignments(a.data.data || [])
     }).finally(() => setLoading(false))
   }, [contact.id])
 
   const tabs = [
-    { key: 'overview', label: 'Overview' },
-    { key: 'leads',    label: `Leads (${leads.length})` },
-    { key: 'messages', label: `Messages (${messages.length})` },
+    { key: 'overview',     label: 'Overview' },
+    { key: 'leads',        label: `Leads (${leads.length})` },
+    { key: 'messages',     label: `Messages (${messages.length})` },
+    { key: 'assignments',  label: `Assignments (${assignments.length})` },
   ]
 
   const activeLeads = leads.filter(l => !['enrolled','lost'].includes(l.stage))
@@ -362,7 +366,7 @@ console.log( contact)
           )
 
           // ── Messages tab ──
-          : (
+          : tab === 'messages' ? (
             <div className="space-y-1 max-h-80 overflow-y-auto">
               {messages.length === 0 ? (
                 <div className="text-center py-8 text-gray-400 text-sm">No message history</div>
@@ -382,6 +386,61 @@ console.log( contact)
                   </div>
                 </div>
               ))}
+            </div>
+          )
+
+          // ── Assignments tab ──
+          : (
+            <div className="space-y-2 max-h-[400px] overflow-y-auto">
+              {assignments.length === 0 ? (
+                <div className="text-center py-8 text-gray-400 text-sm">No lead assignments for this contact</div>
+              ) : assignments.map((a: any) => {
+                const statusColor: Record<string, string> = {
+                  pending:     'bg-yellow-100 text-yellow-700',
+                  notified:    'bg-blue-100 text-blue-700',
+                  assigned:    'bg-indigo-100 text-indigo-700',
+                  accepted:    'bg-green-100 text-green-700',
+                  ai_handling: 'bg-purple-100 text-purple-700',
+                  completed:   'bg-green-100 text-green-700',
+                  transferred: 'bg-gray-100 text-gray-600',
+                  lost:        'bg-red-100 text-red-600',
+                }
+                return (
+                  <div key={a.id} className="border border-gray-200 rounded-xl p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1 flex-wrap">
+                          <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${statusColor[a.status] || 'bg-gray-100 text-gray-600'}`}>
+                            {a.status?.replace(/_/g, ' ')}
+                          </span>
+                          <span className="text-xs text-gray-400 capitalize">{a.assignment_type || 'auto'}</span>
+                          {a.sla_breached && (
+                            <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-red-100 text-red-600">SLA breached</span>
+                          )}
+                        </div>
+                        <p className="text-xs text-gray-500">
+                          Source: <span className="font-medium">{a.source_type || '—'}</span>
+                          {a.campaign && <> · Campaign: <span className="font-medium">{a.campaign.name}</span></>}
+                        </p>
+                        {a.notes && <p className="text-xs text-gray-400 italic mt-1">"{a.notes}"</p>}
+                      </div>
+                      <div className="text-right flex-shrink-0">
+                        {a.staff ? (
+                          <div className="flex items-center gap-1 justify-end">
+                            <span className="w-6 h-6 rounded-full bg-brand-100 text-brand-700 flex items-center justify-center text-xs font-bold">
+                              {a.staff.name?.[0]}
+                            </span>
+                            <span className="text-xs text-gray-600">{a.staff.name}</span>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-gray-300">Unassigned</span>
+                        )}
+                        <p className="text-xs text-gray-400 mt-1">{fmt.relative?.(a.created_at) || a.created_at?.slice(0,10)}</p>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
             </div>
           )
         )}

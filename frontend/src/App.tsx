@@ -18,6 +18,11 @@ import ContactsPage from '@/pages/contacts/ContactsPage'
 // import FlowPage from '@/pages/flow/FlowPage'
 import CampaignsPage from '@/pages/meta-ads/campaigns/CampaignsPage'
 import LeadsPage from '@/pages/leads/LeadsPage'
+import AssignmentPage from '@/pages/leads/AssignmentPage'
+import StaffAvailabilityPage from '@/pages/leads/StaffAvailabilityPage'
+import AssignmentRulesPage from '@/pages/leads/AssignmentRulesPage'
+import LeadNotificationPopup from '@/components/leads/LeadNotificationPopup'
+import AiHandoffOfferPopup from '@/components/leads/AiHandoffOfferPopup'
 import WalletPage from '@/pages/wallet/WalletPage'
 import AnalyticsPage from '@/pages/analytics/AnalyticsPage'
 import SettingsPage from '@/pages/settings/SettingsPage'
@@ -170,6 +175,9 @@ export default function App() {
             <Route path="/flow" element={<FlowNodesPage />} />
             <Route path="campaigns" element={<CampaignsPage />} />
             <Route path="leads" element={<LeadsPage />} />
+            <Route path="leads/assignments"       element={<AssignmentPage />} />
+            <Route path="leads/staff-availability" element={<StaffAvailabilityPage />} />
+            <Route path="leads/assignment-rules"  element={<AssignmentRulesPage />} />
             <Route path="wallet" element={<WalletPage />} />
             <Route path="analytics" element={<AnalyticsPage />} />
             <Route path="settings" element={<SettingsPage />} />

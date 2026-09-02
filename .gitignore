@@ -76,3 +76,7 @@ backend/.env
 
 /backend-node
 backend-node
+
+# Separate GitHub repository
+/unichat_mobile_app
+unichat_mobile_app

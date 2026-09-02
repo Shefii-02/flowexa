@@ -105,6 +105,59 @@ class WahaSessionController extends Controller
         return response()->json(['message' => 'Session deleted.']);
     }
 
+    public function update(Request $request, int $id): JsonResponse
+    {
+        $session = WahaSession::where('company_id', auth()->user()->company_id)->findOrFail($id);
+        $data = $request->validate([
+            'display_name' => 'nullable|string|max:150',
+            'phone'        => 'nullable|string|max:30',
+            'webhook_url'  => 'nullable|url|max:500',
+        ]);
+        $session->update(array_filter($data, fn($v) => !is_null($v)));
+        return response()->json(['message' => 'Session updated.', 'data' => $session]);
+    }
+
+    public function groups(Request $request): JsonResponse
+    {
+        $sessionId = $request->query('session_id', $request->query('session', 'default'));
+        $wahaBase  = $this->wahaBase();
+        $wahaKey   = $this->wahaHeaders()['X-API-Key'];
+
+        try {
+            $res = Http::withHeaders(['X-API-Key' => $wahaKey])
+                ->timeout(15)
+                ->get("{$wahaBase}/api/groups", ['session' => $sessionId]);
+
+            if ($res->successful()) {
+                return response()->json(['data' => $res->json()]);
+            }
+            return response()->json(['data' => [], 'error' => 'WAHA returned ' . $res->status()], 200);
+        } catch (\Exception $e) {
+            return response()->json(['data' => [], 'error' => $e->getMessage()], 200);
+        }
+    }
+
+    public function groupParticipants(Request $request): JsonResponse
+    {
+        $sessionId = $request->query('session_id', $request->query('session', 'default'));
+        $groupId   = $request->query('group_id', '');
+        $wahaBase  = $this->wahaBase();
+        $wahaKey   = $this->wahaHeaders()['X-API-Key'];
+
+        try {
+            $res = Http::withHeaders(['X-API-Key' => $wahaKey])
+                ->timeout(10)
+                ->get("{$wahaBase}/api/groups/{$groupId}/participants", ['session' => $sessionId]);
+
+            if ($res->successful()) {
+                return response()->json($res->json());
+            }
+            return response()->json(['participants' => []], 200);
+        } catch (\Exception $e) {
+            return response()->json(['participants' => []], 200);
+        }
+    }
+
     // WAHA sends events here — update session status in DB
     public function webhook(Request $request): JsonResponse
     {

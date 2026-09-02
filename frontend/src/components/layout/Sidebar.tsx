@@ -280,7 +280,10 @@ export const Sidebar = () => {
                 <NavItem to="/analytics" icon="📈" label="Analytics" />
               </>
             )}
-            <NavItem to="/leads" icon="🎯" label="Leads" />
+            <NavItem to="/leads" icon="🎯" label="Leads" end />
+            <NavItem to="/leads/assignments"        icon="📋" label="Assignment Queue" />
+            <NavItem to="/leads/staff-availability" icon="👥" label="Staff Availability" />
+            <NavItem to="/leads/assignment-rules"   icon="⚙️" label="Assignment Rules" />
             <NavItem to="/message-logs" icon="📋" label="Message logs" />
             {/* Realtime shared inbox — conversations from all customers, agents can claim/reply */}
             <NavItem to="/inbox" icon="💬" label="Inbox" />

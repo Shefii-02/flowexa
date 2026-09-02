@@ -56,16 +56,17 @@ class WaOtpServiceController extends Controller
 
     public function listAuthMessages(): JsonResponse
     {
-        $messages = WaAuthMessage::where('company_id', auth()->user()->company_id)
+        $companyId = auth()->user()->company_id;
+        $messages = WaAuthMessage::where('company_id', $companyId)
             ->orderBy('sort_order')->get();
 
         // Seed defaults if empty
         if ($messages->isEmpty()) {
-            $defaults = WaAuthMessage::defaultTemplates();
+            $defaults = WaAuthMessage::defaultTemplates($companyId);
             $rows = [];
             foreach ($defaults as $i => $d) {
                 $rows[] = WaAuthMessage::create(array_merge($d, [
-                    'company_id' => auth()->user()->company_id,
+                    'company_id' => $companyId,
                     'sort_order' => $i,
                 ]));
             }
@@ -111,11 +112,11 @@ class WaOtpServiceController extends Controller
             ->first();
 
         if (!$service) {
-            return response()->json(['success' => false, 'error' => 'OTP service not configured yet.'], 422);
+            $companyId = auth()->user()->company_id;
+            $service = WaOtpService::create(['company_id' => $companyId]);
         }
-        if (!$service->session_id) {
-            return response()->json(['success' => false, 'error' => 'No WhatsApp session configured. Set one in Settings.'], 422);
-        }
+
+        $sessionId = $service->session_id ?? 'default';
 
         // Generate test OTP
         $length = $service->otp_length ?? 6;
@@ -137,7 +138,7 @@ class WaOtpServiceController extends Controller
             $res = Http::withHeaders(['X-API-Key' => $wahaKey])
                 ->timeout(10)
                 ->post("{$wahaBase}/api/sendText", [
-                    'session' => $service->session_id,
+                    'session' => $sessionId,
                     'chatId'  => $chatId,
                     'text'    => $message,
                 ]);
@@ -220,10 +221,7 @@ class WaOtpServiceController extends Controller
         ]);
 
         $service = WaOtpService::where('company_id', auth()->user()->company_id)->first();
-        $sessionId = $request->session_id ?? ($service?->session_id ?? null);
-        if (!$service || !$sessionId) {
-            return response()->json(['success' => false, 'error' => 'No WhatsApp session configured. Set one in Settings.'], 422);
-        }
+        $sessionId = $request->session_id ?? ($service?->session_id ?? 'default');
 
         $message = $request->message;
         if (!$message && $request->template_id) {
@@ -262,7 +260,7 @@ class WaOtpServiceController extends Controller
             $ms = (int) ((microtime(true) - $start) * 1000);
 
             if ($res->successful()) {
-                WaOtpLog::create([
+                if ($service) WaOtpLog::create([
                     'company_id'  => $service->company_id,
                     'service_id'  => $service->id,
                     'phone'       => $phone,
@@ -293,20 +291,18 @@ class WaOtpServiceController extends Controller
         ]);
 
         $service = WaOtpService::where('company_id', auth()->user()->company_id)->first();
-        $sessionId = $request->session_id ?? ($service?->session_id ?? null);
-        if (!$service || !$sessionId) {
-            return response()->json(['success' => false, 'error' => 'No WhatsApp session configured. Set one in Settings.'], 422);
-        }
+        $sessionId = $request->session_id ?? ($service?->session_id ?? 'default');
 
         $phone    = preg_replace('/[^0-9]/', '', $request->phone);
         $chatId   = $phone . '@c.us';
         $fileUrl  = $request->file_url;
         $filename = $request->filename ?? 'document.pdf';
 
+        $companyId = auth()->user()->company_id;
         if ($request->hasFile('file')) {
             $file     = $request->file('file');
             $filename = $request->filename ?? $file->getClientOriginalName();
-            $path     = $file->store("invoices/{$service->company_id}", 'public');
+            $path     = $file->store("invoices/{$companyId}", 'public');
             $fileUrl  = \Illuminate\Support\Facades\Storage::disk('public')->url($path);
         }
 
@@ -331,7 +327,7 @@ class WaOtpServiceController extends Controller
             $ms = (int) ((microtime(true) - $start) * 1000);
 
             if ($res->successful()) {
-                WaOtpLog::create([
+                if ($service) WaOtpLog::create([
                     'company_id'  => $service->company_id,
                     'service_id'  => $service->id,
                     'phone'       => $phone,

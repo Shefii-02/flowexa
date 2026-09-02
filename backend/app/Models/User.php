@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Models\LeadAssignment;
+use App\Models\StaffAvailability;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
@@ -34,8 +36,13 @@ class User extends Authenticatable implements JWTSubject
     // ── Relationships ─────────────────────────────────────────────────────────
     public function company(): BelongsTo  { return $this->belongsTo(Company::class); }
     public function role(): BelongsTo    { return $this->belongsTo(Role::class); }
-    public function leads(): HasMany     { return $this->hasMany(Lead::class, 'assigned_to'); }
-    public function leadEvents(): HasMany{ return $this->hasMany(LeadEvent::class); }
+    public function leads(): HasMany        { return $this->hasMany(Lead::class, 'assigned_to'); }
+    public function leadEvents(): HasMany  { return $this->hasMany(LeadEvent::class); }
+    public function availability(): \Illuminate\Database\Eloquent\Relations\HasOne
+    {
+        return $this->hasOne(StaffAvailability::class, 'staff_id');
+    }
+    public function leadAssignments(): HasMany { return $this->hasMany(LeadAssignment::class, 'staff_id'); }
 
     // ── Permission helpers ────────────────────────────────────────────────────
     public function isSuperAdmin(): bool

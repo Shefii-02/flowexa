@@ -8,6 +8,7 @@ export * from './flow.slice'
 export * from './wallet.slice'
 export * from './campaigns.slice'
 export * from './leads.slice'
+export * from './leadAssignment.slice'
 
 import authReducer from './auth.slice'
 import uiReducer from './ui.slice'
@@ -18,15 +19,17 @@ import flowReducer from './flow.slice'
 import walletReducer from './wallet.slice'
 import campaignReducer from './campaigns.slice'
 import leadReducer from './leads.slice'
+import leadAssignmentReducer from './leadAssignment.slice'
 
 export const reducers = {
-  auth:      authReducer,
-  ui:        uiReducer,
-  staff:     staffReducer,
-  contacts:  contactReducer,
-  labels:    labelReducer,
-  flow:      flowReducer,
-  wallet:    walletReducer,
-  campaigns: campaignReducer,
-  leads:     leadReducer,
+  auth:            authReducer,
+  ui:              uiReducer,
+  staff:           staffReducer,
+  contacts:        contactReducer,
+  labels:          labelReducer,
+  flow:            flowReducer,
+  wallet:          walletReducer,
+  campaigns:       campaignReducer,
+  leads:           leadReducer,
+  leadAssignment:  leadAssignmentReducer,
 }

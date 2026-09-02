@@ -13,6 +13,10 @@ export interface SessionCreateForm {
   setShowCreateModal: (open: boolean) => void;
   newSessionName: string;
   setNewSessionName: (name: string) => void;
+  newDisplayName: string;
+  setNewDisplayName: (v: string) => void;
+  newPhone: string;
+  setNewPhone: (v: string) => void;
   creating: boolean;
   handleCreate: () => Promise<void>;
 }
@@ -28,15 +32,42 @@ export function useSessionCreateForm({ onCreated, onFailed }: UseSessionCreateFo
   const { t } = useTranslation();
   const toast = useToast();
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [newSessionName, setNewSessionName] = useState('');
-  const [creating, setCreating] = useState(false);
+  const [newSessionName, setNewSessionName]   = useState('');
+  const [newDisplayName, setNewDisplayName]   = useState('');
+  const [newPhone, setNewPhone]               = useState('');
+  const [creating, setCreating]               = useState(false);
 
   const handleCreate = async () => {
     if (!newSessionName.trim()) return;
     try {
       setCreating(true);
       const newSession = await sessionApi.create(newSessionName);
+
+      // Persist display_name / phone to our Laravel backend (fire-and-forget)
+      if (newDisplayName.trim() || newPhone.trim()) {
+        try {
+          const laravelBase = import.meta.env.VITE_API_URL || window.location.origin;
+          const token = localStorage.getItem('wa_token') || '';
+          await fetch(`${laravelBase}/api/v1/waha/sessions`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+              session_name: newSession.name,
+              display_name: newDisplayName.trim() || null,
+              phone: newPhone.trim() || null,
+            }),
+          });
+        } catch {
+          // Non-critical — don't block the main success flow
+        }
+      }
+
       setNewSessionName('');
+      setNewDisplayName('');
+      setNewPhone('');
       setShowCreateModal(false);
       toast.success(t('sessions.create.successTitle'), t('sessions.create.successDesc', { name: newSession.name }));
       onCreated(newSession);
@@ -49,5 +80,11 @@ export function useSessionCreateForm({ onCreated, onFailed }: UseSessionCreateFo
     }
   };
 
-  return { showCreateModal, setShowCreateModal, newSessionName, setNewSessionName, creating, handleCreate };
+  return {
+    showCreateModal, setShowCreateModal,
+    newSessionName, setNewSessionName,
+    newDisplayName, setNewDisplayName,
+    newPhone, setNewPhone,
+    creating, handleCreate,
+  };
 }

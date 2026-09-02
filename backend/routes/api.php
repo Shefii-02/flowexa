@@ -22,6 +22,7 @@ use App\Modules\Flow\Http\Controllers\FlowNodeController;
 use App\Modules\Lead\Http\Controllers\LeadController;
 use App\Modules\Lead\Http\Controllers\LeadCategoryController;
 use App\Modules\Lead\Http\Controllers\LeadNoteController;
+use App\Modules\Lead\Http\Controllers\LeadAssignmentController;
 use App\Modules\Otp\Http\Controllers\OtpController;
 use App\Modules\PhoneNumber\Http\Controllers\PhoneNumberController;
 use App\Modules\PlanPurchase\Http\Controllers\PlanPurchaseController;
@@ -321,6 +322,29 @@ Route::prefix('v1')->group(function () {
             Route::delete('/{lead}/notes/{event}', [LeadNoteController::class, 'destroy'])->name('notes.destroy');
         });
 
+
+        // ── Lead Assignments ─────────────────────────────────────────────────────
+        Route::prefix('lead-assignments')->name('lead-assignments.')->middleware('permission:leads.view')->group(function () {
+            Route::get('/',          [LeadAssignmentController::class, 'index'])->name('index');
+            Route::get('/stats',     [LeadAssignmentController::class, 'stats'])->name('stats');
+            Route::get('/{id}',      [LeadAssignmentController::class, 'show'])->name('show');
+            Route::post('/',         [LeadAssignmentController::class, 'store'])->name('store');
+            Route::put('/{id}',      [LeadAssignmentController::class, 'update'])->name('update');
+            Route::post('/{id}/accept',   [LeadAssignmentController::class, 'accept'])->name('accept');
+            Route::post('/{id}/decline',  [LeadAssignmentController::class, 'decline'])->name('decline');
+            Route::post('/{id}/complete', [LeadAssignmentController::class, 'complete'])->name('complete');
+            Route::post('/{id}/transfer', [LeadAssignmentController::class, 'transfer'])->name('transfer');
+        });
+
+        Route::prefix('lead-assignment-rules')->name('lead-assignment-rules.')->group(function () {
+            Route::get('/',  [LeadAssignmentController::class, 'getRule'])->name('show');
+            Route::post('/', [LeadAssignmentController::class, 'saveRule'])->name('save');
+        });
+
+        Route::prefix('staff')->name('staff.availability.')->group(function () {
+            Route::get('/availability',        [LeadAssignmentController::class, 'staffAvailability'])->name('index');
+            Route::post('/availability/toggle', [LeadAssignmentController::class, 'toggleAvailability'])->name('toggle');
+        });
 
         Route::prefix('blacklist')->name('blacklist.')->group(function () {
             Route::get('/',        [BlacklistController::class, 'index'])->name('index');
@@ -751,12 +775,17 @@ Route::prefix('v1')->middleware(['jwt.auth'])->group(function () {
         Route::get('/',              [WahaSessionController::class, 'index']);
         Route::post('/',             [WahaSessionController::class, 'store']);
         Route::get('/{id}',          [WahaSessionController::class, 'show']);
+        Route::patch('/{id}',        [WahaSessionController::class, 'update']);
         Route::post('/{id}/start',   [WahaSessionController::class, 'start']);
         Route::post('/{id}/stop',    [WahaSessionController::class, 'stop']);
         Route::post('/{id}/logout',  [WahaSessionController::class, 'logout']);
         Route::get('/{id}/qr',       [WahaSessionController::class, 'qr']);
         Route::delete('/{id}',       [WahaSessionController::class, 'destroy']);
     });
+
+    // WA Groups proxy (calls WAHA)
+    Route::get('waha/groups',              [WahaSessionController::class, 'groups']);
+    Route::get('waha/group/participants',  [WahaSessionController::class, 'groupParticipants']);
 
     // Webhook configs
     Route::prefix('waha/webhooks')->group(function () {

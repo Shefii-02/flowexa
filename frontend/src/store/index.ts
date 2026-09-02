@@ -3,20 +3,21 @@ import { configureStore } from '@reduxjs/toolkit'
 import { useDispatch, useSelector, TypedUseSelectorHook } from 'react-redux'
 import {
   authSlice, uiSlice, staffSlice, contactSlice, labelSlice,
-  flowSlice, walletSlice, campaignSlice, leadSlice,
+  flowSlice, walletSlice, campaignSlice, leadSlice, leadAssignmentSlice,
 } from './slices'
 
 export const store = configureStore({
   reducer: {
-    auth:      authSlice.reducer,
-    ui:        uiSlice.reducer,
-    staff:     staffSlice.reducer,
-    contacts:  contactSlice.reducer,
-    labels:    labelSlice.reducer,
-    flow:      flowSlice.reducer,
-    wallet:    walletSlice.reducer,
-    campaigns: campaignSlice.reducer,
-    leads:     leadSlice.reducer,
+    auth:           authSlice.reducer,
+    ui:             uiSlice.reducer,
+    staff:          staffSlice.reducer,
+    contacts:       contactSlice.reducer,
+    labels:         labelSlice.reducer,
+    flow:           flowSlice.reducer,
+    wallet:         walletSlice.reducer,
+    campaigns:      campaignSlice.reducer,
+    leads:          leadSlice.reducer,
+    leadAssignment: leadAssignmentSlice.reducer,
   },
 })
 

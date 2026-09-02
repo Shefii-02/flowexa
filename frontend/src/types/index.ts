@@ -258,6 +258,125 @@ export interface MessageLog {
   created_at: string
 }
 
+// ── Lead Assignment System ─────────────────────────────────────────────────────
+
+export type LeadAssignmentStatus =
+  | 'pending' | 'notified' | 'accepted' | 'assigned'
+  | 'ai_handling' | 'ai_offered' | 'transferred' | 'completed' | 'dropped'
+
+export type LeadSourceType = 'wa_chat' | 'meta_api' | 'campaign' | 'organic' | 'flow_builder' | 'manual'
+
+export interface LeadAssignment {
+  id: number
+  company_id: number
+  contact_id: number
+  staff_id: number | null
+  campaign_id: number | null
+  source_type: LeadSourceType
+  source_ref: string | null
+  status: LeadAssignmentStatus
+  assignment_type: 'auto' | 'manual' | 'notification'
+  priority: number
+  accepted_at: string | null
+  first_reply_at: string | null
+  response_sla_minutes: number
+  sla_breached: boolean
+  sla_breached_at: string | null
+  ai_takeover_at: string | null
+  ai_offered_at: string | null
+  staff_confirmed_at: string | null
+  transfer_reason: string | null
+  transferred_from: number | null
+  notes: string | null
+  created_at: string
+  updated_at: string
+  contact?: { id: number; name: string | null; phone: string; lead_score: number }
+  staff?: { id: number; name: string; email: string } | null
+  campaign?: { id: number; name: string } | null
+}
+
+export interface LeadAssignmentStats {
+  total_today: number
+  auto_assigned: number
+  notification_assigned: number
+  ai_handling: number
+  sla_breached: number
+  avg_response_time: string
+  conversion_rate: string
+  staff_performance: Array<{
+    staff: { id: number; name: string }
+    assigned: number
+    converted: number
+    rate: string
+    avg_response: number
+    score: number
+  }>
+}
+
+export interface StaffAvailabilityRecord {
+  id: number
+  name: string
+  email: string
+  phone: string | null
+  avatar: string | null
+  role: { name: string; label: string } | null
+  availability: {
+    is_online: boolean
+    is_available: boolean
+    status: 'online' | 'away' | 'offline' | 'busy'
+    current_leads_count: number
+    today_leads_count: number
+    today_conversions: number
+    total_conversions: number
+    avg_response_time_minutes: number
+    conversion_rate: number
+    performance_score: number
+    last_seen_at: string | null
+  } | null
+}
+
+export interface LeadAssignmentRule {
+  id: number
+  company_id: number
+  auto_assign_enabled: boolean
+  weight_availability: number
+  weight_max_leads: number
+  weight_performance: number
+  weight_workload: number
+  sla_minutes: number
+  ai_takeover_after_minutes: number
+  notification_mode: 'auto' | 'uber' | 'hybrid'
+  notification_gap_seconds: number
+  notification_timeout_seconds: number
+  max_notification_rounds: number
+  duplicate_window_days: number
+  duplicate_action: 'assign_same_staff' | 'create_new' | 'merge' | 'notify_admin'
+  working_hours_start: string
+  working_hours_end: string
+  working_days: number[]
+  timezone: string
+}
+
+export interface LeadNotification {
+  assignment_id: number
+  notification_id: number
+  contact_name: string
+  contact_phone: string
+  source_type: LeadSourceType
+  lead_score: number
+  priority: number
+  timeout_seconds: number
+  campaign_name: string | null
+}
+
+export interface AiHandoffOffer {
+  assignment_id: number
+  contact_name: string
+  contact_phone: string
+  conversation_summary: string
+  ai_message_count: number
+}
+
 // API
 export interface PaginatedResponse<T> {
   data: T[]

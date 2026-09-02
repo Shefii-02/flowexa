@@ -1,7 +1,7 @@
 // src/pages/inbox/InboxPage.tsx
 import { useEffect, useState, useRef, useCallback } from 'react'
 import { useAppSelector } from '@/store'
-import { conversationApi } from '@/api'
+import { conversationApi, labelApi, contactApi } from '@/api'
 import { Button, Badge, EmptyState } from '@/components/ui'
 import { getError } from '@/utils'
 import toast from 'react-hot-toast'
@@ -34,9 +34,20 @@ export default function InboxPage() {
   const [loadingThread, setLoadingThread] = useState(false)
   const [filter, setFilter]               = useState<'all'|'mine'|'unassigned'>('all')
   const [companyId, setCompanyId]         = useState<number | null>(null)
+  const [labels, setLabels]               = useState<any[]>([])
+  const [labelOpen, setLabelOpen]         = useState(false)
+  const [labelSaving, setLabelSaving]     = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
 
   const active = conversations.find(c => c.id === activeId)
+
+  // Close label dropdown on outside click
+  useEffect(() => {
+    if (!labelOpen) return
+    const close = () => setLabelOpen(false)
+    document.addEventListener('mousedown', close)
+    return () => document.removeEventListener('mousedown', close)
+  }, [labelOpen])
 
   // ── Load conversation list ──────────────────────────────────────────────
   const loadList = useCallback(() => {
@@ -52,6 +63,20 @@ export default function InboxPage() {
   }, [filter])
 
   useEffect(() => { loadList() }, [loadList])
+
+  useEffect(() => {
+    labelApi.list().then(r => setLabels(r.data?.data ?? r.data ?? [])).catch(() => {})
+  }, [])
+
+  const handleAddToLabel = async (labelId: number) => {
+    if (!active?.contact_id || labelSaving) return
+    setLabelSaving(true)
+    try {
+      await contactApi.syncLabels(active.contact_id, [labelId])
+      toast.success('Added to label.')
+    } catch (e) { toast.error(getError(e)) }
+    finally { setLabelSaving(false); setLabelOpen(false) }
+  }
 
   // ── Open a thread ────────────────────────────────────────────────────────
   const openThread = (id: number) => {
@@ -193,13 +218,53 @@ export default function InboxPage() {
                 <p className="font-medium text-sm">{active.contact_name || active.phone}</p>
                 <p className="text-xs text-gray-400">{active.phone}</p>
               </div>
-              {!active.assigned_to ? (
-                <Button onClick={() => handleClaim(active.id)}>Claim conversation</Button>
-              ) : (active.assigned_to === currentUser?.id || canReplyToAny) ? (
-                <Button variant="secondary" onClick={() => handleRelease(active.id)}>Release</Button>
-              ) : (
-                <span className="text-xs text-gray-400">👤 Assigned to {active.assignedAgent?.name || 'another agent'}</span>
-              )}
+              <div className="flex items-center gap-2">
+                {/* Add to Label */}
+                {active.contact_id && labels.length > 0 && (
+                  <div style={{ position: 'relative' }}>
+                    <button
+                      onClick={() => setLabelOpen(v => !v)}
+                      className="text-xs px-2.5 py-1.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 flex items-center gap-1 transition-colors"
+                    >
+                      🏷️ Label
+                    </button>
+                    {labelOpen && (
+                      <div
+                        style={{
+                          position: 'absolute', right: 0, top: '110%', zIndex: 50,
+                          background: '#fff', border: '1px solid #e5e7eb', borderRadius: 10,
+                          boxShadow: '0 4px 16px rgba(0,0,0,0.12)', minWidth: 180, padding: 6,
+                        }}
+                      >
+                        <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide px-2 py-1">Add to label</p>
+                        {labels.map((l: any) => (
+                          <button key={l.id}
+                            onClick={() => handleAddToLabel(l.id)}
+                            disabled={labelSaving}
+                            style={{
+                              display: 'flex', alignItems: 'center', gap: 8, width: '100%',
+                              padding: '6px 10px', border: 'none', background: 'none',
+                              cursor: 'pointer', borderRadius: 6, fontSize: 13, textAlign: 'left',
+                            }}
+                            onMouseEnter={e => (e.currentTarget.style.background = '#f3f4f6')}
+                            onMouseLeave={e => (e.currentTarget.style.background = 'none')}
+                          >
+                            <span style={{ width: 10, height: 10, borderRadius: '50%', background: l.color ?? '#6b7280', flexShrink: 0 }} />
+                            {l.name}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+                {!active.assigned_to ? (
+                  <Button onClick={() => handleClaim(active.id)}>Claim conversation</Button>
+                ) : (active.assigned_to === currentUser?.id || canReplyToAny) ? (
+                  <Button variant="secondary" onClick={() => handleRelease(active.id)}>Release</Button>
+                ) : (
+                  <span className="text-xs text-gray-400">👤 Assigned to {active.assignedAgent?.name || 'another agent'}</span>
+                )}
+              </div>
             </div>
 
             <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-2 bg-[#e5ddd5]">

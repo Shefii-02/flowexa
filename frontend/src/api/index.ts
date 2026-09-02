@@ -484,3 +484,21 @@ export const walletV2Api = {
 // ── Exit impersonation ────────────────────────────────────────────────────
 export const exitImpersonation = (originalToken: string) =>
   api.post('/superadmin/exit-impersonation', {}, { headers: { 'X-Original-Token': originalToken } })
+
+// ── Lead Assignment ───────────────────────────────────────────────────────
+export const leadAssignmentApi = {
+  list: (p?: Record<string, unknown>) => api.get('/lead-assignments', { params: p }),
+  show: (id: number) => api.get(`/lead-assignments/${id}`),
+  stats: () => api.get('/lead-assignments/stats'),
+  create: (d: Record<string, unknown>) => api.post('/lead-assignments', d),
+  update: (id: number, d: Record<string, unknown>) => api.put(`/lead-assignments/${id}`, d),
+  accept: (id: number) => api.post(`/lead-assignments/${id}/accept`),
+  decline: (id: number) => api.post(`/lead-assignments/${id}/decline`),
+  complete: (id: number) => api.post(`/lead-assignments/${id}/complete`),
+  transfer: (id: number, d: { to_staff_id: number; reason?: string }) =>
+    api.post(`/lead-assignments/${id}/transfer`, d),
+  getRule: () => api.get('/lead-assignment-rules'),
+  saveRule: (d: Record<string, unknown>) => api.post('/lead-assignment-rules', d),
+  staffAvailability: () => api.get('/staff/availability'),
+  toggleAvailability: () => api.post('/staff/availability/toggle'),
+}

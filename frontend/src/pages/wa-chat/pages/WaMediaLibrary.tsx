@@ -272,7 +272,7 @@ export default function WaMediaLibrary() {
       const fd = new FormData()
       fd.append('file', file)
       if (activeFolderId) fd.append('folder_id', String(activeFolderId))
-      await api.post('/media-library/upload', fd)
+      await api.post('/media-library/upload', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
       toast.success('File uploaded.')
       await loadFiles(activeFolderId)
       await loadFolders()
