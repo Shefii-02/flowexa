@@ -294,3 +294,9 @@ textarea.form-control,select,input {
 .plugins-page .install-tab.active, .plugins-page .config-modal .modal-tab.active{
   color: #1d4ed8 !important;
 }
+
+
+.webhooks-page .modal-body .event-tag.selected {
+    color: #030303 !important;
+    border-color: #030303 !important;
+}

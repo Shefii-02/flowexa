@@ -348,16 +348,7 @@ export default function WaChatTemplatesPage() {
               <input className="form-control" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Template name" style={{ width: '100%' }} />
             </label>
 
-            <div style={{ display: 'flex', gap: 12 }}>
-              <label style={{ flex: 1 }}>
-                <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 4 }}>Category</div>
-                <input className="form-control" value={form.category} onChange={e => setForm({ ...form, category: e.target.value })} placeholder="marketing" style={{ width: '100%' }} />
-              </label>
-              <label style={{ flex: 1 }}>
-                <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 4 }}>Language</div>
-                <input className="form-control" value={form.language} onChange={e => setForm({ ...form, language: e.target.value })} style={{ width: '100%' }} />
-              </label>
-            </div>
+      
 
             {/* Header (single media) */}
             <label>
