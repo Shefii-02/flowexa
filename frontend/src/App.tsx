@@ -151,7 +151,7 @@ export default function App() {
               <Route path="media-library" element={<WaMediaLibraryPage />} />
               <Route path="api-keys" element={<RequireWaAdmin><WaChatApiKeys /></RequireWaAdmin>} />
               <Route path="automation" element={<WaAutomationPage />} />
-              <Route path="groups" element={<WaGroupsPage />} />
+              {/* <Route path="groups" element={<WaGroupsPage />} /> */}
             </Route>
 
             {/* WA Agent module */}
