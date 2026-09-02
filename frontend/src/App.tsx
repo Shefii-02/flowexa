@@ -150,13 +150,13 @@ export default function App() {
               <Route path="export" element={<WaDataExportPage />} />
               <Route path="media-library" element={<WaMediaLibraryPage />} />
               <Route path="api-keys" element={<RequireWaAdmin><WaChatApiKeys /></RequireWaAdmin>} />
-              
+              <Route path="automation" element={<WaAutomationPage />} />
               {/* <Route path="groups" element={<WaGroupsPage />} /> */}
             </Route>
 
             {/* WA Agent module */}
             <Route path="wa-agent" element={<WaAgentShell />}>
-              <Route path="automation" element={<WaAutomationPage />} />
+              
               <Route index element={<Navigate to="automations" replace />} />
               <Route path="automation"       element={<WaAgentAutomations />} />
               <Route path="knowledge-base"  element={<WaAgentKnowledgeBase />} />
