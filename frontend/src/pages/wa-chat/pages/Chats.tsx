@@ -1714,23 +1714,55 @@ export function Chats() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showProfileCard, activeChat?.id]);
 
-  // Profile card, part 2 — which groups this contact is in. Fires only once the user opens the
-  // "Groups" tab (ProfileCardPanel calls onRequestGroupsScan, which sets groupsScanChatId). The
-  // whole scan is ONE request: the backend walks the group list and matches participants itself,
-  // so the browser never fans out a getGroupInfo per group (which tripped the rate limiter → 429).
+  // Profile card, part 2 — the groups this contact and the session BOTH belong to. Fires only once
+  // the user opens the "Groups" tab (ProfileCardPanel sets groupsScanChatId).
+  //
+  // Primary path is ONE request: GET /groups/for-contact matches participants server-side. If that
+  // route isn't on the gateway yet (404), fall back to the client-side scan — getGroupInfoCached
+  // caps concurrency, retries 429s and caches, so it stays within the rate limiter.
   useEffect(() => {
     if (!showProfileCard || !activeChat || activeChat.isGroup) return;
     if (!selectedSessionId || groupsScanChatId !== activeChat.id) return;
 
     let cancelled = false;
+    const chatId = activeChat.id;
     setProfileGroupsLoading(true);
-    sessionApi.getSharedGroups(selectedSessionId, activeChat.id)
+
+    const keys = new Set<string>();
+    const chatLast10 = chatId.split('@')[0].replace(/\D/g, '').slice(-10);
+    if (chatLast10.length >= 7) keys.add(chatLast10);
+    const crmLast10 = profileContact?.phone ? String(profileContact.phone).replace(/\D/g, '').slice(-10) : '';
+    if (crmLast10.length >= 7) keys.add(crmLast10);
+
+    const clientScan = async (): Promise<{ id: string; name: string }[]> => {
+      if (keys.size === 0) return [];
+      const groups = await sessionApi.getGroups(selectedSessionId);
+      const capped = (groups ?? []).slice(0, 40);
+      const infos = await Promise.allSettled(
+        capped.map(g => getGroupInfoCached(selectedSessionId, g.id).catch(() => null)),
+      );
+      return capped
+        .filter((_g, i) => {
+          const res = infos[i];
+          if (res.status !== 'fulfilled' || !res.value) return false;
+          return res.value.participants?.some((p: { number: string }) =>
+            keys.has(p.number?.replace(/\D/g, '').slice(-10)),
+          );
+        })
+        .map(g => ({ id: g.id, name: g.name }));
+    };
+
+    sessionApi.getSharedGroups(selectedSessionId, chatId)
+      .catch((e: unknown) => {
+        if ((e as { status?: number })?.status === 404) return clientScan();
+        throw e;
+      })
       .then(groups => { if (!cancelled) setProfileGroups(groups ?? []); })
       .catch(() => { if (!cancelled) setProfileGroups([]); })
       .finally(() => { if (!cancelled) setProfileGroupsLoading(false); });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showProfileCard, activeChat?.id, selectedSessionId, groupsScanChatId]);
+  }, [showProfileCard, activeChat?.id, selectedSessionId, groupsScanChatId, profileContact?.phone]);
 
   // Image media items for the lightbox, in render order. `getMediaSrc` reconstructs a usable src
   // from either a base64 payload or a URL — the ChatMessageView shape stores both in `data`.

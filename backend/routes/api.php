@@ -359,10 +359,10 @@ Route::prefix('v1')->group(function () {
         // ── Labels ───────────────────────────────────────────────────────────────
         Route::prefix('labels')->name('labels.')->group(function () {
 
-            Route::middleware('permission:labels.view')->group(function () {
-                Route::get('/',        [LabelController::class, 'index'])->name('index');
-                Route::get('/{label}', [LabelController::class, 'show'])->name('show');
-            });
+            // Read is open to any authenticated user: label pickers (e.g. the WhatsApp chat
+            // contact panel) need the list without granting a dedicated labels.view permission.
+            Route::get('/',        [LabelController::class, 'index'])->name('index');
+            Route::get('/{label}', [LabelController::class, 'show'])->name('show');
 
             Route::middleware('permission:labels.manage')->group(function () {
                 Route::post('/',           [LabelController::class, 'store'])->name('store');
@@ -401,13 +401,12 @@ Route::prefix('v1')->group(function () {
                 ->middleware('permission:contacts.edit')
                 ->name('opt-in');
 
+            // Label assignment is a lightweight tagging action, not a contact edit: any authenticated
+            // user who can see a contact (e.g. from the WhatsApp chat panel) may tag it.
             Route::post('/{contact}/labels', [ContactController::class, 'syncLabels'])
-                ->middleware('permission:contacts.edit')
                 ->name('sync-labels');
 
-
             Route::delete('/{contact}/labels/{label}', [ContactController::class, 'removeLabel'])
-                ->middleware('permission:contacts.edit')
                 ->name('remove-labels');
 
             Route::delete('/{contact}', [ContactController::class, 'destroy'])
