@@ -24,6 +24,8 @@ interface ChatSidebarProps {
     onSelectChat: (chat: Chat) => void;
     /** Human-readable phone line for an individual chat row, or null. */
     getPhoneText?: (chat: Chat) => string | null;
+    /** Same, resolved from a chat id alone (used by callers that only have the id). */
+    getPhoneTextForId?: (id: string) => string | null;
   };
   channelsTab: {
     engineLoading: boolean;
@@ -65,10 +67,12 @@ function ChatSidebar({
   // Shared row markup for the Chats and Status lists — a plain function (not memoized) since it
   // closes over render-scoped props (chatsTab.activeChatId, chatsTab.pictures) that already
   // change every render.
+
+
   const renderChatRow = (chat: Chat) => {
     const isActive = chatsTab.activeChatId === chat.id;
     const displayName = chat.name || chat.id.split('@')[0];
-    const phoneText = chatsTab.getPhoneText?.(chat) ?? null;
+    const phoneText = chatsTab.getPhoneTextForId?.(chat.id) ?? chatsTab.getPhoneText?.(chat) ?? null;
     // Show the number only when it adds something — i.e. the row is showing a name, not the number itself.
     const showPhone =
       !!phoneText && phoneText.replace(/\D/g, '') !== displayName.replace(/\D/g, '');
