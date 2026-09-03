@@ -774,7 +774,31 @@ export const sessionApi = {
   getGroups: (id: string) =>
     request<{ id: string; name: string; participantsCount?: number; linkedParentJID?: string | null }[]>(`/sessions/${id}/groups`),
   getGroupInfo: (sessionId: string, groupId: string) =>
-    request<{ id: string; name: string; participants: { id: string; number: string; name?: string; isAdmin: boolean; isSuperAdmin: boolean }[] }>(`/sessions/${sessionId}/groups/${encodeURIComponent(groupId)}`),
+    request<{ id: string; name: string; description?: string; participants: { id: string; number: string; name?: string; isAdmin: boolean; isSuperAdmin: boolean }[] }>(`/sessions/${sessionId}/groups/${encodeURIComponent(groupId)}`),
+  // The groups a session shares with one contact, computed server-side in ONE request. Replaces the
+  // browser fanning out a getGroupInfo per group (which trips the API rate limiter → 429).
+  getSharedGroups: (sessionId: string, contactId: string, limit = 100) =>
+    request<{ id: string; name: string }[]>(
+      `/sessions/${sessionId}/groups/for-contact?contactId=${encodeURIComponent(contactId)}&limit=${limit}`,
+    ),
+  // Invite link of a group the account administers. The engine refuses (403) for a non-admin, and the
+  // gateway can answer 503 if WhatsApp did not reply in time — callers treat both as "no link to show".
+  getGroupInviteCode: (sessionId: string, groupId: string) =>
+    request<{ inviteCode: string; inviteLink: string }>(
+      `/sessions/${sessionId}/groups/${encodeURIComponent(groupId)}/invite-code`,
+    ),
+  // Invalidate the current invite link and mint a new one. Admin-only; returns the replacement link.
+  revokeGroupInviteCode: (sessionId: string, groupId: string) =>
+    request<{ inviteCode: string; inviteLink: string; message: string }>(
+      `/sessions/${sessionId}/groups/${encodeURIComponent(groupId)}/invite-code/revoke`,
+      { method: 'POST' },
+    ),
+  // Change the group description (the "about" text). Admin-only — the engine refuses (403) otherwise.
+  setGroupDescription: (sessionId: string, groupId: string, description: string) =>
+    request<{ success: boolean; message: string }>(
+      `/sessions/${sessionId}/groups/${encodeURIComponent(groupId)}/description`,
+      { method: 'PUT', body: JSON.stringify({ description }) },
+    ),
   getChats: (id: string) => request<Chat[]>(`/sessions/${id}/chats`),
   markChatRead: (id: string, chatId: string) =>
     request<{ success: boolean }>(`/sessions/${id}/chats/read`, {
@@ -828,6 +852,88 @@ export const sessionApi = {
       body: JSON.stringify({ image, recipients, caption }),
     }),
 };
+
+// =============================================================================
+// Group info: shared cache + throttled fetch
+// =============================================================================
+// The profile card resolves a contact's joined groups by asking the engine for every group's
+// member list, and the data export does the same for a hand-picked set. Firing dozens of those
+// lookups in parallel exhausts the gateway's per-IP throttle and comes back as 429. This helper
+// keeps at most a few in flight at once, retries a 429 with backoff, and caches each result for a
+// few minutes so reopening the card (or switching chats and back) costs no request at all.
+
+type GroupInfo = Awaited<ReturnType<typeof sessionApi.getGroupInfo>>;
+
+const GROUP_INFO_TTL_MS = 5 * 60 * 1000;
+const MAX_GROUP_INFO_CONCURRENCY = 3;
+
+const groupInfoCache = new Map<string, { at: number; value: GroupInfo }>();
+const groupInfoInflight = new Map<string, Promise<GroupInfo>>();
+
+let groupInfoActive = 0;
+const groupInfoQueue: (() => void)[] = [];
+
+function pumpGroupInfoQueue() {
+  while (groupInfoActive < MAX_GROUP_INFO_CONCURRENCY && groupInfoQueue.length > 0) {
+    const job = groupInfoQueue.shift()!;
+    groupInfoActive++;
+    job();
+  }
+}
+
+function scheduleGroupInfo(sessionId: string, groupId: string): Promise<GroupInfo> {
+  return new Promise<GroupInfo>((resolve, reject) => {
+    groupInfoQueue.push(async () => {
+      try {
+        for (let attempt = 0; ; attempt++) {
+          try {
+            resolve(await sessionApi.getGroupInfo(sessionId, groupId));
+            return;
+          } catch (e) {
+            const status = (e as { status?: number })?.status;
+            if (status === 429 && attempt < 3) {
+              await new Promise(r => setTimeout(r, 600 * 2 ** attempt));
+              continue;
+            }
+            reject(e);
+            return;
+          }
+        }
+      } finally {
+        groupInfoActive--;
+        pumpGroupInfoQueue();
+      }
+    });
+    pumpGroupInfoQueue();
+  });
+}
+
+/**
+ * Cached, concurrency-limited variant of {@link sessionApi.getGroupInfo}. Prefer this for any
+ * bulk/fan-out use (profile card joined-groups, data export); a single one-off fetch can call
+ * `sessionApi.getGroupInfo` directly.
+ */
+export function getGroupInfoCached(sessionId: string, groupId: string): Promise<GroupInfo> {
+  const key = `${sessionId}::${groupId}`;
+
+  const cached = groupInfoCache.get(key);
+  if (cached && Date.now() - cached.at < GROUP_INFO_TTL_MS) return Promise.resolve(cached.value);
+
+  const inflight = groupInfoInflight.get(key);
+  if (inflight) return inflight;
+
+  const p = scheduleGroupInfo(sessionId, groupId)
+    .then(value => {
+      groupInfoCache.set(key, { at: Date.now(), value });
+      return value;
+    })
+    .finally(() => {
+      groupInfoInflight.delete(key);
+    });
+
+  groupInfoInflight.set(key, p);
+  return p;
+}
 
 // =============================================================================
 // Webhook API

@@ -3,15 +3,17 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Trans, useTranslation } from 'react-i18next';
 import { nextReconnectState } from '../utils/reconnectState';
 import { applyIncomingToChatList } from '../utils/chatList';
-import { filterChats, filterChannels, groupStatusesByContact } from '../utils/chatFilters';
-import { ArrowLeft, Loader2, Megaphone, CircleDashed, AlertCircle, MessageSquare, X, Users, Tag, UserCheck, Activity, ChevronRight } from 'lucide-react';
+import { filterChats, filterChannels, groupStatusesByContact, buildContactIndex, lookupChatContact } from '../utils/chatFilters';
+import { ArrowLeft, Loader2, Megaphone, CircleDashed, AlertCircle, MessageSquare, X, Users, Tag, UserCheck, Activity, ChevronRight, Search } from 'lucide-react';
 import api from '@/api/client';
 import { useProfilePicture } from '../hooks/useProfilePicture';
 import { useProfilePictures } from '../hooks/useProfilePictures';
 import { useResolvedPhone } from '../hooks/useResolvedPhone';
+import { useSessionContacts } from '../hooks/useSessionContacts';
 import { formatPhoneForDisplay } from '../utils/formatPhone';
 import {
   sessionApi,
+  getGroupInfoCached,
   messageApi,
   asMessageType,
   type Session,
@@ -112,7 +114,7 @@ type IndividualTab = 'info' | 'labels' | 'groups' | 'leads'
 type GroupTab = 'members' | 'info'
 
 function ProfileCardPanel({
-  activeChat, activePp, activePhoneText, profileContact, profileGroups, profileCardLoading, onClose, sessionId,
+  activeChat, activePp, activePhoneText, profileContact, profileGroups, profileCardLoading, profileGroupsLoading, onClose, sessionId, onOpenChat, onRequestGroupsScan,
 }: {
   activeChat: { id: string; name?: string; isGroup?: boolean; kind?: string };
   activePp?: string;
@@ -120,17 +122,17 @@ function ProfileCardPanel({
   profileContact: any;
   profileGroups: { id: string; name: string }[];
   profileCardLoading: boolean;
+  profileGroupsLoading: boolean;
   onClose: () => void;
   sessionId?: string;
+  onOpenChat?: (participant: { id: string; number: string; name?: string }) => void;
+  onRequestGroupsScan?: () => void;
 }) {
   const isGroup = !!activeChat.isGroup
+  const toast = useToast()
 
   const [indTab, setIndTab] = useState<IndividualTab>('info')
   const [grpTab, setGrpTab] = useState<GroupTab>('members')
-
-  const [allLabels, setAllLabels] = useState<{ id: number; name: string; color?: string }[]>([])
-  const [addingLabel, setAddingLabel] = useState(false)
-  const [labelAdding, setLabelAdding] = useState(false)
 
   const [leads, setLeads] = useState<any[]>([])
   const [leadsLoading, setLeadsLoading] = useState(false)
@@ -140,16 +142,27 @@ function ProfileCardPanel({
   const [showStaffPicker, setShowStaffPicker] = useState(false)
   const [assigningStaff, setAssigningStaff] = useState(false)
 
-  const [members, setMembers] = useState<{ id: string; isAdmin: boolean; isSuperAdmin: boolean; name?: string }[]>([])
+  const [members, setMembers] = useState<{ id: string; number: string; isAdmin: boolean; isSuperAdmin: boolean; name?: string }[]>([])
   const [membersLoading, setMembersLoading] = useState(false)
   const [crmMap, setCrmMap] = useState<Map<string, string>>(new Map())
+  const [memberSearch, setMemberSearch] = useState('')
+
+  // Group Info tab: invite link + description editing (both admin-only on the engine)
+  const [groupDescription, setGroupDescription] = useState<string>('')
+  const [descEditing, setDescEditing] = useState(false)
+  const [descDraft, setDescDraft] = useState('')
+  const [descSaving, setDescSaving] = useState(false)
+  const [invite, setInvite] = useState<{ code: string; link: string } | null>(null)
+  const [inviteLoading, setInviteLoading] = useState(false)
 
   // Label management for individual contact Info tab
   const [infoLabels, setInfoLabels] = useState<{ id: number; name: string; color?: string }[]>([])
   const [infoLabelsOpen, setInfoLabelsOpen] = useState(false)
-  const [infoLabelAdding, setInfoLabelAdding] = useState(false)
   const [infoLabelRemoving, setInfoLabelRemoving] = useState<number | null>(null)
   const [localContactLabels, setLocalContactLabels] = useState<{ id: number; name: string; color?: string }[]>([])
+  // Multi-select draft for the "Add to labels" editor: the set of label ids checked right now.
+  const [labelDraft, setLabelDraft] = useState<Set<number>>(new Set())
+  const [labelSaving, setLabelSaving] = useState(false)
 
   // Sync localContactLabels when profileContact changes
   useEffect(() => {
@@ -157,14 +170,26 @@ function ProfileCardPanel({
   }, [profileContact])
 
   // Reset tabs when chat changes
-  useEffect(() => { setIndTab('info'); setGrpTab('members') }, [activeChat.id])
+  useEffect(() => {
+    setIndTab('info'); setGrpTab('members')
+    setInvite(null); setDescEditing(false)
+    setMemberSearch('')
+    setInfoLabelsOpen(false)
+  }, [activeChat.id])
 
-  // Load labels list for individual contacts
+  // The "Groups" tab's shared-group scan is expensive (one request per group), so it only runs
+  // once the user actually opens that tab. The parent debounces re-runs by chat id.
+  useEffect(() => {
+    if (!isGroup && indTab === 'groups') onRequestGroupsScan?.()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [indTab, isGroup, activeChat.id])
+
+  // Load the full CRM label list for the "Add to labels" editor. GET /labels answers { labels: [...] }.
   useEffect(() => {
     if (isGroup) return
-    api.get('/contact-labels').then(r => setAllLabels(r.data?.data ?? r.data ?? [])).catch(() => { })
-    // Also load labels for Info tab label management
-    api.get('/labels').then(r => setInfoLabels(r.data?.data ?? r.data ?? [])).catch(() => { })
+    api.get('/labels')
+      .then(r => setInfoLabels(r.data?.labels ?? r.data?.data ?? r.data ?? []))
+      .catch(() => { })
   }, [isGroup])
 
   // Load group members when viewing a group chat
@@ -173,25 +198,16 @@ function ProfileCardPanel({
     setMembersLoading(true)
     setMembers([])
     setCrmMap(new Map())
-
+   
     Promise.all([
-      api.get('/waha/group/participants', {
-        params: {
-          session_id: sessionId,
-          group_id: activeChat.id,
-        },
-      }),
-
+      getGroupInfoCached(sessionId, activeChat.id),
       api.get('/contacts?per_page=100').catch(() => null),
     ])
-      .then(([membersRes, crmRes]) => {
-        // WAHA participants
-        const loadedMembers =
-          membersRes.data?.participants ??
-          membersRes.data ??
-          []
-
-        setMembers(loadedMembers)
+      .then(([groupInfo, crmRes]) => {
+        // sessionApi.getGroupInfo is fetch-based, not axios — it returns the parsed JSON
+        // directly, with `participants` as a top-level field (not nested under `.data`).
+        setMembers(groupInfo.participants ?? [])
+        setGroupDescription(groupInfo.description ?? '')
 
         // CRM contacts
         const crmContacts: { name?: string; phone?: string }[] =
@@ -224,6 +240,54 @@ function ProfileCardPanel({
       })
   }, [isGroup, activeChat?.id, sessionId])
 
+  // Fetch the invite link lazily, only once the Group Info tab is opened. The engine refuses this for
+  // a non-admin account (403) and the gateway may answer 503 — both just mean "no link to show".
+  useEffect(() => {
+    if (!isGroup || grpTab !== 'info' || !sessionId || !activeChat?.id || invite) return
+    setInviteLoading(true)
+    sessionApi.getGroupInviteCode(sessionId, activeChat.id)
+      .then(r => setInvite({ code: r.inviteCode, link: r.inviteLink }))
+      .catch(() => setInvite(null))
+      .finally(() => setInviteLoading(false))
+  }, [isGroup, grpTab, sessionId, activeChat?.id, invite])
+
+  const copyInviteLink = () => {
+    if (!invite) return
+    const done = navigator.clipboard?.writeText(invite.link)
+    if (done) done.then(() => toast.success('Invite link copied')).catch(() => toast.error('Could not copy the invite link'))
+    else toast.error('Could not copy the invite link')
+  }
+
+  const revokeInviteLink = async () => {
+    if (!sessionId || !activeChat?.id) return
+    if (!window.confirm('Revoke the current invite link? Any link already shared will stop working.')) return
+    setInviteLoading(true)
+    try {
+      const r = await sessionApi.revokeGroupInviteCode(sessionId, activeChat.id)
+      setInvite({ code: r.inviteCode, link: r.inviteLink })
+      toast.success('Invite link revoked', 'A new link has been generated')
+    } catch (e) {
+      toast.error('Could not revoke the invite link', e instanceof Error ? e.message : undefined)
+    } finally {
+      setInviteLoading(false)
+    }
+  }
+
+  const saveDescription = async () => {
+    if (!sessionId || !activeChat?.id) return
+    setDescSaving(true)
+    try {
+      await sessionApi.setGroupDescription(sessionId, activeChat.id, descDraft)
+      setGroupDescription(descDraft)
+      setDescEditing(false)
+      toast.success('Group description updated')
+    } catch (e) {
+      toast.error('Could not update the description', e instanceof Error ? e.message : undefined)
+    } finally {
+      setDescSaving(false)
+    }
+  }
+
   // Load leads when tab opens
   useEffect(() => {
     if (indTab !== 'leads' || !profileContact?.id) return
@@ -240,44 +304,94 @@ function ProfileCardPanel({
     api.get('/staff').then(r => setStaffList(r.data?.data ?? r.data ?? [])).catch(() => { })
   }, [showStaffPicker]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const addLabelToContact = async (labelId: number) => {
+  // Full-set sync: POST /contacts/:id/labels with { label_ids } replaces every label on the contact,
+  // so one call covers adding several at once and removing others. Response carries the fresh list.
+  const saveLabels = async (ids: number[]): Promise<void> => {
     if (!profileContact?.id) return
-    setLabelAdding(true)
+    setLabelSaving(true)
     try {
-      await api.post(`/contacts/${profileContact.id}/labels`, { label_id: labelId })
-      setAddingLabel(false)
-    } catch { }
-    finally { setLabelAdding(false) }
-  }
-
-  const addInfoLabel = async (label: { id: number; name: string; color?: string }) => {
-    if (!profileContact?.id) return
-    setInfoLabelAdding(true)
-    try {
-      await api.post(`/contacts/${profileContact.id}/labels`, { label_id: label.id })
-      setLocalContactLabels(prev => prev.some(l => l.id === label.id) ? prev : [...prev, label])
+      if (ids.length === 0) {
+        // The sync endpoint rejects an empty label_ids array; clear by removing each individually.
+        await Promise.all(
+          localContactLabels.map(l =>
+            api.delete(`/contacts/${profileContact.id}/labels/${l.id}`).catch(() => {}),
+          ),
+        )
+        setLocalContactLabels([])
+      } else {
+        const r = await api.post(`/contacts/${profileContact.id}/labels`, { label_ids: ids })
+        const fresh: { id: number; name: string; color?: string }[] =
+          r.data?.contact?.labels ?? infoLabels.filter(l => ids.includes(l.id))
+        setLocalContactLabels(fresh)
+      }
       setInfoLabelsOpen(false)
     } catch { }
-    finally { setInfoLabelAdding(false) }
+    finally { setLabelSaving(false) }
+  }
+
+  // Open the multi-select editor with the contact's current labels pre-checked.
+  const openLabelEditor = () => {
+    setLabelDraft(new Set(localContactLabels.map(l => l.id)))
+    setInfoLabelsOpen(true)
+  }
+
+  const toggleLabelDraft = (id: number) => {
+    setLabelDraft(prev => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
   }
 
   const removeInfoLabel = async (labelId: number) => {
-    if (!profileContact?.id) return
     setInfoLabelRemoving(labelId)
     try {
-      await api.delete(`/contacts/${profileContact.id}/labels/${labelId}`)
-      setLocalContactLabels(prev => prev.filter(l => l.id !== labelId))
-    } catch { }
-    finally { setInfoLabelRemoving(null) }
+      await saveLabels(localContactLabels.filter(l => l.id !== labelId).map(l => l.id))
+    } finally { setInfoLabelRemoving(null) }
+  }
+
+  // Multi-select label picker: every CRM label as a checkbox, the contact's current labels
+  // pre-checked. Save writes the whole checked set in one request (add several / remove others).
+  const renderLabelEditor = () => {
+    if (!infoLabelsOpen) return null
+    return (
+      <div style={{ marginBottom: 8, border: '1px solid #e5e7eb', borderRadius: 8, padding: 4 }}>
+        <div style={{ maxHeight: 150, overflowY: 'auto' }}>
+          {infoLabels.length === 0 ? (
+            <p style={{ fontSize: 11, color: '#9ca3af', padding: '4px 8px' }}>No labels available</p>
+          ) : (
+            infoLabels.map(lbl => (
+              <label key={lbl.id}
+                style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 8px', cursor: 'pointer', borderRadius: 6, fontSize: 12, color: '#374151' }}
+                onMouseEnter={e => (e.currentTarget.style.background = '#f3f4f6')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'none')}>
+                <input type="checkbox" checked={labelDraft.has(lbl.id)} onChange={() => toggleLabelDraft(lbl.id)} style={{ margin: 0 }} />
+                <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: lbl.color ?? '#6b7280', flexShrink: 0 }} />
+                {lbl.name}
+              </label>
+            ))
+          )}
+        </div>
+        <div style={{ display: 'flex', gap: 6, padding: '6px 4px 2px', borderTop: '1px solid #f3f4f6', marginTop: 4 }}>
+          <button onClick={() => saveLabels([...labelDraft])} disabled={labelSaving}
+            style={{ fontSize: 11, padding: '4px 12px', borderRadius: 6, border: 'none', background: '#2563eb', color: '#fff', cursor: 'pointer', opacity: labelSaving ? 0.6 : 1 }}>
+            {labelSaving ? 'Saving…' : 'Save'}
+          </button>
+          <button onClick={() => setInfoLabelsOpen(false)} disabled={labelSaving}
+            style={{ fontSize: 11, padding: '4px 12px', borderRadius: 6, border: '1px solid #d1d5db', background: '#fff', cursor: 'pointer' }}>
+            Cancel
+          </button>
+        </div>
+      </div>
+    )
   }
 
   const exportMembersCSV = () => {
     const csv = [
       'Name,Phone,WA ID,Is Admin,CRM Name',
       ...members.map(p => {
-        const phone = p.id.replace(/@c\.us$/, '')
-        const crmName = crmMap.get(phone.slice(-10)) ?? ''
-        return `"${p.name ?? ''}","${phone}","${p.id}","${(p.isAdmin || p.isSuperAdmin) ? 'Yes' : 'No'}","${crmName}"`
+        const crmName = crmMap.get(p.number.slice(-10)) ?? ''
+        return `"${p.name ?? ''}","${p.number}","${p.id}","${(p.isAdmin || p.isSuperAdmin) ? 'Yes' : 'No'}","${crmName}"`
       }),
     ].join('\n')
     const blob = new Blob([csv], { type: 'text/csv' })
@@ -387,7 +501,31 @@ function ProfileCardPanel({
                 </button>
               )}
             </div>
-            {membersLoading ? (
+            {members.length > 0 && (
+              <div style={{ position: 'relative', marginBottom: 10 }}>
+                <Search size={13} style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', color: '#9ca3af' }} />
+                <input
+                  value={memberSearch}
+                  onChange={e => setMemberSearch(e.target.value)}
+                  placeholder="Search members by name or number"
+                  style={{ width: '100%', fontSize: 12, padding: '6px 8px 6px 26px', borderRadius: 6, border: '1px solid #d1d5db', boxSizing: 'border-box' }}
+                />
+              </div>
+            )}
+            {(() => {
+              const q = memberSearch.trim().toLowerCase()
+              const qDigits = q.replace(/\D/g, '')
+              const filteredMembers = q
+                ? members.filter(p => {
+                    const crmName = crmMap.get(p.number.slice(-10))
+                    return (
+                      (p.name && p.name.toLowerCase().includes(q)) ||
+                      (crmName && crmName.toLowerCase().includes(q)) ||
+                      (qDigits && p.number.replace(/\D/g, '').includes(qDigits))
+                    )
+                  })
+                : members
+              return membersLoading ? (
               <div style={{ display: 'flex', justifyContent: 'center', padding: 24 }}>
                 <Loader2 size={20} className="animate-spin" style={{ color: '#6b7280' }} />
               </div>
@@ -395,21 +533,39 @@ function ProfileCardPanel({
               <p style={{ fontSize: 12, color: '#9ca3af', textAlign: 'center', padding: '16px 0' }}>
                 {sessionId ? 'No members found' : 'No session selected'}
               </p>
+            ) : filteredMembers.length === 0 ? (
+              <p style={{ fontSize: 12, color: '#9ca3af', textAlign: 'center', padding: '16px 0' }}>
+                No members match “{memberSearch}”
+              </p>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                {members.map(p => {
-                  const phone = p.id.replace(/@.*/, '')
-                  const crmName = crmMap.get(phone.slice(-10))
+                {filteredMembers.map(p => {
+                  const crmName = crmMap.get(p.number.slice(-10))
+                  const primaryName =  p.name ?? crmName
+                  
                   return (
-                    <div key={p.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 10px', borderRadius: 8, background: '#f9fafb' }}>
+                    <div
+                      key={p.id}
+                      onClick={() => onOpenChat?.({ id: p.id, number: p.number, name: p.name })}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpenChat?.({ id: p.id, number: p.number, name: p.name }) } }}
+                      title="Open chat with this member"
+                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 10px', borderRadius: 8, background: '#f9fafb', cursor: onOpenChat ? 'pointer' : 'default' }}
+                    >
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         <div style={{ width: 28, height: 28, borderRadius: '50%', background: (p.isAdmin || p.isSuperAdmin) ? '#dbeafe' : '#f3f4f6', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: p.isAdmin ? '#1d4ed8' : '#6b7280', flexShrink: 0 }}>
-                          {phone.charAt(0)}
+                          {p.number.charAt(0)}
                         </div>
                         <div>
-                          <div style={{ fontSize: 13, color: '#374151' }}>{p.name ?? phone}</div>
-                          {p.name && <div style={{ fontSize: 10, color: '#9ca3af' }}>{phone}</div>}
-                          {crmName && <div style={{ fontSize: 10, color: '#6b7280' }}>CRM: {crmName}</div>}
+                          <div style={{ fontSize: 13, color: '#374151' }}>
+                            {primaryName ?? p.number}
+                            {crmName && <span style={{ fontSize: 9, color: '#16a34a', marginLeft: 4, fontWeight: 600 }}>• saved</span>}
+                          </div>
+                          {primaryName && <div style={{ fontSize: 10, color: '#9ca3af' }}>{p.number}</div>}
+                          {crmName && p.name && p.name !== crmName && (
+                            <div style={{ fontSize: 10, color: '#6b7280' }}>WA name: {p.name}</div>
+                          )}
                         </div>
                       </div>
                       {(p.isAdmin || p.isSuperAdmin) && (
@@ -421,7 +577,8 @@ function ProfileCardPanel({
                   )
                 })}
               </div>
-            )}
+            )
+            })()}
           </div>
         )}
 
@@ -442,9 +599,88 @@ function ProfileCardPanel({
               {members.filter(m => m.isAdmin || m.isSuperAdmin).length > 0 && (
                 <div style={{ color: '#374151' }}>
                   <span style={{ color: '#9ca3af' }}>Admins:</span>{' '}
-                  {members.filter(m => m.isAdmin || m.isSuperAdmin).map(m => m.id.replace(/@.*/, '')).join(', ')}
+                  {members.filter(m => m.isAdmin || m.isSuperAdmin).map(m => m.number).join(', ')}
                 </div>
               )}
+
+              {/* Description — admin-only edit; a non-admin PUT is refused (403) with a toast. */}
+              <div style={{ color: '#374151' }}>
+                <span style={{ color: '#9ca3af' }}>Description</span>
+                {descEditing ? (
+                  <div style={{ marginTop: 4 }}>
+                    <textarea
+                      value={descDraft}
+                      onChange={e => setDescDraft(e.target.value)}
+                      rows={3}
+                      style={{ width: '100%', fontSize: 12, padding: 6, borderRadius: 6, border: '1px solid #d1d5db', resize: 'vertical', boxSizing: 'border-box' }}
+                    />
+                    <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+                      <button
+                        onClick={saveDescription}
+                        disabled={descSaving}
+                        style={{ fontSize: 11, padding: '3px 10px', borderRadius: 6, border: 'none', background: '#2563eb', color: '#fff', cursor: 'pointer' }}
+                      >
+                        {descSaving ? 'Saving…' : 'Save'}
+                      </button>
+                      <button
+                        onClick={() => setDescEditing(false)}
+                        disabled={descSaving}
+                        style={{ fontSize: 11, padding: '3px 10px', borderRadius: 6, border: '1px solid #d1d5db', background: '#fff', cursor: 'pointer' }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ marginTop: 4, display: 'flex', alignItems: 'flex-start', gap: 6 }}>
+                    <span style={{ whiteSpace: 'pre-wrap', flex: 1, color: groupDescription ? '#374151' : '#9ca3af' }}>
+                      {groupDescription || 'No description'}
+                    </span>
+                    <button
+                      onClick={() => { setDescDraft(groupDescription); setDescEditing(true) }}
+                      style={{ fontSize: 11, padding: '2px 8px', borderRadius: 6, border: '1px solid #d1d5db', background: '#fff', cursor: 'pointer', flexShrink: 0 }}
+                    >
+                      Edit
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Invite link — admin-only; a non-admin GET is refused, so the row is hidden then. */}
+             {/* <div style={{ color: '#374151' }}>
+                <span style={{ color: '#9ca3af' }}>Invite link</span>
+                <div style={{ marginTop: 4 }}>
+                  {inviteLoading && !invite ? (
+                    <div style={{ color: '#9ca3af' }}>Loading…</div>
+                  ) : invite ? (
+                    <code style={{ fontSize: 10, background: '#f3f4f6', padding: '2px 6px', borderRadius: 4, wordBreak: 'break-all', display: 'block' }}>
+                      {invite.link}
+                    </code>
+                  ) : (
+                    <div style={{ color: '#9ca3af' }}>Could not load the invite link.</div>
+                  )}
+                  <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+                    <button
+                      onClick={copyInviteLink}
+                      disabled={!invite}
+                      style={{ fontSize: 11, padding: '3px 10px', borderRadius: 6, border: '1px solid #d1d5db', background: '#fff', cursor: invite ? 'pointer' : 'not-allowed', opacity: invite ? 1 : 0.5 }}
+                    >
+                      Copy
+                    </button>
+                    <button
+                      onClick={revokeInviteLink}
+                      disabled={inviteLoading}
+                      style={{ fontSize: 11, padding: '3px 10px', borderRadius: 6, border: '1px solid #fecaca', background: '#fff', color: '#dc2626', cursor: 'pointer' }}
+                    >
+                      {inviteLoading ? 'Revoking…' : 'Revoke & regenerate'}
+                    </button>
+                  </div>
+                  <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 4 }}>
+                    ℹ️ Reading or revoking the invite link needs group-admin rights on WhatsApp.
+                  </div>
+                </div>
+              </div> */}
+
             </div>
           </div>
         )}
@@ -536,27 +772,12 @@ function ProfileCardPanel({
                     <div style={{ fontSize: 10, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                       Labels
                     </div>
-                    <button onClick={() => setInfoLabelsOpen(v => !v)}
+                    <button onClick={() => (infoLabelsOpen ? setInfoLabelsOpen(false) : openLabelEditor())}
                       style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: '#2563eb', display: 'flex', alignItems: 'center', gap: 3 }}>
-                      <Tag size={10} /> {infoLabelsOpen ? 'Cancel' : '+ Add Label'}
+                      <Tag size={10} /> {infoLabelsOpen ? 'Cancel' : localContactLabels.length > 0 ? 'Edit labels' : '+ Add to labels'}
                     </button>
                   </div>
-                  {infoLabelsOpen && (
-                    <div style={{ marginBottom: 8, maxHeight: 130, overflowY: 'auto', border: '1px solid #e5e7eb', borderRadius: 8, padding: 4 }}>
-                      {infoLabels.length === 0
-                        ? <p style={{ fontSize: 11, color: '#9ca3af', padding: '4px 8px' }}>No labels available</p>
-                        : infoLabels.filter(lbl => !localContactLabels.some(l => l.id === lbl.id)).map(lbl => (
-                          <button key={lbl.id} onClick={() => addInfoLabel(lbl)} disabled={infoLabelAdding}
-                            style={{ display: 'flex', alignItems: 'center', gap: 6, width: '100%', textAlign: 'left', padding: '5px 8px', background: 'none', border: 'none', cursor: 'pointer', borderRadius: 6, fontSize: 12, color: '#374151' }}
-                            onMouseEnter={e => (e.currentTarget.style.background = '#f3f4f6')}
-                            onMouseLeave={e => (e.currentTarget.style.background = 'none')}>
-                            <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: lbl.color ?? '#6b7280', flexShrink: 0 }} />
-                            {lbl.name}
-                          </button>
-                        ))
-                      }
-                    </div>
-                  )}
+                  {renderLabelEditor()}
                   {localContactLabels.length > 0 ? (
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
                       {localContactLabels.map(lbl => (
@@ -590,37 +811,26 @@ function ProfileCardPanel({
           <div style={{ padding: '12px 16px' }}>
             {/* System / CRM labels */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-              <div style={{ fontSize: 10, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em' }}>System Labels</div>
+              <div style={{ fontSize: 10, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em' }}>CRM Labels</div>
               {hasContact && (
-                <button onClick={() => setAddingLabel(v => !v)}
+                <button onClick={() => (infoLabelsOpen ? setInfoLabelsOpen(false) : openLabelEditor())}
                   style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: '#2563eb', display: 'flex', alignItems: 'center', gap: 3 }}>
-                  <Tag size={10} /> {addingLabel ? 'Cancel' : '+ Add'}
+                  <Tag size={10} /> {infoLabelsOpen ? 'Cancel' : localContactLabels.length > 0 ? 'Edit labels' : '+ Add to labels'}
                 </button>
               )}
             </div>
 
-            {addingLabel && (
-              <div style={{ marginBottom: 10, maxHeight: 130, overflowY: 'auto', border: '1px solid #e5e7eb', borderRadius: 8, padding: 4 }}>
-                {allLabels.length === 0
-                  ? <p style={{ fontSize: 11, color: '#9ca3af', padding: '4px 8px' }}>No labels created yet</p>
-                  : allLabels.map(lbl => (
-                    <button key={lbl.id} onClick={() => addLabelToContact(lbl.id)} disabled={labelAdding}
-                      style={{ display: 'block', width: '100%', textAlign: 'left', padding: '5px 8px', background: 'none', border: 'none', cursor: 'pointer', borderRadius: 6, fontSize: 12, color: '#374151' }}
-                      onMouseEnter={e => (e.currentTarget.style.background = '#f3f4f6')}
-                      onMouseLeave={e => (e.currentTarget.style.background = 'none')}>
-                      <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: lbl.color ?? '#6b7280', marginRight: 6 }} />
-                      {lbl.name}
-                    </button>
-                  ))
-                }
-              </div>
-            )}
+            {renderLabelEditor()}
 
-            {profileContact?.labels && profileContact.labels.length > 0 ? (
+            {localContactLabels.length > 0 ? (
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 12 }}>
-                {profileContact.labels.map((lbl: { id: number; name: string; color?: string }) => (
-                  <span key={lbl.id} style={{ fontSize: 11, padding: '2px 8px', borderRadius: 10, background: (lbl.color ?? '#6b7280') + '22', color: lbl.color ?? '#374151', fontWeight: 500 }}>
+                {localContactLabels.map(lbl => (
+                  <span key={lbl.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, padding: '2px 6px 2px 8px', borderRadius: 10, background: (lbl.color ?? '#6b7280') + '22', color: lbl.color ?? '#374151', fontWeight: 500 }}>
                     🏷️ {lbl.name}
+                    <button onClick={() => removeInfoLabel(lbl.id)} disabled={infoLabelRemoving === lbl.id}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, lineHeight: 1, color: 'inherit', opacity: infoLabelRemoving === lbl.id ? 0.4 : 0.6, fontSize: 12 }}>
+                      ×
+                    </button>
                   </span>
                 ))}
               </div>
@@ -652,7 +862,7 @@ function ProfileCardPanel({
             <div style={{ fontSize: 10, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 5 }}>
               <Users size={11} /> Shared WhatsApp Groups
             </div>
-            {profileCardLoading ? (
+            {profileGroupsLoading ? (
               <div style={{ display: 'flex', justifyContent: 'center', padding: 20 }}>
                 <Loader2 size={18} className="animate-spin" style={{ color: '#6b7280' }} />
               </div>
@@ -765,6 +975,11 @@ export function Chats() {
   const [profileContact, setProfileContact] = useState<{ id: number; name: string | null; phone: string; labels?: { id: number; name: string; color?: string }[] } | null>(null);
   const [profileGroups, setProfileGroups] = useState<{ id: string; name: string }[]>([]);
   const [profileCardLoading, setProfileCardLoading] = useState(false);
+  // The joined-groups scan asks the engine for every group's member list — dozens of requests.
+  // It stays deferred until the user actually opens the profile card's "Groups" tab, at which
+  // point this holds the chat id it was requested for.
+  const [profileGroupsLoading, setProfileGroupsLoading] = useState(false);
+  const [groupsScanChatId, setGroupsScanChatId] = useState<string | null>(null);
 
   // Chats/Channels/Status tab selection. Switching tabs closes whatever conversation is open so a
   // press on another tab doesn't leave a Chats-tab room rendered underneath a Channels/Status list.
@@ -775,6 +990,37 @@ export function Chats() {
     setActiveChannel(null);
     setActiveStatusContactId(null);
   }, []);
+
+  // Open a 1-1 chat with a group member picked from the profile card's Members tab. Reuse the real
+  // sidebar chat when one already exists (so unread counts / last-message stay wired), otherwise open
+  // a synthetic individual chat keyed by the participant's engine id — the message list backfills from
+  // history and the composer can start the conversation.
+  const openChatWithParticipant = useCallback(
+    (participant: { id: string; number: string; name?: string }) => {
+      const existing =
+        chats.find(c => c.id === participant.id) ??
+        (participant.id.endsWith('@c.us')
+          ? chats.find(
+              c => !c.isGroup && c.id.endsWith('@c.us') && c.id.split('@')[0].slice(-10) === participant.number.slice(-10),
+            )
+          : undefined);
+      setActiveTab('chats');
+      setActiveChannel(null);
+      setActiveStatusContactId(null);
+      setActiveChat(
+        existing ?? {
+          id: participant.id,
+          name: participant.name ?? participant.number,
+          isGroup: false,
+          kind: 'individual',
+          unreadCount: 0,
+          timestamp: Date.now(),
+        },
+      );
+      setShowProfileCard(false);
+    },
+    [chats],
+  );
 
   // Channels tab: only whatsapp-web.js implements channel listing/reading — Baileys throws 501 for
   // both, so the query is gated off entirely (never fired) rather than left to fail per-request.
@@ -884,6 +1130,24 @@ export function Chats() {
   );
   const activePhoneText =
     activePhoneDisplay ?? (resolvedPhoneQ.data ? formatPhoneForDisplay(resolvedPhoneQ.data) : null);
+
+  // Session contact list — powers name/number search in the sidebar and the number shown under a
+  // saved contact's chat row. One request per session, cached; falls back to id-only search if it fails.
+  const sessionContactsQ = useSessionContacts(selectedSessionId || undefined);
+  const contactIndex = useMemo(() => buildContactIndex(sessionContactsQ.data), [sessionContactsQ.data]);
+
+  // Phone line for an individual chat row: prefer the number encoded in the id, else the saved
+  // contact's number (covers @lid chats). Groups/channels/status get nothing.
+  const chatRowPhone = useCallback(
+    (chat: Chat): string | null => {
+      if (chat.kind !== 'individual') return null;
+      const fromId = formatPhoneForDisplay(chat.id);
+      if (fromId) return fromId;
+      const contact = lookupChatContact(chat.id, contactIndex);
+      return contact?.number ? formatPhoneForDisplay(contact.number) : null;
+    },
+    [contactIndex],
+  );
 
   // 1. Fetch available connected sessions on mount
   useEffect(() => {
@@ -1400,7 +1664,7 @@ export function Chats() {
   // One search box drives all three tabs; each matches on its own fields. Plain consts (not useMemo)
   // because chats/channelsQuery.data/statusesQuery.data are already stable, query-cached references,
   // so re-filtering on every render is cheap. See utils/chatFilters for the two status orderings.
-  const filteredChats = filterChats(chats, searchQuery);
+  const filteredChats = filterChats(chats, searchQuery, contactIndex);
   // The channels zero-state ("not subscribed to any channels") stays keyed on the UNFILTERED list
   // below, so a non-matching search renders an empty list rather than claiming there are none.
   const filteredChannels = filterChannels(channelsQuery.data ?? [], searchQuery);
@@ -1425,51 +1689,48 @@ export function Chats() {
     if (el) el.scrollTop = el.scrollHeight;
   }, [activeStatusGroup?.contact.id, activeStatusGroup?.items]);
 
-  // Profile card: load contact info + joined groups for individual chats.
-  // Group chats fetch their own members inside ProfileCardPanel.
+  // Profile card, part 1 — the cheap load: just the CRM contact record (one request). Runs on
+  // every profile-card open. Group chats fetch their own members inside ProfileCardPanel.
   useEffect(() => {
-    if (!showProfileCard || !activeChat) { setProfileContact(null); setProfileGroups([]); return; }
-    if (activeChat.isGroup) { setProfileContact(null); setProfileGroups([]); return; }
+    if (!showProfileCard || !activeChat || activeChat.isGroup) {
+      setProfileContact(null); setProfileGroups([]); setGroupsScanChatId(null);
+      return;
+    }
+    // New chat: drop the previous joined-groups result and disarm the scan until the tab is opened again.
+    setProfileGroups([]); setGroupsScanChatId(null);
+    setProfileCardLoading(true);
+    // Use last 10 digits for CRM search to handle country-code variations.
+    const last10 = activeChat.id.split('@')[0].replace(/\D/g, '').slice(-10);
+    let cancelled = false;
+    api.get(`/contacts?search=${encodeURIComponent(last10)}&per_page=1`)
+      .then(res => {
+        if (cancelled) return;
+        const contacts = res?.data?.data ?? res?.data ?? [];
+        setProfileContact(contacts.length > 0 ? contacts[0] : null);
+      })
+      .catch(() => { if (!cancelled) setProfileContact(null); })
+      .finally(() => { if (!cancelled) setProfileCardLoading(false); });
+    return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showProfileCard, activeChat?.id]);
 
+  // Profile card, part 2 — which groups this contact is in. Fires only once the user opens the
+  // "Groups" tab (ProfileCardPanel calls onRequestGroupsScan, which sets groupsScanChatId). The
+  // whole scan is ONE request: the backend walks the group list and matches participants itself,
+  // so the browser never fans out a getGroupInfo per group (which tripped the rate limiter → 429).
   useEffect(() => {
     if (!showProfileCard || !activeChat || activeChat.isGroup) return;
-    setProfileCardLoading(true);
-    const phone = activeChat.id.split('@')[0];
-    // Use last 10 digits for CRM search to handle country-code variations
-    const last10 = phone.replace(/\D/g, '').slice(-10);
-    // Fetch contact info and all session groups in parallel, then for each group
-    // check if this contact is a participant (joined groups only).
-    Promise.all([
-      api.get(`/contacts?search=${encodeURIComponent(last10)}&per_page=1`).catch(() => null),
-      selectedSessionId ? sessionApi.getGroups(selectedSessionId).catch(() => [] as { id: string; name: string }[]) : Promise.resolve([] as { id: string; name: string }[]),
-    ]).then(async ([contactRes, groups]) => {
-      const contacts = contactRes?.data?.data ?? contactRes?.data ?? [];
-      setProfileContact(contacts.length > 0 ? contacts[0] : null);
+    if (!selectedSessionId || groupsScanChatId !== activeChat.id) return;
 
-      if (!groups || groups.length === 0) {
-        setProfileGroups([]);
-        setProfileCardLoading(false);
-        return;
-      }
-
-      // Cap at 40 groups to avoid flooding WAHA with requests
-      const capped = (groups as { id: string; name: string }[]).slice(0, 40);
-      const infos = await Promise.allSettled(
-        capped.map(g => sessionApi.getGroupInfo(selectedSessionId!, g.id).catch(() => null))
-      );
-
-      const joinedGroups = capped.filter((g, i) => {
-        const res = infos[i];
-        if (res.status !== 'fulfilled' || !res.value) return false;
-        return res.value.participants?.some((p: { number: string }) => p.number === phone);
-      });
-
-      setProfileGroups(joinedGroups);
-      setProfileCardLoading(false);
-    });
-  }, [showProfileCard, activeChat?.id, selectedSessionId]); // eslint-disable-line react-hooks/exhaustive-deps
+    let cancelled = false;
+    setProfileGroupsLoading(true);
+    sessionApi.getSharedGroups(selectedSessionId, activeChat.id)
+      .then(groups => { if (!cancelled) setProfileGroups(groups ?? []); })
+      .catch(() => { if (!cancelled) setProfileGroups([]); })
+      .finally(() => { if (!cancelled) setProfileGroupsLoading(false); });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showProfileCard, activeChat?.id, selectedSessionId, groupsScanChatId]);
 
   // Image media items for the lightbox, in render order. `getMediaSrc` reconstructs a usable src
   // from either a base64 payload or a URL — the ChatMessageView shape stores both in `data`.
@@ -1541,6 +1802,7 @@ export function Chats() {
               activeChatId: activeChat?.id,
               pictures: listPics.data,
               onSelectChat: setActiveChat,
+              getPhoneText: chatRowPhone,
             }}
             channelsTab={{
               engineLoading: currentEngine.isLoading,
@@ -1648,8 +1910,11 @@ export function Chats() {
                     profileContact={profileContact}
                     profileGroups={profileGroups}
                     profileCardLoading={profileCardLoading}
+                    profileGroupsLoading={profileGroupsLoading}
                     sessionId={selectedSessionId}
                     onClose={() => setShowProfileCard(false)}
+                    onOpenChat={openChatWithParticipant}
+                    onRequestGroupsScan={() => setGroupsScanChatId(activeChat.id)}
                   />
                 )}
               </div>

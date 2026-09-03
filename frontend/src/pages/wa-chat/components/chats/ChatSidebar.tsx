@@ -22,6 +22,8 @@ interface ChatSidebarProps {
     activeChatId?: string;
     pictures?: Record<string, string | null>;
     onSelectChat: (chat: Chat) => void;
+    /** Human-readable phone line for an individual chat row, or null. */
+    getPhoneText?: (chat: Chat) => string | null;
   };
   channelsTab: {
     engineLoading: boolean;
@@ -65,6 +67,11 @@ function ChatSidebar({
   // change every render.
   const renderChatRow = (chat: Chat) => {
     const isActive = chatsTab.activeChatId === chat.id;
+    const displayName = chat.name || chat.id.split('@')[0];
+    const phoneText = chatsTab.getPhoneText?.(chat) ?? null;
+    // Show the number only when it adds something — i.e. the row is showing a name, not the number itself.
+    const showPhone =
+      !!phoneText && phoneText.replace(/\D/g, '') !== displayName.replace(/\D/g, '');
     return (
       <div
         key={chat.id}
@@ -85,7 +92,7 @@ function ChatSidebar({
         <div className="chat-item-info">
           <div className="chat-item-top">
             <span className="chat-item-name" title={chat.name || chat.id}>
-              {chat.name || chat.id.split('@')[0]}
+              {displayName}
             </span>
             {chat.kind !== 'individual' && chat.kind !== 'unknown' && (
               <span className={`chat-kind-badge kind-${chat.kind}`}>{t(`chats.kind.${chat.kind}`)}</span>
@@ -95,6 +102,22 @@ function ChatSidebar({
                 where the time belongs, on every such row. */}
             {chat.timestamp ? <span className="chat-item-time">{formatChatTime(chat.timestamp)}</span> : null}
           </div>
+          {showPhone && (
+            <div
+              className="chat-item-phone"
+              style={{
+                fontSize: 11,
+                color: 'var(--text-muted, #8696a0)',
+                lineHeight: 1.3,
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+              }}
+              title={phoneText ?? undefined}
+            >
+              {phoneText}
+            </div>
+          )}
           <div className="chat-item-bottom">
             <span className="chat-item-snippet" title={formatLastMessageSnippet(chat)}>
               {formatLastMessageSnippet(chat) || <span className="no-message">{t('chats.noMessageYet')}</span>}

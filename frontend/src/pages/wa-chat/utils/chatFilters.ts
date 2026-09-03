@@ -19,20 +19,78 @@ interface ChatLike {
   kind?: string;
 }
 
+/** The subset of an engine contact record the chat list needs. */
+export interface ChatContactInfo {
+  /** Name from the account's addressbook — only a saved contact has one. */
+  name?: string;
+  /** Name the contact set for themselves. */
+  pushName?: string;
+  /** MSISDN digits, no separators. */
+  number?: string;
+}
+
+/**
+ * A chat-id → contact lookup, indexed two ways: by the exact engine contact id, and (fallback) by
+ * the last 10 digits of the contact's phone number. The second index bridges the common mismatch
+ * where the chat id is an `@lid` privacy id or carries a different country-code form than the
+ * saved number.
+ */
+export interface ContactIndex {
+  byId: Map<string, ChatContactInfo>;
+  byPhone10: Map<string, ChatContactInfo>;
+}
+
+export function buildContactIndex(
+  contacts: readonly { id: string; name?: string; pushName?: string; number?: string }[] | undefined,
+): ContactIndex {
+  const byId = new Map<string, ChatContactInfo>();
+  const byPhone10 = new Map<string, ChatContactInfo>();
+  for (const c of contacts ?? []) {
+    const info: ChatContactInfo = { name: c.name, pushName: c.pushName, number: c.number };
+    if (c.id) byId.set(c.id, info);
+    const p10 = (c.number ?? '').replace(/\D/g, '').slice(-10);
+    if (p10.length >= 7) byPhone10.set(p10, info);
+  }
+  return { byId, byPhone10 };
+}
+
+/** Resolve the contact record for a chat id: by exact id, then by the phone digits inside the id. */
+export function lookupChatContact(chatId: string, index?: ContactIndex): ChatContactInfo | undefined {
+  if (!index || !chatId) return undefined;
+  const direct = index.byId.get(chatId);
+  if (direct) return direct;
+  const digits = chatId.replace(/@[a-z.]+$/i, '').replace(/[^0-9]/g, '');
+  return digits.length >= 7 ? index.byPhone10.get(digits.slice(-10)) : undefined;
+}
+
 /**
  * Chats tab: real conversations only. Channel- and status-kind rows are hidden here and surfaced on
  * their own tabs instead, so a channel never appears twice.
+ *
+ * With `contactIndex` supplied, the query also matches the saved contact's name, the contact's push
+ * name, and the contact's real phone number — so a chat whose id is an `@lid` still turns up on a
+ * number search.
  */
-export function filterChats<T extends ChatLike>(chats: T[], query: string): T[] {
+export function filterChats<T extends ChatLike>(chats: T[], query: string, contactIndex?: ContactIndex): T[] {
   return chats.filter(c => {
     if (c.kind === 'channel' || c.kind === 'status') return false;
     if (!query) return true;
     if (matches(query, c.name)) return true;
+
     // Strip @c.us / @g.us suffix and match phone digits
     const rawId = (c.id ?? '').replace(/@[a-z.]+$/i, '');
     const idDigits = rawId.replace(/[^0-9]/g, '');
     const qDigits  = query.replace(/[^0-9]/g, '');
-    if (qDigits.length >= 7 && idDigits.endsWith(qDigits.slice(-10))) return true;
+
+    const contact = lookupChatContact(c.id ?? '', contactIndex);
+    if (contact && matches(query, contact.name, contact.pushName)) return true;
+    const contactDigits = (contact?.number ?? '').replace(/[^0-9]/g, '');
+
+    if (qDigits.length >= 7) {
+      const q10 = qDigits.slice(-10);
+      if (idDigits.endsWith(q10)) return true;
+      if (contactDigits && contactDigits.endsWith(q10)) return true;
+    }
     return matches(query, rawId);
   });
 }

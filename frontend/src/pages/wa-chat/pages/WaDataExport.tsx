@@ -4,7 +4,7 @@ import { api } from '@/api/client';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { PageHeader } from '../components/PageHeader';
 import { useSessionsQuery, useSessionGroupsQuery, useGroupInfoQuery } from '../hooks/queries';
-import { sessionApi } from '../api/api';
+import { sessionApi, getGroupInfoCached } from '../api/api';
 
 type ExportJob = {
   id: number;
@@ -138,10 +138,11 @@ export default function WaDataExportPage() {
     }
     setError(''); setDownloadingCsv(true);
     try {
-      // Fetch participants for all selected groups in parallel
+      // Fetch participants for all selected groups — getGroupInfoCached caps concurrency and
+      // retries 429s so a large selection doesn't trip the gateway's per-IP throttle.
       const groupIdArr = [...selectedGroupIds];
       const results = await Promise.allSettled(
-        groupIdArr.map(gid => sessionApi.getGroupInfo(sessionId, gid))
+        groupIdArr.map(gid => getGroupInfoCached(sessionId, gid))
       );
 
       // Deduplicate participants by phone number across all groups
