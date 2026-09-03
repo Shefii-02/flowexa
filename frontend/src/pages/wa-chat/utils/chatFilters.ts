@@ -77,19 +77,23 @@ export function filterChats<T extends ChatLike>(chats: T[], query: string, conta
     if (!query) return true;
     if (matches(query, c.name)) return true;
 
-    // Strip @c.us / @g.us suffix and match phone digits
+    // Match on the phone number. The individual chat id is `<number>@c.us`, so stripping the
+    // domain gives the number itself; the saved contact record carries it explicitly (and is the
+    // only source for an `@lid` chat, whose id is not a phone). Compare digits-only both sides so
+    // a query with spaces / `+` / country-code differences still matches, as a substring so a
+    // partial number works too.
     const rawId = (c.id ?? '').replace(/@[a-z.]+$/i, '');
     const idDigits = rawId.replace(/[^0-9]/g, '');
     const qDigits  = query.replace(/[^0-9]/g, '');
 
     const contact = lookupChatContact(c.id ?? '', contactIndex);
+    // Saved addressbook name and the contact's own push name.
     if (contact && matches(query, contact.name, contact.pushName)) return true;
     const contactDigits = (contact?.number ?? '').replace(/[^0-9]/g, '');
 
-    if (qDigits.length >= 7) {
-      const q10 = qDigits.slice(-10);
-      if (idDigits.endsWith(q10)) return true;
-      if (contactDigits && contactDigits.endsWith(q10)) return true;
+    if (qDigits.length >= 4) {
+      if (idDigits.includes(qDigits)) return true;
+      if (contactDigits.includes(qDigits)) return true;
     }
     return matches(query, rawId);
   });
