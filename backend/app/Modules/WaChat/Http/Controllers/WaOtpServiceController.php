@@ -3,6 +3,7 @@
 namespace App\Modules\WaChat\Http\Controllers;
 
 use App\Http\Controllers\Controller;
+use App\Models\WaPhoneNumber;
 use App\Modules\WaChat\Models\WaOtpService;
 use App\Modules\WaChat\Models\WaAuthMessage;
 use App\Modules\WaChat\Models\WaOtpLog;
@@ -13,6 +14,84 @@ use Illuminate\Support\Str;
 
 class WaOtpServiceController extends Controller
 {
+    private const GRAPH_VERSION = 'v20.0';
+
+    /** Send a plain-text message via WA Chat (WAHA) or Cloud Meta API. Returns response time in ms or null on failure. */
+    private function dispatchText(WaOtpService $service, string $phone, string $message, ?string $sessionId = null): ?int
+    {
+        $channel = $service->delivery_channel ?? 'waha';
+        $start   = microtime(true);
+
+        if ($channel === 'meta') {
+            $phoneNumber = WaPhoneNumber::where('company_id', $service->company_id)
+                ->when($service->wa_phone_number_id, fn($q) => $q->where('id', $service->wa_phone_number_id))
+                ->where('is_active', true)->orderBy('is_default', 'desc')->first();
+
+            if (!$phoneNumber) return null;
+
+            $res = Http::withToken(decrypt($phoneNumber->access_token))
+                ->timeout(10)
+                ->post("https://graph.facebook.com/" . self::GRAPH_VERSION . "/{$phoneNumber->phone_number_id}/messages", [
+                    'messaging_product' => 'whatsapp',
+                    'to'   => preg_replace('/[^0-9]/', '', $phone),
+                    'type' => 'text',
+                    'text' => ['body' => $message, 'preview_url' => false],
+                ]);
+        } else {
+            $wahaBase = rtrim(config('services.waha.base_url', env('WAHA_BASE_URL', 'http://localhost:3000')), '/');
+            $wahaKey  = config('services.waha.api_key', env('WAHA_API_KEY', ''));
+            $sid      = $sessionId ?? $service->session_id ?? 'default';
+
+            $res = Http::withHeaders(['X-API-Key' => $wahaKey])->timeout(10)
+                ->post("{$wahaBase}/api/sendText", [
+                    'session' => $sid,
+                    'chatId'  => preg_replace('/[^0-9]/', '', $phone) . '@c.us',
+                    'text'    => $message,
+                ]);
+        }
+
+        return $res->successful() ? (int)((microtime(true) - $start) * 1000) : null;
+    }
+
+    /** Send a document/file via WA Chat (WAHA) or Cloud Meta API. Returns ms or null on failure. */
+    private function dispatchFile(WaOtpService $service, string $phone, string $fileUrl, string $filename, string $caption, ?string $sessionId = null): ?int
+    {
+        $channel = $service->delivery_channel ?? 'waha';
+        $start   = microtime(true);
+
+        if ($channel === 'meta') {
+            $phoneNumber = WaPhoneNumber::where('company_id', $service->company_id)
+                ->when($service->wa_phone_number_id, fn($q) => $q->where('id', $service->wa_phone_number_id))
+                ->where('is_active', true)->orderBy('is_default', 'desc')->first();
+
+            if (!$phoneNumber) return null;
+
+            $res = Http::withToken(decrypt($phoneNumber->access_token))
+                ->timeout(30)
+                ->post("https://graph.facebook.com/" . self::GRAPH_VERSION . "/{$phoneNumber->phone_number_id}/messages", [
+                    'messaging_product' => 'whatsapp',
+                    'to'       => preg_replace('/[^0-9]/', '', $phone),
+                    'type'     => 'document',
+                    'document' => ['link' => $fileUrl, 'filename' => $filename, 'caption' => $caption],
+                ]);
+        } else {
+            $wahaBase = rtrim(config('services.waha.base_url', env('WAHA_BASE_URL', 'http://localhost:3000')), '/');
+            $wahaKey  = config('services.waha.api_key', env('WAHA_API_KEY', ''));
+            $sid      = $sessionId ?? $service->session_id ?? 'default';
+
+            $res = Http::withHeaders(['X-API-Key' => $wahaKey])->timeout(30)
+                ->post("{$wahaBase}/api/sendFile", [
+                    'session' => $sid,
+                    'chatId'  => preg_replace('/[^0-9]/', '', $phone) . '@c.us',
+                    'file'    => ['url' => $fileUrl, 'filename' => $filename],
+                    'caption' => $caption,
+                ]);
+        }
+
+        return $res->successful() ? (int)((microtime(true) - $start) * 1000) : null;
+    }
+
+
     public function show(): JsonResponse
     {
         $service = WaOtpService::where('company_id', auth()->user()->company_id)->first();
@@ -29,6 +108,8 @@ class WaOtpServiceController extends Controller
             'otp_length'           => 'integer|min:4|max:8',
             'otp_message_template' => 'nullable|string|max:500',
             'session_id'           => 'nullable|string|max:100',
+            'delivery_channel'     => 'nullable|in:waha,meta',
+            'wa_phone_number_id'   => 'nullable|integer',
         ]);
 
         $companyId = auth()->user()->company_id;
@@ -116,37 +197,15 @@ class WaOtpServiceController extends Controller
             $service = WaOtpService::create(['company_id' => $companyId]);
         }
 
-        $sessionId = $service->session_id ?? 'default';
-
-        // Generate test OTP
-        $length = $service->otp_length ?? 6;
-        $otp    = str_pad((string) random_int(0, (int) pow(10, $length) - 1), $length, '0', STR_PAD_LEFT);
-
-        // Build message
+        $length   = $service->otp_length ?? 6;
+        $otp      = str_pad((string) random_int(0, (int) pow(10, $length) - 1), $length, '0', STR_PAD_LEFT);
         $template = $service->otp_message_template ?? 'Your OTP is {{otp}}. Valid for {{expiry}} minutes.';
         $message  = str_replace(['{{otp}}', '{{expiry}}'], [$otp, $service->otp_expiry_minutes ?? 10], $template);
+        $phone    = preg_replace('/[^0-9]/', '', $request->phone);
 
-        // Format phone → WhatsApp chat ID
-        $phone  = preg_replace('/[^0-9]/', '', $request->phone);
-        $chatId = $phone . '@c.us';
-
-        $wahaBase = rtrim(config('services.waha.base_url', env('WAHA_BASE_URL', 'http://localhost:3000')), '/');
-        $wahaKey  = config('services.waha.api_key', env('WAHA_API_KEY', ''));
-
-        $start = microtime(true);
         try {
-            $res = Http::withHeaders(['X-API-Key' => $wahaKey])
-                ->timeout(10)
-                ->post("{$wahaBase}/api/sendText", [
-                    'session' => $sessionId,
-                    'chatId'  => $chatId,
-                    'text'    => $message,
-                ]);
-
-            $ms = (int) ((microtime(true) - $start) * 1000);
-
-            if ($res->successful()) {
-                // Log the test send
+            $ms = $this->dispatchText($service, $phone, $message);
+            if ($ms !== null) {
                 WaOtpLog::create([
                     'company_id'  => $service->company_id,
                     'service_id'  => $service->id,
@@ -156,19 +215,9 @@ class WaOtpServiceController extends Controller
                     'domain'      => 'dashboard-test',
                     'response_ms' => $ms,
                 ]);
-                return response()->json([
-                    'success' => true,
-                    'otp'     => $otp,
-                    'phone'   => $phone,
-                    'message' => $message,
-                    'ms'      => $ms,
-                ]);
+                return response()->json(['success' => true, 'otp' => $otp, 'phone' => $phone, 'message' => $message, 'ms' => $ms]);
             }
-
-            return response()->json([
-                'success' => false,
-                'error'   => 'WAHA returned ' . $res->status() . ': ' . $res->body(),
-            ], 422);
+            return response()->json(['success' => false, 'error' => 'Delivery failed. Check channel settings.'], 422);
         } catch (\Exception $e) {
             return response()->json(['success' => false, 'error' => $e->getMessage()], 500);
         }
@@ -241,25 +290,11 @@ class WaOtpServiceController extends Controller
             return response()->json(['success' => false, 'error' => 'No message content.'], 422);
         }
 
-        $phone  = preg_replace('/[^0-9]/', '', $request->phone);
-        $chatId = $phone . '@c.us';
+        $phone = preg_replace('/[^0-9]/', '', $request->phone);
 
-        $wahaBase = rtrim(config('services.waha.base_url', env('WAHA_BASE_URL', 'http://localhost:3000')), '/');
-        $wahaKey  = config('services.waha.api_key', env('WAHA_API_KEY', ''));
-
-        $start = microtime(true);
         try {
-            $res = Http::withHeaders(['X-API-Key' => $wahaKey])
-                ->timeout(10)
-                ->post("{$wahaBase}/api/sendText", [
-                    'session' => $sessionId,
-                    'chatId'  => $chatId,
-                    'text'    => $message,
-                ]);
-
-            $ms = (int) ((microtime(true) - $start) * 1000);
-
-            if ($res->successful()) {
+            $ms = $this->dispatchText($service, $phone, $message, $sessionId);
+            if ($ms !== null) {
                 if ($service) WaOtpLog::create([
                     'company_id'  => $service->company_id,
                     'service_id'  => $service->id,
@@ -271,8 +306,7 @@ class WaOtpServiceController extends Controller
                 ]);
                 return response()->json(['success' => true, 'phone' => $phone, 'message' => $message, 'ms' => $ms]);
             }
-
-            return response()->json(['success' => false, 'error' => 'WAHA returned ' . $res->status() . ': ' . $res->body()], 422);
+            return response()->json(['success' => false, 'error' => 'Delivery failed. Check channel settings.'], 422);
         } catch (\Exception $e) {
             return response()->json(['success' => false, 'error' => $e->getMessage()], 500);
         }
@@ -294,7 +328,6 @@ class WaOtpServiceController extends Controller
         $sessionId = $request->session_id ?? ($service?->session_id ?? 'default');
 
         $phone    = preg_replace('/[^0-9]/', '', $request->phone);
-        $chatId   = $phone . '@c.us';
         $fileUrl  = $request->file_url;
         $filename = $request->filename ?? 'document.pdf';
 
@@ -310,23 +343,9 @@ class WaOtpServiceController extends Controller
             return response()->json(['success' => false, 'error' => 'No file or file URL provided.'], 422);
         }
 
-        $wahaBase = rtrim(config('services.waha.base_url', env('WAHA_BASE_URL', 'http://localhost:3000')), '/');
-        $wahaKey  = config('services.waha.api_key', env('WAHA_API_KEY', ''));
-
-        $start = microtime(true);
         try {
-            $res = Http::withHeaders(['X-API-Key' => $wahaKey])
-                ->timeout(30)
-                ->post("{$wahaBase}/api/sendFile", [
-                    'session' => $sessionId,
-                    'chatId'  => $chatId,
-                    'file'    => ['url' => $fileUrl, 'filename' => $filename],
-                    'caption' => $request->caption ?? '',
-                ]);
-
-            $ms = (int) ((microtime(true) - $start) * 1000);
-
-            if ($res->successful()) {
+            $ms = $this->dispatchFile($service, $phone, $fileUrl, $filename, $request->caption ?? '', $sessionId);
+            if ($ms !== null) {
                 if ($service) WaOtpLog::create([
                     'company_id'  => $service->company_id,
                     'service_id'  => $service->id,
@@ -338,8 +357,7 @@ class WaOtpServiceController extends Controller
                 ]);
                 return response()->json(['success' => true, 'phone' => $phone, 'file_url' => $fileUrl, 'ms' => $ms]);
             }
-
-            return response()->json(['success' => false, 'error' => 'WAHA returned ' . $res->status() . ': ' . $res->body()], 422);
+            return response()->json(['success' => false, 'error' => 'Delivery failed. Check channel settings.'], 422);
         } catch (\Exception $e) {
             return response()->json(['success' => false, 'error' => $e->getMessage()], 500);
         }

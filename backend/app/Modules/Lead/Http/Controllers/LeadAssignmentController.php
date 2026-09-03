@@ -245,8 +245,10 @@ class LeadAssignmentController extends Controller
     public function getRule(): JsonResponse
     {
         $company = Auth::user()->company;
-        $rule    = LeadAssignmentRule::where('company_id', $company->id)
-            ->firstOrCreate(LeadAssignmentRule::defaultForCompany($company->id));
+        $rule    = LeadAssignmentRule::firstOrCreate(
+            ['company_id' => $company->id],
+            LeadAssignmentRule::defaultForCompany($company->id)
+        );
 
         return response()->json(['data' => $rule]);
     }
@@ -255,8 +257,10 @@ class LeadAssignmentController extends Controller
     public function saveRule(Request $request): JsonResponse
     {
         $company = Auth::user()->company;
-        $rule    = LeadAssignmentRule::where('company_id', $company->id)
-            ->firstOrCreate(LeadAssignmentRule::defaultForCompany($company->id));
+        $rule    = LeadAssignmentRule::firstOrCreate(
+            ['company_id' => $company->id],
+            LeadAssignmentRule::defaultForCompany($company->id)
+        );
 
         $rule->update($request->only([
             'auto_assign_enabled',

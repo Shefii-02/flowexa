@@ -88,6 +88,17 @@ import WaAgentLogs from '@/pages/wa-agent/logs'
 import LeadIntelligencePage from '@/pages/wa-agent/lead-intelligence'
 import MetaAiConfigPage from '@/pages/wa-agent/meta-ai-config'
 
+// WA Cloud pages
+import WaCloudDashboardPage from '@/pages/wa-cloud/WaCloudDashboardPage'
+import WaCloudTemplatesPage from '@/pages/wa-cloud/WaCloudTemplatesPage'
+import WaCloudOtpPage from '@/pages/wa-cloud/WaCloudOtpPage'
+import WaCloudSettingsPage from '@/pages/wa-cloud/settings/WaCloudSettingsPage'
+import WaCloudAutomationsPage from '@/pages/wa-cloud/WaCloudAutomationsPage'
+import WaChatAutomationsPage from '@/pages/wa-chat/pages/WaChatAutomationsPage'
+
+// Lead Categories
+import LeadCategoriesPage from '@/pages/leads/LeadCategoriesPage'
+
 
 
 export const DashboardRouter = () => {
@@ -147,18 +158,20 @@ export default function App() {
               <Route path="templates" element={<WaChatTemplatesPage />} />
               <Route path="logs" element={<WaChatLogs />} />
               <Route path="otp-service" element={<WaOtpServicePage />} />
+              <Route path="api-services" element={<WaOtpServicePage />} />
               <Route path="export" element={<WaDataExportPage />} />
               <Route path="media-library" element={<WaMediaLibraryPage />} />
               <Route path="api-keys" element={<RequireWaAdmin><WaChatApiKeys /></RequireWaAdmin>} />
               <Route path="automation" element={<WaAutomationPage />} />
-              {/* <Route path="groups" element={<WaGroupsPage />} /> */}
+              <Route path="groups" element={<WaGroupsPage />} />
             </Route>
 
             {/* WA Agent module */}
             <Route path="wa-agent" element={<WaAgentShell />}>
               
               <Route index element={<Navigate to="automations" replace />} />
-              <Route path="automation"       element={<WaAgentAutomations />} />
+              <Route path="automations"       element={<WaAgentAutomations />} />
+              <Route path="automation"        element={<Navigate to="/wa-agent/automations" replace />} />
               <Route path="knowledge-base"  element={<WaAgentKnowledgeBase />} />
               <Route path="pipelines"       element={<WaAgentPipelines />} />
               <Route path="ai-agent"        element={<WaAgentAiAgent />} />
@@ -174,7 +187,7 @@ export default function App() {
             {/* <Route path="flow" element={<FlowPage />} /> */}
             <Route path="/flow-builders" element={<FlowBuildersPage />} />
             <Route path="/flow" element={<FlowNodesPage />} />
-            <Route path="campaigns" element={<CampaignsPage />} />
+            
             <Route path="leads" element={<LeadsPage />} />
             <Route path="leads/assignments"       element={<AssignmentPage />} />
             <Route path="leads/staff-availability" element={<StaffAvailabilityPage />} />
@@ -183,10 +196,7 @@ export default function App() {
             <Route path="analytics" element={<AnalyticsPage />} />
             <Route path="settings" element={<SettingsPage />} />
             <Route path="settings/api-keys" element={<ApiKeysPage />} />
-            <Route path="otp" element={<OtpPage />} />
-            <Route path="message-logs" element={<MessageLogsPage />} />
-            <Route path='inbox' element={<InboxPage />} />
-            <Route path='survey-forms' element={<SurveyFormsPage />} />
+            
 
             {/* V2 routes */}
             <Route path="phone-numbers" element={<PhoneNumbersPage />} />
@@ -194,6 +204,23 @@ export default function App() {
             <Route path="templates/:id" element={<TemplateDetailPage />} />
             <Route path="plan-purchase" element={<PlanPurchasePage />} />
             <Route path="blacklist" element={<BlacklistPage />} />
+            <Route path="lead-categories" element={<LeadCategoriesPage />} />
+
+            {/* WA Cloud routes */}
+            <Route path="wa-cloud/dashboard" element={<WaCloudDashboardPage />} />
+            <Route path="wa-cloud/templates" element={<TemplatesPage />} />
+            <Route path="wa-cloud/otp-services" element={<WaCloudOtpPage />} />
+             {/* <Route path="wa-cloud/otp-services" element={<OtpPage />} /> */}
+            <Route path="wa-cloud/settings" element={<WaCloudSettingsPage />} />
+            <Route path="wa-cloud/automations" element={<WaCloudAutomationsPage />} />
+            <Route path="wa-cloud/inbox" element={<InboxPage />} />
+            <Route path="wa-chat/automations" element={<WaChatAutomationsPage />} />
+            <Route path="/wa-cloud/campaigns" element={<CampaignsPage />} />
+            <Route path="/wa-cloud/survey-forms" element={<SurveyFormsPage />} />
+            <Route path="/wa-cloud/otp" element={<OtpPage />} />
+            <Route path="/wa-cloud/message-logs" element={<MessageLogsPage />} />
+            <Route path='/wa-cloud/inbox' element={<InboxPage />} />
+
 
             {/* Meta Ads Manager */}
             <Route path="meta-ads" element={<Navigate to="/meta-ads/campaigns" replace />} />

@@ -25,13 +25,20 @@ class ContactRepository implements ContactRepositoryInterface
 
         return Contact::with('labels')
             ->where('company_id', $companyId)
-            ->when($filter->search, fn($q) =>
-                $q->where(fn($inner) =>
-                    $inner->where('name',  'like', "%{$filter->search}%")
-                          ->orWhere('phone','like', "%{$filter->search}%")
-                          ->orWhere('email','like', "%{$filter->search}%")
-                )
-            )
+            ->when($filter->search, function ($q) use ($filter) {
+                $term    = $filter->search;
+                $stripped = preg_replace('/@[a-z.]+$/i', '', $term);
+                $digits   = preg_replace('/[^0-9]/', '', $stripped);
+                $last10   = strlen($digits) >= 7 ? substr($digits, -10) : null;
+                $q->where(function ($inner) use ($term, $last10) {
+                    $inner->where('name',  'like', "%{$term}%")
+                          ->orWhere('phone', 'like', "%{$term}%")
+                          ->orWhere('email', 'like', "%{$term}%");
+                    if ($last10) {
+                        $inner->orWhere('phone', 'like', "%{$last10}");
+                    }
+                });
+            })
             ->when($filter->labelId, fn($q) =>
                 $q->whereHas('labels', fn($l) =>
                     $l->where('contact_labels.id', $filter->labelId)

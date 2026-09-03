@@ -46,8 +46,15 @@ class RoleController extends Controller
 
     // ─── GET /roles/permissions ───────────────────────────────────────────────
     // Returns ALL permissions grouped by section — used by the role editor UI.
+    // Also auto-syncs any newly added permissions to the admin role so admins
+    // never lose access to a new feature after a seeder run.
     public function allPermissions(): JsonResponse
     {
+        $companyId = auth()->user()->company_id;
+        if ($companyId) {
+            $this->autoSyncAdminRole($companyId);
+        }
+
         $grouped = Permission::orderBy('sort_order')
             ->get()
             ->groupBy('group')
@@ -63,6 +70,106 @@ class RoleController extends Controller
             ->values();
 
         return response()->json(['permissions' => $grouped]);
+    }
+
+    // ─── POST /roles/{role}/reset-permissions ─────────────────────────────────
+    public function resetToDefaults(int $role): JsonResponse
+    {
+        $companyId = auth()->user()->company_id;
+
+        $record = Role::where(function ($q) use ($companyId) {
+            $q->whereNull('company_id')->orWhere('company_id', $companyId);
+        })->find($role);
+
+        if (!$record) {
+            return response()->json(['message' => 'Role not found.'], 404);
+        }
+
+        $allPerms   = Permission::all();
+        $permMap    = $allPerms->pluck('id', 'key');
+        $defaultKeys = $this->defaultPermissionsForRole($record->name, $allPerms->pluck('key')->toArray());
+
+        $validKeys = array_values(array_unique(array_filter($defaultKeys, fn($k) => $permMap->has($k))));
+        $permIds   = array_values($permMap->only($validKeys)->toArray());
+
+        DB::transaction(function () use ($record, $validKeys, $permIds) {
+            $record->permissionRelations()->sync($permIds);
+            $record->update(['permissions' => $validKeys]);
+        });
+
+        return response()->json([
+            'message' => 'Permissions reset to defaults.',
+            'role'    => new RoleResource($record->fresh()->loadCount('users')),
+        ]);
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    /** Compute the canonical permission key list for a named system role. */
+    private function defaultPermissionsForRole(string $roleName, array $allKeys): array
+    {
+        $allViewer = array_values(array_filter($allKeys, fn($k) => str_ends_with($k, '.view')));
+        $allManage = array_values(array_filter($allKeys, fn($k) => str_ends_with($k, '.manage')));
+
+        return match ($roleName) {
+            'superadmin', 'owner' => array_merge($allViewer, $allManage),
+
+            'admin' => array_values(array_filter(
+                array_merge($allViewer, $allManage),
+                fn($k) => !in_array($k, ['plans.manage', 'roles.manage'])
+            )),
+
+            'team_lead' => array_values(array_unique([
+                ...$allViewer,
+                'contacts.manage', 'labels.manage', 'campaigns.manage',
+                'flow_builder.manage', 'inbox.manage', 'leads.manage',
+                'surveys.manage', 'templates.manage',
+                'wa_chat.sessions.manage', 'wa_chat.chats.manage',
+                'wa_chat.message_sender.manage',
+                'wa_agent.automations.manage', 'wa_agent.leads.manage',
+                'staff.manage',
+            ])),
+
+            'counsellor' => [
+                'dashboard.view', 'contacts.view', 'contacts.manage',
+                'leads.view', 'leads.manage',
+                'inbox.view', 'inbox.manage',
+                'wa_chat.chats.view', 'wa_chat.chats.manage',
+                'wa_chat.message_sender.view', 'wa_chat.message_sender.manage',
+                'message_logs.view', 'templates.view',
+                'wa_agent.leads.view',
+            ],
+
+            'viewer' => $allViewer,
+
+            default => [], // custom roles have no predefined defaults
+        };
+    }
+
+    /** Silently sync any new permissions that belong to the admin default set. */
+    private function autoSyncAdminRole(int $companyId): void
+    {
+        $adminRole = Role::where(function ($q) use ($companyId) {
+            $q->whereNull('company_id')->orWhere('company_id', $companyId);
+        })->where('name', 'admin')->first();
+
+        if (!$adminRole) return;
+
+        $allPerms    = Permission::all();
+        $permMap     = $allPerms->pluck('id', 'key');
+        $defaultKeys = $this->defaultPermissionsForRole('admin', $allPerms->pluck('key')->toArray());
+        $currentKeys = $adminRole->permissions ?? [];
+        $missingKeys = array_diff($defaultKeys, $currentKeys);
+
+        if (empty($missingKeys)) return;
+
+        $newKeys = array_values(array_unique(array_merge($currentKeys, $missingKeys)));
+        $permIds = array_values($permMap->only($newKeys)->toArray());
+
+        DB::transaction(function () use ($adminRole, $newKeys, $permIds) {
+            $adminRole->permissionRelations()->sync($permIds);
+            $adminRole->update(['permissions' => $newKeys]);
+        });
     }
 
     // ─── POST /roles ──────────────────────────────────────────────────────────

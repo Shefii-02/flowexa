@@ -3,6 +3,7 @@
 namespace App\Modules\WaChat\Http\Controllers;
 
 use App\Http\Controllers\Controller;
+use App\Models\WaPhoneNumber;
 use App\Modules\WaChat\Models\WaOtpService;
 use App\Modules\WaChat\Models\WaOtpCode;
 use App\Modules\WaChat\Models\WaOtpLog;
@@ -40,23 +41,74 @@ class WaOtpPublicController extends Controller
         return in_array($pkg, $packages);
     }
 
-    private function sendOtpViaWaha(string $phone, string $otp, WaOtpService $service): bool
-    {
-        $template = $service->otp_message_template ?? 'Your OTP code is: {{otp}}. Valid for {{expiry}} minutes.';
-        $message  = str_replace(['{{otp}}', '{{expiry}}'], [$otp, $service->otp_expiry_minutes ?? 10], $template);
+    private const GRAPH_VERSION = 'v20.0';
 
-        $wahaBase = rtrim(config('services.waha.base_url', env('WAHA_BASE_URL', 'http://localhost:3000')), '/');
-        $wahaKey  = config('services.waha.api_key', env('WAHA_API_KEY', ''));
-        $session  = $service->session_id ?? 'default';
+    private function dispatchText(WaOtpService $service, string $phone, string $message): bool
+    {
+        $channel = $service->delivery_channel ?? 'waha';
+        $digits  = preg_replace('/[^0-9]/', '', $phone);
 
         try {
-            $res = Http::withHeaders(['X-API-Key' => $wahaKey])
+            if ($channel === 'meta') {
+                $pn = WaPhoneNumber::where('company_id', $service->company_id)
+                    ->when($service->wa_phone_number_id, fn($q) => $q->where('id', $service->wa_phone_number_id))
+                    ->where('is_active', true)->orderBy('is_default', 'desc')->first();
+                if (!$pn) return false;
+
+                return Http::withToken(decrypt($pn->access_token))->timeout(10)
+                    ->post("https://graph.facebook.com/" . self::GRAPH_VERSION . "/{$pn->phone_number_id}/messages", [
+                        'messaging_product' => 'whatsapp',
+                        'to'   => $digits,
+                        'type' => 'text',
+                        'text' => ['body' => $message, 'preview_url' => false],
+                    ])->successful();
+            }
+
+            $wahaBase = rtrim(config('services.waha.base_url', env('WAHA_BASE_URL', 'http://localhost:3000')), '/');
+            $wahaKey  = config('services.waha.api_key', env('WAHA_API_KEY', ''));
+
+            return Http::withHeaders(['X-API-Key' => $wahaKey])->timeout(10)
                 ->post("{$wahaBase}/api/sendText", [
-                    'session'   => $session,
-                    'chatId'    => $phone . '@c.us',
-                    'text'      => $message,
-                ]);
-            return $res->successful();
+                    'session' => $service->session_id ?? 'default',
+                    'chatId'  => $digits . '@c.us',
+                    'text'    => $message,
+                ])->successful();
+        } catch (\Exception) {
+            return false;
+        }
+    }
+
+    private function dispatchFile(WaOtpService $service, string $phone, string $fileUrl, string $filename, string $caption): bool
+    {
+        $channel = $service->delivery_channel ?? 'waha';
+        $digits  = preg_replace('/[^0-9]/', '', $phone);
+
+        try {
+            if ($channel === 'meta') {
+                $pn = WaPhoneNumber::where('company_id', $service->company_id)
+                    ->when($service->wa_phone_number_id, fn($q) => $q->where('id', $service->wa_phone_number_id))
+                    ->where('is_active', true)->orderBy('is_default', 'desc')->first();
+                if (!$pn) return false;
+
+                return Http::withToken(decrypt($pn->access_token))->timeout(30)
+                    ->post("https://graph.facebook.com/" . self::GRAPH_VERSION . "/{$pn->phone_number_id}/messages", [
+                        'messaging_product' => 'whatsapp',
+                        'to'       => $digits,
+                        'type'     => 'document',
+                        'document' => ['link' => $fileUrl, 'filename' => $filename, 'caption' => $caption],
+                    ])->successful();
+            }
+
+            $wahaBase = rtrim(config('services.waha.base_url', env('WAHA_BASE_URL', 'http://localhost:3000')), '/');
+            $wahaKey  = config('services.waha.api_key', env('WAHA_API_KEY', ''));
+
+            return Http::withHeaders(['X-API-Key' => $wahaKey])->timeout(30)
+                ->post("{$wahaBase}/api/sendFile", [
+                    'session' => $service->session_id ?? 'default',
+                    'chatId'  => $digits . '@c.us',
+                    'file'    => ['url' => $fileUrl, 'filename' => $filename],
+                    'caption' => $caption,
+                ])->successful();
         } catch (\Exception) {
             return false;
         }
@@ -107,11 +159,14 @@ class WaOtpPublicController extends Controller
             'expires_at'   => $expires,
         ]);
 
-        $sent = $this->sendOtpViaWaha($phone, $otp, $service);
+        $template = $service->otp_message_template ?? 'Your OTP code is: {{otp}}. Valid for {{expiry}} minutes.';
+        $message  = str_replace(['{{otp}}', '{{expiry}}'], [$otp, $service->otp_expiry_minutes ?? 10], $template);
+
+        $sent = $this->dispatchText($service, $phone, $message);
         if (!$sent) {
             $code->update(['status' => 'failed']);
             $this->logAction($service, $phone, 'failed', $request, (int)((microtime(true) - $start) * 1000));
-            return response()->json(['error' => 'Failed to send OTP via WhatsApp.'], 500);
+            return response()->json(['error' => 'Failed to send OTP. Check delivery channel settings.'], 500);
         }
 
         $this->logAction($service, $phone, 'sent', $request, (int)((microtime(true) - $start) * 1000));
@@ -180,11 +235,14 @@ class WaOtpPublicController extends Controller
             'expires_at' => $expires,
         ]);
 
-        $sent = $this->sendOtpViaWaha($phone, $otp, $service);
+        $template = $service->otp_message_template ?? 'Your OTP code is: {{otp}}. Valid for {{expiry}} minutes.';
+        $message  = str_replace(['{{otp}}', '{{expiry}}'], [$otp, $service->otp_expiry_minutes ?? 10], $template);
+
+        $sent = $this->dispatchText($service, $phone, $message);
         if (!$sent) {
             $code->update(['status' => 'failed']);
             $this->logAction($service, $phone, 'failed', $request, (int)((microtime(true) - $start) * 1000));
-            return response()->json(['error' => 'Failed to resend OTP via WhatsApp.'], 500);
+            return response()->json(['error' => 'Failed to resend OTP. Check delivery channel settings.'], 500);
         }
 
         $this->logAction($service, $phone, 'resend', $request, (int)((microtime(true) - $start) * 1000));
@@ -199,38 +257,20 @@ class WaOtpPublicController extends Controller
         if (!$service) return response()->json(['error' => 'Invalid or missing API token.'], 401);
         if (!$this->checkOrigin($request, $service)) return response()->json(['error' => 'Origin not allowed.'], 403);
         if (!$this->checkPackage($request, $service)) return response()->json(['error' => 'App package not allowed.'], 403);
-        if (!$service->session_id) return response()->json(['error' => 'No WhatsApp session configured on this service.'], 422);
 
         $data = $request->validate([
             'phone'   => 'required|string|max:20',
             'message' => 'required|string|max:2000',
         ]);
 
-        $phone  = preg_replace('/[^0-9]/', '', $data['phone']);
-        $chatId = $phone . '@c.us';
+        $phone = preg_replace('/[^0-9]/', '', $data['phone']);
+        $sent  = $this->dispatchText($service, $phone, $data['message']);
+        $ms    = (int)((microtime(true) - $start) * 1000);
+        $this->logAction($service, $phone, 'utility', $request, $ms);
 
-        $wahaBase = rtrim(config('services.waha.base_url', env('WAHA_BASE_URL', 'http://localhost:3000')), '/');
-        $wahaKey  = config('services.waha.api_key', env('WAHA_API_KEY', ''));
-
-        try {
-            $res = Http::withHeaders(['X-API-Key' => $wahaKey])
-                ->timeout(10)
-                ->post("{$wahaBase}/api/sendText", [
-                    'session' => $service->session_id,
-                    'chatId'  => $chatId,
-                    'text'    => $data['message'],
-                ]);
-
-            $ms = (int)((microtime(true) - $start) * 1000);
-            $this->logAction($service, $phone, 'utility', $request, $ms);
-
-            if ($res->successful()) {
-                return response()->json(['success' => true, 'phone' => $phone, 'ms' => $ms]);
-            }
-            return response()->json(['error' => 'WAHA returned ' . $res->status()], 422);
-        } catch (\Exception $e) {
-            return response()->json(['error' => $e->getMessage()], 500);
-        }
+        return $sent
+            ? response()->json(['success' => true, 'phone' => $phone, 'ms' => $ms])
+            : response()->json(['error' => 'Delivery failed. Check channel settings.'], 422);
     }
 
     // ── Public Invoice Share ───────────────────────────────────────────────────
@@ -241,7 +281,6 @@ class WaOtpPublicController extends Controller
         if (!$service) return response()->json(['error' => 'Invalid or missing API token.'], 401);
         if (!$this->checkOrigin($request, $service)) return response()->json(['error' => 'Origin not allowed.'], 403);
         if (!$this->checkPackage($request, $service)) return response()->json(['error' => 'App package not allowed.'], 403);
-        if (!$service->session_id) return response()->json(['error' => 'No WhatsApp session configured on this service.'], 422);
 
         $data = $request->validate([
             'phone'    => 'required|string|max:20',
@@ -250,31 +289,13 @@ class WaOtpPublicController extends Controller
             'caption'  => 'nullable|string|max:500',
         ]);
 
-        $phone  = preg_replace('/[^0-9]/', '', $data['phone']);
-        $chatId = $phone . '@c.us';
+        $phone = preg_replace('/[^0-9]/', '', $data['phone']);
+        $sent  = $this->dispatchFile($service, $phone, $data['file_url'], $data['filename'] ?? 'document.pdf', $data['caption'] ?? '');
+        $ms    = (int)((microtime(true) - $start) * 1000);
+        $this->logAction($service, $phone, 'invoice_share', $request, $ms);
 
-        $wahaBase = rtrim(config('services.waha.base_url', env('WAHA_BASE_URL', 'http://localhost:3000')), '/');
-        $wahaKey  = config('services.waha.api_key', env('WAHA_API_KEY', ''));
-
-        try {
-            $res = Http::withHeaders(['X-API-Key' => $wahaKey])
-                ->timeout(30)
-                ->post("{$wahaBase}/api/sendFile", [
-                    'session' => $service->session_id,
-                    'chatId'  => $chatId,
-                    'file'    => ['url' => $data['file_url'], 'filename' => $data['filename'] ?? 'document.pdf'],
-                    'caption' => $data['caption'] ?? '',
-                ]);
-
-            $ms = (int)((microtime(true) - $start) * 1000);
-            $this->logAction($service, $phone, 'invoice_share', $request, $ms);
-
-            if ($res->successful()) {
-                return response()->json(['success' => true, 'phone' => $phone, 'ms' => $ms]);
-            }
-            return response()->json(['error' => 'WAHA returned ' . $res->status()], 422);
-        } catch (\Exception $e) {
-            return response()->json(['error' => $e->getMessage()], 500);
-        }
+        return $sent
+            ? response()->json(['success' => true, 'phone' => $phone, 'ms' => $ms])
+            : response()->json(['error' => 'Delivery failed. Check channel settings.'], 422);
     }
 }

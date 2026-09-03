@@ -16,6 +16,17 @@ type OtpService = {
   otp_length: number;
   otp_message_template: string | null;
   session_id: string | null;
+  delivery_channel: 'waha' | 'meta' | null;
+  wa_phone_number_id: number | null;
+};
+
+type WaPhoneNumber = {
+  id: number;
+  label: string;
+  display_number: string;
+  phone_number_id: string;
+  is_default: boolean;
+  is_active: boolean;
 };
 
 type AuthMessage = {
@@ -57,6 +68,13 @@ function useOtpService() {
   });
 }
 
+function usePhoneNumbers() {
+  return useQuery<WaPhoneNumber[]>({
+    queryKey: ['wa-phone-numbers'],
+    queryFn: () => api.get('/phone-numbers').then(r => r.data?.data ?? r.data ?? []),
+  });
+}
+
 function useAuthMessages() {
   return useQuery<AuthMessage[]>({
     queryKey: ['otp-auth-messages'],
@@ -95,6 +113,8 @@ function CodeBlock({ code, language = 'bash' }: { code: string; language?: strin
 
 export default function WaOtpServicePage() {
   const [activeTab, setActiveTab] = useState<Tab>('Auth OTP');
+  const [confirmResetOpen, setConfirmResetOpen] = useState(false);
+  const [newlyGeneratedToken, setNewlyGeneratedToken] = useState<string | null>(null);
   const qc = useQueryClient();
   const { data: sessions = [] } = useSessionsQuery();
   const readySessions = sessions.filter(s => s.status === 'ready');
@@ -102,6 +122,7 @@ export default function WaOtpServicePage() {
   const { data: service, isLoading } = useOtpService();
   const { data: authMessages = [], isLoading: loadingMsgs } = useAuthMessages();
   const { data: logsRes, isLoading: loadingLogs } = useOtpLogs();
+  const { data: phoneNumbers = [] } = usePhoneNumbers();
   const logs = logsRes?.data ?? [];
 
   const [settingsForm, setSettingsForm] = useState({
@@ -111,6 +132,8 @@ export default function WaOtpServicePage() {
     session_id: '',
     allowed_domains: '',
     allowed_packages: '',
+    delivery_channel: 'waha' as 'waha' | 'meta',
+    wa_phone_number_id: '' as string,
   });
   const [formLoaded, setFormLoaded] = useState(false);
 
@@ -122,6 +145,8 @@ export default function WaOtpServicePage() {
       session_id: service.session_id ?? '',
       allowed_domains: (service.allowed_domains ?? []).join('\n'),
       allowed_packages: (service.allowed_packages ?? []).join('\n'),
+      delivery_channel: service.delivery_channel ?? 'waha',
+      wa_phone_number_id: service.wa_phone_number_id ? String(service.wa_phone_number_id) : '',
     });
     setFormLoaded(true);
   }
@@ -134,13 +159,20 @@ export default function WaOtpServicePage() {
       session_id: settingsForm.session_id || null,
       allowed_domains: settingsForm.allowed_domains.split('\n').map(s => s.trim()).filter(Boolean),
       allowed_packages: settingsForm.allowed_packages.split('\n').map(s => s.trim()).filter(Boolean),
+      delivery_channel: settingsForm.delivery_channel,
+      wa_phone_number_id: settingsForm.wa_phone_number_id ? Number(settingsForm.wa_phone_number_id) : null,
     }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['otp-service'] }),
   });
 
   const resetToken = useMutation({
     mutationFn: () => api.post('/otp-service/reset-token'),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['otp-service'] }),
+    onSuccess: (res) => {
+      const token = res.data?.data?.api_token ?? res.data?.api_token ?? null;
+      if (token) setNewlyGeneratedToken(token);
+      qc.invalidateQueries({ queryKey: ['otp-service'] });
+      setConfirmResetOpen(false);
+    },
   });
 
   const stopToken = useMutation({
@@ -344,6 +376,11 @@ export default function WaOtpServicePage() {
       {service?.api_token && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 10, marginBottom: 20, flexWrap: 'wrap' }}>
           <Shield size={16} color="#2563eb" />
+          <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 8, fontWeight: 600,
+            background: service.delivery_channel === 'meta' ? '#e0f2fe' : '#dcfce7',
+            color: service.delivery_channel === 'meta' ? '#0369a1' : '#166534' }}>
+            {service.delivery_channel === 'meta' ? '☁️ Cloud Meta API' : '📱 WA Chat'}
+          </span>
           <code style={{ flex: 1, fontSize: 12, color: '#1d4ed8', wordBreak: 'break-all' }}>{service.api_token}</code>
           <button onClick={copyToken} title="Copy token"
             style={{ padding: '4px 10px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 12, display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -352,7 +389,7 @@ export default function WaOtpServicePage() {
           {service.api_token_created_at && (
             <span style={{ fontSize: 11, color: '#6b7280' }}>Updated: {new Date(service.api_token_created_at).toLocaleString()}</span>
           )}
-          <button onClick={() => resetToken.mutate()} disabled={resetToken.isPending}
+          <button onClick={() => setConfirmResetOpen(true)} disabled={resetToken.isPending}
             style={{ padding: '4px 10px', background: 'none', border: '1px solid #bfdbfe', borderRadius: 6, cursor: 'pointer', fontSize: 12, color: '#2563eb', display: 'flex', alignItems: 'center', gap: 4 }}>
             <RefreshCw size={12} /> Regenerate
           </button>
@@ -364,7 +401,7 @@ export default function WaOtpServicePage() {
       )}
       {!service?.api_token && (
         <div style={{ marginBottom: 16 }}>
-          <button className="btn-primary" onClick={() => resetToken.mutate()} disabled={resetToken.isPending}
+          <button className="btn-primary" onClick={() => setConfirmResetOpen(true)} disabled={resetToken.isPending}
             style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
             {resetToken.isPending ? <Loader2 size={16} className="animate-spin" /> : <Shield size={16} />}
             Generate API Token
@@ -796,6 +833,54 @@ await axios.post('${baseUrl}/api/v1/api-service/invoice-share', {
       {activeTab === 'Settings' && (
         <div style={{ maxWidth: 560 }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+            {/* ── Delivery Channel ── */}
+            <div style={{ border: '1px solid #e5e7eb', borderRadius: 10, padding: 16 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 12 }}>Delivery Channel</div>
+              <div style={{ display: 'flex', gap: 10, marginBottom: 14 }}>
+                {(['waha', 'meta'] as const).map(ch => (
+                  <button key={ch} onClick={() => setSettingsForm(s => ({ ...s, delivery_channel: ch }))}
+                    style={{
+                      flex: 1, padding: '10px 0', border: `2px solid ${settingsForm.delivery_channel === ch ? '#2563eb' : '#e5e7eb'}`,
+                      borderRadius: 10, cursor: 'pointer', fontWeight: settingsForm.delivery_channel === ch ? 700 : 400,
+                      background: settingsForm.delivery_channel === ch ? '#eff6ff' : '#fff',
+                      color: settingsForm.delivery_channel === ch ? '#1d4ed8' : '#374151', fontSize: 13,
+                    }}>
+                    {ch === 'waha' ? '📱 WA Chat (WAHA)' : '☁️ Cloud Meta API'}
+                  </button>
+                ))}
+              </div>
+              {settingsForm.delivery_channel === 'waha' ? (
+                <div style={{ fontSize: 12, color: '#6b7280' }}>
+                  Sends via your self-hosted WhatsApp session (OpenWA/WAHA). Session ID is configured below.
+                </div>
+              ) : (
+                <div>
+                  <div style={{ fontSize: 12, color: '#6b7280', marginBottom: 10 }}>
+                    Sends via Meta Business Cloud API using your registered phone number.
+                  </div>
+                  <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 6 }}>Meta Phone Number</div>
+                  {phoneNumbers.filter(p => p.is_active).length > 0 ? (
+                    <select value={settingsForm.wa_phone_number_id}
+                      onChange={e => setSettingsForm(s => ({ ...s, wa_phone_number_id: e.target.value }))}
+                      style={inputStyle}>
+                      <option value="">Use default (first active)</option>
+                      {phoneNumbers.filter(p => p.is_active).map(p => (
+                        <option key={p.id} value={String(p.id)}>
+                          {p.label || p.display_number} {p.is_default ? '(default)' : ''}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <div style={{ padding: '10px 14px', background: '#fef3c7', borderRadius: 8, fontSize: 13, color: '#92400e' }}>
+                      ⚠️ No active Meta phone numbers found. Add one in{' '}
+                      <a href="/phone-numbers" style={{ color: '#2563eb', textDecoration: 'underline' }}>Phone Numbers</a>.
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
             <div style={{ display: 'flex', gap: 16 }}>
               <label style={{ flex: 1 }}>
                 <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 6 }}>OTP Length</div>
@@ -950,6 +1035,60 @@ await axios.post('${baseUrl}/api/v1/api-service/invoice-share', {
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* ── Confirm token reset modal ── */}
+      {confirmResetOpen && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ background: '#fff', borderRadius: 14, padding: 28, maxWidth: 420, width: '90%', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+              <Shield size={20} color="#ef4444" />
+              <span style={{ fontSize: 16, fontWeight: 700 }}>Regenerate API Token?</span>
+            </div>
+            <p style={{ fontSize: 14, color: '#374151', marginBottom: 20, lineHeight: 1.6 }}>
+              This will immediately <strong>invalidate</strong> the current API token. All apps using the old token will stop working until updated.
+            </p>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <button onClick={() => setConfirmResetOpen(false)}
+                style={{ padding: '8px 20px', border: '1px solid #e5e7eb', borderRadius: 8, cursor: 'pointer', fontSize: 14, background: '#fff' }}>
+                Cancel
+              </button>
+              <button onClick={() => resetToken.mutate()} disabled={resetToken.isPending}
+                style={{ padding: '8px 20px', background: '#ef4444', color: '#fff', border: 'none', borderRadius: 8, cursor: 'pointer', fontSize: 14, display: 'flex', alignItems: 'center', gap: 6 }}>
+                {resetToken.isPending ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+                Yes, Regenerate
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── New token one-time display modal ── */}
+      {newlyGeneratedToken && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ background: '#fff', borderRadius: 14, padding: 28, maxWidth: 500, width: '90%', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+              <CheckCircle size={20} color="#16a34a" />
+              <span style={{ fontSize: 16, fontWeight: 700 }}>New API Token Generated</span>
+            </div>
+            <p style={{ fontSize: 13, color: '#ef4444', marginBottom: 14, fontWeight: 500 }}>
+              ⚠️ Copy this token now — it will not be shown again in full.
+            </p>
+            <div style={{ background: '#1e293b', borderRadius: 8, padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
+              <code style={{ flex: 1, color: '#e2e8f0', fontSize: 12, wordBreak: 'break-all', lineHeight: 1.6 }}>{newlyGeneratedToken}</code>
+              <button onClick={() => navigator.clipboard.writeText(newlyGeneratedToken)}
+                style={{ flexShrink: 0, padding: '5px 12px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 12, display: 'flex', alignItems: 'center', gap: 4 }}>
+                <Copy size={12} /> Copy
+              </button>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <button onClick={() => setNewlyGeneratedToken(null)}
+                style={{ padding: '8px 24px', background: '#16a34a', color: '#fff', border: 'none', borderRadius: 8, cursor: 'pointer', fontSize: 14, fontWeight: 600 }}>
+                I've copied it — Close
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

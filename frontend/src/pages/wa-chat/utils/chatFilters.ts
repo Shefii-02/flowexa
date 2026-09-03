@@ -24,7 +24,17 @@ interface ChatLike {
  * their own tabs instead, so a channel never appears twice.
  */
 export function filterChats<T extends ChatLike>(chats: T[], query: string): T[] {
-  return chats.filter(c => c.kind !== 'channel' && c.kind !== 'status' && matches(query, c.name, c.id));
+  return chats.filter(c => {
+    if (c.kind === 'channel' || c.kind === 'status') return false;
+    if (!query) return true;
+    if (matches(query, c.name)) return true;
+    // Strip @c.us / @g.us suffix and match phone digits
+    const rawId = (c.id ?? '').replace(/@[a-z.]+$/i, '');
+    const idDigits = rawId.replace(/[^0-9]/g, '');
+    const qDigits  = query.replace(/[^0-9]/g, '');
+    if (qDigits.length >= 7 && idDigits.endsWith(qDigits.slice(-10))) return true;
+    return matches(query, rawId);
+  });
 }
 
 /** Channels tab: same search box, matched on the channel's own name/id. */

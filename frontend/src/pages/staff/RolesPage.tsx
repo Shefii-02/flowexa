@@ -38,10 +38,14 @@ const RoleCard = ({
   role,
   onEdit,
   onDelete,
+  onReset,
+  resetting,
 }: {
   role: Role
   onEdit: (r: Role) => void
   onDelete: (r: Role) => void
+  onReset: (r: Role) => void
+  resetting: boolean
 }) => (
   <div className="bg-white border border-gray-200 rounded-xl p-4 flex flex-col gap-3 hover:shadow-sm transition-shadow">
     <div className="flex items-start justify-between gap-2">
@@ -65,6 +69,16 @@ const RoleCard = ({
         >
           ✏️
         </button>
+        {role.is_system && (
+          <button
+            onClick={() => onReset(role)}
+            disabled={resetting}
+            className="p-1.5 rounded hover:bg-blue-50 text-gray-400 hover:text-blue-500 text-xs disabled:opacity-40"
+            title="Reset permissions to defaults"
+          >
+            {resetting ? '⏳' : '↺'}
+          </button>
+        )}
         {!role.is_system && (
           <button
             onClick={() => onDelete(role)}
@@ -380,6 +394,7 @@ export default function RolesPage() {
   const [editTarget, setEditTarget] = useState<Role | null | undefined>(undefined) // undefined = closed
   const [deleting, setDeleting] = useState<Role | null>(null)
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null)
+  const [resettingId, setResettingId] = useState<number | null>(null)
 
   const load = useCallback(async () => {
     try {
@@ -415,6 +430,19 @@ export default function RolesPage() {
     } finally {
       setDeleting(null)
       setConfirmDeleteId(null)
+    }
+  }
+
+  const handleReset = async (role: Role) => {
+    setResettingId(role.id)
+    try {
+      await roleApi.resetPermissions(role.id)
+      toast.success(`"${role.label || role.name}" permissions reset to defaults`)
+      await load()
+    } catch (e) {
+      toast.error(getError(e))
+    } finally {
+      setResettingId(null)
     }
   }
 
@@ -460,6 +488,8 @@ export default function RolesPage() {
                     role={r}
                     onEdit={setEditTarget}
                     onDelete={(role) => handleDelete(role)}
+                    onReset={handleReset}
+                    resetting={resettingId === r.id}
                   />
                 ))}
               </div>
@@ -479,6 +509,8 @@ export default function RolesPage() {
                     role={r}
                     onEdit={setEditTarget}
                     onDelete={(role) => handleDelete(role)}
+                    onReset={handleReset}
+                    resetting={resettingId === r.id}
                   />
                 ))}
               </div>

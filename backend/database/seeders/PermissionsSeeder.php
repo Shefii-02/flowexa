@@ -41,6 +41,9 @@ class PermissionsSeeder extends Seeder
         // Meta Ads
         ['key' => 'meta_ads.view',     'label' => 'View Meta Ads',            'group' => 'Meta Ads',                     'type' => 'viewer', 'sort_order' => 100],
         ['key' => 'meta_ads.manage',   'label' => 'Manage Meta Ads',          'group' => 'Meta Ads',                     'type' => 'manage', 'sort_order' => 101],
+        // WA Cloud
+        ['key' => 'wa_cloud.view',   'label' => 'View WA Cloud',   'group' => 'WA Cloud', 'type' => 'viewer', 'sort_order' => 105],
+        ['key' => 'wa_cloud.manage', 'label' => 'Manage WA Cloud', 'group' => 'WA Cloud', 'type' => 'manage', 'sort_order' => 106],
         // Phone Numbers
         ['key' => 'phone_numbers.view',   'label' => 'View Phone Numbers',    'group' => 'Phone Numbers',                'type' => 'viewer', 'sort_order' => 110],
         ['key' => 'phone_numbers.manage', 'label' => 'Manage Phone Numbers',  'group' => 'Phone Numbers',                'type' => 'manage', 'sort_order' => 111],

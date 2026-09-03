@@ -1780,110 +1780,145 @@ export function MessageSender() {
           ) : (
             <div className="space-y-2">
               {/* ITEM 3 — Server jobs (primary) */}
-              {serverHistory
-                .filter(h => !historyFilter.status || h.status === historyFilter.status)
-                .map((h, idx) => {
-                  const isActioning = historyActionLoading === h.id
-                  const canPause = h.status === 'running' || h.status === 'sending' || h.status === 'processing'
-                  const canResume = h.status === 'paused'
-                  const canStop = h.status !== 'stopped' && h.status !== 'done'
-                  const canDelete = h.status === 'stopped' || h.status === 'done' || h.status === 'failed'
-                  return (
-                    <div key={`srv-${h.id}`} className="border border-gray-100 rounded-lg overflow-hidden">
-                      <div className="flex items-center justify-between px-4 py-3 hover:bg-gray-50">
-                        <button onClick={() => setExpandedHistory(expandedHistory === idx ? null : idx)}
-                          className="flex items-center gap-3 flex-wrap text-left flex-1 min-w-0">
-                          <StatusBadge status={h.status} />
-                          {h.campaign_name && (
-                            <span className="text-xs font-semibold text-gray-800 truncate max-w-[140px]" title={h.campaign_name}>
-                              📢 {h.campaign_name}
-                            </span>
-                          )}
-                          {h.type && <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full capitalize">{h.type}</span>}
-                          <span className="text-xs font-semibold text-gray-700">👥 {h.total}</span>
-                          <span className="text-xs text-green-600 font-medium">✓ {h.sent}</span>
-                          {h.failed > 0 && <span className="text-xs text-red-500 font-medium">✗ {h.failed}</span>}
-                          {(h.total - h.sent - h.failed) > 0 && <span className="text-xs text-gray-400">{h.total - h.sent - h.failed} pending</span>}
-                          <span className="text-xs text-gray-300">{new Date(h.started_at).toLocaleString('en-IN')}</span>
-                        </button>
-                        <div className="flex items-center gap-1.5 ml-3 flex-shrink-0">
-                          {/* Detail drawer button */}
-                          <button
-                            onClick={() => setDrawerJob(h)}
-                            title="View delivery details"
-                            className="flex items-center gap-1 px-2 py-1 text-xs bg-gray-100 text-gray-600 rounded hover:bg-gray-200">
-                            <Users size={11} /> Details
-                          </button>
-                          {/* Pause */}
-                          {canPause && (
-                            <button
-                              disabled={isActioning}
-                              onClick={() => handleHistoryPause(h.id)}
-                              title="Pause sending"
-                              className="flex items-center gap-1 px-2 py-1 text-xs bg-yellow-100 text-yellow-700 rounded hover:bg-yellow-200 disabled:opacity-50">
-                              <Pause size={11} /> Pause
-                            </button>
-                          )}
-                          {/* Resume */}
-                          {canResume && (
-                            <button
-                              disabled={isActioning}
-                              onClick={() => handleHistoryResume(h.id)}
-                              title="Resume sending"
-                              className="flex items-center gap-1 px-2 py-1 text-xs bg-green-100 text-green-700 rounded hover:bg-green-200 disabled:opacity-50">
-                              <Play size={11} /> Resume
-                            </button>
-                          )}
-                          {/* Stop */}
-                          {canStop && (
-                            <button
-                              disabled={isActioning}
-                              onClick={() => handleHistoryStop(h.id)}
-                              title="Stop permanently"
-                              className="flex items-center gap-1 px-2 py-1 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200 disabled:opacity-50">
-                              <Square size={11} /> Stop
-                            </button>
-                          )}
-                          {/* Delete (only for terminal states) */}
-                          {canDelete && (
-                            <button
-                              disabled={isActioning}
-                              onClick={() => handleHistoryDelete(h.id)}
-                              title="Delete from history"
-                              className="flex items-center gap-1 px-2 py-1 text-xs bg-gray-100 text-gray-500 rounded hover:bg-red-100 hover:text-red-600 disabled:opacity-50">
-                              <Square size={11} /> Delete
-                            </button>
-                          )}
-                          {isActioning && <Loader2 size={14} className="animate-spin text-gray-400" />}
-                          {expandedHistory === idx
-                            ? <ChevronDown size={14} className="text-gray-400 cursor-pointer" onClick={() => setExpandedHistory(null)} />
-                            : <ChevronRight size={14} className="text-gray-400 cursor-pointer" onClick={() => setExpandedHistory(idx)} />}
-                        </div>
-                      </div>
-                      {expandedHistory === idx && (
-                        <div className="px-4 pb-3 border-t border-gray-100 overflow-x-auto">
-                          <table className="w-full text-xs mt-2">
-                            <thead><tr className="text-left text-gray-400">
-                              <th className="pb-1 pr-3">#</th><th className="pb-1 pr-3">Name</th><th className="pb-1 pr-3">Phone</th>
-                              <th className="pb-1 pr-3">Status</th><th className="pb-1">Sent At</th>
-                            </tr></thead>
-                            <tbody className="divide-y divide-gray-50">
-                              {(h.log ?? []).map((e, i) => (
-                                <tr key={i} className="hover:bg-blue-50 cursor-pointer" onClick={() => setDrawerJob(h)}>
-                                  <td className="py-1.5 pr-3 text-gray-400">{i + 1}</td>
-                                  <td className="py-1.5 pr-3 text-gray-800">{e.recipient_name}</td>
-                                  <td className="py-1.5 pr-3 text-gray-500 font-mono">{e.phone}</td>
-                                  <td className="py-1.5 pr-3"><StatusBadge status={e.status} /></td>
-                                  <td className="py-1.5 text-gray-400">{e.sent_at ? new Date(e.sent_at).toLocaleTimeString() : '–'}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      )}
-                    </div>
-                  )
-                })}
+              {serverHistory.filter(h => !historyFilter.status || h.status === historyFilter.status).length > 0 && (
+                <div className="overflow-x-auto rounded-lg border border-gray-200">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="text-xs text-gray-500 uppercase bg-gray-50 border-b border-gray-200">
+                        <th className="px-3 py-2 text-left font-semibold">Campaign Name</th>
+                        <th className="px-3 py-2 text-left font-semibold">Recipient Type</th>
+                        <th className="px-3 py-2 text-left font-semibold">No. of Contacts</th>
+                        <th className="px-3 py-2 text-left font-semibold">Stats</th>
+                        <th className="px-3 py-2 text-left font-semibold">Scheduled At</th>
+                        <th className="px-3 py-2 text-left font-semibold">Session ID</th>
+                        <th className="px-3 py-2 text-left font-semibold">Status</th>
+                        <th className="px-3 py-2 text-left font-semibold">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {serverHistory
+                        .filter(h => !historyFilter.status || h.status === historyFilter.status)
+                        .map((h) => {
+                          const isActioning = historyActionLoading === h.id
+                          const canPause = h.status === 'running' || h.status === 'sending' || h.status === 'processing'
+                          const canResume = h.status === 'paused'
+                          const canStop = h.status !== 'stopped' && h.status !== 'done'
+                          const canDelete = h.status === 'stopped' || h.status === 'done' || h.status === 'failed'
+                          const pending = h.total - h.sent - h.failed
+                          return (
+                            <tr
+                              key={`srv-${h.id}`}
+                              className="hover:bg-blue-50 cursor-pointer"
+                              onClick={() => setDrawerJob(h)}
+                            >
+                              {/* Campaign Name */}
+                              <td className="px-3 py-2 text-gray-800 font-medium max-w-[160px]">
+                                <span className="block truncate" title={h.campaign_name ?? undefined}>
+                                  {h.campaign_name || '—'}
+                                </span>
+                              </td>
+                              {/* Recipient Type */}
+                              <td className="px-3 py-2 text-gray-600 capitalize">
+                                {h.type ? h.type.charAt(0).toUpperCase() + h.type.slice(1) : '—'}
+                              </td>
+                              {/* No. of Contacts */}
+                              <td className="px-3 py-2 text-gray-700 font-semibold">
+                                {h.total}
+                              </td>
+                              {/* Stats */}
+                              <td className="px-3 py-2">
+                                <div className="flex items-center gap-1 flex-wrap">
+                                  <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-green-50 text-green-700 rounded text-xs font-medium">
+                                    {'✅'} {h.sent}
+                                  </span>
+                                  {pending > 0 && (
+                                    <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-yellow-50 text-yellow-700 rounded text-xs font-medium">
+                                      {'⏳'} {pending}
+                                    </span>
+                                  )}
+                                  {h.failed > 0 && (
+                                    <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-red-50 text-red-600 rounded text-xs font-medium">
+                                      {'❌'} {h.failed}
+                                    </span>
+                                  )}
+                                </div>
+                              </td>
+                              {/* Scheduled At */}
+                              <td className="px-3 py-2 text-gray-500 whitespace-nowrap">
+                                {h.started_at ? new Date(h.started_at).toLocaleString('en-IN') : '—'}
+                              </td>
+                              {/* Session ID */}
+                              <td className="px-3 py-2">
+                                {h.session_id ? (
+                                  <span
+                                    className="font-mono text-gray-500 text-xs"
+                                    title={h.session_id}
+                                  >
+                                    {h.session_id.slice(0, 12)}
+                                  </span>
+                                ) : (
+                                  <span className="text-gray-300">—</span>
+                                )}
+                              </td>
+                              {/* Status */}
+                              <td className="px-3 py-2">
+                                <StatusBadge status={h.status} />
+                              </td>
+                              {/* Actions */}
+                              <td className="px-3 py-2" onClick={e => e.stopPropagation()}>
+                                <div className="flex items-center gap-1 flex-wrap">
+                                  <button
+                                    onClick={() => setDrawerJob(h)}
+                                    title="View delivery details"
+                                    className="flex items-center gap-1 px-2 py-1 text-xs bg-gray-100 text-gray-600 rounded hover:bg-gray-200">
+                                    <Users size={11} /> Details
+                                  </button>
+                                  {canPause && (
+                                    <button
+                                      disabled={isActioning}
+                                      onClick={() => handleHistoryPause(h.id)}
+                                      title="Pause sending"
+                                      className="flex items-center gap-1 px-2 py-1 text-xs bg-yellow-100 text-yellow-700 rounded hover:bg-yellow-200 disabled:opacity-50">
+                                      <Pause size={11} /> Pause
+                                    </button>
+                                  )}
+                                  {canResume && (
+                                    <button
+                                      disabled={isActioning}
+                                      onClick={() => handleHistoryResume(h.id)}
+                                      title="Resume sending"
+                                      className="flex items-center gap-1 px-2 py-1 text-xs bg-green-100 text-green-700 rounded hover:bg-green-200 disabled:opacity-50">
+                                      <Play size={11} /> Resume
+                                    </button>
+                                  )}
+                                  {canStop && (
+                                    <button
+                                      disabled={isActioning}
+                                      onClick={() => handleHistoryStop(h.id)}
+                                      title="Stop permanently"
+                                      className="flex items-center gap-1 px-2 py-1 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200 disabled:opacity-50">
+                                      <Square size={11} /> Stop
+                                    </button>
+                                  )}
+                                  {canDelete && (
+                                    <button
+                                      disabled={isActioning}
+                                      onClick={() => handleHistoryDelete(h.id)}
+                                      title="Delete from history"
+                                      className="flex items-center gap-1 px-2 py-1 text-xs bg-gray-100 text-gray-500 rounded hover:bg-red-100 hover:text-red-600 disabled:opacity-50">
+                                      <X size={11} /> Delete
+                                    </button>
+                                  )}
+                                  {isActioning && <Loader2 size={14} className="animate-spin text-gray-400" />}
+                                </div>
+                              </td>
+                            </tr>
+                          )
+                        })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
 
               {/* localStorage fallback jobs (shown only if not already in server results) */}
               {history

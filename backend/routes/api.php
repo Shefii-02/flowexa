@@ -178,10 +178,11 @@ Route::prefix('v1')->group(function () {
             Route::get('/{role}',     [RoleController::class, 'show'])->name('show');
 
             // WRITE — restricted to role managers
-            Route::middleware('permission:role_management.manage')->group(function () {
-                Route::post('/',         [RoleController::class, 'store'])->name('store');
-                Route::put('/{role}',    [RoleController::class, 'update'])->name('update');
-                Route::delete('/{role}', [RoleController::class, 'destroy'])->name('destroy');
+            Route::middleware('permission:roles.manage')->group(function () {
+                Route::post('/',                         [RoleController::class, 'store'])->name('store');
+                Route::put('/{role}',                    [RoleController::class, 'update'])->name('update');
+                Route::delete('/{role}',                 [RoleController::class, 'destroy'])->name('destroy');
+                Route::post('/{role}/reset-permissions', [RoleController::class, 'resetToDefaults'])->name('reset-permissions');
             });
         });
 
@@ -784,8 +785,31 @@ Route::prefix('v1')->middleware(['jwt.auth'])->group(function () {
     });
 
     // WA Groups proxy (calls WAHA)
-    Route::get('waha/groups',              [WahaSessionController::class, 'groups']);
-    Route::get('waha/group/participants',  [WahaSessionController::class, 'groupParticipants']);
+    Route::prefix('waha')->group(function () {
+        Route::get('groups',                              [WahaSessionController::class, 'groups']);
+        Route::post('groups',                             [WahaSessionController::class, 'createGroup']);
+        Route::post('groups/join',                        [WahaSessionController::class, 'joinGroup']);
+        Route::get('groups/join-info',                    [WahaSessionController::class, 'getJoinInfo']);
+
+        Route::get('group/info',                          [WahaSessionController::class, 'groupInfo']);
+        Route::get('group/participants',                  [WahaSessionController::class, 'groupParticipants']);
+        Route::post('group/participants/add',             [WahaSessionController::class, 'addParticipants']);
+        Route::delete('group/participants/remove',        [WahaSessionController::class, 'removeParticipants']);
+        Route::post('group/participants/promote',         [WahaSessionController::class, 'promoteParticipants']);
+        Route::post('group/participants/demote',          [WahaSessionController::class, 'demoteParticipants']);
+        Route::put('group/subject',                       [WahaSessionController::class, 'updateGroupSubject']);
+        Route::put('group/description',                   [WahaSessionController::class, 'updateGroupDescription']);
+        Route::get('group/invite-code',                   [WahaSessionController::class, 'getGroupInviteCode']);
+        Route::post('group/invite-code/revoke',           [WahaSessionController::class, 'revokeGroupInviteCode']);
+        Route::post('group/leave',                        [WahaSessionController::class, 'leaveGroup']);
+        Route::get('group/membership-requests',           [WahaSessionController::class, 'getMembershipRequests']);
+        Route::post('group/membership-requests/approve',  [WahaSessionController::class, 'approveMembershipRequests']);
+        Route::post('group/membership-requests/reject',   [WahaSessionController::class, 'rejectMembershipRequests']);
+        Route::get('group/picture',                       [WahaSessionController::class, 'getGroupPicture']);
+        Route::delete('group/picture',                    [WahaSessionController::class, 'deleteGroupPicture']);
+        Route::get('group/settings',                      [WahaSessionController::class, 'getGroupSettings']);
+        Route::put('group/settings',                      [WahaSessionController::class, 'updateGroupSettings']);
+    });
 
     // Webhook configs
     Route::prefix('waha/webhooks')->group(function () {
@@ -814,6 +838,7 @@ Route::prefix('v1')->middleware(['jwt.auth'])->group(function () {
         Route::post('/upload',        [MediaLibraryController::class, 'upload']);
         Route::patch('/{id}/rename',  [MediaLibraryController::class, 'rename']);
         Route::patch('/{id}/move',    [MediaLibraryController::class, 'move']);
+        Route::post('/{id}/copy',     [MediaLibraryController::class, 'copy']);
         Route::delete('/{id}',        [MediaLibraryController::class, 'destroy']);
         // Folder management
         Route::get('/folders',        [MediaFolderController::class, 'index']);

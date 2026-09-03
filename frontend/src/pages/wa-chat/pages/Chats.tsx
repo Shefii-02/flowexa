@@ -140,8 +140,21 @@ function ProfileCardPanel({
   const [showStaffPicker, setShowStaffPicker] = useState(false)
   const [assigningStaff, setAssigningStaff] = useState(false)
 
-  const [members, setMembers] = useState<{ id: string; isAdmin: boolean; isSuperAdmin: boolean }[]>([])
+  const [members, setMembers] = useState<{ id: string; isAdmin: boolean; isSuperAdmin: boolean; name?: string }[]>([])
   const [membersLoading, setMembersLoading] = useState(false)
+  const [crmMap, setCrmMap] = useState<Map<string, string>>(new Map())
+
+  // Label management for individual contact Info tab
+  const [infoLabels, setInfoLabels] = useState<{ id: number; name: string; color?: string }[]>([])
+  const [infoLabelsOpen, setInfoLabelsOpen] = useState(false)
+  const [infoLabelAdding, setInfoLabelAdding] = useState(false)
+  const [infoLabelRemoving, setInfoLabelRemoving] = useState<number | null>(null)
+  const [localContactLabels, setLocalContactLabels] = useState<{ id: number; name: string; color?: string }[]>([])
+
+  // Sync localContactLabels when profileContact changes
+  useEffect(() => {
+    setLocalContactLabels(profileContact?.labels ?? [])
+  }, [profileContact])
 
   // Reset tabs when chat changes
   useEffect(() => { setIndTab('info'); setGrpTab('members') }, [activeChat.id])
@@ -149,19 +162,67 @@ function ProfileCardPanel({
   // Load labels list for individual contacts
   useEffect(() => {
     if (isGroup) return
-    api.get('/contact-labels').then(r => setAllLabels(r.data?.data ?? r.data ?? [])).catch(() => {})
+    api.get('/contact-labels').then(r => setAllLabels(r.data?.data ?? r.data ?? [])).catch(() => { })
+    // Also load labels for Info tab label management
+    api.get('/labels').then(r => setInfoLabels(r.data?.data ?? r.data ?? [])).catch(() => { })
   }, [isGroup])
 
   // Load group members when viewing a group chat
   useEffect(() => {
-    if (!isGroup || !sessionId) return
+    if (!isGroup || !sessionId || !activeChat?.id) return
     setMembersLoading(true)
     setMembers([])
-    api.get('/waha/group/participants', { params: { session_id: sessionId, group_id: activeChat.id } })
-      .then(r => setMembers(r.data?.participants ?? r.data ?? []))
-      .catch(() => setMembers([]))
-      .finally(() => setMembersLoading(false))
-  }, [isGroup, activeChat.id, sessionId])
+    setCrmMap(new Map())
+
+    Promise.all([
+      api.get('/waha/group/participants', {
+        params: {
+          session_id: sessionId,
+          group_id: activeChat.id,
+        },
+      }),
+
+      api.get('/contacts?per_page=100').catch(() => null),
+    ])
+      .then(([membersRes, crmRes]) => {
+        // WAHA participants
+        const loadedMembers =
+          membersRes.data?.participants ??
+          membersRes.data ??
+          []
+
+        setMembers(loadedMembers)
+
+        // CRM contacts
+        const crmContacts: { name?: string; phone?: string }[] =
+          crmRes?.data?.data ??
+          crmRes?.data ??
+          []
+
+        const map = new Map<string, string>()
+
+        for (const c of crmContacts) {
+          if (c.phone && c.name) {
+            const key = String(c.phone)
+              .replace(/\D/g, '')
+              .slice(-10)
+
+            if (key) {
+              map.set(key, c.name)
+            }
+          }
+        }
+
+        setCrmMap(map)
+      })
+      .catch((error) => {
+        console.error('Failed to load group members:', error)
+        setMembers([])
+      })
+      .finally(() => {
+        setMembersLoading(false)
+      })
+  }, [isGroup, activeChat?.id, sessionId])
 
   // Load leads when tab opens
   useEffect(() => {
@@ -176,7 +237,7 @@ function ProfileCardPanel({
   // Load staff list when picker opens
   useEffect(() => {
     if (!showStaffPicker || staffList.length > 0) return
-    api.get('/staff').then(r => setStaffList(r.data?.data ?? r.data ?? [])).catch(() => {})
+    api.get('/staff').then(r => setStaffList(r.data?.data ?? r.data ?? [])).catch(() => { })
   }, [showStaffPicker]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const addLabelToContact = async (labelId: number) => {
@@ -187,6 +248,45 @@ function ProfileCardPanel({
       setAddingLabel(false)
     } catch { }
     finally { setLabelAdding(false) }
+  }
+
+  const addInfoLabel = async (label: { id: number; name: string; color?: string }) => {
+    if (!profileContact?.id) return
+    setInfoLabelAdding(true)
+    try {
+      await api.post(`/contacts/${profileContact.id}/labels`, { label_id: label.id })
+      setLocalContactLabels(prev => prev.some(l => l.id === label.id) ? prev : [...prev, label])
+      setInfoLabelsOpen(false)
+    } catch { }
+    finally { setInfoLabelAdding(false) }
+  }
+
+  const removeInfoLabel = async (labelId: number) => {
+    if (!profileContact?.id) return
+    setInfoLabelRemoving(labelId)
+    try {
+      await api.delete(`/contacts/${profileContact.id}/labels/${labelId}`)
+      setLocalContactLabels(prev => prev.filter(l => l.id !== labelId))
+    } catch { }
+    finally { setInfoLabelRemoving(null) }
+  }
+
+  const exportMembersCSV = () => {
+    const csv = [
+      'Name,Phone,WA ID,Is Admin,CRM Name',
+      ...members.map(p => {
+        const phone = p.id.replace(/@c\.us$/, '')
+        const crmName = crmMap.get(phone.slice(-10)) ?? ''
+        return `"${p.name ?? ''}","${phone}","${p.id}","${(p.isAdmin || p.isSuperAdmin) ? 'Yes' : 'No'}","${crmName}"`
+      }),
+    ].join('\n')
+    const blob = new Blob([csv], { type: 'text/csv' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'group_members.csv'
+    a.click()
+    URL.revokeObjectURL(url)
   }
 
   const assignStaff = async (staffId: number) => {
@@ -248,25 +348,25 @@ function ProfileCardPanel({
       <div style={{ display: 'flex', borderBottom: '1px solid var(--border, #e5e7eb)', flexShrink: 0 }}>
         {isGroup
           ? ([
-              { id: 'members', label: '👥 Members' },
-              { id: 'info',    label: '🏷️ Info' },
-            ] as { id: GroupTab; label: string }[]).map(tab => (
-              <button key={tab.id} onClick={() => setGrpTab(tab.id)}
-                style={{ flex: 1, padding: '8px 4px', fontSize: 11, fontWeight: grpTab === tab.id ? 600 : 400, background: 'none', border: 'none', borderBottom: `2px solid ${grpTab === tab.id ? '#2563eb' : 'transparent'}`, color: grpTab === tab.id ? '#2563eb' : '#6b7280', cursor: 'pointer' }}>
-                {tab.label}
-              </button>
-            ))
+            { id: 'members', label: '👥 Members' },
+            { id: 'info', label: '🏷️ Info' },
+          ] as { id: GroupTab; label: string }[]).map(tab => (
+            <button key={tab.id} onClick={() => setGrpTab(tab.id)}
+              style={{ flex: 1, padding: '8px 4px', fontSize: 11, fontWeight: grpTab === tab.id ? 600 : 400, background: 'none', border: 'none', borderBottom: `2px solid ${grpTab === tab.id ? '#2563eb' : 'transparent'}`, color: grpTab === tab.id ? '#2563eb' : '#6b7280', cursor: 'pointer' }}>
+              {tab.label}
+            </button>
+          ))
           : ([
-              { id: 'info',   label: '🏷️ Info' },
-              { id: 'labels', label: '🔖 Labels' },
-              { id: 'groups', label: '👥 Groups' },
-              { id: 'leads',  label: '🎯 Leads' },
-            ] as { id: IndividualTab; label: string }[]).map(tab => (
-              <button key={tab.id} onClick={() => setIndTab(tab.id)}
-                style={{ flex: 1, padding: '8px 2px', fontSize: 10, fontWeight: indTab === tab.id ? 600 : 400, background: 'none', border: 'none', borderBottom: `2px solid ${indTab === tab.id ? '#2563eb' : 'transparent'}`, color: indTab === tab.id ? '#2563eb' : '#6b7280', cursor: 'pointer' }}>
-                {tab.label}
-              </button>
-            ))
+            { id: 'info', label: '🏷️ Info' },
+            { id: 'labels', label: '🔖 Labels' },
+            { id: 'groups', label: '👥 Groups' },
+            { id: 'leads', label: '🎯 Leads' },
+          ] as { id: IndividualTab; label: string }[]).map(tab => (
+            <button key={tab.id} onClick={() => setIndTab(tab.id)}
+              style={{ flex: 1, padding: '8px 2px', fontSize: 10, fontWeight: indTab === tab.id ? 600 : 400, background: 'none', border: 'none', borderBottom: `2px solid ${indTab === tab.id ? '#2563eb' : 'transparent'}`, color: indTab === tab.id ? '#2563eb' : '#6b7280', cursor: 'pointer' }}>
+              {tab.label}
+            </button>
+          ))
         }
       </div>
 
@@ -276,8 +376,16 @@ function ProfileCardPanel({
         {/* ── GROUP: MEMBERS TAB ── */}
         {isGroup && grpTab === 'members' && (
           <div style={{ padding: '12px 16px' }}>
-            <div style={{ fontSize: 10, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 10 }}>
-              Members {members.length > 0 ? `(${members.length})` : ''}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+              <div style={{ fontSize: 10, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                Members {members.length > 0 ? `(${members.length})` : ''}
+              </div>
+              {members.length > 0 && (
+                <button onClick={exportMembersCSV}
+                  style={{ background: 'none', border: '1px solid #d1d5db', borderRadius: 6, padding: '3px 8px', fontSize: 10, cursor: 'pointer', color: '#374151', display: 'flex', alignItems: 'center', gap: 3 }}>
+                  📥 Export CSV
+                </button>
+              )}
             </div>
             {membersLoading ? (
               <div style={{ display: 'flex', justifyContent: 'center', padding: 24 }}>
@@ -291,16 +399,21 @@ function ProfileCardPanel({
               <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                 {members.map(p => {
                   const phone = p.id.replace(/@.*/, '')
+                  const crmName = crmMap.get(phone.slice(-10))
                   return (
                     <div key={p.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 10px', borderRadius: 8, background: '#f9fafb' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <div style={{ width: 28, height: 28, borderRadius: '50%', background: (p.isAdmin || p.isSuperAdmin) ? '#dbeafe' : '#f3f4f6', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: p.isAdmin ? '#1d4ed8' : '#6b7280' }}>
+                        <div style={{ width: 28, height: 28, borderRadius: '50%', background: (p.isAdmin || p.isSuperAdmin) ? '#dbeafe' : '#f3f4f6', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: p.isAdmin ? '#1d4ed8' : '#6b7280', flexShrink: 0 }}>
                           {phone.charAt(0)}
                         </div>
-                        <div style={{ fontSize: 13, color: '#374151' }}>{phone}</div>
+                        <div>
+                          <div style={{ fontSize: 13, color: '#374151' }}>{p.name ?? phone}</div>
+                          {p.name && <div style={{ fontSize: 10, color: '#9ca3af' }}>{phone}</div>}
+                          {crmName && <div style={{ fontSize: 10, color: '#6b7280' }}>CRM: {crmName}</div>}
+                        </div>
                       </div>
                       {(p.isAdmin || p.isSuperAdmin) && (
-                        <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 10, background: p.isSuperAdmin ? '#fef3c7' : '#dbeafe', color: p.isSuperAdmin ? '#92400e' : '#1d4ed8', fontWeight: 600 }}>
+                        <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 10, background: p.isSuperAdmin ? '#fef3c7' : '#dbeafe', color: p.isSuperAdmin ? '#92400e' : '#1d4ed8', fontWeight: 600, flexShrink: 0 }}>
                           {p.isSuperAdmin ? 'Owner' : 'Admin'}
                         </span>
                       )}
@@ -413,6 +526,52 @@ function ProfileCardPanel({
                       </div>
                     )}
                   </div>
+                </div>
+              )}
+
+              {/* Labels management in Info tab */}
+              {hasContact && (
+                <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border, #e5e7eb)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                    <div style={{ fontSize: 10, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                      Labels
+                    </div>
+                    <button onClick={() => setInfoLabelsOpen(v => !v)}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: '#2563eb', display: 'flex', alignItems: 'center', gap: 3 }}>
+                      <Tag size={10} /> {infoLabelsOpen ? 'Cancel' : '+ Add Label'}
+                    </button>
+                  </div>
+                  {infoLabelsOpen && (
+                    <div style={{ marginBottom: 8, maxHeight: 130, overflowY: 'auto', border: '1px solid #e5e7eb', borderRadius: 8, padding: 4 }}>
+                      {infoLabels.length === 0
+                        ? <p style={{ fontSize: 11, color: '#9ca3af', padding: '4px 8px' }}>No labels available</p>
+                        : infoLabels.filter(lbl => !localContactLabels.some(l => l.id === lbl.id)).map(lbl => (
+                          <button key={lbl.id} onClick={() => addInfoLabel(lbl)} disabled={infoLabelAdding}
+                            style={{ display: 'flex', alignItems: 'center', gap: 6, width: '100%', textAlign: 'left', padding: '5px 8px', background: 'none', border: 'none', cursor: 'pointer', borderRadius: 6, fontSize: 12, color: '#374151' }}
+                            onMouseEnter={e => (e.currentTarget.style.background = '#f3f4f6')}
+                            onMouseLeave={e => (e.currentTarget.style.background = 'none')}>
+                            <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: lbl.color ?? '#6b7280', flexShrink: 0 }} />
+                            {lbl.name}
+                          </button>
+                        ))
+                      }
+                    </div>
+                  )}
+                  {localContactLabels.length > 0 ? (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+                      {localContactLabels.map(lbl => (
+                        <span key={lbl.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, padding: '2px 6px 2px 8px', borderRadius: 10, background: (lbl.color ?? '#6b7280') + '33', color: lbl.color ?? '#374151', fontWeight: 500 }}>
+                          {lbl.name}
+                          <button onClick={() => removeInfoLabel(lbl.id)} disabled={infoLabelRemoving === lbl.id}
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, lineHeight: 1, color: 'inherit', opacity: infoLabelRemoving === lbl.id ? 0.4 : 0.6, fontSize: 12 }}>
+                            ×
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <p style={{ fontSize: 12, color: '#9ca3af' }}>No labels assigned</p>
+                  )}
                 </div>
               )}
 
@@ -552,9 +711,11 @@ function ProfileCardPanel({
                   <div key={lead.id} style={{ padding: '10px 12px', border: '1px solid var(--border, #e5e7eb)', borderRadius: 8, fontSize: 12 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
                       <span style={{ fontWeight: 600, color: '#374151' }}>{lead.title ?? `Lead #${lead.id}`}</span>
-                      <span style={{ padding: '1px 6px', borderRadius: 8, fontSize: 10,
+                      <span style={{
+                        padding: '1px 6px', borderRadius: 8, fontSize: 10,
                         background: lead.stage === 'won' ? '#dcfce7' : lead.stage === 'lost' ? '#fee2e2' : '#e0f2fe',
-                        color: lead.stage === 'won' ? '#16a34a' : lead.stage === 'lost' ? '#dc2626' : '#0369a1' }}>
+                        color: lead.stage === 'won' ? '#16a34a' : lead.stage === 'lost' ? '#dc2626' : '#0369a1'
+                      }}>
                         {lead.stage ?? 'new'}
                       </span>
                     </div>
@@ -1269,17 +1430,19 @@ export function Chats() {
   useEffect(() => {
     if (!showProfileCard || !activeChat) { setProfileContact(null); setProfileGroups([]); return; }
     if (activeChat.isGroup) { setProfileContact(null); setProfileGroups([]); return; }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showProfileCard, activeChat?.id]);
 
   useEffect(() => {
     if (!showProfileCard || !activeChat || activeChat.isGroup) return;
     setProfileCardLoading(true);
     const phone = activeChat.id.split('@')[0];
+    // Use last 10 digits for CRM search to handle country-code variations
+    const last10 = phone.replace(/\D/g, '').slice(-10);
     // Fetch contact info and all session groups in parallel, then for each group
     // check if this contact is a participant (joined groups only).
     Promise.all([
-      api.get(`/contacts?search=${encodeURIComponent(phone)}&per_page=1`).catch(() => null),
+      api.get(`/contacts?search=${encodeURIComponent(last10)}&per_page=1`).catch(() => null),
       selectedSessionId ? sessionApi.getGroups(selectedSessionId).catch(() => [] as { id: string; name: string }[]) : Promise.resolve([] as { id: string; name: string }[]),
     ]).then(async ([contactRes, groups]) => {
       const contacts = contactRes?.data?.data ?? contactRes?.data ?? [];
@@ -1402,78 +1565,78 @@ export function Chats() {
               <div className="room-container" style={showProfileCard ? { flexDirection: 'row' } : undefined}>
                 {/* Main chat column */}
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'hidden' }}>
-                {/* Room header */}
-                <header className="room-header">
-                  <button className="room-back" onClick={() => setActiveChat(null)} aria-label={t('common.back')}>
-                    <ArrowLeft size={20} />
-                  </button>
-                  {/* Clickable avatar + contact info opens the profile card panel */}
-                  <div
-                    className="room-avatar"
-                    style={{ cursor: 'pointer' }}
-                    onClick={() => setShowProfileCard(v => !v)}
-                    title="View contact profile"
-                  >
-                    {activePp.data ? (
-                      <img
-                        src={activePp.data}
-                        alt=""
-                        onError={() => activePp.refetch()}
-                      />
-                    ) : (
-                      <KindIcon kind={activeChat.kind} />
-                    )}
-                  </div>
-                  <div
-                    className="room-contact-info"
-                    style={{ cursor: 'pointer', flex: 1 }}
-                    onClick={() => setShowProfileCard(v => !v)}
-                    title="View contact profile"
-                  >
-                    <h3>{activeChat.name || activeChat.id.split('@')[0]}</h3>
-                    <span className="room-contact-phone">
-                      {activePhoneText ??
-                        (activeChat.isGroup ? t('chats.groupSubtitle') : t('chats.privateContactSubtitle'))}
-                    </span>
-                    <span className="room-contact-jid" title={activeChat.id}>
-                      {activeChat.id}
-                    </span>
-                  </div>
-                </header>
+                  {/* Room header */}
+                  <header className="room-header">
+                    <button className="room-back" onClick={() => setActiveChat(null)} aria-label={t('common.back')}>
+                      <ArrowLeft size={20} />
+                    </button>
+                    {/* Clickable avatar + contact info opens the profile card panel */}
+                    <div
+                      className="room-avatar"
+                      style={{ cursor: 'pointer' }}
+                      onClick={() => setShowProfileCard(v => !v)}
+                      title="View contact profile"
+                    >
+                      {activePp.data ? (
+                        <img
+                          src={activePp.data}
+                          alt=""
+                          onError={() => activePp.refetch()}
+                        />
+                      ) : (
+                        <KindIcon kind={activeChat.kind} />
+                      )}
+                    </div>
+                    <div
+                      className="room-contact-info"
+                      style={{ cursor: 'pointer', flex: 1 }}
+                      onClick={() => setShowProfileCard(v => !v)}
+                      title="View contact profile"
+                    >
+                      <h3>{activeChat.name || activeChat.id.split('@')[0]}</h3>
+                      <span className="room-contact-phone">
+                        {activePhoneText ??
+                          (activeChat.isGroup ? t('chats.groupSubtitle') : t('chats.privateContactSubtitle'))}
+                      </span>
+                      <span className="room-contact-jid" title={activeChat.id}>
+                        {activeChat.id}
+                      </span>
+                    </div>
+                  </header>
 
-                {/* Messages body */}
-                <ChatThread
-                  sessionId={selectedSessionId}
-                  activeChat={activeChat}
-                  messages={messages}
-                  loadingMessages={loadingMessages}
-                  messagesError={messagesError}
-                  messagesContainerRef={messagesContainerRef}
-                  onMediaLoad={onMediaLoad}
-                  onOpenImage={messageId => {
-                    const idx = imageMedia.findIndex(x => x.id === messageId);
-                    if (idx >= 0) setLightboxIndex(idx);
-                  }}
-                  onReply={setReplyingTo}
-                  onReact={handleReactMessage}
-                  onDelete={handleDeleteMessage}
-                />
+                  {/* Messages body */}
+                  <ChatThread
+                    sessionId={selectedSessionId}
+                    activeChat={activeChat}
+                    messages={messages}
+                    loadingMessages={loadingMessages}
+                    messagesError={messagesError}
+                    messagesContainerRef={messagesContainerRef}
+                    onMediaLoad={onMediaLoad}
+                    onOpenImage={messageId => {
+                      const idx = imageMedia.findIndex(x => x.id === messageId);
+                      if (idx >= 0) setLightboxIndex(idx);
+                    }}
+                    onReply={setReplyingTo}
+                    onReact={handleReactMessage}
+                    onDelete={handleDeleteMessage}
+                  />
 
-                {/* Composer */}
-                <ChatComposer
-                  selectedSessionId={selectedSessionId}
-                  activeChat={activeChat}
-                  replyingTo={replyingTo}
-                  setReplyingTo={setReplyingTo}
-                  onMessageAppended={onMessageAppended}
-                  setChats={setChats}
-                  messageInput={messageInput}
-                  setMessageInput={setMessageInput}
-                  attachment={attachment}
-                  setAttachment={setAttachment}
-                  previewUrl={previewUrl}
-                  setPreviewUrl={setPreviewUrl}
-                />
+                  {/* Composer */}
+                  <ChatComposer
+                    selectedSessionId={selectedSessionId}
+                    activeChat={activeChat}
+                    replyingTo={replyingTo}
+                    setReplyingTo={setReplyingTo}
+                    onMessageAppended={onMessageAppended}
+                    setChats={setChats}
+                    messageInput={messageInput}
+                    setMessageInput={setMessageInput}
+                    attachment={attachment}
+                    setAttachment={setAttachment}
+                    previewUrl={previewUrl}
+                    setPreviewUrl={setPreviewUrl}
+                  />
                 </div>
 
                 {/* Profile card panel — opens when avatar/name is clicked */}
@@ -1554,9 +1717,9 @@ export function Chats() {
                       style={
                         item.type === 'text' && (item.backgroundColor || item.font)
                           ? {
-                              ...(item.backgroundColor ? { backgroundColor: item.backgroundColor, color: '#fff' } : {}),
-                              ...statusFontStyle(item.font),
-                            }
+                            ...(item.backgroundColor ? { backgroundColor: item.backgroundColor, color: '#fff' } : {}),
+                            ...statusFontStyle(item.font),
+                          }
                           : undefined
                       }
                     >

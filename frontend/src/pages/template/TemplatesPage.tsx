@@ -502,7 +502,7 @@ export default function TemplatesPage() {
         open={showCreate}
         onClose={() => { setShowCreate(false); resetForm() }}
         title={editTpl ? `Edit template — ${editTpl.name}` : 'Create template'}
-        size="xl"
+        // size="max-w-5xl"
         footer={
           <>
             <Button variant="secondary" onClick={() => { setShowCreate(false); resetForm() }}>Cancel</Button>

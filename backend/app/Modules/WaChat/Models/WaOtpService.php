@@ -15,6 +15,7 @@ class WaOtpService extends Model
         'company_id', 'api_token', 'api_token_created_at', 'is_active',
         'allowed_domains', 'allowed_packages', 'otp_expiry_minutes',
         'otp_length', 'otp_message_template', 'session_id',
+        'delivery_channel', 'wa_phone_number_id',
     ];
 
     protected $hidden = ['api_token'];

@@ -12,7 +12,16 @@ const DIR_COLOR: Record<string,string> = {
   inbound: 'blue', outbound: 'green',
 }
 
+const CHANNEL_TABS = [
+  { id: '',     label: '🌐 All Messages' },
+  { id: 'waha', label: '📱 WA Chat' },
+  { id: 'meta', label: '☁️ WA Cloud' },
+] as const
+
+type ChannelTab = (typeof CHANNEL_TABS)[number]['id']
+
 export default function MessageLogsPage() {
+  const [channel,   setChannel]   = useState<ChannelTab>('')
   const [logs,      setLogs]      = useState<any[]>([])
   const [total,     setTotal]     = useState(0)
   const [page,      setPage]      = useState(1)
@@ -30,19 +39,48 @@ export default function MessageLogsPage() {
       page, direction: direction||undefined,
       type: type||undefined, search: search||undefined,
       from: dateFrom||undefined, to: dateTo||undefined,
+      channel: channel||undefined,
       per_page: 50,
     })
       .then(r => { setLogs(r.data.data || r.data.logs || []); setTotal(r.data.total || 0) })
       .finally(() => setLoading(false))
-  }, [page, direction, type, search, dateFrom, dateTo])
+  }, [page, direction, type, search, dateFrom, dateTo, channel])
 
   useEffect(() => { load() }, [load])
+
+  const handleChannelChange = (ch: ChannelTab) => {
+    setChannel(ch)
+    setPage(1)
+    setDirection('')
+    setType('')
+    setSearch('')
+    setDateFrom('')
+    setDateTo('')
+  }
 
   return (
     <div className="space-y-5">
       <div>
         <h1 className="page-title">Message Logs</h1>
         <p className="page-sub">{total} messages — all inbound and outbound</p>
+      </div>
+
+      {/* Channel tabs */}
+      <div className="flex gap-1 border-b border-gray-200">
+        {CHANNEL_TABS.map(t => (
+          <button
+            key={t.id}
+            onClick={() => handleChannelChange(t.id)}
+            className={[
+              'px-4 py-2.5 text-sm font-medium whitespace-nowrap border-b-2 -mb-px transition-colors',
+              channel === t.id
+                ? 'border-indigo-500 text-indigo-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300',
+            ].join(' ')}
+          >
+            {t.label}
+          </button>
+        ))}
       </div>
 
       {/* Filters */}

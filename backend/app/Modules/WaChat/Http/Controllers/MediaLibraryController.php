@@ -165,6 +165,57 @@ class MediaLibraryController extends Controller
         return response()->json(['message' => 'Moved.', 'data' => $media]);
     }
 
+    public function copy(Request $request, int $id): JsonResponse
+    {
+        $user      = auth()->user();
+        $media     = MediaLibrary::where('company_id', $user->company_id)->findOrFail($id);
+        $company   = $user->company;
+        $sizeMb    = $media->size / 1048576;
+
+        $usedMb  = (float) ($company->waha_media_used_mb ?? 0);
+        $limitMb = (int)   ($company->waha_media_limit_mb ?? 500);
+        if ($usedMb + $sizeMb > $limitMb) {
+            return response()->json(['message' => "Storage limit ({$limitMb} MB) exceeded."], 422);
+        }
+
+        $targetFolderId = $media->folder_id;
+        if ($request->filled('folder_id')) {
+            $targetFolder = MediaFolder::where('company_id', $user->company_id)
+                ->findOrFail($request->integer('folder_id'));
+            if (!$targetFolder->canAccess($user)) {
+                return response()->json(['message' => 'You do not have access to this folder.'], 403);
+            }
+            $targetFolderId = $targetFolder->id;
+        }
+
+        $folder  = $targetFolderId ? MediaFolder::find($targetFolderId) : null;
+        $slug    = $folder?->slug ?? $media->folder ?? 'documents';
+        $ext     = pathinfo($media->filename, PATHINFO_EXTENSION);
+        $newName = Str::uuid() . ($ext ? ".{$ext}" : '');
+        $newPath = "media/{$user->company_id}/{$slug}/{$newName}";
+
+        Storage::disk('public')->copy($media->path, $newPath);
+
+        $copy = MediaLibrary::create([
+            'company_id'    => $user->company_id,
+            'folder'        => $slug,
+            'folder_id'     => $targetFolderId,
+            'filename'      => $newName,
+            'original_name' => $media->original_name,
+            'display_name'  => 'Copy of ' . $media->display_name,
+            'url'           => Storage::disk('public')->url($newPath),
+            'disk'          => 'public',
+            'path'          => $newPath,
+            'size'          => $media->size,
+            'mime_type'     => $media->mime_type,
+            'uploaded_by'   => $user->id,
+        ]);
+
+        $company->increment('waha_media_used_mb', round($sizeMb, 4));
+
+        return response()->json(['message' => 'Copied.', 'data' => $copy], 201);
+    }
+
     public function destroy(int $id): JsonResponse
     {
         $media     = MediaLibrary::where('company_id', auth()->user()->company_id)->findOrFail($id);

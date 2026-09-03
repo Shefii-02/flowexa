@@ -2,7 +2,7 @@ import { useState, useRef, useCallback, useEffect } from 'react'
 import {
   Upload, FolderPlus, Trash2, Pencil, Copy, Loader2,
   Image, Film, Music, FileText, FolderOpen, Folder, Lock, Globe, X,
-  Check, ChevronDown,
+  Check, ChevronDown, MoreVertical, FolderInput, CopyPlus,
 } from 'lucide-react'
 import api from '@/api/client'
 import { useAppSelector, usePermission } from '@/store'
@@ -214,6 +214,95 @@ function FolderModal({ editing, onClose, onSaved }: FolderModalProps) {
   )
 }
 
+// ── Folder picker modal (copy / move) ─────────────────────────────────────────
+
+interface FolderPickerModalProps {
+  title: string
+  folders: MediaFolder[]
+  onClose: () => void
+  onConfirm: (folderId: number | null) => Promise<void>
+}
+
+function FolderPickerModal({ title, folders, onClose, onConfirm }: FolderPickerModalProps) {
+  const [selectedId, setSelectedId] = useState<number | null>(null)
+  const [saving, setSaving]         = useState(false)
+
+  const handleConfirm = async () => {
+    setSaving(true)
+    try {
+      await onConfirm(selectedId)
+      onClose()
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ background: '#fff', borderRadius: 16, padding: 24, width: 380, boxShadow: '0 20px 60px rgba(0,0,0,0.15)', maxHeight: '80vh', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+          <h3 style={{ fontWeight: 700, fontSize: 15, margin: 0 }}>{title}</h3>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9ca3af' }}><X size={18} /></button>
+        </div>
+
+        <div style={{ overflowY: 'auto', flex: 1, border: '1px solid #e5e7eb', borderRadius: 8 }}>
+          {/* Uncategorised option */}
+          <label style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', cursor: 'pointer', borderBottom: '1px solid #f3f4f6', background: selectedId === null ? '#eef2ff' : '#fff' }}>
+            <input
+              type="radio"
+              name="folder-pick"
+              checked={selectedId === null}
+              onChange={() => setSelectedId(null)}
+              style={{ accentColor: '#6366f1' }}
+            />
+            <FolderOpen size={15} style={{ color: '#9ca3af', flexShrink: 0 }} />
+            <span style={{ fontSize: 13, color: selectedId === null ? '#4338ca' : '#374151', fontWeight: selectedId === null ? 600 : 400 }}>
+              Uncategorised
+            </span>
+          </label>
+
+          {folders.map(folder => (
+            <label key={folder.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', cursor: 'pointer', borderBottom: '1px solid #f3f4f6', background: selectedId === folder.id ? '#eef2ff' : '#fff' }}>
+              <input
+                type="radio"
+                name="folder-pick"
+                checked={selectedId === folder.id}
+                onChange={() => setSelectedId(folder.id)}
+                style={{ accentColor: '#6366f1' }}
+              />
+              <Folder size={15} style={{ color: '#9ca3af', flexShrink: 0 }} />
+              <span style={{ fontSize: 13, color: selectedId === folder.id ? '#4338ca' : '#374151', fontWeight: selectedId === folder.id ? 600 : 400, flex: 1 }}>
+                {folder.name}
+              </span>
+              {folder.permissions && folder.permissions.length > 0 && (
+                <Lock size={10} style={{ color: '#6366f1' }} />
+              )}
+            </label>
+          ))}
+
+          {folders.length === 0 && (
+            <div style={{ padding: '20px 12px', textAlign: 'center', fontSize: 13, color: '#9ca3af' }}>
+              No folders found.
+            </div>
+          )}
+        </div>
+
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 16 }}>
+          <button onClick={onClose}
+            style={{ padding: '8px 18px', border: '1px solid #e5e7eb', borderRadius: 8, background: '#fff', fontSize: 13, cursor: 'pointer', color: '#374151' }}>
+            Cancel
+          </button>
+          <button onClick={handleConfirm} disabled={saving}
+            style={{ padding: '8px 18px', background: '#6366f1', color: '#fff', borderRadius: 8, border: 'none', fontSize: 13, fontWeight: 600, cursor: saving ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: 6, opacity: saving ? 0.6 : 1 }}>
+            {saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+            Confirm
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function WaMediaLibrary() {
@@ -230,6 +319,8 @@ export default function WaMediaLibrary() {
   const [editingFolder,  setEditingFolder]  = useState<MediaFolder | null>(null)
   const [renaming,       setRenaming]       = useState<{ id: number; name: string } | null>(null)
   const [deleteConfirm,  setDeleteConfirm]  = useState<{ type: 'file' | 'folder'; id: number; name: string } | null>(null)
+  const [contextMenu,    setContextMenu]    = useState<{ fileId: number } | null>(null)
+  const [folderPicker,   setFolderPicker]   = useState<{ fileId: number; mode: 'copy' | 'move' } | null>(null)
 
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -316,6 +407,38 @@ export default function WaMediaLibrary() {
 
   const copyUrl = (url: string) => {
     navigator.clipboard.writeText(url).then(() => toast.success('URL copied.'))
+  }
+
+  // Close context menu when clicking elsewhere
+  useEffect(() => {
+    if (!contextMenu) return
+    const handler = () => setContextMenu(null)
+    document.addEventListener('click', handler)
+    return () => document.removeEventListener('click', handler)
+  }, [contextMenu])
+
+  const handleCopyToFolder = async (fileId: number, folderId: number | null) => {
+    try {
+      await api.post(`/media-library/${fileId}/copy`, { folder_id: folderId })
+      toast.success('File copied.')
+      await loadFiles(activeFolderId)
+      await loadFolders()
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message ?? 'Copy failed.')
+      throw e
+    }
+  }
+
+  const handleMoveToFolder = async (fileId: number, folderId: number | null) => {
+    try {
+      await api.patch(`/media-library/${fileId}/move`, { folder_id: folderId })
+      toast.success('File moved.')
+      await loadFiles(activeFolderId)
+      await loadFolders()
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message ?? 'Move failed.')
+      throw e
+    }
   }
 
   const activeFolder = folders.find(f => f.id === activeFolderId)
@@ -484,9 +607,11 @@ export default function WaMediaLibrary() {
                 const displayName = file.display_name || file.original_name
                 const isRenaming  = renaming?.id === file.id
 
+                const isMenuOpen = contextMenu?.fileId === file.id
+
                 return (
                   <div key={file.id}
-                    style={{ border: '1px solid #e5e7eb', borderRadius: 12, overflow: 'hidden', background: '#fff', transition: 'box-shadow 0.15s' }}
+                    style={{ border: '1px solid #e5e7eb', borderRadius: 12, overflow: 'hidden', background: '#fff', transition: 'box-shadow 0.15s', position: 'relative' }}
                     onMouseEnter={e => (e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.1)')}
                     onMouseLeave={e => (e.currentTarget.style.boxShadow = 'none')}>
 
@@ -495,6 +620,52 @@ export default function WaMediaLibrary() {
                       {isImg
                         ? <img src={file.url} alt={displayName} style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
                         : <span style={{ fontSize: 36 }}>{mi.icon}</span>}
+
+                      {/* Three-dot context menu button — visible on hover */}
+                      <button
+                        title="More options"
+                        onClick={e => { e.stopPropagation(); setContextMenu(isMenuOpen ? null : { fileId: file.id }) }}
+                        style={{ position: 'absolute', top: 6, right: 6, background: 'rgba(255,255,255,0.9)', border: '1px solid #e5e7eb', borderRadius: 6, padding: '3px 5px', cursor: 'pointer', color: '#374151', display: 'flex', alignItems: 'center', boxShadow: '0 1px 4px rgba(0,0,0,0.1)', opacity: isMenuOpen ? 1 : undefined }}
+                        className="file-card-menu-btn">
+                        <MoreVertical size={13} />
+                      </button>
+
+                      {/* Context menu dropdown */}
+                      {isMenuOpen && (
+                        <div
+                          onClick={e => e.stopPropagation()}
+                          style={{ position: 'absolute', top: 32, right: 6, background: '#fff', border: '1px solid #e5e7eb', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.12)', zIndex: 40, minWidth: 170, overflow: 'hidden' }}>
+                          <button
+                            onClick={() => { setRenaming({ id: file.id, name: displayName }); setContextMenu(null) }}
+                            style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 9, padding: '9px 14px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, color: '#374151', textAlign: 'left' }}
+                            onMouseEnter={e => (e.currentTarget.style.background = '#f3f4f6')}
+                            onMouseLeave={e => (e.currentTarget.style.background = 'none')}>
+                            <Pencil size={13} style={{ color: '#6b7280' }} /> Rename
+                          </button>
+                          <button
+                            onClick={() => { setFolderPicker({ fileId: file.id, mode: 'copy' }); setContextMenu(null) }}
+                            style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 9, padding: '9px 14px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, color: '#374151', textAlign: 'left' }}
+                            onMouseEnter={e => (e.currentTarget.style.background = '#f3f4f6')}
+                            onMouseLeave={e => (e.currentTarget.style.background = 'none')}>
+                            <CopyPlus size={13} style={{ color: '#6b7280' }} /> Copy to folder
+                          </button>
+                          <button
+                            onClick={() => { setFolderPicker({ fileId: file.id, mode: 'move' }); setContextMenu(null) }}
+                            style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 9, padding: '9px 14px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, color: '#374151', textAlign: 'left' }}
+                            onMouseEnter={e => (e.currentTarget.style.background = '#f3f4f6')}
+                            onMouseLeave={e => (e.currentTarget.style.background = 'none')}>
+                            <FolderInput size={13} style={{ color: '#6b7280' }} /> Move to folder
+                          </button>
+                          <div style={{ height: 1, background: '#f3f4f6', margin: '2px 0' }} />
+                          <button
+                            onClick={() => { setDeleteConfirm({ type: 'file', id: file.id, name: displayName }); setContextMenu(null) }}
+                            style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 9, padding: '9px 14px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, color: '#ef4444', textAlign: 'left' }}
+                            onMouseEnter={e => (e.currentTarget.style.background = '#fff0f0')}
+                            onMouseLeave={e => (e.currentTarget.style.background = 'none')}>
+                            <Trash2 size={13} /> Delete
+                          </button>
+                        </div>
+                      )}
                     </div>
 
                     {/* Info */}
@@ -548,6 +719,22 @@ export default function WaMediaLibrary() {
           editing={editingFolder}
           onClose={() => { setShowFolderModal(false); setEditingFolder(null) }}
           onSaved={() => { loadFolders(); loadFiles(activeFolderId) }}
+        />
+      )}
+
+      {/* ── Folder picker modal (copy / move) ────────────────────── */}
+      {folderPicker && (
+        <FolderPickerModal
+          title={folderPicker.mode === 'copy' ? 'Copy to folder' : 'Move to folder'}
+          folders={folders}
+          onClose={() => setFolderPicker(null)}
+          onConfirm={async (folderId) => {
+            if (folderPicker.mode === 'copy') {
+              await handleCopyToFolder(folderPicker.fileId, folderId)
+            } else {
+              await handleMoveToFolder(folderPicker.fileId, folderId)
+            }
+          }}
         />
       )}
 

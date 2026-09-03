@@ -125,6 +125,7 @@ export const roleApi = {
   create: (d: Record<string, unknown>) => api.post('/roles', d),
   update: (id: number, d: Record<string, unknown>) => api.put(`/roles/${id}`, d),
   delete: (id: number) => api.delete(`/roles/${id}`),
+  resetPermissions: (id: number) => api.post(`/roles/${id}/reset-permissions`),
   // Legacy aliases kept so existing callers don't break
   companyRoles: () => api.get('/roles'),
   createCompanyRole: (d: { label: string; permissions: string[] }) => api.post('/roles', d),
