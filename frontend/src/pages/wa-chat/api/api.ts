@@ -27,14 +27,14 @@ export interface Session {
   id: string;
   name: string;
   status:
-    | 'created'
-    | 'initializing'
-    | 'authenticating'
-    | 'qr_ready'
-    | 'ready'
-    | 'disconnected'
-    | 'action_required'
-    | 'failed';
+  | 'created'
+  | 'initializing'
+  | 'authenticating'
+  | 'qr_ready'
+  | 'ready'
+  | 'disconnected'
+  | 'action_required'
+  | 'failed';
   /**
    * Whether the gateway holds a live engine for this session right now. The precondition the
    * lifecycle routes enforce, and not derivable from `status`: `disconnected` covers both a session
@@ -656,7 +656,7 @@ async function handleErrorResponse<T>(response: Response): Promise<T> {
     sessionStorage.removeItem('openwa_api_key');
     if (typeof window !== 'undefined') {
       window.location.assign('/');
-      return new Promise<T>(() => {});
+      return new Promise<T>(() => { });
     }
   }
 
@@ -815,8 +815,7 @@ export const sessionApi = {
   // video/voice render instead of collapsing to an empty timestamp-only bubble.
   getChatHistory: (id: string, chatId: string, limit = 100, includeMedia = false) =>
     request<EngineHistoryMessage[]>(
-      `/sessions/${id}/messages/${encodeURIComponent(chatId)}/history?limit=${limit}${
-        includeMedia ? '&includeMedia=true' : ''
+      `/sessions/${id}/messages/${encodeURIComponent(chatId)}/history?limit=${limit}${includeMedia ? '&includeMedia=true' : ''
       }`,
     ),
   // A message's stored media, fetched on demand. The message list carries its media inline only up to
