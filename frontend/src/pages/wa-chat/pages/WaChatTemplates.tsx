@@ -283,7 +283,7 @@ export default function WaChatTemplatesPage() {
         <div style={{ display: 'flex', justifyContent: 'center', padding: 40 }}><Loader2 className="animate-spin" size={32} /></div>
       ) : filtered.length === 0 ? (
         <div style={{ textAlign: 'center', padding: 60, color: 'var(--text-muted,#6b7280)' }}>
-          <FileText size={48} strokeWidth={1} style={{ marginBottom: 12 }} />
+          <FileText size={48}  strokeWidth={1} style={{margin: '0 auto 12px ' }} />
           <p>{search ? 'No templates match your search.' : 'No templates yet.'}</p>
         </div>
       ) : (

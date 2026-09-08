@@ -71,14 +71,14 @@ const GROUP_ICON: Record<string, JSX.Element> = {
   image:    <Image    size={13} color="#818cf8" />,
   video:    <Film     size={13} color="#f472b6" />,
   audio:    <Music    size={13} color="#34d399" />,
-  document: <FileText size={13} color="#fb923c" />,
+  document: <FileText size={13} color="#fb923c" style={{margin: '0 auto 12px ' }} />,
 }
 
 function SystemIcon({ slug }: { slug: string }) {
   if (slug === 'images')  return <Image    size={14} color="#818cf8" />
   if (slug === 'videos')  return <Film     size={14} color="#f472b6" />
   if (slug === 'audio')   return <Music    size={14} color="#34d399" />
-  return                         <FileText size={14} color="#fb923c" />
+  return                         <FileText size={14} color="#fb923c" style={{margin: '0 auto 12px ' }} />
 }
 
 const ACCEPT_MAP: Record<string, string> = {

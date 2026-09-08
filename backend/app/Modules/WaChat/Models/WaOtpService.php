@@ -30,5 +30,5 @@ class WaOtpService extends Model
     public function company(): BelongsTo { return $this->belongsTo(Company::class); }
     public function codes(): HasMany { return $this->hasMany(WaOtpCode::class, 'service_id'); }
     public function logs(): HasMany { return $this->hasMany(WaOtpLog::class, 'service_id'); }
-    public function authMessages(): HasMany { return $this->hasMany(WaAuthMessage::class, 'company_id', 'company_id'); }
+    public function configs(): HasMany { return $this->hasMany(WaApiConfig::class, 'company_id', 'company_id'); }
 }

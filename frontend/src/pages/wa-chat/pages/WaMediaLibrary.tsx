@@ -71,7 +71,7 @@ function SystemFolderIcon({ slug }: { slug: string }) {
   if (slug === 'images')    return <Image  size={15} style={{ color: '#818cf8' }} />
   if (slug === 'videos')    return <Film   size={15} style={{ color: '#f472b6' }} />
   if (slug === 'audio')     return <Music  size={15} style={{ color: '#34d399' }} />
-  return                           <FileText size={15} style={{ color: '#fb923c' }} />
+  return                           <FileText size={15} style={{margin: '0 auto 12px ' , color: '#fb923c' }} />
 }
 
 function formatBytes(b: number): string {
@@ -307,7 +307,11 @@ function FolderPickerModal({ title, folders, onClose, onConfirm }: FolderPickerM
 
 export default function WaMediaLibrary() {
   const user       = useAppSelector(s => s.auth.user)
-  const isAdmin    = ['owner', 'admin'].includes(user?.role?.name ?? '')
+  // Role names are stored capitalised ("Admin", "Manager") and superadmin is
+  // platform-level — compare case-insensitively so folder management actually
+  // shows for company admins.
+  // const isAdmin    = ['owner', 'admin', 'manager', 'superadmin','super admin','company admin','company']
+  //   .includes((user?.role?.name ?? user?.role?.label ?? '').toLowerCase())
 
   const [folders,        setFolders]        = useState<MediaFolder[]>([])
   const [files,          setFiles]          = useState<MediaFile[]>([])
@@ -321,6 +325,14 @@ export default function WaMediaLibrary() {
   const [deleteConfirm,  setDeleteConfirm]  = useState<{ type: 'file' | 'folder'; id: number; name: string } | null>(null)
   const [contextMenu,    setContextMenu]    = useState<{ fileId: number } | null>(null)
   const [folderPicker,   setFolderPicker]   = useState<{ fileId: number; mode: 'copy' | 'move' } | null>(null)
+  const [storage,        setStorage]        = useState<{ used_mb: number; limit_mb: number }>({ used_mb: 0, limit_mb: 500 })
+  // Multi-select: ids of files ticked for a bulk move / copy / delete.
+  const [selected,       setSelected]       = useState<Set<number>>(new Set())
+  const [bulkPicker,     setBulkPicker]     = useState<'copy' | 'move' | null>(null)
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false)
+  const [bulkBusy,       setBulkBusy]       = useState(false)
+
+  const MAX_FILE_MB = 100
 
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -342,6 +354,7 @@ export default function WaMediaLibrary() {
         ? raw
         : Object.values(raw as Record<string, MediaFile[]>).flat()
       setFiles(arr)
+      if (res.data?.storage) setStorage(res.data.storage)
     } catch { setFiles([]) } finally { setFilesLoading(false) }
   }, [])
 
@@ -354,16 +367,88 @@ export default function WaMediaLibrary() {
     loadFiles(activeFolderId)
   }, [activeFolderId, loadFiles])
 
+  // Drop any selection when the folder changes — the ids no longer apply.
+  useEffect(() => { setSelected(new Set()) }, [activeFolderId])
+
+  const toggleSelect = (id: number) => setSelected(prev => {
+    const next = new Set(prev)
+    if (next.has(id)) next.delete(id)
+    else next.add(id)
+    return next
+  })
+  const clearSelection = () => setSelected(new Set())
+  const allSelected = files.length > 0 && files.every(f => selected.has(f.id))
+  const toggleSelectAll = () =>
+    setSelected(allSelected ? new Set() : new Set(files.map(f => f.id)))
+
+  const handleBulkDelete = async () => {
+    const ids = [...selected]
+    setBulkBusy(true)
+    try {
+      const res = await api.post('/media-library/bulk/delete', { ids })
+      if (res.data?.storage) setStorage(res.data.storage)
+      toast.success(res.data?.message ?? 'Files deleted.')
+      setFiles(prev => prev.filter(f => !selected.has(f.id)))
+      clearSelection()
+      await loadFolders()
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message ?? 'Delete failed.')
+    } finally {
+      setBulkBusy(false)
+      setBulkDeleteOpen(false)
+    }
+  }
+
+  const handleBulkCopy = async (folderId: number | null) => {
+    try {
+      const res = await api.post('/media-library/bulk/copy', { ids: [...selected], folder_id: folderId })
+      if (res.data?.storage) setStorage(res.data.storage)
+      toast.success(res.data?.message ?? 'Files copied.')
+      clearSelection()
+      await loadFiles(activeFolderId)
+      await loadFolders()
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message ?? 'Copy failed.')
+      throw e
+    }
+  }
+
+  const handleBulkMove = async (folderId: number | null) => {
+    try {
+      const res = await api.post('/media-library/bulk/move', { ids: [...selected], folder_id: folderId })
+      toast.success(res.data?.message ?? 'Files moved.')
+      clearSelection()
+      await loadFiles(activeFolderId)
+      await loadFolders()
+    } catch (e: any) {
+      toast.error(e?.response?.data?.message ?? 'Move failed.')
+      throw e
+    }
+  }
+
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
     e.target.value = ''
+
+    const fileMb    = file.size / 1048576
+    const remaining = storage.limit_mb - storage.used_mb
+    if (fileMb > MAX_FILE_MB) {
+      toast.error(`"${file.name}" is ${fileMb.toFixed(1)} MB — over the ${MAX_FILE_MB} MB per-file limit.`)
+      return
+    }
+    if (fileMb > remaining) {
+      toast.error(`Not enough storage: ${remaining.toFixed(1)} MB free, file is ${fileMb.toFixed(1)} MB. Delete files or raise the limit.`)
+      return
+    }
+
     setUploading(true)
     try {
       const fd = new FormData()
       fd.append('file', file)
       if (activeFolderId) fd.append('folder_id', String(activeFolderId))
-      await api.post('/media-library/upload', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+      const res = await api.post('/media-library/upload', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+      if (res.data?.storage) setStorage(res.data.storage)
       toast.success('File uploaded.')
       await loadFiles(activeFolderId)
       await loadFolders()
@@ -374,7 +459,8 @@ export default function WaMediaLibrary() {
 
   const handleDeleteFile = async (id: number) => {
     try {
-      await api.delete(`/media-library/${id}`)
+      const res = await api.delete(`/media-library/${id}`)
+      if (res.data?.storage) setStorage(res.data.storage)
       toast.success('File deleted.')
       setFiles(prev => prev.filter(f => f.id !== id))
       await loadFolders()
@@ -419,7 +505,8 @@ export default function WaMediaLibrary() {
 
   const handleCopyToFolder = async (fileId: number, folderId: number | null) => {
     try {
-      await api.post(`/media-library/${fileId}/copy`, { folder_id: folderId })
+      const res = await api.post(`/media-library/${fileId}/copy`, { folder_id: folderId })
+      if (res.data?.storage) setStorage(res.data.storage)
       toast.success('File copied.')
       await loadFiles(activeFolderId)
       await loadFolders()
@@ -442,9 +529,8 @@ export default function WaMediaLibrary() {
   }
 
   const activeFolder = folders.find(f => f.id === activeFolderId)
-  const company      = user?.company
-  const usedMb       = (company as any)?.waha_media_used_mb ?? 0
-  const limitMb      = (company as any)?.waha_media_limit_mb ?? 500
+  const usedMb       = storage.used_mb
+  const limitMb      = storage.limit_mb
   const usagePct     = limitMb > 0 ? Math.min(100, Math.round((usedMb / limitMb) * 100)) : 0
 
   const systemFolders = folders.filter(f => f.is_system)
@@ -527,7 +613,7 @@ export default function WaMediaLibrary() {
                     )}
                     <span style={{ fontSize: 10, color: '#9ca3af' }}>{folder.file_count}</span>
                   </button>
-                  {isAdmin && (
+                  {/* {isAdmin && ( */}
                     <div style={{ display: 'flex', gap: 2, opacity: 0.6 }}>
                       <button onClick={() => { setEditingFolder(folder); setShowFolderModal(true) }}
                         title="Edit folder" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, color: '#6b7280' }}>
@@ -538,7 +624,7 @@ export default function WaMediaLibrary() {
                         <Trash2 size={11} />
                       </button>
                     </div>
-                  )}
+                  {/* )} */}
                 </div>
               ))}
             </div>
@@ -546,7 +632,7 @@ export default function WaMediaLibrary() {
         </div>
 
         {/* New Folder button */}
-        {isAdmin && (
+        {/* {isAdmin && ( */}
           <div style={{ padding: 12, borderTop: '1px solid #e5e7eb' }}>
             <button
               onClick={() => { setEditingFolder(null); setShowFolderModal(true) }}
@@ -554,7 +640,7 @@ export default function WaMediaLibrary() {
               <FolderPlus size={14} /> New Folder
             </button>
           </div>
-        )}
+         {/* )} */}
       </div>
 
       {/* ── Main content ─────────────────────────────────────────── */}
@@ -586,6 +672,34 @@ export default function WaMediaLibrary() {
           </label>
         </div>
 
+        {/* Bulk-action bar — shown while files are ticked */}
+        {selected.size > 0 && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 20px', borderBottom: '1px solid #e5e7eb', background: '#eef2ff' }}>
+            <span style={{ fontSize: 13, fontWeight: 600, color: '#4338ca' }}>{selected.size} selected</span>
+            <button onClick={toggleSelectAll}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: '#6366f1', fontWeight: 600 }}>
+              {allSelected ? 'Clear all' : 'Select all'}
+            </button>
+            <div style={{ flex: 1 }} />
+            <button onClick={() => setBulkPicker('move')}
+              style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 12px', background: '#fff', border: '1px solid #c7d2fe', borderRadius: 8, cursor: 'pointer', fontSize: 12, fontWeight: 600, color: '#4338ca' }}>
+              <FolderInput size={13} /> Move to
+            </button>
+            <button onClick={() => setBulkPicker('copy')}
+              style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 12px', background: '#fff', border: '1px solid #c7d2fe', borderRadius: 8, cursor: 'pointer', fontSize: 12, fontWeight: 600, color: '#4338ca' }}>
+              <CopyPlus size={13} /> Copy to
+            </button>
+            <button onClick={() => setBulkDeleteOpen(true)}
+              style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 12px', background: '#fff', border: '1px solid #fecaca', borderRadius: 8, cursor: 'pointer', fontSize: 12, fontWeight: 600, color: '#ef4444' }}>
+              <Trash2 size={13} /> Delete
+            </button>
+            <button onClick={clearSelection}
+              title="Clear selection" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#6b7280', display: 'flex' }}>
+              <X size={16} />
+            </button>
+          </div>
+        )}
+
         {/* Files grid */}
         <div style={{ flex: 1, overflowY: 'auto', padding: 20 }}>
           {filesLoading ? (
@@ -608,15 +722,30 @@ export default function WaMediaLibrary() {
                 const isRenaming  = renaming?.id === file.id
 
                 const isMenuOpen = contextMenu?.fileId === file.id
+                const isSelected = selected.has(file.id)
 
                 return (
                   <div key={file.id}
-                    style={{ border: '1px solid #e5e7eb', borderRadius: 12, overflow: 'hidden', background: '#fff', transition: 'box-shadow 0.15s', position: 'relative' }}
+                    style={{ border: `1px solid ${isSelected ? '#6366f1' : '#e5e7eb'}`, borderRadius: 12, overflow: 'hidden', background: '#fff', transition: 'box-shadow 0.15s', position: 'relative', boxShadow: isSelected ? '0 0 0 2px #c7d2fe' : 'none' }}
                     onMouseEnter={e => (e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.1)')}
-                    onMouseLeave={e => (e.currentTarget.style.boxShadow = 'none')}>
+                    onMouseLeave={e => (e.currentTarget.style.boxShadow = isSelected ? '0 0 0 2px #c7d2fe' : 'none')}>
 
                     {/* Thumbnail */}
                     <div style={{ height: 110, background: isImg ? '#f8f8f8' : '#f3f4f6', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
+
+                      {/* Multi-select checkbox */}
+                      <label
+                        onClick={e => e.stopPropagation()}
+                        title="Select"
+                        style={{ position: 'absolute', top: 6, left: 6, zIndex: 5, display: 'flex', alignItems: 'center', justifyContent: 'center', width: 20, height: 20, background: 'rgba(255,255,255,0.9)', border: '1px solid #e5e7eb', borderRadius: 6, cursor: 'pointer', boxShadow: '0 1px 4px rgba(0,0,0,0.1)' }}>
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => toggleSelect(file.id)}
+                          style={{ width: 13, height: 13, accentColor: '#6366f1', cursor: 'pointer', margin: 0 }}
+                        />
+                      </label>
+
                       {isImg
                         ? <img src={file.url} alt={displayName} style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
                         : <span style={{ fontSize: 36 }}>{mi.icon}</span>}
@@ -736,6 +865,42 @@ export default function WaMediaLibrary() {
             }
           }}
         />
+      )}
+
+      {/* ── Bulk folder picker (copy / move selected) ────────────── */}
+      {bulkPicker && (
+        <FolderPickerModal
+          title={bulkPicker === 'copy' ? `Copy ${selected.size} file(s) to folder` : `Move ${selected.size} file(s) to folder`}
+          folders={folders}
+          onClose={() => setBulkPicker(null)}
+          onConfirm={async (folderId) => {
+            if (bulkPicker === 'copy') await handleBulkCopy(folderId)
+            else await handleBulkMove(folderId)
+          }}
+        />
+      )}
+
+      {/* ── Bulk delete confirmation ─────────────────────────────── */}
+      {bulkDeleteOpen && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ background: '#fff', borderRadius: 14, padding: 24, width: 360, boxShadow: '0 20px 60px rgba(0,0,0,0.15)' }}>
+            <h3 style={{ margin: '0 0 8px', fontWeight: 700, fontSize: 15 }}>Delete {selected.size} file(s)?</h3>
+            <p style={{ fontSize: 13, color: '#6b7280', margin: '0 0 20px' }}>
+              The selected files will be permanently deleted.
+            </p>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <button onClick={() => setBulkDeleteOpen(false)} disabled={bulkBusy}
+                style={{ padding: '8px 16px', border: '1px solid #e5e7eb', borderRadius: 8, background: '#fff', cursor: 'pointer', fontSize: 13 }}>
+                Cancel
+              </button>
+              <button onClick={handleBulkDelete} disabled={bulkBusy}
+                style={{ padding: '8px 16px', background: '#ef4444', color: '#fff', border: 'none', borderRadius: 8, cursor: bulkBusy ? 'not-allowed' : 'pointer', fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6, opacity: bulkBusy ? 0.6 : 1 }}>
+                {bulkBusy ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* ── Delete confirmation ───────────────────────────────────── */}

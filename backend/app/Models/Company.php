@@ -35,8 +35,10 @@ class Company extends Model
         // AI provider config
         'openai_key_id',
         'anthropic_key_id',
+        'google_ai_key_id',
         'ai_provider',
         'ai_model',
+        'max_devices_per_user',
     ];
 
     protected $hidden = ['private_token', 'wa_access_token'];
@@ -166,5 +168,21 @@ class Company extends Model
     public function anthropicKey(): BelongsTo
     {
         return $this->belongsTo(CompanyApiKey::class, 'anthropic_key_id');
+    }
+
+    public function googleAiKey(): BelongsTo
+    {
+        return $this->belongsTo(CompanyApiKey::class, 'google_ai_key_id');
+    }
+
+    /** The active-key FK column name for a given provider, or null if unsupported. */
+    public static function providerKeyColumn(string $provider): ?string
+    {
+        return match ($provider) {
+            'openai'    => 'openai_key_id',
+            'anthropic' => 'anthropic_key_id',
+            'google_ai' => 'google_ai_key_id',
+            default     => null,
+        };
     }
 }

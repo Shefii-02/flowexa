@@ -10,7 +10,8 @@ return new class extends Migration {
         Schema::create('wa_otp_services', function (Blueprint $table) {
             $table->id();
             $table->unsignedBigInteger('company_id')->unique();
-            $table->string('api_token', 255)->unique();
+            // Null until the company generates its first API token.
+            $table->string('api_token', 255)->nullable()->unique();
             $table->timestamp('api_token_created_at')->nullable();
             $table->boolean('is_active')->default(true);
             $table->json('allowed_domains')->nullable();

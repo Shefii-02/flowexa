@@ -1,13 +1,18 @@
-import { useState, useRef, useCallback, useEffect } from 'react'
+import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import Picker from '@emoji-mart/react'
 import data from '@emoji-mart/data'
 import {
   Send, Pause, Square, Play, Download, Upload, X, Plus,
-  ChevronDown, ChevronRight, Users, MessageSquare,
-  FileText, Tag, Hash, Loader2, Search, Calendar, XCircle
+  Users, MessageSquare, Copy,
+  FileText, Tag, Hash, Loader2, Search, Calendar, XCircle,
+  Bold, Italic, Strikethrough,
 } from 'lucide-react'
 import { useSessionsQuery, useSessionGroupsQuery, useSessionChatsQuery } from '../../hooks/queries'
-import { messageApi, contactApi } from '../../api/api'
+import { messageApi, contactApi, getGroupInfoCached } from '../../api/api'
+import { useSessionContacts } from '../../hooks/useSessionContacts'
+import { buildContactIndex, lookupChatContact } from '../../utils/chatFilters'
+import { formatPhoneForDisplay } from '../../utils/formatPhone'
+import { useUser } from '@/hooks/useAuth'
 import api from '@/api/client'
 import MediaPickerModal from '@/components/MediaPickerModal'
 
@@ -51,6 +56,7 @@ interface JobState {
   status: JobStatus
   progress: { sent: number; failed: number; total: number; pending: number }
   log: SendLogEntry[]
+  campaignName?: string
   scheduledAt?: string
   startedAt?: string
   completedAt?: string
@@ -67,10 +73,18 @@ interface ServerJob {
   type: string
   campaign_name?: string
   session_id: string
+  // Explicitly requested future send time — set only for campaigns created with a schedule.
+  // `started_at` stays null for those until the cron actually dispatches them, so the history
+  // table must read this field, not `started_at`, for its "Scheduled At" column.
+  scheduled_at?: string | null
   started_at: string
   completed_at: string
   status: string
   log: { recipient_name: string; phone: string; status: string; sent_at?: string; error?: string }[]
+  // Shape matches toMessagePayload()'s output — 'text' is the only one with a `.text` used
+  // directly by duplicateFromHistory below; the others (media/poll/location/contact/audio) aren't
+  // reconstructed into the composer on duplicate, only the audience carries over for those.
+  message_payload?: { type?: string; text?: string } | null
 }
 
 interface WaTemplate {
@@ -94,20 +108,80 @@ type ExtraPayload =
   | { kind: 'media'; blocks: MessageBlock[] }
   | undefined
 
+// The server-tracked scheduling path (POST /message-sender -> ProcessMessageSenderJob) needs a
+// plain-JSON message_payload, not the discriminated-union ExtraPayload shape used for the
+// immediate client-side send. Must stay in sync with ProcessMessageSenderJob::handle()'s match on
+// message_payload.type — both sides recognize exactly: text (default), media, poll, location,
+// contact, audio.
+// `recipients` (as {name, phone} pairs) is what ProcessMessageSenderJob::handle() actually loops
+// over to send — folded in here, not left for each caller to remember, since a payload missing it
+// isn't invalid in any way the backend can detect: the job just runs zero iterations and silently
+// "completes" with 0 sent / 0 failed despite a nonzero `total` (exactly what happened before this
+// was added — every recipient array was empty at send time).
+function toMessagePayload(templateText: string, extraPayload: ExtraPayload, recipients: Recipient[]): Record<string, unknown> {
+  const recipientList = recipients.map(r => ({ name: r.name, phone: r.phone }))
+  if (!extraPayload) return { type: 'text', text: templateText, recipients: recipientList }
+  switch (extraPayload.kind) {
+    case 'media':    return { type: 'media', blocks: extraPayload.blocks, recipients: recipientList }
+    case 'poll':     return { type: 'poll', question: extraPayload.question, options: extraPayload.options, recipients: recipientList }
+    case 'location': return { type: 'location', lat: extraPayload.lat, lng: extraPayload.lng, name: extraPayload.name, address: extraPayload.address, recipients: recipientList }
+    case 'contact':  return { type: 'contact', contactName: extraPayload.contactName, contactNumber: extraPayload.contactNumber, recipients: recipientList }
+    case 'audio':    return { type: 'audio', url: extraPayload.url, recipients: recipientList }
+  }
+}
+
 // ── ITEM 2 — Variable substitution ───────────────────────────────────────────
 
-function personalizeMessage(template: string, recipient: { name: string; phone: string }): string {
+// Every placeholder always gets substituted with *something* — never left as literal "{{...}}"
+// text in what actually sends — falling back to an empty string for anything genuinely
+// unavailable, except {{name}} which reads better as "Friend" than blank. Must stay in sync with
+// the backend's personalizeMessage (ProcessMessageSenderJob.php), which handles the same six
+// placeholders for the scheduled/server-processed send path.
+function personalizeMessage(
+  template: string,
+  recipient: { name: string; phone: string },
+  company?: { name?: string | null; phone?: string | null; website?: string | null } | null,
+): string {
+  const companyDetails = company?.name
+    ? (company.website ? `${company.name} (${company.website})` : company.name)
+    : ''
   return template
     .replace(/{{name}}/g, recipient.name || 'Friend')
     .replace(/{{phone}}/g, recipient.phone || '')
     .replace(/{{date}}/g, new Date().toLocaleDateString('en-IN'))
     .replace(/{{time}}/g, new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }))
+    .replace(/{{company_details}}/g, companyDetails)
+    .replace(/{{company_number}}/g, company?.phone || '')
 }
 
 // ── Unique Signature (charCodeAt phone-based, per-recipient) ─────────────────
 
 function uniqueSig(phone: string): string {
   return '‍' + phone.split('').map(c => c.charCodeAt(0) % 2 === 0 ? '​' : '‌').join('')
+}
+
+// Recipients are added from five independent sources (manual, CSV, group members, chats, labels),
+// each minting its own synthetic `id` (e.g. `manual-…`, `chat-…`) — so the same real phone number
+// added from two sources previously sailed through as two recipients, both getting the message. A
+// `@lid`/`@c.us` chat id is an opaque WhatsApp identifier, not a real number (see wa-chat @lid
+// note) — normalizing it to digits would collide unrelated chats, so those compare by the exact
+// id instead; a plain phone number compares by digits only, so "+91 98463 66783" and
+// "919846366783" from two different sources are recognised as the same recipient.
+function recipientDedupeKey(r: Recipient): string {
+  return r.phone.includes('@') ? r.phone.toLowerCase() : r.phone.replace(/\D/g, '')
+}
+
+// For the two spots that replace the whole recipient list wholesale from external data (a saved
+// schedule restored from localStorage, a campaign duplicated from history) rather than merging one
+// source in at a time — same key, first occurrence wins.
+function dedupeRecipients(list: Recipient[]): Recipient[] {
+  const seen = new Set<string>()
+  return list.filter(r => {
+    const key = recipientDedupeKey(r)
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
 }
 
 // ── CSV parse ─────────────────────────────────────────────────────────────────
@@ -173,6 +247,7 @@ function formatCountdown(ms: number): string {
 async function persistJobToBackend(job: JobState, sessionId: string) {
   try {
     await api.post('/message-sender/jobs', {
+      campaign_name: job.campaignName,
       total: job.progress.total,
       sent: job.progress.sent,
       failed: job.progress.failed,
@@ -203,6 +278,9 @@ function saveToLocalStorage(job: JobState) {
 // ── Main component ────────────────────────────────────────────────────────────
 
 export function MessageSender() {
+  // Already loaded on login (no extra request) — backs {{company_details}}/{{company_number}}.
+  const company = useUser()?.company
+
   const [pageTab, setPageTab] = useState<PageTab>('sender')
 
   // --- Recipient state ---
@@ -218,6 +296,11 @@ export function MessageSender() {
   // Group tab
   const [groupSearch, setGroupSearch] = useState('')
   const [selectedGroups, setSelectedGroups] = useState<Set<string>>(new Set())
+  // Participants resolved from the currently-selected group(s), deduped across groups by WA id.
+  // Same pattern as the Label tab's contact picker: every one starts included, uncheck to exclude.
+  const [groupParticipants, setGroupParticipants] = useState<{ id: string; number: string; name?: string }[]>([])
+  const [groupParticipantsLoading, setGroupParticipantsLoading] = useState(false)
+  const [excludedGroupParticipantIds, setExcludedGroupParticipantIds] = useState<Set<string>>(new Set())
 
   // CSV tab
   const [csvRecipients, setCsvRecipients] = useState<Recipient[]>([])
@@ -227,6 +310,11 @@ export function MessageSender() {
   // Label tab
   const [labels, setLabels] = useState<{ id: string; name: string }[]>([])
   const [selectedLabels, setSelectedLabels] = useState<Set<string>>(new Set())
+  // Contacts resolved from the currently-selected label(s); the picker below defaults every one of
+  // them to included and lets the user uncheck ones they don't want to message.
+  const [labelContacts, setLabelContacts] = useState<{ id: number; name: string | null; phone: string }[]>([])
+  const [labelContactsLoading, setLabelContactsLoading] = useState(false)
+  const [excludedLabelContactIds, setExcludedLabelContactIds] = useState<Set<number>>(new Set())
 
   // Chat tab
   const [chatSearch, setChatSearch] = useState('')
@@ -278,13 +366,21 @@ export function MessageSender() {
   const [scheduledAt, setScheduledAt] = useState('')
   const [uniqueSignature, setUniqueSignature] = useState(true)
 
-  // ITEM 4 — Schedule state
+  // ITEM 4 — Schedule state. serverId is set only when confirmSchedule's POST to /message-sender
+  // succeeded — cancelScheduled needs it to actually stop that server-tracked job; without it,
+  // "Cancel" could only ever reset local widget state while the real scheduled job kept running.
   const [pendingSchedule, setPendingSchedule] = useState(false)
-  const [scheduledJob, setScheduledJob] = useState<{ scheduledAt: string; timer: ReturnType<typeof setInterval> | null } | null>(null)
+  const [scheduledJob, setScheduledJob] = useState<{ scheduledAt: string; serverId?: number } | null>(null)
   const [countdown, setCountdown] = useState(0)
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const abortRef = useRef(false)
   const pauseRef = useRef(false)
+
+  // Set only while an immediate (non-scheduled) send is running server-side (submitCampaign ->
+  // pollServerJob), so Pause/Resume/Stop route to the real backend job instead of the
+  // abortRef/pauseRef flags that only mean anything for the client-side executeSend fallback loop.
+  const [activeServerJobId, setActiveServerJobId] = useState<number | null>(null)
+  const serverPollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   // --- Job state ---
   const [job, setJob] = useState<JobState>({
@@ -300,7 +396,6 @@ export function MessageSender() {
   const [serverHistory, setServerHistory] = useState<ServerJob[]>([])
   const [historyLoading, setHistoryLoading] = useState(false)
   const [historyFilter, setHistoryFilter] = useState({ status: '', dateFrom: '', dateTo: '' })
-  const [expandedHistory, setExpandedHistory] = useState<number | null>(null)
   const [drawerJob, setDrawerJob] = useState<ServerJob | null>(null)
   const [historyActionLoading, setHistoryActionLoading] = useState<number | null>(null)
 
@@ -315,11 +410,37 @@ export function MessageSender() {
     session,
     recipientTab === 'chat' && !!session
   )
+  // The session's saved addressbook — resolves a chat's real number even when its id is an @lid
+  // privacy id with no derivable digits, same mechanism the wa-chat sidebar uses.
+  const sessionContactsQ = useSessionContacts(session || undefined)
+  const contactIndex = useMemo(() => buildContactIndex(sessionContactsQ.data), [sessionContactsQ.data])
+
+  // Best-effort display number for a chat id or a "chat"/"group" recipient's stored WA id: the id's
+  // own digits when it encodes a real phone (@c.us), else the saved-contact lookup (covers @lid).
+  const displayPhoneFor = useCallback(
+    (waId: string): string | null => {
+      const fromId = formatPhoneForDisplay(waId.replace(/^\+/, ''))
+      if (fromId) return fromId
+      const contact = lookupChatContact(waId, contactIndex)
+      return contact?.number ? formatPhoneForDisplay(contact.number) : null
+    },
+    [contactIndex],
+  )
 
   // Seed session on load
   useEffect(() => {
     if (activeSessions.length > 0 && !session) setSession(activeSessions[0].id)
   }, [activeSessions, session])
+
+  // Stop polling a server-tracked immediate send if this page unmounts mid-send — otherwise the
+  // 2s interval keeps firing setState calls against an unmounted component indefinitely (it only
+  // clears itself on reaching a terminal status, which may never come if the user just navigates
+  // away).
+  useEffect(() => {
+    return () => {
+      if (serverPollRef.current) clearInterval(serverPollRef.current)
+    }
+  }, [])
 
   // WA Chat templates from Project A (wa-chat-templates endpoint, includes media_blocks)
   useEffect(() => {
@@ -345,15 +466,64 @@ export function MessageSender() {
   // Labels
   useEffect(() => {
     if (recipientTab !== 'label') return
-    Promise.all([
-      api.get('/contact-labels').catch(() => ({ data: [] })),
-      api.get('/lead-categories').catch(() => ({ data: [] })),
-    ]).then(([lR, cR]) => {
-      const lbs = (lR.data?.data ?? lR.data ?? []).map((l: any) => ({ id: `label-${l.id}`, name: l.name }))
-      const cats = (cR.data?.data ?? cR.data ?? []).map((c: any) => ({ id: `cat-${c.id}`, name: c.name }))
-      setLabels([...lbs, ...cats])
-    })
+    api.get('/labels').then(r => {
+      // GET /labels answers { labels: [...] } — it doesn't nest under a `data` key, so that alone
+      // as a fallback left this list empty.
+      const lbs = (r.data?.labels ?? r.data?.data ?? r.data ?? []).map((l: any) => ({ id: `label-${l.id}`, name: l.name }))
+      setLabels(lbs)
+    }).catch(() => setLabels([]))
   }, [recipientTab])
+
+  // Resolve the selected label(s) into their actual CRM contacts (name + real phone), so the
+  // picker can show who would actually get the message instead of a synthetic "label" placeholder.
+  // Every match starts included; excludedLabelContactIds tracks the ones the user unchecked.
+  useEffect(() => {
+    if (selectedLabels.size === 0) {
+      setLabelContacts([])
+      setExcludedLabelContactIds(new Set())
+      return
+    }
+    const labelIds = [...selectedLabels].map(id => Number(id.replace('label-', '')))
+    setLabelContactsLoading(true)
+    let cancelled = false
+    api.post('/contacts/by-labels', { label_ids: labelIds })
+      .then(r => {
+        if (cancelled) return
+        setLabelContacts(r.data?.data ?? r.data ?? [])
+        setExcludedLabelContactIds(new Set())
+      })
+      .catch(() => { if (!cancelled) setLabelContacts([]) })
+      .finally(() => { if (!cancelled) setLabelContactsLoading(false) })
+    return () => { cancelled = true }
+  }, [selectedLabels])
+
+  // Resolve the selected group(s) into their member list, deduped by WA id across groups (the same
+  // person may be in more than one selected group). Same picker pattern as labels: everyone starts
+  // included, and excludedGroupParticipantIds tracks who got unchecked.
+  useEffect(() => {
+    if (selectedGroups.size === 0 || !session) {
+      setGroupParticipants([])
+      setExcludedGroupParticipantIds(new Set())
+      return
+    }
+    setGroupParticipantsLoading(true)
+    let cancelled = false
+    Promise.allSettled([...selectedGroups].map(id => getGroupInfoCached(session, id)))
+      .then(results => {
+        if (cancelled) return
+        const byId = new Map<string, { id: string; number: string; name?: string }>()
+        for (const res of results) {
+          if (res.status !== 'fulfilled') continue
+          for (const p of res.value.participants ?? []) {
+            if (!byId.has(p.id)) byId.set(p.id, { id: p.id, number: p.number, name: p.name })
+          }
+        }
+        setGroupParticipants([...byId.values()])
+        setExcludedGroupParticipantIds(new Set())
+      })
+      .finally(() => { if (!cancelled) setGroupParticipantsLoading(false) })
+    return () => { cancelled = true }
+  }, [selectedGroups, session])
 
   // Contact composer search
   useEffect(() => {
@@ -384,19 +554,20 @@ export function MessageSender() {
     try {
       const saved = localStorage.getItem('ms_scheduled_job')
       if (!saved) return
-      const { scheduledAt: sa, recipients, textBody: tb, session: sess, delaySeconds: ds, uniqueSignature: us } = JSON.parse(saved)
+      const { scheduledAt: sa, recipients, textBody: tb, extraPayload: ep, session: sess, delaySeconds: ds, uniqueSignature: us, campaignName: cn } = JSON.parse(saved)
       const target = new Date(sa).getTime()
       if (target > Date.now()) {
         // Restore and re-arm timer
         setScheduledAt(sa)
-        setSelectedRecipients(recipients ?? [])
+        setSelectedRecipients(dedupeRecipients(recipients ?? []))
         setTextBody(tb ?? '')
         setSession(sess ?? '')
         setDelaySeconds(ds ?? 3)
         setUniqueSignature(us ?? true)
+        setCampaignName(cn ?? '')
         const remaining = target - Date.now()
         setCountdown(remaining)
-        armScheduleTimer(sa, recipients ?? [], tb ?? '', sess ?? '', ds ?? 3, us ?? true)
+        armScheduleTimer(sa, recipients ?? [], tb ?? '', sess ?? '', ds ?? 3, us ?? true, cn, company, ep)
       } else {
         localStorage.removeItem('ms_scheduled_job')
       }
@@ -407,7 +578,7 @@ export function MessageSender() {
   useEffect(() => {
     if (pageTab !== 'history') return
     setHistoryLoading(true)
-    api.get('/message-sender/jobs')
+    api.get('/message-sender')
       .then(r => setServerHistory(r.data?.data ?? r.data ?? []))
       .catch(() => setServerHistory([]))
       .finally(() => setHistoryLoading(false))
@@ -418,6 +589,26 @@ export function MessageSender() {
   }, [pageTab])
 
   // ── ITEM 1 — Emoji insert at cursor ───────────────────────────────────────
+
+  // Wraps the textarea's current selection in a WhatsApp markdown marker (*bold*, _italic_,
+  // ~strike~). With no selection, drops the marker pair with the cursor left between them so
+  // typing continues inside the formatting instead of needing a second pass to wrap it after.
+  const wrapSelection = (marker: string) => {
+    const ta = textareaRef.current
+    if (!ta) return
+    const start = ta.selectionStart ?? textBody.length
+    const end = ta.selectionEnd ?? textBody.length
+    const selected = textBody.slice(start, end)
+    const next = textBody.slice(0, start) + marker + selected + marker + textBody.slice(end)
+    setTextBody(next)
+    requestAnimationFrame(() => {
+      ta.focus()
+      const pos = selected
+        ? [start + marker.length, start + marker.length + selected.length]
+        : [start + marker.length, start + marker.length]
+      ta.setSelectionRange(pos[0], pos[1])
+    })
+  }
 
   const insertEmoji = (emoji: { native: string }) => {
     const ta = textareaRef.current
@@ -444,6 +635,9 @@ export function MessageSender() {
     sess: string,
     delay: number,
     uniq: boolean,
+    campaignNameArg?: string,
+    companyArg?: { name?: string | null; phone?: string | null; website?: string | null } | null,
+    extraPayloadArg?: ExtraPayload,
   ) => {
     // Countdown tick
     if (countdownRef.current) clearInterval(countdownRef.current)
@@ -454,7 +648,7 @@ export function MessageSender() {
         setCountdown(0)
         // Fire the send
         localStorage.removeItem('ms_scheduled_job')
-        executeSend(recipients, text, sess, delay, uniq)
+        executeSend(recipients, text, sess, delay, uniq, extraPayloadArg, campaignNameArg, companyArg)
         setScheduledJob(null)
       } else {
         setCountdown(ms)
@@ -462,9 +656,14 @@ export function MessageSender() {
     }, 1000)
   }
 
-  const cancelScheduled = () => {
+  const cancelScheduled = async () => {
     if (countdownRef.current) clearInterval(countdownRef.current)
     countdownRef.current = null
+    // If confirmSchedule created a real server-tracked job, stop it there too — otherwise it
+    // fires anyway via the cron once its scheduled_at arrives, regardless of this local reset.
+    if (scheduledJob?.serverId) {
+      try { await api.post(`/message-sender/${scheduledJob.serverId}/stop`) } catch { /* best-effort */ }
+    }
     setScheduledJob(null)
     setCountdown(0)
     setJob(prev => ({ ...prev, status: 'idle' }))
@@ -474,8 +673,9 @@ export function MessageSender() {
   // ── Recipient helpers ──────────────────────────────────────────────────────
 
   const toggleRecipient = (r: Recipient) => {
+    const key = recipientDedupeKey(r)
     setSelectedRecipients(prev =>
-      prev.find(x => x.id === r.id) ? prev.filter(x => x.id !== r.id) : [...prev, r]
+      prev.find(x => recipientDedupeKey(x) === key) ? prev.filter(x => recipientDedupeKey(x) !== key) : [...prev, r]
     )
   }
 
@@ -483,36 +683,68 @@ export function MessageSender() {
     const phone = manualPhone.trim()
     if (!phone || !PHONE_RE.test(phone.replace(/[\s\-()\+]/g, ''))) return
     const r: Recipient = { id: `manual-${phone}`, name: phone, phone, type: 'personal', category: 'Manual' }
-    if (!selectedRecipients.find(x => x.id === r.id)) setSelectedRecipients(prev => [...prev, r])
+    const key = recipientDedupeKey(r)
+    if (!selectedRecipients.find(x => recipientDedupeKey(x) === key)) setSelectedRecipients(prev => [...prev, r])
     setManualPhone('')
   }
 
   const addCSV = () => {
-    const toAdd = csvRecipients.filter(r => !selectedRecipients.find(x => x.id === r.id))
+    const seen = new Set(selectedRecipients.map(recipientDedupeKey))
+    const toAdd = csvRecipients.filter(r => {
+      const key = recipientDedupeKey(r)
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
     setSelectedRecipients(prev => [...prev, ...toAdd])
   }
 
-  const addGroups = () => {
-    const toAdd = groups
-      .filter(g => selectedGroups.has(g.id))
-      .map(g => ({ id: `group-${g.id}`, name: g.name, phone: g.id, type: 'group' as const, category: 'Group' }))
-      .filter(r => !selectedRecipients.find(x => x.id === r.id))
+  const addGroupParticipants = () => {
+    const seen = new Set(selectedRecipients.map(recipientDedupeKey))
+    const toAdd = groupParticipants
+      .filter(p => !excludedGroupParticipantIds.has(p.id))
+      .map(p => ({ id: `group-member-${p.id}`, name: p.name ?? p.number, phone: p.id, type: 'group' as const, category: 'Group member' }))
+      .filter(r => {
+        const key = recipientDedupeKey(r)
+        if (seen.has(key)) return false
+        seen.add(key)
+        return true
+      })
     setSelectedRecipients(prev => [...prev, ...toAdd])
   }
 
   const addChats = () => {
+    // The recipient's phone MUST stay the chat's own WhatsApp id, @c.us/@lid suffix and all — it's
+    // the one value guaranteed to reach them, since it's the id of a chat that already exists on
+    // this session. Re-deriving a "clean" number and letting executeSend re-resolve it via
+    // checkNumber is unreliable: WhatsApp's number lookup can fail to confirm a number that
+    // nonetheless already has a working chat, which sent every such recipient to "could not
+    // resolve" instead of the message. The real number is still shown in the picker/queue (via
+    // displayPhoneFor) — that's a display-only concern, kept separate from what's sent to.
+    const seen = new Set(selectedRecipients.map(recipientDedupeKey))
     const toAdd = chats
       .filter(c => selectedChats.has(c.id))
       .map(c => ({ id: `chat-${c.id}`, name: c.name, phone: c.id, type: 'chat' as const, category: (c as any).isGroup ? 'Group chat' : 'Contact' }))
-      .filter(r => !selectedRecipients.find(x => x.id === r.id))
+      .filter(r => {
+        const key = recipientDedupeKey(r)
+        if (seen.has(key)) return false
+        seen.add(key)
+        return true
+      })
     setSelectedRecipients(prev => [...prev, ...toAdd])
   }
 
-  const addLabels = () => {
-    const toAdd = [...selectedLabels].map(id => {
-      const label = labels.find(l => l.id === id)
-      return { id, name: label?.name ?? id, phone: id, type: 'label' as const, category: 'Label' }
-    }).filter(r => !selectedRecipients.find(x => x.id === r.id))
+  const addLabelContacts = () => {
+    const seen = new Set(selectedRecipients.map(recipientDedupeKey))
+    const toAdd = labelContacts
+      .filter(c => !excludedLabelContactIds.has(c.id))
+      .map(c => ({ id: `label-contact-${c.id}`, name: c.name ?? c.phone, phone: c.phone, type: 'label' as const, category: 'Label' }))
+      .filter(r => {
+        const key = recipientDedupeKey(r)
+        if (seen.has(key)) return false
+        seen.add(key)
+        return true
+      })
     setSelectedRecipients(prev => [...prev, ...toAdd])
   }
 
@@ -531,7 +763,10 @@ export function MessageSender() {
     const fd = new FormData()
     fd.append('file', file)
     try {
-      const res = await api.post('/media-library/upload', fd)
+      // Without this override, the api client's default 'Content-Type: application/json' header
+      // wins over FormData's own multipart boundary, so the file field never actually reaches
+      // Laravel — matches MediaPickerModal's own upload call, which needs the same override.
+      const res = await api.post('/media-library/upload', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
       const url = res.data?.url ?? res.data?.data?.url ?? ''
       updateBlock(blockId, { mediaUrl: url })
     } catch { /* silent */ }
@@ -579,7 +814,9 @@ export function MessageSender() {
         try {
           const fd = new FormData()
           fd.append('file', new File([blob], `voice-note-${Date.now()}.ogg`, { type: 'audio/ogg; codecs=opus' }))
-          const res = await api.post('/media-library/upload', fd)
+          // See handleMediaUpload: without this override the api client's default JSON
+          // Content-Type header wins over FormData's multipart boundary and the upload 422s.
+          const res = await api.post('/media-library/upload', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
           const serverUrl = res.data?.url ?? res.data?.data?.url ?? ''
           if (serverUrl) setAudioUrl(serverUrl)
         } catch { /* keep blob URL as playback-only fallback */ }
@@ -598,6 +835,23 @@ export function MessageSender() {
     setRecording(false)
   }
 
+  // Clears the composer back to a blank slate — shared by the client-side executeSend loop and by
+  // submitCampaign's server-tracked immediate-send path, so both leave the form in the same state
+  // once a send actually completes.
+  const resetComposerAfterSend = () => {
+    setSelectedRecipients([])
+    setTextBody('')
+    setMediaBlocks([{ id: '1', type: 'text', text: '' }])
+    setSelectedTemplate(null)
+    setCampaignName('')
+    setPollQuestion('')
+    setPollOptions(['', ''])
+    setLocLat(''); setLocLng(''); setLocName(''); setLocAddress('')
+    setSelectedContact2(null)
+    setAudioBlob(null); setAudioUrl(null)
+    setScheduledAt('')
+  }
+
   // ── Core send execution (used by immediate + scheduled) ───────────────────
 
   const executeSend = useCallback(async (
@@ -607,6 +861,8 @@ export function MessageSender() {
     delay: number,
     uniq: boolean,
     extraPayload?: ExtraPayload,
+    campaignNameArg?: string,
+    companyArg?: { name?: string | null; phone?: string | null; website?: string | null } | null,
   ) => {
     abortRef.current = false
     pauseRef.current = false
@@ -616,7 +872,7 @@ export function MessageSender() {
       id: r.id, recipientName: r.name, phone: r.phone,
       type: r.type, status: 'pending', category: r.category
     }))
-    setJob({ status: 'running', progress: { sent: 0, failed: 0, total, pending: total }, log: initialLog, delayMs: delay * 1000, uniqueSignature: uniq, startedAt, sessionId: sess })
+    setJob({ status: 'running', progress: { sent: 0, failed: 0, total, pending: total }, log: initialLog, campaignName: campaignNameArg || undefined, delayMs: delay * 1000, uniqueSignature: uniq, startedAt, sessionId: sess })
 
     let sent = 0; let failed = 0
 
@@ -632,7 +888,7 @@ export function MessageSender() {
 
       const recipient = recipients[i]
       // ITEM 2 — personalize per recipient
-      const personalized = personalizeMessage(templateText, { name: recipient.name, phone: recipient.phone })
+      const personalized = personalizeMessage(templateText, { name: recipient.name, phone: recipient.phone }, companyArg)
       const body = uniq ? personalized + uniqueSig(recipient.phone) : personalized
 
       setJob(prev => {
@@ -668,7 +924,7 @@ export function MessageSender() {
           for (let bi = 0; bi < extraPayload.blocks.length; bi++) {
             const block = extraPayload.blocks[bi]
             if (block.type === 'text') {
-              const personalized = personalizeMessage(block.text ?? '', { name: recipient.name, phone: recipient.phone })
+              const personalized = personalizeMessage(block.text ?? '', { name: recipient.name, phone: recipient.phone }, companyArg)
               const bdy = uniq ? personalized + uniqueSig(recipient.phone) : personalized
               await messageApi.sendText(sess, chatId, bdy)
             } else {
@@ -718,33 +974,24 @@ export function MessageSender() {
 
     // Reset sender form fields after completion
     if (finalStatus === 'done') {
-      setSelectedRecipients([])
-      setTextBody('')
-      setMediaBlocks([{ id: '1', type: 'text', text: '' }])
-      setSelectedTemplate(null)
-      setCampaignName('')
-      setPollQuestion('')
-      setPollOptions(['', ''])
-      setLocLat(''); setLocLng(''); setLocName(''); setLocAddress('')
-      setSelectedContact2(null)
-      setAudioBlob(null); setAudioUrl(null)
-      setScheduledAt('')
+      resetComposerAfterSend()
     }
   }, [])
 
   // ── ITEM 4 — handleSend with schedule check ────────────────────────────────
 
-  const handleSend = useCallback(async () => {
-    if (!session || selectedRecipients.length === 0) return
-
-    let templateText = ''
-    let extraPayload: ExtraPayload = undefined
-
+  // Shared by handleSend (immediate) and confirmSchedule (server-tracked + client-fallback
+  // scheduling) — both need the exact same composer-state -> {text, extraPayload} derivation, and
+  // previously only handleSend had it: confirmSchedule re-derived a much weaker approximation that
+  // dropped poll/location/contact/audio/media content entirely when scheduling anything but a
+  // plain text/template message.
+  const buildOutgoingMessage = useCallback((): { templateText: string; extraPayload: ExtraPayload } | null => {
     if (composerTab === 'text') {
-      templateText = textBody
-      if (!templateText.trim()) return
-    } else if (composerTab === 'template' && selectedTemplate) {
-      templateText = selectedTemplate.body
+      if (!textBody.trim()) return null
+      return { templateText: textBody, extraPayload: undefined }
+    }
+    if (composerTab === 'template' && selectedTemplate) {
+      let templateText = selectedTemplate.body
       // If template has media blocks, treat it as a media send
       const tplBlocks: MessageBlock[] = []
       // 1. Header media (image/video/document)
@@ -759,36 +1006,126 @@ export function MessageSender() {
       }
       if (tplBlocks.length > 0) {
         templateText = `📋 ${selectedTemplate.name}`
-        extraPayload = { kind: 'media', blocks: tplBlocks }
+        return { templateText, extraPayload: { kind: 'media', blocks: tplBlocks } }
       }
-    } else if (composerTab === 'poll') {
+      return { templateText, extraPayload: undefined }
+    }
+    if (composerTab === 'poll') {
       const opts = pollOptions.filter(o => o.trim())
-      if (!pollQuestion.trim() || opts.length < 2) return
-      templateText = `📊 ${pollQuestion}`
-      extraPayload = { kind: 'poll', question: pollQuestion, options: opts }
-    } else if (composerTab === 'location') {
+      if (!pollQuestion.trim() || opts.length < 2) return null
+      return { templateText: `📊 ${pollQuestion}`, extraPayload: { kind: 'poll', question: pollQuestion, options: opts } }
+    }
+    if (composerTab === 'location') {
       const lat = parseFloat(locLat); const lng = parseFloat(locLng)
-      if (isNaN(lat) || isNaN(lng)) return
-      templateText = `📍 ${locName || locAddress || `${lat},${lng}`}`
-      extraPayload = { kind: 'location', lat, lng, name: locName || undefined, address: locAddress || undefined }
-    } else if (composerTab === 'contact') {
-      if (!selectedContact2) return
-      templateText = `👤 ${selectedContact2.name ?? selectedContact2.phone}`
-      extraPayload = { kind: 'contact', contactName: selectedContact2.name ?? selectedContact2.phone, contactNumber: selectedContact2.phone }
-    } else if (composerTab === 'audio') {
-      if (!audioUrl || audioUploading) return
-      templateText = '🎤 Audio message'
-      extraPayload = { kind: 'audio', url: audioUrl }
-    } else if (composerTab === 'media') {
+      if (isNaN(lat) || isNaN(lng)) return null
+      return {
+        templateText: `📍 ${locName || locAddress || `${lat},${lng}`}`,
+        extraPayload: { kind: 'location', lat, lng, name: locName || undefined, address: locAddress || undefined },
+      }
+    }
+    if (composerTab === 'contact') {
+      if (!selectedContact2) return null
+      return {
+        templateText: `👤 ${selectedContact2.name ?? selectedContact2.phone}`,
+        extraPayload: { kind: 'contact', contactName: selectedContact2.name ?? selectedContact2.phone, contactNumber: selectedContact2.phone },
+      }
+    }
+    if (composerTab === 'audio') {
+      if (!audioUrl || audioUploading) return null
+      return { templateText: '🎤 Audio message', extraPayload: { kind: 'audio', url: audioUrl } }
+    }
+    if (composerTab === 'media') {
       const validBlocks = mediaBlocks.filter(b =>
         (b.type === 'text' && b.text?.trim()) || (b.type !== 'text' && b.mediaUrl?.trim())
       )
-      if (validBlocks.length === 0) return
-      templateText = `📎 ${validBlocks.length} block${validBlocks.length !== 1 ? 's' : ''}`
-      extraPayload = { kind: 'media', blocks: validBlocks }
-    } else {
-      return
+      if (validBlocks.length === 0) return null
+      return {
+        templateText: `📎 ${validBlocks.length} block${validBlocks.length !== 1 ? 's' : ''}`,
+        extraPayload: { kind: 'media', blocks: validBlocks },
+      }
     }
+    return null
+  }, [composerTab, textBody, selectedTemplate, pollQuestion, pollOptions, locLat, locLng, locName, locAddress, selectedContact2, audioUrl, audioUploading, mediaBlocks])
+
+  // Polls the server-tracked job's real status/progress every couple seconds — an immediate send
+  // now runs entirely server-side (ProcessMessageSenderJob via the queue), so the browser has no
+  // other way to reflect live sent/failed/pending counts the way the old client-side executeSend
+  // loop could update them synchronously as it went.
+  const pollServerJob = (id: number) => {
+    if (serverPollRef.current) clearInterval(serverPollRef.current)
+    setActiveServerJobId(id)
+    const tick = async () => {
+      try {
+        const r = await api.get(`/message-sender/${id}`)
+        const j: ServerJob = r.data?.data ?? r.data
+        setJob(prev => ({
+          ...prev,
+          status: (j.status as JobStatus) ?? prev.status,
+          progress: { sent: j.sent, failed: j.failed, total: j.total, pending: Math.max(0, j.total - j.sent - j.failed) },
+        }))
+        if (j.status === 'done' || j.status === 'stopped') {
+          if (serverPollRef.current) clearInterval(serverPollRef.current)
+          serverPollRef.current = null
+          setActiveServerJobId(null)
+          refreshServerHistory()
+          if (j.status === 'done') resetComposerAfterSend()
+        }
+      } catch { /* transient — try again next tick */ }
+    }
+    tick()
+    serverPollRef.current = setInterval(tick, 2000)
+  }
+
+  // Creates the campaign server-side (message_sender_jobs) whether or not scheduledAtValue is set —
+  // an immediate send (no value) is created as 'pending' and dispatched right away by store(), a
+  // future one as 'scheduled' for the cron to pick up. Either way the actual sending now happens
+  // server-side via OpenWaMessageService, with every recipient logged to waha_message_logs,
+  // instead of the browser calling the gateway directly. Returns false only if the request itself
+  // failed (session offline, validation rejected, network error) so the caller can fall back to
+  // the old client-side path — never as a normal outcome.
+  const submitCampaign = async (scheduledAtValue?: string): Promise<boolean> => {
+    const built = buildOutgoingMessage()
+    if (!built) return false
+    const { templateText, extraPayload } = built
+
+    try {
+      const res = await api.post('/message-sender', {
+        campaign_name: campaignName || undefined,
+        session_id: session,
+        type: selectedRecipients[0]?.type ?? 'personal',
+        total: selectedRecipients.length,
+        delay_ms: delaySeconds * 1000,
+        unique_signature: uniqueSignature,
+        scheduled_at: scheduledAtValue || undefined,
+        log: selectedRecipients.map(r => ({ recipient_name: r.name, phone: r.phone, status: 'pending' })),
+        message_payload: toMessagePayload(templateText, extraPayload, selectedRecipients),
+      })
+      const newId: number | undefined = res.data?.data?.id
+
+      if (scheduledAtValue) {
+        setJob(prev => ({ ...prev, status: 'scheduled' }))
+        setScheduledJob({ scheduledAt: scheduledAtValue, serverId: newId })
+      } else {
+        setJob({
+          status: 'running',
+          progress: { sent: 0, failed: 0, total: selectedRecipients.length, pending: selectedRecipients.length },
+          log: [], campaignName, delayMs: delaySeconds * 1000, uniqueSignature,
+          startedAt: new Date().toISOString(), sessionId: session,
+        })
+        if (newId) pollServerJob(newId)
+      }
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  const handleSend = useCallback(async () => {
+    if (!session || selectedRecipients.length === 0) return
+
+    const built = buildOutgoingMessage()
+    if (!built) return
+    const { templateText, extraPayload } = built
 
     // ITEM 4 — Check if schedule is set and in the future
     if (scheduledAt) {
@@ -799,64 +1136,104 @@ export function MessageSender() {
       }
     }
 
+    // Send now — server-tracked first (so it's DB-logged like a scheduled campaign); only fall
+    // back to the old client-side loop if that request itself failed.
+    const ok = await submitCampaign(undefined)
+    if (ok) return
+
     // Immediate send
-    executeSend(selectedRecipients, templateText, session, delaySeconds, uniqueSignature, extraPayload)
-  }, [session, selectedRecipients, composerTab, textBody, selectedTemplate, mediaBlocks, delaySeconds, uniqueSignature, scheduledAt, pollQuestion, pollOptions, locLat, locLng, locName, locAddress, selectedContact2, audioUrl, executeSend])
+    executeSend(selectedRecipients, templateText, session, delaySeconds, uniqueSignature, extraPayload, campaignName, company)
+  }, [session, selectedRecipients, buildOutgoingMessage, delaySeconds, uniqueSignature, scheduledAt, campaignName, company, executeSend])
 
   const confirmSchedule = async () => {
-    let templateText = ''
-    if (composerTab === 'text') templateText = textBody
-    else if (composerTab === 'template' && selectedTemplate) templateText = selectedTemplate.body
-    else templateText = mediaBlocks.find(b => b.text)?.text ?? ''
-
     setPendingSchedule(false)
 
-    // POST to Laravel for text/template campaigns so the backend scheduler handles them.
-    if ((composerTab === 'text' || composerTab === 'template') && templateText.trim()) {
-      try {
-        await api.post('/message-sender', {
-          campaign_name: campaignName || undefined,
-          session_id: session,
-          type: selectedRecipients[0]?.type ?? 'personal',
-          total: selectedRecipients.length,
-          delay_ms: delaySeconds * 1000,
-          unique_signature: uniqueSignature,
-          scheduled_at: scheduledAt,
-          log: selectedRecipients.map(r => ({ recipient_name: r.name, phone: r.phone, status: 'pending' })),
-          message_payload: { type: 'text', text: templateText },
-        })
-        setJob(prev => ({ ...prev, status: 'scheduled' }))
-        setScheduledJob({ scheduledAt, timer: null })
-        return
-      } catch { /* fall through to frontend timer as fallback */ }
-    }
+    // Server-tracked first — ProcessMessageSenderJob (run by wachat:process-scheduled-messages)
+    // handles it when scheduled_at arrives. Covers every composer type via toMessagePayload, not
+    // just text/template.
+    const ok = await submitCampaign(scheduledAt)
+    if (ok) return
 
-    // Fallback: use frontend setInterval (also used for non-text types)
+    // Fallback: use frontend setInterval — only reachable if the server POST above failed
+    // (session offline, validation rejected, etc.), so this tab must stay open for the send to
+    // happen at all.
+    const built = buildOutgoingMessage()
+    if (!built) return
+    const { templateText, extraPayload } = built
+
     localStorage.setItem('ms_scheduled_job', JSON.stringify({
       scheduledAt,
       recipients: selectedRecipients,
       textBody: templateText,
+      extraPayload,
       session,
       delaySeconds,
       uniqueSignature,
+      campaignName,
     }))
 
     const target = new Date(scheduledAt).getTime()
     setCountdown(target - Date.now())
-    setScheduledJob({ scheduledAt, timer: null })
+    setScheduledJob({ scheduledAt })
     setJob(prev => ({ ...prev, status: 'scheduled' }))
 
-    armScheduleTimer(scheduledAt, selectedRecipients, templateText, session, delaySeconds, uniqueSignature)
+    armScheduleTimer(scheduledAt, selectedRecipients, templateText, session, delaySeconds, uniqueSignature, campaignName, company, extraPayload)
   }
 
-  const handlePause = () => { pauseRef.current = true }
-  const handleResume = () => { pauseRef.current = false }
-  const handleStop = () => { abortRef.current = true; pauseRef.current = false }
+  // An immediate send now runs server-side once submitCampaign's POST succeeds — activeServerJobId
+  // is set for exactly that duration, so Pause/Resume/Stop route to the real backend job instead
+  // of the abortRef/pauseRef flags, which only mean anything to the client-side executeSend
+  // fallback loop (used when the server POST itself failed).
+  const handlePause = () => {
+    if (activeServerJobId) { handleHistoryPause(activeServerJobId); return }
+    pauseRef.current = true
+  }
+  const handleResume = () => {
+    if (activeServerJobId) { handleHistoryResume(activeServerJobId); return }
+    pauseRef.current = false
+  }
+  const handleStop = () => {
+    if (activeServerJobId) { handleHistoryStop(activeServerJobId); return }
+    abortRef.current = true; pauseRef.current = false
+  }
 
   const refreshServerHistory = () => {
-    api.get('/message-sender/jobs')
+    api.get('/message-sender')
       .then(r => setServerHistory(r.data?.data ?? r.data ?? []))
       .catch(() => {})
+  }
+
+  // Reuse a past campaign's resolved recipient list as the starting point for a new one — the
+  // audience carries over as-is, while campaign name and message are left for the user to change
+  // before scheduling/sending. Recipient type is always set to 'personal': whatever the source's
+  // phone values look like (bare digits or a full WA id with '@'), executeSend's non-'group'
+  // branch already handles both correctly, and the original tab-specific type may not even be a
+  // valid Recipient type (job.type also allows 'campaign'/'from-chat').
+  const duplicateFromHistory = (h: ServerJob) => {
+    const recipients: Recipient[] = (h.log ?? []).map((e, i) => ({
+      id: `dup-${h.id}-${i}-${e.phone}`,
+      name: e.recipient_name || e.phone,
+      phone: e.phone,
+      type: 'personal',
+      category: 'Duplicated',
+    }))
+    setSelectedRecipients(dedupeRecipients(recipients))
+    setCampaignName(h.campaign_name ? `${h.campaign_name} (Copy)` : '')
+    setComposerTab('text')
+    setTextBody(h.message_payload?.text ?? '')
+    if (h.session_id) setSession(h.session_id)
+    setScheduledAt('')
+    setDrawerJob(null)
+    setPageTab('sender')
+  }
+
+  const handleHistoryLaunch = async (id: number) => {
+    setHistoryActionLoading(id)
+    try {
+      await api.post(`/message-sender/${id}/launch`)
+      refreshServerHistory()
+    } catch { /* silent */ }
+    finally { setHistoryActionLoading(null) }
   }
 
   const handleHistoryPause = async (id: number) => {
@@ -908,7 +1285,7 @@ export function MessageSender() {
   const recipientTabs: { id: RecipientTab; label: string; icon: React.ReactNode }[] = [
     { id: 'personal', label: 'Personal', icon: <Users size={14} /> },
     { id: 'group',    label: 'Group',    icon: <Hash size={14} /> },
-    { id: 'csv',      label: 'Bulk CSV', icon: <FileText size={14} /> },
+    { id: 'csv',      label: 'Bulk CSV', icon: <FileText size={14} style={{margin: '0 auto 12px ' }} /> },
     { id: 'label',    label: 'Label',    icon: <Tag size={14} /> },
     { id: 'chat',     label: 'From Chat',icon: <MessageSquare size={14} /> },
   ]
@@ -925,9 +1302,34 @@ export function MessageSender() {
     a.click()
   }
 
+  // Same idea as exportLog, but for a server-tracked job (ServerJob.log uses snake_case fields and
+  // has no per-entry type/category — the job itself carries one type for the whole campaign). A
+  // summary line up top (campaign, stats) makes this useful standalone, not just as a recipient dump.
+  const exportServerLog = (job: ServerJob) => {
+    const csvField = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`
+    const rows = [
+      ['Campaign', 'Type', 'Total', 'Sent', 'Failed', 'Status'].map(csvField).join(','),
+      [job.campaign_name, job.type, job.total, job.sent, job.failed, job.status].map(csvField).join(','),
+      '',
+      '#,Name,Phone,Status,Sent At,Error',
+      ...(job.log ?? []).map((e, i) => [i + 1, e.recipient_name, e.phone, e.status, e.sent_at ?? '', e.error ?? ''].map(csvField).join(',')),
+    ].join('\n')
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(new Blob([rows], { type: 'text/csv' }))
+    a.download = `campaign-${job.id}-${Date.now()}.csv`
+    a.click()
+  }
+
   // ── Variable preview hint ─────────────────────────────────────────────────
 
-  const hasVars = /{{(name|phone|date|time)}}/.test(textBody)
+  const hasVars = /{{(name|phone|date|time|company_details|company_number)}}/.test(textBody)
+
+  // Local-storage history is only ever a fallback for jobs the server hasn't recorded — once any
+  // server history exists it's dropped entirely rather than duplicated alongside it.
+  const localHistory = useMemo(
+    () => (serverHistory.length > 0 ? [] : history.filter(h => !historyFilter.status || h.status === historyFilter.status)),
+    [history, serverHistory.length, historyFilter.status],
+  )
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -963,7 +1365,7 @@ export function MessageSender() {
           {(['sender', 'history'] as PageTab[]).map(t => (
             <button key={t} onClick={() => setPageTab(t)}
               className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${pageTab === t ? 'bg-brand-500 text-white' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'}`}>
-              {t === 'sender' ? '📨 Message Sender' : '🕐 Send History'}
+              {t === 'sender' ? '📨 Campaign' : '🕐 History'}
             </button>
           ))}
         </div>
@@ -1057,9 +1459,55 @@ export function MessageSender() {
                       {groups.length === 0 && <p className="text-xs text-gray-400 px-3 py-3">No groups found for this session.</p>}
                     </div>
                   )}
-                  <button onClick={addGroups} disabled={selectedGroups.size === 0}
+
+                  {/* Selected groups, shown as removable chips */}
+                  {selectedGroups.size > 0 && (
+                    <div className="flex flex-wrap gap-1.5">
+                      {[...selectedGroups].map(id => (
+                        <span key={id} className="inline-flex items-center gap-1 pl-2 pr-1 py-1 bg-brand-50 text-brand-700 rounded-full text-xs font-medium">
+                          {groups.find(g => g.id === id)?.name ?? id}
+                          <button onClick={() => { const s = new Set(selectedGroups); s.delete(id); setSelectedGroups(s) }}
+                            className="hover:bg-brand-100 rounded-full p-0.5">
+                            <X size={10} />
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Members of the selected group(s), deduped — every one starts checked; uncheck
+                      to exclude a member from this send without leaving the group. */}
+                  {selectedGroups.size > 0 && (
+                    <div>
+                      <p className="text-xs font-medium text-gray-500 mb-1">
+                        {groupParticipantsLoading ? 'Loading group members…' : `Members (${groupParticipants.length - excludedGroupParticipantIds.size} of ${groupParticipants.length} selected)`}
+                      </p>
+                      {groupParticipantsLoading ? (
+                        <div className="flex justify-center py-4"><Loader2 size={18} className="animate-spin text-gray-400" /></div>
+                      ) : (
+                        <div className="border border-gray-100 rounded-lg max-h-52 overflow-y-auto divide-y divide-gray-50">
+                          {groupParticipants.map(p => (
+                            <label key={p.id} className="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 cursor-pointer">
+                              <input type="checkbox" checked={!excludedGroupParticipantIds.has(p.id)}
+                                onChange={e => {
+                                  const s = new Set(excludedGroupParticipantIds)
+                                  e.target.checked ? s.delete(p.id) : s.add(p.id)
+                                  setExcludedGroupParticipantIds(s)
+                                }}
+                                className="rounded" />
+                              <span className="text-sm font-medium text-gray-800 flex-1">{p.name ?? p.number}</span>
+                              <span className="text-xs text-gray-400">{p.number}</span>
+                            </label>
+                          ))}
+                          {groupParticipants.length === 0 && <p className="text-xs text-gray-400 px-3 py-3">No members found for the selected group(s).</p>}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  <button onClick={addGroupParticipants} disabled={groupParticipants.length - excludedGroupParticipantIds.size === 0}
                     className="px-4 py-2 bg-brand-500 text-white rounded-lg text-sm disabled:opacity-50 hover:bg-brand-600">
-                    Add {selectedGroups.size} group{selectedGroups.size !== 1 ? 's' : ''} to recipients
+                    Add {groupParticipants.length - excludedGroupParticipantIds.size} member{groupParticipants.length - excludedGroupParticipantIds.size !== 1 ? 's' : ''} to recipients
                   </button>
                 </div>
               )}
@@ -1106,9 +1554,55 @@ export function MessageSender() {
                     ))}
                     {labels.length === 0 && <p className="text-xs text-gray-400 px-3 py-3">Loading labels…</p>}
                   </div>
-                  <button onClick={addLabels} disabled={selectedLabels.size === 0}
+
+                  {/* Selected labels, shown as removable chips */}
+                  {selectedLabels.size > 0 && (
+                    <div className="flex flex-wrap gap-1.5">
+                      {[...selectedLabels].map(id => (
+                        <span key={id} className="inline-flex items-center gap-1 pl-2 pr-1 py-1 bg-brand-50 text-brand-700 rounded-full text-xs font-medium">
+                          {labels.find(l => l.id === id)?.name ?? id}
+                          <button onClick={() => { const s = new Set(selectedLabels); s.delete(id); setSelectedLabels(s) }}
+                            className="hover:bg-brand-100 rounded-full p-0.5">
+                            <X size={10} />
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Contacts matching the selected label(s) — every one starts checked; uncheck to
+                      exclude a contact from this send without leaving the label. */}
+                  {selectedLabels.size > 0 && (
+                    <div>
+                      <p className="text-xs font-medium text-gray-500 mb-1">
+                        {labelContactsLoading ? 'Loading matching contacts…' : `Matching contacts (${labelContacts.length - excludedLabelContactIds.size} of ${labelContacts.length} selected)`}
+                      </p>
+                      {labelContactsLoading ? (
+                        <div className="flex justify-center py-4"><Loader2 size={18} className="animate-spin text-gray-400" /></div>
+                      ) : (
+                        <div className="border border-gray-100 rounded-lg max-h-52 overflow-y-auto divide-y divide-gray-50">
+                          {labelContacts.map(c => (
+                            <label key={c.id} className="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 cursor-pointer">
+                              <input type="checkbox" checked={!excludedLabelContactIds.has(c.id)}
+                                onChange={e => {
+                                  const s = new Set(excludedLabelContactIds)
+                                  e.target.checked ? s.delete(c.id) : s.add(c.id)
+                                  setExcludedLabelContactIds(s)
+                                }}
+                                className="rounded" />
+                              <span className="text-sm font-medium text-gray-800 flex-1">{c.name ?? c.phone}</span>
+                              <span className="text-xs text-gray-400">{c.phone}</span>
+                            </label>
+                          ))}
+                          {labelContacts.length === 0 && <p className="text-xs text-gray-400 px-3 py-3">No contacts have the selected label(s).</p>}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  <button onClick={addLabelContacts} disabled={labelContacts.length - excludedLabelContactIds.size === 0}
                     className="px-4 py-2 bg-brand-500 text-white rounded-lg text-sm disabled:opacity-50 hover:bg-brand-600">
-                    Add {selectedLabels.size} label{selectedLabels.size !== 1 ? 's' : ''} to queue
+                    Add {labelContacts.length - excludedLabelContactIds.size} contact{labelContacts.length - excludedLabelContactIds.size !== 1 ? 's' : ''} to queue
                   </button>
                 </div>
               )}
@@ -1127,6 +1621,9 @@ export function MessageSender() {
                             onChange={e => { const s = new Set(selectedChats); e.target.checked ? s.add(c.id) : s.delete(c.id); setSelectedChats(s) }}
                             className="rounded" />
                           <span className="text-sm text-gray-800 flex-1">{c.name}</span>
+                          {!(c as any).isGroup && displayPhoneFor(c.id) && (
+                            <span className="text-xs text-gray-400">{displayPhoneFor(c.id)}</span>
+                          )}
                           {(c as any).isGroup && <span className="text-xs bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded">Group</span>}
                         </label>
                       ))}
@@ -1144,12 +1641,15 @@ export function MessageSender() {
               {selectedRecipients.length > 0 && (
                 <div className="mt-3 pt-3 border-t border-gray-100">
                   <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
-                    {selectedRecipients.map(r => (
-                      <span key={r.id} className="inline-flex items-center gap-1 bg-brand-50 text-brand-700 border border-brand-200 px-2 py-0.5 rounded-full text-xs">
-                        {r.name}
-                        <button onClick={() => setSelectedRecipients(prev => prev.filter(x => x.id !== r.id))} className="hover:text-red-500"><X size={10} /></button>
-                      </span>
-                    ))}
+                    {selectedRecipients.map(r => {
+                      const phone = displayPhoneFor(r.phone)
+                      return (
+                        <span key={r.id} className="inline-flex items-center gap-1 bg-brand-50 text-brand-700 border border-brand-200 px-2 py-0.5 rounded-full text-xs">
+                          {r.name}{phone && r.name !== phone ? ` (${phone})` : ''}
+                          <button onClick={() => setSelectedRecipients(prev => prev.filter(x => x.id !== r.id))} className="hover:text-red-500"><X size={10} /></button>
+                        </span>
+                      )
+                    })}
                   </div>
                   <button onClick={() => setSelectedRecipients([])} className="mt-1.5 text-xs text-gray-400 hover:text-red-500">Clear all</button>
                 </div>
@@ -1162,7 +1662,7 @@ export function MessageSender() {
               <div className="flex flex-wrap gap-2 mb-4">
                 {([
                   { id: 'text', label: '✏️ Text' },
-                  { id: 'media', label: '📎 Media' },
+                  { id: 'media', label: '📎 Multi Media' },
                   { id: 'template', label: '📋 Template' },
                   { id: 'poll', label: '📊 Poll' },
                   { id: 'location', label: '📍 Location' },
@@ -1179,13 +1679,30 @@ export function MessageSender() {
               {/* ITEM 1 — Text sub-tab with emoji picker */}
               {composerTab === 'text' && (
                 <div className="space-y-2">
+                  {/* Formatting toolbar — wraps the current selection in WhatsApp's own markdown
+                      syntax; with nothing selected it drops the marker pair with the cursor between
+                      them so typing continues inside the formatting. */}
+                  <div className="flex gap-1">
+                    <button type="button" onClick={() => wrapSelection('*')} title="Bold (*text*)"
+                      className="p-1.5 rounded border border-gray-200 text-gray-600 hover:bg-gray-100">
+                      <Bold size={13} />
+                    </button>
+                    <button type="button" onClick={() => wrapSelection('_')} title="Italic (_text_)"
+                      className="p-1.5 rounded border border-gray-200 text-gray-600 hover:bg-gray-100">
+                      <Italic size={13} />
+                    </button>
+                    <button type="button" onClick={() => wrapSelection('~')} title="Strikethrough (~text~)"
+                      className="p-1.5 rounded border border-gray-200 text-gray-600 hover:bg-gray-100">
+                      <Strikethrough size={13} />
+                    </button>
+                  </div>
                   <div className="relative">
                     <textarea
                       ref={textareaRef}
                       value={textBody}
                       onChange={e => setTextBody(e.target.value)}
                       rows={5}
-                      placeholder="Type your message… *bold* _italic_ {{name}} {{phone}} {{date}} {{time}}"
+                      placeholder="Type your message… *bold* _italic_ ~strike~ {{name}} {{phone}} {{date}} {{time}}"
                       className="w-full px-3 py-2 pr-10 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-300 resize-none"
                     />
                     {/* Emoji button */}
@@ -1209,14 +1726,14 @@ export function MessageSender() {
                     )}
                   </div>
                   <div className="flex justify-between text-xs text-gray-400">
-                    <span>Variables: {'{{name}}'} {'{{phone}}'} {'{{date}}'} {'{{time}}'}</span>
+                    <span>Variables: {'{{name}}'} {'{{phone}}'} {'{{date}}'} {'{{time}}'} {'{{company_details}}'} {'{{company_number}}'}</span>
                     <span>{textBody.length} chars</span>
                   </div>
                   {/* ITEM 2 — Variable preview hint */}
                   {hasVars && selectedRecipients.length > 0 && (
                     <div className="bg-brand-50 border border-brand-100 rounded-lg px-3 py-2 text-xs text-brand-700">
                       <span className="font-medium">Preview for {selectedRecipients[0].name}:</span>{' '}
-                      {personalizeMessage(textBody, { name: selectedRecipients[0].name, phone: selectedRecipients[0].phone }).slice(0, 120)}
+                      {personalizeMessage(textBody, { name: selectedRecipients[0].name, phone: selectedRecipients[0].phone }, company).slice(0, 120)}
                     </div>
                   )}
                   {hasVars && selectedRecipients.length === 0 && (
@@ -1346,7 +1863,7 @@ export function MessageSender() {
                   {selectedTemplate && selectedRecipients.length > 0 && (
                     <div className="bg-brand-50 border border-brand-100 rounded-lg px-3 py-2 text-xs text-brand-700">
                       <span className="font-medium">Preview for {selectedRecipients[0].name}:</span>{' '}
-                      {personalizeMessage(selectedTemplate.body, { name: selectedRecipients[0].name, phone: selectedRecipients[0].phone }).slice(0, 120)}
+                      {personalizeMessage(selectedTemplate.body, { name: selectedRecipients[0].name, phone: selectedRecipients[0].phone }, company).slice(0, 120)}
                     </div>
                   )}
                 </div>
@@ -1720,7 +2237,7 @@ export function MessageSender() {
       {pageTab === 'history' && (
         <div className="bg-white rounded-xl border border-gray-200 p-4">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-sm font-semibold text-gray-700">Send History</h2>
+            <h2 className="text-sm font-semibold text-gray-700">History</h2>
             <div className="flex gap-2">
               <input type="date" value={historyFilter.dateFrom} onChange={e => setHistoryFilter(f => ({ ...f, dateFrom: e.target.value }))}
                 className="px-2 py-1 text-xs border border-gray-200 rounded" />
@@ -1729,6 +2246,13 @@ export function MessageSender() {
               <select value={historyFilter.status} onChange={e => setHistoryFilter(f => ({ ...f, status: e.target.value }))}
                 className="px-2 py-1 text-xs border border-gray-200 rounded">
                 <option value="">All statuses</option>
+                {/* "Pending" covers a campaign waiting on its scheduled time as well as one created
+                    for immediate send whose worker hasn't picked it up yet — either way, "created,
+                    not yet sending" and startable with Launch. */}
+                <option value="pending">Pending</option>
+                <option value="scheduled">Scheduled</option>
+                <option value="running">Running</option>
+                <option value="paused">Paused</option>
                 <option value="done">Done</option>
                 <option value="stopped">Stopped</option>
               </select>
@@ -1800,6 +2324,10 @@ export function MessageSender() {
                         .filter(h => !historyFilter.status || h.status === historyFilter.status)
                         .map((h) => {
                           const isActioning = historyActionLoading === h.id
+                          // A 'scheduled' job already has a real send time and fires on its own via
+                          // the cron — Launch only makes sense for 'pending' (no date picked, just
+                          // waiting to be started).
+                          const canLaunch = h.status === 'pending'
                           const canPause = h.status === 'running' || h.status === 'sending' || h.status === 'processing'
                           const canResume = h.status === 'paused'
                           const canStop = h.status !== 'stopped' && h.status !== 'done'
@@ -1843,9 +2371,14 @@ export function MessageSender() {
                                   )}
                                 </div>
                               </td>
-                              {/* Scheduled At */}
+                              {/* Scheduled At — the requested future time for a scheduled campaign;
+                                  fall back to when an immediate one actually started. */}
                               <td className="px-3 py-2 text-gray-500 whitespace-nowrap">
-                                {h.started_at ? new Date(h.started_at).toLocaleString('en-IN') : '—'}
+                                {h.scheduled_at
+                                  ? new Date(h.scheduled_at).toLocaleString('en-IN')
+                                  : h.started_at
+                                    ? new Date(h.started_at).toLocaleString('en-IN')
+                                    : '—'}
                               </td>
                               {/* Session ID */}
                               <td className="px-3 py-2">
@@ -1873,6 +2406,27 @@ export function MessageSender() {
                                     className="flex items-center gap-1 px-2 py-1 text-xs bg-gray-100 text-gray-600 rounded hover:bg-gray-200">
                                     <Users size={11} /> Details
                                   </button>
+                                  <button
+                                    onClick={() => duplicateFromHistory(h)}
+                                    title="Start a new campaign with this audience"
+                                    className="flex items-center gap-1 px-2 py-1 text-xs bg-gray-100 text-gray-600 rounded hover:bg-gray-200">
+                                    <Copy size={11} /> Duplicate
+                                  </button>
+                                  <button
+                                    onClick={() => exportServerLog(h)}
+                                    title="Export campaign + per-recipient log as CSV"
+                                    className="flex items-center gap-1 px-2 py-1 text-xs bg-gray-100 text-gray-600 rounded hover:bg-gray-200">
+                                    <Download size={11} /> CSV
+                                  </button>
+                                  {canLaunch && (
+                                    <button
+                                      disabled={isActioning}
+                                      onClick={() => handleHistoryLaunch(h.id)}
+                                      title="Start sending now"
+                                      className="flex items-center gap-1 px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200 disabled:opacity-50">
+                                      <Send size={11} /> Launch
+                                    </button>
+                                  )}
                                   {canPause && (
                                     <button
                                       disabled={isActioning}
@@ -1920,55 +2474,112 @@ export function MessageSender() {
                 </div>
               )}
 
-              {/* localStorage fallback jobs (shown only if not already in server results) */}
-              {history
-                .filter(h => !historyFilter.status || h.status === historyFilter.status)
-                .filter(h => !serverHistory.length)
-                .map((h, idx) => {
-                  const key = `ls-${idx}`
-                  const eIdx = serverHistory.length + idx
-                  return (
-                    <div key={key} className="border border-gray-100 rounded-lg overflow-hidden opacity-75">
-                      <button onClick={() => setExpandedHistory(expandedHistory === eIdx ? null : eIdx)}
-                        className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-50 text-left">
-                        <div className="flex items-center gap-4">
-                          <StatusBadge status={h.status} />
-                          <span className="text-sm font-medium text-gray-800">{h.progress.total} recipients</span>
-                          <span className="text-xs text-gray-400">{h.progress.sent} sent · {h.progress.failed} failed</span>
-                          <span className="text-xs text-gray-300">(local)</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <button onClick={e => { e.stopPropagation(); exportLog(h.log) }}
-                            className="flex items-center gap-1 px-2 py-1 bg-gray-100 text-gray-600 rounded text-xs hover:bg-gray-200">
-                            <Download size={11} /> CSV
-                          </button>
-                          {expandedHistory === eIdx ? <ChevronDown size={14} className="text-gray-400" /> : <ChevronRight size={14} className="text-gray-400" />}
-                        </div>
-                      </button>
-                      {expandedHistory === eIdx && (
-                        <div className="px-4 pb-3 border-t border-gray-100 overflow-x-auto">
-                          <table className="w-full text-xs mt-2">
-                            <thead><tr className="text-left text-gray-400">
-                              <th className="pb-1 pr-3">#</th><th className="pb-1 pr-3">Name</th><th className="pb-1 pr-3">Phone</th>
-                              <th className="pb-1 pr-3">Status</th><th className="pb-1">Sent At</th>
-                            </tr></thead>
-                            <tbody className="divide-y divide-gray-50">
-                              {h.log.map((e, i) => (
-                                <tr key={e.id}>
-                                  <td className="py-1.5 pr-3 text-gray-400">{i + 1}</td>
-                                  <td className="py-1.5 pr-3 text-gray-800">{e.recipientName}</td>
-                                  <td className="py-1.5 pr-3 text-gray-500 font-mono">{e.phone}</td>
-                                  <td className="py-1.5 pr-3"><StatusBadge status={e.status} /></td>
-                                  <td className="py-1.5 text-gray-400">{e.sentAt ? new Date(e.sentAt).toLocaleTimeString() : '–'}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      )}
-                    </div>
-                  )
-                })}
+              {/* localStorage fallback jobs (shown only if not already in server results) — same
+                  table layout as the server history above, no accordion. Row click opens the same
+                  delivery-details drawer, built on the fly from this job's local shape; pause/
+                  resume/stop/delete are omitted since these entries have no backend job id to act on. */}
+              {localHistory.length > 0 && (
+                <div className="overflow-x-auto rounded-lg border border-gray-200">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="text-xs text-gray-500 uppercase bg-gray-50 border-b border-gray-200">
+                        <th className="px-3 py-2 text-left font-semibold">Campaign Name</th>
+                        <th className="px-3 py-2 text-left font-semibold">Recipient Type</th>
+                        <th className="px-3 py-2 text-left font-semibold">No. of Contacts</th>
+                        <th className="px-3 py-2 text-left font-semibold">Stats</th>
+                        <th className="px-3 py-2 text-left font-semibold">Started At</th>
+                        <th className="px-3 py-2 text-left font-semibold">Session ID</th>
+                        <th className="px-3 py-2 text-left font-semibold">Status</th>
+                        <th className="px-3 py-2 text-left font-semibold">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {localHistory.map((h, idx) => {
+                          const pending = h.progress.total - h.progress.sent - h.progress.failed
+                          const recipientType = h.log[0]?.type ?? 'personal'
+                          // No message_payload here — local jobs never persisted their original
+                          // text anywhere, so duplicating one carries the audience over but leaves
+                          // the message blank (same as duplicating without server-side history).
+                          const asServerJob: ServerJob = {
+                            id: -1 - idx,
+                            campaign_name: h.campaignName,
+                            total: h.progress.total,
+                            sent: h.progress.sent,
+                            failed: h.progress.failed,
+                            type: recipientType,
+                            session_id: h.sessionId ?? '',
+                            started_at: h.startedAt ?? '',
+                            completed_at: h.completedAt ?? '',
+                            status: h.status,
+                            log: h.log.map(e => ({
+                              recipient_name: e.recipientName, phone: e.phone, status: e.status,
+                              sent_at: e.sentAt, error: e.error,
+                            })),
+                          }
+                          const openDetails = () => setDrawerJob(asServerJob)
+                          return (
+                            <tr key={`ls-${idx}`} className="hover:bg-blue-50 cursor-pointer opacity-75" onClick={openDetails}>
+                              <td className="px-3 py-2 text-gray-800 font-medium max-w-[160px]">
+                                <span className="block truncate" title={h.campaignName ?? undefined}>
+                                  {h.campaignName || '—'}
+                                </span>
+                              </td>
+                              <td className="px-3 py-2 text-gray-600 capitalize">
+                                {recipientType.charAt(0).toUpperCase() + recipientType.slice(1)}
+                                <span className="ml-1.5 text-gray-300 normal-case">(local)</span>
+                              </td>
+                              <td className="px-3 py-2 text-gray-700 font-semibold">{h.progress.total}</td>
+                              <td className="px-3 py-2">
+                                <div className="flex items-center gap-1 flex-wrap">
+                                  <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-green-50 text-green-700 rounded text-xs font-medium">
+                                    {'✅'} {h.progress.sent}
+                                  </span>
+                                  {pending > 0 && (
+                                    <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-yellow-50 text-yellow-700 rounded text-xs font-medium">
+                                      {'⏳'} {pending}
+                                    </span>
+                                  )}
+                                  {h.progress.failed > 0 && (
+                                    <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-red-50 text-red-600 rounded text-xs font-medium">
+                                      {'❌'} {h.progress.failed}
+                                    </span>
+                                  )}
+                                </div>
+                              </td>
+                              <td className="px-3 py-2 text-gray-500 whitespace-nowrap">
+                                {h.startedAt ? new Date(h.startedAt).toLocaleString('en-IN') : '—'}
+                              </td>
+                              <td className="px-3 py-2">
+                                {h.sessionId ? (
+                                  <span className="font-mono text-gray-500 text-xs" title={h.sessionId}>{h.sessionId.slice(0, 12)}</span>
+                                ) : (
+                                  <span className="text-gray-300">—</span>
+                                )}
+                              </td>
+                              <td className="px-3 py-2"><StatusBadge status={h.status} /></td>
+                              <td className="px-3 py-2" onClick={e => e.stopPropagation()}>
+                                <div className="flex items-center gap-1 flex-wrap">
+                                  <button onClick={openDetails} title="View delivery details"
+                                    className="flex items-center gap-1 px-2 py-1 text-xs bg-gray-100 text-gray-600 rounded hover:bg-gray-200">
+                                    <Users size={11} /> Details
+                                  </button>
+                                  <button onClick={() => duplicateFromHistory(asServerJob)} title="Start a new campaign with this audience"
+                                    className="flex items-center gap-1 px-2 py-1 text-xs bg-gray-100 text-gray-600 rounded hover:bg-gray-200">
+                                    <Copy size={11} /> Duplicate
+                                  </button>
+                                  <button onClick={() => exportLog(h.log)} title="Export as CSV"
+                                    className="flex items-center gap-1 px-2 py-1 text-xs bg-gray-100 text-gray-600 rounded hover:bg-gray-200">
+                                    <Download size={11} /> CSV
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          )
+                        })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -1984,9 +2595,13 @@ export function MessageSender() {
             {/* Header */}
             <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 bg-gray-50">
               <div>
-                <h2 className="text-sm font-semibold text-gray-900">Delivery Details</h2>
+                <h2 className="text-sm font-semibold text-gray-900">{drawerJob.campaign_name || 'Delivery Details'}</h2>
                 <p className="text-xs text-gray-500 mt-0.5">
-                  {new Date(drawerJob.started_at).toLocaleString('en-IN')}
+                  {drawerJob.started_at
+                    ? new Date(drawerJob.started_at).toLocaleString('en-IN')
+                    : drawerJob.scheduled_at
+                      ? `Scheduled for ${new Date(drawerJob.scheduled_at).toLocaleString('en-IN')}`
+                      : '—'}
                   {drawerJob.session_id && ` · ${drawerJob.session_id}`}
                 </p>
               </div>
@@ -2014,7 +2629,32 @@ export function MessageSender() {
             <div className="flex items-center gap-2 px-5 py-2.5 border-b border-gray-100">
               <StatusBadge status={drawerJob.status} />
               <div className="flex-1" />
-              {(drawerJob.status === 'running' || drawerJob.status === 'sending') && (
+              <button
+                onClick={() => duplicateFromHistory(drawerJob)}
+                title="Start a new campaign with this audience"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200">
+                <Copy size={12} /> Duplicate
+              </button>
+              <button
+                onClick={() => exportServerLog(drawerJob)}
+                title="Export campaign + per-recipient log as CSV"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200">
+                <Download size={12} /> CSV
+              </button>
+              {/* drawerJob.id > 0 excludes the synthetic negative ids built for local-history rows,
+                  which have no real backend job to act on. */}
+              {/* A 'scheduled' job fires on its own via the cron — Launch only applies to
+                  'pending' (no date picked, just waiting to be started). */}
+              {drawerJob.id > 0 && drawerJob.status === 'pending' && (
+                <button
+                  disabled={historyActionLoading === drawerJob.id}
+                  onClick={() => handleHistoryLaunch(drawerJob.id)}
+                  title="Start sending now"
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50">
+                  <Send size={12} /> Launch
+                </button>
+              )}
+              {drawerJob.id > 0 && (drawerJob.status === 'running' || drawerJob.status === 'sending') && (
                 <button
                   disabled={historyActionLoading === drawerJob.id}
                   onClick={() => handleHistoryPause(drawerJob.id)}
@@ -2022,7 +2662,7 @@ export function MessageSender() {
                   <Pause size={12} /> Pause
                 </button>
               )}
-              {drawerJob.status === 'paused' && (
+              {drawerJob.id > 0 && drawerJob.status === 'paused' && (
                 <button
                   disabled={historyActionLoading === drawerJob.id}
                   onClick={() => handleHistoryResume(drawerJob.id)}
@@ -2030,7 +2670,7 @@ export function MessageSender() {
                   <Play size={12} /> Resume
                 </button>
               )}
-              {drawerJob.status !== 'stopped' && drawerJob.status !== 'done' && (
+              {drawerJob.id > 0 && drawerJob.status !== 'stopped' && drawerJob.status !== 'done' && (
                 <button
                   disabled={historyActionLoading === drawerJob.id}
                   onClick={() => handleHistoryStop(drawerJob.id)}

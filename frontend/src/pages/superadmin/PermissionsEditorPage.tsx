@@ -8,7 +8,7 @@ import { permissionsApi } from '@/api'
 
 export default function PermissionsEditorPage() {
   const [roles,   setRoles]   = useState<any[]>([])
-  const [allPerms,setAllPerms]= useState<Record<string, string[]>>({})
+  const [allPerms,setAllPerms]= useState<Record<string, { key: string; label: string; type: string }[]>>({})
   const [selected,setSelected]= useState<any>(null)
   const [edited,  setEdited]  = useState<string[]>([])
   const [saving,  setSaving]  = useState(false)
@@ -17,7 +17,7 @@ export default function PermissionsEditorPage() {
   useEffect(() => {
     permissionsApi.list().then(r => {
       setRoles(r.data.roles)
-      setAllPerms(r.data.all_permissions)
+      setAllPerms(r.data.catalogue ?? {})
     }).finally(() => setLoading(false))
   }, [])
 
@@ -90,10 +90,10 @@ export default function PermissionsEditorPage() {
                       <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide capitalize mb-2">{group}</p>
                       <div className="grid grid-cols-2 gap-2">
                         {perms.map(perm => (
-                          <label key={perm} className="flex items-center gap-2 cursor-pointer hover:bg-gray-50 p-2 rounded-lg">
-                            <input type="checkbox" checked={edited.includes(perm)} onChange={() => toggle(perm)}
+                          <label key={perm.key} className="flex items-center gap-2 cursor-pointer hover:bg-gray-50 p-2 rounded-lg">
+                            <input type="checkbox" checked={edited.includes(perm.key)} onChange={() => toggle(perm.key)}
                               className="w-4 h-4 text-brand-500 rounded border-gray-300" />
-                            <span className="text-xs font-mono text-gray-700">{perm}</span>
+                            <span className="text-xs text-gray-700">{perm.label}</span>
                           </label>
                         ))}
                       </div>

@@ -263,7 +263,7 @@ class LeadAssignmentController extends Controller
         );
 
         $rule->update($request->only([
-            'auto_assign_enabled',
+            'auto_assign_enabled', 'strategy',
             'weight_availability', 'weight_max_leads', 'weight_performance', 'weight_workload',
             'sla_minutes', 'ai_takeover_after_minutes',
             'notification_mode', 'notification_gap_seconds', 'notification_timeout_seconds', 'max_notification_rounds',

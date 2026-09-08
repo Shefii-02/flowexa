@@ -46,9 +46,10 @@ export function useSessionCreateForm({ onCreated, onFailed }: UseSessionCreateFo
       // Persist display_name / phone to our Laravel backend (fire-and-forget)
       if (newDisplayName.trim() || newPhone.trim()) {
         try {
-          const laravelBase = import.meta.env.VITE_API_URL || window.location.origin;
+          // VITE_API_URL already includes the /api/v1 prefix (see src/api/client.ts).
+          const laravelBase = import.meta.env.VITE_API_URL || '/api/v1';
           const token = localStorage.getItem('wa_token') || '';
-          await fetch(`${laravelBase}/api/v1/waha/sessions`, {
+          await fetch(`${laravelBase}/waha/sessions`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',

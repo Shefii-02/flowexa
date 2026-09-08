@@ -20,10 +20,13 @@ class MetaAdsService
     // ── Connect ad account ────────────────────────────────────────────────
     public function connectAdAccount(int $companyId, array $data): MetaAdAccount
     {
+        Log::alert("MetaAdsService: Connecting ad account for company {$companyId} with data: " . json_encode($data));
         // Validate token by fetching account info
         $info = $this->get("/{$data['ad_account_id']}", $data['access_token'], [
             'fields' => 'name,currency,timezone_name,account_status,business',
         ]);
+
+        Log::info("MetaAdsService: Fetched account info for {$data['ad_account_id']}: " . json_encode($info));
 
         if (!isset($info['name'])) {
             throw new \Exception('Invalid ad account or access token. Please check your credentials.');

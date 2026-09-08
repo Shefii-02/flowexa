@@ -205,7 +205,7 @@ export function Templates() {
 
       {sessions.length === 0 ? (
         <div className="templates-empty-page">
-          <FileText size={48} strokeWidth={1} />
+          <FileText size={48} strokeWidth={1}  style={{margin: '0 auto 12px ' }} />
           <h3>{t('templates.empty.noSessionsTitle')}</h3>
           <p>{t('templates.empty.noSessionsDesc')}</p>
         </div>
@@ -238,7 +238,7 @@ export function Templates() {
               </div>
             ) : templates.length === 0 ? (
               <div className="templates-empty-list">
-                <FileText size={40} strokeWidth={1} />
+                <FileText size={40} strokeWidth={1} style={{margin: '0 auto 12px ' }} />
                 <h3>{t('templates.empty.title')}</h3>
                 <p>{t('templates.empty.description')}</p>
               </div>

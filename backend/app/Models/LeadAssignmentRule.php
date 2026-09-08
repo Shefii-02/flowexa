@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class LeadAssignmentRule extends Model
 {
     protected $fillable = [
-        'company_id', 'auto_assign_enabled',
+        'company_id', 'auto_assign_enabled', 'strategy',
         'weight_availability', 'weight_max_leads', 'weight_performance', 'weight_workload',
         'sla_minutes', 'ai_takeover_after_minutes',
         'notification_mode', 'notification_gap_seconds', 'notification_timeout_seconds', 'max_notification_rounds',
@@ -28,6 +28,7 @@ class LeadAssignmentRule extends Model
         return [
             'company_id'                   => $companyId,
             'auto_assign_enabled'          => true,
+            'strategy'                     => 'round_robin',
             'weight_availability'          => 30,
             'weight_max_leads'             => 25,
             'weight_performance'           => 25,

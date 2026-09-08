@@ -18,12 +18,12 @@ class SuperAdminOnly
             ], 401);
         }
 
-        // if ($user->role?->name !== 'superadmin') {
-        //     return response()->json([
-        //         'message'    => 'Access denied. Only superadmin can perform this action.',
-        //         'error_code' => 'forbidden',
-        //     ], 403);
-        // }
+        if ($user->role?->name !== 'superadmin') {
+            return response()->json([
+                'message'    => 'Access denied. Only a full superadmin can perform this action.',
+                'error_code' => 'forbidden',
+            ], 403);
+        }
 
         return $next($request);
     }

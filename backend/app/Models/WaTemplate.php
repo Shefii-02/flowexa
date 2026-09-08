@@ -32,11 +32,26 @@ class WaTemplate extends Model
         'buttons',
         'status',
         'rejection_reason',
+        // AUTHENTICATION-only fields — these were previously omitted, so a
+        // freshly created auth template silently lost its delivery method / apps
+        // until it was saved a second time (TemplateService::create mass-assigns
+        // them via WaTemplate::create).
+        'auth_delivery_method',
+        'auth_add_expiry',
+        'auth_code_expiration_minutes',
+        'auth_add_security_recommendation',
+        'auth_apps',
+        'auth_zero_tap_terms_accepted',
     ];
 
     protected $casts = [
-        'body_examples' => 'array',
-        'buttons'       => 'array',
+        'body_examples'                    => 'array',
+        'buttons'                          => 'array',
+        'auth_apps'                        => 'array',
+        'auth_add_expiry'                  => 'boolean',
+        'auth_code_expiration_minutes'     => 'integer',
+        'auth_add_security_recommendation' => 'boolean',
+        'auth_zero_tap_terms_accepted'     => 'boolean',
     ];
 
     // protected $fillable = [

@@ -6,11 +6,14 @@ use App\Jobs\CheckLeadSla;
 use App\Jobs\NotifyStaffNewLead;
 use App\Jobs\SendLeadNotifications;
 use App\Models\Company;
+use App\Models\CompanyHoliday;
+use App\Models\CompanyWorkingHour;
 use App\Models\Contact;
 use App\Models\LeadAssignment;
 use App\Models\LeadAssignmentRule;
 use App\Models\StaffAvailability;
 use App\Models\User;
+use Illuminate\Support\Carbon;
 use App\Modules\WaChat\Models\AiAgentSession;
 use Illuminate\Support\Facades\DB;
 
@@ -80,9 +83,31 @@ class LeadAssignmentEngine
             }
             $contact->update($updatePayload);
 
+            // Outside the company's working hours (per-weekday schedule + holiday
+            // overrides) → hand straight to the AI agent so the lead isn't dropped.
+            if (!$this->withinWorkingHours($company, $rule)) {
+                $this->startAiAgent($assignment, $company, $contact);
+                $assignment->update(['transfer_reason' => 'Received outside working hours — AI agent engaged.']);
+                return $assignment;
+            }
+
             // Uber-only mode → just send notifications
             if ($rule->notification_mode === 'uber') {
                 dispatch(new SendLeadNotifications($assignment->id, $rule->id));
+                return $assignment;
+            }
+
+            // Basic "round robin" strategy → assign to the least-recently-loaded
+            // available staff member, one by one, ignoring the weighted algorithm.
+            if (($rule->strategy ?? 'algorithm') === 'round_robin') {
+                $staff = $this->roundRobinPick($company);
+                if ($staff) {
+                    $this->assignToStaff($assignment, $staff, $rule);
+                } elseif ($rule->notification_mode === 'hybrid') {
+                    dispatch(new SendLeadNotifications($assignment->id, $rule->id));
+                } else {
+                    $this->startAiAgent($assignment, $company, $contact);
+                }
                 return $assignment;
             }
 
@@ -154,6 +179,56 @@ class LeadAssignmentEngine
             'ai_takeover_at'       => now(),
             'ai_agent_session_id'  => $session->id,
         ]);
+    }
+
+    /**
+     * Is "now" (in the rule timezone) inside the company's working hours?
+     * Falls back to the rule's global start/end/days when no per-weekday rows
+     * exist. A holiday override for the date always means closed.
+     */
+    public function withinWorkingHours(Company $company, LeadAssignmentRule $rule): bool
+    {
+        $tz = $rule->timezone ?: 'Asia/Kolkata';
+        $now = Carbon::now($tz);
+
+        if (CompanyHoliday::where('company_id', $company->id)->whereDate('date', $now->toDateString())->exists()) {
+            return false;
+        }
+
+        $row = CompanyWorkingHour::where('company_id', $company->id)->where('weekday', (int) $now->dayOfWeek)->first();
+
+        if ($row) {
+            if (!$row->is_open) {
+                return false;
+            }
+            $start = $now->copy()->setTimeFromTimeString((string) $row->start_time);
+            $end   = $now->copy()->setTimeFromTimeString((string) $row->end_time);
+        } else {
+            $openDays = $rule->working_days ?: [1, 2, 3, 4, 5];
+            if (!in_array((int) $now->dayOfWeek, $openDays, true)) {
+                return false;
+            }
+            $start = $now->copy()->setTimeFromTimeString((string) ($rule->working_hours_start ?: '09:00:00'));
+            $end   = $now->copy()->setTimeFromTimeString((string) ($rule->working_hours_end ?: '18:00:00'));
+        }
+
+        return $now->betweenIncluded($start, $end);
+    }
+
+    /** Least-loaded available staff member, then longest-idle (round-robin). */
+    public function roundRobinPick(Company $company): ?User
+    {
+        $candidate = StaffAvailability::query()
+            ->where('company_id', $company->id)
+            ->where('is_available', true)
+            ->whereNotIn('status', ['offline', 'busy'])
+            ->whereHas('staff', fn ($q) => $q->where('is_active', true))
+            ->orderBy('today_leads_count')
+            ->orderByRaw('last_seen_at IS NULL DESC')
+            ->orderBy('last_seen_at')
+            ->first();
+
+        return $candidate?->staff;
     }
 
     public function calculatePriority(Contact $contact, array $dupCheck): int

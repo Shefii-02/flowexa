@@ -6,7 +6,6 @@ use App\Models\Company;
 use App\Models\Permission;
 use App\Models\Role;
 use App\Modules\WaChat\Models\AutomationRule;
-use App\Modules\WaChat\Models\WaAuthMessage;
 use Illuminate\Support\Facades\DB;
 
 class CompanySetupService
@@ -16,7 +15,6 @@ class CompanySetupService
         DB::transaction(function () use ($company) {
             $this->createDefaultRoles($company);
             $this->createDefaultAutomations($company);
-            $this->createDefaultAiAuthMessages($company);
         });
     }
 
@@ -154,27 +152,6 @@ class CompanySetupService
 
         foreach ($automations as $def) {
             AutomationRule::create(array_merge($def, ['company_id' => $company->id]));
-        }
-    }
-
-    private function createDefaultAiAuthMessages(Company $company): void
-    {
-        $templates = [
-            ['name' => 'OTP Message',     'type' => 'otp',           'sort_order' => 1,
-             'message_template' => 'Your verification code for ' . $company->name . ' is {{otp}}. Valid for {{expiry}} minutes. Do not share this code.'],
-            ['name' => 'Welcome Message', 'type' => 'welcome',        'sort_order' => 2,
-             'message_template' => 'Welcome to ' . $company->name . '! Your account is ready. Reply HELP for assistance.'],
-            ['name' => 'Login Alert',     'type' => 'login_alert',    'sort_order' => 3,
-             'message_template' => 'New login detected on your ' . $company->name . ' account at {{time}}. Not you? Contact support immediately.'],
-            ['name' => 'Password Reset',  'type' => 'password_reset', 'sort_order' => 4,
-             'message_template' => 'Your password reset code for ' . $company->name . ' is {{otp}}. Ignore if not requested.'],
-        ];
-
-        foreach ($templates as $tpl) {
-            WaAuthMessage::create(array_merge($tpl, [
-                'company_id' => $company->id,
-                'is_active'  => true,
-            ]));
         }
     }
 }

@@ -20,12 +20,12 @@ class SuperAdmin
 
         $role = $user->role?->name;
 
-        // if (!in_array($role, ['superadmin', 'superadmin_staff'])) {
-        //     return response()->json([
-        //         'message'    => 'Access denied. SuperAdmin only.',
-        //         'error_code' => 'forbidden',
-        //     ], 403);
-        // }
+        if (!in_array($role, ['superadmin', 'superadmin_staff'], true)) {
+            return response()->json([
+                'message'    => 'Access denied. SuperAdmin only.',
+                'error_code' => 'forbidden',
+            ], 403);
+        }
 
         return $next($request);
     }

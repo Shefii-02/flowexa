@@ -3,6 +3,7 @@
 namespace App\Modules\Contact\Services;
 
 use App\Models\Contact;
+use App\Models\LeadAssignment;
 use App\Modules\Contact\DTOs\ContactFilterDTO;
 use App\Modules\Contact\DTOs\CreateContactDTO;
 use App\Modules\Contact\DTOs\ImportContactDTO;
@@ -50,7 +51,34 @@ class ContactService
         $contact = $this->contactRepository->findById($id, $companyId);
         if (!$contact) throw ContactException::notFound();
 
-        return $this->contactRepository->update($contact, $dto);
+        $contact = $this->contactRepository->update($contact, $dto);
+
+        if ($dto->assignedTo !== null) {
+            $contact = $this->assignStaff($contact, $companyId, $dto->assignedTo);
+        }
+
+        return $contact;
+    }
+
+    // ─── Assign staff ─────────────────────────────────────────────────────────
+    // Manual staff assignment from the CRM contact panel: records it as its own LeadAssignment
+    // (source_type/assignment_type "manual") rather than overwriting one the auto-routing engine
+    // created, then points the contact's current_assignment_id at it — the same field the
+    // automatic engine sets, so both paths read back through the same "assigned_to" API shape.
+    private function assignStaff(Contact $contact, int $companyId, int $staffId): Contact
+    {
+        $assignment = LeadAssignment::create([
+            'company_id'      => $companyId,
+            'contact_id'      => $contact->id,
+            'staff_id'        => $staffId,
+            'source_type'     => 'manual',
+            'assignment_type' => 'manual',
+            'status'          => 'assigned',
+        ]);
+
+        $contact->update(['current_assignment_id' => $assignment->id]);
+
+        return $contact->fresh(['labels', 'currentAssignment.staff']);
     }
 
     // ─── Sync labels ──────────────────────────────────────────────────────────
@@ -60,7 +88,7 @@ class ContactService
         if (!$contact) throw ContactException::notFound();
 
         $this->contactRepository->syncLabels($contact, $labelIds);
-        return $contact->fresh('labels');
+        return $contact->fresh(['labels', 'currentAssignment.staff']);
     }
 
     // ─── Remove label ─────────────────────────────────────────────────────────
@@ -70,7 +98,7 @@ class ContactService
         if (!$contact) throw ContactException::notFound();
 
         $this->contactRepository->removeLabel($contact, $labelId);
-        return $contact->fresh('labels');
+        return $contact->fresh(['labels', 'currentAssignment.staff']);
     }
 
     // ─── Opt out ──────────────────────────────────────────────────────────────

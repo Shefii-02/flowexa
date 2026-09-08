@@ -17,6 +17,9 @@ class ContactResource extends JsonResource
             'phone'           => $this->phone,
             'name'            => $this->name,
             'email'           => $this->email,
+            // The originating WhatsApp id (@c.us or @lid) — lets any consumer address this contact
+            // directly instead of re-deriving a chat id from `phone` (which an @lid chat never had).
+            'wa_id'           => $this->wa_id,
             'custom_fields'   => $this->custom_fields,
             'opted_in'        => $this->opted_in,
             'opted_out_at'    => $this->opted_out_at?->toIso8601String(),
@@ -24,8 +27,25 @@ class ContactResource extends JsonResource
             'crm_id'          => $this->crm_id,
             'created_at'      => $this->created_at->toIso8601String(),
 
+            // AI / lead intelligence fields — real columns on the model that were previously
+            // dropped on the floor here, leaving the CRM-details panel unable to show them.
+            'lead_score'             => $this->lead_score,
+            'lead_stage'             => $this->lead_stage,
+            'conversation_summary'   => $this->conversation_summary,
+
             'labels' => $this->whenLoaded('labels',
                 fn() => LabelResource::collection($this->labels)
+            ),
+
+            // The contact's current staff assignment, via current_assignment_id -> LeadAssignment.
+            // Null (not omitted) once the relation is loaded but no assignment exists, so the panel
+            // can tell "not loaded yet" apart from "loaded, nobody assigned".
+            'assigned_to' => $this->whenLoaded('currentAssignment',
+                fn() => $this->currentAssignment?->staff ? [
+                    'id'    => $this->currentAssignment->staff->id,
+                    'name'  => $this->currentAssignment->staff->name,
+                    'email' => $this->currentAssignment->staff->email,
+                ] : null
             ),
 
             'leads' => $this->whenLoaded('leads',

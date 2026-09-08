@@ -23,7 +23,7 @@ class ContactRepository implements ContactRepositoryInterface
         $sortBy  = in_array($filter->sortBy, self::ALLOWED_SORT) ? $filter->sortBy : 'created_at';
         $sortDir = $filter->sortDir === 'asc' ? 'asc' : 'desc';
 
-        return Contact::with('labels')
+        return Contact::with(['labels', 'currentAssignment.staff'])
             ->where('company_id', $companyId)
             ->when($filter->search, function ($q) use ($filter) {
                 $term    = $filter->search;
@@ -33,7 +33,10 @@ class ContactRepository implements ContactRepositoryInterface
                 $q->where(function ($inner) use ($term, $last10) {
                     $inner->where('name',  'like', "%{$term}%")
                           ->orWhere('phone', 'like', "%{$term}%")
-                          ->orWhere('email', 'like', "%{$term}%");
+                          ->orWhere('email', 'like', "%{$term}%")
+                          // Exact match on the stored WhatsApp id: the one reliable way to find a
+                          // contact by an @lid chat id, whose digits aren't a phone number at all.
+                          ->orWhere('wa_id', $term);
                     if ($last10) {
                         $inner->orWhere('phone', 'like', "%{$last10}");
                     }
@@ -54,7 +57,7 @@ class ContactRepository implements ContactRepositoryInterface
     // ─── Find by ID ───────────────────────────────────────────────────────────
     public function findById(int $id, int $companyId): ?Contact
     {
-        return Contact::with(['labels', 'leads.assignedTo', 'messages' => fn($q) => $q->latest()->limit(20)])
+        return Contact::with(['labels', 'currentAssignment.staff', 'leads.assignedTo', 'messages' => fn($q) => $q->latest()->limit(20)])
             ->where('id', $id)
             ->where('company_id', $companyId)
             ->first();
@@ -76,6 +79,7 @@ class ContactRepository implements ContactRepositoryInterface
             'phone'         => $dto->phone,
             'name'          => $dto->name,
             'email'         => $dto->email,
+            'wa_id'         => $dto->waId,
             'custom_fields' => $dto->customFields,
             'opted_in'      => $dto->optedIn,
         ]);
@@ -84,7 +88,7 @@ class ContactRepository implements ContactRepositoryInterface
             $contact->labels()->sync($dto->labelIds);
         }
 
-        return $contact->load('labels');
+        return $contact->load(['labels', 'currentAssignment.staff']);
     }
 
     // ─── Update ───────────────────────────────────────────────────────────────
@@ -99,7 +103,7 @@ class ContactRepository implements ContactRepositoryInterface
         ], fn($v) => !is_null($v));
 
         $contact->update($data);
-        return $contact->fresh('labels');
+        return $contact->fresh(['labels', 'currentAssignment.staff']);
     }
 
     // ─── Sync labels ──────────────────────────────────────────────────────────

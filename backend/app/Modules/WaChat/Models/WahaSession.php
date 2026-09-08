@@ -14,9 +14,13 @@ class WahaSession extends Model
     protected $fillable = [
         'company_id', 'session_name', 'display_name', 'phone',
         'status', 'webhook_url', 'engine', 'last_seen_at',
+        'gateway_created_at', 'session_token',
     ];
 
-    protected $casts = ['last_seen_at' => 'datetime'];
+    protected $casts = [
+        'last_seen_at'       => 'datetime',
+        'gateway_created_at' => 'datetime',
+    ];
 
     public function company(): BelongsTo
     {

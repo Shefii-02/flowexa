@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Download, FileText, Loader2, RefreshCw, Users, Eye, EyeOff, UserCheck, CheckCircle, CheckSquare, Square, Tag } from 'lucide-react';
+import { Download, FileText, Loader2, RefreshCw, Users, Eye, EyeOff, UserCheck, CheckCircle, CheckSquare, Square, Tag, Trash2 } from 'lucide-react';
 import { api } from '@/api/client';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { PageHeader } from '../components/PageHeader';
@@ -21,7 +21,18 @@ function useExportJobs() {
   return useQuery<{ data: ExportJob[] }>({
     queryKey: ['wa-export-jobs'],
     queryFn: () => api.get('/wa-export').then(r => r.data),
-    refetchInterval: 10_000,
+    // Only poll while a job is still running — and a job started > 15 min ago is
+    // treated as stuck, so we stop hammering the server. Otherwise no polling:
+    // the list refetches on mount and after an export is queued.
+    refetchInterval: (query) => {
+      const jobs = query.state.data?.data ?? [];
+      const active = jobs.some(j =>
+        (j.status === 'pending' || j.status === 'processing') &&
+        Date.now() - new Date(j.created_at).getTime() < 15 * 60_000,
+      );
+      return active ? 4000 : false;
+    },
+    refetchIntervalInBackground: false,
   });
 }
 
@@ -30,6 +41,7 @@ const statusColor = (s: string) =>
 
 const exportTypeLabel = (t: string) => ({
   chat_list:          'Chat List',
+  contact_list:       'Saved Contacts',
   group_list:         'Group List',
   group_participants: 'Group Participants',
   message_history:    'Message History',
@@ -52,18 +64,34 @@ export default function WaDataExportPage() {
   const qc = useQueryClient();
   const { data: jobsRes, isLoading } = useExportJobs();
   const jobs = jobsRes?.data ?? [];
+  const hasRunningJob = jobs.some(j => j.status === 'pending' || j.status === 'processing');
 
   const { data: sessions = [] } = useSessionsQuery();
   const readySessions = sessions.filter(s => s.status === 'ready');
 
   const [sessionId,           setSessionId]           = useState('');
-  const [exportType,          setExportType]          = useState<'chats' | 'groups' | 'group_participants' | 'labels' | 'broadcast_groups'>('chats');
+  const [exportType,          setExportType]          = useState<'chats' | 'contacts' | 'groups' | 'group_participants' | 'labels' | 'broadcast_groups'>('chats');
   const [includeParticipants, setIncludeParticipants] = useState(false);
   const [showGroupPreview,    setShowGroupPreview]    = useState(false);
   const [selectedGroupIds,    setSelectedGroupIds]    = useState<Set<string>>(new Set());
   const [exporting,           setExporting]           = useState(false);
   const [downloadingCsv,      setDownloadingCsv]      = useState(false);
   const [error,               setError]               = useState('');
+  const [confirmDeleteId,     setConfirmDeleteId]     = useState<number | null>(null);
+  const [deletingId,          setDeletingId]          = useState<number | null>(null);
+
+  const handleDeleteJob = async (id: number) => {
+    setDeletingId(id);
+    try {
+      await api.delete(`/wa-export/${id}`);
+      setConfirmDeleteId(null);
+      qc.invalidateQueries({ queryKey: ['wa-export-jobs'] });
+    } catch (e: any) {
+      setError(e?.response?.data?.message ?? 'Delete failed.');
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   // Labels export state
   const [labels,              setLabels]              = useState<{ id: string; name: string }[]>([]);
@@ -123,11 +151,16 @@ export default function WaDataExportPage() {
     try {
       if (exportType === 'chats') {
         await api.post('/wa-export/chats', { session_id: sessionId });
+      } else if (exportType === 'contacts') {
+        await api.post('/wa-export/contacts', { session_id: sessionId });
       } else {
         await api.post('/wa-export/groups', { session_id: sessionId, include_participants: includeParticipants });
       }
       qc.invalidateQueries({ queryKey: ['wa-export-jobs'] });
-    } catch { setError('Export failed. Check session and try again.'); }
+    } catch (e: any) {
+      setError(e?.response?.data?.message ?? 'Export failed. Check session and try again.');
+      qc.invalidateQueries({ queryKey: ['wa-export-jobs'] });
+    }
     finally   { setExporting(false); }
   };
 
@@ -253,6 +286,7 @@ export default function WaDataExportPage() {
             <select value={exportType} onChange={e => setExportType(e.target.value as typeof exportType)}
               style={{ width: '100%', padding: '8px 12px', border: '1px solid var(--border,#e5e7eb)', borderRadius: 8, fontSize: 14 }}>
               <option value="chats">Chat List</option>
+              <option value="contacts">Saved Contacts</option>
               <option value="groups">Groups (all groups)</option>
               <option value="group_participants">Group Participants (select groups)</option>
               <option value="labels">📋 Labels — export contacts by label</option>
@@ -500,10 +534,10 @@ export default function WaDataExportPage() {
                     : 'Select groups first'}
             </button>
           ) : (
-            <button className="btn-primary" onClick={doExport} disabled={exporting || !sessionId}
+            <button className="btn-primary" onClick={doExport} disabled={exporting || hasRunningJob || !sessionId}
               style={{ alignSelf: 'flex-start', display: 'flex', gap: 8, alignItems: 'center' }}>
-              {exporting ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
-              {exporting ? 'Exporting…' : 'Start Export'}
+              {(exporting || hasRunningJob) ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
+              {exporting ? 'Queuing…' : hasRunningJob ? 'Export in progress…' : 'Start Export'}
             </button>
           )}
         </div>
@@ -517,13 +551,13 @@ export default function WaDataExportPage() {
             ? <div style={{ display: 'flex', justifyContent: 'center', padding: 40 }}><Loader2 className="animate-spin" size={28} /></div>
             : jobs.length === 0
               ? <div style={{ textAlign: 'center', padding: 60, color: '#6b7280' }}>
-                  <FileText size={40} strokeWidth={1} style={{ marginBottom: 12 }} />
+                  <FileText size={40} strokeWidth={1} style={{margin: '0 auto 12px ' }} />
                   <p>No exports yet.</p>
                 </div>
               : <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                   {jobs.map(job => (
-                    <div key={job.id} style={{ border: '1px solid var(--border,#e5e7eb)', borderRadius: 10, padding: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <div>
+                    <div key={job.id} style={{ border: '1px solid var(--border,#e5e7eb)', borderRadius: 10, padding: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+                      <div style={{ minWidth: 0 }}>
                         <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 4 }}>
                           <Users size={16} color="#6b7280" />
                           <span style={{ fontWeight: 600 }}>{exportTypeLabel(job.export_type)}</span>
@@ -537,13 +571,31 @@ export default function WaDataExportPage() {
                         </div>
                         {job.error_message && <div style={{ fontSize: 12, color: '#ef4444', marginTop: 4 }}>{job.error_message}</div>}
                       </div>
-                      {job.status === 'done' && job.file_url && (
-                        <a href={job.file_url} download target="_blank" rel="noreferrer"
-                          style={{ display: 'flex', gap: 6, alignItems: 'center', padding: '8px 16px', background: '#2563eb', color: '#fff', borderRadius: 8, textDecoration: 'none', fontSize: 13, fontWeight: 500 }}>
-                          <Download size={14} /> Download CSV
-                        </a>
-                      )}
-                      {job.status === 'processing' && <Loader2 size={20} className="animate-spin" color="#2563eb" />}
+                      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 }}>
+                        {job.status === 'done' && job.file_url && (
+                          <a href={job.file_url} download target="_blank" rel="noreferrer"
+                            style={{ display: 'flex', gap: 6, alignItems: 'center', padding: '8px 16px', background: '#2563eb', color: '#fff', borderRadius: 8, textDecoration: 'none', fontSize: 13, fontWeight: 500 }}>
+                            <Download size={14} /> Download CSV
+                          </a>
+                        )}
+                        {job.status === 'processing' && <Loader2 size={20} className="animate-spin" color="#2563eb" />}
+                        {confirmDeleteId === job.id ? (
+                          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                            <span style={{ fontSize: 12, color: '#991b1b' }}>Delete?</span>
+                            <button onClick={() => handleDeleteJob(job.id)} disabled={deletingId === job.id}
+                              style={{ fontSize: 12, padding: '4px 10px', border: 'none', borderRadius: 6, background: '#ef4444', color: '#fff', cursor: 'pointer' }}>
+                              {deletingId === job.id ? '…' : 'Yes'}
+                            </button>
+                            <button onClick={() => setConfirmDeleteId(null)}
+                              style={{ fontSize: 12, padding: '4px 10px', border: '1px solid #e5e7eb', borderRadius: 6, background: '#fff', cursor: 'pointer' }}>No</button>
+                          </div>
+                        ) : (
+                          <button onClick={() => setConfirmDeleteId(job.id)} title="Delete export"
+                            style={{ padding: 7, border: '1px solid #fca5a5', borderRadius: 6, background: 'none', color: '#ef4444', cursor: 'pointer', display: 'flex' }}>
+                            <Trash2 size={14} />
+                          </button>
+                        )}
+                      </div>
                     </div>
                   ))}
                 </div>}

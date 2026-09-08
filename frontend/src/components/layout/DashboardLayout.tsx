@@ -4,6 +4,7 @@ import { useEffect } from 'react'
 import { useAppDispatch, useAppSelector } from '@/store'
 import { toggleSidebar } from '@/store/slices'
 import { Sidebar } from './Sidebar'
+import { SessionStatusIndicator } from './SessionStatusIndicator'
 import LeadNotificationPopup from '@/components/leads/LeadNotificationPopup'
 import AiHandoffOfferPopup from '@/components/leads/AiHandoffOfferPopup'
 import { connectStaffSocket, disconnectStaffSocket } from '@/socket/staffSocket'
@@ -42,6 +43,7 @@ export const DashboardLayout = () => {
             </svg>
           </button>
           <div className="flex-1" />
+          <SessionStatusIndicator />
         </header>
 
         {/* Page content */}

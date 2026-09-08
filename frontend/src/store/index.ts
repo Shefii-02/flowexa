@@ -30,14 +30,25 @@ export const useAppDispatch: () => AppDispatch              = useDispatch
 export const useAppSelector: TypedUseSelectorHook<RootState> = useSelector
 
 // ── Permission hook ───────────────────────────────────────────────────────────
+// Both the full superadmin and platform (superadmin_staff) accounts live in
+// the /superadmin area.
+export const SUPERADMIN_ROLES = ['superadmin', 'superadmin_staff'] as const
+export const isSuperAdminRole = (name?: string | null) => !!name && SUPERADMIN_ROLES.includes(name as never)
+
 export const usePermission = (permission: string): boolean => {
   const user = useAppSelector((s) => s.auth.user)
   if (!user?.role) return false
-  if (user.role.name === 'superadmin') return true
+  if (isSuperAdminRole(user.role.name)) return true
   return user.role.permissions.includes(permission)
 }
 
 export const useIsSuperAdmin = (): boolean => {
+  const user = useAppSelector((s) => s.auth.user)
+  return isSuperAdminRole(user?.role?.name)
+}
+
+/** True only for the full superadmin (not platform staff). */
+export const useIsFullSuperAdmin = (): boolean => {
   const user = useAppSelector((s) => s.auth.user)
   return user?.role?.name === 'superadmin'
 }

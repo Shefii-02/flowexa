@@ -129,10 +129,13 @@ class CompanyApiKeyController extends Controller
 
         $company = $this->company();
 
-        $isActiveOpenai    = $company->openai_key_id    === $key->id;
-        $isActiveAnthropic = $company->anthropic_key_id === $key->id;
+        $isActive = in_array($key->id, [
+            $company->openai_key_id,
+            $company->anthropic_key_id,
+            $company->google_ai_key_id,
+        ], true);
 
-        if ($isActiveOpenai || $isActiveAnthropic) {
+        if ($isActive) {
             return response()->json([
                 'message' => 'Cannot delete the active key. Set another key as active first.',
             ], 409);
@@ -189,15 +192,14 @@ class CompanyApiKeyController extends Controller
         $key->is_active = true;
         $key->save();
 
-        // Update company pointer
-        $field = match ($key->provider) {
-            'openai'    => 'openai_key_id',
-            'anthropic' => 'anthropic_key_id',
-            default     => null,
-        };
+        // Update company pointer + make this the single active provider.
+        $field = \App\Models\Company::providerKeyColumn($key->provider);
 
         if ($field) {
-            $company->update([$field => $key->id]);
+            $company->update([
+                $field        => $key->id,
+                'ai_provider' => $key->provider,
+            ]);
         }
     }
 }

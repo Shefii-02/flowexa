@@ -50,4 +50,18 @@ return [
         'credentials_path' => env('FIREBASE_CREDENTIALS_PATH'),
     ],
 
+    // The wa-chat engine is open-wa, not "WAHA" — its REST API is
+    // POST {origin}/api/sessions/{sessionId}/messages/send-{type}, authenticated per-company via
+    // Company.wa_chat_token (X-API-Key), not a single shared key. The frontend already talks to
+    // this same origin correctly (see frontend/.env's VITE_WA_CHAT_API_URL) — this is that same
+    // origin, for the backend's own direct calls (OpenWaMessageService, used by
+    // ProcessMessageSenderJob). Several other files (WahaSessionController, WaOtpServiceController,
+    // WaOtpPublicController, SendAutomationMessage, WaExportController) still call a
+    // config('services.waha...') that was never defined anywhere and use a single global
+    // WAHA_API_KEY that doesn't match this per-company-token model — they need the same fix if
+    // those features are also failing to send.
+    'open_wa' => [
+        'base_url' => rtrim(env('WA_CHAT_API_ORIGIN', 'http://localhost:2785'), '/') . '/api',
+    ],
+
 ];

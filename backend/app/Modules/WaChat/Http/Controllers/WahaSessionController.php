@@ -5,6 +5,8 @@ namespace App\Modules\WaChat\Http\Controllers;
 use App\Http\Controllers\Controller;
 use App\Modules\WaChat\Models\WahaSession;
 use App\Modules\WaChat\Services\AutomationEngine;
+use App\Modules\WaChat\Services\Agent\AgentInbound;
+use App\Modules\WaChat\Services\Agent\ConversationalAgentService;
 use App\Modules\WaChat\Services\Rag\RagOrchestrator;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -28,6 +30,59 @@ class WahaSessionController extends Controller
         $sessions = WahaSession::where('company_id', auth()->user()->company_id)
             ->orderBy('created_at', 'desc')->get();
         return response()->json(['data' => $sessions]);
+    }
+
+    /**
+     * GET /waha/sessions/health — live connected/disconnected status for every
+     * session of the company, pulled straight from the open-wa gateway. Lean
+     * (short timeout, no DB writes) so it can be polled from the dashboard
+     * header. Degrades to an empty list if the gateway is unreachable.
+     */
+    public function health(): JsonResponse
+    {
+        $company = auth()->user()->company;
+        $apiKey  = (string) ($company?->wa_chat_token ?? '');
+        $base    = rtrim((string) config('services.open_wa.base_url'), '/');
+
+        $rows = [];
+        try {
+            $res = Http::withHeaders(['X-API-Key' => $apiKey])
+                ->timeout(8)->connectTimeout(4)
+                ->get("{$base}/sessions");
+            if ($res->successful()) {
+                $rows = $res->json('data', $res->json() ?? []);
+            }
+        } catch (\Throwable) {
+            $rows = [];
+        }
+
+        $connectedStates = ['ready', 'connected', 'working', 'authenticated'];
+
+        $sessions = collect(is_array($rows) ? $rows : [])
+            ->map(function ($s) use ($connectedStates) {
+                $id = $s['id'] ?? $s['name'] ?? $s['sessionId'] ?? null;
+                if (!filled($id)) return null;
+
+                return [
+                    'id'        => $id,
+                    'name'      => $s['displayName'] ?? $s['name'] ?? $id,
+                    'phone'     => $s['phone'] ?? ($s['me']['id'] ?? null),
+                    'status'    => $s['status'] ?? 'unknown',
+                    'connected' => in_array(strtolower((string) ($s['status'] ?? '')), $connectedStates, true),
+                ];
+            })
+            ->filter()
+            ->values();
+
+        return response()->json([
+            'data'    => $sessions,
+            'summary' => [
+                'total'        => $sessions->count(),
+                'connected'    => $sessions->where('connected', true)->count(),
+                'disconnected' => $sessions->where('connected', false)->count(),
+                'reachable'    => !empty($rows) || $sessions->isNotEmpty(),
+            ],
+        ]);
     }
 
     public function store(Request $request): JsonResponse
@@ -355,16 +410,36 @@ class WahaSessionController extends Controller
         if ($session && in_array($event, ['message', 'message.any', 'messages.upsert'])) {
             $fromMe = $payload['fromMe'] ?? false;
             if (!$fromMe) {
+                $from = $payload['from'] ?? ($payload['chatId'] ?? null);
+                $body = $payload['body'] ?? ($payload['text'] ?? '');
+                $type = $payload['type'] ?? 'text';
+
                 try {
-                    $eventData = [
+                    app(AutomationEngine::class)->handleIncomingMessage([
                         'session' => $name,
-                        'from'    => $payload['from'] ?? ($payload['chatId'] ?? null),
-                        'body'    => $payload['body'] ?? ($payload['text'] ?? ''),
-                        'type'    => $payload['type'] ?? 'text',
-                    ];
-                    app(AutomationEngine::class)->handleIncomingMessage($eventData);
+                        'from'    => $from,
+                        'body'    => $body,
+                        'type'    => $type,
+                    ]);
                 } catch (\Exception $e) {
                     Log::error('Webhook AutomationEngine error: ' . $e->getMessage());
+                }
+
+                // Conversational AI agent — runs when the company has an active playbook.
+                if ($from) {
+                    try {
+                        app(ConversationalAgentService::class)->handle(new AgentInbound(
+                            companyId:  $session->company_id,
+                            channel:    'open_wa',
+                            sessionRef: $name,
+                            phone:      preg_replace('/@.*/', '', (string) $from),
+                            text:       (string) $body,
+                            type:       (string) $type,
+                            fromGroup:  str_ends_with((string) $from, '@g.us'),
+                        ));
+                    } catch (\Throwable $e) {
+                        Log::error('Webhook ConversationalAgent error: ' . $e->getMessage());
+                    }
                 }
             }
         }

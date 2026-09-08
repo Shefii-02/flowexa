@@ -11,7 +11,7 @@ class WaOtpCode extends Model
     protected $table = 'wa_otp_codes';
 
     protected $fillable = [
-        'company_id', 'service_id', 'phone', 'otp_code', 'reference_id',
+        'company_id', 'service_id', 'config_id', 'phone', 'otp_code', 'reference_id',
         'ip_address', 'domain', 'status', 'attempts', 'sent_at', 'verified_at', 'expires_at',
     ];
 

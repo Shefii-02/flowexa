@@ -29,7 +29,7 @@ export const companyApi = {
 export const staffApi = {
   list: (p?: Record<string, unknown>) => api.get('/staff', { params: p }),
   show: (id: number) => api.get(`/staff/${id}`),
-  roles: () => api.get('/staff/roles'),
+  roles: () => api.get('/roles'),
   performance: () => api.get('/staff/performance'),
   departments: () => api.get('/staff/departments'),
   create: (d: Record<string, unknown>) => api.post('/staff', d),
@@ -126,6 +126,7 @@ export const roleApi = {
   update: (id: number, d: Record<string, unknown>) => api.put(`/roles/${id}`, d),
   delete: (id: number) => api.delete(`/roles/${id}`),
   resetPermissions: (id: number) => api.post(`/roles/${id}/reset-permissions`),
+  syncCatalogue: () => api.post('/roles/sync-catalogue'),
   // Legacy aliases kept so existing callers don't break
   companyRoles: () => api.get('/roles'),
   createCompanyRole: (d: { label: string; permissions: string[] }) => api.post('/roles', d),
@@ -255,11 +256,36 @@ export const settingsApi = {
   verifyWa: () => api.get('/settings/verify-wa'),
   testSend: (d: { phone: string; message?: string }) => api.post('/settings/test-send', d),
   webhookLogs: () => api.get('/settings/webhook-logs'),
+  getProfile: () => api.get('/auth/profile'),
+  updateProfile: (d: Record<string, unknown>) => api.put('/auth/profile', d),
+  updateAvatar: (file: File) => {
+    const fd = new FormData()
+    fd.append('avatar', file)
+    fd.append('_method', 'PUT')
+    return api.post('/auth/profile', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+  },
+  changePassword: (d: { current_password: string; password: string; password_confirmation: string }) =>
+    api.post('/auth/change-password', d),
 }
 
 
 export const messageLogApi = {
   list: (p?: Record<string, unknown>) => api.get('/message-logs', { params: p }),
+}
+
+// ── Linked devices (phone-app QR / PIN login) ─────────────────────────────────
+export const deviceApi = {
+  // my own devices
+  mine: () => api.get('/devices'),
+  // team overview / one staff member (needs devices.view or staff.view)
+  staff: () => api.get('/devices/staff'),
+  userDevices: (userId: number) => api.get(`/devices/user/${userId}`),
+  // QR / PIN challenge
+  createChallenge: (userId?: number) =>
+    api.post('/devices/login-challenge', userId ? { user_id: userId } : {}),
+  challengeStatus: (id: number) => api.get(`/devices/login-challenge/${id}`),
+  cancelChallenge: (id: number) => api.post(`/devices/login-challenge/${id}/cancel`),
+  revoke: (deviceId: number) => api.delete(`/devices/${deviceId}`),
 }
 
 // ── SuperAdmin ────────────────────────────────────────────────────────────────
@@ -279,6 +305,18 @@ export const superadminApi = {
   createPlan: (d: Record<string, unknown>) => api.post('/superadmin/plans', d),
   updatePlan: (id: number, d: Record<string, unknown>) => api.put(`/superadmin/plans/${id}`, d),
   users: (p?: Record<string, unknown>) => api.get('/superadmin/users', { params: p }),
+  companyPermissions: (id: number) => api.get(`/superadmin/companies/${id}/permissions`),
+  updateCompanyRolePermissions: (id: number, roleId: number, permissions: string[]) =>
+    api.put(`/superadmin/companies/${id}/roles/${roleId}/permissions`, { permissions }),
+  resyncCompanyPermissions: (id: number) => api.post(`/superadmin/companies/${id}/permissions/resync`),
+}
+
+// ── SuperAdmin: prebuilt WhatsApp template library ────────────────────────────
+export const prebuiltTemplateApi = {
+  list:   (p?: Record<string, unknown>) => api.get('/superadmin/prebuilt-templates', { params: p }),
+  create: (d: Record<string, unknown>) => api.post('/superadmin/prebuilt-templates', d),
+  update: (id: number, d: Record<string, unknown>) => api.patch(`/superadmin/prebuilt-templates/${id}`, d),
+  remove: (id: number) => api.delete(`/superadmin/prebuilt-templates/${id}`),
 }
 
 
@@ -469,6 +507,11 @@ export const saStaffApi = {
   update: (id: number, d: Record<string, unknown>) => api.put(`/superadmin/staff/${id}`, d),
   delete: (id: number) => api.delete(`/superadmin/staff/${id}`),
   toggle: (id: number) => api.patch(`/superadmin/staff/${id}/toggle`),
+  // platform-staff linked devices (same QR / PIN feature)
+  devices: (id: number) => api.get(`/superadmin/staff/${id}/devices`),
+  deviceChallenge: (id: number) => api.post(`/superadmin/staff/${id}/device-challenge`),
+  revokeDevice: (id: number, deviceId: number) =>
+    api.delete(`/superadmin/staff/${id}/devices/${deviceId}`),
 }
 
 // ── Permissions Editor ────────────────────────────────────────────────────
@@ -502,4 +545,8 @@ export const leadAssignmentApi = {
   saveRule: (d: Record<string, unknown>) => api.post('/lead-assignment-rules', d),
   staffAvailability: () => api.get('/staff/availability'),
   toggleAvailability: () => api.post('/staff/availability/toggle'),
+  getWorkingHours: () => api.get('/working-hours'),
+  saveWorkingHours: (hours: unknown[]) => api.put('/working-hours', { hours }),
+  addHoliday: (d: { date: string; name: string }) => api.post('/working-hours/holidays', d),
+  removeHoliday: (id: number) => api.delete(`/working-hours/holidays/${id}`),
 }

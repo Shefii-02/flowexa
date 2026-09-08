@@ -81,6 +81,20 @@ class WebhookService
         // powers the shared inbox UI (counsellors seeing/replying to the same thread).
         $this->logInboundToInbox($company, $contact, $dto);
 
+        // 3c. WA Cloud automation rules (welcome / keyword / out-of-office). Best-effort —
+        // an automation failure must never break inbound processing. Time-based rules
+        // (follow-ups, inactivity) run from the wa-cloud:run-automations schedule instead.
+        try {
+            app(\App\Modules\WaCloud\Services\WaCloudAutomationEngine::class)->runInbound(
+                $company,
+                $dto->phone,
+                (string) ($dto->text ?? $dto->replyTitle ?? $dto->caption ?? ''),
+                $company->wa_phone_id,
+            );
+        } catch (\Throwable $e) {
+            Log::warning('WA Cloud automation (inbound) failed: ' . $e->getMessage());
+        }
+
         // 4. STOP / opt-out handling (before any flow routing)
         if ($dto->type === 'text') {
             $msgText = strtolower(trim($dto->text ?? ''));
@@ -107,6 +121,27 @@ class WebhookService
         if (!$contact->fresh()->opted_in) {
             Log::info("Contact {$contact->id} is opted out — skipping flow routing");
             return;
+        }
+
+        // 5b. Conversational AI agent — when the company has an active playbook it
+        // takes over from the legacy flow-builder / menu routing below.
+        if (in_array($dto->type, ['text', 'interactive'], true)) {
+            $agentText = $dto->text ?? $dto->replyTitle ?? $dto->caption ?? '';
+            if (trim($agentText) !== '') {
+                $handled = app(\App\Modules\WaChat\Services\Agent\ConversationalAgentService::class)->handle(
+                    new \App\Modules\WaChat\Services\Agent\AgentInbound(
+                        companyId:  $company->id,
+                        channel:    'meta_cloud',
+                        sessionRef: (string) ($company->wa_phone_id ?: 'meta_cloud'),
+                        phone:      $dto->phone,
+                        text:       $agentText,
+                        type:       $dto->type,
+                    )
+                );
+                if ($handled) {
+                    return;
+                }
+            }
         }
 
         // 6a. Native WhatsApp Flow submission — customer tapped Submit on a bottom-sheet
@@ -1191,6 +1226,15 @@ class WebhookService
             'location'    => '[Location]',
             default       => '[' . $dto->type . ']',
         };
+    }
+
+    /**
+     * Public entry point for the AI agent to send a plain text reply over the
+     * Meta Cloud API, reusing the same dispatch + logging + inbox mirroring.
+     */
+    public function sendAgentText(Company $company, string $phone, string $text): void
+    {
+        $this->sendText($company, $phone, $text);
     }
 
     // ─── WhatsApp API helpers ─────────────────────────────────────────────────

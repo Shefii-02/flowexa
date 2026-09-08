@@ -3,6 +3,7 @@
 namespace App\Modules\Contact\Http\Controllers;
 
 use App\Http\Controllers\Controller;
+use App\Models\Contact;
 use App\Modules\Contact\DTOs\ContactFilterDTO;
 use App\Modules\Contact\DTOs\CreateContactDTO;
 use App\Modules\Contact\DTOs\ImportContactDTO;
@@ -168,9 +169,9 @@ class ContactController extends Controller
         $companyId = auth()->user()->company_id;
         $labelIds  = $data['label_ids'];
 
-        // Contacts → labels is a many-to-many through contact_labels pivot table.
-        $contacts = \App\Modules\Contact\Models\Contact::where('company_id', $companyId)
-            ->whereHas('labels', fn($q) => $q->whereIn('labels.id', $labelIds))
+        // Contacts → labels is a many-to-many through contact_label_pivot.
+        $contacts = Contact::where('company_id', $companyId)
+            ->whereHas('labels', fn($q) => $q->whereIn('contact_labels.id', $labelIds))
             ->select('id', 'name', 'phone')
             ->get();
 

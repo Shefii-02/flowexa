@@ -1,1 +1,1 @@
-export { default } from '@/pages/wa-agent/automations'
+export { default } from '@/pages/wa-cloud/WaCloudAutomations'

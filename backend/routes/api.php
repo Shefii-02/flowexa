@@ -22,12 +22,23 @@ use App\Modules\Flow\Http\Controllers\FlowNodeController;
 use App\Modules\Lead\Http\Controllers\LeadController;
 use App\Modules\Lead\Http\Controllers\LeadCategoryController;
 use App\Modules\Lead\Http\Controllers\LeadNoteController;
+use App\Modules\Lead\Http\Controllers\LeadReportController;
+use App\Modules\Lead\Http\Controllers\WorkingHoursController;
+use App\Modules\Crm\Http\Controllers\DealController;
+use App\Modules\Crm\Http\Controllers\TaskController;
+use App\Modules\Crm\Http\Controllers\SegmentController;
+use App\Modules\Hr\Http\Controllers\AttendanceController;
+use App\Modules\Hr\Http\Controllers\LeaveController;
+use App\Modules\Hr\Http\Controllers\HrConfigController;
+use App\Modules\Hr\Http\Controllers\PayrollController;
+use App\Modules\Hr\Http\Controllers\IncentiveController;
 use App\Modules\Lead\Http\Controllers\LeadAssignmentController;
 use App\Modules\Otp\Http\Controllers\OtpController;
 use App\Modules\PhoneNumber\Http\Controllers\PhoneNumberController;
 use App\Modules\PlanPurchase\Http\Controllers\PlanPurchaseController;
 use App\Modules\Report\Http\Controllers\ReportController;
 use App\Modules\Settings\Http\Controllers\MessageLogController;
+use App\Modules\Settings\Http\Controllers\PrebuiltTemplateController;
 use App\Modules\Settings\Http\Controllers\SettingsController;
 use App\Modules\Settings\Http\Controllers\SuperAdminController;
 use App\Modules\Staff\Http\Controllers\RoleController;
@@ -57,11 +68,18 @@ use App\Modules\WaChat\Http\Controllers\MediaFolderController;
 use App\Modules\WaChat\Http\Controllers\WaChatTemplateController;
 use App\Modules\WaChat\Http\Controllers\WaOtpServiceController;
 use App\Modules\WaChat\Http\Controllers\WaOtpPublicController;
+use App\Modules\WaCloud\Http\Controllers\WaCloudApiServiceController;
+use App\Modules\WaCloud\Http\Controllers\WaCloudApiConfigController;
+use App\Modules\WaCloud\Http\Controllers\WaCloudApiPublicController;
+use App\Modules\WaCloud\Http\Controllers\WaCloudInboxAnalyticsController;
+use App\Modules\WaCloud\Http\Controllers\WaCloudAutomationController;
 use App\Modules\WaChat\Http\Controllers\WaExportController;
 use App\Modules\WaChat\Http\Controllers\AutomationController;
 use App\Modules\WaChat\Http\Controllers\KnowledgeBaseController;
 use App\Modules\WaChat\Http\Controllers\PipelineController;
 use App\Modules\WaChat\Http\Controllers\AiAgentController;
+use App\Modules\WaChat\Http\Controllers\AgentPlaybookController;
+use App\Modules\WaChat\Http\Controllers\AgentPlaybookTemplateController;
 use App\Http\Controllers\CompanyApiKeyController;
 use App\Http\Controllers\MetaAiController;
 use App\Modules\CompanyRole\Http\Controllers\CompanyRoleController;
@@ -82,12 +100,36 @@ Route::prefix('v1')->group(function () {
         Route::post('login',    [AuthController::class, 'login'])->name('login');
     });
 
+    // ── Mobile app QR / PIN device login (public — the challenge is the credential) ──
+    Route::prefix('device-auth')->group(function () {
+        Route::post('check',          [\App\Modules\Auth\Http\Controllers\DeviceAuthController::class, 'check']);
+        Route::post('claim',          [\App\Modules\Auth\Http\Controllers\DeviceAuthController::class, 'claim']);
+        Route::post('remove-device',  [\App\Modules\Auth\Http\Controllers\DeviceAuthController::class, 'removeDevice']);
+
+        Route::middleware('jwt.auth')->group(function () {
+            Route::get('status',    [\App\Modules\Auth\Http\Controllers\DeviceAuthController::class, 'status']);
+            Route::post('heartbeat', [\App\Modules\Auth\Http\Controllers\DeviceAuthController::class, 'heartbeat']);
+            Route::post('logout',    [\App\Modules\Auth\Http\Controllers\DeviceAuthController::class, 'logout']);
+        });
+    });
+
     Route::middleware(['jwt.auth'])->group(function () {
 
         Route::prefix('auth')->name('auth.')->group(function () {
             Route::get('me',       [AuthController::class, 'me'])->name('me');
             Route::post('refresh', [AuthController::class, 'refresh'])->name('refresh');
             Route::post('logout',  [AuthController::class, 'logout'])->name('logout');
+        });
+
+        // ── Linked devices (web management) ──────────────────────────────────
+        Route::prefix('devices')->group(function () {
+            Route::get('/',                          [\App\Modules\Auth\Http\Controllers\DeviceController::class, 'index']);
+            Route::get('/staff',                     [\App\Modules\Auth\Http\Controllers\DeviceController::class, 'staff']);
+            Route::get('/user/{userId}',             [\App\Modules\Auth\Http\Controllers\DeviceController::class, 'userDevices']);
+            Route::post('/login-challenge',          [\App\Modules\Auth\Http\Controllers\DeviceController::class, 'createChallenge']);
+            Route::get('/login-challenge/{id}',      [\App\Modules\Auth\Http\Controllers\DeviceController::class, 'challengeStatus']);
+            Route::post('/login-challenge/{id}/cancel', [\App\Modules\Auth\Http\Controllers\DeviceController::class, 'cancelChallenge']);
+            Route::delete('/{id}',                   [\App\Modules\Auth\Http\Controllers\DeviceController::class, 'destroy']);
         });
 
         Route::prefix('superadmin')->name('superadmin.')->group(function () {
@@ -119,6 +161,11 @@ Route::prefix('v1')->group(function () {
                 Route::delete('staff/{id}',   [SuperadminStaffController::class, 'destroy'])->name('staff.destroy');
                 Route::patch('staff/{id}/toggle', [SuperadminStaffController::class, 'toggle'])->name('staff.toggle');
 
+                // Platform-staff phone-app linked devices (same QR / PIN feature as company staff)
+                Route::get('staff/{id}/devices',                 [SuperadminStaffController::class, 'devices'])->name('staff.devices');
+                Route::post('staff/{id}/device-challenge',       [SuperadminStaffController::class, 'deviceChallenge'])->name('staff.device-challenge');
+                Route::delete('staff/{id}/devices/{deviceId}',   [SuperadminStaffController::class, 'revokeDevice'])->name('staff.device-revoke');
+
                 // Reports
                 Route::get('reports/platform',          [ReportController::class, 'platformReport'])->name('reports.platform');
                 Route::get('reports/company/{company}', [ReportController::class, 'companyReport'])->name('reports.company');
@@ -127,6 +174,23 @@ Route::prefix('v1')->group(function () {
                 // Role permissions editor
                 Route::get('permissions',         [SuperAdminController::class, 'permissions'])->name('permissions');
                 Route::put('permissions/{roleId}', [SuperAdminController::class, 'updatePermissions'])->name('permissions.update');
+
+                // Per-company permission management
+                Route::get('companies/{company}/permissions',                 [SuperAdminController::class, 'companyPermissions']);
+                Route::put('companies/{company}/roles/{roleId}/permissions',   [SuperAdminController::class, 'updateCompanyRolePermissions']);
+                Route::post('companies/{company}/permissions/resync',          [SuperAdminController::class, 'resyncCompanyPermissions']);
+
+                // Agent playbook category templates (LMS, Real Estate, Services…)
+                Route::get('playbook-templates',         [AgentPlaybookTemplateController::class, 'index'])->name('playbook-templates.index');
+                Route::post('playbook-templates',        [AgentPlaybookTemplateController::class, 'store'])->name('playbook-templates.store');
+                Route::patch('playbook-templates/{id}',  [AgentPlaybookTemplateController::class, 'update'])->name('playbook-templates.update');
+                Route::delete('playbook-templates/{id}', [AgentPlaybookTemplateController::class, 'destroy'])->name('playbook-templates.destroy');
+
+                // Prebuilt WhatsApp template library (auth / utility / other)
+                Route::get('prebuilt-templates',         [PrebuiltTemplateController::class, 'index'])->name('prebuilt-templates.index');
+                Route::post('prebuilt-templates',        [PrebuiltTemplateController::class, 'store'])->name('prebuilt-templates.store');
+                Route::patch('prebuilt-templates/{id}',  [PrebuiltTemplateController::class, 'update'])->name('prebuilt-templates.update');
+                Route::delete('prebuilt-templates/{id}', [PrebuiltTemplateController::class, 'destroy'])->name('prebuilt-templates.destroy');
 
                 // Exit impersonation
                 Route::post('exit-impersonation', [SuperAdminController::class, 'exitImpersonation'])->name('exit-impersonation');
@@ -180,6 +244,7 @@ Route::prefix('v1')->group(function () {
             // WRITE — restricted to role managers
             Route::middleware('permission:roles.manage')->group(function () {
                 Route::post('/',                         [RoleController::class, 'store'])->name('store');
+                Route::post('/sync-catalogue',           [RoleController::class, 'syncCatalogue'])->name('sync-catalogue');
                 Route::put('/{role}',                    [RoleController::class, 'update'])->name('update');
                 Route::delete('/{role}',                 [RoleController::class, 'destroy'])->name('destroy');
                 Route::post('/{role}/reset-permissions', [RoleController::class, 'resetToDefaults'])->name('reset-permissions');
@@ -294,6 +359,85 @@ Route::prefix('v1')->group(function () {
 
 
 
+        // ── HR — Attendance / Breaks / Leave (mobile app + web) ──────────────
+        Route::prefix('hr')->middleware(['company.active'])->group(function () {
+            // Self service
+            Route::get('attendance/me',          [AttendanceController::class, 'me']);
+            Route::post('attendance/clock-in',   [AttendanceController::class, 'clockIn']);
+            Route::post('attendance/clock-out',  [AttendanceController::class, 'clockOut']);
+            Route::post('attendance/break/start', [AttendanceController::class, 'breakStart']);
+            Route::post('attendance/break/end',  [AttendanceController::class, 'breakEnd']);
+
+            // Team / admin (permission checked in the controller)
+            Route::get('attendance',             [AttendanceController::class, 'index']);
+            Route::get('attendance/payroll',     [AttendanceController::class, 'payroll']);
+            Route::post('attendance',            [AttendanceController::class, 'storeEntry']);
+            Route::patch('attendance/{id}',      [AttendanceController::class, 'update']);
+            Route::post('attendance/{id}/overtime', [AttendanceController::class, 'reviewOvertime']);
+
+            // Incentives
+            Route::get('incentive-rules',        [IncentiveController::class, 'rules']);
+            Route::post('incentive-rules',       [IncentiveController::class, 'storeRule']);
+            Route::patch('incentive-rules/{id}', [IncentiveController::class, 'updateRule']);
+            Route::delete('incentive-rules/{id}', [IncentiveController::class, 'destroyRule']);
+            Route::get('incentives',             [IncentiveController::class, 'index']);
+            Route::post('incentives',            [IncentiveController::class, 'store']);
+            Route::patch('incentives/{id}',      [IncentiveController::class, 'update']);
+            Route::delete('incentives/{id}',     [IncentiveController::class, 'destroy']);
+
+            // Payroll
+            Route::get('payroll/runs',              [PayrollController::class, 'runs']);
+            Route::post('payroll/runs',             [PayrollController::class, 'generate']);
+            Route::get('payroll/runs/{id}',         [PayrollController::class, 'show']);
+            Route::get('payroll/runs/{id}/report',  [PayrollController::class, 'report']);
+            Route::post('payroll/runs/{id}/release', [PayrollController::class, 'release']);
+            Route::patch('payroll/items/{id}',      [PayrollController::class, 'updateItem']);
+
+            // Leave
+            Route::get('leave/types',   [LeaveController::class, 'types']);
+            Route::get('leave',         [LeaveController::class, 'index']);
+            Route::post('leave',        [LeaveController::class, 'store']);
+            Route::post('leave/{id}/cancel', [LeaveController::class, 'cancel']);
+            Route::post('leave/{id}/review', [LeaveController::class, 'review']);
+
+            // Config
+            Route::get('settings',      [HrConfigController::class, 'showSettings']);
+            Route::put('settings',      [HrConfigController::class, 'updateSettings']);
+            Route::get('break-types',   [HrConfigController::class, 'breakTypes']);
+            Route::post('break-types',  [HrConfigController::class, 'storeBreakType']);
+            Route::patch('break-types/{id}',  [HrConfigController::class, 'updateBreakType']);
+            Route::delete('break-types/{id}', [HrConfigController::class, 'destroyBreakType']);
+            Route::get('leave-types',   [HrConfigController::class, 'leaveTypes']);
+            Route::post('leave-types',  [HrConfigController::class, 'storeLeaveType']);
+            Route::patch('leave-types/{id}',  [HrConfigController::class, 'updateLeaveType']);
+            Route::delete('leave-types/{id}', [HrConfigController::class, 'destroyLeaveType']);
+            Route::get('staff-profiles',          [HrConfigController::class, 'staffProfiles']);
+            Route::put('staff-profiles/{userId}', [HrConfigController::class, 'updateStaffProfile']);
+        });
+
+        // ── Advanced CRM — Deals / Tasks / Segments ──────────────────────────
+        Route::prefix('crm')->middleware(['company.active'])->group(function () {
+            Route::get('deals/board',        [DealController::class, 'board']);
+            Route::get('deals',              [DealController::class, 'index']);
+            Route::post('deals',             [DealController::class, 'store']);
+            Route::get('deals/{id}',         [DealController::class, 'show']);
+            Route::patch('deals/{id}',       [DealController::class, 'update']);
+            Route::patch('deals/{id}/stage', [DealController::class, 'moveStage']);
+            Route::delete('deals/{id}',      [DealController::class, 'destroy']);
+
+            Route::get('tasks',              [TaskController::class, 'index']);
+            Route::post('tasks',             [TaskController::class, 'store']);
+            Route::patch('tasks/{id}',       [TaskController::class, 'update']);
+            Route::post('tasks/{id}/toggle', [TaskController::class, 'toggle']);
+            Route::delete('tasks/{id}',      [TaskController::class, 'destroy']);
+
+            Route::get('segments',           [SegmentController::class, 'index']);
+            Route::post('segments',          [SegmentController::class, 'store']);
+            Route::post('segments/preview',  [SegmentController::class, 'preview']);
+            Route::patch('segments/{id}',    [SegmentController::class, 'update']);
+            Route::delete('segments/{id}',   [SegmentController::class, 'destroy']);
+        });
+
         Route::prefix('leads')->name('leads.')->group(function () {
 
             Route::get('/',           [LeadController::class, 'index'])->name('index');
@@ -301,6 +445,13 @@ Route::prefix('v1')->group(function () {
             Route::post('/import', [LeadController::class, 'import'])->middleware('permission:leads.create');
             Route::get('/export',  [LeadController::class, 'export'])->middleware('permission:leads.view_all');
 
+            // Leads → Summary (Basic) + Report (Advanced). Declared before /{lead}.
+            Route::get('/summary', [LeadReportController::class, 'summary'])->name('summary');
+            Route::get('/report',  [LeadReportController::class, 'report'])->name('report');
+            Route::get('/saved-reports',        [LeadReportController::class, 'savedReports']);
+            Route::post('/saved-reports',       [LeadReportController::class, 'storeSavedReport']);
+            Route::patch('/saved-reports/{id}', [LeadReportController::class, 'updateSavedReport']);
+            Route::delete('/saved-reports/{id}',[LeadReportController::class, 'destroySavedReport']);
 
             Route::get('/{lead}',     [LeadController::class, 'show'])->name('show');
 
@@ -340,6 +491,14 @@ Route::prefix('v1')->group(function () {
         Route::prefix('lead-assignment-rules')->name('lead-assignment-rules.')->group(function () {
             Route::get('/',  [LeadAssignmentController::class, 'getRule'])->name('show');
             Route::post('/', [LeadAssignmentController::class, 'saveRule'])->name('save');
+        });
+
+        // Per-weekday working hours + holiday overrides (used by the assignment engine)
+        Route::prefix('working-hours')->group(function () {
+            Route::get('/',  [WorkingHoursController::class, 'index']);
+            Route::put('/',  [WorkingHoursController::class, 'update']);
+            Route::post('/holidays',       [WorkingHoursController::class, 'storeHoliday']);
+            Route::delete('/holidays/{id}', [WorkingHoursController::class, 'destroyHoliday']);
         });
 
         Route::prefix('staff')->name('staff.availability.')->group(function () {
@@ -751,18 +910,33 @@ Route::post('/send', [ExtensionController::class, 'send']); // calls Graph API, 
 // API_SEPARATION: these are Project B routes — unichatwa.univexa.in
 // ═══════════════════════════════════════════════════════════════════════════
 
-// ── Public OTP API (no auth — validated by Bearer token against wa_otp_services) ──
-Route::prefix('v1/otp')->group(function () {
-    Route::post('send',   [WaOtpPublicController::class, 'publicSend']);
-    Route::post('verify', [WaOtpPublicController::class, 'publicVerify']);
-    Route::post('resend', [WaOtpPublicController::class, 'publicResend']);
+// ── Public WA Cloud Api Service ──────────────────────────────────────────────
+// No path token — the Authorization: Bearer <api_token> header alone (matched
+// against wa_cloud_otp_services.api_token, which is globally unique) identifies
+// and authenticates the company's service. Declared BEFORE the wa-chat group
+// below so the literal "wa-cloud" prefix wins over that group's {waChatToken}
+// wildcard (its regex [A-Za-z0-9_\-]+ would otherwise also match "wa-cloud").
+Route::prefix('v1/wa-cloud')->group(function () {
+    Route::post('otp/send',                  [WaCloudApiPublicController::class, 'publicSend']);
+    Route::post('otp/verify',                [WaCloudApiPublicController::class, 'publicVerify']);
+    Route::post('otp/resend',                [WaCloudApiPublicController::class, 'publicResend']);
+    Route::post('api-service/utility-send',  [WaCloudApiPublicController::class, 'publicUtilitySend']);
+    Route::post('api-service/invoice-share', [WaCloudApiPublicController::class, 'publicInvoiceShare']);
 });
 
-// ── Public Api Service (Bearer token — utility message + invoice share for external platforms) ──
-Route::prefix('v1/api-service')->group(function () {
-    Route::post('utility-send',   [WaOtpPublicController::class, 'publicUtilitySend']);
-    Route::post('invoice-share',  [WaOtpPublicController::class, 'publicInvoiceShare']);
-});
+// ── Public Api Service ───────────────────────────────────────────────────────
+// The {waChatToken} path segment is the company's Company.wa_chat_token — it
+// identifies the company. The Authorization: Bearer <api_token> header (checked
+// against wa_otp_services.api_token for that company) authenticates the service.
+Route::prefix('v1/{waChatToken}')
+    ->where(['waChatToken' => '[A-Za-z0-9_\-]+'])
+    ->group(function () {
+        Route::post('otp/send',   [WaOtpPublicController::class, 'publicSend']);
+        Route::post('otp/verify', [WaOtpPublicController::class, 'publicVerify']);
+        Route::post('otp/resend', [WaOtpPublicController::class, 'publicResend']);
+        Route::post('api-service/utility-send',  [WaOtpPublicController::class, 'publicUtilitySend']);
+        Route::post('api-service/invoice-share', [WaOtpPublicController::class, 'publicInvoiceShare']);
+    });
 
 // ── WAHA session webhook receiver (public — called by WAHA server) ──
 Route::post('v1/waha/webhook', [WahaSessionController::class, 'webhook']);
@@ -773,6 +947,7 @@ Route::prefix('v1')->middleware(['jwt.auth'])->group(function () {
     // Sessions
     Route::prefix('waha/sessions')->group(function () {
         Route::get('/',              [WahaSessionController::class, 'index']);
+        Route::get('/health',        [WahaSessionController::class, 'health']);
         Route::post('/',             [WahaSessionController::class, 'store']);
         Route::get('/{id}',          [WahaSessionController::class, 'show']);
         Route::patch('/{id}',        [WahaSessionController::class, 'update']);
@@ -825,6 +1000,7 @@ Route::prefix('v1')->middleware(['jwt.auth'])->group(function () {
         Route::post('/',             [MessageSenderController::class, 'store']);
         Route::get('/stats',         [MessageSenderController::class, 'stats']);
         Route::get('/{id}',          [MessageSenderController::class, 'show']);
+        Route::post('/{id}/launch',  [MessageSenderController::class, 'launch']);
         Route::post('/{id}/pause',   [MessageSenderController::class, 'pause']);
         Route::post('/{id}/resume',  [MessageSenderController::class, 'resume']);
         Route::post('/{id}/stop',    [MessageSenderController::class, 'stop']);
@@ -835,6 +1011,9 @@ Route::prefix('v1')->middleware(['jwt.auth'])->group(function () {
     Route::prefix('media-library')->group(function () {
         Route::get('/',               [MediaLibraryController::class, 'index']);
         Route::post('/upload',        [MediaLibraryController::class, 'upload']);
+        Route::post('/bulk/move',     [MediaLibraryController::class, 'bulkMove']);
+        Route::post('/bulk/copy',     [MediaLibraryController::class, 'bulkCopy']);
+        Route::post('/bulk/delete',   [MediaLibraryController::class, 'bulkDestroy']);
         Route::patch('/{id}/rename',  [MediaLibraryController::class, 'rename']);
         Route::patch('/{id}/move',    [MediaLibraryController::class, 'move']);
         Route::post('/{id}/copy',     [MediaLibraryController::class, 'copy']);
@@ -857,26 +1036,74 @@ Route::prefix('v1')->middleware(['jwt.auth'])->group(function () {
 
     // OTP Service (management — protected)
     Route::prefix('otp-service')->group(function () {
-        Route::get('/',                         [WaOtpServiceController::class, 'show']);
-        Route::post('/',                        [WaOtpServiceController::class, 'storeOrUpdate']);
-        Route::post('/reset-token',             [WaOtpServiceController::class, 'resetToken']);
-        Route::post('/stop-token',              [WaOtpServiceController::class, 'stopToken']);
-        Route::post('/test-send',               [WaOtpServiceController::class, 'testSend']);
-        Route::get('/auth-messages',            [WaOtpServiceController::class, 'listAuthMessages']);
-        Route::post('/auth-messages',           [WaOtpServiceController::class, 'createAuthMessage']);
-        Route::patch('/auth-messages/{id}',     [WaOtpServiceController::class, 'updateAuthMessage']);
-        Route::get('/logs',                     [WaOtpServiceController::class, 'logs']);
-        Route::get('/utility-templates',        [WaOtpServiceController::class, 'listUtilityTemplates']);
-        Route::post('/utility-send',            [WaOtpServiceController::class, 'utilityMessageSend']);
-        Route::post('/invoice-share',           [WaOtpServiceController::class, 'invoiceShare']);
+        Route::get('/',                      [WaOtpServiceController::class, 'show']);
+        Route::post('/',                     [WaOtpServiceController::class, 'storeOrUpdate']);
+        Route::post('/reset-token',          [WaOtpServiceController::class, 'resetToken']);
+        Route::post('/stop-token',           [WaOtpServiceController::class, 'stopToken']);
+        Route::post('/test-send',            [WaOtpServiceController::class, 'testSend']);
+        Route::get('/logs',                  [WaOtpServiceController::class, 'logs']);
+
+        // Named API configs (Auth OTP API / Utility / Invoice Share tabs)
+        Route::get('/configs',              [WaOtpServiceController::class, 'configs']);
+        Route::post('/configs',             [WaOtpServiceController::class, 'storeConfig']);
+        Route::patch('/configs/{id}',       [WaOtpServiceController::class, 'updateConfig']);
+        Route::delete('/configs/{id}',      [WaOtpServiceController::class, 'destroyConfig']);
+        Route::get('/configs/{id}/stats',   [WaOtpServiceController::class, 'configStats']);
+        Route::get('/prebuilt-templates',   [WaOtpServiceController::class, 'prebuiltTemplates']);
+        Route::get('/sessions',             [WaOtpServiceController::class, 'sessions']);
+
+        Route::post('/utility-send',         [WaOtpServiceController::class, 'utilityMessageSend']);
+        Route::post('/invoice-share',        [WaOtpServiceController::class, 'invoiceShare']);
+    });
+
+    // WA Cloud OTP Service (management — protected). Independent of the wa-chat
+    // "otp-service" block above: own tables, own controller, sends via Meta.
+    Route::prefix('wa-cloud/otp-service')->middleware(['company.active'])->group(function () {
+        Route::get('/',            [WaCloudApiServiceController::class, 'show']);
+        Route::post('/',           [WaCloudApiServiceController::class, 'storeOrUpdate']);
+        Route::post('/reset-token', [WaCloudApiServiceController::class, 'resetToken']);
+        Route::post('/stop-token',  [WaCloudApiServiceController::class, 'stopToken']);
+        Route::post('/test-send',   [WaCloudApiServiceController::class, 'testSend']);
+        Route::get('/logs',        [WaCloudApiServiceController::class, 'logs']);
+
+        // Literal paths before "/configs/{id}".
+        Route::get('/prebuilt-templates',   [WaCloudApiConfigController::class, 'prebuiltTemplates']);
+        Route::get('/configs',              [WaCloudApiConfigController::class, 'index']);
+        Route::post('/configs',             [WaCloudApiConfigController::class, 'store']);
+        Route::patch('/configs/{id}',       [WaCloudApiConfigController::class, 'update']);
+        Route::delete('/configs/{id}',      [WaCloudApiConfigController::class, 'destroy']);
+        Route::get('/configs/{id}/stats',   [WaCloudApiConfigController::class, 'stats']);
+        Route::post('/configs/{id}/submit', [WaCloudApiConfigController::class, 'submit']);
+        Route::post('/configs/{id}/sync',   [WaCloudApiConfigController::class, 'sync']);
+        Route::post('/configs/{id}/upload-header-media',   [WaCloudApiConfigController::class, 'uploadHeaderMedia']);
+        Route::delete('/configs/{id}/delete-header-media', [WaCloudApiConfigController::class, 'deleteHeaderMedia']);
+    });
+
+    // WA Cloud → Inbox Analytics (messages + calls + conversations, filterable)
+    Route::prefix('wa-cloud/inbox-analytics')->middleware(['company.active'])->group(function () {
+        Route::get('/',       [WaCloudInboxAnalyticsController::class, 'summary']);
+        Route::get('/agents', [WaCloudInboxAnalyticsController::class, 'agents']);
+    });
+
+    // WA Cloud → Automation Rules (own tables — separate from /wa-agent/automations)
+    Route::prefix('wa-cloud/automations')->middleware(['company.active'])->group(function () {
+        Route::get('/',             [WaCloudAutomationController::class, 'index']);
+        Route::post('/',            [WaCloudAutomationController::class, 'store']);
+        Route::get('/logs',         [WaCloudAutomationController::class, 'logs']);
+        Route::get('/{id}',         [WaCloudAutomationController::class, 'show']);
+        Route::patch('/{id}',       [WaCloudAutomationController::class, 'update']);
+        Route::delete('/{id}',      [WaCloudAutomationController::class, 'destroy']);
+        Route::post('/{id}/toggle', [WaCloudAutomationController::class, 'toggleActive']);
     });
 
     // Data Export
     Route::prefix('wa-export')->group(function () {
         Route::get('/',                  [WaExportController::class, 'listJobs']);
         Route::post('/chats',            [WaExportController::class, 'exportChats']);
+        Route::post('/contacts',         [WaExportController::class, 'exportContacts']);
         Route::post('/groups',           [WaExportController::class, 'exportGroups']);
         Route::get('/{id}/download',     [WaExportController::class, 'download']);
+        Route::delete('/{id}',           [WaExportController::class, 'destroy']);
     });
 
     // WA Agent — Automation Rules
@@ -912,11 +1139,21 @@ Route::prefix('v1')->middleware(['jwt.auth'])->group(function () {
         Route::get('/{id}/runs',         [PipelineController::class, 'runs']);
     });
 
+    // WA Agent — Playbook (per-company agent configuration)
+    Route::prefix('wa-agent/playbook')->group(function () {
+        Route::get('/',            [AgentPlaybookController::class, 'index']);
+        Route::post('/',           [AgentPlaybookController::class, 'store']);
+        Route::patch('/{id}',      [AgentPlaybookController::class, 'update']);
+        Route::post('/{id}/toggle',[AgentPlaybookController::class, 'toggle']);
+        Route::delete('/{id}',     [AgentPlaybookController::class, 'destroy']);
+    });
+
     // WA Agent — AI Agent
     Route::prefix('wa-agent')->group(function () {
         Route::post('/ask',              [AiAgentController::class, 'ask']);
         Route::post('/voice-test',       [AiAgentController::class, 'voiceTest']);
         Route::get('/available-models',  [AiAgentController::class, 'availableModels']);
+        Route::get('/ai-settings',       [AiAgentController::class, 'aiSettings']);
         Route::post('/config',           [AiAgentController::class, 'saveConfig']);
         Route::get('/sessions',          [AiAgentController::class, 'sessions']);
         Route::get('/sessions/{id}',     [AiAgentController::class, 'sessionDetail']);

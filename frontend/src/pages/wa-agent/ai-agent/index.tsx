@@ -166,7 +166,7 @@ function BubbleContent({ msg }: { msg: ChatMessage }) {
     return (
       <div className="flex items-center gap-2.5">
         <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${isUser ? 'bg-white/20' : 'bg-indigo-100'}`}>
-          <FileText size={18} className={isUser ? 'text-white' : 'text-indigo-600'} />
+          <FileText size={18} style={{margin: '0 auto 12px ' }} className={isUser ? 'text-white' : 'text-indigo-600'} />
         </div>
         <div className="min-w-0">
           <p className="text-sm font-medium leading-tight truncate">{msg.docFilename || 'Document'}</p>
@@ -244,7 +244,7 @@ function AgentVoiceBadge({ text, lang }: { text: string; lang?: string }) {
 const RESPONSE_MODE_OPTS: { id: ResponseMode; label: string; icon: React.ReactNode }[] = [
   { id: 'text',     label: 'Text',     icon: <MessageSquare size={11} /> },
   { id: 'voice',    label: 'Voice',    icon: <Volume2 size={11} /> },
-  { id: 'document', label: 'Document', icon: <FileText size={11} /> },
+  { id: 'document', label: 'Document', icon: <FileText size={11} style={{margin: '0 auto 12px ' }} /> },
   { id: 'video',    label: 'Video',    icon: <Video size={11} /> },
 ]
 

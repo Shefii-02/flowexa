@@ -43,6 +43,7 @@ class User extends Authenticatable implements JWTSubject
         return $this->hasOne(StaffAvailability::class, 'staff_id');
     }
     public function leadAssignments(): HasMany { return $this->hasMany(LeadAssignment::class, 'staff_id'); }
+    public function devices(): HasMany { return $this->hasMany(UserDevice::class); }
 
     // ── Permission helpers ────────────────────────────────────────────────────
     public function isSuperAdmin(): bool

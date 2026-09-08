@@ -2,6 +2,7 @@
 import { createAsyncThunk, createSlice, PayloadAction } from '@reduxjs/toolkit'
 import { authApi } from '@/api'
 import type { AuthState, User, Wallet } from '@/types'
+import { WA_CHAT_API_KEY_STORAGE } from '@/pages/wa-chat/api/client'
 
 // ── WA Chat session bootstrap ─────────────────────────────────────────────────
 // Maps Project A's user role to the WA Chat RBAC role so RequireWaAdmin gates
@@ -20,7 +21,7 @@ function resolveWaChatRole(user: User | null): 'admin' | 'operator' | 'viewer' {
 function syncWaChatSession(user: User | null) {
   const token = user?.company?.wa_chat_token
   if (token) {
-    sessionStorage.setItem('openwa_api_key', token)
+    sessionStorage.setItem(WA_CHAT_API_KEY_STORAGE, token)
     localStorage.setItem('openwa_user_role', resolveWaChatRole(user))
   } else {
     clearWaChatSession()
@@ -29,7 +30,7 @@ function syncWaChatSession(user: User | null) {
 
 // Called on logout — clears both keys so the WA Chat module is fully de-authed.
 function clearWaChatSession() {
-  sessionStorage.removeItem('openwa_api_key')
+  sessionStorage.removeItem(WA_CHAT_API_KEY_STORAGE)
   localStorage.removeItem('openwa_user_role')
 }
 

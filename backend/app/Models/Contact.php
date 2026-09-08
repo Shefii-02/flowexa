@@ -25,6 +25,8 @@ class Contact extends Model
         'last_sentiment', 'detected_intent',
         'buying_signals_count', 'objections_count',
         'meta_ai_profile', 'conversation_summary', 'summary_updated_at',
+        // Assignment / lead-routing fields
+        'current_assignment_id', 'total_leads_count', 'first_lead_at', 'last_lead_at',
     ];
 
     protected $casts = [
@@ -38,12 +40,19 @@ class Contact extends Model
         'lead_score'           => 'integer',
         'buying_signals_count' => 'integer',
         'objections_count'     => 'integer',
+        'total_leads_count'    => 'integer',
+        'first_lead_at'        => 'datetime',
+        'last_lead_at'         => 'datetime',
     ];
 
     // ── Relationships ─────────────────────────────────────────────────────────
     public function company(): BelongsTo  { return $this->belongsTo(Company::class); }
     public function leads(): HasMany      { return $this->hasMany(Lead::class); }
     public function messages(): HasMany   { return $this->hasMany(MessageLog::class); }
+    public function currentAssignment(): BelongsTo
+    {
+        return $this->belongsTo(LeadAssignment::class, 'current_assignment_id');
+    }
 
     public function labels(): BelongsToMany
     {

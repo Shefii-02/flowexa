@@ -11,6 +11,7 @@ readonly class UpdateContactDTO
         public ?string $email        = null,
         public ?array  $customFields = null,
         public ?bool   $optedIn      = true,
+        public ?int    $assignedTo   = null,
     ) {}
 
     public static function fromRequest(array $data): self
@@ -20,6 +21,7 @@ readonly class UpdateContactDTO
             email: $data['email']         ?? null,
             customFields: $data['custom_fields'] ?? null,
             optedIn: isset($data['opted_in']) ? (bool) $data['opted_in'] : true,
+            assignedTo: isset($data['assigned_to']) ? (int) $data['assigned_to'] : null,
         );
     }
 }

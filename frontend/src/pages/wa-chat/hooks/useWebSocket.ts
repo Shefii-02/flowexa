@@ -1,6 +1,7 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { WA_CHAT_SOCKET_URL } from '../socket';
+import { WA_CHAT_API_KEY_STORAGE } from '../api/client';
 
 interface SessionStatusEvent {
   sessionId: string;
@@ -159,7 +160,7 @@ export function useWebSocket(events: WebSocketEvents = {}) {
     if (socketRef.current?.connected) return;
 
     // Get API key from sessionStorage (same as api.ts)
-    const apiKey = sessionStorage.getItem('openwa_api_key');
+    const apiKey = sessionStorage.getItem(WA_CHAT_API_KEY_STORAGE);
 
     if (!apiKey) {
       console.warn('[WebSocket] No API key found, skipping connection');

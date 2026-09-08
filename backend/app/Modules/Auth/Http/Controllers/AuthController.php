@@ -92,7 +92,17 @@ class AuthController extends Controller
             'phone'      => ['sometimes', 'string', 'max:25'],
             'language'   => ['sometimes', 'string', 'max:5'],
             'department' => ['sometimes', 'string', 'max:60'],
+            'avatar'     => ['sometimes', 'file', 'image', 'max:4096'],
         ]);
+
+        if ($request->hasFile('avatar')) {
+            $user = auth()->user();
+            if ($user->avatar && \Illuminate\Support\Facades\Storage::disk('public')->exists($user->avatar)) {
+                \Illuminate\Support\Facades\Storage::disk('public')->delete($user->avatar);
+            }
+            $d['avatar'] = $request->file('avatar')->store("avatars/{$user->company_id}", 'public');
+        }
+
         auth()->user()->update($d);
         return response()->json(['user' => auth()->user()->fresh()]);
     }

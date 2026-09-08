@@ -18,11 +18,8 @@ export default function LoginPage() {
     dispatch(clearAuthError())
     const result = await dispatch(loginThunk({ email, password }))
     if (loginThunk.fulfilled.match(result)) {
-      if(result.payload.user.role.name === 'superadmin') {
-        navigate('/superadmin')
-      } else {
-        navigate('/dashboard')
-      }
+      const role = result.payload.user.role?.name
+      navigate(role === 'superadmin' || role === 'superadmin_staff' ? '/superadmin' : '/dashboard')
     }
   }
 
@@ -65,6 +62,10 @@ export default function LoginPage() {
               onChange={(e) => setPassword(e.target.value)}
               required
             />
+
+            <div className="text-right -mt-2">
+              <Link to="/forgot-password" className="text-xs text-brand-600 hover:underline">Forgot password?</Link>
+            </div>
 
             <Button type="submit" className="w-full justify-center" loading={loading}>
               Sign in

@@ -14,6 +14,7 @@ class MediaLibrary extends Model
     protected $fillable = [
         'company_id',
         'folder',
+        'folder_id',
         'filename',
         'original_name',
         'display_name',
@@ -35,7 +36,7 @@ class MediaLibrary extends Model
     }
     public function folder(): BelongsTo
     {
-        return $this->belongsTo(MediaFolder::class, 'folder');
+        return $this->belongsTo(MediaFolder::class, 'folder_id');
     }
     public function getFileUrlAttribute(): string
     {

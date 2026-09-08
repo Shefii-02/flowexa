@@ -88,17 +88,11 @@ class ConversationAnalyzer
             } catch (\Exception) {}
         }
 
-        // Fall back to company Anthropic key
-        $anthropicKey = CompanyApiKeyResolver::anthropic($company);
-        if ($anthropicKey) {
-            $model = CompanyApiKeyResolver::model($company);
-            return [$anthropicKey, $model, 'anthropic'];
-        }
-
-        // Fall back to company OpenAI key
-        $openaiKey = CompanyApiKeyResolver::openai($company);
-        if ($openaiKey) {
-            return [$openaiKey, 'gpt-4o-mini', 'openai'];
+        // Fall back to the resolved active provider (company key → platform key → env)
+        $resolved = CompanyApiKeyResolver::resolve($company);
+        if ($resolved) {
+            $model = $resolved['provider'] === 'openai' ? 'gpt-4o-mini' : $resolved['model'];
+            return [$resolved['key'], $model, $resolved['provider']];
         }
 
         return [null, null, null];
@@ -143,6 +137,7 @@ Analyze and return ONLY valid JSON (no markdown, no extra text):
             return match($provider) {
                 'anthropic' => $this->callAnthropic($apiKey, $model, $systemPrompt, $latestMessage),
                 'openai'    => $this->callOpenAI($apiKey, $model, $messages),
+                'google_ai' => $this->callGoogle($apiKey, $model, $systemPrompt, $latestMessage),
                 'meta_ai'   => $this->callMetaOrTogether($apiKey, $model, $messages),
                 default     => null,
             };
@@ -182,6 +177,22 @@ Analyze and return ONLY valid JSON (no markdown, no extra text):
 
         if ($response->successful()) return $response->json('choices.0.message.content');
         Log::warning('ConversationAnalyzer OpenAI error: ' . $response->body());
+        return null;
+    }
+
+    private function callGoogle(string $apiKey, string $model, string $system, string $userMsg): ?string
+    {
+        $response = Http::timeout(30)->post(
+            "https://generativelanguage.googleapis.com/v1beta/models/{$model}:generateContent?key={$apiKey}",
+            [
+                'systemInstruction' => ['parts' => [['text' => $system]]],
+                'contents'          => [['role' => 'user', 'parts' => [['text' => "Latest customer message: \"{$userMsg}\""]]]],
+                'generationConfig'  => ['maxOutputTokens' => 800, 'temperature' => 0.1],
+            ]
+        );
+
+        if ($response->successful()) return $response->json('candidates.0.content.parts.0.text');
+        Log::warning('ConversationAnalyzer Google AI error: ' . $response->body());
         return null;
     }
 

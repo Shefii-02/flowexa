@@ -85,10 +85,11 @@ function FlatLink({ to, icon, label, end }: { to: string; icon: string; label: s
 }
 
 // ── Accordion sub-link ─────────────────────────────────────────────────────────
-function SubLink({ to, icon, label }: { to: string; icon: string; label: string }) {
+function SubLink({ to, icon, label, end }: { to: string; icon: string; label: string; end?: boolean }) {
   return (
     <NavLink
       to={to}
+      end={end}
       className={({ isActive }) =>
         cn(
           'flex items-center gap-2 px-2 py-1.5 rounded-lg text-[13px] transition-colors',
@@ -365,7 +366,7 @@ export const Sidebar = () => {
               <SubLink to="/wa-chat/chats" icon="💬" label="Chats" />
               {/* }
                 {canViewMsgSend &&  */}
-              <SubLink to="/wa-chat/message-sender" icon="📨" label="Message Sender" />
+              <SubLink to="/wa-chat/message-sender" icon="📨" label="Campaign" />
               {/* } */}
               <SubLink to="/wa-chat/plugins" icon="🔌" label="Plugin" />
               {/* {canViewWebhooks &&  */}
@@ -412,7 +413,7 @@ export const Sidebar = () => {
               <SubLink to="/wa-cloud/survey-forms" icon="📝" label="Survey Forms" />
               {/* }
                 {canViewOtp &&  */}
-              <SubLink to="/wa-cloud/otp-services" icon="🔑" label="OTP Services" />
+              <SubLink to="/wa-cloud/api-service" icon="🔑" label="API Service" />
               {/* } */}
 
               <SubLink to="/wa-cloud/inbox" icon="📥" label="Inbox" />
@@ -429,6 +430,7 @@ export const Sidebar = () => {
             {canViewMsgLogs &&  */}
               <FlatLink to="/wa-cloud/message-logs" icon="📜" label="Message Logs" />
               {/* } */}
+              <FlatLink to="/wa-cloud/inbox-analytics" icon="📈" label="Inbox Analytics" />
 
               {/* Nested WA Agent inside WA Cloud */}
               {/* {canViewAuto && ( */}
@@ -459,11 +461,13 @@ export const Sidebar = () => {
               <SubLink to="/wa-agent/pipelines" icon="🔄" label="Pipelines" />
               {/* } */}
               <SubLink to="/wa-agent/ai-agent" icon="🤖" label="AI Agent" />
+              <SubLink to="/wa-agent/playbook" icon="📖" label="Playbook" />
               {/* {canViewAgLeads &&  */}
               <SubLink to="/wa-agent/lead-intelligence" icon="🎯" label="Lead Intelligence" />
               {/* } */}
               <SubLink to="/wa-agent/meta-ai" icon="⚙️" label="AI Config" />
               <SubLink to="/wa-agent/logs" icon="📜" label="Logs" />
+              <SubLink to="/wa-agent/settings" icon="🔑" label="Settings" />
             </Accordion>
             {/* )} */}
 
@@ -486,29 +490,69 @@ export const Sidebar = () => {
 
             {/* ── CRM ── */}
             <SectionHeader label="CRM" />
-            {/* {canViewContacts &&  */}
-            <FlatLink to="/contacts" icon="👥" label="Contacts" />
-            {/* } */}
-            {/* {canViewLabels &&  */}
-            <FlatLink to="/labels" icon="🏷️" label="Labels" />
-            {/* } */}
-            {/* {canViewBList &&  */}
-            <FlatLink to="/blacklist" icon="🚫" label="Blacklist" />
-            {/* }
-            {canViewLeads &&  */}
-            <FlatLink to="/leads" icon="🎯" label="Leads" end />
-            {/* }
-            {canViewLeads &&  */}
-            <FlatLink to="/lead-categories" icon="📂" label="Lead Categories" />
-            {/* } */}
+            <NestedAccordion
+              icon="🗂️"
+              label="CRM"
+              basePaths={['/contacts', '/labels', '/blacklist', '/lead-categories', '/crm']}
+              defaultOpen
+            >
+              <NestedAccordion icon="🟢" label="Basic CRM" basePaths={['/contacts', '/labels', '/blacklist']}>
+                <SubLink to="/contacts" icon="👥" label="Contacts" />
+                <SubLink to="/labels" icon="🏷️" label="Labels" />
+                <SubLink to="/blacklist" icon="🚫" label="Blacklist" />
+              </NestedAccordion>
+
+              <NestedAccordion icon="🔷" label="Advanced CRM" basePaths={['/crm', '/lead-categories']}>
+                <SubLink to="/contacts" icon="👥" label="Contacts" />
+                <SubLink to="/labels" icon="🏷️" label="Labels" />
+                <SubLink to="/crm/deals" icon="💼" label="Deals Pipeline" />
+                <SubLink to="/crm/tasks" icon="📋" label="Tasks & Follow-ups" />
+                <SubLink to="/crm/segments" icon="🧩" label="Segments" />
+                <SubLink to="/blacklist" icon="🚫" label="Blacklist" />
+                <SubLink to="/lead-categories" icon="📂" label="Lead Categories" />
+              </NestedAccordion>
+            </NestedAccordion>
+
+            {/* ── LEADS ── */}
+            <SectionHeader label="Leads" />
+            <NestedAccordion
+              icon="🎯"
+              label="Leads"
+              basePaths={['/leads']}
+              defaultOpen
+            >
+              {/* common */}
+              <SubLink to="/leads" icon="🎯" label="All Leads" end />
+
+              <NestedAccordion icon="🟢" label="Basic" basePaths={['/leads/summary']}>
+                <SubLink to="/leads" icon="🎯" label="All Leads" end />
+                <SubLink to="/leads/summary" icon="📈" label="Leads Summary" />
+              </NestedAccordion>
+
+              <NestedAccordion
+                icon="🔷"
+                label="Advanced"
+                basePaths={['/leads/report', '/leads/assignments', '/leads/assignment-rules']}
+              >
+                <SubLink to="/leads" icon="🎯" label="All Leads" end />
+                <SubLink to="/leads/summary" icon="📈" label="Leads Summary" />
+                <SubLink to="/leads/report" icon="📊" label="Leads Report" />
+                <SubLink to="/leads/assignments" icon="🧭" label="Assignments" />
+                <SubLink to="/leads/assignment-rules" icon="📋" label="Assignment Rules" />
+              </NestedAccordion>
+            </NestedAccordion>
+
+            {/* ── HR ── */}
+            <SectionHeader label="HR" />
+            <NestedAccordion icon="👥" label="HR" basePaths={['/hr']} defaultOpen>
+              <SubLink to="/hr/attendance" icon="🕒" label="My Attendance" />
+              <SubLink to="/hr/admin" icon="🛠️" label="HR Admin" />
+            </NestedAccordion>
 
             {/* ── STAFF ── */}
             <SectionHeader label="Staff" />
             {/* {canViewStaff &&  */}
             <FlatLink to="/staff" icon="👤" label="Staff" />
-            {/* }
-            {canViewStaff &&  */}
-            <FlatLink to="/leads/staff-availability" icon="🟢" label="Staff Availability" />
             {/* }
             {canManageStaff &&  */}
             <FlatLink to="/leads/assignment-rules" icon="📋" label="Assignment Rules" />
@@ -535,6 +579,7 @@ export const Sidebar = () => {
             <FlatLink to="/superadmin/staff" icon="👤" label="Platform Staff" />
             <FlatLink to="/superadmin/permissions" icon="🔑" label="Permissions" />
             <FlatLink to="/superadmin/topup" icon="💬" label="Top-up Packages" />
+            <FlatLink to="/superadmin/prebuilt-templates" icon="🧩" label="Prebuilt Templates" />
             <FlatLink to="/superadmin/reports" icon="📊" label="Reports" />
           </>
         )}

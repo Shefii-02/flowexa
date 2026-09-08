@@ -8,8 +8,16 @@ Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
 })->purpose('Display an inspiring quote');
 
-// WA Chat — dispatch scheduled message jobs every minute
-Schedule::command('wachat:process-scheduled-messages')->everyMinute();
+// Expire stale QR / PIN device-login challenges + prune old ones.
+Schedule::call(function () {
+    \App\Models\DeviceLoginToken::where('status', 'pending')
+        ->where('expires_at', '<', now())
+        ->update(['status' => 'expired']);
+    \App\Models\DeviceLoginToken::where('created_at', '<', now()->subDays(7))->delete();
+})->everyFiveMinutes()->name('device-login:prune')->withoutOverlapping();
+
+// WA Cloud (Meta Cloud API) time-based automation rules
+Schedule::command('wa-cloud:run-automations')->everyFifteenMinutes()->withoutOverlapping();
 
 // Lead Assignment
 Schedule::command('leads:check-sla')->everyMinute();

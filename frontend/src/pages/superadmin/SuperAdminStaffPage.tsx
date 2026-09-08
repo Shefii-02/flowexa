@@ -1,8 +1,9 @@
 // src/pages/superadmin/SuperAdminStaffPage.tsx
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { saStaffApi } from '@/api'
 import { Button, Input, Modal, Badge, EmptyState, ConfirmModal, TableSkeleton } from '@/components/ui'
 import { fmt, getError } from '@/utils'
+import LinkedDevicesModal, { type DeviceService } from '@/components/devices/LinkedDevicesModal'
 import toast from 'react-hot-toast'
 
 export default function SuperAdminStaffPage() {
@@ -11,6 +12,7 @@ export default function SuperAdminStaffPage() {
   const [showModal,setShowModal] = useState(false)
   const [editItem, setEditItem]  = useState<any>(null)
   const [delItem,  setDelItem]   = useState<any>(null)
+  const [deviceItem, setDeviceItem] = useState<any>(null)
   const [saving,   setSaving]    = useState(false)
   const [form, setForm] = useState({ name: '', email: '', password: '', role: 'superadmin_staff' })
   const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }))
@@ -41,6 +43,16 @@ export default function SuperAdminStaffPage() {
     catch (e) { toast.error(getError(e)) }
   }
 
+  const deviceService: DeviceService | null = useMemo(() => {
+    if (!deviceItem) return null
+    const uid = deviceItem.id
+    return {
+      list: () => saStaffApi.devices(uid).then(r => r.data),
+      createChallenge: () => saStaffApi.deviceChallenge(uid).then(r => r.data),
+      revoke: (deviceId) => saStaffApi.revokeDevice(uid, deviceId).then(() => undefined),
+    }
+  }, [deviceItem])
+
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
@@ -63,7 +75,8 @@ export default function SuperAdminStaffPage() {
                     <td><Badge variant="purple">{s.role?.label || 'Platform Staff'}</Badge></td>
                     <td><Badge variant={s.is_active ? 'green' : 'gray'}>{s.is_active ? 'Active' : 'Inactive'}</Badge></td>
                     <td>
-                      <div className="flex gap-1">
+                      <div className="flex gap-2">
+                        <button onClick={() => setDeviceItem(s)} className="text-xs text-indigo-600 hover:underline">Devices</button>
                         {s.role?.name !== 'superadmin' && (
                           <>
                             <button onClick={() => openEdit(s)} className="text-xs text-blue-600 hover:underline">Edit</button>
@@ -89,6 +102,13 @@ export default function SuperAdminStaffPage() {
       </Modal>
       <ConfirmModal open={!!delItem} title="Remove staff?" message={`Remove ${delItem?.name} from platform staff?`}
         onConfirm={handleDelete} onCancel={() => setDelItem(null)} />
+      <LinkedDevicesModal
+        open={!!deviceService}
+        onClose={() => setDeviceItem(null)}
+        title={deviceItem ? `${deviceItem.name} — linked devices` : 'Linked devices'}
+        subtitle="Link the phone app for this platform staff member via QR code or PIN."
+        service={deviceService ?? { list: async () => ({ max: 0, active: 0, devices: [] }), createChallenge: async () => { throw new Error('n/a') }, revoke: async () => undefined }}
+      />
     </div>
   )
 }

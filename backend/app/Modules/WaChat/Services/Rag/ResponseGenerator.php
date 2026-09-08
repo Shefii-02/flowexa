@@ -19,49 +19,115 @@ class ResponseGenerator
         array   $aiConfig,
         Company $company
     ): string {
-        // Resolve key: company DB key → .env fallback
-        $apiKey = CompanyApiKeyResolver::anthropic($company);
-
-        // Allow override from aiConfig for legacy test calls
+        // Legacy test calls may pass an explicit key/provider in aiConfig.
         if (!empty($aiConfig['api_key'])) {
-            $apiKey = $aiConfig['api_key'];
+            $provider = $aiConfig['provider'] ?? 'anthropic';
+            $apiKey   = $aiConfig['api_key'];
+            $model    = $aiConfig['model'] ?? CompanyApiKeyResolver::model($company);
+            $keyModel = null;
+        } else {
+            $resolved = CompanyApiKeyResolver::resolve($company);
+            if (!$resolved) {
+                return "AI is not configured yet. Add an API key under WA Agent → Settings.";
+            }
+            $provider = $resolved['provider'];
+            $apiKey   = $resolved['key'];
+            $model    = $resolved['model'];
+            $keyModel = $resolved['key_model'];
         }
 
-        if (empty($apiKey)) {
-            return "AI not configured. Please add an Anthropic API key in Settings → API Keys.";
-        }
-
-        $model        = CompanyApiKeyResolver::model($company);
         $systemPrompt = $this->buildSystemPrompt($context, $aiConfig, $language);
         $messages     = $this->buildMessages($conversationHistory, $query);
 
         try {
-            $response = Http::withHeaders([
-                'x-api-key'         => $apiKey,
-                'anthropic-version' => '2023-06-01',
-                'content-type'      => 'application/json',
-            ])->timeout(30)->post('https://api.anthropic.com/v1/messages', [
-                'model'      => $model,
-                'max_tokens' => self::MAX_TOKENS,
-                'system'     => $systemPrompt,
-                'messages'   => $messages,
-            ]);
+            $text = match ($provider) {
+                'openai'    => $this->callOpenAI($apiKey, $model, $systemPrompt, $messages),
+                'google_ai' => $this->callGoogle($apiKey, $model, $systemPrompt, $messages),
+                default     => $this->callAnthropic($apiKey, $model, $systemPrompt, $messages),
+            };
 
-            if ($response->successful()) {
-                // Record usage against the company's active key
-                if ($company->anthropic_key_id && $company->anthropicKey) {
-                    CompanyApiKeyResolver::recordUsage($company->anthropicKey, 0.0);
+            if ($text !== null) {
+                if ($keyModel) {
+                    CompanyApiKeyResolver::recordUsage($keyModel, 0.0);
                 }
-                return $response->json('content.0.text') ?? $this->fallbackResponse($language);
+                return $text;
             }
-
-            Log::warning('ResponseGenerator Anthropic error: ' . $response->body());
         } catch (\Exception $e) {
-            Log::error('ResponseGenerator exception: ' . $e->getMessage());
+            Log::error("ResponseGenerator ({$provider}) exception: " . $e->getMessage());
         }
 
         return $this->fallbackResponse($language);
     }
+
+    // ── Provider callers ─────────────────────────────────────────────────────
+
+    private function callAnthropic(string $apiKey, string $model, string $system, array $messages): ?string
+    {
+        $response = Http::withHeaders([
+            'x-api-key'         => $apiKey,
+            'anthropic-version' => '2023-06-01',
+            'content-type'      => 'application/json',
+        ])->timeout(30)->post('https://api.anthropic.com/v1/messages', [
+            'model'      => $model,
+            'max_tokens' => self::MAX_TOKENS,
+            'system'     => $system,
+            'messages'   => $messages,
+        ]);
+
+        if ($response->successful()) {
+            return $response->json('content.0.text');
+        }
+
+        Log::warning('ResponseGenerator Anthropic error: ' . $response->body());
+        return null;
+    }
+
+    private function callOpenAI(string $apiKey, string $model, string $system, array $messages): ?string
+    {
+        $response = Http::withToken($apiKey)
+            ->timeout(30)
+            ->post('https://api.openai.com/v1/chat/completions', [
+                'model'      => $model,
+                'max_tokens' => self::MAX_TOKENS,
+                'messages'   => array_merge([['role' => 'system', 'content' => $system]], $messages),
+            ]);
+
+        if ($response->successful()) {
+            return $response->json('choices.0.message.content');
+        }
+
+        Log::warning('ResponseGenerator OpenAI error: ' . $response->body());
+        return null;
+    }
+
+    private function callGoogle(string $apiKey, string $model, string $system, array $messages): ?string
+    {
+        $contents = [];
+        foreach ($messages as $m) {
+            $contents[] = [
+                'role'  => $m['role'] === 'assistant' ? 'model' : 'user',
+                'parts' => [['text' => $m['content']]],
+            ];
+        }
+
+        $response = Http::timeout(30)->post(
+            "https://generativelanguage.googleapis.com/v1beta/models/{$model}:generateContent?key={$apiKey}",
+            [
+                'systemInstruction' => ['parts' => [['text' => $system]]],
+                'contents'          => $contents,
+                'generationConfig'  => ['maxOutputTokens' => self::MAX_TOKENS],
+            ]
+        );
+
+        if ($response->successful()) {
+            return $response->json('candidates.0.content.parts.0.text');
+        }
+
+        Log::warning('ResponseGenerator Google AI error: ' . $response->body());
+        return null;
+    }
+
+    // ── Prompt building ──────────────────────────────────────────────────────
 
     private function buildSystemPrompt(string $context, array $aiConfig, string $language): string
     {

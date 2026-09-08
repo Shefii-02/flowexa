@@ -4,7 +4,7 @@ import { Trans, useTranslation } from 'react-i18next';
 import { nextReconnectState } from '../utils/reconnectState';
 import { applyIncomingToChatList } from '../utils/chatList';
 import { filterChats, filterChannels, groupStatusesByContact, buildContactIndex, lookupChatContact } from '../utils/chatFilters';
-import { ArrowLeft, Loader2, Megaphone, CircleDashed, AlertCircle, MessageSquare, X, Users, Tag, UserCheck, Activity, ChevronRight, Search } from 'lucide-react';
+import { ArrowLeft, Loader2, Megaphone, CircleDashed, AlertCircle, MessageSquare } from 'lucide-react';
 import api from '@/api/client';
 import { useProfilePicture } from '../hooks/useProfilePicture';
 import { useProfilePictures } from '../hooks/useProfilePictures';
@@ -41,14 +41,13 @@ import { useChatMessages, useChatMessagesActions, messagesQueryKey } from '../ho
 import { useChannelMessages } from '../hooks/useChannelMessages';
 import { useContactStatuses } from '../hooks/useContactStatuses';
 import { useChatScrollPosition } from '../hooks/useChatScrollPosition';
-import { useCurrentEngineQuery } from '../hooks/queries';
+import { useCurrentEngineQuery, queryKeys } from '../hooks/queries';
 import { createTrailingCoalescer } from '../utils/trailingCoalescer';
 import MessageBody from '../components/chats/MessageBody';
 import MediaLightbox, { type LightboxItem } from '../components/chats/MediaLightbox';
-import KindIcon from '../components/chats/KindIcon';
 import ChatSidebar from '../components/chats/ChatSidebar';
-import ChatThread from '../components/chats/ChatThread';
-import ChatComposer, { type StagedAttachment } from '../components/chats/ChatComposer';
+import ChatRoom from '../components/chats/ChatRoom';
+import { type StagedAttachment } from '../components/chats/ChatComposer';
 import StatusMedia from '../components/chats/StatusMedia';
 import StatusComposeModal from '../components/chats/StatusComposeModal';
 import './Chats.css';
@@ -108,844 +107,6 @@ const statusFontStyle = (font?: number): { fontFamily?: string; fontWeight?: num
   };
 };
 
-// ── ProfileCardPanel ───────────────────────────────────────────────────────────
-
-type IndividualTab = 'info' | 'labels' | 'groups' | 'leads'
-type GroupTab = 'members' | 'info'
-
-function ProfileCardPanel({
-  activeChat, activePp, activePhoneText, profileContact, profileGroups, profileCardLoading, profileGroupsLoading, onClose, sessionId, onOpenChat, onRequestGroupsScan,
-}: {
-  activeChat: { id: string; name?: string; isGroup?: boolean; kind?: string };
-  activePp?: string;
-  activePhoneText?: string | null;
-  profileContact: any;
-  profileGroups: { id: string; name: string }[];
-  profileCardLoading: boolean;
-  profileGroupsLoading: boolean;
-  onClose: () => void;
-  sessionId?: string;
-  onOpenChat?: (participant: { id: string; number: string; name?: string }) => void;
-  onRequestGroupsScan?: () => void;
-}) {
-  const isGroup = !!activeChat.isGroup
-  const toast = useToast()
-
-  const [indTab, setIndTab] = useState<IndividualTab>('info')
-  const [grpTab, setGrpTab] = useState<GroupTab>('members')
-
-  const [leads, setLeads] = useState<any[]>([])
-  const [leadsLoading, setLeadsLoading] = useState(false)
-  const [creatingLead, setCreatingLead] = useState(false)
-
-  const [staffList, setStaffList] = useState<{ id: number; name: string; email: string }[]>([])
-  const [showStaffPicker, setShowStaffPicker] = useState(false)
-  const [assigningStaff, setAssigningStaff] = useState(false)
-
-  const [members, setMembers] = useState<{ id: string; number: string; isAdmin: boolean; isSuperAdmin: boolean; name?: string }[]>([])
-  const [membersLoading, setMembersLoading] = useState(false)
-  const [crmMap, setCrmMap] = useState<Map<string, string>>(new Map())
-  const [memberSearch, setMemberSearch] = useState('')
-
-  // Group Info tab: invite link + description editing (both admin-only on the engine)
-  const [groupDescription, setGroupDescription] = useState<string>('')
-  const [descEditing, setDescEditing] = useState(false)
-  const [descDraft, setDescDraft] = useState('')
-  const [descSaving, setDescSaving] = useState(false)
-  const [invite, setInvite] = useState<{ code: string; link: string } | null>(null)
-  const [inviteLoading, setInviteLoading] = useState(false)
-
-  // Label management for individual contact Info tab
-  const [infoLabels, setInfoLabels] = useState<{ id: number; name: string; color?: string }[]>([])
-  const [infoLabelsOpen, setInfoLabelsOpen] = useState(false)
-  const [infoLabelRemoving, setInfoLabelRemoving] = useState<number | null>(null)
-  const [localContactLabels, setLocalContactLabels] = useState<{ id: number; name: string; color?: string }[]>([])
-  // Multi-select draft for the "Add to labels" editor: the set of label ids checked right now.
-  const [labelDraft, setLabelDraft] = useState<Set<number>>(new Set())
-  const [labelSaving, setLabelSaving] = useState(false)
-
-  // Sync localContactLabels when profileContact changes
-  useEffect(() => {
-    setLocalContactLabels(profileContact?.labels ?? [])
-  }, [profileContact])
-
-  // Reset tabs when chat changes
-  useEffect(() => {
-    setIndTab('info'); setGrpTab('members')
-    setInvite(null); setDescEditing(false)
-    setMemberSearch('')
-    setInfoLabelsOpen(false)
-  }, [activeChat.id])
-
-  // The "Groups" tab's shared-group scan is expensive (one request per group), so it only runs
-  // once the user actually opens that tab. The parent debounces re-runs by chat id.
-  useEffect(() => {
-    if (!isGroup && indTab === 'groups') onRequestGroupsScan?.()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [indTab, isGroup, activeChat.id])
-
-  // Load the full CRM label list for the "Add to labels" editor. GET /labels answers { labels: [...] }.
-  useEffect(() => {
-    if (isGroup) return
-    api.get('/labels')
-      .then(r => setInfoLabels(r.data?.labels ?? r.data?.data ?? r.data ?? []))
-      .catch(() => { })
-  }, [isGroup])
-
-  // Load group members when viewing a group chat
-  useEffect(() => {
-    if (!isGroup || !sessionId || !activeChat?.id) return
-    setMembersLoading(true)
-    setMembers([])
-    setCrmMap(new Map())
-   
-    Promise.all([
-      getGroupInfoCached(sessionId, activeChat.id),
-      api.get('/contacts?per_page=100').catch(() => null),
-    ])
-      .then(([groupInfo, crmRes]) => {
-        // sessionApi.getGroupInfo is fetch-based, not axios — it returns the parsed JSON
-        // directly, with `participants` as a top-level field (not nested under `.data`).
-        setMembers(groupInfo.participants ?? [])
-        setGroupDescription(groupInfo.description ?? '')
-
-        // CRM contacts
-        const crmContacts: { name?: string; phone?: string }[] =
-          crmRes?.data?.data ??
-          crmRes?.data ??
-          []
-
-        const map = new Map<string, string>()
-
-        for (const c of crmContacts) {
-          if (c.phone && c.name) {
-            const key = String(c.phone)
-              .replace(/\D/g, '')
-              .slice(-10)
-
-            if (key) {
-              map.set(key, c.name)
-            }
-          }
-        }
-
-        setCrmMap(map)
-      })
-      .catch((error) => {
-        console.error('Failed to load group members:', error)
-        setMembers([])
-      })
-      .finally(() => {
-        setMembersLoading(false)
-      })
-  }, [isGroup, activeChat?.id, sessionId])
-
-  // Fetch the invite link lazily, only once the Group Info tab is opened. The engine refuses this for
-  // a non-admin account (403) and the gateway may answer 503 — both just mean "no link to show".
-  useEffect(() => {
-    if (!isGroup || grpTab !== 'info' || !sessionId || !activeChat?.id || invite) return
-    setInviteLoading(true)
-    sessionApi.getGroupInviteCode(sessionId, activeChat.id)
-      .then(r => setInvite({ code: r.inviteCode, link: r.inviteLink }))
-      .catch(() => setInvite(null))
-      .finally(() => setInviteLoading(false))
-  }, [isGroup, grpTab, sessionId, activeChat?.id, invite])
-
-  const copyInviteLink = () => {
-    if (!invite) return
-    const done = navigator.clipboard?.writeText(invite.link)
-    if (done) done.then(() => toast.success('Invite link copied')).catch(() => toast.error('Could not copy the invite link'))
-    else toast.error('Could not copy the invite link')
-  }
-
-  const revokeInviteLink = async () => {
-    if (!sessionId || !activeChat?.id) return
-    if (!window.confirm('Revoke the current invite link? Any link already shared will stop working.')) return
-    setInviteLoading(true)
-    try {
-      const r = await sessionApi.revokeGroupInviteCode(sessionId, activeChat.id)
-      setInvite({ code: r.inviteCode, link: r.inviteLink })
-      toast.success('Invite link revoked', 'A new link has been generated')
-    } catch (e) {
-      toast.error('Could not revoke the invite link', e instanceof Error ? e.message : undefined)
-    } finally {
-      setInviteLoading(false)
-    }
-  }
-
-  const saveDescription = async () => {
-    if (!sessionId || !activeChat?.id) return
-    setDescSaving(true)
-    try {
-      await sessionApi.setGroupDescription(sessionId, activeChat.id, descDraft)
-      setGroupDescription(descDraft)
-      setDescEditing(false)
-      toast.success('Group description updated')
-    } catch (e) {
-      toast.error('Could not update the description', e instanceof Error ? e.message : undefined)
-    } finally {
-      setDescSaving(false)
-    }
-  }
-
-  // Load leads when tab opens
-  useEffect(() => {
-    if (indTab !== 'leads' || !profileContact?.id) return
-    setLeadsLoading(true)
-    api.get(`/leads?contact_id=${profileContact.id}&per_page=10`)
-      .then(r => setLeads(r.data?.data ?? []))
-      .catch(() => setLeads([]))
-      .finally(() => setLeadsLoading(false))
-  }, [indTab, profileContact?.id])
-
-  // Load staff list when picker opens
-  useEffect(() => {
-    if (!showStaffPicker || staffList.length > 0) return
-    api.get('/staff').then(r => setStaffList(r.data?.data ?? r.data ?? [])).catch(() => { })
-  }, [showStaffPicker]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Full-set sync: POST /contacts/:id/labels with { label_ids } replaces every label on the contact,
-  // so one call covers adding several at once and removing others. Response carries the fresh list.
-  const saveLabels = async (ids: number[]): Promise<void> => {
-    if (!profileContact?.id) return
-    setLabelSaving(true)
-    try {
-      if (ids.length === 0) {
-        // The sync endpoint rejects an empty label_ids array; clear by removing each individually.
-        await Promise.all(
-          localContactLabels.map(l =>
-            api.delete(`/contacts/${profileContact.id}/labels/${l.id}`).catch(() => {}),
-          ),
-        )
-        setLocalContactLabels([])
-      } else {
-        const r = await api.post(`/contacts/${profileContact.id}/labels`, { label_ids: ids })
-        const fresh: { id: number; name: string; color?: string }[] =
-          r.data?.contact?.labels ?? infoLabels.filter(l => ids.includes(l.id))
-        setLocalContactLabels(fresh)
-      }
-      setInfoLabelsOpen(false)
-    } catch { }
-    finally { setLabelSaving(false) }
-  }
-
-  // Open the multi-select editor with the contact's current labels pre-checked.
-  const openLabelEditor = () => {
-    setLabelDraft(new Set(localContactLabels.map(l => l.id)))
-    setInfoLabelsOpen(true)
-  }
-
-  const toggleLabelDraft = (id: number) => {
-    setLabelDraft(prev => {
-      const next = new Set(prev)
-      next.has(id) ? next.delete(id) : next.add(id)
-      return next
-    })
-  }
-
-  const removeInfoLabel = async (labelId: number) => {
-    setInfoLabelRemoving(labelId)
-    try {
-      await saveLabels(localContactLabels.filter(l => l.id !== labelId).map(l => l.id))
-    } finally { setInfoLabelRemoving(null) }
-  }
-
-  // Multi-select label picker: every CRM label as a checkbox, the contact's current labels
-  // pre-checked. Save writes the whole checked set in one request (add several / remove others).
-  const renderLabelEditor = () => {
-    if (!infoLabelsOpen) return null
-    return (
-      <div style={{ marginBottom: 8, border: '1px solid #e5e7eb', borderRadius: 8, padding: 4 }}>
-        <div style={{ maxHeight: 150, overflowY: 'auto' }}>
-          {infoLabels.length === 0 ? (
-            <p style={{ fontSize: 11, color: '#9ca3af', padding: '4px 8px' }}>No labels available</p>
-          ) : (
-            infoLabels.map(lbl => (
-              <label key={lbl.id}
-                style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 8px', cursor: 'pointer', borderRadius: 6, fontSize: 12, color: '#374151' }}
-                onMouseEnter={e => (e.currentTarget.style.background = '#f3f4f6')}
-                onMouseLeave={e => (e.currentTarget.style.background = 'none')}>
-                <input type="checkbox" checked={labelDraft.has(lbl.id)} onChange={() => toggleLabelDraft(lbl.id)} style={{ margin: 0 }} />
-                <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: lbl.color ?? '#6b7280', flexShrink: 0 }} />
-                {lbl.name}
-              </label>
-            ))
-          )}
-        </div>
-        <div style={{ display: 'flex', gap: 6, padding: '6px 4px 2px', borderTop: '1px solid #f3f4f6', marginTop: 4 }}>
-          <button onClick={() => saveLabels([...labelDraft])} disabled={labelSaving}
-            style={{ fontSize: 11, padding: '4px 12px', borderRadius: 6, border: 'none', background: '#2563eb', color: '#fff', cursor: 'pointer', opacity: labelSaving ? 0.6 : 1 }}>
-            {labelSaving ? 'Saving…' : 'Save'}
-          </button>
-          <button onClick={() => setInfoLabelsOpen(false)} disabled={labelSaving}
-            style={{ fontSize: 11, padding: '4px 12px', borderRadius: 6, border: '1px solid #d1d5db', background: '#fff', cursor: 'pointer' }}>
-            Cancel
-          </button>
-        </div>
-      </div>
-    )
-  }
-
-  const exportMembersCSV = () => {
-    const csv = [
-      'Name,Phone,WA ID,Is Admin,CRM Name',
-      ...members.map(p => {
-        const crmName = crmMap.get(p.number.slice(-10)) ?? ''
-        return `"${p.name ?? ''}","${p.number}","${p.id}","${(p.isAdmin || p.isSuperAdmin) ? 'Yes' : 'No'}","${crmName}"`
-      }),
-    ].join('\n')
-    const blob = new Blob([csv], { type: 'text/csv' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = 'group_members.csv'
-    a.click()
-    URL.revokeObjectURL(url)
-  }
-
-  const assignStaff = async (staffId: number) => {
-    if (!profileContact?.id) return
-    setAssigningStaff(true)
-    try {
-      await api.patch(`/contacts/${profileContact.id}`, { assigned_to: staffId })
-      setShowStaffPicker(false)
-    } catch { }
-    finally { setAssigningStaff(false) }
-  }
-
-  const createLead = async () => {
-    if (!profileContact?.id) return
-    setCreatingLead(true)
-    try {
-      await api.post('/leads', { contact_id: profileContact.id, source: 'whatsapp_chat', stage: 'new' })
-      const r = await api.get(`/leads?contact_id=${profileContact.id}&per_page=10`)
-      setLeads(r.data?.data ?? [])
-    } catch { }
-    finally { setCreatingLead(false) }
-  }
-
-  const hasContact = !!profileContact
-
-  return (
-    <div style={{ width: 290, flexShrink: 0, borderLeft: '1px solid var(--border, #e5e7eb)', background: '#fff', display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
-      {/* Header */}
-      <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border, #e5e7eb)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
-        <span style={{ fontWeight: 600, fontSize: 14 }}>{isGroup ? 'Group Info' : 'Contact Info'}</span>
-        <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#6b7280', padding: 4 }}>
-          <X size={16} />
-        </button>
-      </div>
-
-      {/* Avatar + name */}
-      <div style={{ padding: '18px 16px', textAlign: 'center', borderBottom: '1px solid var(--border, #e5e7eb)', flexShrink: 0 }}>
-        <div style={{ width: 64, height: 64, borderRadius: '50%', background: '#f3f4f6', margin: '0 auto 10px', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          {activePp
-            ? <img src={activePp} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-            : <Users size={28} color="#9ca3af" />
-          }
-        </div>
-        <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 3 }}>{activeChat.name || activeChat.id.split('@')[0]}</div>
-        {activePhoneText && <div style={{ fontSize: 12, color: '#6b7280' }}>{activePhoneText}</div>}
-        <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 3, fontFamily: 'monospace', wordBreak: 'break-all' }}>{activeChat.id}</div>
-        {isGroup ? (
-          <div style={{ marginTop: 8, display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px', background: '#dbeafe', borderRadius: 10, fontSize: 11, color: '#1d4ed8' }}>
-            <Users size={10} /> Group Chat
-          </div>
-        ) : hasContact ? (
-          <div style={{ marginTop: 8, display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px', background: '#dcfce7', borderRadius: 10, fontSize: 11, color: '#16a34a' }}>
-            <UserCheck size={10} /> In CRM
-          </div>
-        ) : null}
-      </div>
-
-      {/* Tabs */}
-      <div style={{ display: 'flex', borderBottom: '1px solid var(--border, #e5e7eb)', flexShrink: 0 }}>
-        {isGroup
-          ? ([
-            { id: 'members', label: '👥 Members' },
-            { id: 'info', label: '🏷️ Info' },
-          ] as { id: GroupTab; label: string }[]).map(tab => (
-            <button key={tab.id} onClick={() => setGrpTab(tab.id)}
-              style={{ flex: 1, padding: '8px 4px', fontSize: 11, fontWeight: grpTab === tab.id ? 600 : 400, background: 'none', border: 'none', borderBottom: `2px solid ${grpTab === tab.id ? '#2563eb' : 'transparent'}`, color: grpTab === tab.id ? '#2563eb' : '#6b7280', cursor: 'pointer' }}>
-              {tab.label}
-            </button>
-          ))
-          : ([
-            { id: 'info', label: '🏷️ Info' },
-            { id: 'labels', label: '🔖 Labels' },
-            { id: 'groups', label: '👥 Groups' },
-            { id: 'leads', label: '🎯 Leads' },
-          ] as { id: IndividualTab; label: string }[]).map(tab => (
-            <button key={tab.id} onClick={() => setIndTab(tab.id)}
-              style={{ flex: 1, padding: '8px 2px', fontSize: 10, fontWeight: indTab === tab.id ? 600 : 400, background: 'none', border: 'none', borderBottom: `2px solid ${indTab === tab.id ? '#2563eb' : 'transparent'}`, color: indTab === tab.id ? '#2563eb' : '#6b7280', cursor: 'pointer' }}>
-              {tab.label}
-            </button>
-          ))
-        }
-      </div>
-
-      {/* Tab content */}
-      <div style={{ flex: 1, overflowY: 'auto' }}>
-
-        {/* ── GROUP: MEMBERS TAB ── */}
-        {isGroup && grpTab === 'members' && (
-          <div style={{ padding: '12px 16px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-              <div style={{ fontSize: 10, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                Members {members.length > 0 ? `(${members.length})` : ''}
-              </div>
-              {members.length > 0 && (
-                <button onClick={exportMembersCSV}
-                  style={{ background: 'none', border: '1px solid #d1d5db', borderRadius: 6, padding: '3px 8px', fontSize: 10, cursor: 'pointer', color: '#374151', display: 'flex', alignItems: 'center', gap: 3 }}>
-                  📥 Export CSV
-                </button>
-              )}
-            </div>
-            {members.length > 0 && (
-              <div style={{ position: 'relative', marginBottom: 10 }}>
-                <Search size={13} style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', color: '#9ca3af' }} />
-                <input
-                  value={memberSearch}
-                  onChange={e => setMemberSearch(e.target.value)}
-                  placeholder="Search members by name or number"
-                  style={{ width: '100%', fontSize: 12, padding: '6px 8px 6px 26px', borderRadius: 6, border: '1px solid #d1d5db', boxSizing: 'border-box' }}
-                />
-              </div>
-            )}
-            {(() => {
-              const q = memberSearch.trim().toLowerCase()
-              const qDigits = q.replace(/\D/g, '')
-              const filteredMembers = q
-                ? members.filter(p => {
-                    const crmName = crmMap.get(p.number.slice(-10))
-                    return (
-                      (p.name && p.name.toLowerCase().includes(q)) ||
-                      (crmName && crmName.toLowerCase().includes(q)) ||
-                      (qDigits && p.number.replace(/\D/g, '').includes(qDigits))
-                    )
-                  })
-                : members
-              return membersLoading ? (
-              <div style={{ display: 'flex', justifyContent: 'center', padding: 24 }}>
-                <Loader2 size={20} className="animate-spin" style={{ color: '#6b7280' }} />
-              </div>
-            ) : members.length === 0 ? (
-              <p style={{ fontSize: 12, color: '#9ca3af', textAlign: 'center', padding: '16px 0' }}>
-                {sessionId ? 'No members found' : 'No session selected'}
-              </p>
-            ) : filteredMembers.length === 0 ? (
-              <p style={{ fontSize: 12, color: '#9ca3af', textAlign: 'center', padding: '16px 0' }}>
-                No members match “{memberSearch}”
-              </p>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                {filteredMembers.map(p => {
-                  const crmName = crmMap.get(p.number.slice(-10))
-                  const primaryName =  p.name ?? crmName
-                  
-                  return (
-                    <div
-                      key={p.id}
-                      onClick={() => onOpenChat?.({ id: p.id, number: p.number, name: p.name })}
-                      role="button"
-                      tabIndex={0}
-                      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpenChat?.({ id: p.id, number: p.number, name: p.name }) } }}
-                      title="Open chat with this member"
-                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 10px', borderRadius: 8, background: '#f9fafb', cursor: onOpenChat ? 'pointer' : 'default' }}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <div style={{ width: 28, height: 28, borderRadius: '50%', background: (p.isAdmin || p.isSuperAdmin) ? '#dbeafe' : '#f3f4f6', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: p.isAdmin ? '#1d4ed8' : '#6b7280', flexShrink: 0 }}>
-                          {p.number.charAt(0)}
-                        </div>
-                        <div>
-                          <div style={{ fontSize: 13, color: '#374151' }}>
-                            {primaryName ?? p.number}
-                            {crmName && <span style={{ fontSize: 9, color: '#16a34a', marginLeft: 4, fontWeight: 600 }}>• saved</span>}
-                          </div>
-                          {primaryName && <div style={{ fontSize: 10, color: '#9ca3af' }}>{p.number}</div>}
-                          {crmName && p.name && p.name !== crmName && (
-                            <div style={{ fontSize: 10, color: '#6b7280' }}>WA name: {p.name}</div>
-                          )}
-                        </div>
-                      </div>
-                      {(p.isAdmin || p.isSuperAdmin) && (
-                        <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 10, background: p.isSuperAdmin ? '#fef3c7' : '#dbeafe', color: p.isSuperAdmin ? '#92400e' : '#1d4ed8', fontWeight: 600, flexShrink: 0 }}>
-                          {p.isSuperAdmin ? 'Owner' : 'Admin'}
-                        </span>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-            )
-            })()}
-          </div>
-        )}
-
-        {/* ── GROUP: INFO TAB ── */}
-        {isGroup && grpTab === 'info' && (
-          <div style={{ padding: '12px 16px' }}>
-            <div style={{ fontSize: 10, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 10 }}>
-              Group Details
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, fontSize: 12 }}>
-              <div style={{ color: '#374151' }}>
-                <span style={{ color: '#9ca3af' }}>Group ID</span><br />
-                <code style={{ fontSize: 10, background: '#f3f4f6', padding: '2px 6px', borderRadius: 4, wordBreak: 'break-all' }}>{activeChat.id}</code>
-              </div>
-              <div style={{ color: '#374151' }}>
-                <span style={{ color: '#9ca3af' }}>Members:</span> {membersLoading ? '…' : members.length}
-              </div>
-              {members.filter(m => m.isAdmin || m.isSuperAdmin).length > 0 && (
-                <div style={{ color: '#374151' }}>
-                  <span style={{ color: '#9ca3af' }}>Admins:</span>{' '}
-                  {members.filter(m => m.isAdmin || m.isSuperAdmin).map(m => m.number).join(', ')}
-                </div>
-              )}
-
-              {/* Description — admin-only edit; a non-admin PUT is refused (403) with a toast. */}
-              <div style={{ color: '#374151' }}>
-                <span style={{ color: '#9ca3af' }}>Description</span>
-                {descEditing ? (
-                  <div style={{ marginTop: 4 }}>
-                    <textarea
-                      value={descDraft}
-                      onChange={e => setDescDraft(e.target.value)}
-                      rows={3}
-                      style={{ width: '100%', fontSize: 12, padding: 6, borderRadius: 6, border: '1px solid #d1d5db', resize: 'vertical', boxSizing: 'border-box' }}
-                    />
-                    <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
-                      <button
-                        onClick={saveDescription}
-                        disabled={descSaving}
-                        style={{ fontSize: 11, padding: '3px 10px', borderRadius: 6, border: 'none', background: '#2563eb', color: '#fff', cursor: 'pointer' }}
-                      >
-                        {descSaving ? 'Saving…' : 'Save'}
-                      </button>
-                      <button
-                        onClick={() => setDescEditing(false)}
-                        disabled={descSaving}
-                        style={{ fontSize: 11, padding: '3px 10px', borderRadius: 6, border: '1px solid #d1d5db', background: '#fff', cursor: 'pointer' }}
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <div style={{ marginTop: 4, display: 'flex', alignItems: 'flex-start', gap: 6 }}>
-                    <span style={{ whiteSpace: 'pre-wrap', flex: 1, color: groupDescription ? '#374151' : '#9ca3af' }}>
-                      {groupDescription || 'No description'}
-                    </span>
-                    <button
-                      onClick={() => { setDescDraft(groupDescription); setDescEditing(true) }}
-                      style={{ fontSize: 11, padding: '2px 8px', borderRadius: 6, border: '1px solid #d1d5db', background: '#fff', cursor: 'pointer', flexShrink: 0 }}
-                    >
-                      Edit
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              {/* Invite link — admin-only; a non-admin GET is refused, so the row is hidden then. */}
-             {/* <div style={{ color: '#374151' }}>
-                <span style={{ color: '#9ca3af' }}>Invite link</span>
-                <div style={{ marginTop: 4 }}>
-                  {inviteLoading && !invite ? (
-                    <div style={{ color: '#9ca3af' }}>Loading…</div>
-                  ) : invite ? (
-                    <code style={{ fontSize: 10, background: '#f3f4f6', padding: '2px 6px', borderRadius: 4, wordBreak: 'break-all', display: 'block' }}>
-                      {invite.link}
-                    </code>
-                  ) : (
-                    <div style={{ color: '#9ca3af' }}>Could not load the invite link.</div>
-                  )}
-                  <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
-                    <button
-                      onClick={copyInviteLink}
-                      disabled={!invite}
-                      style={{ fontSize: 11, padding: '3px 10px', borderRadius: 6, border: '1px solid #d1d5db', background: '#fff', cursor: invite ? 'pointer' : 'not-allowed', opacity: invite ? 1 : 0.5 }}
-                    >
-                      Copy
-                    </button>
-                    <button
-                      onClick={revokeInviteLink}
-                      disabled={inviteLoading}
-                      style={{ fontSize: 11, padding: '3px 10px', borderRadius: 6, border: '1px solid #fecaca', background: '#fff', color: '#dc2626', cursor: 'pointer' }}
-                    >
-                      {inviteLoading ? 'Revoking…' : 'Revoke & regenerate'}
-                    </button>
-                  </div>
-                  <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 4 }}>
-                    ℹ️ Reading or revoking the invite link needs group-admin rights on WhatsApp.
-                  </div>
-                </div>
-              </div> */}
-
-            </div>
-          </div>
-        )}
-
-        {/* ── INDIVIDUAL: INFO TAB ── */}
-        {!isGroup && indTab === 'info' && (
-          profileCardLoading ? (
-            <div style={{ display: 'flex', justifyContent: 'center', padding: 24 }}>
-              <Loader2 size={20} className="animate-spin" style={{ color: '#6b7280' }} />
-            </div>
-          ) : (
-            <>
-              {/* Assign Staff */}
-              {hasContact && (
-                <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border, #e5e7eb)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                    <div style={{ fontSize: 10, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                      Assigned Staff
-                    </div>
-                    <button onClick={() => setShowStaffPicker(v => !v)}
-                      style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: '#2563eb' }}>
-                      {showStaffPicker ? 'Cancel' : '+ Assign'}
-                    </button>
-                  </div>
-                  {!showStaffPicker && (profileContact.assigned_to ? (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <div style={{ width: 28, height: 28, borderRadius: '50%', background: '#ede9fe', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: '#7c3aed' }}>
-                        {(profileContact.assigned_to?.name ?? 'S').charAt(0).toUpperCase()}
-                      </div>
-                      <div>
-                        <div style={{ fontSize: 13, fontWeight: 500, color: '#374151' }}>{profileContact.assigned_to?.name ?? 'Staff'}</div>
-                        <div style={{ fontSize: 11, color: '#9ca3af' }}>{profileContact.assigned_to?.email ?? ''}</div>
-                      </div>
-                    </div>
-                  ) : (
-                    <p style={{ fontSize: 12, color: '#9ca3af' }}>Not assigned to any staff</p>
-                  ))}
-                  {showStaffPicker && (
-                    <div style={{ maxHeight: 150, overflowY: 'auto', border: '1px solid #e5e7eb', borderRadius: 8, padding: 4 }}>
-                      {staffList.length === 0 ? (
-                        <p style={{ fontSize: 11, color: '#9ca3af', padding: '6px 8px' }}>Loading staff…</p>
-                      ) : staffList.map(s => (
-                        <button key={s.id} onClick={() => assignStaff(s.id)} disabled={assigningStaff}
-                          style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '7px 8px', background: 'none', border: 'none', cursor: 'pointer', borderRadius: 6, textAlign: 'left' }}
-                          onMouseEnter={e => (e.currentTarget.style.background = '#f3f4f6')}
-                          onMouseLeave={e => (e.currentTarget.style.background = 'none')}>
-                          <div style={{ width: 24, height: 24, borderRadius: '50%', background: '#ede9fe', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: '#7c3aed', flexShrink: 0 }}>
-                            {s.name.charAt(0).toUpperCase()}
-                          </div>
-                          <div>
-                            <div style={{ fontSize: 12, fontWeight: 500, color: '#374151' }}>{s.name}</div>
-                            <div style={{ fontSize: 10, color: '#9ca3af' }}>{s.email}</div>
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Contact details */}
-              {hasContact && (
-                <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border, #e5e7eb)' }}>
-                  <div style={{ fontSize: 10, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>CRM Details</div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 5, fontSize: 12 }}>
-                    {profileContact.email && <div style={{ color: '#374151' }}>📧 {profileContact.email}</div>}
-                    {profileContact.company_name && <div style={{ color: '#374151' }}>🏢 {profileContact.company_name}</div>}
-                    {profileContact.lead_stage && <div style={{ color: '#374151' }}>🎯 Stage: <b>{profileContact.lead_stage}</b></div>}
-                    {profileContact.lead_score !== undefined && profileContact.lead_score !== null && (
-                      <div style={{ color: '#374151' }}>
-                        📊 Lead Score: <b style={{ color: profileContact.lead_score >= 76 ? '#dc2626' : profileContact.lead_score >= 51 ? '#d97706' : '#6b7280' }}>
-                          {profileContact.lead_score}/100
-                        </b>
-                      </div>
-                    )}
-                    {profileContact.conversation_summary && (
-                      <div style={{ marginTop: 6, padding: '6px 8px', background: '#f8fafc', borderRadius: 6, fontSize: 11, color: '#475569', lineHeight: 1.5 }}>
-                        💬 {profileContact.conversation_summary}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* Labels management in Info tab */}
-              {hasContact && (
-                <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border, #e5e7eb)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                    <div style={{ fontSize: 10, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                      Labels
-                    </div>
-                    <button onClick={() => (infoLabelsOpen ? setInfoLabelsOpen(false) : openLabelEditor())}
-                      style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: '#2563eb', display: 'flex', alignItems: 'center', gap: 3 }}>
-                      <Tag size={10} /> {infoLabelsOpen ? 'Cancel' : localContactLabels.length > 0 ? 'Edit labels' : '+ Add to labels'}
-                    </button>
-                  </div>
-                  {renderLabelEditor()}
-                  {localContactLabels.length > 0 ? (
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
-                      {localContactLabels.map(lbl => (
-                        <span key={lbl.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, padding: '2px 6px 2px 8px', borderRadius: 10, background: (lbl.color ?? '#6b7280') + '33', color: lbl.color ?? '#374151', fontWeight: 500 }}>
-                          {lbl.name}
-                          <button onClick={() => removeInfoLabel(lbl.id)} disabled={infoLabelRemoving === lbl.id}
-                            style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, lineHeight: 1, color: 'inherit', opacity: infoLabelRemoving === lbl.id ? 0.4 : 0.6, fontSize: 12 }}>
-                            ×
-                          </button>
-                        </span>
-                      ))}
-                    </div>
-                  ) : (
-                    <p style={{ fontSize: 12, color: '#9ca3af' }}>No labels assigned</p>
-                  )}
-                </div>
-              )}
-
-              {!hasContact && (
-                <div style={{ padding: '16px', textAlign: 'center' }}>
-                  <div style={{ fontSize: 13, color: '#9ca3af', marginBottom: 8 }}>Contact not in CRM yet</div>
-                  <div style={{ fontSize: 12, color: '#d1d5db' }}>Messages will create a contact automatically when the AI Agent responds</div>
-                </div>
-              )}
-            </>
-          )
-        )}
-
-        {/* ── INDIVIDUAL: LABELS TAB ── */}
-        {!isGroup && indTab === 'labels' && (
-          <div style={{ padding: '12px 16px' }}>
-            {/* System / CRM labels */}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-              <div style={{ fontSize: 10, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em' }}>CRM Labels</div>
-              {hasContact && (
-                <button onClick={() => (infoLabelsOpen ? setInfoLabelsOpen(false) : openLabelEditor())}
-                  style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: '#2563eb', display: 'flex', alignItems: 'center', gap: 3 }}>
-                  <Tag size={10} /> {infoLabelsOpen ? 'Cancel' : localContactLabels.length > 0 ? 'Edit labels' : '+ Add to labels'}
-                </button>
-              )}
-            </div>
-
-            {renderLabelEditor()}
-
-            {localContactLabels.length > 0 ? (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 12 }}>
-                {localContactLabels.map(lbl => (
-                  <span key={lbl.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, padding: '2px 6px 2px 8px', borderRadius: 10, background: (lbl.color ?? '#6b7280') + '22', color: lbl.color ?? '#374151', fontWeight: 500 }}>
-                    🏷️ {lbl.name}
-                    <button onClick={() => removeInfoLabel(lbl.id)} disabled={infoLabelRemoving === lbl.id}
-                      style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, lineHeight: 1, color: 'inherit', opacity: infoLabelRemoving === lbl.id ? 0.4 : 0.6, fontSize: 12 }}>
-                      ×
-                    </button>
-                  </span>
-                ))}
-              </div>
-            ) : (
-              <p style={{ fontSize: 12, color: '#9ca3af', marginBottom: 12 }}>{hasContact ? 'No labels assigned' : 'Contact not in CRM'}</p>
-            )}
-
-            {/* WhatsApp native labels */}
-            {profileContact?.wa_labels && profileContact.wa_labels.length > 0 && (
-              <>
-                <div style={{ fontSize: 10, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 6, marginTop: 4, paddingTop: 10, borderTop: '1px solid #f3f4f6' }}>
-                  WhatsApp Labels
-                </div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
-                  {profileContact.wa_labels.map((lbl: string, i: number) => (
-                    <span key={i} style={{ fontSize: 11, padding: '2px 8px', borderRadius: 10, background: '#fef3c7', color: '#92400e', fontWeight: 500 }}>
-                      📱 {lbl}
-                    </span>
-                  ))}
-                </div>
-              </>
-            )}
-          </div>
-        )}
-
-        {/* ── INDIVIDUAL: GROUPS TAB ── */}
-        {!isGroup && indTab === 'groups' && (
-          <div style={{ padding: '12px 16px' }}>
-            <div style={{ fontSize: 10, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 5 }}>
-              <Users size={11} /> Shared WhatsApp Groups
-            </div>
-            {profileGroupsLoading ? (
-              <div style={{ display: 'flex', justifyContent: 'center', padding: 20 }}>
-                <Loader2 size={18} className="animate-spin" style={{ color: '#6b7280' }} />
-              </div>
-            ) : profileGroups.length > 0 ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {profileGroups.map(g => (
-                  <div key={g.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8 }}>
-                    <div style={{ width: 28, height: 28, borderRadius: '50%', background: '#dcfce7', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, flexShrink: 0 }}>
-                      👥
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 12, fontWeight: 500, color: '#166534', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{g.name}</div>
-                      <div style={{ fontSize: 10, color: '#6b7280', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{g.id}</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div style={{ textAlign: 'center', padding: '16px 0', color: '#9ca3af', fontSize: 12 }}>
-                <Users size={24} style={{ margin: '0 auto 8px', opacity: 0.3 }} />
-                Not in any shared groups
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* ── INDIVIDUAL: LEADS TAB ── */}
-        {!isGroup && indTab === 'leads' && (
-          <div style={{ padding: '12px 16px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-              <div style={{ fontSize: 10, fontWeight: 600, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                Lead History
-              </div>
-              {hasContact && (
-                <button onClick={createLead} disabled={creatingLead}
-                  style={{ background: '#2563eb', color: '#fff', border: 'none', borderRadius: 6, padding: '4px 10px', fontSize: 11, cursor: 'pointer', opacity: creatingLead ? 0.7 : 1 }}>
-                  {creatingLead ? '…' : '+ Lead'}
-                </button>
-              )}
-            </div>
-            {!hasContact ? (
-              <p style={{ fontSize: 12, color: '#9ca3af' }}>Contact not in CRM — no lead history available.</p>
-            ) : leadsLoading ? (
-              <div style={{ display: 'flex', justifyContent: 'center', padding: 20 }}>
-                <Loader2 size={18} className="animate-spin" style={{ color: '#6b7280' }} />
-              </div>
-            ) : leads.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '16px 0', color: '#9ca3af', fontSize: 12 }}>
-                <Activity size={24} style={{ margin: '0 auto 8px', opacity: 0.3 }} />
-                No leads yet.
-                <br /><span style={{ fontSize: 11 }}>Click "+ Lead" to create one.</span>
-              </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {leads.map((lead: any) => (
-                  <div key={lead.id} style={{ padding: '10px 12px', border: '1px solid var(--border, #e5e7eb)', borderRadius: 8, fontSize: 12 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                      <span style={{ fontWeight: 600, color: '#374151' }}>{lead.title ?? `Lead #${lead.id}`}</span>
-                      <span style={{
-                        padding: '1px 6px', borderRadius: 8, fontSize: 10,
-                        background: lead.stage === 'won' ? '#dcfce7' : lead.stage === 'lost' ? '#fee2e2' : '#e0f2fe',
-                        color: lead.stage === 'won' ? '#16a34a' : lead.stage === 'lost' ? '#dc2626' : '#0369a1'
-                      }}>
-                        {lead.stage ?? 'new'}
-                      </span>
-                    </div>
-                    {lead.category?.name && <div style={{ color: '#6b7280' }}>🏷️ {lead.category.name}</div>}
-                    {lead.value && <div style={{ color: '#16a34a', fontWeight: 600 }}>₹{Number(lead.value).toLocaleString()}</div>}
-                    <div style={{ color: '#9ca3af', marginTop: 3 }}>
-                      {new Date(lead.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-      </div>
-    </div>
-  )
-}
-
 export function Chats() {
   const { t } = useTranslation();
   useDocumentTitle(t('nav.chats'));
@@ -956,9 +117,9 @@ export function Chats() {
   const [selectedSessionId, setSelectedSessionId] = useState<string>('');
   const [loadingSessions, setLoadingSessions] = useState<boolean>(true);
 
-  // Chats list
+  // Chats list. `chats` is the server snapshot (from the React Query cache below) PLUS the live
+  // local edits the socket feed applies — unread badges, last-message previews, reorder-on-incoming.
   const [chats, setChats] = useState<Chat[]>([]);
-  const [loadingChats, setLoadingChats] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState<string>('');
 
   // Selected chat & message history
@@ -1169,28 +330,54 @@ export function Chats() {
     void loadSessions();
   }, [t, showErrorToast]);
 
-  // 2. Fetch chats when active session changes
-  const loadChats = useCallback(
-    async (sessionId: string) => {
-      if (!sessionId) return;
-      try {
-        setLoadingChats(true);
-        const data = await sessionApi.getChats(sessionId);
-        const sorted = [...data].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-        setChats(sorted);
-      } catch (err) {
-        showErrorToast(t('chats.errors.loadChats'), err instanceof Error ? err.message : undefined);
-        setChats([]);
-      } finally {
-        setLoadingChats(false);
-      }
-    },
-    [t, showErrorToast],
-  );
+  // 2. Chat list for the active session — React Query cached, NOT a raw fetch per dropdown flip.
+  //
+  // `sessionApi.getChats` is a heavy engine call (whatsapp-web.js serializes every chat across the
+  // Chromium CDP bridge). Re-firing it on every session switch — and on every window refocus, the
+  // React Query default — is what let concurrent getChats calls across sessions starve other
+  // sessions' Chromium pages until the liveness watchdog treated them as dead and disconnected
+  // them. The live socket feed already keeps the list current (new message, ack, edit, and the
+  // sidebar-refetch path below), so refresh only on an explicit invalidate.
+  const chatsQuery = useQuery({
+    queryKey: queryKeys.sessionChats(selectedSessionId),
+    queryFn: () => sessionApi.getChats(selectedSessionId),
+    enabled: Boolean(selectedSessionId),
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+  });
+  const loadingChats = chatsQuery.isLoading;
+
+  // Re-seed the editable `chats` state from the cache. Keyed on `selectedSessionId` too, not just
+  // the query data: on an A→B→A switch the cache hands back the SAME array reference for A, so a
+  // dep on `chatsQuery.data` alone would not re-run and the list would stay empty. An explicit
+  // refetch (refetchChats below) intentionally resets the live local edits to server truth.
+  useEffect(() => {
+    if (chatsQuery.data) {
+      setChats([...chatsQuery.data].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0)));
+    } else {
+      setChats([]);
+    }
+  }, [selectedSessionId, chatsQuery.data]);
+
+  useEffect(() => {
+    if (chatsQuery.isError) {
+      showErrorToast(
+        t('chats.errors.loadChats'),
+        chatsQuery.error instanceof Error ? chatsQuery.error.message : undefined,
+      );
+    }
+  }, [chatsQuery.isError, chatsQuery.error, showErrorToast, t]);
+
+  // Force a fresh chat-list fetch for the active session. Used when a message or edit arrives for a
+  // chat the sidebar does not have a row for yet, so a summary refresh is the only way to show it.
+  const refetchChats = useCallback(() => {
+    if (!selectedSessionId) return;
+    void queryClient.invalidateQueries({ queryKey: queryKeys.sessionChats(selectedSessionId) });
+  }, [queryClient, selectedSessionId]);
 
   useEffect(() => {
     if (selectedSessionId) {
-      void loadChats(selectedSessionId);
       setActiveChat(null);
       setActiveChannel(null);
       setActiveStatusContactId(null);
@@ -1202,7 +389,7 @@ export function Chats() {
       setPreviewUrl(null);
       lastRoomIdRef.current = null;
     }
-  }, [selectedSessionId, loadChats]);
+  }, [selectedSessionId]);
 
   // Coalesce mark-as-read RPCs per chat: every incoming message in the visible chat raises a
   // read event, and a per-event POST sprays the gateway into 429s. One trailing call per chat
@@ -1286,10 +473,10 @@ export function Chats() {
         return result.chats;
       });
       if (needsSidebarRefetch) {
-        void loadChats(selectedSessionId);
+        refetchChats();
       }
     },
-    [selectedSessionId, activeChat, loadChats, markChatRead, appendMessage, onMessageAppended, t],
+    [selectedSessionId, activeChat, refetchChats, markChatRead, appendMessage, onMessageAppended, t],
   );
 
   const handleIncomingMessageAck = useCallback(
@@ -1402,10 +589,10 @@ export function Chats() {
         // The chat may never have been opened, so there is no message cache from which to prove
         // whether this was its latest row. Refresh summaries instead of guessing and overwriting the
         // sidebar with the body of an older edited message.
-        void loadChats(selectedSessionId);
+        refetchChats();
       }
     },
-    [selectedSessionId, queryClient, loadChats],
+    [selectedSessionId, queryClient, refetchChats],
   );
 
   // A contact's new story lands here instead of in the message pipeline; invalidate the statuses
@@ -1570,7 +757,7 @@ export function Chats() {
     (hit: SearchHit) => {
       pendingHitRef.current = { chatId: hit.chatId, waMessageId: hit.waMessageId };
       if (hit.sessionId !== selectedSessionId) {
-        // Switching session triggers loadChats; the effect below selects the chat once the list lands.
+        // Switching session reloads the chat list (chatsQuery); the effect below selects the chat once it lands.
         setSelectedSessionId(hit.sessionId);
       } else {
         const chat = chats.find(c => c.id === hit.chatId);
@@ -1690,7 +877,7 @@ export function Chats() {
   }, [activeStatusGroup?.contact.id, activeStatusGroup?.items]);
 
   // Profile card, part 1 — the cheap load: just the CRM contact record (one request). Runs on
-  // every profile-card open. Group chats fetch their own members inside ProfileCardPanel.
+  // every profile-card open. Group chats fetch their own members inside GroupInfoPanel.
   useEffect(() => {
     if (!showProfileCard || !activeChat || activeChat.isGroup) {
       setProfileContact(null); setProfileGroups([]); setGroupsScanChatId(null);
@@ -1698,11 +885,24 @@ export function Chats() {
     }
     // New chat: drop the previous joined-groups result and disarm the scan until the tab is opened again.
     setProfileGroups([]); setGroupsScanChatId(null);
+
+    // @lid ids are WhatsApp's privacy-preserving linked id, NOT a phone number (e.g.
+    // "140724855111835@lid") — pulling digits from it would search the CRM on garbage. Use the
+    // already-resolved real number (activePhoneText, from useResolvedPhone above) instead, and wait
+    // for that resolution before searching. @c.us ids keep using their own digits, unaffected.
+    const isLid = activeChat.id.includes('@lid');
+    const last10 = (isLid ? activePhoneText ?? '' : activeChat.id.split('@')[0]).replace(/\D/g, '').slice(-10);
+    if (!last10) {
+      // Still waiting on the @lid → real-number resolution; this effect re-runs once activePhoneText lands.
+      setProfileContact(null);
+      setProfileCardLoading(isLid);
+      return;
+    }
+
     setProfileCardLoading(true);
-    // Use last 10 digits for CRM search to handle country-code variations.
-    const last10 = activeChat.id.split('@')[0].replace(/\D/g, '').slice(-10);
     let cancelled = false;
-    api.get(`/contacts?search=${encodeURIComponent(last10)}&per_page=1`)
+    const url = `/contacts?search=${encodeURIComponent(last10)}&per_page=1`;
+    api.get(url)
       .then(res => {
         if (cancelled) return;
         const contacts = res?.data?.data ?? res?.data ?? [];
@@ -1712,10 +912,10 @@ export function Chats() {
       .finally(() => { if (!cancelled) setProfileCardLoading(false); });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showProfileCard, activeChat?.id]);
+  }, [showProfileCard, activeChat?.id, activePhoneText]);
 
   // Profile card, part 2 — the groups this contact and the session BOTH belong to. Fires only once
-  // the user opens the "Groups" tab (ProfileCardPanel sets groupsScanChatId).
+  // the user opens the "Groups" tab (ContactInfoPanel sets groupsScanChatId).
   //
   // Primary path is ONE request: GET /groups/for-contact matches participants server-side. If that
   // route isn't on the gateway yet (404), fall back to the client-side scan — getGroupInfoCached
@@ -1729,7 +929,9 @@ export function Chats() {
     setProfileGroupsLoading(true);
 
     const keys = new Set<string>();
-    const chatLast10 = chatId.split('@')[0].replace(/\D/g, '').slice(-10);
+    // Same @lid caveat as the profileContact search above: a @lid id's digits aren't a phone number.
+    const chatDigitsSource = chatId.includes('@lid') ? activePhoneText ?? '' : chatId.split('@')[0];
+    const chatLast10 = chatDigitsSource.replace(/\D/g, '').slice(-10);
     if (chatLast10.length >= 7) keys.add(chatLast10);
     const crmLast10 = profileContact?.phone ? String(profileContact.phone).replace(/\D/g, '').slice(-10) : '';
     if (crmLast10.length >= 7) keys.add(crmLast10);
@@ -1762,7 +964,7 @@ export function Chats() {
       .finally(() => { if (!cancelled) setProfileGroupsLoading(false); });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showProfileCard, activeChat?.id, selectedSessionId, groupsScanChatId, profileContact?.phone]);
+  }, [showProfileCard, activeChat?.id, selectedSessionId, groupsScanChatId, profileContact?.phone, activePhoneText]);
 
   // Image media items for the lightbox, in render order. `getMediaSrc` reconstructs a usable src
   // from either a base64 payload or a URL — the ChatMessageView shape stores both in `data`.
@@ -1856,100 +1058,45 @@ export function Chats() {
           {/* RIGHT VIEW: active chat room */}
           <main className="chats-room">
             {activeChat ? (
-              <div className="room-container" style={showProfileCard ? { flexDirection: 'row' } : undefined}>
-                {/* Main chat column */}
-                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'hidden' }}>
-                  {/* Room header */}
-                  <header className="room-header">
-                    <button className="room-back" onClick={() => setActiveChat(null)} aria-label={t('common.back')}>
-                      <ArrowLeft size={20} />
-                    </button>
-                    {/* Clickable avatar + contact info opens the profile card panel */}
-                    <div
-                      className="room-avatar"
-                      style={{ cursor: 'pointer' }}
-                      onClick={() => setShowProfileCard(v => !v)}
-                      title="View contact profile"
-                    >
-                      {activePp.data ? (
-                        <img
-                          src={activePp.data}
-                          alt=""
-                          onError={() => activePp.refetch()}
-                        />
-                      ) : (
-                        <KindIcon kind={activeChat.kind} />
-                      )}
-                    </div>
-                    <div
-                      className="room-contact-info"
-                      style={{ cursor: 'pointer', flex: 1 }}
-                      onClick={() => setShowProfileCard(v => !v)}
-                      title="View contact profile"
-                    >
-                      <h3>{activeChat.name || activeChat.id.split('@')[0]}</h3>
-                      <span className="room-contact-phone">
-                        {activePhoneText ??
-                          (activeChat.isGroup ? t('chats.groupSubtitle') : t('chats.privateContactSubtitle'))}
-                      </span>
-                      <span className="room-contact-jid" title={activeChat.id}>
-                        {activeChat.id}
-                      </span>
-                    </div>
-                  </header>
-
-                  {/* Messages body */}
-                  <ChatThread
-                    sessionId={selectedSessionId}
-                    activeChat={activeChat}
-                    messages={messages}
-                    loadingMessages={loadingMessages}
-                    messagesError={messagesError}
-                    messagesContainerRef={messagesContainerRef}
-                    onMediaLoad={onMediaLoad}
-                    onOpenImage={messageId => {
-                      const idx = imageMedia.findIndex(x => x.id === messageId);
-                      if (idx >= 0) setLightboxIndex(idx);
-                    }}
-                    onReply={setReplyingTo}
-                    onReact={handleReactMessage}
-                    onDelete={handleDeleteMessage}
-                  />
-
-                  {/* Composer */}
-                  <ChatComposer
-                    selectedSessionId={selectedSessionId}
-                    activeChat={activeChat}
-                    replyingTo={replyingTo}
-                    setReplyingTo={setReplyingTo}
-                    onMessageAppended={onMessageAppended}
-                    setChats={setChats}
-                    messageInput={messageInput}
-                    setMessageInput={setMessageInput}
-                    attachment={attachment}
-                    setAttachment={setAttachment}
-                    previewUrl={previewUrl}
-                    setPreviewUrl={setPreviewUrl}
-                  />
-                </div>
-
-                {/* Profile card panel — opens when avatar/name is clicked */}
-                {showProfileCard && (
-                  <ProfileCardPanel
-                    activeChat={activeChat}
-                    activePp={activePp.data ?? undefined}
-                    activePhoneText={activePhoneText}
-                    profileContact={profileContact}
-                    profileGroups={profileGroups}
-                    profileCardLoading={profileCardLoading}
-                    profileGroupsLoading={profileGroupsLoading}
-                    sessionId={selectedSessionId}
-                    onClose={() => setShowProfileCard(false)}
-                    onOpenChat={openChatWithParticipant}
-                    onRequestGroupsScan={() => setGroupsScanChatId(activeChat.id)}
-                  />
-                )}
-              </div>
+              <ChatRoom
+                sessionId={selectedSessionId}
+                activeChat={activeChat}
+                onBack={() => setActiveChat(null)}
+                activePp={activePp.data ?? undefined}
+                onAvatarError={() => activePp.refetch()}
+                activePhoneText={activePhoneText}
+                messages={messages}
+                loadingMessages={loadingMessages}
+                messagesError={messagesError}
+                messagesContainerRef={messagesContainerRef}
+                onMediaLoad={onMediaLoad}
+                onOpenImage={messageId => {
+                  const idx = imageMedia.findIndex(x => x.id === messageId);
+                  if (idx >= 0) setLightboxIndex(idx);
+                }}
+                replyingTo={replyingTo}
+                setReplyingTo={setReplyingTo}
+                onReact={handleReactMessage}
+                onDelete={handleDeleteMessage}
+                setChats={setChats}
+                onMessageAppended={onMessageAppended}
+                messageInput={messageInput}
+                setMessageInput={setMessageInput}
+                attachment={attachment}
+                setAttachment={setAttachment}
+                previewUrl={previewUrl}
+                setPreviewUrl={setPreviewUrl}
+                showProfileCard={showProfileCard}
+                onToggleProfileCard={() => setShowProfileCard(v => !v)}
+                onCloseProfileCard={() => setShowProfileCard(false)}
+                profileContact={profileContact}
+                profileGroups={profileGroups}
+                profileCardLoading={profileCardLoading}
+                profileGroupsLoading={profileGroupsLoading}
+                onRequestGroupsScan={() => setGroupsScanChatId(activeChat.id)}
+                onOpenChatWithParticipant={openChatWithParticipant}
+                onContactUpdated={setProfileContact}
+              />
             ) : activeChannel ? (
               // Read-only channel pane: no send footer, reactions, delete, reply, or markChatRead —
               // subscribed channels are a broadcast feed, not a two-way conversation.

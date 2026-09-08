@@ -68,6 +68,7 @@ class SuperAdminController extends Controller
             'name'    => ['sometimes', 'string', 'max:100'],
             'plan_id' => ['sometimes', 'integer', 'exists:plans,id'],
             'email'   => ['sometimes', 'email'],
+            'max_devices_per_user' => ['sometimes', 'integer', 'min:1', 'max:20'],
         ]);
         $c = $this->superAdminService->updateCompany($company, $request->all());
         return response()->json(['message' => 'Company updated.', 'company' => $c]);
@@ -152,30 +153,92 @@ class SuperAdminController extends Controller
     }
 
 
+    /** The full permission catalogue from the DB, grouped. */
+    private function permissionCatalogue(): array
+    {
+        return \App\Models\Permission::orderBy('sort_order')->orderBy('key')->get()
+            ->groupBy('group')
+            ->map(fn ($g) => $g->map(fn ($p) => [
+                'key'   => $p->key,
+                'label' => $p->label,
+                'type'  => $p->type,
+            ])->values())
+            ->toArray();
+    }
+
+    /** Legacy global editor — every role across every company. */
     public function permissions(): \Illuminate\Http\JsonResponse
     {
-        $roles = \App\Models\Role::all()->map(fn($r) => [
+        $roles = \App\Models\Role::with('company:id,name')->orderBy('company_id')->get()->map(fn ($r) => [
             'id'          => $r->id,
             'name'        => $r->name,
             'label'       => $r->label,
+            'company'     => $r->company?->name,
+            'company_id'  => $r->company_id,
             'is_system'   => $r->is_system,
-            'permissions' => $r->permissions,
+            'permissions' => $r->permissions ?? [],
         ]);
 
-        $allPermissions = [
-            'contacts'   => ['contacts.view', 'contacts.create', 'contacts.edit', 'contacts.delete', 'contacts.import'],
-            'labels'     => ['labels.view', 'labels.manage'],
-            'staff'      => ['staff.view', 'staff.create', 'staff.edit', 'staff.delete'],
-            'flow'       => ['flow.view', 'flow.manage'],
-            'campaigns'  => ['campaigns.view', 'campaigns.create', 'campaigns.edit', 'campaigns.delete', 'campaigns.launch'],
-            'leads'      => ['leads.view_own', 'leads.view_all', 'leads.create', 'leads.edit', 'leads.assign', 'leads.delete'],
-            'analytics'  => ['analytics.view_own', 'analytics.view_all'],
-            'billing'    => ['billing.view', 'billing.manage'],
-            'settings'   => ['settings.manage'],
-            'crm'        => ['crm.sync'],
-        ];
+        return response()->json([
+            'roles'           => $roles,
+            'catalogue'       => $this->permissionCatalogue(),
+            'all_permissions' => \App\Models\Permission::pluck('key')->all(),
+        ]);
+    }
 
-        return response()->json(['roles' => $roles, 'all_permissions' => $allPermissions]);
+    /** GET /superadmin/companies/{company}/permissions — company-scoped editor. */
+    public function companyPermissions(Company $company): \Illuminate\Http\JsonResponse
+    {
+        $roles = \App\Models\Role::where('company_id', $company->id)
+            ->orderBy('sort_order')->orderBy('id')->get()->map(fn ($r) => [
+                'id'          => $r->id,
+                'name'        => $r->name,
+                'label'       => $r->label,
+                'is_system'   => $r->is_system,
+                'protected'   => in_array($r->name, ['superadmin', 'owner'], true),
+                'permissions' => $r->permissions ?? [],
+                'user_count'  => $r->users()->count(),
+            ]);
+
+        return response()->json([
+            'company'   => ['id' => $company->id, 'name' => $company->name],
+            'catalogue' => $this->permissionCatalogue(),
+            'roles'     => $roles,
+        ]);
+    }
+
+    /** PUT /superadmin/companies/{company}/roles/{role}/permissions */
+    public function updateCompanyRolePermissions(\Illuminate\Http\Request $request, Company $company, int $roleId): \Illuminate\Http\JsonResponse
+    {
+        $data = $request->validate(['permissions' => ['present', 'array'], 'permissions.*' => ['string']]);
+
+        $role = \App\Models\Role::where('company_id', $company->id)->findOrFail($roleId);
+        if (in_array($role->name, ['superadmin', 'owner'], true)) {
+            return response()->json(['message' => 'The superadmin and owner roles always have full access.'], 422);
+        }
+
+        $ids = \App\Models\Permission::whereIn('key', $data['permissions'])->pluck('id')->all();
+        $role->syncPermissions($ids); // updates both the pivot and the JSON column
+
+        return response()->json(['message' => 'Permissions updated.', 'role' => $role->fresh()]);
+    }
+
+    /** POST /superadmin/companies/{company}/permissions/resync — rebuild default system roles for the company. */
+    public function resyncCompanyPermissions(Company $company): \Illuminate\Http\JsonResponse
+    {
+        $permMap = \App\Models\Permission::pluck('id', 'key');
+        $roleDefs = (new \Database\Seeders\PermissionsSeeder())->rolePermissions($permMap->keys()->all());
+
+        foreach (\App\Models\Role::where('company_id', $company->id)->where('is_system', true)->get() as $role) {
+            $keys = $roleDefs[$role->name] ?? null;
+            if ($keys === null) {
+                continue;
+            }
+            $valid = array_values(array_unique(array_filter($keys, fn ($k) => $permMap->has($k))));
+            $role->syncPermissions(array_values($permMap->only($valid)->all()));
+        }
+
+        return response()->json(['message' => 'Default role permissions re-applied for this company.']);
     }
 
     public function updatePermissions(\Illuminate\Http\Request $request, int $roleId): \Illuminate\Http\JsonResponse
@@ -183,12 +246,13 @@ class SuperAdminController extends Controller
         $request->validate(['permissions' => ['required', 'array']]);
         $role = \App\Models\Role::findOrFail($roleId);
 
-        // System roles (superadmin, owner) cannot have permissions reduced
-        if (in_array($role->name, ['superadmin', 'owner'])) {
+        if (in_array($role->name, ['superadmin', 'owner'], true)) {
             return response()->json(['message' => 'Cannot modify superadmin or owner permissions.'], 403);
         }
 
-        $role->update(['permissions' => $request->permissions]);
+        $ids = \App\Models\Permission::whereIn('key', $request->permissions)->pluck('id')->all();
+        $role->syncPermissions($ids);
+
         return response()->json(['message' => 'Permissions updated.', 'role' => $role->fresh()]);
     }
 }

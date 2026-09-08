@@ -10,7 +10,7 @@ use Illuminate\Support\Facades\DB;
 class PermissionsSeeder extends Seeder
 {
     // ── Full permission catalogue ─────────────────────────────────────────────
-    private const PERMISSIONS = [
+    public const PERMISSIONS = [
         // Dashboard
         ['key' => 'dashboard.view',    'label' => 'View Dashboard',           'group' => 'Dashboard',                    'type' => 'viewer', 'sort_order' => 10],
         ['key' => 'dashboard.manage',  'label' => 'Manage Dashboard Widgets', 'group' => 'Dashboard',                    'type' => 'manage', 'sort_order' => 11],
@@ -44,6 +44,10 @@ class PermissionsSeeder extends Seeder
         // WA Cloud
         ['key' => 'wa_cloud.view',   'label' => 'View WA Cloud',   'group' => 'WA Cloud', 'type' => 'viewer', 'sort_order' => 105],
         ['key' => 'wa_cloud.manage', 'label' => 'Manage WA Cloud', 'group' => 'WA Cloud', 'type' => 'manage', 'sort_order' => 106],
+        // HR / Attendance
+        ['key' => 'hr.manage',            'label' => 'Manage HR settings, break & leave types', 'group' => 'HR', 'type' => 'manage', 'sort_order' => 107],
+        ['key' => 'hr.attendance.view_all', 'label' => 'View team attendance',                  'group' => 'HR', 'type' => 'viewer', 'sort_order' => 108],
+        ['key' => 'hr.leave.approve',     'label' => 'Approve leave & overtime',                'group' => 'HR', 'type' => 'manage', 'sort_order' => 109],
         // Phone Numbers
         ['key' => 'phone_numbers.view',   'label' => 'View Phone Numbers',    'group' => 'Phone Numbers',                'type' => 'viewer', 'sort_order' => 110],
         ['key' => 'phone_numbers.manage', 'label' => 'Manage Phone Numbers',  'group' => 'Phone Numbers',                'type' => 'manage', 'sort_order' => 111],
@@ -107,10 +111,15 @@ class PermissionsSeeder extends Seeder
         // WA Agent — Pipelines
         ['key' => 'wa_agent.pipelines.view',   'label' => 'View Pipelines',   'group' => 'WA Agent — Pipelines',         'type' => 'viewer', 'sort_order' => 310],
         ['key' => 'wa_agent.pipelines.manage', 'label' => 'Manage Pipelines', 'group' => 'WA Agent — Pipelines',         'type' => 'manage', 'sort_order' => 311],
+        // Linked Devices — phone-app (QR / PIN) login management.
+        // NB: every user can always manage their OWN devices; these keys only gate
+        // viewing/managing OTHER staff members' linked devices.
+        ['key' => 'devices.view',   'label' => "View Staff Linked Devices",   'group' => 'Linked Devices', 'type' => 'viewer', 'sort_order' => 320],
+        ['key' => 'devices.manage', 'label' => "Manage Staff Linked Devices", 'group' => 'Linked Devices', 'type' => 'manage', 'sort_order' => 321],
     ];
 
     // ── Role permission definitions ───────────────────────────────────────────
-    private function rolePermissions(array $allKeys): array
+    public function rolePermissions(array $allKeys): array
     {
         $allViewer = array_values(array_filter($allKeys, fn($k) => str_ends_with($k, '.view')));
         $allManage = array_values(array_filter($allKeys, fn($k) => str_ends_with($k, '.manage')));
@@ -134,7 +143,7 @@ class PermissionsSeeder extends Seeder
                 'wa_chat.sessions.manage', 'wa_chat.chats.manage',
                 'wa_chat.message_sender.manage',
                 'wa_agent.automations.manage', 'wa_agent.leads.manage',
-                'staff.manage',
+                'staff.manage', 'devices.manage',
             ],
 
             'counsellor' => [

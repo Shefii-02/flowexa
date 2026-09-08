@@ -1,223 +1,223 @@
-// src/pages/leads/AssignmentRulesPage.tsx
-import { useEffect, useState } from 'react'
-import { useAppDispatch, useAppSelector } from '@/store'
-import { fetchRuleThunk } from '@/store/slices'
+import { useCallback, useEffect, useState } from 'react'
 import { leadAssignmentApi } from '@/api'
 import { getError } from '@/utils'
 import toast from 'react-hot-toast'
-import type { LeadAssignmentRule } from '@/types'
+import { StaffAvailabilityPanel } from '@/components/leads/StaffAvailabilityPanel'
 
-const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 const TIMEZONES = ['Asia/Kolkata', 'UTC', 'America/New_York', 'Europe/London', 'Asia/Dubai', 'Asia/Singapore']
 
+type Rule = Record<string, any>
+type Hour = { weekday: number; is_open: boolean; start_time: string; end_time: string }
+type Holiday = { id: number; date: string; name: string }
+
+const t = (s: string) => (s ?? '').slice(0, 5)
+
 export default function AssignmentRulesPage() {
-  const dispatch = useAppDispatch()
-  const rule     = useAppSelector(s => s.leadAssignment.rule)
-  const [form, setForm] = useState<Partial<LeadAssignmentRule>>({})
+  const [tab, setTab] = useState<'basic' | 'advanced'>('basic')
+  const [rule, setRule] = useState<Rule | null>(null)
+  const [hours, setHours] = useState<Hour[]>([])
+  const [holidays, setHolidays] = useState<Holiday[]>([])
+  const [newHol, setNewHol] = useState({ date: '', name: '' })
   const [saving, setSaving] = useState(false)
 
-  useEffect(() => { dispatch(fetchRuleThunk()) }, [dispatch])
-  useEffect(() => { if (rule) setForm(rule) }, [rule])
+  const load = useCallback(async () => {
+    const [r, wh] = await Promise.all([leadAssignmentApi.getRule(), leadAssignmentApi.getWorkingHours()])
+    setRule(r.data?.data ?? r.data)
+    setHours((wh.data?.hours ?? []).map((h: any) => ({ weekday: h.weekday, is_open: !!h.is_open, start_time: t(h.start_time), end_time: t(h.end_time) })))
+    setHolidays(wh.data?.holidays ?? [])
+  }, [])
+  useEffect(() => { load() }, [load])
 
-  const set = (k: keyof LeadAssignmentRule, v: unknown) =>
-    setForm(f => ({ ...f, [k]: v }))
+  const set = (k: string, v: unknown) => setRule(r => ({ ...r, [k]: v }))
+  const setHour = (wd: number, patch: Partial<Hour>) => setHours(hs => hs.map(h => (h.weekday === wd ? { ...h, ...patch } : h)))
 
-  const totalWeight = (form.weight_availability ?? 0) + (form.weight_max_leads ?? 0)
-    + (form.weight_performance ?? 0) + (form.weight_workload ?? 0)
+  const totalWeight = (rule?.weight_availability ?? 0) + (rule?.weight_max_leads ?? 0) + (rule?.weight_performance ?? 0) + (rule?.weight_workload ?? 0)
+  const isAdvanced = tab === 'advanced'
+  const weightsOk = !isAdvanced || rule?.strategy !== 'algorithm' || totalWeight === 100
 
-  const toggleDay = (d: number) => {
-    const days = [...(form.working_days ?? [1, 2, 3, 4, 5])]
-    const idx  = days.indexOf(d)
-    if (idx === -1) days.push(d)
-    else days.splice(idx, 1)
-    set('working_days', days.sort())
-  }
-
-  const handleSave = async () => {
+  const save = async () => {
+    if (!rule) return
     setSaving(true)
     try {
-      await leadAssignmentApi.saveRule(form)
-      toast.success('Rules saved')
-      dispatch(fetchRuleThunk())
-    } catch (e) {
-      toast.error(getError(e))
-    } finally {
-      setSaving(false)
-    }
+      await leadAssignmentApi.saveRule({
+        ...rule,
+        strategy: isAdvanced ? (rule.strategy ?? 'algorithm') : 'round_robin',
+      })
+      await leadAssignmentApi.saveWorkingHours(hours)
+      toast.success('Assignment rules saved')
+      load()
+    } catch (e) { toast.error(getError(e)) }
+    finally { setSaving(false) }
   }
+
+  const addHoliday = async () => {
+    if (!newHol.date || !newHol.name.trim()) return
+    try { await leadAssignmentApi.addHoliday(newHol); setNewHol({ date: '', name: '' }); load() }
+    catch (e) { toast.error(getError(e)) }
+  }
+  const removeHoliday = async (id: number) => { await leadAssignmentApi.removeHoliday(id); load() }
 
   if (!rule) return <div className="p-6 text-gray-400">Loading…</div>
 
+  const card = 'bg-white rounded-xl border border-gray-200 p-6 space-y-4'
+  const input = 'w-full border border-gray-300 rounded-lg px-3 py-2 text-sm'
+
   return (
-    <div className="p-6 max-w-3xl space-y-8">
-      <h1 className="text-xl font-bold text-gray-900">Assignment Rules</h1>
+    <div className="p-6 max-w-3xl space-y-6">
+      <div>
+        <h1 className="text-xl font-bold text-gray-900">Assignment Rules</h1>
+        <p className="text-sm text-gray-500 mt-1">How incoming leads are routed to staff</p>
+      </div>
 
-      {/* Mode */}
-      <section className="bg-white rounded-xl border border-gray-200 p-6 space-y-3">
-        <h2 className="font-semibold text-gray-800">Assignment Mode</h2>
-        {(['auto', 'hybrid', 'uber'] as const).map(m => (
-          <label key={m} className="flex items-start gap-3 cursor-pointer">
-            <input
-              type="radio"
-              name="mode"
-              value={m}
-              checked={form.notification_mode === m}
-              onChange={() => set('notification_mode', m)}
-              className="mt-0.5"
-            />
-            <div>
-              <p className="font-medium text-gray-700 capitalize">{m === 'uber' ? 'Notification (Uber)' : m === 'hybrid' ? 'Hybrid (Recommended)' : 'Auto Assignment'}</p>
-              <p className="text-xs text-gray-400">
-                {m === 'auto'   && 'System automatically assigns based on score algorithm'}
-                {m === 'hybrid' && 'Try auto first, fall back to notifications if no staff available'}
-                {m === 'uber'   && 'Notify staff one by one — first to accept gets the lead'}
-              </p>
-            </div>
-          </label>
+      <div className="flex gap-1 border-b border-gray-200">
+        {(['basic', 'advanced'] as const).map(x => (
+          <button key={x} onClick={() => setTab(x)}
+            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px capitalize ${tab === x ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500'}`}>
+            {x} CRM assignment
+          </button>
         ))}
+      </div>
+
+      {/* Strategy summary */}
+      <section className={card}>
+        <h2 className="font-semibold text-gray-800">{isAdvanced ? 'Advanced routing' : 'Basic routing'}</h2>
+        {!isAdvanced ? (
+          <p className="text-sm text-gray-500">
+            <strong>Round robin</strong> — leads are handed to staff <strong>one by one, equally</strong>. The least-loaded
+            available agent gets the next lead. Falls back to notifications / AI when nobody is available.
+          </p>
+        ) : (
+          <>
+            <p className="text-sm text-gray-500">Priority-ranked (Uber-style) routing with a weighted algorithm and an AI fallback.</p>
+            {(['algorithm', 'round_robin'] as const).map(s => (
+              <label key={s} className="flex items-start gap-2 text-sm cursor-pointer">
+                <input type="radio" name="strategy" checked={(rule.strategy ?? 'algorithm') === s} onChange={() => set('strategy', s)} className="mt-0.5" />
+                <span>{s === 'algorithm' ? 'Weighted algorithm (priority person first, one by one)' : 'Simple round robin'}</span>
+              </label>
+            ))}
+            <div>
+              <label className="block text-sm text-gray-600 mb-1">Notification mode</label>
+              <select className={input} value={rule.notification_mode ?? 'hybrid'} onChange={e => set('notification_mode', e.target.value)}>
+                <option value="uber">Notification (Uber) — offer to staff one by one, first to accept wins</option>
+                <option value="hybrid">Hybrid — auto-assign, fall back to notifications</option>
+                <option value="auto">Auto — algorithm assigns directly</option>
+              </select>
+            </div>
+          </>
+        )}
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={!!rule.auto_assign_enabled} onChange={e => set('auto_assign_enabled', e.target.checked)} />
+          Auto-assign new leads
+        </label>
       </section>
 
-      {/* Algorithm Weights */}
-      {(form.notification_mode === 'auto' || form.notification_mode === 'hybrid') && (
-        <section className="bg-white rounded-xl border border-gray-200 p-6 space-y-4">
+      {/* Advanced-only: weights */}
+      {isAdvanced && (rule.strategy ?? 'algorithm') === 'algorithm' && (
+        <section className={card}>
           <div className="flex items-center justify-between">
-            <h2 className="font-semibold text-gray-800">Algorithm Weights</h2>
-            <span className={`text-sm font-semibold ${totalWeight === 100 ? 'text-green-600' : 'text-red-500'}`}>
-              Total: {totalWeight}% {totalWeight === 100 ? '✅' : '⚠ Must be 100'}
-            </span>
+            <h2 className="font-semibold text-gray-800">Algorithm weights</h2>
+            <span className={`text-sm font-semibold ${totalWeight === 100 ? 'text-green-600' : 'text-red-500'}`}>Total {totalWeight}% {totalWeight === 100 ? '✅' : '⚠ must be 100'}</span>
           </div>
-
-          {([
-            ['weight_availability', 'Availability'],
-            ['weight_max_leads', 'Capacity / Max Leads'],
-            ['weight_performance', 'Performance'],
-            ['weight_workload', 'Workload'],
-          ] as [keyof LeadAssignmentRule, string][]).map(([k, label]) => (
+          {([['weight_availability', 'Availability'], ['weight_max_leads', 'Capacity'], ['weight_performance', 'Performance'], ['weight_workload', 'Workload']] as const).map(([k, label]) => (
             <div key={k}>
-              <div className="flex justify-between text-sm mb-1">
-                <span className="text-gray-600">{label}</span>
-                <span className="font-medium text-gray-800">{form[k] ?? 0}%</span>
+              <div className="flex justify-between text-sm mb-1"><span className="text-gray-600">{label}</span><span className="font-medium">{rule[k] ?? 0}%</span></div>
+              <input type="range" min={0} max={100} step={5} value={rule[k] ?? 0} onChange={e => set(k, Number(e.target.value))} className="w-full accent-indigo-600" />
+            </div>
+          ))}
+        </section>
+      )}
+
+      {/* SLA + AI takeover — both tabs */}
+      <section className={card}>
+        <h2 className="font-semibold text-gray-800">Response SLA &amp; AI handoff</h2>
+        <div className="grid grid-cols-2 gap-4">
+          <label className="text-sm text-gray-600">Reply SLA (minutes)
+            <input type="number" min={1} className={`mt-1 ${input}`} value={rule.sla_minutes ?? 30} onChange={e => set('sla_minutes', Number(e.target.value))} />
+          </label>
+          <label className="text-sm text-gray-600">AI takes over after (minutes)
+            <input type="number" min={1} className={`mt-1 ${input}`} value={rule.ai_takeover_after_minutes ?? 20} onChange={e => set('ai_takeover_after_minutes', Number(e.target.value))} />
+            <span className="text-xs text-gray-400">If the assigned staff hasn't replied, the AI agent continues the chat.</span>
+          </label>
+        </div>
+      </section>
+
+      {/* Advanced-only: notification tuning + duplicate action */}
+      {isAdvanced && (
+        <>
+          {(rule.notification_mode === 'uber' || rule.notification_mode === 'hybrid') && (
+            <section className={card}>
+              <h2 className="font-semibold text-gray-800">Notification settings</h2>
+              <div className="grid grid-cols-3 gap-4">
+                <label className="text-sm text-gray-600">Gap between staff (sec)<input type="number" min={5} className={`mt-1 ${input}`} value={rule.notification_gap_seconds ?? 30} onChange={e => set('notification_gap_seconds', Number(e.target.value))} /></label>
+                <label className="text-sm text-gray-600">Acceptance timeout (sec)<input type="number" min={10} className={`mt-1 ${input}`} value={rule.notification_timeout_seconds ?? 60} onChange={e => set('notification_timeout_seconds', Number(e.target.value))} /></label>
+                <label className="text-sm text-gray-600">Max staff to notify<input type="number" min={1} max={10} className={`mt-1 ${input}`} value={rule.max_notification_rounds ?? 3} onChange={e => set('max_notification_rounds', Number(e.target.value))} /></label>
               </div>
-              <input
-                type="range" min={0} max={100} step={5}
-                value={(form[k] ?? 0) as number}
-                onChange={e => set(k, Number(e.target.value))}
-                className="w-full accent-brand-600"
-              />
+            </section>
+          )}
+          <section className={card}>
+            <h2 className="font-semibold text-gray-800">Duplicate lead handling</h2>
+            <div className="grid grid-cols-2 gap-4">
+              <label className="text-sm text-gray-600">Duplicate window (days)<input type="number" min={1} className={`mt-1 ${input}`} value={rule.duplicate_window_days ?? 90} onChange={e => set('duplicate_window_days', Number(e.target.value))} /></label>
+              <label className="text-sm text-gray-600">Action on duplicate
+                <select className={`mt-1 ${input}`} value={rule.duplicate_action ?? 'assign_same_staff'} onChange={e => set('duplicate_action', e.target.value)}>
+                  <option value="assign_same_staff">Assign to same staff</option>
+                  <option value="create_new">Create new lead</option>
+                  <option value="merge">Merge into existing</option>
+                  <option value="notify_admin">Notify admin</option>
+                </select>
+              </label>
             </div>
-          ))}
-        </section>
+          </section>
+        </>
       )}
 
-      {/* SLA */}
-      <section className="bg-white rounded-xl border border-gray-200 p-6 space-y-4">
-        <h2 className="font-semibold text-gray-800">SLA Settings</h2>
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm text-gray-600 mb-1">Reply SLA (minutes)</label>
-            <input type="number" min={1} className="input" value={form.sla_minutes ?? 30}
-              onChange={e => set('sla_minutes', Number(e.target.value))} />
-            <p className="text-xs text-gray-400 mt-1">AI takes over if staff doesn't reply in time</p>
-          </div>
-          <div>
-            <label className="block text-sm text-gray-600 mb-1">AI takeover after (minutes)</label>
-            <input type="number" min={1} className="input" value={form.ai_takeover_after_minutes ?? 30}
-              onChange={e => set('ai_takeover_after_minutes', Number(e.target.value))} />
-          </div>
-        </div>
-      </section>
-
-      {/* Notification settings */}
-      {(form.notification_mode === 'uber' || form.notification_mode === 'hybrid') && (
-        <section className="bg-white rounded-xl border border-gray-200 p-6 space-y-4">
-          <h2 className="font-semibold text-gray-800">Notification Settings</h2>
-          <div className="grid grid-cols-3 gap-4">
-            <div>
-              <label className="block text-sm text-gray-600 mb-1">Gap between staff (sec)</label>
-              <input type="number" min={5} className="input" value={form.notification_gap_seconds ?? 30}
-                onChange={e => set('notification_gap_seconds', Number(e.target.value))} />
+      {/* Working hours — per day, both tabs */}
+      <section className={card}>
+        <h2 className="font-semibold text-gray-800">Working hours <span className="text-xs font-normal text-gray-400">(leads outside these hours go straight to the AI agent)</span></h2>
+        <div className="space-y-1.5">
+          {hours.sort((a, b) => a.weekday - b.weekday).map(h => (
+            <div key={h.weekday} className="flex items-center gap-3 text-sm">
+              <label className="flex items-center gap-2 w-32">
+                <input type="checkbox" checked={h.is_open} onChange={e => setHour(h.weekday, { is_open: e.target.checked })} />
+                {DAYS[h.weekday]}
+              </label>
+              <input type="time" disabled={!h.is_open} value={h.start_time} onChange={e => setHour(h.weekday, { start_time: e.target.value })} className="border border-gray-200 rounded px-2 py-1 disabled:opacity-40" />
+              <span className="text-gray-400">–</span>
+              <input type="time" disabled={!h.is_open} value={h.end_time} onChange={e => setHour(h.weekday, { end_time: e.target.value })} className="border border-gray-200 rounded px-2 py-1 disabled:opacity-40" />
             </div>
-            <div>
-              <label className="block text-sm text-gray-600 mb-1">Acceptance timeout (sec)</label>
-              <input type="number" min={10} className="input" value={form.notification_timeout_seconds ?? 60}
-                onChange={e => set('notification_timeout_seconds', Number(e.target.value))} />
-            </div>
-            <div>
-              <label className="block text-sm text-gray-600 mb-1">Max staff to notify</label>
-              <input type="number" min={1} max={10} className="input" value={form.max_notification_rounds ?? 3}
-                onChange={e => set('max_notification_rounds', Number(e.target.value))} />
-            </div>
-          </div>
-        </section>
-      )}
-
-      {/* Duplicate Handling */}
-      <section className="bg-white rounded-xl border border-gray-200 p-6 space-y-4">
-        <h2 className="font-semibold text-gray-800">Duplicate Lead Handling</h2>
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm text-gray-600 mb-1">Duplicate window (days)</label>
-            <input type="number" min={1} className="input" value={form.duplicate_window_days ?? 90}
-              onChange={e => set('duplicate_window_days', Number(e.target.value))} />
-            <p className="text-xs text-gray-400 mt-1">Same phone within this window = duplicate</p>
-          </div>
-          <div>
-            <label className="block text-sm text-gray-600 mb-1">Action on duplicate</label>
-            <select className="input" value={form.duplicate_action ?? 'assign_same_staff'}
-              onChange={e => set('duplicate_action', e.target.value)}>
-              <option value="assign_same_staff">Assign to same staff</option>
-              <option value="create_new">Create new lead</option>
-              <option value="merge">Merge into existing</option>
-              <option value="notify_admin">Notify admin</option>
-            </select>
-          </div>
-        </div>
-      </section>
-
-      {/* Working Hours */}
-      <section className="bg-white rounded-xl border border-gray-200 p-6 space-y-4">
-        <h2 className="font-semibold text-gray-800">Working Hours</h2>
-        <div className="flex flex-wrap gap-2">
-          {DAYS.map((d, i) => (
-            <button
-              key={i}
-              type="button"
-              onClick={() => toggleDay(i)}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium border transition-colors ${
-                (form.working_days ?? [1,2,3,4,5]).includes(i)
-                  ? 'bg-brand-600 text-white border-brand-600'
-                  : 'bg-white text-gray-500 border-gray-200'
-              }`}
-            >{d}</button>
           ))}
         </div>
-        <div className="grid grid-cols-3 gap-4">
-          <div>
-            <label className="block text-sm text-gray-600 mb-1">Start time</label>
-            <input type="time" className="input" value={form.working_hours_start ?? '09:00'}
-              onChange={e => set('working_hours_start', e.target.value)} />
+        <label className="text-sm text-gray-600 block">Timezone
+          <select className={`mt-1 ${input} max-w-xs`} value={rule.timezone ?? 'Asia/Kolkata'} onChange={e => set('timezone', e.target.value)}>
+            {TIMEZONES.map(tz => <option key={tz}>{tz}</option>)}
+          </select>
+        </label>
+
+        <div>
+          <h3 className="text-sm font-medium text-gray-700 mb-1.5">Holidays / closed dates</h3>
+          <div className="flex gap-2 mb-2">
+            <input type="date" value={newHol.date} onChange={e => setNewHol(p => ({ ...p, date: e.target.value }))} className="border border-gray-200 rounded px-2 py-1 text-sm" />
+            <input value={newHol.name} onChange={e => setNewHol(p => ({ ...p, name: e.target.value }))} placeholder="Holiday name" className="border border-gray-200 rounded px-2 py-1 text-sm flex-1" />
+            <button onClick={addHoliday} className="px-3 py-1 bg-indigo-600 text-white rounded text-sm">Add</button>
           </div>
-          <div>
-            <label className="block text-sm text-gray-600 mb-1">End time</label>
-            <input type="time" className="input" value={form.working_hours_end ?? '18:00'}
-              onChange={e => set('working_hours_end', e.target.value)} />
-          </div>
-          <div>
-            <label className="block text-sm text-gray-600 mb-1">Timezone</label>
-            <select className="input" value={form.timezone ?? 'Asia/Kolkata'}
-              onChange={e => set('timezone', e.target.value)}>
-              {TIMEZONES.map(tz => <option key={tz} value={tz}>{tz}</option>)}
-            </select>
+          <div className="flex flex-wrap gap-2">
+            {holidays.map(h => (
+              <span key={h.id} className="inline-flex items-center gap-1.5 text-xs bg-gray-50 border border-gray-200 rounded-full pl-3 pr-1.5 py-1">
+                {h.date} · {h.name}
+                <button onClick={() => removeHoliday(h.id)} className="text-gray-400 hover:text-red-500">×</button>
+              </span>
+            ))}
           </div>
         </div>
       </section>
+
+      {/* Staff availability — folded in, both tabs */}
+      <StaffAvailabilityPanel compact />
 
       <div className="flex justify-end">
-        <button
-          onClick={handleSave}
-          disabled={saving || totalWeight !== 100}
-          className="btn btn-primary px-8"
-        >
+        <button onClick={save} disabled={saving || !weightsOk}
+          className="px-8 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium disabled:opacity-50">
           {saving ? 'Saving…' : 'Save Rules'}
         </button>
       </div>

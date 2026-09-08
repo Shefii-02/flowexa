@@ -11,7 +11,7 @@ class WaOtpLog extends Model
     protected $table = 'wa_otp_logs';
 
     protected $fillable = [
-        'company_id', 'service_id', 'phone', 'action',
+        'company_id', 'service_id', 'config_id', 'session_id', 'phone', 'action',
         'ip_address', 'domain', 'response_ms',
     ];
 

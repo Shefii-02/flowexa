@@ -103,6 +103,50 @@ class RoleController extends Controller
         ]);
     }
 
+    // ─── POST /roles/sync-catalogue ──────────────────────────────────────────
+    // Re-applies the current permission catalogue to this company's roles:
+    //  • system roles (owner/admin/team_lead/…) are re-synced to their defaults,
+    //    which picks up BOTH newly added and removed permissions;
+    //  • custom roles keep their selections but lose any keys that no longer exist.
+    public function syncCatalogue(): JsonResponse
+    {
+        $companyId = auth()->user()->company_id;
+
+        $allPerms = Permission::all();
+        $permMap  = $allPerms->pluck('id', 'key');
+        $allKeys  = $allPerms->pluck('key')->toArray();
+
+        $roles = Role::where(function ($q) use ($companyId) {
+            $q->whereNull('company_id')->orWhere('company_id', $companyId);
+        })->get();
+
+        $synced = 0;
+
+        DB::transaction(function () use ($roles, $permMap, $allKeys, &$synced) {
+            foreach ($roles as $role) {
+                if ($role->is_system) {
+                    $keys = $this->defaultPermissionsForRole($role->name, $allKeys);
+                } else {
+                    // custom role — keep current picks, drop keys that were removed
+                    $keys = array_values(array_intersect($role->permissions ?? [], $allKeys));
+                }
+
+                $validKeys = array_values(array_unique(array_filter($keys, fn ($k) => $permMap->has($k))));
+                $permIds   = array_values($permMap->only($validKeys)->toArray());
+
+                $role->permissionRelations()->sync($permIds);
+                $role->update(['permissions' => $validKeys]);
+                $synced++;
+            }
+        });
+
+        return response()->json([
+            'message'          => "Permissions refreshed — {$synced} roles synced to the current catalogue.",
+            'permission_count' => $allPerms->count(),
+            'roles_synced'     => $synced,
+        ]);
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     /** Compute the canonical permission key list for a named system role. */

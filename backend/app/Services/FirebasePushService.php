@@ -80,6 +80,32 @@ class FirebasePushService
         );
     }
 
+    // ── WhatsApp session went down ──────────────────────────────────────────
+    public function notifySessionInactive(int $companyId, string $phone, ?string $reason = null): void
+    {
+        $this->sendToCompany(
+            $companyId,
+            'wa_session_inactive',
+            '🔴 WhatsApp session disconnected',
+            $reason
+                ? "Your WhatsApp number ({$phone}) has disconnected: {$reason}"
+                : "Your WhatsApp number ({$phone}) has disconnected. Messages will not send until it's reconnected.",
+            ['phone' => $phone, 'action' => 'open_wa_session']
+        );
+    }
+
+    // ── WhatsApp session came back up (after having been reported inactive) ─
+    public function notifySessionRestored(int $companyId, string $phone): void
+    {
+        $this->sendToCompany(
+            $companyId,
+            'wa_session_restored',
+            '🟢 WhatsApp session reconnected',
+            "Your WhatsApp number ({$phone}) is reconnected and sending normally again.",
+            ['phone' => $phone, 'action' => 'open_wa_session']
+        );
+    }
+
     // ── Inbound lead notification (flow triggered) ─────────────────────────
     public function notifyNewLead(int $companyId, int $leadId, string $contactName, string $category): void
     {

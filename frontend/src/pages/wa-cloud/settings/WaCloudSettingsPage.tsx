@@ -7,7 +7,6 @@ import toast from 'react-hot-toast'
 const TABS = [
   { id: 'credentials', label: '📱 WA Credentials' },
   { id: 'webhooks',    label: '🔗 Webhooks' },
-  { id: 'otp',        label: '🔐 OTP API Credentials' },
 ] as const
 
 type TabId = (typeof TABS)[number]['id']
@@ -271,59 +270,9 @@ function WebhooksTab() {
           </div>
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-700">
             <strong>Subscribe to these webhook fields in Meta:</strong><br />
-            ✅ messages &nbsp;·&nbsp; ✅ message_template_status_update &nbsp;·&nbsp; ✅ message_template_quality_update
+            ✅ messages &nbsp;·&nbsp; ✅ message_template_status_update &nbsp;·&nbsp; ✅ message_template_quality_update &nbsp;·&nbsp; ✅ calls <span className="text-blue-500">(for Inbox Analytics call stats)</span>
           </div>
         </div>
-      </div>
-    </div>
-  )
-}
-
-// ── OTP Credentials tab ───────────────────────────────────────────────────────
-
-function OtpCredentialsTab() {
-  const [company, setCompany] = useState<any>(null)
-  const [token, setToken] = useState<string | null>(null)
-  const [regen, setRegen] = useState(false)
-
-  useEffect(() => {
-    settingsApi.index().then(r => setCompany(r.data.company))
-  }, [])
-
-  const handleRegenToken = async () => {
-    setRegen(true)
-    try {
-      const { data } = await settingsApi.regenerateToken()
-      setToken(data.private_token)
-      toast.success('Token regenerated.')
-    } catch (e) { toast.error(getError(e)) }
-    finally { setRegen(false) }
-  }
-
-  return (
-    <div className="card">
-      <div className="card-header"><h3 className="card-title">OTP API credentials</h3></div>
-      <div className="card-body space-y-4">
-        <div>
-          <p className="label">App ID</p>
-          <code className="text-xs bg-gray-100 px-3 py-1.5 rounded font-mono text-gray-700 block select-all">
-            {company?.app_id || '—'}
-          </code>
-        </div>
-        <div>
-          <p className="label">Private Token</p>
-          {token ? (
-            <div className="bg-green-50 border border-green-200 rounded-lg p-3">
-              <p className="text-xs text-green-700 font-medium mb-1">⚠️ Copy this now — shown only once:</p>
-              <code className="text-xs font-mono text-green-900 break-all select-all">{token}</code>
-            </div>
-          ) : (
-            <p className="text-xs text-gray-400">Token stored securely. Regenerate to reveal a new one.</p>
-          )}
-        </div>
-        <Button variant="secondary" onClick={handleRegenToken} loading={regen}>
-          Regenerate private token
-        </Button>
       </div>
     </div>
   )
@@ -338,7 +287,7 @@ export default function WaCloudSettingsPage() {
     <div className="max-w-3xl space-y-6">
       <div>
         <h1 className="page-title">☁️ WA Cloud Settings</h1>
-        <p className="page-sub">Meta Business API credentials, webhooks and OTP configuration</p>
+        <p className="page-sub">Meta Business API credentials and webhooks</p>
       </div>
 
       <TabBar active={tab} onChange={setTab} />
@@ -346,7 +295,6 @@ export default function WaCloudSettingsPage() {
       <div className="pt-2">
         {tab === 'credentials' && <CredentialsTab />}
         {tab === 'webhooks'    && <WebhooksTab />}
-        {tab === 'otp'         && <OtpCredentialsTab />}
       </div>
     </div>
   )

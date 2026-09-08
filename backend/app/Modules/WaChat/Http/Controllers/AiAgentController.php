@@ -107,44 +107,76 @@ class AiAgentController extends Controller
         return null;
     }
 
+    /** Static catalogue of selectable models per provider. */
+    public static function modelCatalogue(): array
+    {
+        return [
+            'anthropic' => [
+                ['id' => 'claude-haiku-4-5-20251001',  'label' => 'Claude Haiku 4.5',  'speed' => 'fast',   'cost' => '$',    'description' => 'Best for high volume'],
+                ['id' => 'claude-sonnet-4-6-20251001', 'label' => 'Claude Sonnet 4.6', 'speed' => 'medium', 'cost' => '$$',   'description' => 'Better quality'],
+                ['id' => 'claude-opus-4-8-20251001',   'label' => 'Claude Opus 4.8',   'speed' => 'slow',   'cost' => '$$$$', 'description' => 'Best quality'],
+            ],
+            'openai' => [
+                ['id' => 'gpt-4o-mini', 'label' => 'GPT-4o Mini', 'speed' => 'fast',   'cost' => '$',  'description' => 'Fast and cheap'],
+                ['id' => 'gpt-4o',      'label' => 'GPT-4o',      'speed' => 'medium', 'cost' => '$$', 'description' => 'Best OpenAI model'],
+            ],
+            'google_ai' => [
+                ['id' => 'gemini-1.5-flash', 'label' => 'Gemini 1.5 Flash', 'speed' => 'fast',   'cost' => '$',  'description' => 'Free tier available'],
+                ['id' => 'gemini-1.5-pro',   'label' => 'Gemini 1.5 Pro',   'speed' => 'medium', 'cost' => '$$', 'description' => 'Best Gemini model'],
+            ],
+        ];
+    }
+
     // ── Available models (for UI model selector) ───────────────────────────────
 
     public function availableModels(): JsonResponse
     {
-        $company = Company::find(Auth::user()->company_id) ?? new Company();
+        $company   = Company::find(Auth::user()->company_id) ?? new Company();
+        $catalogue = self::modelCatalogue();
 
-        $anthropicHint = $company->anthropicKey?->api_key_hint;
-        $openaiHint    = $company->openaiKey?->api_key_hint;
+        return response()->json(collect($catalogue)->map(fn($models, $provider) => [
+            'provider'        => $provider,
+            'has_key'         => !empty(CompanyApiKeyResolver::keyForProvider($company, $provider)),
+            'active_key_hint' => CompanyApiKeyResolver::activeKeyModel($company, $provider)?->api_key_hint,
+            'models'          => $models,
+        ])->values());
+    }
+
+    // ── Consolidated AI settings (wa-agent → Settings tab) ────────────────────
+
+    public function aiSettings(): JsonResponse
+    {
+        $company   = Company::find(Auth::user()->company_id) ?? new Company();
+        $platform  = CompanyApiKeyResolver::platformCompany();
+        $isPlatform = $platform && $platform->id === $company->id;
+        $catalogue = self::modelCatalogue();
+
+        $providers = collect($catalogue)->map(function ($models, $provider) use ($company, $platform, $isPlatform) {
+            $companyKey  = CompanyApiKeyResolver::activeKeyModel($company, $provider);
+            $platformKey = (!$isPlatform && $platform)
+                ? CompanyApiKeyResolver::activeKeyModel($platform, $provider)
+                : null;
+
+            $source = $companyKey ? 'company' : ($platformKey ? 'platform' : 'none');
+
+            return [
+                'provider'          => $provider,
+                'models'            => $models,
+                'source'            => $source,
+                'has_company_key'   => (bool) $companyKey,
+                'has_platform_key'  => (bool) $platformKey,
+                'active_key_hint'   => $companyKey?->api_key_hint ?? $platformKey?->api_key_hint,
+            ];
+        })->values();
+
+        $resolved = CompanyApiKeyResolver::resolve($company);
 
         return response()->json([
-            [
-                'provider'        => 'anthropic',
-                'has_key'         => !empty(CompanyApiKeyResolver::anthropic($company)),
-                'active_key_hint' => $anthropicHint,
-                'models'          => [
-                    ['id' => 'claude-haiku-4-5-20251001',  'label' => 'Claude Haiku 4.5',  'speed' => 'fast',   'cost' => '$',    'description' => 'Best for high volume'],
-                    ['id' => 'claude-sonnet-4-6-20251001', 'label' => 'Claude Sonnet 4.6', 'speed' => 'medium', 'cost' => '$$',   'description' => 'Better quality'],
-                    ['id' => 'claude-opus-4-8-20251001',   'label' => 'Claude Opus 4.8',   'speed' => 'slow',   'cost' => '$$$$', 'description' => 'Best quality'],
-                ],
-            ],
-            [
-                'provider'        => 'openai',
-                'has_key'         => !empty(CompanyApiKeyResolver::openai($company)),
-                'active_key_hint' => $openaiHint,
-                'models'          => [
-                    ['id' => 'gpt-4o-mini', 'label' => 'GPT-4o Mini', 'speed' => 'fast',   'cost' => '$',  'description' => 'Fast and cheap'],
-                    ['id' => 'gpt-4o',      'label' => 'GPT-4o',      'speed' => 'medium', 'cost' => '$$', 'description' => 'Best OpenAI model'],
-                ],
-            ],
-            [
-                'provider'        => 'google_ai',
-                'has_key'         => false,
-                'active_key_hint' => null,
-                'models'          => [
-                    ['id' => 'gemini-1.5-flash', 'label' => 'Gemini 1.5 Flash', 'speed' => 'fast',   'cost' => '$',  'description' => 'Free tier available'],
-                    ['id' => 'gemini-1.5-pro',   'label' => 'Gemini 1.5 Pro',   'speed' => 'medium', 'cost' => '$$', 'description' => 'Best Gemini model'],
-                ],
-            ],
+            'active_provider'   => CompanyApiKeyResolver::provider($company),
+            'active_model'      => CompanyApiKeyResolver::model($company),
+            'resolved_source'   => $resolved['source'] ?? 'none',
+            'is_platform_admin' => $isPlatform,
+            'providers'         => $providers,
         ]);
     }
 

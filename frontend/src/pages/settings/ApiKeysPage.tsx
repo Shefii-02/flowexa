@@ -393,9 +393,9 @@ function ProviderSection({ provider, keys, onRefresh, onAdd }: {
   )
 }
 
-// ── Page ──────────────────────────────────────────────────────────────────────
+// ── Reusable manager (provider sections + add-key flow) ───────────────────────
 
-export default function ApiKeysPage() {
+export function ApiKeysManager({ onChange }: { onChange?: () => void } = {}) {
   const [keys, setKeys] = useState<ApiKey[]>([])
   const [loading, setLoading] = useState(true)
   const [addModal, setAddModal] = useState<Provider | null>(null)
@@ -406,12 +406,46 @@ export default function ApiKeysPage() {
       setKeys(r.data)
     } catch {}
     setLoading(false)
-  }, [])
+    onChange?.()
+  }, [onChange])
 
   useEffect(() => { load() }, [load])
 
   const byProvider = (p: Provider) => keys.filter(k => k.provider === p)
 
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <Loader2 size={28} className="animate-spin text-indigo-400" />
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-5">
+      {(['anthropic', 'openai', 'google_ai'] as Provider[]).map(p => (
+        <ProviderSection
+          key={p}
+          provider={p}
+          keys={byProvider(p)}
+          onRefresh={load}
+          onAdd={setAddModal}
+        />
+      ))}
+
+      {addModal && (
+        <AddKeyModal
+          onClose={() => setAddModal(null)}
+          onAdded={() => { setAddModal(null); load() }}
+        />
+      )}
+    </div>
+  )
+}
+
+// ── Page ──────────────────────────────────────────────────────────────────────
+
+export default function ApiKeysPage() {
   return (
     <div className="p-6 max-w-3xl mx-auto space-y-6">
       <div>
@@ -420,31 +454,7 @@ export default function ApiKeysPage() {
           Manage per-company AI provider keys. Keys are encrypted at rest and never exposed after saving.
         </p>
       </div>
-
-      {loading ? (
-        <div className="flex items-center justify-center py-20">
-          <Loader2 size={28} className="animate-spin text-indigo-400" />
-        </div>
-      ) : (
-        <div className="space-y-5">
-          {(['anthropic', 'openai', 'google_ai'] as Provider[]).map(p => (
-            <ProviderSection
-              key={p}
-              provider={p}
-              keys={byProvider(p)}
-              onRefresh={load}
-              onAdd={setAddModal}
-            />
-          ))}
-        </div>
-      )}
-
-      {addModal && (
-        <AddKeyModal
-          onClose={() => setAddModal(null)}
-          onAdded={() => { setAddModal(null); load() }}
-        />
-      )}
+      <ApiKeysManager />
     </div>
   )
 }

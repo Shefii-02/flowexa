@@ -1,6 +1,7 @@
 // src/pages/superadmin/SuperAdminCompanies.tsx
 
 import { useEffect, useState, useCallback } from 'react'
+import { Link } from 'react-router-dom'
 import { superadminApi } from '@/api'
 import {
   Button,
@@ -622,6 +623,15 @@ export default function SuperAdminCompanies() {
                             >
                               ✏️ Edit
                             </button>
+
+                            {/* Permissions */}
+                            <Link
+                              to={`/superadmin/companies/${company.id}/permissions`}
+                              onClick={() => setOpenMenuId(null)}
+                              className="block w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                            >
+                              🛡️ Permissions
+                            </Link>
 
                             {/* Top-up */}
                             <button

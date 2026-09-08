@@ -310,7 +310,7 @@ function LeadTab({ rules, saving, onSave }: { rules: AutoRule[]; saving: boolean
 const RESPONSE_MODES: { id: AgentResponseMode; label: string; desc: string; icon: React.ReactNode }[] = [
   { id: 'text',     label: 'Text',          desc: 'Plain text reply',               icon: <MessageSquare size={14} /> },
   { id: 'voice',    label: 'Voice Note',    desc: 'Audio response via URL',         icon: <Mic size={14} /> },
-  { id: 'document', label: 'Document',      desc: 'Share a PDF/file attachment',    icon: <FileText size={14} /> },
+  { id: 'document', label: 'Document',      desc: 'Share a PDF/file attachment',    icon: <FileText style={{margin: '0 auto 12px ' }} size={14} /> },
   { id: 'video',    label: 'Video Link',    desc: 'Share a video URL as message',   icon: <Video size={14} /> },
 ]
 

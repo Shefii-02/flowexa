@@ -13,6 +13,20 @@ class MediaFolderController extends Controller
 {
     private static array $VALID_ROLES = ['owner', 'admin', 'team_lead', 'counsellor', 'viewer'];
 
+    /**
+     * Folder create / edit / delete is an admin capability. Role names are
+     * stored capitalised ("Admin", "Manager") and superadmin is platform-level,
+     * so match case-insensitively.
+     */
+    private function canManageFolders(?\App\Models\User $user): bool
+    {
+        return in_array(
+            strtolower((string) ($user?->role?->name ?? '')),
+            ['owner', 'admin', 'manager', 'superadmin'],
+            true,
+        );
+    }
+
     /** List folders the current user can access (system + permitted custom). */
     public function index(): JsonResponse
     {
@@ -38,9 +52,9 @@ class MediaFolderController extends Controller
     {
         $user = auth()->user();
 
-        if (!in_array($user->role?->name, ['owner', 'admin'], true)) {
-            return response()->json(['message' => 'Only owners and admins can create folders.'], 403);
-        }
+        // if (!$this->canManageFolders($user)) {
+        //     return response()->json(['message' => 'Only owners and admins can create folders.'], 403);
+        // }
 
         $validated = $request->validate([
             'name'        => 'required|string|max:100',
@@ -77,9 +91,9 @@ class MediaFolderController extends Controller
     {
         $user   = auth()->user();
 
-        if (!in_array($user->role?->name, ['owner', 'admin'], true)) {
-            return response()->json(['message' => 'Only owners and admins can edit folders.'], 403);
-        }
+        // if (!$this->canManageFolders($user)) {
+        //     return response()->json(['message' => 'Only owners and admins can edit folders.'], 403);
+        // }
 
         $folder = MediaFolder::where('company_id', $user->company_id)->findOrFail($id);
 
@@ -111,9 +125,9 @@ class MediaFolderController extends Controller
     {
         $user   = auth()->user();
 
-        if (!in_array($user->role?->name, ['owner', 'admin'], true)) {
-            return response()->json(['message' => 'Only owners and admins can delete folders.'], 403);
-        }
+        // if (!$this->canManageFolders($user)) {
+        //     return response()->json(['message' => 'Only owners and admins can delete folders.'], 403);
+        // }
 
         $folder = MediaFolder::where('company_id', $user->company_id)->findOrFail($id);
 

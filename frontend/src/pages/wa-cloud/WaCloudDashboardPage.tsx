@@ -24,9 +24,7 @@ interface PhoneNumber {
 
 interface OtpService {
   is_active: boolean
-  delivery_channel: string
-  otp_length: number
-  otp_expiry_minutes: number
+  api_token: string | null
 }
 
 interface OtpLog {
@@ -120,7 +118,7 @@ export default function WaCloudDashboardPage() {
       const [overviewRes, phonesRes, otpRes] = await Promise.allSettled([
         api.get('/analytics/overview'),
         api.get('/phone-numbers'),
-        api.get('/otp-service'),
+        api.get('/wa-cloud/otp-service'),
       ])
       if (overviewRes.status === 'fulfilled') setOverview(overviewRes.value.data)
       if (phonesRes.status  === 'fulfilled') {
@@ -133,7 +131,7 @@ export default function WaCloudDashboardPage() {
         setOtpService(d.data ?? d)
       }
       try {
-        const logsRes = await api.get('/otp-service/logs')
+        const logsRes = await api.get('/wa-cloud/otp-service/logs')
         const raw = logsRes.data
         setOtpLogs((raw.data ?? raw) as OtpLog[])
       } catch { /* OTP may not be configured */ }
@@ -229,8 +227,8 @@ export default function WaCloudDashboardPage() {
         {/* OTP service status */}
         <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
           <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-            <h2 className="text-sm font-semibold text-gray-900">🔑 OTP Service</h2>
-            <Link to="/wa-chat/api-services" className="text-xs text-indigo-600 hover:underline">Configure →</Link>
+            <h2 className="text-sm font-semibold text-gray-900">🔑 API Service</h2>
+            <Link to="/wa-cloud/api-service" className="text-xs text-indigo-600 hover:underline">Configure →</Link>
           </div>
           {otpService ? (
             <div className="px-5 py-4 space-y-3">
@@ -240,15 +238,10 @@ export default function WaCloudDashboardPage() {
                 </span>
               </Row>
               <Row label="Delivery channel">
-                <span className="text-xs font-medium text-gray-700">
-                  {otpService.delivery_channel === 'meta' ? '☁️ Cloud Meta API' : '📱 WA Chat (WAHA)'}
-                </span>
+                <span className="text-xs font-medium text-gray-700">☁️ Cloud Meta API</span>
               </Row>
-              <Row label="OTP length">
-                <span className="text-xs font-medium text-gray-700">{otpService.otp_length ?? 6} digits</span>
-              </Row>
-              <Row label="Expiry">
-                <span className="text-xs font-medium text-gray-700">{otpService.otp_expiry_minutes ?? 10} min</span>
+              <Row label="API token">
+                <span className="text-xs font-medium text-gray-700">{otpService.api_token ? 'Generated' : 'Not generated'}</span>
               </Row>
               {defaultPhone && (
                 <div className="pt-3 border-t border-gray-50">
@@ -262,7 +255,7 @@ export default function WaCloudDashboardPage() {
           ) : (
             <div className="px-5 py-10 text-center text-sm text-gray-400">
               OTP service not configured.{' '}
-              <Link to="/wa-chat/api-services" className="text-indigo-600 hover:underline">Set up →</Link>
+              <Link to="/wa-cloud/api-service" className="text-indigo-600 hover:underline">Set up →</Link>
             </div>
           )}
         </div>
@@ -321,7 +314,7 @@ export default function WaCloudDashboardPage() {
         <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Quick Actions</p>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {[
-            { label: 'API Services',  icon: '🔑', to: '/wa-chat/api-services' },
+            { label: 'API Service',   icon: '🔑', to: '/wa-cloud/api-service' },
             { label: 'Phone Numbers', icon: '📱', to: '/phone-numbers' },
             { label: 'WA Templates',  icon: '📋', to: '/wa-cloud/templates' },
             { label: 'Campaigns',     icon: '📢', to: '/campaigns' },

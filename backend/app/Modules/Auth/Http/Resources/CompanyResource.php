@@ -47,7 +47,7 @@ class CompanyResource extends JsonResource
                 'is_low'              => $this->wallet->balance <= $this->wallet->low_balance_alert,
             ]),
 
-            'wa_chat_token' => 'owa_k1_46abb61eeb52d9799c2a3247f7af6496a59391b5737a720313915a9b232b6967'
+            'wa_chat_token' => $this->wa_chat_token
         ];
     }
 }

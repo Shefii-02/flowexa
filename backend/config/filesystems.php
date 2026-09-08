@@ -45,6 +45,21 @@ return [
             'visibility' => 'public',
             'throw' => false,
             'report' => false,
+            // Every directory Flysystem creates under this disk (media/{company}/{images,videos,...},
+            // templates, exports, etc.) gets full read/write/execute up front — a folder created with a
+            // restrictive umask here is otherwise only caught when a later request 403s trying to read
+            // it back. Flysystem's local adapter already no-ops when the directory exists, so this never
+            // re-creates or re-chmods anything already there.
+            'permissions' => [
+                'file' => [
+                    'public' => 0666,
+                    'private' => 0600,
+                ],
+                'dir' => [
+                    'public' => 0777,
+                    'private' => 0700,
+                ],
+            ],
         ],
 
         's3' => [

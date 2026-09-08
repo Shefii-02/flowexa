@@ -3,7 +3,7 @@
 
 // The WA Chat base URL comes from the dedicated ./client module so this module can never
 // resolve to Project A's flownode-api origin. See ./client.ts for the env var contract.
-import { WA_CHAT_API_BASE_URL } from './client';
+import { WA_CHAT_API_BASE_URL, WA_CHAT_API_KEY_STORAGE } from './client';
 
 // Re-exported under the original name so the ported call sites keep working unchanged.
 export const API_BASE_URL = WA_CHAT_API_BASE_URL;
@@ -653,7 +653,7 @@ export interface SearchResults {
 // throw an Error carrying the HTTP status and, when the gateway supplied one, its machine code.
 async function handleErrorResponse<T>(response: Response): Promise<T> {
   if (response.status === 401) {
-    sessionStorage.removeItem('openwa_api_key');
+    sessionStorage.removeItem(WA_CHAT_API_KEY_STORAGE);
     if (typeof window !== 'undefined') {
       window.location.assign('/');
       return new Promise<T>(() => { });
@@ -683,7 +683,7 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
   const url = `${API_BASE_URL}${endpoint}`;
 
   // Get API key from sessionStorage for authentication
-  const apiKey = sessionStorage.getItem('openwa_api_key');
+  const apiKey = sessionStorage.getItem(WA_CHAT_API_KEY_STORAGE);
 
   // For FormData (file uploads) let the browser set multipart/form-data + boundary itself.
   const isFormData = options.body instanceof FormData;
@@ -708,7 +708,7 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
 
 /** Like {@link request} but returns the raw response text — e.g. a plugin's HTML config-UI bundle. */
 async function requestText(endpoint: string): Promise<string> {
-  const apiKey = sessionStorage.getItem('openwa_api_key');
+  const apiKey = sessionStorage.getItem(WA_CHAT_API_KEY_STORAGE);
   const response = await fetch(`${API_BASE_URL}${endpoint}`, {
     headers: { ...(apiKey ? { 'X-API-Key': apiKey } : {}) },
   });
@@ -725,7 +725,7 @@ async function requestBlob(endpoint: string): Promise<Blob> {
   const url = `${API_BASE_URL}${endpoint}`;
 
   // Get API key from sessionStorage for authentication
-  const apiKey = sessionStorage.getItem('openwa_api_key');
+  const apiKey = sessionStorage.getItem(WA_CHAT_API_KEY_STORAGE);
 
   const headers: HeadersInit = {
     ...(apiKey ? { 'X-API-Key': apiKey } : {}),

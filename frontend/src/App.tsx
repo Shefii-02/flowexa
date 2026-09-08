@@ -9,6 +9,8 @@ import { useIsSuperAdmin } from '@/store'
 // Auth pages
 import LoginPage from '@/pages/auth/LoginPage'
 import RegisterPage from '@/pages/auth/RegisterPage'
+import ForgotPassword from '@/pages/auth/ForgotPassword'
+import ResetPassword from '@/pages/settings/ResetPassword'
 
 // Main pages
 import DashboardPage from '@/pages/dashboard/DashboardPage'
@@ -18,8 +20,14 @@ import ContactsPage from '@/pages/contacts/ContactsPage'
 // import FlowPage from '@/pages/flow/FlowPage'
 import CampaignsPage from '@/pages/meta-ads/campaigns/CampaignsPage'
 import LeadsPage from '@/pages/leads/LeadsPage'
+import LeadsSummaryPage from '@/pages/leads/LeadsSummaryPage'
+import LeadsReportPage from '@/pages/leads/LeadsReportPage'
+import DealsPage from '@/pages/crm/DealsPage'
+import CrmTasksPage from '@/pages/crm/TasksPage'
+import SegmentsPage from '@/pages/crm/SegmentsPage'
+import AttendancePage from '@/pages/hr/AttendancePage'
+import HrAdminPage from '@/pages/hr/HrAdminPage'
 import AssignmentPage from '@/pages/leads/AssignmentPage'
-import StaffAvailabilityPage from '@/pages/leads/StaffAvailabilityPage'
 import AssignmentRulesPage from '@/pages/leads/AssignmentRulesPage'
 import LeadNotificationPopup from '@/components/leads/LeadNotificationPopup'
 import AiHandoffOfferPopup from '@/components/leads/AiHandoffOfferPopup'
@@ -35,7 +43,9 @@ import SuperAdminPlans from '@/pages/superadmin/SuperAdminPlans'
 import SuperAdminStats from '@/pages/superadmin/SuperAdminStats'
 import SuperAdminStaffPage from '@/pages/superadmin/SuperAdminStaffPage'
 import PermissionsEditorPage from '@/pages/superadmin/PermissionsEditorPage'
+import CompanyPermissionsPage from '@/pages/superadmin/CompanyPermissionsPage'
 import TopupPackagesPage from '@/pages/superadmin/TopupPackagesPage'
+import PrebuiltTemplatesPage from '@/pages/superadmin/PrebuiltTemplatesPage'
 
 // Meta Ads pages
 import AdAccountPage from '@/pages/meta-ads/ad-account/AdAccountPage'
@@ -76,7 +86,6 @@ import WaAutomationPage from '@/pages/wa-chat/pages/WaAutomation'
 import WaGroupsPage from '@/pages/wa-chat/pages/WaGroups'
 
 // Settings pages
-import ApiKeysPage from '@/pages/settings/ApiKeysPage'
 
 // WA Agent module
 import WaAgentShell from '@/pages/wa-agent/WaAgentShell'
@@ -87,11 +96,14 @@ import WaAgentAiAgent from '@/pages/wa-agent/ai-agent'
 import WaAgentLogs from '@/pages/wa-agent/logs'
 import LeadIntelligencePage from '@/pages/wa-agent/lead-intelligence'
 import MetaAiConfigPage from '@/pages/wa-agent/meta-ai-config'
+import WaAgentSettingsPage from '@/pages/wa-agent/settings'
+import WaAgentPlaybookPage from '@/pages/wa-agent/playbook'
 
 // WA Cloud pages
 import WaCloudDashboardPage from '@/pages/wa-cloud/WaCloudDashboardPage'
 import WaCloudTemplatesPage from '@/pages/wa-cloud/WaCloudTemplatesPage'
 import WaCloudOtpPage from '@/pages/wa-cloud/WaCloudOtpPage'
+import WaCloudInboxAnalytics from '@/pages/wa-cloud/WaCloudInboxAnalytics'
 import WaCloudSettingsPage from '@/pages/wa-cloud/settings/WaCloudSettingsPage'
 import WaCloudAutomationsPage from '@/pages/wa-cloud/WaCloudAutomationsPage'
 import WaChatAutomationsPage from '@/pages/wa-chat/pages/WaChatAutomationsPage'
@@ -131,6 +143,8 @@ export default function App() {
           {/* Public routes */}
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
 
           {/* Protected routes — inside dashboard layout */}
           <Route
@@ -175,9 +189,11 @@ export default function App() {
               <Route path="knowledge-base"  element={<WaAgentKnowledgeBase />} />
               <Route path="pipelines"       element={<WaAgentPipelines />} />
               <Route path="ai-agent"        element={<WaAgentAiAgent />} />
+              <Route path="playbook"        element={<WaAgentPlaybookPage />} />
               <Route path="lead-intelligence" element={<LeadIntelligencePage />} />
               <Route path="meta-ai"         element={<MetaAiConfigPage />} />
               <Route path="logs"            element={<WaAgentLogs />} />
+              <Route path="settings"        element={<WaAgentSettingsPage />} />
             </Route>
 
             <Route path="staff" element={<StaffPage />} />
@@ -189,13 +205,15 @@ export default function App() {
             <Route path="/flow" element={<FlowNodesPage />} />
             
             <Route path="leads" element={<LeadsPage />} />
+            <Route path="leads/summary"           element={<LeadsSummaryPage />} />
+            <Route path="leads/report"            element={<LeadsReportPage />} />
             <Route path="leads/assignments"       element={<AssignmentPage />} />
-            <Route path="leads/staff-availability" element={<StaffAvailabilityPage />} />
+            <Route path="leads/staff-availability" element={<Navigate to="/leads/assignment-rules" replace />} />
             <Route path="leads/assignment-rules"  element={<AssignmentRulesPage />} />
             <Route path="wallet" element={<WalletPage />} />
             <Route path="analytics" element={<AnalyticsPage />} />
             <Route path="settings" element={<SettingsPage />} />
-            <Route path="settings/api-keys" element={<ApiKeysPage />} />
+            <Route path="settings/api-keys" element={<Navigate to="/wa-agent/settings" replace />} />
             
 
             {/* V2 routes */}
@@ -206,14 +224,25 @@ export default function App() {
             <Route path="blacklist" element={<BlacklistPage />} />
             <Route path="lead-categories" element={<LeadCategoriesPage />} />
 
+            {/* Advanced CRM */}
+            <Route path="crm/deals" element={<DealsPage />} />
+            <Route path="crm/tasks" element={<CrmTasksPage />} />
+            <Route path="crm/segments" element={<SegmentsPage />} />
+
+            {/* HR */}
+            <Route path="hr/attendance" element={<AttendancePage />} />
+            <Route path="hr/admin" element={<HrAdminPage />} />
+
             {/* WA Cloud routes */}
             <Route path="wa-cloud/dashboard" element={<WaCloudDashboardPage />} />
             <Route path="wa-cloud/templates" element={<TemplatesPage />} />
-            <Route path="wa-cloud/otp-services" element={<WaCloudOtpPage />} />
-             {/* <Route path="wa-cloud/otp-services" element={<OtpPage />} /> */}
+            <Route path="wa-cloud/api-service" element={<WaCloudOtpPage />} />
+            <Route path="wa-cloud/otp-service" element={<Navigate to="/wa-cloud/api-service" replace />} />
+            <Route path="wa-cloud/otp-services" element={<Navigate to="/wa-cloud/api-service" replace />} />
             <Route path="wa-cloud/settings" element={<WaCloudSettingsPage />} />
             <Route path="wa-cloud/automations" element={<WaCloudAutomationsPage />} />
             <Route path="wa-cloud/inbox" element={<InboxPage />} />
+            <Route path="wa-cloud/inbox-analytics" element={<WaCloudInboxAnalytics />} />
             <Route path="wa-chat/automations" element={<WaChatAutomationsPage />} />
             <Route path="/wa-cloud/campaigns" element={<CampaignsPage />} />
             <Route path="/wa-cloud/survey-forms" element={<SurveyFormsPage />} />
@@ -257,8 +286,16 @@ export default function App() {
               element={<SuperAdminRoute><PermissionsEditorPage /></SuperAdminRoute>}
             />
             <Route
+              path="superadmin/companies/:id/permissions"
+              element={<SuperAdminRoute><CompanyPermissionsPage /></SuperAdminRoute>}
+            />
+            <Route
               path="superadmin/topup"
               element={<SuperAdminRoute><TopupPackagesPage /></SuperAdminRoute>}
+            />
+            <Route
+              path="superadmin/prebuilt-templates"
+              element={<SuperAdminRoute><PrebuiltTemplatesPage /></SuperAdminRoute>}
             />
             <Route
               path="superadmin/reports"

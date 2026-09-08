@@ -1,12 +1,13 @@
 // src/pages/staff/StaffPage.tsx
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useAppDispatch, useAppSelector, usePermission } from '@/store'
 import { fetchStaffThunk } from '@/store/slices'
-import { staffApi, labelApi } from '@/api'
+import { staffApi, labelApi, deviceApi } from '@/api'
 import {
   Button, Input, Select, Modal, ConfirmModal,
   Badge, EmptyState, Pagination, TableSkeleton, Spinner,
 } from '@/components/ui'
+import LinkedDevicesModal, { type DeviceService } from '@/components/devices/LinkedDevicesModal'
 import { fmt, getError } from '@/utils'
 import toast from 'react-hot-toast'
 
@@ -18,6 +19,18 @@ export default function StaffPage() {
   const canCreate  = usePermission('staff.create')
   const canEdit    = usePermission('staff.edit')
   const canDelete  = usePermission('staff.delete')
+
+  const [deviceUser, setDeviceUser] = useState<any>(null)
+  const deviceService: DeviceService | null = useMemo(() => {
+    if (!deviceUser) return null
+    const uid = deviceUser.id
+    return {
+      list: () => deviceApi.userDevices(uid).then((r) => r.data),
+      createChallenge: () => deviceApi.createChallenge(uid).then((r) => r.data),
+      challengeStatus: (id) => deviceApi.challengeStatus(id).then((r) => r.data),
+      revoke: (deviceId) => deviceApi.revoke(deviceId).then(() => undefined),
+    }
+  }, [deviceUser])
 
   const [page,    setPage]    = useState(1)
   const [search,  setSearch]  = useState('')
@@ -146,6 +159,7 @@ export default function StaffPage() {
                     </td>
                     <td>
                       <div className="flex gap-1">
+                        <button onClick={() => setDeviceUser(u)} className="text-xs text-indigo-600 hover:underline px-1">Devices</button>
                         {canEdit && (
                           <>
                             <button onClick={() => openEdit(u)} className="text-xs text-blue-600 hover:underline px-1">Edit</button>
@@ -187,6 +201,15 @@ export default function StaffPage() {
           <Input label="Max leads" type="number" min={1} max={500} value={form.max_leads} onChange={(e) => set('max_leads', e.target.value)} />
         </div>
       </Modal>
+
+      {/* Linked devices */}
+      <LinkedDevicesModal
+        open={!!deviceService}
+        onClose={() => setDeviceUser(null)}
+        title={deviceUser ? `${deviceUser.name} — linked devices` : 'Linked devices'}
+        subtitle="Active phone-app devices for this staff member. Start a QR/PIN login to link a new one."
+        service={deviceService ?? { list: async () => ({ max: 0, active: 0, devices: [] }), createChallenge: async () => { throw new Error('n/a') }, revoke: async () => undefined }}
+      />
 
       {/* Delete Confirm */}
       <ConfirmModal

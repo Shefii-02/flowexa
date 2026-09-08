@@ -184,7 +184,7 @@ export function Logs() {
           </div>
           {filteredLogs.length === 0 ? (
             <div className="empty-table-state">
-              <FileText size={48} strokeWidth={1} />
+              <FileText size={48} strokeWidth={1} style={{margin: '0 auto 12px ' }} />
               {hasSeverityFilter || hasSearch ? (
                 <>
                   <h3>{t('logs.empty.filteredTitle')}</h3>

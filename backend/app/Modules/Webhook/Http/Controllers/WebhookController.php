@@ -3,8 +3,10 @@
 namespace App\Modules\Webhook\Http\Controllers;
 
 use App\Models\Company;
+use App\Models\WaCall;
 use App\Models\WaTemplate;
 use App\Models\WebhookLog;
+use App\Modules\WaCloud\Models\WaCloudApiConfig;
 use App\Modules\Webhook\DTOs\InboundMessageDTO;
 use App\Modules\Webhook\DTOs\StatusUpdateDTO;
 use App\Modules\Webhook\Services\WebhookService;
@@ -129,8 +131,95 @@ class WebhookController extends Controller
                     $dto = StatusUpdateDTO::fromMeta($status);
                     $this->webhookService->handleStatusUpdate($company, $dto);
                 }
+
+                // ── Calling API events (webhook field "calls") ────────────────
+                if ($field === 'calls') {
+                    foreach ($value['calls'] ?? [] as $call) {
+                        $this->handleCall($company, $call, $phoneNumberId);
+                    }
+                }
             }
         }
+    }
+
+    // ─── WhatsApp Business Calling API — upsert one call row ──────────────────
+    // The `calls` webhook delivers connect / status / terminate events for the
+    // same call id over time; we merge each into a single wa_calls row. Field
+    // names vary across Meta's rollout, so every lookup is defensive.
+    private function handleCall(Company $company, array $call, ?string $phoneNumberId): void
+    {
+        $callId = $call['id'] ?? $call['call_id'] ?? null;
+        if (!$callId) {
+            return;
+        }
+
+        $rawDirection = strtoupper((string) ($call['direction'] ?? ''));
+        $direction = str_contains($rawDirection, 'BUSINESS') ? 'outbound' : 'inbound';
+
+        $event  = strtolower((string) ($call['event'] ?? ''));
+        $status = $this->mapCallStatus($call['status'] ?? $event, $event, $call);
+
+        $ts = fn ($v) => $v ? \Illuminate\Support\Carbon::createFromTimestamp(is_numeric($v) ? (int) $v : strtotime((string) $v)) : null;
+
+        $existing = WaCall::where('company_id', $company->id)->where('wa_call_id', $callId)->first();
+
+        $contactId = $existing?->contact_id;
+        $conversationId = $existing?->conversation_id;
+        $assignedTo = $existing?->assigned_to;
+        $peerPhone = $direction === 'inbound' ? ($call['from'] ?? null) : ($call['to'] ?? null);
+        if (!$contactId && $peerPhone) {
+            $digits = preg_replace('/\D/', '', $peerPhone);
+            $conv = \App\Models\WaConversation::where('company_id', $company->id)
+                ->where('phone', 'like', "%{$digits}")->latest('id')->first();
+            if ($conv) {
+                $contactId = $conv->contact_id;
+                $conversationId = $conv->id;
+                $assignedTo = $conv->assigned_to;
+            }
+        }
+
+        $attrs = array_filter([
+            'phone_number_id' => $phoneNumberId,
+            'contact_id'      => $contactId,
+            'conversation_id' => $conversationId,
+            'assigned_to'     => $assignedTo,
+            'direction'       => $direction,
+            'status'          => $status,
+            'from_phone'      => $call['from'] ?? null,
+            'to_phone'        => $call['to'] ?? null,
+            'started_at'      => $ts($call['start_time'] ?? ($event === 'connect' ? ($call['timestamp'] ?? null) : null)),
+            'connected_at'    => $status === 'completed' || $event === 'connect' ? $ts($call['connect_time'] ?? $call['timestamp'] ?? null) : null,
+            'ended_at'        => $event === 'terminate' ? $ts($call['end_time'] ?? $call['timestamp'] ?? null) : null,
+            'duration_seconds' => isset($call['duration']) ? (int) $call['duration'] : null,
+            'raw'             => $call,
+        ], fn ($v) => $v !== null);
+
+        if ($existing) {
+            $existing->update($attrs);
+        } else {
+            WaCall::create(array_merge($attrs, [
+                'company_id' => $company->id,
+                'wa_call_id' => $callId,
+            ]));
+        }
+    }
+
+    /** Normalise Meta's assorted call status / event strings to our vocabulary. */
+    private function mapCallStatus(string $raw, string $event, array $call): string
+    {
+        $s = strtolower($raw);
+        return match (true) {
+            str_contains($s, 'ring')                       => 'ringing',
+            str_contains($s, 'connect'), $s === 'accepted' => 'connected',
+            str_contains($s, 'complete'), $s === 'ended'   => 'completed',
+            str_contains($s, 'miss'), $s === 'no_answer'   => 'missed',
+            str_contains($s, 'reject'), $s === 'declined'  => 'rejected',
+            str_contains($s, 'cancel')                     => 'canceled',
+            str_contains($s, 'fail'), $s === 'error'       => 'failed',
+            $event === 'terminate'                          => isset($call['duration']) && (int) $call['duration'] > 0 ? 'completed' : 'missed',
+            $event === 'connect'                            => 'connected',
+            default                                         => 'ringing',
+        };
     }
 
     // ─── Resolve company by phone_number_id ──────────────────────────────────
@@ -165,7 +254,25 @@ class WebhookController extends Controller
 
         if (!$templateName || !$event) return;
 
-        // Find template — match by name + WABA if available
+        $statusMap = [
+            'APPROVED'         => 'approved',
+            'REJECTED'         => 'rejected',
+            'PENDING_DELETION' => 'pending_deletion',
+            'FLAGGED'          => 'flagged',
+            'PAUSED'           => 'paused',
+        ];
+
+        $mappedStatus = $statusMap[$event] ?? strtolower($event);
+        $mappedReason = in_array($event, ['REJECTED', 'FLAGGED'])
+            ? ($reason ?? 'Rejected by Meta — check template content guidelines')
+            : null;
+
+        // Keep the WA Cloud Api Service configs (their own Meta template mirror)
+        // in sync so an approval/rejection reflects without a manual "Sync".
+        WaCloudApiConfig::where('template_name', $templateName)
+            ->update(['template_status' => $mappedStatus, 'rejection_reason' => $mappedReason]);
+
+        // Find the campaign-side template — match by name + WABA if available
         $query = WaTemplate::where('name', $templateName);
 
         if ($wabaId) {
@@ -176,23 +283,13 @@ class WebhookController extends Controller
         $template = $query->first();
 
         if (!$template) {
-            Log::warning("Template webhook: no template found for name={$templateName}");
+            Log::warning("Template webhook: no WaTemplate found for name={$templateName}");
             return;
         }
 
-        $statusMap = [
-            'APPROVED'         => 'approved',
-            'REJECTED'         => 'rejected',
-            'PENDING_DELETION' => 'pending_deletion',
-            'FLAGGED'          => 'flagged',
-            'PAUSED'           => 'paused',
-        ];
-
         $template->update([
-            'status'           => $statusMap[$event] ?? strtolower($event),
-            'rejection_reason' => in_array($event, ['REJECTED', 'FLAGGED'])
-                ? ($reason ?? 'Rejected by Meta — check template content guidelines')
-                : null,
+            'status'           => $mappedStatus,
+            'rejection_reason' => $mappedReason,
         ]);
 
         // Push notification to company owner
