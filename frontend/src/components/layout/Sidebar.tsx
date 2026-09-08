@@ -253,13 +253,14 @@ export const Sidebar = () => {
 
   // ── Accordion state ───────────────────────────────────────────────────────────
   // Only ONE top-level accordion open at a time
-  type AccordionId = 'wa-chat' | 'wa-cloud' | 'wa-agent' | 'meta-ads' | null
+  type AccordionId = 'wa-chat' | 'wa-cloud' | 'wa-agent' | 'meta-ads' | 'instagram' | null
 
   const detectOpen = (path: string): AccordionId => {
     if (path.startsWith('/wa-chat')) return 'wa-chat'
     if (path.startsWith('/wa-cloud')) return 'wa-cloud'
     if (path.startsWith('/wa-agent')) return 'wa-agent'
     if (path.startsWith('/meta-ads')) return 'meta-ads'
+    if (path.startsWith('/instagram')) return 'instagram'
     return null
   }
 
@@ -349,6 +350,7 @@ export const Sidebar = () => {
             {/* {canViewDash &&  */}
             <FlatLink to="/dashboard" icon="📊" label="Dashboard" end />
             {/* } */}
+            <FlatLink to="/setup-guide" icon="🧭" label="Setup Guide" />
 
             {/* ── WA Chat accordion ── */}
             {/* {canViewWaChat && ( */}
@@ -457,6 +459,8 @@ export const Sidebar = () => {
               {/* {canViewKb &&  */}
               <SubLink to="/wa-agent/knowledge-base" icon="📚" label="Knowledge Base" />
               {/* } */}
+              <SubLink to="/wa-agent/catalog" icon="📦" label="Listings & Products" />
+              <SubLink to="/wa-agent/website-widget" icon="🌐" label="Website Widget" />
               {/* {canViewPipes &&  */}
               <SubLink to="/wa-agent/pipelines" icon="🔄" label="Pipelines" />
               {/* } */}
@@ -482,11 +486,26 @@ export const Sidebar = () => {
             >
               <SubLink to="/meta-ads/accounts" icon="🏦" label="Ad Accounts" />
               <SubLink to="/meta-ads/campaigns" icon="📢" label="Campaigns" />
+              <SubLink to="/meta-ads/audiences" icon="🎯" label="Audience Sets" />
+              <SubLink to="/meta-ads/lead-ads" icon="📥" label="Lead Ads" />
               <SubLink to="/meta-ads/creatives" icon="🎨" label="Creative Studio" />
               <SubLink to="/meta-ads/media" icon="🖼️" label="Media Library" />
               <SubLink to="/meta-ads/insights" icon="📊" label="Ads Insight" />
             </Accordion>
             {/* )} */}
+
+            {/* ── Instagram accordion ── */}
+            <Accordion
+              icon="📸"
+              label="Instagram"
+              basePaths={['/instagram']}
+              isOpen={openAccordion === 'instagram'}
+              onToggle={() => toggle('instagram')}
+            >
+              <SubLink to="/instagram/accounts" icon="🔗" label="Accounts" />
+              <SubLink to="/instagram/automations" icon="⚡" label="Auto-DM Rules" />
+              <SubLink to="/instagram/inbox" icon="💬" label="DM Inbox" />
+            </Accordion>
 
             {/* ── CRM ── */}
             <SectionHeader label="CRM" />
@@ -566,6 +585,7 @@ export const Sidebar = () => {
             {/* ── SYSTEM ── */}
             <SectionHeader label="System" />
             <FlatLink to="/settings" icon="⚙️" label="Settings" />
+            <FlatLink to="/settings/integrations" icon="🔌" label="Integrations" />
           </>
         )}
 

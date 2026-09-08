@@ -34,6 +34,7 @@ import AiHandoffOfferPopup from '@/components/leads/AiHandoffOfferPopup'
 import WalletPage from '@/pages/wallet/WalletPage'
 import AnalyticsPage from '@/pages/analytics/AnalyticsPage'
 import SettingsPage from '@/pages/settings/SettingsPage'
+import IntegrationsPage from '@/pages/settings/IntegrationsPage'
 import OtpPage from '@/pages/otp/OtpPage'
 import MessageLogsPage from '@/pages/message-logs/MessageLogsPage'
 
@@ -51,7 +52,12 @@ import PrebuiltTemplatesPage from '@/pages/superadmin/PrebuiltTemplatesPage'
 import AdAccountPage from '@/pages/meta-ads/ad-account/AdAccountPage'
 import MetaCampaignsPage from '@/pages/meta-ads/campaigns/MetaCampaignsPage'
 import AdSetPage from '@/pages/meta-ads/ad-sets/AdSetPage'
+import AudienceSetsPage from '@/pages/meta-ads/audiences/AudienceSetsPage'
+import LeadAdsPage from '@/pages/meta-ads/leads/LeadAdsPage'
 import CreativeStudioPage from '@/pages/meta-ads/creatives/CreativeStudioPage'
+import InstagramAccountsPage from '@/pages/instagram/InstagramAccountsPage'
+import InstagramAutomationsPage from '@/pages/instagram/InstagramAutomationsPage'
+import InstagramInboxPage from '@/pages/instagram/InstagramInboxPage'
 import MediaLibraryPage from '@/pages/meta-ads/media-library/MediaLibraryPage'
 import AdsInsightsDashboard from '@/pages/meta-ads/insights/AdsInsightsDashboard'
 import ReportsPage from '@/pages/reports/ReportsPage'
@@ -93,6 +99,9 @@ import WaAgentAutomations from '@/pages/wa-agent/automations'
 import WaAgentKnowledgeBase from '@/pages/wa-agent/knowledge-base'
 import WaAgentPipelines from '@/pages/wa-agent/pipelines'
 import WaAgentAiAgent from '@/pages/wa-agent/ai-agent'
+import CatalogPage from '@/pages/wa-agent/catalog/CatalogPage'
+import WidgetPage from '@/pages/wa-agent/widget/WidgetPage'
+import SetupGuidePage from '@/pages/setup-guide/SetupGuidePage'
 import WaAgentLogs from '@/pages/wa-agent/logs'
 import LeadIntelligencePage from '@/pages/wa-agent/lead-intelligence'
 import MetaAiConfigPage from '@/pages/wa-agent/meta-ai-config'
@@ -187,6 +196,8 @@ export default function App() {
               <Route path="automations"       element={<WaAgentAutomations />} />
               <Route path="automation"        element={<Navigate to="/wa-agent/automations" replace />} />
               <Route path="knowledge-base"  element={<WaAgentKnowledgeBase />} />
+              <Route path="catalog"         element={<CatalogPage />} />
+              <Route path="website-widget"  element={<WidgetPage />} />
               <Route path="pipelines"       element={<WaAgentPipelines />} />
               <Route path="ai-agent"        element={<WaAgentAiAgent />} />
               <Route path="playbook"        element={<WaAgentPlaybookPage />} />
@@ -196,6 +207,7 @@ export default function App() {
               <Route path="settings"        element={<WaAgentSettingsPage />} />
             </Route>
 
+            <Route path="setup-guide" element={<SetupGuidePage />} />
             <Route path="staff" element={<StaffPage />} />
             <Route path="staff/roles" element={<RolesPage />} />
             <Route path="contacts" element={<ContactsPage />} />
@@ -213,6 +225,7 @@ export default function App() {
             <Route path="wallet" element={<WalletPage />} />
             <Route path="analytics" element={<AnalyticsPage />} />
             <Route path="settings" element={<SettingsPage />} />
+            <Route path="settings/integrations" element={<IntegrationsPage />} />
             <Route path="settings/api-keys" element={<Navigate to="/wa-agent/settings" replace />} />
             
 
@@ -256,9 +269,16 @@ export default function App() {
             <Route path="meta-ads/accounts" element={<AdAccountPage />} />
             <Route path="meta-ads/campaigns" element={<MetaCampaignsPage />} />
             <Route path="meta-ads/campaigns/:campaignId" element={<AdSetPage />} />
+            <Route path="meta-ads/audiences" element={<AudienceSetsPage />} />
+            <Route path="meta-ads/lead-ads" element={<LeadAdsPage />} />
             <Route path="meta-ads/creatives" element={<CreativeStudioPage />} />
             <Route path="meta-ads/media" element={<MediaLibraryPage />} />
             <Route path="meta-ads/insights" element={<AdsInsightsDashboard />} />
+
+            <Route path="instagram" element={<Navigate to="/instagram/accounts" replace />} />
+            <Route path="instagram/accounts" element={<InstagramAccountsPage />} />
+            <Route path="instagram/automations" element={<InstagramAutomationsPage />} />
+            <Route path="instagram/inbox" element={<InstagramInboxPage />} />
 
             {/* SuperAdmin — each route redirects non-superadmins to /dashboard */}
             <Route

@@ -22,6 +22,7 @@ class DatabaseSeeder extends Seeder
             SuperAdminSeeder::class,
             PrebuiltTemplateSeeder::class,
             AgentPlaybookTemplateSeeder::class,
+            MetaAdsSeeder::class,
         ]);
     }
 }

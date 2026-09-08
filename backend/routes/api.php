@@ -53,6 +53,10 @@ use App\Modules\MetaAds\Http\Controllers\{
     MetaAdAccountController,
     MetaCampaignController,
     MetaAdSetController,
+    MetaAudienceSetController,
+    MetaLeadController,
+    MetaAdsAiController,
+    McpController,
     MetaCreativeController,
     MetaAdController,
     MetaInsightController,
@@ -780,8 +784,20 @@ Route::prefix('v1')->group(function () {
             Route::post('accounts/{id}/set-default', [MetaAdAccountController::class, 'setDefault']);
             Route::get('accounts/{id}/verify',      [MetaAdAccountController::class, 'verify']);
 
-            // Audience templates
+            // Audience templates (system starter presets)
             Route::get('audience-templates',        [MetaAdSetController::class, 'audienceTemplates']);
+
+            // Audience sets — company-owned, reusable, one-click apply / customize
+            Route::get('audience-sets',                     [MetaAudienceSetController::class, 'index']);
+            Route::post('audience-sets',                    [MetaAudienceSetController::class, 'store']);
+            Route::post('audience-sets/estimate-reach',     [MetaAudienceSetController::class, 'estimateReach']);
+            Route::get('audience-sets/targeting-search',    [MetaAudienceSetController::class, 'search']);
+            Route::post('audience-sets/from-template/{templateId}', [MetaAudienceSetController::class, 'fromTemplate']);
+            Route::post('audience-sets/from-adset/{adSetId}',       [MetaAudienceSetController::class, 'fromAdSet']);
+            Route::get('audience-sets/{id}',                [MetaAudienceSetController::class, 'show']);
+            Route::put('audience-sets/{id}',                [MetaAudienceSetController::class, 'update']);
+            Route::post('audience-sets/{id}/duplicate',     [MetaAudienceSetController::class, 'duplicate']);
+            Route::delete('audience-sets/{id}',             [MetaAudienceSetController::class, 'destroy']);
 
             // Campaigns
             Route::get('campaigns',                 [MetaCampaignController::class, 'index']);
@@ -790,12 +806,14 @@ Route::prefix('v1')->group(function () {
             Route::put('campaigns/{id}',            [MetaCampaignController::class, 'update']);
             Route::delete('campaigns/{id}',         [MetaCampaignController::class, 'destroy']);
             Route::patch('campaigns/{id}/status',   [MetaCampaignController::class, 'updateStatus']);
+            Route::post('campaigns/{id}/duplicate', [MetaCampaignController::class, 'duplicate']);
 
             // Ad sets
             Route::get('campaigns/{cid}/adsets',    [MetaAdSetController::class, 'index']);
             Route::post('campaigns/{cid}/adsets',   [MetaAdSetController::class, 'store']);
             Route::put('adsets/{id}',               [MetaAdSetController::class, 'update']);
             Route::patch('adsets/{id}/status',      [MetaAdSetController::class, 'updateStatus']);
+            Route::post('adsets/{id}/duplicate',    [MetaAdSetController::class, 'duplicate']);
             Route::delete('adsets/{id}',            [MetaAdSetController::class, 'destroy']);
 
             // Media library
@@ -821,6 +839,78 @@ Route::prefix('v1')->group(function () {
             Route::get('insights/campaign/{id}',    [MetaInsightController::class, 'campaign']);
             Route::get('insights/overview',         [MetaInsightController::class, 'overview']);
             Route::post('insights/sync/{campaignId}', [MetaInsightController::class, 'sync']);
+
+            // AI campaign builder
+            Route::get('ai/status',                   [MetaAdsAiController::class, 'status']);
+            Route::post('ai/plan',                    [MetaAdsAiController::class, 'plan']);
+            Route::post('ai/build',                   [MetaAdsAiController::class, 'build']);
+
+            // MCP server — JSON-RPC endpoint an AI agent connects to
+            Route::post('mcp',                        [McpController::class, 'handle']);
+
+            // Lead ads → CRM
+            Route::get('lead-forms',                  [MetaLeadController::class, 'forms']);
+            Route::post('lead-forms',                 [MetaLeadController::class, 'createForm']);
+            Route::post('lead-forms/sync',            [MetaLeadController::class, 'syncForms']);
+            Route::post('lead-forms/{formId}/sync-leads', [MetaLeadController::class, 'syncFormLeads']);
+            Route::get('leads',                       [MetaLeadController::class, 'leads']);
+        });
+
+        // ── Google Sheets / Drive lead sync ──
+        Route::prefix('/google')->middleware(['company.active'])->group(function () {
+            Route::get('/connect',       [\App\Modules\Google\Http\Controllers\GoogleIntegrationController::class, 'connectUrl']);
+            Route::get('/status',        [\App\Modules\Google\Http\Controllers\GoogleIntegrationController::class, 'status']);
+            Route::delete('/disconnect', [\App\Modules\Google\Http\Controllers\GoogleIntegrationController::class, 'disconnect']);
+            Route::post('/syncs',        [\App\Modules\Google\Http\Controllers\GoogleIntegrationController::class, 'createSync']);
+            Route::post('/syncs/{id}/run', [\App\Modules\Google\Http\Controllers\GoogleIntegrationController::class, 'syncNow']);
+            Route::delete('/syncs/{id}', [\App\Modules\Google\Http\Controllers\GoogleIntegrationController::class, 'deleteSync']);
+            Route::get('/drive/files',    [\App\Modules\Google\Http\Controllers\GoogleIntegrationController::class, 'driveFiles']);
+            Route::post('/drive/upload',  [\App\Modules\Google\Http\Controllers\GoogleIntegrationController::class, 'driveUpload']);
+        });
+
+        // ── Website chat widget management ──
+        Route::prefix('/widgets')->middleware(['company.active'])->group(function () {
+            Route::get('/',        [\App\Modules\Catalog\Http\Controllers\WidgetController::class, 'index']);
+            Route::post('/',       [\App\Modules\Catalog\Http\Controllers\WidgetController::class, 'store']);
+            Route::put('/{id}',    [\App\Modules\Catalog\Http\Controllers\WidgetController::class, 'update']);
+            Route::delete('/{id}', [\App\Modules\Catalog\Http\Controllers\WidgetController::class, 'destroy']);
+            Route::get('/{id}/conversations',       [\App\Modules\Catalog\Http\Controllers\WidgetController::class, 'conversations']);
+            Route::get('/{id}/conversations/{cid}', [\App\Modules\Catalog\Http\Controllers\WidgetController::class, 'conversation']);
+        });
+
+        // ── Catalog: listings the AI agent answers about + matches leads against ──
+        Route::prefix('/listings')->middleware(['company.active'])->group(function () {
+            Route::get('/templates',       [\App\Modules\Catalog\Http\Controllers\ListingController::class, 'templates']);
+            Route::post('/templates',      [\App\Modules\Catalog\Http\Controllers\ListingController::class, 'setTemplate']);
+            Route::post('/match',          [\App\Modules\Catalog\Http\Controllers\ListingController::class, 'match']);
+            Route::get('/',                [\App\Modules\Catalog\Http\Controllers\ListingController::class, 'index']);
+            Route::post('/',               [\App\Modules\Catalog\Http\Controllers\ListingController::class, 'store']);
+            Route::get('/{id}',            [\App\Modules\Catalog\Http\Controllers\ListingController::class, 'show']);
+            Route::put('/{id}',            [\App\Modules\Catalog\Http\Controllers\ListingController::class, 'update']);
+            Route::delete('/{id}',         [\App\Modules\Catalog\Http\Controllers\ListingController::class, 'destroy']);
+        });
+
+        // ── Instagram: connected account, keyword auto-DM bot, DM inbox + AI agent ──
+        Route::prefix('/instagram')->name('instagram.')->middleware(['company.active'])->group(function () {
+            Route::get('accounts',                 [\App\Modules\Instagram\Http\Controllers\InstagramAccountController::class, 'index']);
+            Route::post('accounts',                [\App\Modules\Instagram\Http\Controllers\InstagramAccountController::class, 'store']);
+            Route::put('accounts/{id}',            [\App\Modules\Instagram\Http\Controllers\InstagramAccountController::class, 'update']);
+            Route::delete('accounts/{id}',         [\App\Modules\Instagram\Http\Controllers\InstagramAccountController::class, 'destroy']);
+            Route::post('accounts/{id}/sync',      [\App\Modules\Instagram\Http\Controllers\InstagramAccountController::class, 'sync']);
+            Route::get('accounts/{id}/media',      [\App\Modules\Instagram\Http\Controllers\InstagramAccountController::class, 'media']);
+            Route::post('accounts/{id}/import-listings', [\App\Modules\Instagram\Http\Controllers\InstagramAccountController::class, 'importListings']);
+
+            Route::get('automations',              [\App\Modules\Instagram\Http\Controllers\InstagramAutomationController::class, 'index']);
+            Route::post('automations',             [\App\Modules\Instagram\Http\Controllers\InstagramAutomationController::class, 'store']);
+            Route::put('automations/{id}',         [\App\Modules\Instagram\Http\Controllers\InstagramAutomationController::class, 'update']);
+            Route::post('automations/{id}/toggle', [\App\Modules\Instagram\Http\Controllers\InstagramAutomationController::class, 'toggle']);
+            Route::post('automations/{id}/test',   [\App\Modules\Instagram\Http\Controllers\InstagramAutomationController::class, 'test']);
+            Route::delete('automations/{id}',      [\App\Modules\Instagram\Http\Controllers\InstagramAutomationController::class, 'destroy']);
+
+            Route::get('conversations',            [\App\Modules\Instagram\Http\Controllers\InstagramInboxController::class, 'index']);
+            Route::get('conversations/{id}',       [\App\Modules\Instagram\Http\Controllers\InstagramInboxController::class, 'show']);
+            Route::post('conversations/{id}/reply', [\App\Modules\Instagram\Http\Controllers\InstagramInboxController::class, 'reply']);
+            Route::patch('conversations/{id}',     [\App\Modules\Instagram\Http\Controllers\InstagramInboxController::class, 'updateStatus']);
         });
 
 
@@ -887,8 +977,24 @@ Route::prefix('v1')->group(function () {
     // ── Razorpay webhook (public — verified by signature) ────────────────────
     Route::post('razorpay/webhook', [PaymentController::class, 'webhook']);
 
-    // Public webhook
+    // Public webhook (Meta lead ads + ad review). GET = subscription verification handshake.
+    Route::get('/meta-ads/webhook', [MetaWebhookController::class, 'verify']);
     Route::post('/meta-ads/webhook', [MetaWebhookController::class, 'handle']);
+
+    // Public webhook — Instagram comments + DMs.
+    Route::get('/instagram/webhook',  [\App\Modules\Instagram\Http\Controllers\InstagramWebhookController::class, 'verify']);
+    Route::post('/instagram/webhook', [\App\Modules\Instagram\Http\Controllers\InstagramWebhookController::class, 'handle']);
+
+    // Google OAuth redirect-back (browser hit, not an API call).
+    Route::get('/google/callback', [\App\Modules\Google\Http\Controllers\GoogleIntegrationController::class, 'callback']);
+
+    // ── Public website chat widget (called from customer sites) ──
+    Route::prefix('public/widget')->middleware(['widget.cors'])->group(function () {
+        Route::get('/{key}.js',        [\App\Modules\Catalog\Http\Controllers\WidgetPublicController::class, 'script']);
+        Route::get('/{key}/bootstrap', [\App\Modules\Catalog\Http\Controllers\WidgetPublicController::class, 'bootstrap']);
+        Route::match(['post', 'options'], '/{key}/chat', [\App\Modules\Catalog\Http\Controllers\WidgetPublicController::class, 'chat'])
+            ->middleware('throttle:30,1');
+    });
 });
 
 

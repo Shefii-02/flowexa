@@ -6,6 +6,7 @@ import { Button, Badge, Modal, Input, EmptyState, Pagination } from '@/component
 import { fmt, getError } from '@/utils'
 import toast from 'react-hot-toast'
 import { metaAdsApi } from '../api/meta-ads'
+import { AiCampaignBuilder } from './AiCampaignBuilder'
 
 const OBJECTIVES = [
   { value: 'LEAD_GENERATION', label: 'Lead Generation', icon: '🎯', desc: 'Collect leads from interested people' },
@@ -23,6 +24,15 @@ const statusColor: Record<string, string> = {
   ACTIVE: 'green', PAUSED: 'yellow', DELETED: 'red', ARCHIVED: 'gray', IN_REVIEW: 'blue',
 }
 
+// Meta requires this to be declared up front for regulated ad categories — it can't be changed later.
+const SPECIAL_AD_CATEGORIES = [
+  { value: 'HOUSING', label: 'Housing' },
+  { value: 'EMPLOYMENT', label: 'Employment' },
+  { value: 'CREDIT', label: 'Credit' },
+  { value: 'ISSUES_ELECTIONS_POLITICS', label: 'Social issues, elections or politics' },
+  { value: 'ONLINE_GAMBLING_AND_GAMING', label: 'Online gambling & gaming' },
+]
+
 export default function MetaCampaignsPage() {
   const navigate   = useNavigate()
   const [campaigns,setCampaigns]= useState<any[]>([])
@@ -33,7 +43,10 @@ export default function MetaCampaignsPage() {
   const [showModal,setShowModal]= useState(false)
   const [saving,   setSaving]   = useState(false)
   const [form, setForm] = useState({ account_id: '', name: '', objective: '', buying_type: 'AUCTION', spend_cap: '' })
+  const [specialCategories, setSpecialCategories] = useState<string[]>([])
   const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }))
+  const toggleCategory = (v: string) =>
+    setSpecialCategories(c => (c.includes(v) ? c.filter(x => x !== v) : [...c, v]))
 
   const load = () => {
     setLoading(true)
@@ -50,8 +63,13 @@ export default function MetaCampaignsPage() {
   const handleCreate = async () => {
     setSaving(true)
     try {
-      const { data } = await metaAdsApi.createCampaign({ ...form, account_id: +form.account_id, spend_cap: form.spend_cap || undefined })
-      toast.success('Campaign created!'); setShowModal(false)
+      const { data } = await metaAdsApi.createCampaign({
+        ...form,
+        account_id: +form.account_id,
+        spend_cap: form.spend_cap || undefined,
+        special_ad_categories: specialCategories.length ? specialCategories : undefined,
+      })
+      toast.success('Campaign created!'); setShowModal(false); setSpecialCategories([])
       navigate(`/meta-ads/campaigns/${data.campaign.id}`)
     } catch (e) { toast.error(getError(e)) }
     finally     { setSaving(false) }
@@ -62,12 +80,21 @@ export default function MetaCampaignsPage() {
     catch (e) { toast.error(getError(e)) }
   }
 
+  const [dupingId, setDupingId] = useState<number | null>(null)
+  const handleDuplicate = async (id: number) => {
+    setDupingId(id)
+    try { await metaAdsApi.duplicateCampaign(id); toast.success('Campaign duplicated (paused).'); load() }
+    catch (e) { toast.error(getError(e)) }
+    finally { setDupingId(null) }
+  }
+
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
         <div><h1 className="page-title">Meta Campaigns</h1><p className="page-sub">{total} campaigns across all ad accounts</p></div>
         <div className="flex gap-2">
           <Button variant="secondary" onClick={() => navigate('/meta-ads/accounts')}>Ad accounts</Button>
+          {accounts.length > 0 && <AiCampaignBuilder accounts={accounts} onBuilt={load} />}
           <Button onClick={() => setShowModal(true)}>+ New campaign</Button>
         </div>
       </div>
@@ -102,6 +129,9 @@ export default function MetaCampaignsPage() {
                         <button onClick={() => navigate(`/meta-ads/campaigns/${c.id}`)} className="text-xs text-blue-600 hover:underline">Details</button>
                         {c.status === 'ACTIVE'  && <button onClick={() => handleStatus(c.id,'PAUSED')} className="text-xs text-yellow-600 hover:underline">Pause</button>}
                         {c.status === 'PAUSED'  && <button onClick={() => handleStatus(c.id,'ACTIVE')} className="text-xs text-green-600 hover:underline">Resume</button>}
+                        <button onClick={() => handleDuplicate(c.id)} disabled={dupingId === c.id} className="text-xs text-gray-500 hover:underline disabled:opacity-50">
+                          {dupingId === c.id ? 'Copying…' : 'Duplicate'}
+                        </button>
                         <button onClick={() => handleStatus(c.id,'ARCHIVED')} className="text-xs text-gray-500 hover:underline">Archive</button>
                       </div>
                     </td>
@@ -140,6 +170,24 @@ export default function MetaCampaignsPage() {
             </div>
           </div>
           <Input label="Spend cap ₹ (optional)" type="number" placeholder="Leave blank for no cap" value={form.spend_cap} onChange={e => set('spend_cap', e.target.value)} />
+
+          <div>
+            <label className="label">Special ad category (optional)</label>
+            <p className="text-xs text-gray-400 mb-1.5">
+              Required by Meta if the ad is about housing, employment, credit, politics or gambling. Limits targeting — and can't be changed after the campaign is created.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {SPECIAL_AD_CATEGORIES.map(c => {
+                const on = specialCategories.includes(c.value)
+                return (
+                  <button key={c.value} type="button" onClick={() => toggleCategory(c.value)}
+                    className={`text-xs rounded-full px-3 py-1 border ${on ? 'bg-brand-600 text-white border-brand-600' : 'border-gray-300 text-gray-600 hover:border-brand-400'}`}>
+                    {c.label}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
         </div>
       </Modal>
     </div>

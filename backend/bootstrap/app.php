@@ -15,6 +15,7 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withCommands([
         \App\Modules\WaChat\Console\Commands\ProcessScheduledMessages::class,
+        \App\Modules\Google\Console\SyncGoogleSheets::class,
         \App\Modules\WaChat\Console\Commands\ProcessAutomations::class,
         \App\Modules\WaChat\Console\Commands\ProcessFollowUps::class,
         \App\Modules\WaChat\Console\Commands\ResetMonthlyUsage::class,
@@ -26,6 +27,7 @@ return Application::configure(basePath: dirname(__DIR__))
     ])
     ->withSchedule(function (\Illuminate\Console\Scheduling\Schedule $schedule): void {
         $schedule->command('wachat:process-scheduled-messages')->everyMinute();
+        $schedule->command('google:sync-sheets')->everySixHours()->withoutOverlapping();
         $schedule->command('wachat:process-automations')->everyFiveMinutes();
         $schedule->command('wachat:process-followups')->everyFifteenMinutes();
         $schedule->command('ai:reset-monthly-tokens')->monthlyOn(1, '00:00');
@@ -54,6 +56,9 @@ return Application::configure(basePath: dirname(__DIR__))
 
             // OTP external API key auth
             'otp.auth'       => \App\Modules\Otp\Http\Middleware\OtpApiAuth::class,
+
+            // Public website chat widget (cross-origin)
+            'widget.cors'    => \App\Http\Middleware\WidgetCors::class,
         ]);
     })
     ->withProviders([

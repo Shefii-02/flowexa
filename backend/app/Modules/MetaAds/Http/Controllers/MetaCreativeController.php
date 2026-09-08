@@ -31,6 +31,8 @@ class MetaCreativeController extends Controller
             'headline'       => ['nullable','string','max:255'],
             'description'    => ['nullable','string','max:255'],
             'call_to_action' => ['nullable','string'],
+            // A lead-ad creative points at an Instant Form instead of a URL.
+            'lead_form_id'   => ['nullable','integer','exists:meta_lead_forms,id'],
             'destination_url'=> ['nullable','url'],
             'image_id'       => ['required_if:format,image','nullable','integer'],
             'video_id'       => ['required_if:format,video','nullable','integer'],

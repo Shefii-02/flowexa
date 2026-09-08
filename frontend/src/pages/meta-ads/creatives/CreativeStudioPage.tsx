@@ -30,13 +30,15 @@ export default function CreativeStudioPage() {
   ])
   const [form, setForm] = useState({
     account_id: '', name: '', primary_text: '',
-    headline: '', description: '', call_to_action: 'LEARN_MORE', destination_url: '',
+    headline: '', description: '', call_to_action: 'LEARN_MORE', destination_url: '', lead_form_id: '',
   })
   const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }))
+  const [leadForms, setLeadForms] = useState<{ id: number; name: string | null; status: string | null }[]>([])
+  const isLeadAd = !!form.lead_form_id
 
   useEffect(() => {
-    Promise.all([metaAdsApi.accounts(), metaAdsApi.creatives()])
-      .then(([a, c]) => { setAccounts(a.data.accounts); setCreatives(c.data.creatives) })
+    Promise.all([metaAdsApi.accounts(), metaAdsApi.creatives(), metaAdsApi.leadForms()])
+      .then(([a, c, lf]) => { setAccounts(a.data.accounts); setCreatives(c.data.creatives); setLeadForms(lf.data.forms ?? []) })
   }, [])
 
   const handlePickMedia = (m: any) => { setSelectedMedia(m); setShowMedia(false) }
@@ -46,6 +48,8 @@ export default function CreativeStudioPage() {
     setSaving(true)
     try {
       const payload: any = { ...form, account_id: +form.account_id, format }
+      payload.lead_form_id = form.lead_form_id ? +form.lead_form_id : undefined
+      if (payload.lead_form_id) payload.destination_url = undefined
       if (format === 'image')    payload.image_id      = selectedMedia?.id
       if (format === 'video')    payload.video_id      = selectedMedia?.id
       if (format === 'carousel') payload.carousel_cards = carouselCards
@@ -150,7 +154,27 @@ export default function CreativeStudioPage() {
             <div className="grid grid-cols-2 gap-3">
               <Input label="Headline" value={form.headline} onChange={e => set('headline', e.target.value)} />
               <Input label="Description" value={form.description} onChange={e => set('description', e.target.value)} />
-              <Input label="Destination URL" value={form.destination_url} onChange={e => set('destination_url', e.target.value)} placeholder="https://yoursite.com" />
+              {isLeadAd ? (
+                <div className="col-span-2">
+                  <label className="label">Instant Form (lead ad)</label>
+                  <select className="select" value={form.lead_form_id} onChange={e => set('lead_form_id', e.target.value)}>
+                    <option value="">— Not a lead ad (use a URL) —</option>
+                    {leadForms.map(f => <option key={f.id} value={f.id}>{f.name || `Form ${f.id}`}{f.status && f.status !== 'ACTIVE' ? ` (${f.status})` : ''}</option>)}
+                  </select>
+                  <p className="text-xs text-gray-400 mt-1">The CTA opens this form; leads flow into your CRM. Manage forms under Lead Ads.</p>
+                </div>
+              ) : (
+                <>
+                  <Input label="Destination URL" value={form.destination_url} onChange={e => set('destination_url', e.target.value)} placeholder="https://yoursite.com" />
+                  <div>
+                    <label className="label">Or use a lead form</label>
+                    <select className="select" value={form.lead_form_id} onChange={e => set('lead_form_id', e.target.value)}>
+                      <option value="">— URL destination —</option>
+                      {leadForms.map(f => <option key={f.id} value={f.id}>{f.name || `Form ${f.id}`}</option>)}
+                    </select>
+                  </div>
+                </>
+              )}
               <div><label className="label">Call to action</label>
                 <select className="select" value={form.call_to_action} onChange={e => set('call_to_action', e.target.value)}>
                   {CTAS.map(c => <option key={c} value={c}>{c.replace(/_/g,' ')}</option>)}

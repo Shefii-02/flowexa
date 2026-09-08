@@ -4,7 +4,6 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\SoftDeletes;
 
 class MetaAudienceTemplate extends Model
 {
@@ -15,8 +14,12 @@ class MetaAudienceTemplate extends Model
     protected $guarded = [];
 
     protected $casts = [
-        'created_at'=>'datetime',
-        'updated_at'=>'datetime',
-        'deleted_at'=>'datetime',
+        'interests'               => 'array',
+        'behaviors'               => 'array',
+        'targeting_json'          => 'array',
+        'suggested_daily_budget'  => 'decimal:2',
+        'is_active'               => 'boolean',
+        'created_at'              => 'datetime',
+        'updated_at'              => 'datetime',
     ];
 }

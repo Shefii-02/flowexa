@@ -39,6 +39,7 @@ class Company extends Model
         'ai_provider',
         'ai_model',
         'max_devices_per_user',
+        'industry_template',
     ];
 
     protected $hidden = ['private_token', 'wa_access_token'];

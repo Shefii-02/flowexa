@@ -64,4 +64,32 @@ return [
         'base_url' => rtrim(env('WA_CHAT_API_ORIGIN', 'http://localhost:2785'), '/') . '/api',
     ],
 
+    'meta_ads' => [
+        // Graph API version used for every Ads Manager call. Bump deliberately after checking the
+        // changelog — field names on delivery_estimate / insights shift between versions.
+        'graph_version'  => env('META_ADS_GRAPH_VERSION', 'v21.0'),
+        // Verify token for the Meta webhook subscription (lead gen + ad review).
+        'webhook_verify_token' => env('META_ADS_WEBHOOK_VERIFY_TOKEN'),
+        // App secret — used to validate the X-Hub-Signature-256 on inbound webhooks.
+        'app_secret'     => env('META_ADS_APP_SECRET'),
+    ],
+
+    'google' => [
+        // OAuth client for the per-company Google Sheets / Drive lead sync.
+        // Create at console.cloud.google.com → APIs & Services → Credentials → OAuth client (Web).
+        // Enable the "Google Sheets API" and "Google Drive API".
+        'client_id'     => env('GOOGLE_CLIENT_ID'),
+        'client_secret' => env('GOOGLE_CLIENT_SECRET'),
+        'redirect_uri'  => env('GOOGLE_REDIRECT_URI', env('APP_URL') . '/api/v1/google/callback'),
+    ],
+
+    'instagram' => [
+        // Graph API version for the Instagram Messaging + comments API.
+        'graph_version'        => env('INSTAGRAM_GRAPH_VERSION', 'v21.0'),
+        // Verify token for the Instagram webhook subscription (comments + messages).
+        'webhook_verify_token' => env('INSTAGRAM_WEBHOOK_VERIFY_TOKEN'),
+        // App secret for X-Hub-Signature-256 validation (falls back to the meta_ads one).
+        'app_secret'           => env('INSTAGRAM_APP_SECRET', env('META_ADS_APP_SECRET')),
+    ],
+
 ];
