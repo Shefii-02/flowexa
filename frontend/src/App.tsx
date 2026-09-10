@@ -263,10 +263,11 @@ export default function App() {
             <Route path="wa-cloud/inbox-analytics" element={<Navigate to="/wa-cloud/analytics" replace />} />
             <Route path="wa-cloud/phone-numbers" element={<PhoneNumbersPage />} />
             <Route path="wa-chat/automations" element={<WaChatAutomationsPage />} />
+            <Route path="wa-chat/inbox-analytics" element={<WaCloudInboxAnalytics title="Inbox Analytics" subtitle="Message, call and inbox activity for your WhatsApp inbox" />} />
             <Route path="/wa-cloud/campaigns" element={<CampaignsPage />} />
             <Route path="/wa-cloud/survey-forms" element={<SurveyFormsPage />} />
             <Route path="/wa-cloud/otp" element={<OtpPage />} />
-            <Route path="/wa-cloud/message-logs" element={<MessageLogsPage />} />
+            <Route path="/wa-cloud/message-logs" element={<MessageLogsPage lockChannel="meta" />} />
             <Route path='/wa-cloud/inbox' element={<InboxPage />} />
 
 

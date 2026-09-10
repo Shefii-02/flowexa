@@ -54,7 +54,10 @@ function Tile({ label, value, hint }: { label: string; value: string | number; h
   )
 }
 
-export default function WaCloudInboxAnalytics() {
+export default function WaCloudInboxAnalytics({
+  title = 'Inbox Analytics',
+  subtitle = 'Message, call and inbox activity across your WhatsApp inbox',
+}: { title?: string; subtitle?: string } = {}) {
   const today = new Date()
   const start = new Date(); start.setDate(today.getDate() - 29)
 
@@ -110,7 +113,7 @@ export default function WaCloudInboxAnalytics() {
 
   return (
     <div className="p-6 space-y-6">
-      <PageHeader title="WA Cloud Analytics" subtitle="Message, call and inbox activity for your WhatsApp Cloud number" />
+      <PageHeader title={title} subtitle={subtitle} />
 
       {/* Filters */}
       <div className="bg-white border border-gray-200 rounded-xl p-4 flex flex-wrap items-end gap-3">

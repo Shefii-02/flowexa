@@ -9,6 +9,9 @@ readonly class MessageLogFilterDTO
         public ?string $type      = null,
         public ?string $status    = null,
         public ?string $phone     = null,
+        public ?string $search    = null,
+        public ?string $from      = null,
+        public ?string $to        = null,
         public int     $perPage   = 30,
         public int     $page      = 1,
     ) {}
@@ -20,6 +23,9 @@ readonly class MessageLogFilterDTO
             type:      $data['type']      ?? null,
             status:    $data['status']    ?? null,
             phone:     $data['phone']     ?? null,
+            search:    $data['search']    ?? null,
+            from:      $data['from']      ?? null,
+            to:        $data['to']        ?? null,
             perPage:   (int) ($data['per_page'] ?? 30),
             page:      (int) ($data['page']     ?? 1),
         );

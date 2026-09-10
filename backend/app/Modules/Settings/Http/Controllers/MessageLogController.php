@@ -31,10 +31,17 @@ class MessageLogController extends Controller
         $filter = MessageLogFilterDTO::fromRequest($request->all());
 
         $logs = MessageLog::where('company_id', auth()->user()->company_id)
+            ->with('contact:id,name,phone')
             ->when($filter->direction, fn($q) => $q->where('direction', $filter->direction))
             ->when($filter->type,      fn($q) => $q->where('type',      $filter->type))
             ->when($filter->status,    fn($q) => $q->where('status',    $filter->status))
             ->when($filter->phone,     fn($q) => $q->where('phone', 'like', "%{$filter->phone}%"))
+            ->when($filter->search, fn($q) => $q->where(fn($w) => $w
+                ->where('phone', 'like', "%{$filter->search}%")
+                ->orWhere('content', 'like', "%{$filter->search}%")
+                ->orWhereHas('contact', fn($c) => $c->where('name', 'like', "%{$filter->search}%"))))
+            ->when($filter->from, fn($q) => $q->whereDate('created_at', '>=', $filter->from))
+            ->when($filter->to,   fn($q) => $q->whereDate('created_at', '<=', $filter->to))
             ->latest()
             ->paginate($filter->perPage, ['*'], 'page', $filter->page);
 

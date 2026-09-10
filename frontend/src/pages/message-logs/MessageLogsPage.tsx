@@ -20,8 +20,14 @@ const CHANNEL_TABS = [
 
 type ChannelTab = (typeof CHANNEL_TABS)[number]['id']
 
-export default function MessageLogsPage() {
-  const [channel,   setChannel]   = useState<ChannelTab>('')
+const CHANNEL_TITLE: Record<string, string> = { waha: 'WA Chat', meta: 'WA Cloud' }
+
+/**
+ * `lockChannel` pins the page to one channel — used by the WA Chat and WA Cloud
+ * sidebars so each only shows its own message logs (no channel switcher).
+ */
+export default function MessageLogsPage({ lockChannel }: { lockChannel?: 'waha' | 'meta' } = {}) {
+  const [channel,   setChannel]   = useState<ChannelTab>(lockChannel ?? '')
   const [logs,      setLogs]      = useState<any[]>([])
   const [total,     setTotal]     = useState(0)
   const [page,      setPage]      = useState(1)
@@ -61,27 +67,29 @@ export default function MessageLogsPage() {
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="page-title">Message Logs</h1>
+        <h1 className="page-title">{lockChannel ? `${CHANNEL_TITLE[lockChannel]} Message Logs` : 'Message Logs'}</h1>
         <p className="page-sub">{total} messages — all inbound and outbound</p>
       </div>
 
-      {/* Channel tabs */}
-      <div className="flex gap-1 border-b border-gray-200">
-        {CHANNEL_TABS.map(t => (
-          <button
-            key={t.id}
-            onClick={() => handleChannelChange(t.id)}
-            className={[
-              'px-4 py-2.5 text-sm font-medium whitespace-nowrap border-b-2 -mb-px transition-colors',
-              channel === t.id
-                ? 'border-indigo-500 text-indigo-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300',
-            ].join(' ')}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
+      {/* Channel tabs — hidden when the page is pinned to one channel */}
+      {!lockChannel && (
+        <div className="flex gap-1 border-b border-gray-200">
+          {CHANNEL_TABS.map(t => (
+            <button
+              key={t.id}
+              onClick={() => handleChannelChange(t.id)}
+              className={[
+                'px-4 py-2.5 text-sm font-medium whitespace-nowrap border-b-2 -mb-px transition-colors',
+                channel === t.id
+                  ? 'border-indigo-500 text-indigo-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300',
+              ].join(' ')}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Filters */}
       <div className="card">
