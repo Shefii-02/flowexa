@@ -11,6 +11,8 @@ readonly class UpdateLeadDTO
         public ?string $category     = null,
         public ?string $notes        = null,
         public ?string $followedUpAt = null,
+        public ?int    $listingId    = null,
+        public ?float  $saleValue    = null,
     ) {}
 
     public static function fromRequest(array $data): self
@@ -21,6 +23,8 @@ readonly class UpdateLeadDTO
             category:    $data['category']      ?? null,
             notes:       $data['notes']         ?? null,
             followedUpAt:$data['followed_up_at']?? null,
+            listingId:   isset($data['listing_id']) ? (int) $data['listing_id'] : null,
+            saleValue:   isset($data['sale_value']) ? (float) $data['sale_value'] : null,
         );
     }
 }

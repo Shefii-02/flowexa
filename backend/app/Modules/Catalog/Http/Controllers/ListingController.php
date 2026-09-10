@@ -98,6 +98,7 @@ class ListingController extends Controller
             'description'  => ['nullable', 'string', 'max:5000'],
             'status'       => ['sometimes', Rule::in(['draft', 'active', 'inactive', 'sold'])],
             'price'        => ['nullable', 'numeric', 'min:0'],
+            'incentive_percentage' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'price_unit'   => ['nullable', 'string', 'max:20'],
             'currency'     => ['sometimes', 'string', 'max:8'],
             'location'     => ['nullable', 'string', 'max:160'],

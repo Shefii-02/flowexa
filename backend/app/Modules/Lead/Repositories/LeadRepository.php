@@ -94,6 +94,8 @@ class LeadRepository implements LeadRepositoryInterface
             'category'      => $dto->category,
             'notes'         => $dto->notes,
             'followed_up_at'=> $dto->followedUpAt,
+            'listing_id'    => $dto->listingId,
+            'sale_value'    => $dto->saleValue,
         ], fn($v) => !is_null($v));
 
         if (isset($data['stage']) && $data['stage'] === 'enrolled') {
@@ -104,6 +106,30 @@ class LeadRepository implements LeadRepositoryInterface
 
         if ($dto->stage && $dto->stage !== $oldStage) {
             $this->logEvent($lead, 'stage_changed', ['from' => $oldStage, 'to' => $dto->stage]);
+        }
+
+        // Auto-record a sale when the lead converts: stage just became "enrolled",
+        // the lead carries an item + amount + an assigned counsellor, and no sale
+        // has been recorded for it yet.
+        $lead->refresh();
+        if ($lead->stage === 'enrolled' && $oldStage !== 'enrolled'
+            && $lead->listing_id && $lead->sale_value && $lead->assigned_to
+            && !$lead->sale()->exists()) {
+            try {
+                app(\App\Modules\Hr\Support\SalesService::class)->record($lead->company_id, [
+                    'listing_id' => $lead->listing_id,
+                    'lead_id'    => $lead->id,
+                    'contact_id' => $lead->contact_id,
+                    'staff_id'   => $lead->assigned_to,
+                    'amount'     => (float) $lead->sale_value,
+                    'sold_at'    => now()->toDateString(),
+                    'note'       => 'Auto-recorded on lead enrolment.',
+                    'created_by' => auth()->id(),
+                ]);
+                $this->logEvent($lead, 'sale_recorded', ['amount' => (float) $lead->sale_value, 'listing_id' => $lead->listing_id]);
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::warning("Lead {$lead->id} auto-sale failed: " . $e->getMessage());
+            }
         }
 
         return $lead->fresh(['contact', 'assignedTo']);

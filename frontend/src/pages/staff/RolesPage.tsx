@@ -446,7 +446,6 @@ export default function RolesPage() {
     }
   }
 
-  const systemRoles = roles.filter((r) => r.is_system)
   const companyRoles = roles.filter((r) => !r.is_system)
 
   return (
@@ -496,26 +495,8 @@ export default function RolesPage() {
             )}
           </section>
 
-          {/* System roles */}
-          {systemRoles.length > 0 && (
-            <section>
-              <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">
-                System roles
-              </h2>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {systemRoles.map((r) => (
-                  <RoleCard
-                    key={r.id}
-                    role={r}
-                    onEdit={setEditTarget}
-                    onDelete={(role) => handleDelete(role)}
-                    onReset={handleReset}
-                    resetting={resettingId === r.id}
-                  />
-                ))}
-              </div>
-            </section>
-          )}
+          {/* Platform system roles are not shown here — this screen manages only
+              the roles your company created. */}
 
           {/* Permission matrix overview table — this company's roles only */}
           {groups.length > 0 && companyRoles.length > 0 && (

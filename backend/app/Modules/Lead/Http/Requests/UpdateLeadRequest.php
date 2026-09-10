@@ -18,6 +18,10 @@ class UpdateLeadRequest extends FormRequest
             'category'       => ['nullable', 'string', 'max:100'],
             'notes'          => ['nullable', 'string', 'max:1000'],
             'followed_up_at' => ['nullable', 'date'],
+            // Item + amount the lead converts on — reaching "enrolled" with both
+            // set auto-records a sale (and posts the counsellor's incentive).
+            'listing_id'     => ['nullable', 'integer'],
+            'sale_value'     => ['nullable', 'numeric', 'min:0'],
         ];
     }
     protected function failedValidation(Validator $v): void {

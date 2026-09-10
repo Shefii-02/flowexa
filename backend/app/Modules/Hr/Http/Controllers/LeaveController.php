@@ -41,6 +41,13 @@ class LeaveController extends Controller
         $q = HrLeaveRequest::where('company_id', $this->companyId())
             ->with('leaveType:id,name,color', 'user:id,name,avatar', 'reviewer:id,name')
             ->when($request->filled('status'), fn ($x) => $x->where('status', $request->string('status')))
+            // Day filter: requests that cover this date (start_date .. end_date span it).
+            ->when($request->filled('date'), fn ($x) => $x
+                ->whereDate('start_date', '<=', $request->date('date'))
+                ->whereDate('end_date', '>=', $request->date('date')))
+            // Range filter: requests overlapping [from, to].
+            ->when($request->filled('from'), fn ($x) => $x->whereDate('end_date', '>=', $request->date('from')))
+            ->when($request->filled('to'), fn ($x) => $x->whereDate('start_date', '<=', $request->date('to')))
             ->orderByDesc('start_date');
 
         if ($request->string('scope') === 'team' && $this->canApprove()) {

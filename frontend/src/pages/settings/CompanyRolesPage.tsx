@@ -82,7 +82,6 @@ export default function CompanyRolesPage() {
     } catch(e) { toast.error(getError(e)) }
   }
 
-  const systemRoles = roles.filter(r => r.is_system)
   const customRoles = roles.filter(r => !r.is_system)
 
   return (
@@ -95,41 +94,8 @@ export default function CompanyRolesPage() {
         <Button onClick={openCreate}>+ Custom role</Button>
       </div>
 
-      {/* System roles */}
-      <div>
-        <p className="text-sm font-semibold text-gray-500 mb-3">
-          System roles <span className="text-xs font-normal text-gray-400">— auto-created, cannot be deleted</span>
-        </p>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {systemRoles.map(r => {
-            const perms = JSON.parse(r.permissions || '[]') as string[]
-            const hasAll = perms.includes('*')
-            return (
-              <div key={r.id} className="card p-4 border border-gray-200">
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-2">
-                    <Badge variant="blue">{r.label}</Badge>
-                    <Badge variant="gray">System</Badge>
-                  </div>
-                  <button onClick={() => openEdit(r)} className="text-xs text-blue-600 hover:underline">Edit permissions</button>
-                </div>
-                {hasAll ? (
-                  <p className="text-xs text-brand-600 font-semibold">✅ Full access — all permissions</p>
-                ) : (
-                  <div className="flex flex-wrap gap-1">
-                    {perms.slice(0, 6).map((p:string) => (
-                      <span key={p} className="text-xs bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">{p}</span>
-                    ))}
-                    {perms.length > 6 && (
-                      <span className="text-xs text-gray-400">+{perms.length - 6} more</span>
-                    )}
-                  </div>
-                )}
-              </div>
-            )
-          })}
-        </div>
-      </div>
+      {/* Platform system roles are managed by the platform, not here — this screen
+          only lists and manages roles your company created. */}
 
       {/* Custom roles */}
       <div>

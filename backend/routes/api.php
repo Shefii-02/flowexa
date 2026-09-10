@@ -396,6 +396,12 @@ Route::prefix('v1')->group(function () {
             Route::patch('incentives/{id}',      [IncentiveController::class, 'update']);
             Route::delete('incentives/{id}',     [IncentiveController::class, 'destroy']);
 
+            // Sales — catalog item sold / admission taken → auto-posts an incentive
+            Route::get('sales',          [\App\Modules\Hr\Http\Controllers\SalesController::class, 'index']);
+            Route::get('sales/summary',  [\App\Modules\Hr\Http\Controllers\SalesController::class, 'summary']);
+            Route::post('sales',         [\App\Modules\Hr\Http\Controllers\SalesController::class, 'store']);
+            Route::delete('sales/{id}',  [\App\Modules\Hr\Http\Controllers\SalesController::class, 'destroy']);
+
             // Payroll
             Route::get('payroll/runs',              [PayrollController::class, 'runs']);
             Route::post('payroll/runs',             [PayrollController::class, 'generate']);

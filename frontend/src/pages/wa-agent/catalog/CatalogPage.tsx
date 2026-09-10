@@ -14,6 +14,7 @@ type Draft = {
   status: Listing['status']
   price: string
   price_unit: string
+  incentive_percentage: string
   currency: string
   location: string
   attributes: Record<string, unknown>
@@ -22,7 +23,7 @@ type Draft = {
 
 const emptyDraft = (type: string): Draft => ({
   type, title: '', description: '', status: 'active',
-  price: '', price_unit: '', currency: 'INR', location: '', attributes: {}, media: [],
+  price: '', price_unit: '', incentive_percentage: '', currency: 'INR', location: '', attributes: {}, media: [],
 })
 
 function AttrInput({ field, value, onChange }: { field: AttributeField; value: unknown; onChange: (v: unknown) => void }) {
@@ -120,6 +121,7 @@ export default function CatalogPage() {
         ...editor,
         price: editor.price === '' ? null : +editor.price,
         price_unit: editor.price_unit || null,
+        incentive_percentage: editor.incentive_percentage === '' ? null : +editor.incentive_percentage,
         media: editor.media.filter(m => m.url.trim()),
       }
       if (editor.id) { await catalogApi.update(editor.id, payload); toast.success('Updated.') }
@@ -137,7 +139,7 @@ export default function CatalogPage() {
 
   const toDraft = (l: Listing): Draft => ({
     id: l.id, type: l.type, title: l.title, description: l.description ?? '', status: l.status,
-    price: l.price ?? '', price_unit: l.price_unit ?? '', currency: l.currency, location: l.location ?? '',
+    price: l.price ?? '', price_unit: l.price_unit ?? '', incentive_percentage: (l as any).incentive_percentage ?? '', currency: l.currency, location: l.location ?? '',
     attributes: l.attributes ?? {}, media: (l.media ?? []).map(m => ({ url: m.url })),
   })
 
@@ -210,9 +212,10 @@ export default function CatalogPage() {
           <div className="space-y-3">
             <Input label="Title *" value={editor.title} onChange={e => setEditor({ ...editor, title: e.target.value })} />
             <Textarea label="Description" rows={2} value={editor.description} onChange={e => setEditor({ ...editor, description: e.target.value })} />
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-2 gap-3">
               <Input label="Price" type="number" value={editor.price} onChange={e => setEditor({ ...editor, price: e.target.value })} />
               <Input label="Unit" value={editor.price_unit} onChange={e => setEditor({ ...editor, price_unit: e.target.value })} placeholder="total / per_month" />
+              <Input label="Staff incentive %" type="number" value={editor.incentive_percentage} onChange={e => setEditor({ ...editor, incentive_percentage: e.target.value })} placeholder="e.g. 5 — overrides the rule" />
               <div>
                 <label className="label">Status</label>
                 <select className="select" value={editor.status} onChange={e => setEditor({ ...editor, status: e.target.value as Listing['status'] })}>

@@ -47,7 +47,9 @@ export default function StaffPage() {
   })
 
   useEffect(() => {
-    staffApi.roles().then((r) => setRoles(r.data.roles))
+    // Only this company's own roles — the platform's built-in system roles
+    // (owner / admin / counsellor …) aren't assignable to company staff here.
+    staffApi.roles().then((r) => setRoles((r.data.roles ?? []).filter((x: any) => !x.is_system)))
   }, [])
 
   useEffect(() => {

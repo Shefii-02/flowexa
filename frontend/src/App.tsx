@@ -229,7 +229,7 @@ export default function App() {
             <Route path="leads/assignment-rules"  element={<AssignmentRulesPage />} />
             <Route path="wallet" element={<WalletPage />} />
             <Route path="analytics" element={<AnalyticsPage />} />
-            <Route path="settings" element={<SettingsPage />} />
+            <Route path="settings/index" element={<SettingsPage />} />
             <Route path="settings/integrations" element={<IntegrationsPage />} />
             <Route path="settings/api-keys" element={<Navigate to="/wa-agent/settings" replace />} />
             
@@ -249,7 +249,8 @@ export default function App() {
 
             {/* HR */}
             <Route path="hr/attendance" element={<AttendancePage />} />
-            <Route path="hr/admin" element={<HrAdminPage />} />
+            <Route path="hr/admin" element={<Navigate to="/hr/admin/attendance" replace />} />
+            <Route path="hr/admin/:tab" element={<HrAdminPage />} />
 
             {/* WA Cloud routes */}
             <Route path="wa-cloud/dashboard" element={<WaCloudDashboardPage />} />

@@ -542,23 +542,22 @@ export const Sidebar = () => {
               basePaths={['/leads']}
               defaultOpen
             >
-              {/* common */}
+              {/* Shared by both views — the lead list itself */}
               <SubLink to="/leads" icon="🎯" label="All Leads" end />
 
+              {/* Basic — at-a-glance metrics */}
               <NestedAccordion icon="🟢" label="Basic" basePaths={['/leads/summary']}>
-                <SubLink to="/leads" icon="🎯" label="All Leads" end />
                 <SubLink to="/leads/summary" icon="📈" label="Leads Summary" />
               </NestedAccordion>
 
+              {/* Advanced — filtered reporting + assignment engine */}
               <NestedAccordion
                 icon="🔷"
                 label="Advanced"
-                basePaths={['/leads/report', '/leads/assignments', '/leads/assignment-rules']}
+                basePaths={['/leads/report', '/leads/assignments', '/leads/assignment-rules', '/leads/staff-availability']}
               >
-                <SubLink to="/leads" icon="🎯" label="All Leads" end />
-                <SubLink to="/leads/summary" icon="📈" label="Leads Summary" />
                 <SubLink to="/leads/report" icon="📊" label="Leads Report" />
-                <SubLink to="/leads/assignments" icon="🧭" label="Assignments" />
+                <SubLink to="/leads/assignments" icon="🧭" label="Assignment Queues" />
                 <SubLink to="/leads/assignment-rules" icon="📋" label="Assignment Rules" />
               </NestedAccordion>
             </NestedAccordion>
@@ -567,18 +566,30 @@ export const Sidebar = () => {
             <SectionHeader label="HR" />
             <NestedAccordion icon="👥" label="HR" basePaths={['/hr']} defaultOpen>
               <SubLink to="/hr/attendance" icon="🕒" label="My Attendance" />
-              <SubLink to="/hr/admin" icon="🛠️" label="HR Admin" />
+
+              <NestedAccordion icon="🛠️" label="Administration" basePaths={['/hr/admin']}>
+                <SubLink to="/hr/admin/attendance" icon="🗓️" label="Attendance" />
+                <SubLink to="/hr/admin/payroll" icon="💰" label="Payroll" />
+                <SubLink to="/hr/admin/sales" icon="🧾" label="Sales" />
+                <SubLink to="/hr/admin/incentives" icon="🎁" label="Incentives" />
+                <SubLink to="/hr/admin/leave" icon="🌴" label="Leave Requests" />
+                <SubLink to="/hr/admin/staff-setup" icon="⚙️" label="Staff Setup" />
+              </NestedAccordion>
+
+              <NestedAccordion icon="🔧" label="Configuration"
+                basePaths={['/hr/admin/break-types', '/hr/admin/leave-types', '/hr/admin/office']}>
+                <SubLink to="/hr/admin/break-types" icon="☕" label="Break Types" />
+                <SubLink to="/hr/admin/leave-types" icon="🏷️" label="Leave Types" />
+                <SubLink to="/hr/admin/office" icon="🏢" label="Office Details" />
+              </NestedAccordion>
             </NestedAccordion>
 
             {/* ── STAFF ── */}
             <SectionHeader label="Staff" />
             {/* {canViewStaff &&  */}
             <FlatLink to="/staff" icon="👤" label="Staff" />
-            {/* }
-            {canManageStaff &&  */}
-            <FlatLink to="/leads/assignment-rules" icon="📋" label="Assignment Rules" />
-            {/* }
-            {canViewRoles &&  */}
+            {/* Assignment Rules now lives under Leads → Advanced */}
+            {/* {canViewRoles &&  */}
             <FlatLink to="/staff/roles" icon="🎭" label="Roles" />
             {/* } */}
 
@@ -586,7 +597,7 @@ export const Sidebar = () => {
 
             {/* ── SYSTEM ── */}
             <SectionHeader label="System" />
-            <FlatLink to="/settings" icon="⚙️" label="Settings" />
+            <FlatLink to="/settings/index" icon="⚙️" label="Settings" />
             <FlatLink to="/settings/integrations" icon="🔌" label="Integrations" />
             {/* } */}
             <FlatLink to="/wallet" icon="👛" label="Wallet" />

@@ -2,7 +2,6 @@ import { useCallback, useEffect, useState } from 'react'
 import { leadAssignmentApi } from '@/api'
 import { getError } from '@/utils'
 import toast from 'react-hot-toast'
-import { StaffAvailabilityPanel } from '@/components/leads/StaffAvailabilityPanel'
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 const TIMEZONES = ['Asia/Kolkata', 'UTC', 'America/New_York', 'Europe/London', 'Asia/Dubai', 'Asia/Singapore']
@@ -211,9 +210,6 @@ export default function AssignmentRulesPage() {
           </div>
         </div>
       </section>
-
-      {/* Staff availability — folded in, both tabs */}
-      <StaffAvailabilityPanel compact />
 
       <div className="flex justify-end">
         <button onClick={save} disabled={saving || !weightsOk}

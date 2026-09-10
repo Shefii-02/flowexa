@@ -13,13 +13,14 @@ class HrStaffProfile extends Model
     protected $fillable = [
         'company_id', 'user_id', 'attendance_type', 'work_mode',
         'duty_start', 'duty_end', 'weekly_off',
-        'monthly_salary', 'hourly_rate', 'is_active',
+        'monthly_salary', 'hourly_rate', 'monthly_target', 'is_active',
     ];
 
     protected $casts = [
         'weekly_off'     => 'array',
         'monthly_salary' => 'float',
         'hourly_rate'    => 'float',
+        'monthly_target' => 'float',
         'is_active'      => 'boolean',
     ];
 

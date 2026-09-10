@@ -18,12 +18,14 @@ class Lead extends Model
         'company_id', 'contact_id', 'assigned_to', 'assigned_by',
         'flow_node_id', 'campaign_id', 'stage', 'priority', 'category',
         'source', 'notes', 'crm_id', 'followed_up_at', 'enrolled_at', 'assigned_at',
+        'listing_id', 'sale_value',
     ];
 
     protected $casts = [
         'followed_up_at' => 'datetime',
         'enrolled_at'    => 'datetime',
         'assigned_at'    => 'datetime',
+        'sale_value'     => 'decimal:2',
     ];
 
     // ── Relationships ─────────────────────────────────────────────────────────
@@ -33,6 +35,8 @@ class Lead extends Model
     public function assignedBy(): BelongsTo { return $this->belongsTo(User::class, 'assigned_by'); }
     public function flowNode(): BelongsTo   { return $this->belongsTo(FlowNode::class, 'flow_node_id'); }
     public function campaign(): BelongsTo   { return $this->belongsTo(Campaign::class); }
+    public function listing(): BelongsTo    { return $this->belongsTo(Listing::class); }
+    public function sale(): \Illuminate\Database\Eloquent\Relations\HasOne { return $this->hasOne(ListingSale::class); }
     public function events(): HasMany       { return $this->hasMany(LeadEvent::class)->latest(); }
 
     // ── Scopes ────────────────────────────────────────────────────────────────

@@ -181,6 +181,7 @@ class HrConfigController extends Controller
                 'weekly_off'      => $p?->weekly_off ?? [],
                 'monthly_salary'  => $p?->monthly_salary,
                 'hourly_rate'     => $p?->hourly_rate,
+                'monthly_target'  => $p?->monthly_target,
                 'is_active'       => $p?->is_active ?? true,
             ];
         });
@@ -201,6 +202,7 @@ class HrConfigController extends Controller
             'weekly_off.*'    => ['integer', 'between:0,6'],
             'monthly_salary'  => ['nullable', 'numeric', 'min:0'],
             'hourly_rate'     => ['nullable', 'numeric', 'min:0'],
+            'monthly_target'  => ['nullable', 'numeric', 'min:0'],
             'is_active'       => ['boolean'],
         ]);
 
