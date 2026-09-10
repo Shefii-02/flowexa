@@ -4,6 +4,7 @@ import { useDispatch, useSelector, TypedUseSelectorHook } from 'react-redux'
 import {
   authSlice, uiSlice, staffSlice, contactSlice, labelSlice,
   flowSlice, walletSlice, campaignSlice, leadSlice, leadAssignmentSlice,
+  appErrorSlice,
 } from './slices'
 
 export const store = configureStore({
@@ -18,6 +19,7 @@ export const store = configureStore({
     campaigns:      campaignSlice.reducer,
     leads:          leadSlice.reducer,
     leadAssignment: leadAssignmentSlice.reducer,
+    appError:       appErrorSlice.reducer,
   },
 })
 

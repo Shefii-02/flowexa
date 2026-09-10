@@ -653,11 +653,18 @@ export interface SearchResults {
 // throw an Error carrying the HTTP status and, when the gateway supplied one, its machine code.
 async function handleErrorResponse<T>(response: Response): Promise<T> {
   if (response.status === 401) {
+    // The company's WA Chat key is missing / expired / revoked. Drop it and let
+    // the caller surface a "not connected" state — do NOT hard-redirect out of
+    // the module (that dumps the user on the dashboard when they just tapped a
+    // WA Chat link). WaChatShell renders the empty state when the key is gone.
     sessionStorage.removeItem(WA_CHAT_API_KEY_STORAGE);
-    if (typeof window !== 'undefined') {
-      window.location.assign('/');
-      return new Promise<T>(() => { });
-    }
+    const unauth = new Error('WA Chat is not connected for this account.') as Error & {
+      status?: number;
+      code?: string;
+    };
+    unauth.status = 401;
+    unauth.code = 'WA_CHAT_NOT_CONNECTED';
+    throw unauth;
   }
 
   // On a non-JSON body (e.g. a reverse-proxy 502/503 HTML page) fall through to `HTTP <status>`

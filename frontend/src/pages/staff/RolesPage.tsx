@@ -517,8 +517,8 @@ export default function RolesPage() {
             </section>
           )}
 
-          {/* Permission matrix overview table */}
-          {groups.length > 0 && (
+          {/* Permission matrix overview table — this company's roles only */}
+          {groups.length > 0 && companyRoles.length > 0 && (
             <section>
               <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-3">
                 Permission overview
@@ -531,7 +531,7 @@ export default function RolesPage() {
                         <th className="text-left px-4 py-2.5 text-xs text-gray-400 font-medium w-48">
                           Permission group
                         </th>
-                        {roles.map((r) => (
+                        {companyRoles.map((r) => (
                           <th
                             key={r.id}
                             className="px-3 py-2.5 text-xs font-medium text-center"
@@ -549,7 +549,7 @@ export default function RolesPage() {
                           className={gi % 2 === 0 ? 'bg-white' : 'bg-gray-50'}
                         >
                           <td className="px-4 py-2 text-gray-700 font-medium text-xs">{g.group}</td>
-                          {roles.map((r) => {
+                          {companyRoles.map((r) => {
                             const hasView = g.permissions.some(
                               (p) => p.type === 'viewer' && r.permissions.includes(p.key)
                             )

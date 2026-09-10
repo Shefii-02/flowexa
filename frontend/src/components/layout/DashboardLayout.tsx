@@ -1,18 +1,21 @@
-import { Outlet, useNavigate } from 'react-router-dom'
+import { Outlet, useLocation } from 'react-router-dom'
 import { Toaster } from 'react-hot-toast'
 import { useEffect } from 'react'
 import { useAppDispatch, useAppSelector } from '@/store'
-import { toggleSidebar } from '@/store/slices'
+import { toggleSidebar, clearForbidden } from '@/store/slices'
 import { Sidebar } from './Sidebar'
 import { SessionStatusIndicator } from './SessionStatusIndicator'
 import LeadNotificationPopup from '@/components/leads/LeadNotificationPopup'
 import AiHandoffOfferPopup from '@/components/leads/AiHandoffOfferPopup'
 import { connectStaffSocket, disconnectStaffSocket } from '@/socket/staffSocket'
+import { ErrorBoundary, AccessDeniedScreen } from '@/components/error'
 
 export const DashboardLayout = () => {
   const dispatch    = useAppDispatch()
+  const location    = useLocation()
   const sidebarOpen = useAppSelector((s) => s.ui.sidebarOpen)
   const user        = useAppSelector((s) => s.auth.user)
+  const forbidden   = useAppSelector((s) => s.appError.forbidden)
 
   useEffect(() => {
     if (user?.id && user.company?.id) {
@@ -20,6 +23,12 @@ export const DashboardLayout = () => {
       return () => disconnectStaffSocket(user.id)
     }
   }, [user?.id, user?.company?.id])
+
+  // A 403 shows the Access Denied screen; navigating anywhere clears it.
+  useEffect(() => {
+    if (forbidden) dispatch(clearForbidden())
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.pathname])
 
   return (
     <div className="flex h-screen overflow-hidden bg-gray-50">
@@ -48,7 +57,9 @@ export const DashboardLayout = () => {
 
         {/* Page content */}
         <main className="flex-1 overflow-y-auto p-6">
-          <Outlet />
+          <ErrorBoundary resetKey={location.pathname}>
+            {forbidden ? <AccessDeniedScreen /> : <Outlet />}
+          </ErrorBoundary>
         </main>
       </div>
 

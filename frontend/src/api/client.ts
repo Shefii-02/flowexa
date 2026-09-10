@@ -1,7 +1,7 @@
 // src/api/client.ts
 import axios, { AxiosInstance, AxiosError } from 'axios'
 import { store } from '@/store'
-import { logout, setToken } from '@/store/slices'
+import { logout, setToken, setForbidden } from '@/store/slices'
 
 const BASE_URL = import.meta.env.VITE_API_URL || '/api/v1'
 
@@ -64,6 +64,27 @@ api.interceptors.response.use(
 
       store.dispatch(logout())
       window.location.href = '/login'
+    }
+
+    // ── 403 → surface an Access Denied screen (not just a toast) ──────────────
+    if (error.response?.status === 403) {
+      const data = error.response.data as
+        | { message?: string; required_permission?: string | string[]; code?: string }
+        | undefined
+      store.dispatch(
+        setForbidden({
+          message: data?.message || 'You do not have permission to perform this action.',
+          requiredPermission: data?.required_permission,
+          method: error.config?.method?.toUpperCase(),
+          url: (error.config?.baseURL ?? '') + (error.config?.url ?? ''),
+          status: 403,
+          code: data?.code,
+          requestId:
+            (error.response.headers?.['x-request-id'] as string | undefined) ||
+            (error.response.headers?.['x-trace-id'] as string | undefined),
+          at: new Date().toISOString(),
+        }),
+      )
     }
 
     return Promise.reject(error)

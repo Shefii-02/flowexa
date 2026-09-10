@@ -9,6 +9,7 @@ export * from './wallet.slice'
 export * from './campaigns.slice'
 export * from './leads.slice'
 export * from './leadAssignment.slice'
+export * from './appError.slice'
 
 import authReducer from './auth.slice'
 import uiReducer from './ui.slice'
@@ -20,6 +21,7 @@ import walletReducer from './wallet.slice'
 import campaignReducer from './campaigns.slice'
 import leadReducer from './leads.slice'
 import leadAssignmentReducer from './leadAssignment.slice'
+import appErrorReducer from './appError.slice'
 
 export const reducers = {
   auth:            authReducer,
@@ -32,4 +34,5 @@ export const reducers = {
   campaigns:       campaignReducer,
   leads:           leadReducer,
   leadAssignment:  leadAssignmentReducer,
+  appError:        appErrorReducer,
 }

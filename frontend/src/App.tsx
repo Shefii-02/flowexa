@@ -4,6 +4,7 @@ import { Provider } from 'react-redux'
 import { store } from '@/store'
 import { ProtectedRoute } from '@/components/shared/ProtectedRoute'
 import { DashboardLayout } from '@/components/layout/DashboardLayout'
+import { ErrorBoundary } from '@/components/error'
 import { useIsSuperAdmin } from '@/store'
 
 // Auth pages
@@ -148,6 +149,7 @@ export default function App() {
   return (
     <Provider store={store}>
       <BrowserRouter>
+        <ErrorBoundary>
         <Routes>
           {/* Public routes */}
           <Route path="/login" element={<LoginPage />} />
@@ -326,6 +328,7 @@ export default function App() {
           {/* Catch-all */}
           <Route path="*" element={<RoleBasedRedirect />} />
         </Routes>
+        </ErrorBoundary>
       </BrowserRouter>
     </Provider>
   )
