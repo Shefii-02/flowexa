@@ -42,14 +42,15 @@ class AuthRepository implements AuthRepositoryInterface
 
             // 1. Company
             $company = Company::create([
-                'plan_id'       => $trialPlan?->id,
-                'name'          => $dto->companyName,
-                'slug'          => $this->uniqueSlug($dto->companyName),
-                'app_id'        => $this->generateAppId(),
-                'private_token' => encrypt(Str::random(40)),
-                'email'         => $dto->email,
-                'status'        => 'trial',
-                'trial_ends_at' => now()->addDays(14),
+                'plan_id'          => $trialPlan?->id,
+                'name'             => $dto->companyName,
+                'slug'             => $this->uniqueSlug($dto->companyName),
+                'app_id'           => $this->generateAppId(),
+                'private_token'    => encrypt(Str::random(40)),
+                'email'            => $dto->email,
+                'status'           => 'trial',
+                'trial_ends_at'    => now()->addDays(14),
+                'industry_template'=> $dto->businessType,
             ]);
 
             // 2. Owner user
@@ -69,6 +70,9 @@ class AuthRepository implements AuthRepositoryInterface
                 'balance'             => 1000,
                 'free_quota_reset_at' => now()->addMonth(),
             ]);
+
+            // 4. Editable sample data (starter playbook / FAQ / pipeline)
+            app(\App\Modules\Auth\Support\CompanyStarterKit::class)->seed($company, $dto->businessType);
 
             return $user->load(['role', 'company.wallet', 'company.plan']);
         });

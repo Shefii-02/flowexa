@@ -10,16 +10,18 @@ readonly class RegisterDTO
         public string  $email,
         public string  $password,
         public ?string $phone = null,
+        public string  $businessType = 'generic',
     ) {}
 
     public static function fromRequest(array $data): self
     {
         return new self(
-            companyName: $data['company_name'],
-            ownerName:   $data['name'],
-            email:       $data['email'],
-            password:    $data['password'],
-            phone:       $data['phone'] ?? null,
+            companyName:  $data['company_name'],
+            ownerName:    $data['name'],
+            email:        $data['email'],
+            password:     $data['password'],
+            phone:        $data['phone'] ?? null,
+            businessType: $data['business_type'] ?? 'generic',
         );
     }
 }

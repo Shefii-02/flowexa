@@ -41,9 +41,17 @@ type Company = {
   wa_connected?: boolean
 }
 
+const BUSINESS_TYPES = [
+  { value: 'generic',       label: 'Other / general business' },
+  { value: 'real_estate',   label: 'Real Estate' },
+  { value: 'health_clinic', label: 'Health Clinic' },
+  { value: 'education',      label: 'Education & Coaching' },
+]
+
 const emptyForm = {
   company_name: '',
   company_phone: '',
+  business_type: 'generic',
   owner_name: '',
   owner_email: '',
   owner_phone: '',
@@ -162,6 +170,7 @@ export default function SuperAdminCompanies() {
     setForm({
       company_name: company.name ?? '',
       company_phone: company.phone ?? '',
+      business_type: (company as any).industry_template ?? 'generic',
 
       owner_name: company.company_owner?.name ?? '',
       owner_email: company.company_owner?.email ?? '',
@@ -221,6 +230,11 @@ export default function SuperAdminCompanies() {
 
         plan_id: Number(form.plan_id),
         initial_balance: Number(form.initial_balance),
+      }
+
+      // Business type — only meaningful when creating (sets the company's industry template).
+      if (!editingCompany) {
+        payload.business_type = form.business_type
       }
 
       // Only send password if entered
@@ -804,6 +818,22 @@ export default function SuperAdminCompanies() {
               )
             }
           />
+
+          {/* Business type — create only */}
+          {!editingCompany && (
+            <div>
+              <label className="label">Business type</label>
+              <select
+                className="select"
+                value={form.business_type}
+                onChange={(event) => set('business_type', event.target.value)}
+              >
+                {BUSINESS_TYPES.map((b) => (
+                  <option key={b.value} value={b.value}>{b.label}</option>
+                ))}
+              </select>
+            </div>
+          )}
 
           {/* Plan */}
           <div>

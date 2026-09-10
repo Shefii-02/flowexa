@@ -461,7 +461,7 @@ export const Sidebar = () => {
               {/* {canViewKb &&  */}
               <SubLink to="/wa-agent/knowledge-base" icon="📚" label="Knowledge Base" />
               {/* } */}
-              <SubLink to="/wa-agent/catalog" icon="📦" label="Listings & Products" />
+              {/* Catalog is a top-level item now (📦 Catalog under CRM) */}
               <SubLink to="/wa-agent/website-widget" icon="🌐" label="Website Widget" />
               {/* {canViewPipes &&  */}
               <SubLink to="/wa-agent/pipelines" icon="🔄" label="Pipelines" />
@@ -533,6 +533,8 @@ export const Sidebar = () => {
                 <SubLink to="/lead-categories" icon="📂" label="Lead Categories" />
               </NestedAccordion>
             </NestedAccordion>
+
+            <FlatLink to="/wa-agent/catalog" icon="📦" label="Catalog" />
 
             {/* ── LEADS ── */}
             <SectionHeader label="Leads" />

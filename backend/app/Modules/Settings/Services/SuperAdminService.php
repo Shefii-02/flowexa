@@ -59,14 +59,15 @@ class SuperAdminService
             $ownerRole = Role::where('name','owner')->firstOrFail();
 
             $company = Company::create([
-                'plan_id'       => $dto->planId,
-                'name'          => $dto->companyName,
-                'slug'          => Str::slug($dto->companyName).'-'.Str::random(4),
-                'app_id'        => 'WA_APP_'.strtoupper(Str::random(12)),
-                'private_token' => encrypt(Str::random(40)),
-                'email'         => $dto->ownerEmail,
-                'phone'         => $dto->companyPhone,
-                'status'        => 'active',
+                'plan_id'          => $dto->planId,
+                'name'             => $dto->companyName,
+                'slug'             => Str::slug($dto->companyName).'-'.Str::random(4),
+                'app_id'           => 'WA_APP_'.strtoupper(Str::random(12)),
+                'private_token'    => encrypt(Str::random(40)),
+                'email'            => $dto->ownerEmail,
+                'phone'            => $dto->companyPhone,
+                'status'           => 'active',
+                'industry_template'=> $dto->businessType,
             ]);
 
             User::create([
@@ -83,6 +84,8 @@ class SuperAdminService
                 'company_id' => $company->id,
                 'balance'    => $dto->initialBalance,
             ]);
+
+            app(\App\Modules\Auth\Support\CompanyStarterKit::class)->seed($company, $dto->businessType);
 
             return $company->fresh(['plan','wallet']);
         });

@@ -19,6 +19,8 @@ class CompanyResource extends JsonResource
             'website'       => $this->website,
             'logo'          => $this->logo,
             'status'        => $this->status,
+            'industry_template'      => $this->industry_template ?? 'generic',
+            'industry_template_name' => config('industry_templates.' . ($this->industry_template ?? 'generic') . '.name', 'Other business'),
             'trial_ends_at' => $this->trial_ends_at?->toIso8601String(),
             'settings'      => $this->settings,
             'created_at'    => $this->created_at->toIso8601String(),

@@ -18,6 +18,7 @@ class SuperAdminCreateCompanyRequest extends FormRequest
             'owner_password'  => ['required','string','min:8'],
             'plan_id'         => ['required','integer','exists:plans,id'],
             'initial_balance' => ['nullable','integer','min:0'],
+            'business_type'   => ['nullable', \Illuminate\Validation\Rule::in(array_keys(config('industry_templates', [])))],
         ];
     }
     protected function failedValidation(Validator $v): void

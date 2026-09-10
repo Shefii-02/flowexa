@@ -106,11 +106,6 @@ export default function CatalogPage() {
     catch (e) { toast.error(getError(e)) }
   }
 
-  const changeIndustry = async (key: string) => {
-    setActiveKey(key)
-    try { await catalogApi.setTemplate(key); toast.success(`Switched to ${templates[key]?.name}.`) }
-    catch (e) { toast.error(getError(e)) }
-  }
 
   const save = async () => {
     if (!editor) return
@@ -154,9 +149,11 @@ export default function CatalogPage() {
           <h1 className="page-title">Listings & Products</h1>
           <p className="page-sub">The live catalog your AI agent uses to answer queries and match leads</p>
         </div>
-        <select className="select max-w-[190px]" value={activeKey} onChange={e => changeIndustry(e.target.value)}>
-          {Object.entries(templates).map(([k, t]) => <option key={k} value={k}>{t.name}</option>)}
-        </select>
+        {template && (
+          <span className="text-xs px-3 py-1.5 rounded-lg bg-gray-100 text-gray-600" title="Set at signup — contact support to change">
+            {template.name}
+          </span>
+        )}
         <Button onClick={() => setEditor(emptyDraft(listingType))}>+ Add {listingType}</Button>
       </div>
 

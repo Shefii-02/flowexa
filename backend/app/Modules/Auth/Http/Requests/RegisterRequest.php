@@ -13,11 +13,13 @@ class RegisterRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'company_name' => ['required', 'string', 'max:100'],
-            'name'         => ['required', 'string', 'max:100'],
-            'email'        => ['required', 'email', 'unique:users,email'],
-            'password'     => ['required', 'string', 'min:8', 'confirmed'],
-            'phone'        => ['nullable', 'string', 'max:15'],
+            'company_name'  => ['required', 'string', 'max:100'],
+            'name'          => ['required', 'string', 'max:100'],
+            'email'         => ['required', 'email', 'unique:users,email'],
+            'password'      => ['required', 'string', 'min:8', 'confirmed'],
+            'phone'         => ['nullable', 'string', 'max:15'],
+            // Set once at signup — drives the catalog / agent templates / sample data.
+            'business_type' => ['nullable', \Illuminate\Validation\Rule::in(array_keys(config('industry_templates', [])))],
         ];
     }
 

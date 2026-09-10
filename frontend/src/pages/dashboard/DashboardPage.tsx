@@ -184,7 +184,14 @@ export default function DashboardPage() {
       {/* ── Greeting + alerts ───────────────────────────────────────────── */}
       <div>
         <h1 className="page-title">{greeting}, {user?.name?.split(' ')[0]} 👋</h1>
-        <p className="page-sub">Here's your company overview for {user?.company?.name}</p>
+        <p className="page-sub">
+          Here's your company overview for {user?.company?.name}
+          {(user?.company as any)?.industry_template_name && (
+            <span className="ml-2 text-xs px-2 py-0.5 rounded-full bg-brand-50 text-brand-700">
+              {(user?.company as any).industry_template_name}
+            </span>
+          )}
+        </p>
       </div>
 
       {user?.company?.status === 'trial' && user.company.trial_ends_at && (

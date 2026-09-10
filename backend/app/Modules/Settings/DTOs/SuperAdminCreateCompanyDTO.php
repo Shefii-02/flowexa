@@ -12,6 +12,7 @@ readonly class SuperAdminCreateCompanyDTO
         public ?string $ownerPassword,
         public int    $planId,
         public int    $initialBalance = 1000,
+        public string $businessType = 'generic',
     ) {}
 
 
@@ -26,6 +27,7 @@ readonly class SuperAdminCreateCompanyDTO
             ownerPassword:  $data['owner_password'] ?? null,
             planId:         (int) $data['plan_id'],
             initialBalance: (int) ($data['initial_balance'] ?? 1000),
+            businessType:   $data['business_type'] ?? 'generic',
         );
     }
 }

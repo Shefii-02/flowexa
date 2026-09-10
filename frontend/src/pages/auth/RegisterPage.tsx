@@ -4,8 +4,17 @@ import { useNavigate, Link } from 'react-router-dom'
 import { useAppDispatch } from '@/store'
 import { loginThunk } from '@/store/slices'
 import { authApi } from '@/api'
-import { Button, Input } from '@/components/ui'
+import { Button, Input, Select } from '@/components/ui'
 import { getError } from '@/utils'
+
+// Matches config/industry_templates.php keys — set once here, drives the catalog,
+// agent playbook and the sample data seeded for the new company.
+const BUSINESS_TYPES = [
+  { value: 'generic',       label: 'Other / general business' },
+  { value: 'real_estate',   label: 'Real Estate' },
+  { value: 'health_clinic', label: 'Health Clinic' },
+  { value: 'education',      label: 'Education & Coaching' },
+]
 
 export default function RegisterPage() {
   const dispatch = useAppDispatch()
@@ -13,6 +22,7 @@ export default function RegisterPage() {
 
   const [form, setForm] = useState({
     company_name: '', name: '', email: '', password: '', password_confirmation: '', phone: '',
+    business_type: 'generic',
   })
   const [loading, setLoading] = useState(false)
   const [error,   setError]   = useState('')
@@ -55,6 +65,8 @@ export default function RegisterPage() {
             )}
 
             <Input label="Company name" placeholder="Univexa Technologies" value={form.company_name} onChange={(e) => set('company_name', e.target.value)} required />
+            <Select label="Business type" value={form.business_type} onChange={(e) => set('business_type', e.target.value)}
+              options={BUSINESS_TYPES} />
             <Input label="Your name" placeholder="Arjun Menon" value={form.name} onChange={(e) => set('name', e.target.value)} required />
             <Input label="Email" type="email" placeholder="arjun@company.com" value={form.email} onChange={(e) => set('email', e.target.value)} required />
             <Input label="Password" type="password" placeholder="Min 8 characters" value={form.password} onChange={(e) => set('password', e.target.value)} required />
