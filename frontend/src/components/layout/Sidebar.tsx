@@ -377,12 +377,16 @@ export const Sidebar = () => {
                 {canViewTpls &&  */}
               <SubLink to="/wa-chat/templates" icon="📋" label="Templates" />
               {/* } */}
-              <SubLink to="/wa-chat/logs" icon="📜" label="Logs" />
               {/* {canViewApiKeys &&  */}
               <SubLink to="/wa-chat/api-services" icon="🔑" label="API Services" />
               {/* } */}
               <SubLink to="/wa-chat/export" icon="📤" label="Data Export" />
               <SubLink to="/wa-chat/media-library" icon="🖼️" label="Media Library" />
+
+              {/* ── ANALYTICS ── */}
+              <SectionHeader label="Analytics" />
+              <FlatLink to="/wa-chat/analytics" icon="📊" label="Analytics" />
+              <FlatLink to="/wa-chat/logs" icon="📜" label="Message Logs" />
 
               {/* Nested WA Agent inside WA Chat */}
               {/* {canViewAuto && ( */}
@@ -426,10 +430,8 @@ export const Sidebar = () => {
               {/* {canViewReports &&  */}
               <FlatLink to="/wa-cloud/analytics" icon="📊" label="Analytics" />
               {/* } */}
-              {/* {canViewInbox &&  */}
-              <FlatLink to="/wa-cloud/inbox" icon="📥" label="Inbox" />
-              {/* }
-            {canViewMsgLogs &&  */}
+              {/* Inbox lives in the section above — not repeated here. */}
+              {/* {canViewMsgLogs &&  */}
               <FlatLink to="/wa-cloud/message-logs" icon="📜" label="Message Logs" />
               {/* } */}
               <FlatLink to="/wa-cloud/inbox-analytics" icon="📈" label="Inbox Analytics" />

@@ -550,3 +550,8 @@ export const leadAssignmentApi = {
   addHoliday: (d: { date: string; name: string }) => api.post('/working-hours/holidays', d),
   removeHoliday: (id: number) => api.delete(`/working-hours/holidays/${id}`),
 }
+
+// ── WA Chat analytics (company-scoped, aggregates gateway per-session stats) ──
+export const waChatAnalyticsApi = {
+  get: () => api.get('/wa-chat/analytics'),
+}

@@ -65,6 +65,7 @@ use App\Modules\MetaAds\Http\Controllers\{
 };
 use App\Modules\Survey\Http\Controllers\SurveyFormController;
 use App\Modules\WaChat\Http\Controllers\WahaSessionController;
+use App\Modules\WaChat\Http\Controllers\WaChatAnalyticsController;
 use App\Modules\WaChat\Http\Controllers\WahaWebhookConfigController;
 use App\Modules\WaChat\Http\Controllers\MessageSenderController;
 use App\Modules\WaChat\Http\Controllers\MediaLibraryController;
@@ -1054,6 +1055,9 @@ Route::prefix('v1')->middleware(['jwt.auth'])->group(function () {
     Route::get('waha/token',            [WahaSessionController::class, 'tokenStatus']);
     Route::post('waha/token/reconnect', [WahaSessionController::class, 'reconnectToken'])
         ->middleware('permission:settings.manage');
+
+    // Company-scoped WA Chat analytics (aggregates per-session gateway stats)
+    Route::get('wa-chat/analytics', [WaChatAnalyticsController::class, 'index']);
 
     // Sessions
     Route::prefix('waha/sessions')->group(function () {

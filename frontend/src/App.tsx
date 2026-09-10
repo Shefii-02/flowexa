@@ -83,6 +83,7 @@ import { Webhooks as WaChatWebhooks } from '@/pages/wa-chat/pages/Webhooks'
 import { Logs as WaChatLogs } from '@/pages/wa-chat/pages/Logs'
 import { ApiKeys as WaChatApiKeys } from '@/pages/wa-chat/pages/ApiKeys'
 import WaChatDashboard from '@/pages/wa-chat/pages/Dashboard'
+import WaChatAnalytics from '@/pages/wa-chat/pages/Analytics'
 import WaChatPlugins from '@/pages/wa-chat/pages/Plugins'
 import MessageSender from '@/pages/wa-chat/pages/message-sender'
 import WaChatTemplatesPage from '@/pages/wa-chat/pages/WaChatTemplates'
@@ -175,6 +176,7 @@ export default function App() {
             <Route path="wa-chat" element={<WaChatShell />}>
               <Route index element={<Navigate to="dashboard" replace />} />
               <Route path="dashboard" element={<WaChatDashboard />} />
+              <Route path="analytics" element={<WaChatAnalytics />} />
               <Route path="sessions" element={<WaChatSessions />} />
               <Route path="chats" element={<WaChatChats />} />
               <Route path="message-sender" element={<MessageSender />} />
