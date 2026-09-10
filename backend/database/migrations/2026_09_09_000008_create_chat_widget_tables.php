@@ -18,8 +18,8 @@ return new class extends Migration
             // Which vertical the widget agent behaves as. Null = use the company default.
             $t->string('industry_template', 30)->nullable();
 
-            $t->string('agent_name', 80)->default('Assistant');
-            $t->text('greeting')->default('Hi! 👋 How can I help you today?');
+            $t->string('agent_name', 80)->nullable()->default('Assistant');
+            $t->text('greeting')->nullable()->comment('Hi! 👋 How can I help you today?');
             // { primary_color, position:'right'|'left', avatar_url, launcher_text, dark }
             $t->json('branding')->nullable();
             // Domains the widget may run on (empty = allow any). Exact host match.
