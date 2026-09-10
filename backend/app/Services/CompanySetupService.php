@@ -13,12 +13,17 @@ class CompanySetupService
     public function setup(Company $company): void
     {
         DB::transaction(function () use ($company) {
-            $this->createDefaultRoles($company);
+            $this->syncDefaultRoles($company);
             $this->createDefaultAutomations($company);
         });
     }
 
-    private function createDefaultRoles(Company $company): void
+    /**
+     * Create (or refresh) the company's default roles and their permissions.
+     * Idempotent — matches on (company_id, name), so re-running picks up any
+     * change to the permission catalogue or the role definitions below.
+     */
+    public function syncDefaultRoles(Company $company): void
     {
         $allPermissions = Permission::all();
 
@@ -102,18 +107,20 @@ class CompanySetupService
         ];
 
         foreach ($roles as $def) {
-            $permIds = $def['permissions'];
+            $permIds = array_values(array_unique($def['permissions']));
             unset($def['permissions']);
 
-            $permKeys = $allPermissions->whereIn('id', $permIds)->pluck('key')->toArray();
+            $permKeys = $allPermissions->whereIn('id', $permIds)->pluck('key')->values()->toArray();
 
-            $role = Role::create(array_merge($def, [
-                'label'       => $def['name'],
-                'company_id'  => $company->id,
-                'is_system'   => false,
-                'is_active'   => true,
-                'permissions' => $permKeys,
-            ]));
+            $role = Role::updateOrCreate(
+                ['company_id' => $company->id, 'name' => $def['name']],
+                array_merge($def, [
+                    'label'       => $def['name'],
+                    'is_system'   => false,
+                    'is_active'   => true,
+                    'permissions' => $permKeys,
+                ])
+            );
 
             $role->permissionRelations()->sync($permIds);
         }
@@ -151,7 +158,10 @@ class CompanySetupService
         ];
 
         foreach ($automations as $def) {
-            AutomationRule::create(array_merge($def, ['company_id' => $company->id]));
+            AutomationRule::firstOrCreate(
+                ['company_id' => $company->id, 'rule_type' => $def['rule_type']],
+                array_merge($def, ['company_id' => $company->id])
+            );
         }
     }
 }

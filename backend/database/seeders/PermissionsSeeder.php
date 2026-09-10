@@ -122,14 +122,15 @@ class PermissionsSeeder extends Seeder
     public function rolePermissions(array $allKeys): array
     {
         $allViewer = array_values(array_filter($allKeys, fn($k) => str_ends_with($k, '.view')));
-        $allManage = array_values(array_filter($allKeys, fn($k) => str_ends_with($k, '.manage')));
 
         return [
-            'superadmin' => array_merge($allViewer, $allManage),
-            'owner'      => array_merge($allViewer, $allManage),
+            // superadmin / owner get the entire catalogue — not just the
+            // .view/.manage subset (which drops e.g. hr.attendance.view_all).
+            'superadmin' => $allKeys,
+            'owner'      => $allKeys,
 
             'admin' => array_values(array_filter(
-                array_merge($allViewer, $allManage),
+                $allKeys,
                 fn($k) => !in_array($k, ['plans.manage', 'roles.manage'])
             )),
 

@@ -30,6 +30,9 @@ class DatabaseSeeder extends Seeder
             // ── Platform account ─────────────────────────────────────────────
             SuperAdminSeeder::class,
 
+            // ── Per-company default roles + user role backfill ───────────────
+            CompanyRolesSeeder::class,
+
             // ── Billing ──────────────────────────────────────────────────────
             TopupPackagesSeeder::class,
 
