@@ -26,6 +26,9 @@ use Illuminate\Http\Request;
 // ─── SuperAdmin Controller ────────────────────────────────────────────────────
 class SuperAdminController extends Controller
 {
+    /** System roles that always keep full access and cannot be edited. */
+    private const PROTECTED_ROLE_NAMES = ['superadmin', 'owner'];
+
     public function __construct(private readonly SuperAdminService $superAdminService) {}
 
     public function dashboard(): JsonResponse
@@ -166,18 +169,30 @@ class SuperAdminController extends Controller
             ->toArray();
     }
 
-    /** Legacy global editor — every role across every company. */
+    /**
+     * GET /superadmin/permissions — the global role editor.
+     *
+     * Only system roles (company_id IS NULL) are managed here. Per-company
+     * roles have their own editor at /superadmin/companies/{company}/permissions.
+     */
     public function permissions(): \Illuminate\Http\JsonResponse
     {
-        $roles = \App\Models\Role::with('company:id,name')->orderBy('company_id')->get()->map(fn ($r) => [
-            'id'          => $r->id,
-            'name'        => $r->name,
-            'label'       => $r->label,
-            'company'     => $r->company?->name,
-            'company_id'  => $r->company_id,
-            'is_system'   => $r->is_system,
-            'permissions' => $r->permissions ?? [],
-        ]);
+        $roles = \App\Models\Role::whereNull('company_id')
+            ->orderBy('sort_order')->orderBy('id')
+            ->withCount('users')
+            ->get()
+            ->map(fn ($r) => [
+                'id'          => $r->id,
+                'name'        => $r->name,
+                'label'       => $r->label,
+                'description' => $r->description,
+                'company'     => null,
+                'company_id'  => null,
+                'is_system'   => (bool) $r->is_system,
+                'protected'   => in_array($r->name, self::PROTECTED_ROLE_NAMES, true),
+                'user_count'  => $r->users_count,
+                'permissions' => $r->permissions ?? [],
+            ]);
 
         return response()->json([
             'roles'           => $roles,
@@ -241,18 +256,61 @@ class SuperAdminController extends Controller
         return response()->json(['message' => 'Default role permissions re-applied for this company.']);
     }
 
+    /**
+     * PUT /superadmin/permissions/{roleId} — update a system role's permissions.
+     *
+     * Only global roles (company_id IS NULL) are editable here; superadmin and
+     * owner are locked to full access. Submitted keys are checked against the
+     * catalogue: unknown-and-new keys are rejected, while legacy keys already
+     * on the role are preserved (some route middleware still checks those).
+     */
     public function updatePermissions(\Illuminate\Http\Request $request, int $roleId): \Illuminate\Http\JsonResponse
     {
-        $request->validate(['permissions' => ['required', 'array']]);
-        $role = \App\Models\Role::findOrFail($roleId);
+        $data = $request->validate([
+            'permissions'   => ['present', 'array'],
+            'permissions.*' => ['string'],
+        ]);
 
-        if (in_array($role->name, ['superadmin', 'owner'], true)) {
-            return response()->json(['message' => 'Cannot modify superadmin or owner permissions.'], 403);
+        $role = \App\Models\Role::whereNull('company_id')->find($roleId);
+        if (! $role) {
+            return response()->json(['message' => 'System role not found.'], 404);
         }
 
-        $ids = \App\Models\Permission::whereIn('key', $request->permissions)->pluck('id')->all();
-        $role->syncPermissions($ids);
+        if (in_array($role->name, self::PROTECTED_ROLE_NAMES, true)) {
+            return response()->json([
+                'message' => ucfirst($role->name) . ' always has full access and cannot be edited.',
+            ], 403);
+        }
 
-        return response()->json(['message' => 'Permissions updated.', 'role' => $role->fresh()]);
+        $submitted     = array_values(array_unique($data['permissions']));
+        $catalogueKeys = \App\Models\Permission::pluck('id', 'key');   // key => id
+        $existingKeys  = $role->permissions ?? [];
+
+        $unknownNew = array_values(array_filter(
+            $submitted,
+            fn ($k) => ! $catalogueKeys->has($k) && ! in_array($k, $existingKeys, true)
+        ));
+
+        // Pivot table: only real catalogue permissions.
+        $permIds = $catalogueKeys->only($submitted)->values()->all();
+        $role->permissionRelations()->sync($permIds);
+
+        // JSON column: catalogue keys + any legacy key that is still submitted.
+        $jsonKeys = array_values(array_filter(
+            $submitted,
+            fn ($k) => $catalogueKeys->has($k) || in_array($k, $existingKeys, true)
+        ));
+        $role->update(['permissions' => $jsonKeys]);
+
+        return response()->json([
+            'message'         => 'Permissions updated.',
+            'role'            => [
+                'id'          => $role->id,
+                'name'        => $role->name,
+                'label'       => $role->label,
+                'permissions' => $role->permissions ?? [],
+            ],
+            'ignored_unknown' => $unknownNew,
+        ]);
     }
 }
