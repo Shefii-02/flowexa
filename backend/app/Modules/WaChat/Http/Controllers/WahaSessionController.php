@@ -44,14 +44,24 @@ class WahaSessionController extends Controller
         ]);
     }
 
+    // The wa-chat engine is the open-wa node gateway (see config services.open_wa).
+    // config('services.open_wa.base_url') already ends in `/api`; the call sites
+    // below add their own `/api/...`, so strip it back to the origin here.
     private function wahaBase(): string
     {
-        return rtrim(config('services.waha.base_url', env('WAHA_BASE_URL', 'http://localhost:3000')), '/');
+        return rtrim(preg_replace('#/api/?$#', '', (string) config('services.open_wa.base_url')), '/');
     }
 
+    /** Per-company key — the gateway scopes every call to this company's sessions. */
     private function wahaHeaders(): array
     {
-        return ['X-API-Key' => config('services.waha.api_key', env('WAHA_API_KEY', ''))];
+        return ['X-API-Key' => (string) (auth()->user()?->company?->wa_chat_token ?? '')];
+    }
+
+    /** ADMIN key — only for session create/delete, which a scoped key cannot do. */
+    private function adminHeaders(): array
+    {
+        return ['X-API-Key' => (string) config('services.open_wa.admin_key')];
     }
 
     public function index(): JsonResponse
@@ -124,21 +134,36 @@ class WahaSessionController extends Controller
             return response()->json(['message' => 'Session limit reached. Upgrade your plan to add more sessions.'], 422);
         }
 
+        // session_name is generated from the gateway id — the client only labels it.
         $data = $request->validate([
-            'session_name'  => 'required|string|max:100|unique:waha_sessions,session_name',
             'display_name'  => 'nullable|string|max:150',
             'engine'        => 'nullable|string|max:30',
             'webhook_url'   => 'nullable|url|max:500',
         ]);
 
-        $session = WahaSession::create(array_merge($data, ['company_id' => $companyId]));
-
-        // Create session in WAHA
-        Http::withHeaders($this->wahaHeaders())
+        // Create the session on the gateway with the ADMIN key (a company's own
+        // scoped key is not allowed to create sessions), then bind the new
+        // session id into this company's key allowlist.
+        $res = Http::withHeaders($this->adminHeaders())
             ->post("{$this->wahaBase()}/api/sessions", [
-                'name'   => $session->session_name,
-                'config' => ['webhooks' => $session->webhook_url ? [['url' => $session->webhook_url, 'events' => ['message', 'session.status']]] : []],
+                'name' => 'co' . $companyId . '-' . \Illuminate\Support\Str::lower(\Illuminate\Support\Str::random(10)),
             ]);
+
+        if (! $res->successful()) {
+            return response()->json([
+                'message' => 'Gateway refused to create the session (HTTP ' . $res->status() . ').',
+            ], 502);
+        }
+
+        // waha_sessions.session_name holds the gateway session **id** (UUID) —
+        // that is what allowedSessions matches and what the /{id} routes take.
+        $session = WahaSession::create(array_merge($data, [
+            'company_id'         => $companyId,
+            'session_name'       => (string) $res->json('id'),
+            'gateway_created_at' => now(),
+        ]));
+
+        app(WaChatTokenService::class)->syncSessions($company);
 
         return response()->json(['message' => 'Session created.', 'data' => $session], 201);
     }
@@ -183,9 +208,17 @@ class WahaSessionController extends Controller
 
     public function destroy(int $id): JsonResponse
     {
-        $session = WahaSession::where('company_id', auth()->user()->company_id)->findOrFail($id);
-        Http::withHeaders($this->wahaHeaders())->delete("{$this->wahaBase()}/api/sessions/{$session->session_name}");
+        $user    = auth()->user();
+        $session = WahaSession::where('company_id', $user->company_id)->findOrFail($id);
+
+        // Delete on the gateway with the ADMIN key, then drop the id from this
+        // company's key allowlist.
+        Http::withHeaders($this->adminHeaders())
+            ->delete("{$this->wahaBase()}/api/sessions/{$session->session_name}");
         $session->delete();
+
+        app(WaChatTokenService::class)->syncSessions($user->company);
+
         return response()->json(['message' => 'Session deleted.']);
     }
 

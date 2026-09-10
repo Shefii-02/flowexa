@@ -12,7 +12,8 @@ class WaChatToken extends Command
         {company? : Company id or slug (omit with --all)}
         {--all : Operate on every company}
         {--check : Verify the stored token against the gateway (default)}
-        {--provision : Mint a fresh gateway key and store it}';
+        {--provision : Mint a fresh scoped gateway key and store it}
+        {--sync : Re-push the company\'s session allowlist to its gateway key}';
 
     protected $description = 'Check or (re)provision a company\'s open-wa gateway API key (Company.wa_chat_token)';
 
@@ -25,17 +26,38 @@ class WaChatToken extends Command
         }
 
         $provision = (bool) $this->option('provision');
-        $this->line("Gateway: " . config('services.open_wa.base_url'));
+        $base     = (string) config('services.open_wa.base_url');
+        $adminSet = filled(config('services.open_wa.admin_key'));
+
+        $this->line('Gateway      : ' . $base . '   (WA_CHAT_API_ORIGIN)');
+        $this->line('Admin key set: ' . ($adminSet ? 'yes' : 'NO  — set WA_CHAT_ADMIN_KEY to --provision'));
+        if (str_contains($base, 'localhost') || str_contains($base, '127.0.0.1')) {
+            $this->warn('Gateway points at localhost. On a server, WA_CHAT_API_ORIGIN must be the');
+            $this->warn('real open-wa origin (e.g. https://unichatwa.univexa.in) or the local port it listens on.');
+        }
         $this->newLine();
 
-        $bad = 0;
+        $sync = (bool) $this->option('sync');
+        $bad  = 0;
         foreach ($companies as $company) {
             $label = "#{$company->id} {$company->name}";
 
             if ($provision) {
                 try {
                     $token = $svc->provision($company);
-                    $this->info("  ✅ {$label} — provisioned " . substr($token, 0, 14) . '…');
+                    $scope = count($svc->sessionScope($company));
+                    $this->info("  ✅ {$label} — provisioned " . substr($token, 0, 14) . "… (scoped to {$scope} session/s)");
+                } catch (\Throwable $e) {
+                    $this->error("  ❌ {$label} — {$e->getMessage()}");
+                    $bad++;
+                }
+                continue;
+            }
+
+            if ($sync) {
+                try {
+                    $svc->syncSessions($company);
+                    $this->info("  ✅ {$label} — allowlist synced (" . count($svc->sessionScope($company)) . ' session/s)');
                 } catch (\Throwable $e) {
                     $this->error("  ❌ {$label} — {$e->getMessage()}");
                     $bad++;

@@ -3,6 +3,7 @@
 namespace App\Modules\WaChat\Services;
 
 use App\Models\Company;
+use App\Modules\WaChat\Models\WahaSession;
 use Illuminate\Support\Facades\Http;
 use RuntimeException;
 
@@ -10,11 +11,23 @@ use RuntimeException;
  * Owns the per-company API key for the open-wa node gateway
  * (`Company.wa_chat_token`, sent as the `X-API-Key` header).
  *
- * The node gateway has no tenant model — it is a flat list of API keys. Each
- * Flowexa company gets its own key, minted here with the gateway's ADMIN key.
+ * SaaS model: the node gateway has no tenant concept — it is a flat list of API
+ * keys, each with an `allowedSessions` allowlist. Every Flowexa company gets its
+ * own OPERATOR key scoped to exactly the sessions it created (rows in
+ * `waha_sessions`). A company therefore only ever sees / acts on its own
+ * sessions; session creation & deletion is brokered here with the gateway's
+ * ADMIN key, which then rewrites the company key's allowlist.
  */
 class WaChatTokenService
 {
+    /**
+     * A scoped key with an EMPTY allowlist is treated as unrestricted by the
+     * gateway (it would see every tenant's sessions). Until a company has a real
+     * session, pin its key to this nil UUID so the allowlist is non-empty and
+     * matches nothing.
+     */
+    private const NIL_SESSION = '00000000-0000-0000-0000-000000000000';
+
     private string $base;
 
     public function __construct()
@@ -22,20 +35,35 @@ class WaChatTokenService
         $this->base = rtrim((string) config('services.open_wa.base_url'), '/');
     }
 
-    private function adminKey(): string
+    public function adminKey(): string
     {
         $key = (string) config('services.open_wa.admin_key');
         if ($key === '') {
             throw new RuntimeException(
-                'WA_CHAT_ADMIN_KEY is not set — cannot mint per-company WA Chat keys.'
+                'WA_CHAT_ADMIN_KEY is not set — cannot mint or scope per-company WA Chat keys.'
             );
         }
         return $key;
     }
 
+    public function baseUrl(): string
+    {
+        return $this->base;
+    }
+
+    /** The session ids (gateway UUIDs, stored in waha_sessions.session_name) this company owns. */
+    public function sessionScope(Company $company): array
+    {
+        $ids = WahaSession::where('company_id', $company->id)
+            ->pluck('session_name')
+            ->filter()
+            ->values()
+            ->all();
+
+        return $ids ?: [self::NIL_SESSION];
+    }
+
     /**
-     * Live status of a company's stored token, checked against the gateway.
-     *
      * @return array{configured:bool, valid:bool, reason:string, gateway:string, checked_at:string}
      */
     public function status(Company $company): array
@@ -68,20 +96,22 @@ class WaChatTokenService
     }
 
     /**
-     * Mint a fresh gateway key for the company and persist it. Best-effort revoke
-     * of the previous key so orphans don't pile up on the gateway.
+     * Mint a fresh OPERATOR key scoped to this company's current sessions and
+     * persist it (raw token + gateway key id). Revokes the previous key.
      *
-     * @return string the new raw token (also stored on the company)
+     * @return string the new raw token
      */
     public function provision(Company $company): string
     {
-        $previous = (string) ($company->wa_chat_token ?? '');
+        $previousToken = (string) ($company->wa_chat_token ?? '');
+        $previousKeyId = (string) ($company->wa_chat_key_id ?? '');
 
         $res = Http::withHeaders(['X-API-Key' => $this->adminKey()])
             ->timeout(15)->connectTimeout(5)
             ->post("{$this->base}/auth/api-keys", [
-                'name' => "flowexa:{$company->slug} #{$company->id}",
-                'role' => 'admin',
+                'name'            => "flowexa:{$company->slug} #{$company->id}",
+                'role'            => 'operator',
+                'allowedSessions' => $this->sessionScope($company),
             ]);
 
         if (! $res->successful()) {
@@ -90,45 +120,102 @@ class WaChatTokenService
             );
         }
 
-        $raw = (string) ($res->json('apiKey') ?? '');
-        if ($raw === '') {
-            throw new RuntimeException('Gateway created a key but returned no raw value.');
+        $raw   = (string) ($res->json('apiKey') ?? '');
+        $keyId = (string) ($res->json('id') ?? '');
+        if ($raw === '' || $keyId === '') {
+            throw new RuntimeException('Gateway created a key but returned no raw value / id.');
         }
 
         $company->forceFill([
             'wa_chat_token'            => $raw,
+            'wa_chat_key_id'           => $keyId,
             'wa_chat_token_expires_at' => null,
             'wa_auth_enabled'          => true,
         ])->save();
 
-        if ($previous !== '' && $previous !== $raw) {
-            $this->revoke($previous);
+        if ($previousKeyId !== '' && $previousKeyId !== $keyId) {
+            $this->revokeById($previousKeyId);
+        } elseif ($previousToken !== '' && $previousToken !== $raw) {
+            $this->revokeByPrefix($previousToken);
         }
 
         return $raw;
     }
 
-    /** Best-effort: find the gateway key row for a raw token and revoke it. */
-    public function revoke(string $rawToken): void
+    /**
+     * Re-push this company's session allowlist to its gateway key. Call after
+     * every session create / delete. No-op if the company was never provisioned.
+     */
+    public function syncSessions(Company $company): void
+    {
+        $keyId = (string) ($company->wa_chat_key_id ?? '');
+        if ($keyId === '') {
+            return;
+        }
+
+        try {
+            Http::withHeaders(['X-API-Key' => $this->adminKey()])
+                ->timeout(12)
+                ->put("{$this->base}/auth/api-keys/{$keyId}", [
+                    'allowedSessions' => $this->sessionScope($company),
+                ]);
+        } catch (\Throwable) {
+            // Best-effort: the DB row (waha_sessions) is authoritative; a missed
+            // sync is repaired by `wa-chat:token {company} --sync` or the next change.
+        }
+    }
+
+    public function revokeById(string $keyId): void
     {
         try {
-            $list = Http::withHeaders(['X-API-Key' => $this->adminKey()])
-                ->timeout(10)->get("{$this->base}/auth/api-keys");
-            if (! $list->successful()) {
+            // Never revoke the gateway's own admin key — some legacy rows had it
+            // copied straight into wa_chat_token.
+            $adminId = $this->adminKeyId();
+            if ($adminId !== null && $adminId === $keyId) {
                 return;
             }
 
+            Http::withHeaders(['X-API-Key' => $this->adminKey()])
+                ->timeout(10)
+                ->delete("{$this->base}/auth/api-keys/{$keyId}");
+        } catch (\Throwable) {
+            // orphaned gateway keys are harmless
+        }
+    }
+
+    public function revokeByPrefix(string $rawToken): void
+    {
+        if ($rawToken === $this->adminKey()) {
+            return; // legacy: wa_chat_token == the admin key itself
+        }
+
+        try {
             $prefix = substr($rawToken, 0, 12);
-            $match  = collect($list->json('data') ?? $list->json() ?? [])
+            $match  = collect($this->listKeys())
                 ->first(fn ($k) => ($k['keyPrefix'] ?? null) === $prefix);
 
             if ($match && isset($match['id'])) {
-                Http::withHeaders(['X-API-Key' => $this->adminKey()])
-                    ->timeout(10)
-                    ->delete("{$this->base}/auth/api-keys/{$match['id']}");
+                $this->revokeById((string) $match['id']);
             }
         } catch (\Throwable) {
-            // orphaned gateway keys are harmless; never fail a re-provision on this
+            // best-effort
         }
+    }
+
+    /** @return array<int, array<string, mixed>> */
+    private function listKeys(): array
+    {
+        $res = Http::withHeaders(['X-API-Key' => $this->adminKey()])
+            ->timeout(10)->get("{$this->base}/auth/api-keys");
+
+        return $res->successful() ? ($res->json('data') ?? $res->json() ?? []) : [];
+    }
+
+    private function adminKeyId(): ?string
+    {
+        $prefix = substr($this->adminKey(), 0, 12);
+        $match  = collect($this->listKeys())->first(fn ($k) => ($k['keyPrefix'] ?? null) === $prefix);
+
+        return $match['id'] ?? null;
     }
 }

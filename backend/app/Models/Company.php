@@ -30,6 +30,7 @@ class Company extends Model
         'wa_business_id',
         'wa_chat_token',
         'wa_chat_token_expires_at',
+        'wa_chat_key_id',
         'wa_auth_enabled',
         'settings',
         'meta_app_id',
