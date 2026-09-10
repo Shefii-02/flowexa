@@ -73,6 +73,9 @@ interface ServerJob {
   type: string
   campaign_name?: string
   session_id: string
+  /** Human-readable session label (display name), resolved server-side from session_id.
+   *  Falls back to the raw session_id when the session has no name or was deleted. */
+  session_name?: string | null
   // Explicitly requested future send time — set only for campaigns created with a schedule.
   // `started_at` stays null for those until the cron actually dispatches them, so the history
   // table must read this field, not `started_at`, for its "Scheduled At" column.
@@ -402,6 +405,23 @@ export function MessageSender() {
   // --- Queries ---
   const { data: sessions = [] } = useSessionsQuery()
   const activeSessions = sessions.filter(s => s.status === 'ready')
+
+  // Resolve a session's human-readable name for display. Prefers a label already
+  // resolved server-side (history rows), then the live sessions list, then a
+  // truncated id for sessions that have since been deleted.
+  const sessionNameById = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const s of sessions) m.set(s.id, s.name || s.id)
+    return m
+  }, [sessions])
+  const sessionLabel = useCallback(
+    (id?: string | null, serverName?: string | null): string => {
+      if (serverName) return serverName
+      if (!id) return '—'
+      return sessionNameById.get(id) ?? `${id.slice(0, 12)}…`
+    },
+    [sessionNameById],
+  )
   const { data: groups = [], isLoading: groupsLoading } = useSessionGroupsQuery(
     session,
     recipientTab === 'group' && !!session
@@ -2269,7 +2289,7 @@ export function MessageSender() {
                   <span className="text-xs text-blue-600">
                     {job.progress.sent} sent · {job.progress.failed} failed · {job.progress.pending} pending
                   </span>
-                  {job.sessionId && <span className="text-xs text-blue-400">Session: {job.sessionId}</span>}
+                  {job.sessionId && <span className="text-xs text-blue-400" title={job.sessionId}>Session: {sessionLabel(job.sessionId)}</span>}
                 </div>
                 <div className="flex gap-2">
                   {isRunning && (
@@ -2314,7 +2334,7 @@ export function MessageSender() {
                         <th className="px-3 py-2 text-left font-semibold">No. of Contacts</th>
                         <th className="px-3 py-2 text-left font-semibold">Stats</th>
                         <th className="px-3 py-2 text-left font-semibold">Scheduled At</th>
-                        <th className="px-3 py-2 text-left font-semibold">Session ID</th>
+                        <th className="px-3 py-2 text-left font-semibold">Session</th>
                         <th className="px-3 py-2 text-left font-semibold">Status</th>
                         <th className="px-3 py-2 text-left font-semibold">Actions</th>
                       </tr>
@@ -2380,14 +2400,14 @@ export function MessageSender() {
                                     ? new Date(h.started_at).toLocaleString('en-IN')
                                     : '—'}
                               </td>
-                              {/* Session ID */}
+                              {/* Session */}
                               <td className="px-3 py-2">
                                 {h.session_id ? (
                                   <span
-                                    className="font-mono text-gray-500 text-xs"
+                                    className="text-gray-600 text-xs"
                                     title={h.session_id}
                                   >
-                                    {h.session_id.slice(0, 12)}
+                                    {sessionLabel(h.session_id, h.session_name)}
                                   </span>
                                 ) : (
                                   <span className="text-gray-300">—</span>
@@ -2488,7 +2508,7 @@ export function MessageSender() {
                         <th className="px-3 py-2 text-left font-semibold">No. of Contacts</th>
                         <th className="px-3 py-2 text-left font-semibold">Stats</th>
                         <th className="px-3 py-2 text-left font-semibold">Started At</th>
-                        <th className="px-3 py-2 text-left font-semibold">Session ID</th>
+                        <th className="px-3 py-2 text-left font-semibold">Session</th>
                         <th className="px-3 py-2 text-left font-semibold">Status</th>
                         <th className="px-3 py-2 text-left font-semibold">Actions</th>
                       </tr>
@@ -2551,7 +2571,7 @@ export function MessageSender() {
                               </td>
                               <td className="px-3 py-2">
                                 {h.sessionId ? (
-                                  <span className="font-mono text-gray-500 text-xs" title={h.sessionId}>{h.sessionId.slice(0, 12)}</span>
+                                  <span className="text-gray-600 text-xs" title={h.sessionId}>{sessionLabel(h.sessionId)}</span>
                                 ) : (
                                   <span className="text-gray-300">—</span>
                                 )}
@@ -2602,7 +2622,7 @@ export function MessageSender() {
                     : drawerJob.scheduled_at
                       ? `Scheduled for ${new Date(drawerJob.scheduled_at).toLocaleString('en-IN')}`
                       : '—'}
-                  {drawerJob.session_id && ` · ${drawerJob.session_id}`}
+                  {drawerJob.session_id && ` · ${sessionLabel(drawerJob.session_id, drawerJob.session_name)}`}
                 </p>
               </div>
               <button onClick={() => setDrawerJob(null)} className="text-gray-400 hover:text-gray-700">

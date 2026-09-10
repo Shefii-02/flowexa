@@ -349,8 +349,7 @@ export const Sidebar = () => {
             {/* Dashboard - always visible */}
             {/* {canViewDash &&  */}
             <FlatLink to="/dashboard" icon="📊" label="Dashboard" end />
-            {/* } */}
-            <FlatLink to="/setup-guide" icon="🧭" label="Setup Guide" />
+
 
             {/* ── WA Chat accordion ── */}
             {/* {canViewWaChat && ( */}
@@ -370,7 +369,7 @@ export const Sidebar = () => {
                 {canViewMsgSend &&  */}
               <SubLink to="/wa-chat/message-sender" icon="📨" label="Campaign" />
               {/* } */}
-              <SubLink to="/wa-chat/plugins" icon="🔌" label="Plugin" />
+              {/* <SubLink to="/wa-chat/plugins" icon="🔌" label="Plugin" /> */}
               {/* {canViewWebhooks &&  */}
               <SubLink to="/wa-chat/webhooks" icon="🔗" label="Webhooks" />
               {/* }
@@ -382,7 +381,7 @@ export const Sidebar = () => {
               {/* } */}
               <SubLink to="/wa-chat/export" icon="📤" label="Data Export" />
               <SubLink to="/wa-chat/media-library" icon="🖼️" label="Media Library" />
-
+              <SubLink to="/wa-chat/automations" icon="⚙️" label="Agent Automations" />
               {/* ── ANALYTICS ── */}
               <SectionHeader label="Analytics" />
               <FlatLink to="/wa-chat/analytics" icon="📊" label="Analytics" />
@@ -390,13 +389,13 @@ export const Sidebar = () => {
 
               {/* Nested WA Agent inside WA Chat */}
               {/* {canViewAuto && ( */}
-              <NestedAccordion
+              {/* <NestedAccordion
                 icon="🤖"
                 label="WA Agent"
                 basePaths={['/wa-chat/automations']}
               >
                 <SubLink to="/wa-chat/automations" icon="⚙️" label="Automations" />
-              </NestedAccordion>
+              </NestedAccordion> */}
               {/* )} */}
             </Accordion>
             {/* )} */}
@@ -421,7 +420,7 @@ export const Sidebar = () => {
                 {canViewOtp &&  */}
               <SubLink to="/wa-cloud/api-service" icon="🔑" label="API Service" />
               {/* } */}
-
+              <SubLink to="/wa-cloud/automations" icon="⚙️" label="Agent Automations" />
               <SubLink to="/wa-cloud/inbox" icon="📥" label="Inbox" />
               <SubLink to="/wa-cloud/settings" icon="⚙️" label="Settings" />
 
@@ -438,13 +437,13 @@ export const Sidebar = () => {
 
               {/* Nested WA Agent inside WA Cloud */}
               {/* {canViewAuto && ( */}
-              <NestedAccordion
+              {/* <NestedAccordion
                 icon="🤖"
                 label="WA Agent"
                 basePaths={['/wa-cloud/automations']}
-              >
-                <SubLink to="/wa-cloud/automations" icon="⚙️" label="Automations" />
-              </NestedAccordion>
+              > */}
+              {/* <SubLink to="/wa-cloud/automations" icon="⚙️" label="Automations" />
+              </NestedAccordion> */}
               {/* )} */}
             </Accordion>
             {/* )} */}
@@ -588,6 +587,8 @@ export const Sidebar = () => {
             <SectionHeader label="System" />
             <FlatLink to="/settings" icon="⚙️" label="Settings" />
             <FlatLink to="/settings/integrations" icon="🔌" label="Integrations" />
+            {/* } */}
+            <FlatLink to="/setup-guide" icon="🧭" label="Setup Guide" />
           </>
         )}
 
@@ -603,6 +604,8 @@ export const Sidebar = () => {
             <FlatLink to="/superadmin/topup" icon="💬" label="Top-up Packages" />
             <FlatLink to="/superadmin/prebuilt-templates" icon="🧩" label="Prebuilt Templates" />
             <FlatLink to="/superadmin/reports" icon="📊" label="Reports" />
+            {/* } */}
+            <FlatLink to="/setup-guide" icon="🧭" label="Setup Guide" />
           </>
         )}
       </nav>

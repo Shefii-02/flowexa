@@ -47,6 +47,7 @@ export const contactApi = {
   update: (id: number, d: Record<string, unknown>) => api.put(`/contacts/${id}`, d),
   blacklist: (phone: string, reason?: string) => api.post('/blacklist', { phone, reason }),
   leads: (id: number) => api.get(`/contacts/${id}/leads`),
+  campaigns: (id: number) => api.get(`/contacts/${id}/campaigns`),
   messages: (id: number, p?: Record<string, unknown>) => api.get(`/contacts/${id}/messages`, { params: p }),
   delete: (id: number) => api.delete(`/contacts/${id}`),
   optIn: (id: number) => api.patch(`/contacts/${id}/opt-in`),

@@ -542,7 +542,9 @@ Route::prefix('v1')->group(function () {
                 Route::get('/',               [ContactController::class, 'index'])->name('index');
                 Route::get('/export',         [ContactController::class, 'export'])->name('export');
                 Route::post('/by-labels',     [ContactController::class, 'byLabels'])->name('by-labels');
-                Route::get('/{contact}',      [ContactController::class, 'show'])->name('show');
+                Route::get('/{contact}',           [ContactController::class, 'show'])->name('show');
+                Route::get('/{contact}/leads',     [ContactController::class, 'leads'])->name('leads');
+                Route::get('/{contact}/campaigns', [ContactController::class, 'campaigns'])->name('campaigns');
             });
 
             Route::post('/import', [ContactController::class, 'import'])

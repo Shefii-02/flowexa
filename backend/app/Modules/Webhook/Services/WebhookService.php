@@ -585,16 +585,21 @@ class WebhookService
     private function logInboundToInbox(Company $company, Contact $contact, InboundMessageDTO $dto): void
     {
         try {
+            $displayName = $contact->name ?: ($dto->profileName ?: null);
+
             $conversation = WaConversation::firstOrCreate(
                 ['company_id' => $company->id, 'phone' => $dto->phone],
-                ['contact_id' => $contact->id, 'contact_name' => $contact->name ?? null, 'status' => 'open']
+                ['contact_id' => $contact->id, 'contact_name' => $displayName, 'status' => 'open']
             );
 
-            $conversation->update([
+            $conversation->update(array_filter([
                 'status'          => 'open',
                 'last_message_at' => now(),
                 'unread_count'    => $conversation->unread_count + 1,
-            ]);
+                'contact_id'      => $conversation->contact_id ?: $contact->id,
+                // Keep the inbox label fresh with the latest WhatsApp display name.
+                'contact_name'    => $displayName ?: $conversation->contact_name,
+            ], fn ($v) => $v !== null));
 
             $message = WaMessage::create([
                 'conversation_id' => $conversation->id,
@@ -1206,10 +1211,25 @@ class WebhookService
     // ─── Resolve or create contact ────────────────────────────────────────────
     private function resolveContact(Company $company, InboundMessageDTO $dto): Contact
     {
-        return Contact::firstOrCreate(
+        $contact = Contact::firstOrCreate(
             ['company_id' => $company->id, 'phone' => $dto->phone],
-            ['wa_id' => $dto->waId, 'opted_in' => true]
+            [
+                'wa_id'    => $dto->waId,
+                'opted_in' => true,
+                // The WhatsApp display name the customer set — the best label we get from the
+                // Cloud API (it does not expose profile photos).
+                'name'     => $dto->profileName ?: null,
+            ]
         );
+
+        // Backfill the name on an existing contact that has none, or whose "name" is just the
+        // phone number (older auto-created rows), without ever clobbering a name a human set.
+        $profileName = trim((string) $dto->profileName);
+        if ($profileName !== '' && (blank($contact->name) || $contact->name === $contact->phone)) {
+            $contact->forceFill(['name' => $profileName])->save();
+        }
+
+        return $contact;
     }
 
     // ─── Extract readable content from message ────────────────────────────────

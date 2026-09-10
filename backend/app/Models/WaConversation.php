@@ -5,6 +5,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class WaConversation extends Model
 {
@@ -56,5 +57,11 @@ class WaConversation extends Model
     public function latestMessage(): HasMany
     {
         return $this->messages()->latest();
+    }
+
+    // Single most-recent message — for the inbox list preview line.
+    public function lastMessage(): HasOne
+    {
+        return $this->hasOne(WaMessage::class, 'conversation_id')->latestOfMany();
     }
 }

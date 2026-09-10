@@ -23,7 +23,11 @@ class ConversationController extends Controller
             ->when($request->status, fn ($q, $s) => $q->where('status', $s))
             ->when($request->boolean('mine'), fn ($q) => $q->where('assigned_to', auth()->id()))
             ->when($request->boolean('unassigned'), fn ($q) => $q->whereNull('assigned_to'))
-            ->with(['assignedAgent:id,name'])
+            ->with([
+                'assignedAgent:id,name',
+                'contact:id,name',
+                'lastMessage',
+            ])
             ->orderByDesc('last_message_at')
             ->paginate($request->integer('per_page', 30));
 
@@ -38,6 +42,7 @@ class ConversationController extends Controller
     {
         $conversation = WaConversation::where('id', $id)
             ->where('company_id', auth()->user()->company_id)
+            ->with(['assignedAgent:id,name', 'contact:id,name,phone,email,lead_stage,lead_score,conversation_summary'])
             ->firstOrFail();
 
         $messages = WaMessage::where('conversation_id', $conversation->id)

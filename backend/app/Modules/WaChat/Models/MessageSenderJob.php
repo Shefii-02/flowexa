@@ -28,7 +28,35 @@ class MessageSenderJob extends Model
         'completed_at'     => 'datetime',
     ];
 
+    protected $appends = ['session_name'];
+
     public function company(): BelongsTo { return $this->belongsTo(Company::class); }
     public function creator(): BelongsTo { return $this->belongsTo(User::class, 'created_by'); }
     public function messageLogs(): HasMany { return $this->hasMany(WahaMessageLog::class, 'job_id'); }
+
+    /**
+     * The WhatsApp session this job was sent through. `session_id` stores the
+     * gateway session id, which is persisted locally as waha_sessions.session_name.
+     */
+    public function wahaSession(): BelongsTo
+    {
+        return $this->belongsTo(WahaSession::class, 'session_id', 'session_name');
+    }
+
+    /**
+     * Human-readable session label for the campaign-history UI. Falls back to the
+     * raw id when the session has no display name or has since been deleted.
+     */
+    public function getSessionNameAttribute(): ?string
+    {
+        if (!$this->session_id) {
+            return null;
+        }
+
+        $session = $this->relationLoaded('wahaSession')
+            ? $this->getRelation('wahaSession')
+            : $this->wahaSession()->first();
+
+        return $session?->display_name ?: $this->session_id;
+    }
 }

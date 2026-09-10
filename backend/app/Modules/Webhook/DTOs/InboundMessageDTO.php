@@ -16,9 +16,10 @@ readonly class InboundMessageDTO
         public ?string $replyTitle     = null,
         public ?array  $rawPayload     = null,
         public ?string $caption        = null,
+        public ?string $profileName    = null,  // the WhatsApp display name the customer set
     ) {}
 
-    public static function fromMeta(array $message, string $phone, string $waId): self
+    public static function fromMeta(array $message, string $phone, string $waId, ?string $profileName = null): self
     {
         $type            = $message['type'] ?? 'text';
         $text            = null;
@@ -56,6 +57,7 @@ readonly class InboundMessageDTO
             replyTitle:       $replyTitle,
             rawPayload:       $message,
             caption:          $message['image']['caption'] ?? $message['document']['caption'] ?? null,
+            profileName:      $profileName,
         );
     }
 }

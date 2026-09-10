@@ -118,11 +118,12 @@ class WebhookController extends Controller
 
                 // ── Inbound messages ──────────────────────────────────────────
                 foreach ($value['messages'] ?? [] as $message) {
-                    $contact = $value['contacts'][0] ?? [];
-                    $phone   = $contact['wa_id'] ?? $message['from'];
-                    $waId    = $contact['wa_id'] ?? $message['from'];
+                    $contact     = $value['contacts'][0] ?? [];
+                    $phone       = $contact['wa_id'] ?? $message['from'];
+                    $waId        = $contact['wa_id'] ?? $message['from'];
+                    $profileName = $contact['profile']['name'] ?? null;
 
-                    $dto = InboundMessageDTO::fromMeta($message, $phone, $waId);
+                    $dto = InboundMessageDTO::fromMeta($message, $phone, $waId, $profileName);
                     $this->webhookService->handleInbound($company, $dto);
                 }
 

@@ -3,7 +3,9 @@
 namespace App\Modules\Contact\Http\Controllers;
 
 use App\Http\Controllers\Controller;
+use App\Models\CampaignContact;
 use App\Models\Contact;
+use App\Models\Lead;
 use App\Modules\Contact\DTOs\ContactFilterDTO;
 use App\Modules\Contact\DTOs\CreateContactDTO;
 use App\Modules\Contact\DTOs\ImportContactDTO;
@@ -129,6 +131,64 @@ class ContactController extends Controller
             'message'  => 'Contact opted in.',
             'opted_in' => true,
         ]);
+    }
+
+    // ─── GET /contacts/{id}/leads ────────────────────────────────────────────
+    // Leads for this contact, each with its recent activity timeline (lead_events).
+    public function leads(int $contact): JsonResponse
+    {
+        $companyId = auth()->user()->company_id;
+        $this->contactService->show($contact, $companyId); // 404s if not this company's contact
+
+        $leads = Lead::where('company_id', $companyId)
+            ->where('contact_id', $contact)
+            ->with(['assignedTo:id,name', 'events' => fn ($q) => $q->with('user:id,name')->latest()->limit(20)])
+            ->latest()
+            ->get()
+            ->map(fn (Lead $l) => [
+                'id'          => $l->id,
+                'stage'       => $l->stage,
+                'priority'    => $l->priority,
+                'category'    => $l->category,
+                'source'      => $l->source,
+                'notes'       => $l->notes,
+                'assigned_to' => $l->assignedTo?->name,
+                'created_at'  => $l->created_at?->toIso8601String(),
+                'activities'  => $l->events->map(fn ($e) => [
+                    'id'         => $e->id,
+                    'event'      => $e->event,
+                    'payload'    => $e->payload,
+                    'by'         => $e->user?->name,
+                    'created_at' => $e->created_at?->toIso8601String(),
+                ]),
+            ]);
+
+        return response()->json(['leads' => $leads]);
+    }
+
+    // ─── GET /contacts/{id}/campaigns ────────────────────────────────────────
+    // Broadcast campaigns this contact was included in + their per-recipient status.
+    public function campaigns(int $contact): JsonResponse
+    {
+        $companyId = auth()->user()->company_id;
+        $this->contactService->show($contact, $companyId);
+
+        $rows = CampaignContact::where('contact_id', $contact)
+            ->whereHas('campaign', fn ($q) => $q->where('company_id', $companyId))
+            ->with('campaign:id,name,created_at')
+            ->latest()
+            ->get()
+            ->map(fn (CampaignContact $cc) => [
+                'campaign_id'   => $cc->campaign_id,
+                'campaign_name' => $cc->campaign?->name ?? "Campaign #{$cc->campaign_id}",
+                'status'        => $cc->status,
+                'failed_reason' => $cc->failed_reason,
+                'sent_at'       => $cc->sent_at?->toIso8601String(),
+                'delivered_at'  => $cc->delivered_at?->toIso8601String(),
+                'read_at'       => $cc->read_at?->toIso8601String(),
+            ]);
+
+        return response()->json(['campaigns' => $rows]);
     }
 
     // ─── DELETE /contacts/{id} ────────────────────────────────────────────────

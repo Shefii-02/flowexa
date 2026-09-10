@@ -23,7 +23,7 @@ class MessageSenderController extends Controller
         // until enough of the pending ones finished to make room. The frontend has no "load more"
         // for this list, so a hard cap here was silently hiding history rather than paging it.
         $jobs = MessageSenderJob::where('company_id', auth()->user()->company_id)
-            ->with(['creator:id,name', 'messageLogs'])
+            ->with(['creator:id,name', 'messageLogs', 'wahaSession:session_name,display_name,phone'])
             ->orderByRaw("CASE WHEN status IN ('pending','scheduled') THEN 0 ELSE 1 END")
             ->orderByRaw('scheduled_at IS NULL DESC')
             ->orderBy('scheduled_at', 'asc')
@@ -77,7 +77,7 @@ class MessageSenderController extends Controller
     public function show(int $id): JsonResponse
     {
         $job = MessageSenderJob::where('company_id', auth()->user()->company_id)
-            ->with(['messageLogs', 'creator:id,name'])
+            ->with(['messageLogs', 'creator:id,name', 'wahaSession:session_name,display_name,phone'])
             ->findOrFail($id);
         return response()->json(['data' => $this->withLiveLog($job)]);
     }
@@ -98,7 +98,7 @@ class MessageSenderController extends Controller
                 'error'          => $l->error_message,
             ])->all());
         }
-        $job->makeHidden('messageLogs');
+        $job->makeHidden(['messageLogs', 'wahaSession']);
         return $job;
     }
 
