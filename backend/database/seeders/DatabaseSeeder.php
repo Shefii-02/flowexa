@@ -23,7 +23,7 @@ class DatabaseSeeder extends Seeder
             UpdatePlansWithLimitsSeeder::class, // redundant with PlansSeeder; kept for completeness
 
             // ── Roles & permissions ──────────────────────────────────────────
-            // RolesSeeder::class,
+            RolesSeeder::class,
             SuperadminStaffRoleSeeder::class,
             PermissionsSeeder::class,
 

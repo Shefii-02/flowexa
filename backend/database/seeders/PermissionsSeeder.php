@@ -178,7 +178,7 @@ class PermissionsSeeder extends Seeder
 
             // 2. Update each system role's JSON permissions AND role_permissions pivot
             foreach ($roleDefs as $roleName => $permKeys) {
-                $role = Role::where('company_id', 0)->where('name', $roleName)->first();
+                $role = Role::whereNull('company_id')->where('name', $roleName)->first();
                 if (!$role) {
                     $this->command->warn("Role [{$roleName}] not found — skipping.");
                     continue;

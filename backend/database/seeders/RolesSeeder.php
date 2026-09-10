@@ -109,10 +109,10 @@ class RolesSeeder extends Seeder
         ];
 
         foreach ($roles as $role) {
-            // System roles live under company_id = 0; company-scoped roles
+            // System roles are global: company_id IS NULL. Company-scoped roles
             // (Title Case, is_system = 0) must never be matched here.
             Role::updateOrCreate(
-                ['company_id' => 0, 'name' => $role['name']],
+                ['company_id' => null, 'name' => $role['name']],
                 [
                     'label'       => $role['label'],
                     'permissions' => array_values($role['permissions']),

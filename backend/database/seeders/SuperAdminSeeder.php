@@ -15,7 +15,7 @@ class SuperAdminSeeder extends Seeder
 {
     public function run(): void
     {
-        $superAdminRole = Role::where('company_id', 0)->where('name', 'superadmin')->firstOrFail();
+        $superAdminRole = Role::whereNull('company_id')->where('name', 'superadmin')->firstOrFail();
         $trialPlan      = Plan::where('name', 'Trial')->firstOrFail();
 
         // ── Platform company (host of the superadmin) ─────────────────────────
