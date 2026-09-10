@@ -1050,6 +1050,11 @@ Route::post('v1/waha/webhook', [WahaSessionController::class, 'webhook']);
 // ── Protected WA Chat routes ─────────────────────────────────────────────
 Route::prefix('v1')->middleware(['jwt.auth'])->group(function () {
 
+    // Gateway API-key status / reconnect
+    Route::get('waha/token',            [WahaSessionController::class, 'tokenStatus']);
+    Route::post('waha/token/reconnect', [WahaSessionController::class, 'reconnectToken'])
+        ->middleware('permission:settings.manage');
+
     // Sessions
     Route::prefix('waha/sessions')->group(function () {
         Route::get('/',              [WahaSessionController::class, 'index']);

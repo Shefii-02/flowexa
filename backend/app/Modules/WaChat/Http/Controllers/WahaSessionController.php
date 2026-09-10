@@ -8,6 +8,7 @@ use App\Modules\WaChat\Services\AutomationEngine;
 use App\Modules\WaChat\Services\Agent\AgentInbound;
 use App\Modules\WaChat\Services\Agent\ConversationalAgentService;
 use App\Modules\WaChat\Services\Rag\RagOrchestrator;
+use App\Modules\WaChat\Services\WaChatTokenService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
@@ -15,6 +16,34 @@ use Illuminate\Support\Facades\Log;
 
 class WahaSessionController extends Controller
 {
+    /** GET /waha/token — live status of this company's gateway key. */
+    public function tokenStatus(WaChatTokenService $tokens): JsonResponse
+    {
+        $company = auth()->user()->company;
+        abort_unless($company, 404, 'No company on this account.');
+
+        return response()->json($tokens->status($company));
+    }
+
+    /** POST /waha/token/reconnect — mint a fresh gateway key for this company. */
+    public function reconnectToken(WaChatTokenService $tokens): JsonResponse
+    {
+        $company = auth()->user()->company;
+        abort_unless($company, 404, 'No company on this account.');
+
+        try {
+            $tokens->provision($company);
+        } catch (\Throwable $e) {
+            return response()->json(['message' => $e->getMessage()], 502);
+        }
+
+        return response()->json([
+            'message' => 'WhatsApp Chat reconnected.',
+            'status'  => $tokens->status($company->refresh()),
+            'wa_chat_token' => $company->wa_chat_token,
+        ]);
+    }
+
     private function wahaBase(): string
     {
         return rtrim(config('services.waha.base_url', env('WAHA_BASE_URL', 'http://localhost:3000')), '/');

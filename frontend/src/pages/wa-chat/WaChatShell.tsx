@@ -7,11 +7,15 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Outlet, Link } from 'react-router-dom'
 import { useEffect, useState, type ReactNode } from 'react'
+import toast from 'react-hot-toast'
 import { RoleProvider } from './components/RoleProvider'
 import { ToastProvider } from './components/Toast'
 import { useRole } from './hooks/useRole'
 import { WA_CHAT_API_KEY_STORAGE } from './api/client'
-import { useCurrentUser } from '@/store'
+import { useAppDispatch, useCurrentUser, usePermission } from '@/store'
+import { fetchMeThunk } from '@/store/slices'
+import { getError } from '@/utils'
+import api from '@/api/client'
 // Side-effect import: boots the WA Chat i18next instance (locales under ./i18n).
 import './i18n'
 
@@ -48,7 +52,7 @@ export function RequireWaAdmin({ children }: { children: ReactNode }) {
 //                     cleared the sessionStorage key)
 type WaChatState = 'ok' | 'not-set-up' | 'disconnected'
 
-function useWaChatState(): WaChatState {
+function useWaChatState(): [WaChatState, () => void] {
   const companyToken = useCurrentUser()?.company?.wa_chat_token ?? null
 
   const compute = (): WaChatState => {
@@ -64,11 +68,12 @@ function useWaChatState(): WaChatState {
 
   const [state, setState] = useState<WaChatState>(compute)
 
+  const sync = () => {
+    if (sessionStorage.getItem(WA_CHAT_API_KEY_STORAGE)) return setState('ok')
+    setState(companyToken ? 'disconnected' : 'not-set-up')
+  }
+
   useEffect(() => {
-    const sync = () => {
-      if (sessionStorage.getItem(WA_CHAT_API_KEY_STORAGE)) return setState('ok')
-      setState(companyToken ? 'disconnected' : 'not-set-up')
-    }
     sync()
     window.addEventListener('storage', sync)
     // same-tab sessionStorage writes don't fire 'storage' — poll lightly so the
@@ -78,37 +83,78 @@ function useWaChatState(): WaChatState {
       window.removeEventListener('storage', sync)
       window.clearInterval(id)
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [companyToken])
 
-  return state
+  return [state, sync]
 }
 
-function WaChatNotConnected({ state }: { state: Exclude<WaChatState, 'ok'> }) {
+function WaChatNotConnected({
+  state,
+  onRecheck,
+}: {
+  state: Exclude<WaChatState, 'ok'>
+  onRecheck: () => void
+}) {
+  const dispatch = useAppDispatch()
+  const canManage = usePermission('settings.manage')
+  const [busy, setBusy] = useState(false)
+
   const copy =
     state === 'disconnected'
       ? {
           title: 'WhatsApp Chat session expired',
-          body: 'Your WhatsApp Chat workspace needs to be reconnected. Reconnect it from Settings to get back to the shared inbox, sessions and campaigns.',
+          body: 'The WhatsApp Chat gateway rejected this workspace’s key. Reconnect to mint a fresh one and get back to the shared inbox, sessions and campaigns.',
+          cta: 'Reconnect WhatsApp Chat',
         }
       : {
           title: 'WhatsApp Chat isn’t connected',
-          body: 'This account doesn’t have a WhatsApp Chat workspace yet. Connect a number from Settings to start using the shared inbox, sessions and campaigns.',
+          body: 'This account doesn’t have a WhatsApp Chat workspace yet. Connect one to start using the shared inbox, sessions and campaigns.',
+          cta: 'Connect WhatsApp Chat',
         }
+
+  const reconnect = async () => {
+    setBusy(true)
+    try {
+      const { data } = await api.post('/waha/token/reconnect')
+      if (data?.wa_chat_token) {
+        sessionStorage.setItem(WA_CHAT_API_KEY_STORAGE, data.wa_chat_token)
+      }
+      await dispatch(fetchMeThunk())
+      onRecheck()
+      toast.success('WhatsApp Chat reconnected.')
+    } catch (e) {
+      toast.error(getError(e))
+    } finally {
+      setBusy(false)
+    }
+  }
 
   return (
     <div className="max-w-md mx-auto mt-16 text-center">
       <div className="text-4xl mb-3">💬</div>
       <h2 className="text-lg font-semibold text-gray-900">{copy.title}</h2>
       <p className="text-sm text-gray-500 mt-2">{copy.body}</p>
-      <div className="mt-5 flex items-center justify-center gap-3">
-        <Link
-          to="/settings"
-          className="px-4 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700"
-        >
-          Go to Settings
+
+      <div className="mt-5 flex flex-wrap items-center justify-center gap-3">
+        {canManage ? (
+          <button
+            onClick={reconnect}
+            disabled={busy}
+            className="px-4 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700 disabled:opacity-60"
+          >
+            {busy ? 'Connecting…' : copy.cta}
+          </button>
+        ) : (
+          <span className="text-xs text-gray-400">
+            Ask an owner or admin to reconnect WhatsApp Chat from Settings.
+          </span>
+        )}
+        <Link to="/settings" className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900">
+          Settings
         </Link>
         <Link to="/dashboard" className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900">
-          Back to dashboard
+          Dashboard
         </Link>
       </div>
     </div>
@@ -116,13 +162,17 @@ function WaChatNotConnected({ state }: { state: Exclude<WaChatState, 'ok'> }) {
 }
 
 export default function WaChatShell() {
-  const state = useWaChatState()
+  const [state, recheck] = useWaChatState()
 
   return (
     <QueryClientProvider client={waChatQueryClient}>
       <RoleProvider>
         <ToastProvider>
-          {state === 'ok' ? <Outlet /> : <WaChatNotConnected state={state} />}
+          {state === 'ok' ? (
+            <Outlet />
+          ) : (
+            <WaChatNotConnected state={state} onRecheck={recheck} />
+          )}
         </ToastProvider>
       </RoleProvider>
     </QueryClientProvider>

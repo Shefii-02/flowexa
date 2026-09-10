@@ -62,6 +62,10 @@ return [
     // those features are also failing to send.
     'open_wa' => [
         'base_url' => rtrim(env('WA_CHAT_API_ORIGIN', 'http://localhost:2785'), '/') . '/api',
+        // Node gateway ADMIN key (API_MASTER_KEY on the node side, or the value in
+        // its data/.api-key). Used ONLY to mint / revoke each company's own
+        // per-company key (Company.wa_chat_token) via POST /auth/api-keys.
+        'admin_key' => env('WA_CHAT_ADMIN_KEY'),
     ],
 
     'meta_ads' => [
