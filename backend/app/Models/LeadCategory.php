@@ -54,7 +54,7 @@ class LeadCategorySeeder
         ];
 
         foreach ($defaults as $cat) {
-            LeadCategory::firstOrCreate(
+            LeadCategory::updateOrCreate(
                 ['company_id' => $companyId, 'name' => $cat['name']],
                 array_merge($cat, ['company_id' => $companyId])
             );

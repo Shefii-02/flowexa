@@ -14,8 +14,8 @@ class SuperadminStaffRoleSeeder extends Seeder
 {
     public function run(): void
     {
-        Role::firstOrCreate(
-            ['name' => 'superadmin_staff'],
+        Role::updateOrCreate(
+            ['company_id' => 0, 'name' => 'superadmin_staff'],
             [
                 'label'       => 'Platform Staff',
                 'is_system'   => true,

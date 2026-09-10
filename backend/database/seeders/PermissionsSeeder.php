@@ -178,7 +178,7 @@ class PermissionsSeeder extends Seeder
 
             // 2. Update each system role's JSON permissions AND role_permissions pivot
             foreach ($roleDefs as $roleName => $permKeys) {
-                $role = Role::where('name', $roleName)->first();
+                $role = Role::where('company_id', 0)->where('name', $roleName)->first();
                 if (!$role) {
                     $this->command->warn("Role [{$roleName}] not found — skipping.");
                     continue;
@@ -196,9 +196,8 @@ class PermissionsSeeder extends Seeder
                 $merged = array_unique(array_values(array_merge($existingKeys, $validKeys)));
                 $role->update(['permissions' => $merged]);
 
-                // Also add new descriptive columns if still default
-                if (!$role->description) {
-                    $role->update([
+                // Refresh the descriptive columns on every run.
+                $role->update([
                         'description' => match($roleName) {
                             'superadmin' => 'Full platform access — cannot be modified',
                             'owner'      => 'Full company access — cannot be modified',
@@ -226,8 +225,7 @@ class PermissionsSeeder extends Seeder
                             'viewer'     => 5,
                             default      => 99,
                         },
-                    ]);
-                }
+                ]);
 
                 $count = count($validKeys);
                 $this->command->info("  └─ {$roleName}: {$count} permissions synced.");

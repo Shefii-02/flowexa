@@ -15,47 +15,66 @@ class SuperAdminSeeder extends Seeder
 {
     public function run(): void
     {
-        $superAdminRole = Role::where('name', 'superadmin')->firstOrFail();
+        $superAdminRole = Role::where('company_id', 0)->where('name', 'superadmin')->firstOrFail();
         $trialPlan      = Plan::where('name', 'Trial')->firstOrFail();
 
-        // ── Platform company (for superadmin) ─────────────────────────────────
-        $platform = Company::firstOrCreate(
+        // ── Platform company (host of the superadmin) ─────────────────────────
+        // `app_id` / `private_token` are NOT NULL secrets — generated once on
+        // create and never rotated. The descriptive fields are refreshed on
+        // every run.
+        $refreshable = [
+            'plan_id' => $trialPlan->id,
+            'name'    => 'WA SaaS Platform',
+            'email'   => 'platform@waapi.com',
+            'status'  => 'active',
+        ];
+
+        $platform = Company::withTrashed()->firstOrCreate(
             ['slug' => 'platform'],
-            [
-                'plan_id'       => $trialPlan->id,
-                'name'          => 'WA SaaS Platform',
+            $refreshable + [
                 'app_id'        => 'WA_APP_PLATFORM_0001',
                 'private_token' => encrypt(Str::random(40)),
-                'email'         => 'platform@waapi.com',
-                'status'        => 'active',
             ]
         );
+        if ($platform->trashed()) {
+            $platform->restore();
+        }
+        $platform->update($refreshable);
 
-        // Create wallet if not exists
-        if (!$platform->wallet) {
-            Wallet::create([
-                'company_id' => $platform->id,
-                'balance'    => 999999,
-            ]);
+        // Wallet — created once; the balance is never reset by the seeder.
+        Wallet::firstOrCreate(
+            ['company_id' => $platform->id],
+            ['balance' => 999999]
+        );
+
+        // ── SuperAdmin user ──────────────────────────────────────────────────
+        // `password` is NOT NULL — set once on create, never touched again.
+        // The other fields are refreshed on every run.
+        $userFields = [
+            'company_id' => $platform->id,
+            'role_id'    => $superAdminRole->id,
+            'name'       => 'Super Admin',
+            'is_active'  => true,
+        ];
+
+        $superAdmin = User::withTrashed()->firstOrCreate(
+            ['email' => 'superadmin@waapi.com'],
+            $userFields + ['password' => Hash::make('SuperAdmin@123')]
+        );
+        if ($superAdmin->trashed()) {
+            $superAdmin->restore();
         }
 
-        // ── SuperAdmin user ────────────────────────────────────────────────────
-        $superAdmin = User::firstOrCreate(
-            ['email' => 'superadmin@waapi.com'],
-            [
-                'company_id' => $platform->id,
-                'role_id'    => $superAdminRole->id,
-                'name'       => 'Super Admin',
-                'password'   => Hash::make('SuperAdmin@123'),
-                'is_active'  => true,
-            ]
-        );
-
-        $this->command->info('');
-        $this->command->info('✅ SuperAdmin created:');
-        $this->command->info('   Email:    superadmin@waapi.com');
-        $this->command->info('   Password: SuperAdmin@123');
-        $this->command->warn('   ⚠️  Change this password immediately in production!');
-        $this->command->info('');
+        if ($superAdmin->wasRecentlyCreated) {
+            $this->command->info('');
+            $this->command->info('✅ SuperAdmin created:');
+            $this->command->info('   Email:    superadmin@waapi.com');
+            $this->command->info('   Password: SuperAdmin@123');
+            $this->command->warn('   ⚠️  Change this password immediately in production!');
+            $this->command->info('');
+        } else {
+            $superAdmin->update($userFields);
+            $this->command->info('✅ SuperAdmin present (superadmin@waapi.com) — password left untouched.');
+        }
     }
 }

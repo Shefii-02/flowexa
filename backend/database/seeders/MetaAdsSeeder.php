@@ -3,11 +3,14 @@
 
 namespace Database\Seeders;
 
+use App\Models\MetaAudienceTemplate;
 use Illuminate\Database\Seeder;
-use Illuminate\Support\Facades\DB;
 
 class MetaAdsSeeder extends Seeder
 {
+    /** JSON columns that the model casts to array. */
+    private const JSON_COLUMNS = ['interests', 'behaviors', 'targeting_json'];
+
     public function run(): void
     {
         $templates = [
@@ -449,12 +452,18 @@ class MetaAdsSeeder extends Seeder
         ];
 
         foreach ($templates as $tpl) {
-            DB::table('meta_audience_templates')->updateOrInsert(
-                ['slug' => $tpl['slug']],
-                array_merge($tpl, ['created_at' => now(), 'updated_at' => now()])
-            );
+            // The array data files still json_encode() these columns; the model
+            // casts them to array, so decode before upserting to avoid double
+            // encoding.
+            foreach (self::JSON_COLUMNS as $col) {
+                if (isset($tpl[$col]) && is_string($tpl[$col])) {
+                    $tpl[$col] = json_decode($tpl[$col], true);
+                }
+            }
+
+            MetaAudienceTemplate::updateOrCreate(['slug' => $tpl['slug']], $tpl);
         }
 
-        $this->command->info('Seeded ' . count($templates) . ' Meta audience templates.');
+        $this->command->info('✅ Upserted ' . count($templates) . ' Meta audience templates.');
     }
 }

@@ -109,8 +109,10 @@ class RolesSeeder extends Seeder
         ];
 
         foreach ($roles as $role) {
-            Role::firstOrCreate(
-                ['name' => $role['name']],
+            // System roles live under company_id = 0; company-scoped roles
+            // (Title Case, is_system = 0) must never be matched here.
+            Role::updateOrCreate(
+                ['company_id' => 0, 'name' => $role['name']],
                 [
                     'label'       => $role['label'],
                     'permissions' => array_values($role['permissions']),
@@ -119,6 +121,6 @@ class RolesSeeder extends Seeder
             );
         }
 
-        $this->command->info('✅ Roles seeded: superadmin, owner, admin, team_lead, counsellor, viewer');
+        $this->command->info('✅ Roles upserted: superadmin, owner, admin, team_lead, counsellor, viewer');
     }
 }
