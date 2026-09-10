@@ -4,6 +4,7 @@ import { surveyFormApi } from '@/api'
 import { Button, Input, Modal, ConfirmModal, Badge, EmptyState, Pagination } from '@/components/ui'
 import { getError } from '@/utils'
 import toast from 'react-hot-toast'
+import SurveyResponsesModal from './SurveyResponsesModal'
 
 const FIELD_TYPES = [
   { value: 'text',   label: 'Text',   icon: '💬', desc: 'Free-form answer' },
@@ -32,8 +33,7 @@ export default function SurveyFormsPage() {
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState(DEFAULT_FORM)
   const [showResponses, setShowResponses] = useState<any>(null)
-  const [responses, setResponses] = useState<any[]>([])
-  const [loadingResponses, setLoadingResponses] = useState(false)
+  const [duplicatingId, setDuplicatingId] = useState<number | null>(null)
   const set = (k: string, v: any) => setForm(f => ({ ...f, [k]: v }))
 
   const load = useCallback(() => {
@@ -113,8 +113,14 @@ export default function SurveyFormsPage() {
           options: f.type === 'choice' ? f.options.filter((o: string) => o.trim()) : undefined,
         })),
       }
-      if (editForm) { await surveyFormApi.update(editForm.id, payload); toast.success('Survey form updated.') }
-      else          { await surveyFormApi.create(payload); toast.success('Survey form created.') }
+      if (editForm) {
+        const { data } = await surveyFormApi.update(editForm.id, payload)
+        toast.success('Survey form updated.')
+        if (data?.flow_republished) toast.success('Meta Flow re-published with the new questions.')
+        else if (data?.flow_error) toast.error(`Saved, but Meta Flow update failed: ${data.flow_error}`)
+      } else {
+        await surveyFormApi.create(payload); toast.success('Survey form created.')
+      }
       setShowCreate(false); load()
     } catch (e) { toast.error(getError(e)) }
     finally { setSaving(false) }
@@ -128,13 +134,14 @@ export default function SurveyFormsPage() {
     } catch (e) { toast.error(getError(e)) }
   }
 
-  const openResponses = (f: any) => {
-    setShowResponses(f)
-    setLoadingResponses(true)
-    surveyFormApi.responses(f.id, { per_page: 50 })
-      .then(r => setResponses(r.data.responses || []))
-      .catch(e => toast.error(getError(e)))
-      .finally(() => setLoadingResponses(false))
+  const duplicate = async (f: any) => {
+    setDuplicatingId(f.id)
+    try {
+      await surveyFormApi.duplicate(f.id)
+      toast.success(`Duplicated “${f.name}”.`)
+      load()
+    } catch (e) { toast.error(getError(e)) }
+    finally { setDuplicatingId(null) }
   }
 
   return (
@@ -167,17 +174,26 @@ export default function SurveyFormsPage() {
                     <td>
                       <p className="font-medium">{f.name}</p>
                       {f.description && <p className="text-xs text-gray-400 mt-0.5">{f.description}</p>}
+                      {f.flow_id && (
+                        <span className="inline-flex items-center gap-1 text-[10px] text-brand-600 mt-1">
+                          ● Meta Flow {f.flow_status || 'draft'}
+                        </span>
+                      )}
                     </td>
                     <td className="text-sm">{(f.fields || []).length}</td>
                     <td>
-                      <button onClick={() => openResponses(f)} className="text-xs text-brand-600 hover:underline">
+                      <button onClick={() => setShowResponses(f)} className="text-xs text-brand-600 hover:underline">
                         {f.responses_count ?? 0} responses →
                       </button>
                     </td>
                     <td><Badge variant={f.is_active ? 'green' : 'gray'}>{f.is_active ? 'Active' : 'Inactive'}</Badge></td>
                     <td>
-                      <div className="flex gap-2">
+                      <div className="flex gap-2 flex-wrap">
                         <button onClick={() => openEdit(f)} className="text-xs text-blue-600 hover:underline">Edit</button>
+                        <button onClick={() => duplicate(f)} disabled={duplicatingId === f.id}
+                          className="text-xs text-gray-600 hover:underline">
+                          {duplicatingId === f.id ? '…' : 'Duplicate'}
+                        </button>
                         <button onClick={() => setDelForm(f)} className="text-xs text-red-500 hover:underline">Delete</button>
                       </div>
                     </td>
@@ -272,31 +288,10 @@ export default function SurveyFormsPage() {
         </div>
       </Modal>
 
-      {/* Responses viewer */}
-      <Modal open={!!showResponses} onClose={() => setShowResponses(null)} title={`Responses — ${showResponses?.name}`} size="lg">
-        {loadingResponses ? (
-          <div className="text-center py-8 text-gray-400">Loading...</div>
-        ) : responses.length === 0 ? (
-          <EmptyState icon="📭" title="No responses yet" desc="Submissions will appear here once customers complete this survey via WhatsApp." />
-        ) : (
-          <div className="space-y-3 max-h-[60vh] overflow-y-auto">
-            {responses.map(r => (
-              <div key={r.id} className="border border-gray-200 rounded-xl p-3">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-medium">{r.contact?.name || r.phone}</span>
-                  <Badge variant={r.status === 'completed' ? 'green' : r.status === 'abandoned' ? 'gray' : 'yellow'}>{r.status}</Badge>
-                </div>
-                <div className="text-xs text-gray-600 space-y-1">
-                  {Object.entries(r.answers || {}).map(([k, v]) => (
-                    <div key={k} className="flex gap-2"><span className="text-gray-400 font-mono">{k}:</span><span>{String(v)}</span></div>
-                  ))}
-                </div>
-                <p className="text-[11px] text-gray-300 mt-2">{r.created_at?.slice(0, 19).replace('T', ' ')}</p>
-              </div>
-            ))}
-          </div>
-        )}
-      </Modal>
+      {/* Responses viewer — summary, list, CSV export, add-to-label, convert-to-leads */}
+      {showResponses && (
+        <SurveyResponsesModal form={showResponses} onClose={() => setShowResponses(null)} />
+      )}
 
       <ConfirmModal
         open={!!delForm}

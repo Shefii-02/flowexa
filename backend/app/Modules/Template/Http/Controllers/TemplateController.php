@@ -481,10 +481,13 @@ class TemplateController extends Controller
             'header_example'  => ['nullable', 'string', 'max:255'],
             'footer'          => ['nullable', 'string', 'max:60'],
             'buttons'         => ['nullable', 'array', 'max:3'],
-            'buttons.*.type'  => ['required_with:buttons', 'in:QUICK_REPLY,URL,PHONE_NUMBER'],
+            // SURVEY_FORM is our own button kind — Meta only ever sees it as a QUICK_REPLY
+            // (see buildComponents). Tapping it starts the linked survey (handled in the webhook).
+            'buttons.*.type'  => ['required_with:buttons', 'in:QUICK_REPLY,URL,PHONE_NUMBER,SURVEY_FORM'],
             'buttons.*.text'  => ['required_with:buttons', 'string', 'max:25'],
             'buttons.*.url'   => ['nullable', 'required_if:buttons.*.type,URL', 'url'],
-            'buttons.*.phone_number' => ['nullable', 'required_if:buttons.*.type,PHONE_NUMBER', 'string', 'max:20'],
+            'buttons.*.phone_number'   => ['nullable', 'required_if:buttons.*.type,PHONE_NUMBER', 'string', 'max:20'],
+            'buttons.*.survey_form_id' => ['nullable', 'required_if:buttons.*.type,SURVEY_FORM', 'integer'],
 
             // ── AUTHENTICATION-only fields ──────────────────────────────
             'auth_delivery_method'             => [$isAuth ? 'required' : 'nullable', 'in:copy_code,one_tap,zero_tap'],
@@ -738,19 +741,25 @@ class TemplateController extends Controller
 
         if (!empty($d['buttons'])) {
             $buttons = collect($d['buttons'])->map(function ($b) {
-                $isPhone = ($b['type'] ?? 'QUICK_REPLY') === 'PHONE_NUMBER';
+                $type    = $b['type'] ?? 'QUICK_REPLY';
+                // A SURVEY_FORM button is a plain quick-reply as far as Meta is concerned —
+                // the survey link lives only in our DB and is resolved from the tap webhook.
+                if ($type === 'SURVEY_FORM') {
+                    $type = 'QUICK_REPLY';
+                }
+                $isPhone = $type === 'PHONE_NUMBER';
 
                 // Frontend may send the number under a dedicated `phone_number` field, or
                 // (legacy behavior) under `text` itself — support both so nothing breaks.
                 $phoneNumber = $b['phone_number'] ?? ($isPhone ? ($b['text'] ?? null) : null);
 
                 return array_filter([
-                    'type'         => $b['type'] ?? 'QUICK_REPLY',
+                    'type'         => $type,
                     'text'         => $isPhone ? ($b['label'] ?? $b['text'] ?? 'Call') : $b['text'],
-                    'url'          => $b['type'] === 'URL' ? ($b['url'] ?? null) : null,
+                    'url'          => $type === 'URL' ? ($b['url'] ?? null) : null,
                     'phone_number' => $isPhone ? $phoneNumber : null,
                 ], fn($v) => !is_null($v));
-            })->toArray(); // media fields intentionally dropped here
+            })->toArray(); // media / survey_form_id fields intentionally dropped here
 
             $components[] = ['type' => 'BUTTONS', 'buttons' => $buttons];
         }

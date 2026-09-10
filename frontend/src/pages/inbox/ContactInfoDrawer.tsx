@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Activity, Loader2, Megaphone, Tag, UserCheck, X } from 'lucide-react'
 import { contactApi, labelApi, staffApi, leadApi } from '@/api'
 import { getError } from '@/utils'
@@ -11,6 +11,7 @@ interface Label { id: number; name: string; color?: string }
 interface Staff { id: number; name: string; email?: string }
 
 interface Props {
+  open: boolean
   contactId: number | null
   fallbackName: string
   fallbackPhone: string
@@ -49,11 +50,12 @@ const CAMPAIGN_STATUS: Record<string, { text: string; cls: string }> = {
 }
 
 export default function ContactInfoDrawer({
-  contactId, fallbackName, fallbackPhone, conversationMeta, onClose, onContactChanged,
+  open, contactId, fallbackName, fallbackPhone, conversationMeta, onClose, onContactChanged,
 }: Props) {
   const [tab, setTab] = useState<Tab>('info')
   const [contact, setContact] = useState<any>(null)
   const [loading, setLoading] = useState(false)
+  const loadedIdRef = useRef<number | null>(null)   // which contactId `contact` holds — skips refetch
 
   const [allLabels, setAllLabels] = useState<Label[]>([])
   const [labelEditorOpen, setLabelEditorOpen] = useState(false)
@@ -73,42 +75,45 @@ export default function ContactInfoDrawer({
 
   const contactLabels: Label[] = contact?.labels ?? []
 
-  // ── Load the CRM contact whenever the conversation changes ──────────────
+  // ── Load the CRM contact — only while the drawer is open, and only once per
+  //    contactId (reopening the same conversation's drawer is then instant) ──
   const loadContact = useCallback(() => {
-    if (!contactId) { setContact(null); return }
+    if (!contactId) { setContact(null); loadedIdRef.current = null; return }
+    if (loadedIdRef.current === contactId) return
     setLoading(true)
     contactApi.show(contactId)
-      .then(r => setContact(r.data?.contact ?? r.data))
-      .catch(() => setContact(null))
+      .then(r => { setContact(r.data?.contact ?? r.data); loadedIdRef.current = contactId })
+      .catch(() => { setContact(null); loadedIdRef.current = null })
       .finally(() => setLoading(false))
   }, [contactId])
 
-  useEffect(() => { loadContact() }, [loadContact])
+  useEffect(() => { if (open) loadContact() }, [open, loadContact])
   useEffect(() => { setTab('info'); setLabelEditorOpen(false); setStaffPickerOpen(false) }, [contactId])
 
   useEffect(() => {
+    if (!open || allLabels.length) return
     labelApi.list().then(r => setAllLabels(r.data?.labels ?? r.data?.data ?? r.data ?? [])).catch(() => {})
-  }, [])
+  }, [open, allLabels.length])
 
   useEffect(() => { setLabelDraft(new Set(contactLabels.map(l => l.id))) }, [contact])
 
   useEffect(() => {
-    if (tab !== 'leads' || !contactId) return
+    if (!open || tab !== 'leads' || !contactId) return
     setLeadsLoading(true)
     contactApi.leads(contactId)
       .then(r => setLeads(r.data?.leads ?? r.data?.data ?? []))
       .catch(() => setLeads([]))
       .finally(() => setLeadsLoading(false))
-  }, [tab, contactId])
+  }, [open, tab, contactId])
 
   useEffect(() => {
-    if (tab !== 'campaigns' || !contactId) return
+    if (!open || tab !== 'campaigns' || !contactId) return
     setCampaignsLoading(true)
     contactApi.campaigns(contactId)
       .then(r => setCampaigns(r.data?.campaigns ?? []))
       .catch(() => setCampaigns([]))
       .finally(() => setCampaignsLoading(false))
-  }, [tab, contactId])
+  }, [open, tab, contactId])
 
   useEffect(() => {
     if (!staffPickerOpen || staffList.length) return
@@ -188,7 +193,8 @@ export default function ContactInfoDrawer({
   )
 
   return (
-    <div className="wa-drawer">
+    <div className="wa-drawer" aria-hidden={!open}>
+     <div className="wa-drawer__inner">
       <div className="wa-drawer__head">
         <span>Contact info</span>
         <button className="wa-iconbtn" onClick={onClose} aria-label="Close"><X size={16} /></button>
@@ -213,7 +219,13 @@ export default function ContactInfoDrawer({
 
       <div className="wa-drawer__scroll">
         {loading && (
-          <div className="wa-center-pad"><Loader2 size={18} className="animate-spin" style={{ margin: '0 auto' }} /></div>
+          <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div className="wa-skel" style={{ width: '40%', height: 10 }} />
+            <div className="wa-skel" style={{ width: '90%', height: 12 }} />
+            <div className="wa-skel" style={{ width: '70%', height: 12 }} />
+            <div className="wa-skel" style={{ width: '55%', height: 10, marginTop: 8 }} />
+            <div className="wa-skel" style={{ width: '85%', height: 12 }} />
+          </div>
         )}
 
         {!loading && tab === 'info' && (
@@ -418,6 +430,7 @@ export default function ContactInfoDrawer({
           </div>
         )}
       </div>
+     </div>
     </div>
   )
 }

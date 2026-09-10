@@ -69,6 +69,7 @@ export default function WaCloudInboxAnalytics() {
   const [labels, setLabels] = useState<{ id: number; name: string }[]>([])
   const [data, setData] = useState<Summary | null>(null)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     const asArray = (v: unknown) => (Array.isArray(v) ? v : [])
@@ -82,6 +83,7 @@ export default function WaCloudInboxAnalytics() {
 
   useEffect(() => {
     setLoading(true)
+    setError(null)
     const params: Record<string, string> = { from, to }
     if (direction) params.direction = direction
     if (status) params.status = status
@@ -89,6 +91,7 @@ export default function WaCloudInboxAnalytics() {
     if (labelId) params.label_id = labelId
     api.get('/wa-cloud/inbox-analytics', { params })
       .then(r => setData(r.data))
+      .catch(() => setError('Could not load analytics. Please try again.'))
       .finally(() => setLoading(false))
   }, [from, to, direction, status, agentId, labelId])
 
@@ -107,7 +110,7 @@ export default function WaCloudInboxAnalytics() {
 
   return (
     <div className="p-6 space-y-6">
-      <PageHeader title="Inbox Analytics" subtitle="Message and call activity across your WhatsApp Cloud inbox" />
+      <PageHeader title="WA Cloud Analytics" subtitle="Message, call and inbox activity for your WhatsApp Cloud number" />
 
       {/* Filters */}
       <div className="bg-white border border-gray-200 rounded-xl p-4 flex flex-wrap items-end gap-3">
@@ -150,7 +153,9 @@ export default function WaCloudInboxAnalytics() {
         )}
       </div>
 
-      {loading || !data ? (
+      {error ? (
+        <div className="text-center text-sm text-red-500 py-16">{error}</div>
+      ) : loading || !data ? (
         <div className="text-center text-sm text-gray-400 py-16">Loading…</div>
       ) : (
         <>

@@ -31,6 +31,13 @@ readonly class InboundMessageDTO
             $text = $message['text']['body'] ?? null;
         }
 
+        // Quick-reply button on a *template* message — arrives as its own type, not
+        // "interactive". Meta gives us the caption + a developer payload.
+        if ($type === 'button') {
+            $replyTitle = $message['button']['text'] ?? null;
+            $replyId    = $message['button']['payload'] ?? $replyTitle;
+        }
+
         if ($type === 'interactive') {
             $interactive     = $message['interactive'];
             $interactiveType = $interactive['type'] ?? null;

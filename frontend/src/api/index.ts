@@ -443,6 +443,20 @@ export const surveyFormApi = {
   // GET /survey-forms/{id}/responses — submitted answers for this form
   responses: (id: number, params?: { status?: string; page?: number; per_page?: number }) =>
     api.get(`/survey-forms/${id}/responses`, { params }),
+
+  duplicate: (id: number) => api.post(`/survey-forms/${id}/duplicate`),
+  publishFlow: (id: number) => api.post(`/survey-forms/${id}/publish-flow`),
+  analytics: (id: number) => api.get(`/survey-forms/${id}/analytics`),
+  exportResponses: (id: number) =>
+    api.get(`/survey-forms/${id}/responses/export`, { responseType: 'blob' }),
+  responsesToLabel: (id: number, payload: {
+    label_id?: number; new_label_name?: string; new_label_color?: string
+    field_key?: string; field_value?: string; only_completed?: boolean
+  }) => api.post(`/survey-forms/${id}/responses/to-label`, payload),
+  responsesToLeads: (id: number, payload: {
+    stage?: string; category?: string; assigned_to?: number
+    field_key?: string; field_value?: string; only_completed?: boolean
+  }) => api.post(`/survey-forms/${id}/responses/to-leads`, payload),
 }
 
 

@@ -39,6 +39,37 @@ const MEDIA_ICON: Record<string, JSX.Element> = {
   audio: <Mic size={13} />, sticker: <ImageIcon size={13} />, location: <MapPin size={13} />,
 }
 
+const LIST_SKELETON = Array.from({ length: 7 })
+const THREAD_SKELETON: Array<'in' | 'out'> = ['in', 'in', 'out', 'in', 'out', 'out', 'in', 'out']
+
+function ListSkeleton() {
+  return (
+    <>
+      {LIST_SKELETON.map((_, i) => (
+        <div key={i} className="wa-conv">
+          <div className="wa-skel wa-skel--avatar" />
+          <div className="wa-conv__body" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <div className="wa-skel" style={{ width: '55%', height: 11 }} />
+            <div className="wa-skel" style={{ width: '80%', height: 10 }} />
+          </div>
+        </div>
+      ))}
+    </>
+  )
+}
+
+function ThreadSkeleton() {
+  return (
+    <div className="wa-skel-thread">
+      {THREAD_SKELETON.map((side, i) => (
+        <div key={i} className={`wa-row ${side === 'out' ? 'out' : ''}`}>
+          <div className="wa-skel wa-skel--bubble" style={{ width: `${40 + (i * 37) % 45}%` }} />
+        </div>
+      ))}
+    </div>
+  )
+}
+
 function Ticks({ status }: { status: string }) {
   if (status === 'failed') return <AlertTriangle size={12} className="wa-tick failed" />
   if (status === 'queued') return <Clock size={11} className="wa-tick" />
@@ -67,6 +98,7 @@ export default function InboxPage() {
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const taRef = useRef<HTMLTextAreaElement>(null)
+  const reqRef = useRef(0)   // guards against a slow response for a thread the user already left
 
   const active = activeConversation ?? conversations.find(c => c.id === activeId) ?? null
   const canReplyHere = !!active && (canReplyToAny || active.assigned_to === currentUser?.id)
@@ -96,17 +128,23 @@ export default function InboxPage() {
 
   // ── open a thread ───────────────────────────────────────────────────────
   const openThread = (id: number) => {
+    if (id === activeId) return
+    const token = ++reqRef.current
     setActiveId(id)
+    // Paint the header instantly from the list row we already have, then load messages.
+    setActiveConversation(conversations.find(c => c.id === id) ?? null)
+    setMessages([])
     setLoadingThread(true)
     conversationApi.messages(id)
       .then(r => {
+        if (reqRef.current !== token) return   // user moved on — drop this response
         setMessages(r.data.messages || [])
         setActiveConversation(r.data.conversation ?? null)
         setCompanyId(r.data.conversation?.company_id ?? companyId)
         setConversations(prev => prev.map(c => c.id === id ? { ...c, unread_count: 0 } : c))
       })
-      .catch(e => toast.error(getError(e)))
-      .finally(() => setLoadingThread(false))
+      .catch(e => { if (reqRef.current === token) toast.error(getError(e)) })
+      .finally(() => { if (reqRef.current === token) setLoadingThread(false) })
   }
 
   useEffect(() => {
@@ -208,7 +246,8 @@ export default function InboxPage() {
   }
 
   const threadBody = () => {
-    if (loadingThread) return <div className="wa-center-pad">Loading conversation…</div>
+    if (loadingThread) return <ThreadSkeleton />
+    if (messages.length === 0) return <div className="wa-center-pad">No messages in this conversation yet.</div>
     const rows: JSX.Element[] = []
     let lastDay = ''
     for (const m of messages) {
@@ -241,7 +280,7 @@ export default function InboxPage() {
         </div>
         <div className="wa-list__scroll">
           {loadingList ? (
-            <div className="wa-center-pad">Loading…</div>
+            <ListSkeleton />
           ) : visibleConversations.length === 0 ? (
             <div className="wa-center-pad">No conversations{search ? ' match your search' : ' yet'}.</div>
           ) : visibleConversations.map(c => {
@@ -346,9 +385,11 @@ export default function InboxPage() {
         </div>
       )}
 
-      {/* ── contact info drawer ────────────────────────────────── */}
-      {drawerOpen && active && (
+      {/* ── contact info drawer (stays mounted while a chat is open; the grid
+             column animates its width, so no remount / refetch on toggle) ─── */}
+      {active && (
         <ContactInfoDrawer
+          open={drawerOpen}
           contactId={active.contact_id ?? active.contact?.id ?? null}
           fallbackName={active.contact_name || active.contact?.name || ''}
           fallbackPhone={active.phone || ''}

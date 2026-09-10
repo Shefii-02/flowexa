@@ -15,7 +15,7 @@
   --wa-chat-bg: #efeae2;
 
   display: grid;
-  grid-template-columns: 340px minmax(0, 1fr);
+  grid-template-columns: 340px minmax(0, 1fr) 0px;
   height: calc(100vh - 120px);
   min-height: 460px;
   border: 1px solid var(--wa-border);
@@ -24,15 +24,27 @@
   background: var(--wa-panel);
   font-size: 14px;
   color: var(--wa-ink);
+  position: relative;
+  transition: grid-template-columns .2s ease;
 }
 .wa-inbox.has-drawer {
   grid-template-columns: 340px minmax(0, 1fr) 320px;
 }
+@media (prefers-reduced-motion: reduce) {
+  .wa-inbox { transition: none; }
+}
 @media (max-width: 1100px) {
-  .wa-inbox, .wa-inbox.has-drawer { grid-template-columns: 300px minmax(0, 1fr); }
+  .wa-inbox { grid-template-columns: 300px minmax(0, 1fr) 0px; transition: none; }
+  .wa-inbox.has-drawer { grid-template-columns: 300px minmax(0, 1fr) 0px; }
   .wa-inbox.has-drawer .wa-drawer {
-    position: absolute; right: 0; top: 0; bottom: 0; z-index: 30;
+    position: absolute; right: 0; top: 0; bottom: 0; z-index: 30; width: 320px;
     box-shadow: -8px 0 24px rgba(11, 20, 26, 0.14);
+    transform: translateX(0);
+  }
+  .wa-inbox .wa-drawer {
+    position: absolute; right: 0; top: 0; bottom: 0; z-index: 30; width: 320px;
+    transform: translateX(100%);
+    transition: transform .2s ease;
   }
 }
 
@@ -289,10 +301,16 @@
 
 /* ── drawer: contact info ──────────────────────────────────────── */
 .wa-drawer {
-  display: flex;
-  flex-direction: column;
   border-left: 1px solid var(--wa-border);
   background: var(--wa-panel);
+  min-width: 0;
+  overflow: hidden;      /* the grid column animates 0 → 320; this clips the fixed inner */
+}
+.wa-drawer__inner {
+  width: 320px;          /* fixed — content never reflows while the column animates */
+  height: 100%;
+  display: flex;
+  flex-direction: column;
   min-height: 0;
 }
 .wa-drawer__head {
@@ -389,3 +407,21 @@
 .wa-tl-time { font-size: 10px; font-weight: 400; color: var(--wa-muted); }
 .wa-tl-detail { font-size: 12px; color: #4b5563; margin-top: 1px; }
 .wa-tl-by { font-size: 10px; color: var(--wa-muted); margin-top: 1px; }
+
+/* ── skeletons ─────────────────────────────────────────────────── */
+.wa-skel {
+  border-radius: 6px;
+  background: linear-gradient(100deg, #e9edef 30%, #f4f6f7 50%, #e9edef 70%);
+  background-size: 200% 100%;
+  animation: wa-shimmer 1.2s ease-in-out infinite;
+}
+.wa-skel--avatar { width: 42px; height: 42px; border-radius: 50%; flex-shrink: 0; }
+.wa-skel--bubble { height: 34px; border-radius: 8px; }
+.wa-skel-thread { display: flex; flex-direction: column; gap: 10px; padding-top: 6px; }
+@keyframes wa-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .wa-skel { animation: none; }
+}

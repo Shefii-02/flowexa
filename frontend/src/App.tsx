@@ -232,9 +232,9 @@ export default function App() {
             <Route path="settings/integrations" element={<IntegrationsPage />} />
             <Route path="settings/api-keys" element={<Navigate to="/wa-agent/settings" replace />} />
             
-
+            
             {/* V2 routes */}
-            <Route path="phone-numbers" element={<PhoneNumbersPage />} />
+            <Route path="wa-cloud/phone-numbers" element={<PhoneNumbersPage />} />
             <Route path="templates" element={<TemplatesPage />} />
             <Route path="templates/:id" element={<TemplateDetailPage />} />
             <Route path="plan-purchase" element={<PlanPurchasePage />} />
@@ -259,7 +259,9 @@ export default function App() {
             <Route path="wa-cloud/settings" element={<WaCloudSettingsPage />} />
             <Route path="wa-cloud/automations" element={<WaCloudAutomationsPage />} />
             <Route path="wa-cloud/inbox" element={<InboxPage />} />
-            <Route path="wa-cloud/inbox-analytics" element={<WaCloudInboxAnalytics />} />
+            <Route path="wa-cloud/analytics" element={<WaCloudInboxAnalytics />} />
+            <Route path="wa-cloud/inbox-analytics" element={<Navigate to="/wa-cloud/analytics" replace />} />
+            <Route path="wa-cloud/phone-numbers" element={<PhoneNumbersPage />} />
             <Route path="wa-chat/automations" element={<WaChatAutomationsPage />} />
             <Route path="/wa-cloud/campaigns" element={<CampaignsPage />} />
             <Route path="/wa-cloud/survey-forms" element={<SurveyFormsPage />} />

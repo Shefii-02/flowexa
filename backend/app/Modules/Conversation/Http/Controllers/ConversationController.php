@@ -45,10 +45,18 @@ class ConversationController extends Controller
             ->with(['assignedAgent:id,name', 'contact:id,name,phone,email,lead_stage,lead_score,conversation_summary'])
             ->firstOrFail();
 
+        // Cap the payload — a long-running thread can hold thousands of rows and both
+        // the transfer and the client render become the bottleneck. Take the newest
+        // slice, then hand it back oldest-first for display.
+        $limit = min(max((int) request('limit', 120), 20), 300);
+
         $messages = WaMessage::where('conversation_id', $conversation->id)
             ->with('sentBy:id,name')
-            ->orderBy('created_at')
-            ->get();
+            ->latest('created_at')
+            ->limit($limit)
+            ->get()
+            ->reverse()
+            ->values();
 
         // Opening the thread marks it read
         $conversation->update(['unread_count' => 0]);

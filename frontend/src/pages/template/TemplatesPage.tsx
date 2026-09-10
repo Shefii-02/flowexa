@@ -1,7 +1,7 @@
 // // src/pages/templates/TemplatesPage.tsx
 // src/pages/templates/TemplatesPage.tsx
 import { useEffect, useState, useCallback, useMemo } from 'react'
-import { templateApi } from '@/api'
+import { templateApi, surveyFormApi } from '@/api'
 import { Button, Input, Modal, ConfirmModal, Badge, EmptyState, Pagination } from '@/components/ui'
 import { fmt, getError } from '@/utils'
 import toast from 'react-hot-toast'
@@ -14,7 +14,10 @@ const LANGUAGES  = [
   { code: 'ta',    label: 'Tamil' },
   { code: 'ar',    label: 'Arabic' },
 ]
-const CTA_TYPES  = ['NONE','QUICK_REPLY','URL','PHONE_NUMBER']
+const CTA_TYPES  = ['NONE','QUICK_REPLY','URL','PHONE_NUMBER','SURVEY_FORM']
+const CTA_LABEL: Record<string, string> = {
+  QUICK_REPLY: 'Quick reply', URL: 'URL', PHONE_NUMBER: 'Phone', SURVEY_FORM: 'Survey form',
+}
 
 // header format options — TEXT is the classic header, others need a sample media upload for Meta review
 const HEADER_FORMATS = [
@@ -48,7 +51,7 @@ const DEFAULT_FORM = {
   header: '',       // text header content — only used when header_format === 'TEXT'
   header_example: '', // sample value for the single {{1}} variable allowed in a text header
   body: '', footer: '',
-  buttons: [] as { type: string; text: string; url?: string; phone_number?: string }[],
+  buttons: [] as { type: string; text: string; url?: string; phone_number?: string; survey_form_id?: number }[],
   // AUTHENTICATION-only — code delivery setup. Meta generates body/footer copy itself;
   // these just configure how the OTP is delivered and what flags are set.
   auth_delivery_method: 'copy_code' as 'copy_code'|'one_tap'|'zero_tap',
@@ -88,6 +91,14 @@ export default function TemplatesPage() {
   const [filter,     setFilter]     = useState('')
   const [form,       setForm]       = useState(DEFAULT_FORM)
   const set = (k: string, v: any) => setForm(f => ({ ...f, [k]: v }))
+
+  // Survey forms available to bind to a SURVEY_FORM button.
+  const [surveyForms, setSurveyForms] = useState<{ id: number; name: string; is_active: boolean }[]>([])
+  useEffect(() => {
+    surveyFormApi.list({ per_page: 100 })
+      .then(r => setSurveyForms(r.data?.data ?? r.data?.survey_forms ?? r.data ?? []))
+      .catch(() => setSurveyForms([]))
+  }, [])
 
   // sample media for IMAGE/VIDEO/DOCUMENT headers — required by Meta for template review
   const [headerSampleFile, setHeaderSampleFile] = useState<File | null>(null)
@@ -189,6 +200,10 @@ export default function TemplatesPage() {
         if (!btn.phone_number?.trim()) return `Button ${i + 1}: phone number is required for a phone button`
         if (!isValidPhoneNumber(btn.phone_number)) return `Button ${i + 1}: enter a valid phone number with country code (e.g. +919846366783)`
       }
+
+      if (btn.type === 'SURVEY_FORM' && !btn.survey_form_id) {
+        return `Button ${i + 1}: pick a survey form for this button`
+      }
     }
     return null
   }
@@ -285,6 +300,7 @@ export default function TemplatesPage() {
           text: b.text.trim(),
           url: b.type === 'URL' ? b.url?.trim() : undefined,
           phone_number: b.type === 'PHONE_NUMBER' ? b.phone_number?.trim() : undefined,
+          survey_form_id: b.type === 'SURVEY_FORM' ? b.survey_form_id : undefined,
         })),
       }
 
@@ -337,16 +353,16 @@ export default function TemplatesPage() {
 
   const addButton = () => setForm(f => ({ ...f, buttons: [...f.buttons, { type: 'QUICK_REPLY', text: '' }] }))
   const removeButton = (i: number) => setForm(f => ({ ...f, buttons: f.buttons.filter((_, idx) => idx !== i) }))
-  const updateButton = (i: number, k: string, v: string) =>
+  const updateButton = (i: number, k: string, v: string | number) =>
     setForm(f => ({ ...f, buttons: f.buttons.map((b, idx) => idx === i ? { ...b, [k]: v } : b) }))
 
-  // Switching a button's type away from URL/PHONE_NUMBER should drop the now-irrelevant
-  // field instead of silently keeping stale data around (e.g. a leftover phone number
-  // hanging on a button that's since become a QUICK_REPLY).
+  // Switching a button's type should drop the now-irrelevant field instead of silently
+  // keeping stale data around (e.g. a leftover phone number or survey link on a button
+  // that's since become a QUICK_REPLY).
   const updateButtonType = (i: number, type: string) =>
     setForm(f => ({
       ...f,
-      buttons: f.buttons.map((b, idx) => idx === i ? { type, text: b.text, url: undefined, phone_number: undefined } : b),
+      buttons: f.buttons.map((b, idx) => idx === i ? { type, text: b.text, url: undefined, phone_number: undefined, survey_form_id: undefined } : b),
     }))
 
   const addAuthApp = () => setForm(f => ({ ...f, auth_apps: [...f.auth_apps, { package_name: '', signature_hash: '' }] }))
@@ -704,16 +720,40 @@ export default function TemplatesPage() {
                         value={btn.type}
                         onChange={e => updateButtonType(i, e.target.value)}
                       >
-                        {CTA_TYPES.filter(t => t !== 'NONE').map(t => <option key={t} value={t}>{t.replace('_',' ')}</option>)}
+                        {CTA_TYPES.filter(t => t !== 'NONE').map(t => <option key={t} value={t}>{CTA_LABEL[t] ?? t.replace('_', ' ')}</option>)}
                       </select>
                       <Input
-                        placeholder={btn.type === 'PHONE_NUMBER' ? 'Button label — e.g. Call Us' : 'Button text'}
+                        placeholder={btn.type === 'PHONE_NUMBER' ? 'Button label — e.g. Call Us' : btn.type === 'SURVEY_FORM' ? 'Button text — e.g. Take the survey' : 'Button text'}
                         value={btn.text}
                         onChange={e => updateButton(i, 'text', e.target.value.slice(0, 25))}
                         className="flex-1"
                       />
                       <button onClick={() => removeButton(i)} className="text-red-400 hover:text-red-600 text-lg flex-shrink-0">×</button>
                     </div>
+
+                    {btn.type === 'SURVEY_FORM' && (
+                      <>
+                        <select
+                          className="select text-xs"
+                          value={btn.survey_form_id ?? ''}
+                          onChange={e => updateButton(i, 'survey_form_id', Number(e.target.value))}
+                        >
+                          <option value="">Select a survey form…</option>
+                          {surveyForms.map(sf => (
+                            <option key={sf.id} value={sf.id} disabled={!sf.is_active}>
+                              {sf.name}{sf.is_active ? '' : ' (inactive)'}
+                            </option>
+                          ))}
+                        </select>
+                        <p className="text-[11px] text-gray-400">
+                          Meta registers this as a quick-reply button. When the customer taps it, the survey runs in chat and responses are saved under
+                          {' '}<span className="font-medium">Survey Forms → Responses</span>.
+                        </p>
+                        {surveyForms.length === 0 && (
+                          <p className="text-[11px] text-amber-600">No survey forms yet — create one under WA Cloud → Survey Forms first.</p>
+                        )}
+                      </>
+                    )}
 
                     {btn.type === 'URL' && (
                       <Input

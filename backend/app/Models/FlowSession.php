@@ -14,6 +14,9 @@ class FlowSession extends Model
 {
     protected $fillable = [
         'company_id', 'contact_id', 'current_node_id', 'phone', 'context', 'expires_at',
+        // Link to an in-progress survey (sequential text mode) — set when a survey node
+        // or a SURVEY_FORM template button starts a survey, cleared when it finishes.
+        'active_survey_response_id',
     ];
 
     protected $casts = [

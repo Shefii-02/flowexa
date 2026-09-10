@@ -123,6 +123,13 @@ class WebhookService
             return;
         }
 
+        // 5a. Survey-form template button — the customer tapped a quick-reply button
+        // that the company linked to a survey form. Start that survey and stop here.
+        if (in_array($dto->type, ['button', 'interactive'], true)
+            && $this->handleTemplateSurveyButton($company, $contact, $dto)) {
+            return;
+        }
+
         // 5b. Conversational AI agent — when the company has an active playbook it
         // takes over from the legacy flow-builder / menu routing below.
         if (in_array($dto->type, ['text', 'interactive'], true)) {
@@ -252,19 +259,31 @@ class WebhookService
     // plain text message, one at a time, and stores the customer's replies.
     // ════════════════════════════════════════════════════════════════════
 
-    // Begin a survey: create the response row, link it to the session, ask question 1.
+    // Begin a survey triggered by a flow-builder node.
     private function startSurvey(Company $company, Contact $contact, string $phone, FlowNode $node): void
     {
-        Log::info("Survey Started");
-
         $form = SurveyForm::where('id', $node->survey_form_id)
             ->where('company_id', $company->id)
             ->where('is_active', true)
             ->first();
-        Log::info("Form Getted");
-        Log::info($form);
+
         if (!$form || empty($form->fields)) {
             Log::warning("Survey node {$node->id} has no usable survey_form — falling back to fallback message", ['company' => $company->id]);
+            $this->sendFallbackMessage($company, $phone);
+            return;
+        }
+
+        $this->startSurveyForm($company, $contact, $phone, $form, $node);
+    }
+
+    /**
+     * Begin a survey for a given form: create the response row, link it to the
+     * session, and send it (native Flow if published, else sequential questions).
+     * $node is optional — a SURVEY_FORM template button triggers this with no node.
+     */
+    private function startSurveyForm(Company $company, Contact $contact, string $phone, SurveyForm $form, ?FlowNode $node = null): void
+    {
+        if (empty($form->fields)) {
             $this->sendFallbackMessage($company, $phone);
             return;
         }
@@ -274,7 +293,7 @@ class WebhookService
             'company_id'          => $company->id,
             'contact_id'          => $contact->id,
             'phone'               => $phone,
-            'flow_node_id'        => $node->id,
+            'flow_node_id'        => $node?->id,
             'answers'             => [],
             'status'              => 'in_progress',
             'current_field_index' => 0,
@@ -284,8 +303,7 @@ class WebhookService
             ['company_id' => $company->id, 'phone' => $phone],
             [
                 'contact_id'                 => $contact->id,
-                'current_node_id'            => $node->id,
-                'flow_builder_id'            => $node->flow_builder_id,
+                'current_node_id'            => $node?->id,
                 'active_survey_response_id'  => $response->id,
                 'context'                    => ['survey_form_id' => $form->id],
                 'expires_at'                 => now()->addHours(24),
@@ -295,10 +313,7 @@ class WebhookService
         // Native bottom-sheet Flow (published on Meta) — one message, one screen with
         // all fields, single nfm_reply on submit. Preferred whenever it's available.
         if ($form->isNativeFlowReady()) {
-            Log::info("Botton Form Getted");
-
             $this->sendSurveyFlowMessage($company, $phone, $form);
-                    Log::info("Botton Form Done");
             return;
         }
 
@@ -309,6 +324,51 @@ class WebhookService
         }
 
         $this->sendSurveyQuestion($company, $phone, $form, 0);
+    }
+
+    /**
+     * A quick-reply button on a template that the company linked to a survey form.
+     * Meta only tells us the button caption + payload, so we match that against the
+     * SURVEY_FORM buttons stored on this company's templates.
+     * Returns true if a survey was started.
+     */
+    private function handleTemplateSurveyButton(Company $company, Contact $contact, InboundMessageDTO $dto): bool
+    {
+        $tapped = trim((string) ($dto->replyTitle ?? $dto->replyId ?? ''));
+        if ($tapped === '') {
+            return false;
+        }
+
+        $templates = WaTemplate::where('company_id', $company->id)
+            ->whereNotNull('buttons')
+            ->get(['id', 'buttons']);
+
+        foreach ($templates as $template) {
+            foreach (($template->buttons ?? []) as $btn) {
+                if (($btn['type'] ?? '') !== 'SURVEY_FORM' || empty($btn['survey_form_id'])) {
+                    continue;
+                }
+                if (mb_strtolower(trim((string) ($btn['text'] ?? ''))) !== mb_strtolower($tapped)) {
+                    continue;
+                }
+
+                $form = SurveyForm::where('id', $btn['survey_form_id'])
+                    ->where('company_id', $company->id)
+                    ->where('is_active', true)
+                    ->first();
+
+                if (!$form || empty($form->fields)) {
+                    Log::warning("[template-survey] button matched but form {$btn['survey_form_id']} is missing/inactive", ['company' => $company->id]);
+                    return false;
+                }
+
+                Log::info("[template-survey] starting survey {$form->id} from template {$template->id} button '{$tapped}'");
+                $this->startSurveyForm($company, $contact, $dto->phone, $form);
+                return true;
+            }
+        }
+
+        return false;
     }
 
     // Ask one question. Choice questions become a button/list picker so answers stay

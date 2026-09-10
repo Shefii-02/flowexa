@@ -359,7 +359,13 @@ Route::prefix('v1')->group(function () {
             Route::get('/{id}',             [SurveyFormController::class, 'show']);
             Route::put('/{id}',             [SurveyFormController::class, 'update']);
             Route::delete('/{id}',          [SurveyFormController::class, 'destroy']);
+            Route::post('/{id}/duplicate',  [SurveyFormController::class, 'duplicate']);
+            Route::post('/{id}/publish-flow', [SurveyFormController::class, 'publishFlow']);
+            Route::get('/{id}/analytics',   [SurveyFormController::class, 'analytics']);
             Route::get('/{id}/responses',   [SurveyFormController::class, 'responses']);
+            Route::get('/{id}/responses/export',   [SurveyFormController::class, 'exportResponses']);
+            Route::post('/{id}/responses/to-label', [SurveyFormController::class, 'responsesToLabel']);
+            Route::post('/{id}/responses/to-leads', [SurveyFormController::class, 'responsesToLeads']);
         });
 
 
