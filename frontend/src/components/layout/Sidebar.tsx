@@ -384,8 +384,7 @@ export const Sidebar = () => {
               <SubLink to="/wa-chat/automations" icon="⚙️" label="Agent Automations" />
               {/* ── ANALYTICS ── */}
               <SectionHeader label="Analytics" />
-              <FlatLink to="/wa-chat/analytics" icon="📊" label="Analytics" />
-              <FlatLink to="/wa-chat/inbox-analytics" icon="📈" label="Inbox Analytics" />
+              <FlatLink to="/wa-chat/analytics" icon="📈" label="Inbox Analytics" />
               <FlatLink to="/wa-chat/logs" icon="🧾" label="Audit Log" />
 
               {/* Nested WA Agent inside WA Chat */}
@@ -435,6 +434,7 @@ export const Sidebar = () => {
               {/* {canViewMsgLogs &&  */}
               <FlatLink to="/wa-cloud/message-logs" icon="📜" label="Message Logs" />
               {/* } */}
+              <FlatLink to="/wa-cloud/audit-log" icon="🧾" label="Audit Log" />
 
               {/* Nested WA Agent inside WA Cloud */}
               {/* {canViewAuto && ( */}

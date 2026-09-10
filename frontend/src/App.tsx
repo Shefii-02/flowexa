@@ -115,6 +115,7 @@ import WaCloudDashboardPage from '@/pages/wa-cloud/WaCloudDashboardPage'
 import WaCloudTemplatesPage from '@/pages/wa-cloud/WaCloudTemplatesPage'
 import WaCloudOtpPage from '@/pages/wa-cloud/WaCloudOtpPage'
 import WaCloudInboxAnalytics from '@/pages/wa-cloud/WaCloudInboxAnalytics'
+import WaCloudAuditLogPage from '@/pages/wa-cloud/WaCloudAuditLogPage'
 import WaCloudSettingsPage from '@/pages/wa-cloud/settings/WaCloudSettingsPage'
 import WaCloudAutomationsPage from '@/pages/wa-cloud/WaCloudAutomationsPage'
 import WaChatAutomationsPage from '@/pages/wa-chat/pages/WaChatAutomationsPage'
@@ -263,7 +264,7 @@ export default function App() {
             <Route path="wa-cloud/inbox-analytics" element={<Navigate to="/wa-cloud/analytics" replace />} />
             <Route path="wa-cloud/phone-numbers" element={<PhoneNumbersPage />} />
             <Route path="wa-chat/automations" element={<WaChatAutomationsPage />} />
-            <Route path="wa-chat/inbox-analytics" element={<WaCloudInboxAnalytics title="Inbox Analytics" subtitle="Message, call and inbox activity for your WhatsApp inbox" />} />
+            <Route path="wa-cloud/audit-log" element={<WaCloudAuditLogPage />} />
             <Route path="/wa-cloud/campaigns" element={<CampaignsPage />} />
             <Route path="/wa-cloud/survey-forms" element={<SurveyFormsPage />} />
             <Route path="/wa-cloud/otp" element={<OtpPage />} />

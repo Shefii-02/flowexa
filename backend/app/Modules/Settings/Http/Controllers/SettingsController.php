@@ -307,35 +307,52 @@ class SettingsController extends Controller
         }
     }
 
-    // ── Webhook logs ──────────────────────────────────────────────────────
-    public function webhookLogs(): JsonResponse
+    // ── Webhook logs — the WA Cloud "audit log": every Meta webhook received,
+    //    the event it carried, whether it processed, and any error. ────────────
+    public function webhookLogs(Request $request): JsonResponse
     {
-        $logs = WebhookLog::where('company_id', auth()->user()->company_id)
+        $limit  = min(max($request->integer('limit', 100), 1), 500);
+        $status = $request->string('status')->toString();
+
+        $rows = WebhookLog::where('company_id', auth()->user()->company_id)
+            ->when($status !== '', fn ($q) => $q->where('status', $status))
             ->latest()
-            ->limit(50)
+            ->limit($limit)
             ->get();
 
-        $logs = $logs->map(function ($log) {
-
+        $logs = $rows->map(function ($log) {
             $change = $log->payload['entry'][0]['changes'][0] ?? [];
+            $field  = $change['field'] ?? 'unknown';
+            $value  = $change['value'] ?? [];
 
-            $field = $change['field'] ?? 'unknown';
+            $detail = null;
+            if (!empty($value['messages'][0]['type'])) {
+                $detail = 'message · ' . $value['messages'][0]['type'];
+            } elseif (!empty($value['statuses'][0]['status'])) {
+                $detail = 'status · ' . $value['statuses'][0]['status'];
+            } elseif (!empty($value['calls'][0]['event'])) {
+                $detail = 'call · ' . $value['calls'][0]['event'];
+            } elseif ($field === 'message_template_status_update') {
+                $detail = 'template · ' . ($value['event'] ?? '');
+            }
 
-            $messageType = $change['value']['messages'][0]['type'] ?? null;
+            $phone = $value['messages'][0]['from']
+                ?? $value['statuses'][0]['recipient_id']
+                ?? $value['contacts'][0]['wa_id']
+                ?? null;
 
             return [
-                'id' => $log->id,
-                'event_type' => $messageType
-                    ? "{$field} ({$messageType})"
-                    : $field,
-                'status' => $log->status,
-                'error' => $log->error,
+                'id'         => $log->id,
+                'event_type' => $field,
+                'detail'     => $detail,
+                'phone'      => $phone,
+                'status'     => $log->status,
+                'error'      => $log->error,
+                'ms'         => $log->processing_ms,
                 'created_at' => $log->created_at,
             ];
         });
 
-        return response()->json([
-            'logs' => $logs
-        ]);
+        return response()->json(['logs' => $logs]);
     }
 }
