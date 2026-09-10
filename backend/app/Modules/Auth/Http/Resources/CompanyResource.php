@@ -26,7 +26,9 @@ class CompanyResource extends JsonResource
             // WA connected status (never expose token)
             'wa_connected' => $this->wa_connected,
             'wa_phone_id'  => $this->wa_phone_id,
-            'wa_access_token' => decrypt($this->wa_access_token),
+            'wa_access_token' => filled($this->wa_access_token)
+                ? rescue(fn () => decrypt($this->wa_access_token), null, false)
+                : null,
             'wa_business_id' => $this->wa_business_id,
             'webhook_verify_token' => $this->wa_webhook_token,
             'wa_config' => $this->wa_config,

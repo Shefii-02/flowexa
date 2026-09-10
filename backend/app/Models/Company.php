@@ -111,7 +111,12 @@ class Company extends Model
 
     public function getDecryptWaAccessTokenAttribute()
     {
-        return decrypt($this->wa_access_token);
+        if (blank($this->wa_access_token)) {
+            return null;
+        }
+
+        // Tolerate a stale APP_KEY or a value that was stored in plain text.
+        return rescue(fn () => decrypt($this->wa_access_token), null, false);
     }
 
     // ── Scopes ───────────────────────────────────────────────────────────────

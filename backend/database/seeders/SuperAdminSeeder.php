@@ -49,21 +49,31 @@ class SuperAdminSeeder extends Seeder
 
         // ── SuperAdmin user ──────────────────────────────────────────────────
         // `password` is NOT NULL — set once on create, never touched again.
-        // The other fields are refreshed on every run.
-        $userFields = [
-            'company_id' => $platform->id,
-            'role_id'    => $superAdminRole->id,
-            'name'       => 'Super Admin',
-            'is_active'  => true,
-        ];
-
         $superAdmin = User::withTrashed()->firstOrCreate(
             ['email' => 'superadmin@waapi.com'],
-            $userFields + ['password' => Hash::make('SuperAdmin@123')]
+            [
+                'company_id' => $platform->id,
+                'role_id'    => $superAdminRole->id,
+                'name'       => 'Super Admin',
+                'is_active'  => true,
+                'password'   => Hash::make('SuperAdmin@123'),
+            ]
         );
         if ($superAdmin->trashed()) {
             $superAdmin->restore();
         }
+
+        // Refresh the safe fields. `company_id` is only corrected when it points
+        // nowhere valid — never yank an existing superadmin off a real company.
+        $refresh = [
+            'role_id'   => $superAdminRole->id,
+            'name'      => 'Super Admin',
+            'is_active' => true,
+        ];
+        if (blank($superAdmin->company_id) || ! Company::whereKey($superAdmin->company_id)->exists()) {
+            $refresh['company_id'] = $platform->id;
+        }
+        $superAdmin->update($refresh);
 
         if ($superAdmin->wasRecentlyCreated) {
             $this->command->info('');
@@ -73,7 +83,6 @@ class SuperAdminSeeder extends Seeder
             $this->command->warn('   ⚠️  Change this password immediately in production!');
             $this->command->info('');
         } else {
-            $superAdmin->update($userFields);
             $this->command->info('✅ SuperAdmin present (superadmin@waapi.com) — password left untouched.');
         }
     }
