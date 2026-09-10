@@ -97,7 +97,10 @@ class CampaignService
     {
         $campaign = $this->show($id, $companyId);
 
-        $company = auth()->user()->company;
+        // Resolve the company from the campaign itself, not the request user —
+        // this method also runs headless from the campaigns:dispatch-scheduled
+        // command, where there is no authenticated user.
+        $company = $campaign->company;
 
         if (!in_array($campaign->status, self::LAUNCHABLE_STATUSES)) {
             throw CampaignException::notLaunchable($campaign->status);
@@ -112,13 +115,11 @@ class CampaignService
 
         $total  = $contacts->count();
 
-        if ($company->wa_config == 'wallet') {
+        $walletMode = $company->wa_config == 'wallet';
+        $wallet     = $walletMode ? $this->walletService->getWallet($companyId) : null;
 
-            $wallet = $this->walletService->getWallet($companyId);
-
-            if ($wallet->balance < $total) {
-                throw CampaignException::insufficientBalance($wallet->balance, $total);
-            }
+        if ($walletMode && $wallet->balance < $total) {
+            throw CampaignException::insufficientBalance($wallet->balance, $total);
         }
 
         DB::transaction(function () use ($campaign, $contacts, $total, $companyId, $company) {
@@ -171,12 +172,12 @@ class CampaignService
         ProcessCampaignBatch::dispatch($campaign->id, $companyId)
             ->onQueue('campaigns');
 
-        $wallet->refresh();
+        $wallet?->refresh();
 
         return new LaunchResultDTO(
             totalContacts: $total,
             walletDebited: $total,
-            remainingBalance: $wallet->balance,
+            remainingBalance: (int) ($wallet?->balance ?? 0),
         );
     }
 

@@ -24,9 +24,11 @@ return Application::configure(basePath: dirname(__DIR__))
         \App\Console\Commands\CleanupOldAnalyses::class,
         \App\Console\Commands\SetupExistingCompanies::class,
         \App\Modules\WaCloud\Console\Commands\RunWaCloudAutomations::class,
+        \App\Modules\Campaign\Console\Commands\DispatchScheduledCampaigns::class,
     ])
     ->withSchedule(function (\Illuminate\Console\Scheduling\Schedule $schedule): void {
         $schedule->command('wachat:process-scheduled-messages')->everyMinute();
+        $schedule->command('campaigns:dispatch-scheduled')->everyMinute()->withoutOverlapping();
         $schedule->command('google:sync-sheets')->everySixHours()->withoutOverlapping();
         $schedule->command('wachat:process-automations')->everyFiveMinutes();
         $schedule->command('wachat:process-followups')->everyFifteenMinutes();

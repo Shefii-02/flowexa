@@ -50,7 +50,7 @@ class CampaignRepository implements CampaignRepositoryInterface
             'target_labels'       => $dto->targetLabels,
             'csv_file'            => $dto->csvFilePath,
             'throttle_per_minute' => $dto->throttlePerMinute,
-            'status'              => 'draft',
+            'status'              => $dto->scheduledAt ? 'scheduled' : 'draft',
             'scheduled_at'        => $dto->scheduledAt,
         ]);
     }
@@ -65,6 +65,12 @@ class CampaignRepository implements CampaignRepositoryInterface
             'throttle_per_minute'=> $dto->throttlePerMinute,
             'scheduled_at'       => $dto->scheduledAt,
         ], fn($v) => !is_null($v));
+
+        // Keep status in sync with the schedule while the campaign is still
+        // pre-launch, so campaigns:dispatch-scheduled can pick it up.
+        if (in_array($campaign->status, ['draft', 'scheduled'], true) && array_key_exists('scheduled_at', $data)) {
+            $data['status'] = $data['scheduled_at'] ? 'scheduled' : 'draft';
+        }
 
         $campaign->update($data);
         return $campaign->fresh(['creator', 'template']);

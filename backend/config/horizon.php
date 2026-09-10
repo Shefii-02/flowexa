@@ -174,7 +174,7 @@ return [
             ],
             'supervisor-default' => [
                 'connection'   => 'redis',
-                'queue'        => ['default'],
+                'queue'        => ['default', 'analysis'],
                 'balance'      => 'auto',
                 'minProcesses' => 1,
                 'maxProcesses' => 5,
@@ -187,7 +187,7 @@ return [
         'staging' => [
             'supervisor-1' => [
                 'connection'   => 'redis',
-                'queue'        => ['default', 'campaigns', 'webhooks'],
+                'queue'        => ['default', 'campaigns', 'webhooks', 'analysis'],
                 'balance'      => 'simple',
                 'minProcesses' => 1,
                 'maxProcesses' => 5,
@@ -200,7 +200,7 @@ return [
         'local' => [
             'supervisor-1' => [
                 'connection'   => 'redis',
-                'queue'        => ['default', 'campaigns', 'webhooks'],
+                'queue'        => ['default', 'campaigns', 'webhooks', 'analysis'],
                 'balance'      => 'simple',
                 'minProcesses' => 1,
                 'maxProcesses' => 3,
