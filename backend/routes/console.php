@@ -19,6 +19,9 @@ Schedule::call(function () {
 // WA Cloud (Meta Cloud API) time-based automation rules
 Schedule::command('wa-cloud:run-automations')->everyFifteenMinutes()->withoutOverlapping();
 
+// Subscriptions — expire trials + lapsed paid plans past their grace window
+Schedule::command('subscriptions:sweep')->dailyAt('00:30')->withoutOverlapping();
+
 // Lead Assignment
 Schedule::command('leads:check-sla')->everyMinute();
 Schedule::command('leads:process-handoffs')->everyFiveMinutes();

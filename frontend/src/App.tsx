@@ -42,6 +42,7 @@ import MessageLogsPage from '@/pages/message-logs/MessageLogsPage'
 // SuperAdmin pages
 import SuperAdminCompanies from '@/pages/superadmin/SuperAdminCompanies'
 import SuperAdminPlans from '@/pages/superadmin/SuperAdminPlans'
+import SuperAdminBilling from '@/pages/superadmin/SuperAdminBilling'
 import SuperAdminStats from '@/pages/superadmin/SuperAdminStats'
 import SuperAdminStaffPage from '@/pages/superadmin/SuperAdminStaffPage'
 import PermissionsEditorPage from '@/pages/superadmin/PermissionsEditorPage'
@@ -305,6 +306,10 @@ export default function App() {
             <Route
               path="superadmin/stats"
               element={<SuperAdminRoute><SuperAdminStats /></SuperAdminRoute>}
+            />
+            <Route
+              path="superadmin/billing"
+              element={<SuperAdminRoute><SuperAdminBilling /></SuperAdminRoute>}
             />
             <Route
               path="superadmin/staff"

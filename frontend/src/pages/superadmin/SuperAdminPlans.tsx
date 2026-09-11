@@ -29,12 +29,14 @@ const FEATURE_OPTIONS = [
 const DEFAULT_FORM = {
   name:                  '',
   messages_limit:        '1000',
-  price:                 '0',
+  price:                 '499',
   duration_type:         'monthly',
   duration_months:       '1',
   max_users:             '5',
   max_templates:         '10',
   max_phone_numbers:     '1',
+  max_wa_sessions:       '1',
+  alert_before_days:     '7',
   max_campaigns:         '',
   max_contacts:          '',
   max_labels:            '',
@@ -90,6 +92,8 @@ export default function SuperAdminPlans() {
       max_users:             String(p.max_users ?? ''),
       max_templates:         String(p.max_templates ?? ''),
       max_phone_numbers:     String(p.max_phone_numbers ?? 1),
+      max_wa_sessions:       p.max_wa_sessions != null ? String(p.max_wa_sessions) : '',
+      alert_before_days:     String(p.alert_before_days ?? 7),
       max_campaigns:         p.max_campaigns != null ? String(p.max_campaigns) : '',
       max_contacts:          p.max_contacts  != null ? String(p.max_contacts)  : '',
       max_labels:            p.max_labels    != null ? String(p.max_labels)    : '',
@@ -112,6 +116,8 @@ export default function SuperAdminPlans() {
     max_users:             form.max_users             ? +form.max_users             : null,
     max_templates:         form.max_templates         ? +form.max_templates         : null,
     max_phone_numbers:     +form.max_phone_numbers,
+    max_wa_sessions:       form.max_wa_sessions ? +form.max_wa_sessions : null,
+    alert_before_days:     form.alert_before_days ? +form.alert_before_days : 7,
     max_campaigns:         form.max_campaigns         ? +form.max_campaigns         : null,
     max_contacts:          form.max_contacts          ? +form.max_contacts          : null,
     max_labels:            form.max_labels            ? +form.max_labels            : null,
@@ -286,14 +292,32 @@ export default function SuperAdminPlans() {
 
           {/* Row 5 */}
           <Input
-            label="Max phone numbers * (1–5)"
+            label="Max phone numbers (Cloud)"
             type="number"
-            min={1}
-            max={5}
+            min={0}
+            max={20}
             placeholder="1"
             value={form.max_phone_numbers}
             onChange={e => set('max_phone_numbers', e.target.value)}
             required
+          />
+          <Input
+            label="Max WA Chat sessions (open-wa)"
+            type="number"
+            min={0}
+            max={20}
+            placeholder="blank = unlimited"
+            value={form.max_wa_sessions}
+            onChange={e => set('max_wa_sessions', e.target.value)}
+          />
+          <Input
+            label="Expiry alert — days before"
+            type="number"
+            min={0}
+            max={60}
+            placeholder="7"
+            value={form.alert_before_days}
+            onChange={e => set('alert_before_days', e.target.value)}
           />
           <Input
             label="Max campaigns"

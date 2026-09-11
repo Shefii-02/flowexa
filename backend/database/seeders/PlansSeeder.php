@@ -8,9 +8,15 @@ use Illuminate\Database\Seeder;
 /**
  * Single source of truth for the public subscription plans.
  *
- * Idempotent: matches on `name` and re-applies every attribute (pricing,
- * feature list, and the per-plan usage limits) on each run, so editing a
- * value here and re-running `db:seed` updates the existing row in place.
+ * Every plan is paid — there are no ₹0 plans. A new company instead gets a
+ * 7-day free trial (Company.status = 'trial' + trial_ends_at) and only picks
+ * a paid plan when the trial ends or they upgrade early.
+ *
+ * Idempotent: matches on `name` and re-applies every attribute on each run,
+ * so editing a value here and re-running `db:seed --class=PlansSeeder`
+ * updates the existing row in place. Any non-custom plan whose name is not in
+ * the list below is deactivated (is_active = false) rather than deleted, so
+ * companies still holding a retired plan keep working until they change plan.
  */
 class PlansSeeder extends Seeder
 {
@@ -18,37 +24,14 @@ class PlansSeeder extends Seeder
     {
         $plans = [
             [
-                'name'           => 'Trial',
-                'messages_limit' => 1000,
-                'price'          => 0,
-                'is_active'      => true,
-                'features'       => [
-                    'Up to 1,000 messages',
-                    '1 WhatsApp number',
-                    'Flow builder',
-                    'Contact management',
-                    '14-day trial',
-                ],
-                'duration_type'         => 'custom',
-                'duration_months'       => null,
-                'max_users'             => 3,
-                'max_templates'         => 5,
-                'max_phone_numbers'     => 1,
-                'max_campaigns'         => 5,
-                'max_contacts'          => 500,
-                'max_labels'            => 10,
-                'max_flow_nodes'        => 20,
-                'max_campaign_contacts' => 500,
-                'throttle_per_minute'   => 20,
-            ],
-            [
                 'name'           => 'Starter',
-                'messages_limit' => 10000,
-                'price'          => 999,
+                'messages_limit' => 8000,
+                'price'          => 499,
                 'is_active'      => true,
                 'features'       => [
-                    'Up to 10,000 messages/month',
-                    '1 WhatsApp number',
+                    'Up to 8,000 messages/month',
+                    '1 WhatsApp Cloud number',
+                    '1 WA Chat session',
                     'Flow builder',
                     'Contact management',
                     'Basic analytics',
@@ -56,24 +39,27 @@ class PlansSeeder extends Seeder
                 ],
                 'duration_type'         => 'monthly',
                 'duration_months'       => 1,
-                'max_users'             => 10,
-                'max_templates'         => 20,
+                'alert_before_days'     => 7,
+                'max_users'             => 5,
+                'max_templates'         => 15,
                 'max_phone_numbers'     => 1,
-                'max_campaigns'         => 20,
-                'max_contacts'          => 5000,
-                'max_labels'            => 25,
-                'max_flow_nodes'        => 50,
-                'max_campaign_contacts' => 5000,
+                'max_wa_sessions'       => 1,
+                'max_campaigns'         => 15,
+                'max_contacts'          => 3000,
+                'max_labels'            => 20,
+                'max_flow_nodes'        => 40,
+                'max_campaign_contacts' => 3000,
                 'throttle_per_minute'   => 60,
             ],
             [
                 'name'           => 'Growth',
-                'messages_limit' => 50000,
-                'price'          => 2999,
+                'messages_limit' => 30000,
+                'price'          => 1499,
                 'is_active'      => true,
                 'features'       => [
-                    'Up to 50,000 messages/month',
-                    '2 WhatsApp numbers',
+                    'Up to 30,000 messages/month',
+                    '3 WhatsApp Cloud numbers',
+                    '3 WA Chat sessions',
                     'Flow builder + AI suggestions',
                     'CRM integration',
                     'Advanced analytics',
@@ -82,35 +68,39 @@ class PlansSeeder extends Seeder
                 ],
                 'duration_type'         => 'monthly',
                 'duration_months'       => 1,
-                'max_users'             => 25,
-                'max_templates'         => 50,
+                'alert_before_days'     => 7,
+                'max_users'             => 15,
+                'max_templates'         => 40,
                 'max_phone_numbers'     => 3,
+                'max_wa_sessions'       => 3,
                 'max_campaigns'         => 50,
-                'max_contacts'          => 25000,
-                'max_labels'            => 100,
-                'max_flow_nodes'        => 200,
-                'max_campaign_contacts' => 25000,
+                'max_contacts'          => 20000,
+                'max_labels'            => 80,
+                'max_flow_nodes'        => 150,
+                'max_campaign_contacts' => 20000,
                 'throttle_per_minute'   => 150,
             ],
             [
-                'name'           => 'Enterprise',
-                'messages_limit' => 200000,
-                'price'          => 9999,
+                'name'           => 'Pro',
+                'messages_limit' => 100000,
+                'price'          => 3999,
                 'is_active'      => true,
                 'features'       => [
-                    'Up to 200,000 messages/month',
-                    'Unlimited WhatsApp numbers',
+                    'Up to 100,000 messages/month',
+                    '5 WhatsApp Cloud numbers',
+                    '10 WA Chat sessions',
                     'Full API access',
                     'Custom CRM integration',
                     'Dedicated account manager',
-                    'SLA guarantee',
                     'Custom branding',
                 ],
                 'duration_type'         => 'monthly',
                 'duration_months'       => 1,
+                'alert_before_days'     => 10,
                 'max_users'             => null,  // null == unlimited
                 'max_templates'         => null,
                 'max_phone_numbers'     => 5,
+                'max_wa_sessions'       => 10,
                 'max_campaigns'         => null,
                 'max_contacts'          => null,
                 'max_labels'            => null,
@@ -120,10 +110,20 @@ class PlansSeeder extends Seeder
             ],
         ];
 
+        $keep = [];
         foreach ($plans as $plan) {
             Plan::updateOrCreate(['name' => $plan['name']], $plan);
+            $keep[] = $plan['name'];
         }
 
-        $this->command->info('✅ Plans upserted: Trial, Starter, Growth, Enterprise');
+        // Retire every other non-custom plan (e.g. the legacy ₹0 "Trial" plan)
+        // without deleting it — companies still on it keep working.
+        $retired = Plan::where('is_custom', false)
+            ->whereNotIn('name', $keep)
+            ->where('is_active', true)
+            ->update(['is_active' => false]);
+
+        $this->command->info('✅ Plans upserted: ' . implode(', ', $keep)
+            . ($retired ? " · {$retired} legacy plan(s) retired" : ''));
     }
 }

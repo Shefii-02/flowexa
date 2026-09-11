@@ -216,4 +216,101 @@ class SuperAdminService
             'messages_today'    => DB::table('message_logs')->whereDate('created_at',now())->count(),
         ];
     }
+
+    // ── Billing / subscription overview ───────────────────────────────────────
+    public function billing(): array
+    {
+        $grace = (int) config('billing.grace_days', 3);
+
+        // Monthly-recurring-revenue: every active company's plan price
+        // normalised to a monthly figure.
+        $activeCompanies = Company::where('status', 'active')
+            ->whereNotNull('plan_id')
+            ->with('plan')
+            ->get();
+
+        $monthly = fn (Plan $p) => (int) ($p->duration_months ?? 1) > 0
+            ? (float) $p->price / (int) ($p->duration_months ?? 1)
+            : (float) $p->price;
+
+        $mrr = 0.0;
+        $byPlan = [];
+        foreach ($activeCompanies as $c) {
+            if (! $c->plan) continue;
+            $m = $monthly($c->plan);
+            $mrr += $m;
+            $byPlan[$c->plan->id] ??= ['plan' => $c->plan->name, 'companies' => 0, 'mrr' => 0.0];
+            $byPlan[$c->plan->id]['companies']++;
+            $byPlan[$c->plan->id]['mrr'] += $m;
+        }
+
+        $thisMonth = DB::table('payment_orders')->where('status', 'paid')
+            ->where('created_at', '>=', now()->startOfMonth())->sum('amount');
+        $lastMonth = DB::table('payment_orders')->where('status', 'paid')
+            ->whereBetween('created_at', [now()->subMonthNoOverflow()->startOfMonth(), now()->startOfMonth()])
+            ->sum('amount');
+
+        return [
+            'mrr'  => round($mrr, 2),
+            'arr'  => round($mrr * 12, 2),
+            'companies' => [
+                'total'     => Company::count(),
+                'active'    => Company::where('status', 'active')->count(),
+                'trial'     => Company::where('status', 'trial')->count(),
+                'expired'   => Company::where('status', 'expired')->count(),
+                'suspended' => Company::where('status', 'suspended')->count(),
+            ],
+            'revenue' => [
+                'this_month' => (float) $thisMonth,
+                'last_month' => (float) $lastMonth,
+                'all_time'   => (float) DB::table('payment_orders')->where('status', 'paid')->sum('amount'),
+            ],
+            'by_plan' => array_values(collect($byPlan)->map(fn ($r) => [
+                'plan'      => $r['plan'],
+                'companies' => $r['companies'],
+                'mrr'       => round($r['mrr'], 2),
+            ])->sortByDesc('mrr')->values()->all()),
+            'recent_orders' => DB::table('payment_orders as po')
+                ->leftJoin('companies as c', 'c.id', '=', 'po.company_id')
+                ->orderByDesc('po.created_at')->limit(15)
+                ->get(['po.id', 'po.amount', 'po.status', 'po.messages_credit', 'po.razorpay_order_id', 'po.razorpay_payment_id', 'po.created_at', 'c.name as company'])
+                ->map(fn ($o) => [
+                    'id'         => $o->id,
+                    'company'    => $o->company,
+                    'amount'     => (float) $o->amount,
+                    'status'     => $o->status,
+                    'kind'       => $o->messages_credit > 0 ? 'wallet_topup' : 'plan',
+                    'reference'  => $o->razorpay_payment_id ?: $o->razorpay_order_id,
+                    'created_at' => $o->created_at,
+                ]),
+            'upcoming_expiries' => Company::query()
+                ->whereNotNull('plan_expires_at')
+                ->whereIn('status', ['active', 'trial'])
+                ->whereBetween('plan_expires_at', [now(), now()->addDays(14)])
+                ->with('plan:id,name')
+                ->orderBy('plan_expires_at')
+                ->get(['id', 'name', 'plan_id', 'plan_expires_at', 'status'])
+                ->map(fn ($c) => [
+                    'id'         => $c->id,
+                    'name'       => $c->name,
+                    'plan'       => $c->plan?->name,
+                    'expires_at' => $c->plan_expires_at,
+                    'days_left'  => (int) ceil(now()->floatDiffInDays($c->plan_expires_at, false)),
+                    'status'     => $c->status,
+                ]),
+            'recent_changes' => \App\Models\CompanyPlan::with(['plan:id,name', 'company:id,name'])
+                ->latest()->limit(15)->get()
+                ->map(fn ($cp) => [
+                    'id'         => $cp->id,
+                    'company'    => $cp->company?->name,
+                    'plan'       => $cp->plan?->name,
+                    'status'     => $cp->status,
+                    'amount'     => (float) $cp->amount_paid,
+                    'duration'   => $cp->duration_type,
+                    'starts_at'  => $cp->starts_at,
+                    'expires_at' => $cp->expires_at,
+                ]),
+            'grace_days' => $grace,
+        ];
+    }
 }

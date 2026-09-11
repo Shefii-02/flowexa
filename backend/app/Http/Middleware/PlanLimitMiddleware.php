@@ -14,11 +14,12 @@ use Illuminate\Support\Facades\DB;
  */
 class PlanLimitMiddleware
 {
-    // Map resource names → [table, company_fk, count_column]
-    private const LIMITS = [
+    // Map resource names → [table, company_fk, plan_limit_column]
+    public const LIMITS = [
         'users'           => ['users',           'company_id', 'max_users'],
         'templates'       => ['wa_templates',     'company_id', 'max_templates'],
         'phone_numbers'   => ['wa_phone_numbers', 'company_id', 'max_phone_numbers'],
+        'wa_sessions'     => ['waha_sessions',    'company_id', 'max_wa_sessions'],
         'campaigns'       => ['campaigns',        'company_id', 'max_campaigns'],
         'contacts'        => ['contacts',         'company_id', 'max_contacts'],
         'labels'          => ['contact_labels',   'company_id', 'max_labels'],
@@ -51,8 +52,9 @@ class PlanLimitMiddleware
         $current = DB::table($table)->where($fk, $company->id)->count();
 
         if ($current >= $max) {
+            $label = str_replace('_', ' ', $resource);
             return response()->json([
-                'message'    => "You have reached your plan limit of {$max} {$resource}. Please upgrade your plan.",
+                'message'    => "Your plan allows {$max} {$label}. Upgrade your plan to add more.",
                 'error_code' => 'plan_limit_reached',
                 'resource'   => $resource,
                 'current'    => $current,

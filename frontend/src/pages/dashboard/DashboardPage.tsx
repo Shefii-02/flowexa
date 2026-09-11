@@ -194,19 +194,37 @@ export default function DashboardPage() {
         </p>
       </div>
 
-      {user?.company?.status === 'trial' && user.company.trial_ends_at && (
-        <div className="bg-amber-50 border border-amber-200 rounded-xl px-5 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span>⏳</span>
-            <p className="text-sm text-amber-800 font-medium">
-              Trial ends {fmt.date(user.company.trial_ends_at)}
-            </p>
+      {(() => {
+        const sub = (user?.company as any)?.subscription
+        if (!sub?.ends_at) return null
+        const onTrial = sub.on_trial
+        const d = sub.days_left as number
+        // Only show while expiring soon / expired — a healthy paid plan needs no banner.
+        if (!sub.expired && !sub.expiring_soon && !onTrial) return null
+        const tone = sub.expired ? 'red' : d <= 2 ? 'red' : 'amber'
+        const cls = tone === 'red'
+          ? 'bg-red-50 border-red-200 text-red-800'
+          : 'bg-amber-50 border-amber-200 text-amber-800'
+        return (
+          <div className={`border rounded-xl px-5 py-3 flex items-center justify-between ${cls}`}>
+            <div className="flex items-center gap-2">
+              <span>{sub.expired ? '🔒' : '⏳'}</span>
+              <p className="text-sm font-medium">
+                {onTrial
+                  ? sub.expired
+                    ? `Your free trial ended on ${fmt.date(sub.ends_at)}`
+                    : `Free trial · ${d} day${d === 1 ? '' : 's'} left (ends ${fmt.date(sub.ends_at)})`
+                  : sub.expired
+                    ? `Your plan expired on ${fmt.date(sub.ends_at)}`
+                    : `Plan expires in ${d} day${d === 1 ? '' : 's'} (${fmt.date(sub.ends_at)})`}
+              </p>
+            </div>
+            <button onClick={() => navigate('/plan-purchase')} className="text-xs font-medium hover:underline">
+              {onTrial ? 'Choose a plan' : 'Renew / upgrade'} →
+            </button>
           </div>
-          <button onClick={() => navigate('/wallet')} className="text-xs text-amber-700 font-medium hover:underline">
-            Upgrade now →
-          </button>
-        </div>
-      )}
+        )
+      })()}
 
       {overview?.wallet.balance !== undefined && overview.wallet.balance < 500 && waConfig === 'wallet' && (
         <div className="bg-red-50 border border-red-200 rounded-xl px-5 py-3 flex items-center justify-between">

@@ -71,22 +71,28 @@ class EnsureCompanyActiveV2
     private function getCompanyStatus(\App\Models\Company $company): string
     {
         if ($company->status === 'suspended') return 'suspended';
+        if ($company->status === 'cancelled') return 'cancelled';
 
-        // Check plan expiry
-        if ($company->plan_expires_at && $company->plan_expires_at->isPast()) {
-            // Auto-update status
+        // A few days of grace after the paid/trial period ends so a late
+        // renewal doesn't lock people out mid-work. During grace the account
+        // stays usable and the dashboard shows an "expired — renew" banner.
+        $graceCutoff = now()->subDays((int) config('billing.grace_days', 3));
+
+        // Paid plan lapsed past its grace window
+        if ($company->plan_expires_at && $company->plan_expires_at->lt($graceCutoff)) {
             $company->updateQuietly(['status' => 'expired']);
             return 'expired';
         }
 
-        if ($company->status === 'expired')   return 'expired';
-        if ($company->status === 'cancelled') return 'cancelled';
-        if ($company->status === 'trial') {
-            if ($company->trial_ends_at && $company->trial_ends_at->isPast()) {
-                $company->updateQuietly(['status' => 'expired']);
-                return 'expired';
-            }
+        // Trial lapsed past its grace window
+        if ($company->status === 'trial'
+            && $company->trial_ends_at
+            && $company->trial_ends_at->lt($graceCutoff)) {
+            $company->updateQuietly(['status' => 'expired']);
+            return 'expired';
         }
+
+        if ($company->status === 'expired') return 'expired';
 
         return 'active';
     }

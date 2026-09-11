@@ -35,11 +35,64 @@ class PlanPurchaseService
             ->first();
     }
 
+    // ── Preview an upgrade / downgrade / renewal ──────────────────────────────
+    // Returns the change type, the price for the chosen duration, and — for a
+    // downgrade — any current usage that exceeds the target plan's limits and
+    // would have to be trimmed first.
+    public function changePreview(int $companyId, int $planId, string $durationType): array
+    {
+        $company = Company::findOrFail($companyId);
+        $target  = Plan::findOrFail($planId);
+        $current = $company->plan;
+
+        $type = 'new';
+        if ($current) {
+            $type = match (true) {
+                $current->id === $target->id       => 'renew',
+                (float) $target->price > (float) $current->price => 'upgrade',
+                (float) $target->price < (float) $current->price => 'downgrade',
+                default                            => 'change',
+            };
+        }
+
+        $blockers = [];
+        foreach (\App\Http\Middleware\PlanLimitMiddleware::LIMITS as $resource => [$table, $fk, $column]) {
+            $max = $target->$column;
+            if ($max === null) continue; // unlimited on the target plan
+
+            $used = DB::table($table)->where($fk, $companyId)->count();
+            if ($used > $max) {
+                $label = str_replace('_', ' ', $resource);
+                $blockers[] = "You have {$used} {$label}; {$target->name} allows {$max}. Remove " . ($used - $max) . " before switching.";
+            }
+        }
+
+        return [
+            'type'         => $type,
+            'current_plan' => $current ? ['id' => $current->id, 'name' => $current->name, 'price' => (float) $current->price] : null,
+            'target_plan'  => ['id' => $target->id, 'name' => $target->name, 'price' => (float) $target->price],
+            'duration_type' => $durationType,
+            'amount'       => round($this->calculatePrice($target->price, $durationType), 2),
+            'blockers'     => $blockers,
+            'can_proceed'  => count($blockers) === 0,
+        ];
+    }
+
     // ── Create Razorpay order for plan purchase ───────────────────────────────
     public function createPlanOrder(int $companyId, int $userId, int $planId, string $durationType): array
     {
         $plan = Plan::findOrFail($planId);
          $user = auth()->user();
+
+        // Guard: block a downgrade while current usage still exceeds the
+        // target plan's limits (mirrors PlanLimitMiddleware at create time).
+        $preview = $this->changePreview($companyId, $planId, $durationType);
+        if (! $preview['can_proceed']) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'plan_id' => $preview['blockers'],
+            ]);
+        }
+
         // Calculate price based on duration
         $price = $this->calculatePrice($plan->price, $durationType);
 

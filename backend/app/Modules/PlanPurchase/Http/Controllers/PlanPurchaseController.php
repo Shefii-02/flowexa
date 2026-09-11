@@ -34,6 +34,15 @@ class PlanPurchaseController extends Controller
         return response()->json(['addons' => $this->svc->activeAddons()]);
     }
 
+    public function previewChange(Request $request): JsonResponse
+    {
+        $d = $request->validate([
+            'plan_id'       => ['required', 'integer', 'exists:plans,id'],
+            'duration_type' => ['required', 'in:monthly,3month,6month,yearly,12month'],
+        ]);
+        return response()->json($this->svc->changePreview(auth()->user()->company_id, $d['plan_id'], $d['duration_type']));
+    }
+
     public function createOrder(Request $request): JsonResponse
     {
         $d = $request->validate(['plan_id' => ['required', 'integer', 'exists:plans,id'], 'duration_type' => ['required', 'in:monthly,3month,6month,yearly,12month']]);
@@ -75,7 +84,27 @@ class PlanPurchaseController extends Controller
 
     public function superAdminCreatePlan(Request $request): JsonResponse
     {
-        $d = $request->validate(['name' => ['required', 'string', 'max:50'], 'messages_limit' => ['required', 'integer'], 'price' => ['required', 'numeric', 'min:0'], 'duration_type' => ['required', 'in:monthly,yearly,3month,6month,12month,custom,unlimited'], 'duration_months' => ['nullable', 'integer'], 'max_users' => ['nullable', 'integer'], 'max_templates' => ['nullable', 'integer'], 'max_phone_numbers' => ['required', 'integer', 'min:1', 'max:5'], 'max_campaigns' => ['nullable', 'integer'], 'max_contacts' => ['nullable', 'integer'], 'max_labels' => ['nullable', 'integer'], 'max_flow_nodes' => ['nullable', 'integer'], 'max_campaign_contacts' => ['nullable', 'integer'], 'throttle_per_minute' => ['required', 'integer', 'min:10', 'max:1000'], 'features' => ['nullable', 'array'], 'is_active' => ['nullable', 'boolean']]);
+        $d = $request->validate([
+            'name' => ['required', 'string', 'max:50'],
+            'messages_limit' => ['required', 'integer'],
+            // Paid plans only — every plan already includes a free trial, so no ₹0 plans.
+            'price' => ['required', 'numeric', 'min:1'],
+            'duration_type' => ['required', 'in:monthly,yearly,3month,6month,12month,custom,unlimited'],
+            'duration_months' => ['nullable', 'integer'],
+            'alert_before_days' => ['nullable', 'integer', 'min:0', 'max:60'],
+            'max_users' => ['nullable', 'integer'],
+            'max_templates' => ['nullable', 'integer'],
+            'max_phone_numbers' => ['required', 'integer', 'min:0', 'max:20'],
+            'max_wa_sessions' => ['nullable', 'integer', 'min:0', 'max:20'],
+            'max_campaigns' => ['nullable', 'integer'],
+            'max_contacts' => ['nullable', 'integer'],
+            'max_labels' => ['nullable', 'integer'],
+            'max_flow_nodes' => ['nullable', 'integer'],
+            'max_campaign_contacts' => ['nullable', 'integer'],
+            'throttle_per_minute' => ['required', 'integer', 'min:10', 'max:1000'],
+            'features' => ['nullable', 'array'],
+            'is_active' => ['nullable', 'boolean'],
+        ]);
         return response()->json(['plan' => Plan::create($d)], 201);
     }
 

@@ -12,8 +12,8 @@ class Plan extends Model
 {
     protected $fillable = [
         'name', 'messages_limit', 'price', 'features', 'is_active',
-        'duration_type', 'duration_months', 'max_users', 'max_templates',
-        'max_phone_numbers', 'max_campaigns', 'max_contacts', 'max_labels',
+        'duration_type', 'duration_months', 'alert_before_days', 'max_users', 'max_templates',
+        'max_phone_numbers', 'max_wa_sessions', 'max_campaigns', 'max_contacts', 'max_labels',
         'max_flow_nodes', 'max_campaign_contacts', 'throttle_per_minute',
         'is_custom', 'custom_for_company_id',
     ];

@@ -158,6 +158,7 @@ Route::prefix('v1')->group(function () {
                 Route::put('plans/{plan}',                     [SuperAdminController::class, 'updatePlan'])->name('plans.update');
                 Route::get('users',                            [SuperAdminController::class, 'users'])->name('users.index');
                 Route::get('stats',                            [SuperAdminController::class, 'stats'])->name('stats');
+                Route::get('billing',                          [SuperAdminController::class, 'billing'])->name('billing');
 
                 // Staff
                 Route::get('staff',           [SuperadminStaffController::class, 'index']); //->name('staff.index');
@@ -670,6 +671,7 @@ Route::prefix('v1')->group(function () {
         Route::middleware(['company.active'])->group(function () {
             Route::get('plans',                        [PlanPurchaseController::class, 'index'])->name('plans.index');
             Route::get('plans/current',               [PlanPurchaseController::class, 'currentPlan'])->name('plans.current');
+            Route::post('plans/preview-change',        [PlanPurchaseController::class, 'previewChange'])->name('plans.preview-change');
             Route::post('plans/create-order',          [PlanPurchaseController::class, 'createOrder'])->name('plans.create-order');
             Route::post('plans/verify-payment',        [PlanPurchaseController::class, 'verifyPayment'])->name('plans.verify-payment');
             Route::get('plans/history',                [PlanPurchaseController::class, 'history'])->name('plans.history');
@@ -1077,7 +1079,7 @@ Route::prefix('v1')->middleware(['jwt.auth'])->group(function () {
     Route::prefix('waha/sessions')->group(function () {
         Route::get('/',              [WahaSessionController::class, 'index']);
         Route::get('/health',        [WahaSessionController::class, 'health']);
-        Route::post('/',             [WahaSessionController::class, 'store']);
+        Route::post('/',             [WahaSessionController::class, 'store'])->middleware('plan.limit:wa_sessions');
         Route::get('/{id}',          [WahaSessionController::class, 'show']);
         Route::patch('/{id}',        [WahaSessionController::class, 'update']);
         Route::post('/{id}/start',   [WahaSessionController::class, 'start']);

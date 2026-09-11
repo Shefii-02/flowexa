@@ -42,7 +42,7 @@ class RegisterController extends Controller
             'app_id'       => 'WA_APP_' . strtoupper(Str::random(12)),
             'plan_id'      => $trialPlan?->id,
             'status'       => 'trial',
-            'trial_ends_at'=> now()->addDays(14),
+            'trial_ends_at'=> now()->addDays(7),
             'webhook_verify_token' => Str::random(32),
         ]);
 

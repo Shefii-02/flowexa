@@ -50,9 +50,31 @@ export default function PlanPurchasePage() {
     return base * months * (1 - d.discount / 100)
   }
 
+  const relationTo = (plan: any): 'current' | 'upgrade' | 'downgrade' | 'buy' => {
+    if (!current?.plan) return 'buy'
+    if (current.plan.id === plan.id) return current.status === 'active' ? 'current' : 'buy'
+    const cur = Number(current.plan.price ?? 0)
+    if (Number(plan.price) > cur) return 'upgrade'
+    if (Number(plan.price) < cur) return 'downgrade'
+    return 'buy'
+  }
+
   const handleBuy = async (plan: any) => {
     setPaying(plan.id)
     try {
+      // Check upgrade / downgrade feasibility first (a downgrade is blocked
+      // while current usage still exceeds the target plan's limits).
+      try {
+        const { data: preview } = await planApi.previewChange(plan.id, duration)
+        if (!preview.can_proceed) {
+          setPaying(null)
+          preview.blockers?.forEach((b: string) => toast.error(b, { duration: 6000 }))
+          return
+        }
+      } catch (e) {
+        setPaying(null); toast.error(getError(e)); return
+      }
+
       const { data } = await planApi.createOrder(plan.id, duration)
 
       if (!window.Razorpay) {
@@ -164,7 +186,8 @@ export default function PlanPurchasePage() {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {plans.map(plan => {
           const price = calcPrice(plan.price, duration)
-          const isCurrentPlan = current?.plan?.id === plan.id
+          const rel = relationTo(plan)
+          const isCurrentPlan = rel === 'current'
 
           return (
             <div key={plan.id} className={`card p-5 flex flex-col ${isCurrentPlan ? 'border-brand-400 ring-1 ring-brand-400' : ''}`}>
@@ -206,13 +229,18 @@ export default function PlanPurchasePage() {
 
               <Button
                 className="w-full justify-center mt-auto"
-                variant={isCurrentPlan ? 'secondary' : 'primary'}
+                variant={rel === 'current' ? 'secondary' : 'primary'}
                 loading={paying === plan.id}
-                disabled={isCurrentPlan && current?.status === 'active'}
                 onClick={() => handleBuy(plan)}
               >
-                {isCurrentPlan ? 'Renew plan' : plan.price === 0 ? 'Activate' : 'Buy plan'}
+                {rel === 'current' ? 'Renew plan'
+                  : rel === 'upgrade' ? 'Upgrade'
+                  : rel === 'downgrade' ? 'Downgrade'
+                  : 'Buy plan'}
               </Button>
+              {rel === 'downgrade' && (
+                <p className="text-[11px] text-gray-400 mt-1.5 text-center">Applies immediately · no refund for unused days</p>
+              )}
             </div>
           )
         })}

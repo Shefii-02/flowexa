@@ -41,6 +41,11 @@ class SuperAdminController extends Controller
         return response()->json($this->superAdminService->stats());
     }
 
+    public function billing(): JsonResponse
+    {
+        return response()->json($this->superAdminService->billing());
+    }
+
     public function companies(Request $request): JsonResponse
     {
         $companies = $this->superAdminService->companies(

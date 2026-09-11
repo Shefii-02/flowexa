@@ -9,6 +9,12 @@ class CompanyResource extends JsonResource
 {
     public function toArray(Request $request): array
     {
+        // ── Subscription / trial countdown ──────────────────────────────────
+        $onTrial   = $this->status === 'trial' && $this->trial_ends_at;
+        $endsAt    = $onTrial ? $this->trial_ends_at : $this->plan_expires_at;
+        $daysLeft  = $endsAt ? (int) ceil(now()->floatDiffInDays($endsAt, false)) : null;
+        $alertDays = $this->relationLoaded('plan') ? ($this->plan?->alert_before_days ?? 7) : 7;
+
         return [
             'id'            => $this->id,
             'name'          => $this->name,
@@ -21,7 +27,16 @@ class CompanyResource extends JsonResource
             'status'        => $this->status,
             'industry_template'      => $this->industry_template ?? 'generic',
             'industry_template_name' => config('industry_templates.' . ($this->industry_template ?? 'generic') . '.name', 'Other business'),
-            'trial_ends_at' => $this->trial_ends_at?->toIso8601String(),
+            'trial_ends_at'   => $this->trial_ends_at?->toIso8601String(),
+            'plan_expires_at' => $this->plan_expires_at?->toIso8601String(),
+            'subscription'    => [
+                'on_trial'      => (bool) $onTrial,
+                'ends_at'       => $endsAt?->toIso8601String(),
+                'days_left'     => $daysLeft,
+                'expired'       => $daysLeft !== null && $daysLeft < 0,
+                'expiring_soon' => $daysLeft !== null && $daysLeft >= 0 && $daysLeft <= $alertDays,
+                'alert_days'    => $alertDays,
+            ],
             'settings'      => $this->settings,
             'created_at'    => $this->created_at->toIso8601String(),
 

@@ -25,6 +25,7 @@ class Company extends Model
         'logo',
         'status',
         'trial_ends_at',
+        'plan_expires_at',
         'wa_phone_id',
         'wa_access_token',
         'wa_business_id',
@@ -49,8 +50,9 @@ class Company extends Model
     protected $hidden = ['private_token', 'wa_access_token'];
 
     protected $casts = [
-        'settings'       => 'array',
-        'trial_ends_at'  => 'datetime',
+        'settings'         => 'array',
+        'trial_ends_at'    => 'datetime',
+        'plan_expires_at'  => 'datetime',
     ];
 
     // ── Relationships ─────────────────────────────────────────────────────────

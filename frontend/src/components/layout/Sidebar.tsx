@@ -615,6 +615,7 @@ export const Sidebar = () => {
             <FlatLink to="/superadmin" icon="📊" label="Dashboard" end />
             <FlatLink to="/superadmin/companies" icon="🏢" label="Companies" />
             <FlatLink to="/superadmin/plans" icon="📦" label="Plans" />
+            <FlatLink to="/superadmin/billing" icon="💰" label="Billing" />
             <FlatLink to="/superadmin/staff" icon="👤" label="Platform Staff" />
             <FlatLink to="/superadmin/permissions" icon="🔑" label="Permissions" />
             <FlatLink to="/superadmin/topup" icon="💬" label="Top-up Packages" />

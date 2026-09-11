@@ -49,7 +49,7 @@ class AuthRepository implements AuthRepositoryInterface
                 'private_token'    => encrypt(Str::random(40)),
                 'email'            => $dto->email,
                 'status'           => 'trial',
-                'trial_ends_at'    => now()->addDays(14),
+                'trial_ends_at'    => now()->addDays(7),
                 'industry_template'=> $dto->businessType,
             ]);
 
