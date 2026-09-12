@@ -26,6 +26,7 @@ type Stats = {
 }
 
 type WaSession = { session_id: string; session_name: string; status?: string }
+type WaCloudNumber = { id: number; phone_number_id: string; label: string; display_number: string; is_active: boolean }
 
 type ResponseMode = 'text' | 'voice' | 'document' | 'video'
 
@@ -256,6 +257,9 @@ function LiveChatDrawer({ open, onClose, waSessions, companyName }: {
   waSessions: WaSession[]
   companyName?: string
 }) {
+  // Channel: which kind of account this test message pretends to come in on.
+  const [channel, setChannel]           = useState<'wa_chat' | 'wa_cloud'>('wa_chat')
+  const [phoneNumbers, setPhoneNumbers] = useState<WaCloudNumber[]>([])
   const [sessionId, setSessionId]       = useState('')
   const [phone, setPhone]               = useState('919999999999')
   const [responseMode, setResponseMode] = useState<ResponseMode>('text')
@@ -271,6 +275,15 @@ function LiveChatDrawer({ open, onClose, waSessions, companyName }: {
   useEffect(() => {
     api.get('/wa-agent/available-models').then(r => setProviderGroups(r.data)).catch(() => {})
   }, [])
+
+  useEffect(() => {
+    if (channel !== 'wa_cloud' || phoneNumbers.length > 0) return
+    api.get('/phone-numbers').then(r => setPhoneNumbers(r.data?.phone_numbers ?? [])).catch(() => {})
+  }, [channel, phoneNumbers.length])
+
+  // Switching channel invalidates whichever reference (session/number) was picked
+  // for the other one, and starts a fresh test thread.
+  useEffect(() => { setSessionId(''); setHistory([]) }, [channel])
   // recording
   const [recording, setRecording]       = useState(false)
   const [recordSecs, setRecordSecs]     = useState(0)
@@ -348,7 +361,7 @@ function LiveChatDrawer({ open, onClose, waSessions, companyName }: {
       content: '🎤 Voice message', audioUrl: localUrl, ts: Date.now(),
     }
     setHistory(h => [...h, voiceMsg])
-    if (!sessionId) { toast.error('Select a session first'); return }
+    if (!sessionId) { toast.error(channel === 'wa_chat' ? 'Select a session first' : 'Select a number first'); return }
     setThinking(true)
     try {
       const form = new FormData()
@@ -447,22 +460,59 @@ function LiveChatDrawer({ open, onClose, waSessions, companyName }: {
 
         {/* Config strip */}
         <div className="px-4 py-3 border-b border-gray-100 bg-gray-50 space-y-3 flex-shrink-0">
-          {/* Session */}
+          {/* Channel */}
           <div>
-            <label className="text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-1 block">WA Session</label>
+            <label className="text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-1 block">Channel</label>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={() => setChannel('wa_chat')}
+                className={`flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-medium transition-colors ${
+                  channel === 'wa_chat' ? 'bg-indigo-50 border-indigo-300 text-indigo-700' : 'bg-white border-gray-200 text-gray-500'
+                }`}
+              >📱 WA Chat</button>
+              <button
+                onClick={() => setChannel('wa_cloud')}
+                className={`flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-medium transition-colors ${
+                  channel === 'wa_cloud' ? 'bg-indigo-50 border-indigo-300 text-indigo-700' : 'bg-white border-gray-200 text-gray-500'
+                }`}
+              >☁️ WA Cloud</button>
+            </div>
+          </div>
+
+          {/* Session (WA Chat) or Number (WA Cloud) — picked by name only, never a raw id */}
+          <div>
+            <label className="text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-1 block">
+              {channel === 'wa_chat' ? 'Session' : 'Number'}
+            </label>
             <div className="relative">
-              <select value={sessionId}
-                onChange={e => { setSessionId(e.target.value); setHistory([]) }}
-                className="w-full appearance-none pl-3 pr-8 py-2 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400">
-                <option value="">— Select session —</option>
-                {waSessions.map(s => (
-                  <option key={s.session_id} value={s.session_id}>
-                    {s.session_name || s.session_id}{s.status ? ` · ${s.status}` : ''}
-                  </option>
-                ))}
-              </select>
+              {channel === 'wa_chat' ? (
+                <select value={sessionId}
+                  onChange={e => { setSessionId(e.target.value); setHistory([]) }}
+                  className="w-full appearance-none pl-3 pr-8 py-2 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400">
+                  <option value="">— Select session —</option>
+                  {waSessions.map(s => (
+                    <option key={s.session_id} value={s.session_id}>
+                      {s.session_name || s.session_id}{s.status ? ` · ${s.status}` : ''}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <select value={sessionId}
+                  onChange={e => { setSessionId(e.target.value); setHistory([]) }}
+                  className="w-full appearance-none pl-3 pr-8 py-2 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400">
+                  <option value="">— Select number —</option>
+                  {phoneNumbers.map(n => (
+                    <option key={n.id} value={n.phone_number_id}>
+                      {n.label || n.display_number}{n.display_number ? ` (${n.display_number})` : ''}{!n.is_active ? ' · inactive' : ''}
+                    </option>
+                  ))}
+                </select>
+              )}
               <ChevronDown size={13} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
             </div>
+            {channel === 'wa_cloud' && phoneNumbers.length === 0 && (
+              <p className="text-[11px] text-gray-400 mt-1">No WA Cloud numbers connected yet.</p>
+            )}
           </div>
 
           {/* RAG toggle + provider override */}
@@ -609,7 +659,13 @@ function LiveChatDrawer({ open, onClose, waSessions, companyName }: {
                         </span>
                       )}
                       {msg.meta.status && (
-                        <span className={`text-[10px] px-1.5 py-px rounded-full border ${
+                        <span
+                          title={
+                            msg.meta.status === 'answered' ? 'Found a matching chunk in the knowledge base and answered from it.' :
+                            msg.meta.status === 'no_rag' ? 'Knowledge base was skipped — this is the raw model\'s own answer with no company context.' :
+                            'No matching knowledge base content was found for this question — this is the fallback message, not the AI reading from your stored content.'
+                          }
+                          className={`text-[10px] px-1.5 py-px rounded-full border cursor-help ${
                           msg.meta.status === 'answered' ? 'bg-green-50 text-green-600 border-green-100' :
                           msg.meta.status === 'no_rag' ? 'bg-purple-50 text-purple-600 border-purple-100' :
                           'bg-yellow-50 text-yellow-700 border-yellow-100'
@@ -663,7 +719,7 @@ function LiveChatDrawer({ open, onClose, waSessions, companyName }: {
               </button>
               <textarea value={input} onChange={e => { setInput(e.target.value); if (responseMode !== 'text') setResponseMode('text') }} onKeyDown={onKeyDown}
                 disabled={!sessionId || thinking} rows={1}
-                placeholder={sessionId ? 'Message… (Enter to send)' : 'Select a session first'}
+                placeholder={sessionId ? 'Message… (Enter to send)' : (channel === 'wa_chat' ? 'Select a session first' : 'Select a number first')}
                 className="flex-1 resize-none px-3 py-2.5 text-sm border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-400 disabled:bg-gray-50 disabled:text-gray-400 max-h-28 overflow-y-auto" />
               <button onClick={sendText} disabled={!sessionId || !input.trim() || thinking}
                 className="p-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex-shrink-0">

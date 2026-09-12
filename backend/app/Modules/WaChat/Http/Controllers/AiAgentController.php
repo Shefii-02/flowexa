@@ -68,16 +68,23 @@ class AiAgentController extends Controller
         ]);
 
         $company = Company::find(Auth::user()->company_id) ?? new Company();
+        $forcedConfig = json_decode((string) $request->input('ai_config', '{}'), true) ?: [];
 
-        $transcript = $this->transcribeWithWhisper($request->file('audio'), $company);
+        // A forced OpenAI key in the test tool should also drive Whisper transcription —
+        // otherwise "force provider" only affects the text answer and transcription silently
+        // falls back to the company's own saved key (or fails if it doesn't have one),
+        // even though the tester explicitly supplied a key to test with.
+        $whisperKey = ($forcedConfig['provider'] ?? null) === 'openai' && !empty($forcedConfig['api_key'])
+            ? $forcedConfig['api_key']
+            : null;
+
+        $transcript = $this->transcribeWithWhisper($request->file('audio'), $company, $whisperKey);
 
         if ($transcript === null) {
             return response()->json([
-                'error' => 'Voice transcription unavailable. Add an OpenAI key in Settings → API Keys to enable Whisper.',
+                'error' => 'Voice transcription unavailable. Add an OpenAI key in Settings → API Keys (or pick "openai" under "AI key to test" with a key) to enable Whisper.',
             ], 422);
         }
-
-        $forcedConfig = json_decode((string) $request->input('ai_config', '{}'), true) ?: [];
 
         $result = $this->rag->answer(
             query:         $transcript,
@@ -92,9 +99,9 @@ class AiAgentController extends Controller
         return response()->json(array_merge($result, ['transcript' => $transcript]));
     }
 
-    private function transcribeWithWhisper(UploadedFile $audio, Company $company): ?string
+    private function transcribeWithWhisper(UploadedFile $audio, Company $company, ?string $overrideKey = null): ?string
     {
-        $apiKey = CompanyApiKeyResolver::openai($company);
+        $apiKey = $overrideKey ?: CompanyApiKeyResolver::openai($company);
         if (empty($apiKey)) {
             return null;
         }
@@ -109,8 +116,9 @@ class AiAgentController extends Controller
                 ]);
 
             if ($response->successful()) {
-                // Record usage on the company's OpenAI key
-                if ($company->openai_key_id && $company->openaiKey) {
+                // Record usage on the company's OpenAI key — only meaningful when we
+                // actually used it, not a one-off key typed into the test tool.
+                if (!$overrideKey && $company->openai_key_id && $company->openaiKey) {
                     CompanyApiKeyResolver::recordUsage($company->openaiKey, 0.0);
                 }
                 return $response->json('text');
