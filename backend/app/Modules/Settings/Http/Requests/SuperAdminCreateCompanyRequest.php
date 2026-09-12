@@ -15,10 +15,17 @@ class SuperAdminCreateCompanyRequest extends FormRequest
             'company_name'    => ['required','string','max:100'],
             'owner_name'      => ['required','string','max:100'],
             'owner_email'     => ['required','email','unique:users,email'],
+            'owner_phone'     => ['nullable','string','max:20'],
+            'company_phone'   => ['nullable','string','max:20'],
+            'company_email'   => ['nullable','email'],
+            'website'         => ['nullable','string','max:150'],
             'owner_password'  => ['required','string','min:8'],
             'plan_id'         => ['required','integer','exists:plans,id'],
             'initial_balance' => ['nullable','integer','min:0'],
             'business_type'   => ['nullable', \Illuminate\Validation\Rule::in(array_keys(config('industry_templates', [])))],
+            'status'          => ['nullable', \Illuminate\Validation\Rule::in(['active','trial'])],
+            'trial_days'      => ['nullable','integer','min:1','max:365'],
+            'max_devices_per_user' => ['nullable','integer','min:1','max:20'],
         ];
     }
     protected function failedValidation(Validator $v): void

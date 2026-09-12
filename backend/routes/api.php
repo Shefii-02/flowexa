@@ -151,6 +151,7 @@ Route::prefix('v1')->group(function () {
                 Route::put('companies/{company}',              [SuperAdminController::class, 'updateCompany'])->name('companies.update');
                 Route::delete('companies/{company}',           [SuperAdminController::class, 'deleteCompany'])->name('companies.destroy');
                 Route::post('companies/{company}/top-up',      [SuperAdminController::class, 'topUp'])->name('companies.top-up');
+                Route::post('companies/{company}/reset-api-key', [SuperAdminController::class, 'resetApiKey'])->name('companies.reset-api-key');
                 Route::post('companies/{company}/impersonate', [SuperAdminController::class, 'impersonate'])->name('companies.impersonate');
                 Route::patch('companies/{company}/status',     [SuperAdminController::class, 'updateStatus'])->name('companies.status');
                 Route::get('plans',                            [SuperAdminController::class, 'plans'])->name('plans.index');

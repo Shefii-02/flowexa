@@ -307,6 +307,7 @@ export const superadminApi = {
   updateStatus: (id: number, status: string) => api.patch(`/superadmin/companies/${id}/status`, { status }),
   deleteCompany: (id: number) => api.delete(`/superadmin/companies/${id}`),
   topUp: (id: number, amount: number, description?: string) => api.post(`/superadmin/companies/${id}/top-up`, { amount, description }),
+  resetApiKey: (id: number) => api.post(`/superadmin/companies/${id}/reset-api-key`),
   impersonate: (id: number) => api.post(`/superadmin/companies/${id}/impersonate`),
   plans: () => api.get('/superadmin/plans'),
   createPlan: (d: Record<string, unknown>) => api.post('/superadmin/plans', d),

@@ -73,13 +73,27 @@ class SuperAdminController extends Controller
     public function updateCompany(Request $request, Company $company): JsonResponse
     {
         $request->validate([
-            'name'    => ['sometimes', 'string', 'max:100'],
-            'plan_id' => ['sometimes', 'integer', 'exists:plans,id'],
-            'email'   => ['sometimes', 'email'],
+            'name'          => ['sometimes', 'string', 'max:100'],
+            'plan_id'       => ['sometimes', 'integer', 'exists:plans,id'],
+            'email'         => ['sometimes', 'email'],
+            'company_email' => ['sometimes', 'email'],
+            'company_phone' => ['sometimes', 'nullable', 'string', 'max:20'],
+            'website'       => ['sometimes', 'nullable', 'string', 'max:150'],
             'max_devices_per_user' => ['sometimes', 'integer', 'min:1', 'max:20'],
         ]);
         $c = $this->superAdminService->updateCompany($company, $request->all());
         return response()->json(['message' => 'Company updated.', 'company' => $c]);
+    }
+
+    /** POST /superadmin/companies/{company}/reset-api-key — rotate the platform app_id + private_token pair. */
+    public function resetApiKey(Company $company): JsonResponse
+    {
+        $result = $this->superAdminService->resetApiKey($company);
+        return response()->json([
+            'message'       => 'API key reset. Store it safely — the private token is shown only once.',
+            'app_id'        => $result['app_id'],
+            'private_token' => $result['private_token'],
+        ]);
     }
 
     public function updateStatus(UpdateCompanyStatusRequest $request, Company $company): JsonResponse

@@ -58,15 +58,20 @@ class SuperAdminService
         return DB::transaction(function () use ($dto) {
             $ownerRole = Role::where('name','owner')->firstOrFail();
 
+            $isTrial = $dto->status === 'trial';
+
             $company = Company::create([
                 'plan_id'          => $dto->planId,
                 'name'             => $dto->companyName,
                 'slug'             => Str::slug($dto->companyName).'-'.Str::random(4),
                 'app_id'           => 'WA_APP_'.strtoupper(Str::random(12)),
                 'private_token'    => encrypt(Str::random(40)),
-                'email'            => $dto->ownerEmail,
+                'email'            => $dto->companyEmail ?: $dto->ownerEmail,
                 'phone'            => $dto->companyPhone,
-                'status'           => 'active',
+                'website'          => $dto->website,
+                'status'           => $isTrial ? 'trial' : 'active',
+                'trial_ends_at'    => $isTrial ? now()->addDays($dto->trialDays ?: 14) : null,
+                'max_devices_per_user' => $dto->maxDevicesPerUser ?: 2,
                 'industry_template'=> $dto->businessType,
             ]);
 
@@ -98,8 +103,10 @@ class SuperAdminService
         $company->update(array_filter([
             'name'    => $data['name']    ?? null,
             'plan_id' => $data['plan_id'] ?? null,
-            'email'   => $data['email']   ?? null,
+            'email'   => $data['company_email'] ?? $data['email'] ?? null,
             'phone'   => $data['company_phone']   ?? null,
+            'website' => $data['website'] ?? null,
+            'max_devices_per_user' => $data['max_devices_per_user'] ?? null,
         ], fn($v) => !is_null($v)));
 
 
@@ -130,6 +137,26 @@ class SuperAdminService
     public function deleteCompany(Company $company): void
     {
         $company->delete();
+    }
+
+    /**
+     * Regenerate a company's platform API credentials (app_id + private_token) —
+     * the pair external integrations (OTP API, etc.) authenticate with, distinct
+     * from per-provider AI keys in CompanyApiKey. The old pair stops working the
+     * moment this runs, so the caller must surface the new values immediately —
+     * private_token is encrypted at rest and never re-readable in the clear.
+     */
+    public function resetApiKey(Company $company): array
+    {
+        $appId = 'WA_APP_'.strtoupper(Str::random(12));
+        $raw   = Str::random(40);
+
+        $company->update([
+            'app_id'        => $appId,
+            'private_token' => encrypt($raw),
+        ]);
+
+        return ['app_id' => $appId, 'private_token' => $raw];
     }
 
     public function topUp(Company $company, TopUpDTO $dto): array

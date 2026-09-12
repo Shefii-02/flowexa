@@ -21,8 +21,13 @@ type Company = {
   name: string
   email: string
   phone?: string | null
+  website?: string | null
   status: string
   plan_id: number
+  app_id?: string
+  max_devices_per_user?: number
+  industry_template?: string
+  trial_ends_at?: string | null
   plan?: {
     id: number
     name: string
@@ -51,6 +56,8 @@ const BUSINESS_TYPES = [
 const emptyForm = {
   company_name: '',
   company_phone: '',
+  company_email: '',
+  website: '',
   business_type: 'generic',
   owner_name: '',
   owner_email: '',
@@ -58,6 +65,9 @@ const emptyForm = {
   owner_password: '',
   plan_id: '',
   initial_balance: '1',
+  status: 'active',
+  trial_days: '14',
+  max_devices_per_user: '2',
 }
 
 export default function SuperAdminCompanies() {
@@ -77,6 +87,10 @@ export default function SuperAdminCompanies() {
 
   const [editingCompany, setEditingCompany] = useState<Company | null>(null)
   const [openMenuId, setOpenMenuId] = useState<number | null>(null)
+
+  const [resetKeyFor, setResetKeyFor] = useState<Company | null>(null)
+  const [resettingKey, setResettingKey] = useState(false)
+  const [newApiKey, setNewApiKey] = useState<{ app_id: string; private_token: string } | null>(null)
 
   const [actingId, setActingId] = useState<number | null>(null)
   const [plans, setPlans] = useState<any[]>([])
@@ -170,7 +184,9 @@ export default function SuperAdminCompanies() {
     setForm({
       company_name: company.name ?? '',
       company_phone: company.phone ?? '',
-      business_type: (company as any).industry_template ?? 'generic',
+      company_email: company.email ?? '',
+      website: company.website ?? '',
+      business_type: company.industry_template ?? 'generic',
 
       owner_name: company.company_owner?.name ?? '',
       owner_email: company.company_owner?.email ?? '',
@@ -181,6 +197,9 @@ export default function SuperAdminCompanies() {
 
       plan_id: company.plan_id?.toString() ?? '',
       initial_balance: company.wallet?.balance?.toString() ?? '0',
+      status: company.status ?? 'active',
+      trial_days: '14',
+      max_devices_per_user: company.max_devices_per_user?.toString() ?? '2',
     })
 
     setOpenMenuId(null)
@@ -223,6 +242,8 @@ export default function SuperAdminCompanies() {
       const payload: any = {
         company_name: form.company_name,
         company_phone: form.company_phone,
+        company_email: form.company_email || undefined,
+        website: form.website || undefined,
 
         owner_name: form.owner_name,
         owner_email: form.owner_email,
@@ -230,11 +251,16 @@ export default function SuperAdminCompanies() {
 
         plan_id: Number(form.plan_id),
         initial_balance: Number(form.initial_balance),
+        max_devices_per_user: Number(form.max_devices_per_user) || 2,
       }
 
-      // Business type — only meaningful when creating (sets the company's industry template).
+      // Business type / trial status — only meaningful when creating.
       if (!editingCompany) {
         payload.business_type = form.business_type
+        payload.status = form.status
+        if (form.status === 'trial') {
+          payload.trial_days = Number(form.trial_days) || 14
+        }
       }
 
       // Only send password if entered
@@ -381,6 +407,37 @@ export default function SuperAdminCompanies() {
       load()
     } catch (error) {
       toast.error(getError(error))
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // Reset API key
+  // ─────────────────────────────────────────────────────────────
+
+  const handleResetApiKey = async () => {
+    if (!resetKeyFor) return
+
+    setResettingKey(true)
+
+    try {
+      const { data } = await superadminApi.resetApiKey(resetKeyFor.id)
+
+      setNewApiKey({ app_id: data.app_id, private_token: data.private_token })
+      setResetKeyFor(null)
+      load()
+    } catch (error) {
+      toast.error(getError(error))
+    } finally {
+      setResettingKey(false)
+    }
+  }
+
+  const copyText = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text)
+      toast.success('Copied.')
+    } catch {
+      toast.error('Could not copy — select and copy manually.')
     }
   }
 
@@ -673,6 +730,17 @@ export default function SuperAdminCompanies() {
                               🔑 Login as
                             </button>
 
+                            {/* Reset API key */}
+                            <button
+                              onClick={() => {
+                                setResetKeyFor(company)
+                                setOpenMenuId(null)
+                              }}
+                              className="block w-full text-left px-3 py-2 text-sm text-orange-600 hover:bg-orange-50"
+                            >
+                              ♻️ Reset API key
+                            </button>
+
                             {/* Suspend / Activate */}
                             {company.status !==
                               'suspended' ? (
@@ -819,6 +887,33 @@ export default function SuperAdminCompanies() {
             }
           />
 
+          {/* Company email (billing/contact — defaults to owner email if left blank) */}
+          <Input
+            label="Company email"
+            type="email"
+            placeholder="defaults to owner email"
+            value={form.company_email}
+            onChange={(event) => set('company_email', event.target.value)}
+          />
+
+          {/* Website */}
+          <Input
+            label="Website"
+            placeholder="https://..."
+            value={form.website}
+            onChange={(event) => set('website', event.target.value)}
+          />
+
+          {/* Max devices per user */}
+          <Input
+            label="Max devices per user"
+            type="number"
+            min={1}
+            max={20}
+            value={form.max_devices_per_user}
+            onChange={(event) => set('max_devices_per_user', event.target.value)}
+          />
+
           {/* Business type — create only */}
           {!editingCompany && (
             <div>
@@ -833,6 +928,33 @@ export default function SuperAdminCompanies() {
                 ))}
               </select>
             </div>
+          )}
+
+          {/* Account status — create only (post-creation, use Suspend/Activate) */}
+          {!editingCompany && (
+            <div>
+              <label className="label">Account status</label>
+              <select
+                className="select"
+                value={form.status}
+                onChange={(event) => set('status', event.target.value)}
+              >
+                <option value="active">Active</option>
+                <option value="trial">Trial</option>
+              </select>
+            </div>
+          )}
+
+          {/* Trial length — only when creating on trial */}
+          {!editingCompany && form.status === 'trial' && (
+            <Input
+              label="Trial length (days)"
+              type="number"
+              min={1}
+              max={365}
+              value={form.trial_days}
+              onChange={(event) => set('trial_days', event.target.value)}
+            />
           )}
 
           {/* Plan */}
@@ -1008,6 +1130,48 @@ export default function SuperAdminCompanies() {
           setDelCompany(null)
         }
       />
+
+      {/* Reset API key confirmation */}
+      <ConfirmModal
+        open={!!resetKeyFor}
+        title="Reset API key?"
+        message={`This immediately invalidates "${resetKeyFor?.name}"'s current app_id/private_token pair — any integration still using the old pair will start failing. Continue?`}
+        confirmLabel="Reset key"
+        onConfirm={handleResetApiKey}
+        onCancel={() => setResetKeyFor(null)}
+        loading={resettingKey}
+      />
+
+      {/* New API key — shown once */}
+      <Modal
+        open={!!newApiKey}
+        onClose={() => setNewApiKey(null)}
+        title="New API key"
+        size="sm"
+        footer={<Button onClick={() => setNewApiKey(null)}>Done</Button>}
+      >
+        <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+          Copy these now — the private token can't be shown again.
+        </p>
+
+        <div className="space-y-3 mt-3">
+          <div>
+            <label className="label">App ID</label>
+            <div className="flex gap-2">
+              <input className="input font-mono text-xs" readOnly value={newApiKey?.app_id ?? ''} />
+              <Button variant="secondary" size="sm" onClick={() => newApiKey && copyText(newApiKey.app_id)}>Copy</Button>
+            </div>
+          </div>
+
+          <div>
+            <label className="label">Private token</label>
+            <div className="flex gap-2">
+              <input className="input font-mono text-xs" readOnly value={newApiKey?.private_token ?? ''} />
+              <Button variant="secondary" size="sm" onClick={() => newApiKey && copyText(newApiKey.private_token)}>Copy</Button>
+            </div>
+          </div>
+        </div>
+      </Modal>
     </div>
   )
 }

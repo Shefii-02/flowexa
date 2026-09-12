@@ -14,8 +14,14 @@ class SuperAdminCompanyResource extends JsonResource
             'name' => $this->name,
             'email' => $this->email,
             'phone' => $this->phone,
+            'website' => $this->website,
             'status' => $this->status,
             'plan_id' => $this->plan_id,
+            'app_id' => $this->app_id,
+            'max_devices_per_user' => $this->max_devices_per_user,
+            'industry_template' => $this->industry_template,
+            'trial_ends_at' => $this->trial_ends_at,
+            'created_at' => $this->created_at,
 
             'plan' => $this->whenLoaded('plan', fn () => [
                 'id' => $this->plan->id,
