@@ -26,23 +26,22 @@ class ProcessCampaignBatch implements ShouldQueue
 
     public function handle(CampaignRepositoryInterface $campaignRepository): void
     {
-        $campaign = Campaign::with('template')->find($this->campaignId);
+        $campaign = Campaign::with(['template', 'waPhoneNumber'])->find($this->campaignId);
 
         if (!$campaign || $campaign->status !== 'running') {
             Log::info("Campaign {$this->campaignId} is not running — job skipped.");
             return;
         }
 
-        $company = $campaign->company;
+        $credentials = $this->resolveCredentials($campaign);
 
-        if (!$company->wa_phone_id || !$company->wa_access_token) {
+        if (!$credentials) {
             Log::error("Campaign {$this->campaignId}: WA credentials missing.");
             $campaignRepository->updateStatus($campaign, 'failed');
             return;
         }
 
-        $token    = decrypt($company->wa_access_token);
-        $phoneId  = $company->wa_phone_id;
+        [$token, $phoneId] = $credentials;
         $throttle = $campaign->throttle_per_minute;
         $batchSize= min($throttle, 50); // process up to 50 per tick
         $sent     = 0;
@@ -110,6 +109,29 @@ class ProcessCampaignBatch implements ShouldQueue
                     ->delay(now()->addSeconds(60)); // next batch after 1 min
             }
         }
+    }
+
+    /**
+     * A campaign created with a specific WA Cloud number (multi-number companies)
+     * sends from that number's own credentials; a campaign with none set (or an
+     * older company still on the single-number setup) falls back to the company's
+     * legacy wa_phone_id/wa_access_token, exactly as this job always used to behave.
+     *
+     * @return array{0:string,1:string}|null [token, phoneId], or null if neither source has credentials
+     */
+    private function resolveCredentials(Campaign $campaign): ?array
+    {
+        $number = $campaign->waPhoneNumber;
+        if ($number && $number->is_active && $number->access_token && $number->phone_number_id) {
+            return [$number->decrypted_token, $number->phone_number_id];
+        }
+
+        $company = $campaign->company;
+        if ($company->wa_phone_id && $company->wa_access_token) {
+            return [decrypt($company->wa_access_token), $company->wa_phone_id];
+        }
+
+        return null;
     }
 
     // ─── Build WhatsApp API payload ───────────────────────────────────────────

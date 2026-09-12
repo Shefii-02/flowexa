@@ -16,6 +16,7 @@ class CreateCampaignRequest extends FormRequest
             'name'                => ['required', 'string', 'max:150'],
             'description'         => ['nullable', 'string', 'max:500'],
             'template_id'         => ['required', 'integer', 'exists:wa_templates,id'],
+            'wa_phone_number_id'  => ['nullable', 'integer', 'exists:wa_phone_numbers,id'],
             'template_variables'  => ['nullable', 'array'],
             'target_type'         => ['required', 'in:csv,labels,all'],
             'target_labels'       => ['required_if:target_type,labels', 'array'],

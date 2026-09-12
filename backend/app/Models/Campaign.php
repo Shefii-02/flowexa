@@ -15,17 +15,27 @@ class Campaign extends Model
     use SoftDeletes;
 
     protected $fillable = [
-        'company_id', 'created_by', 'template_id', 'name', 'description',
+        'company_id', 'created_by', 'template_id',
+        // wa_phone_number_id was a real column CreateCampaignDTO/CampaignRepository
+        // already tried to set on every create() — missing from $fillable meant
+        // Eloquent silently dropped it every time, so no campaign ever actually
+        // recorded which WA Cloud number it should send from (see also
+        // ProcessCampaignBatch, which never even read the column and always sent
+        // through the company's single legacy wa_phone_id/wa_access_token instead).
+        'wa_phone_number_id',
+        'name', 'description',
         'template_variables', 'target_type', 'target_labels', 'csv_file',
-        'throttle_per_minute', 'status', 'total_contacts', 'sent',
+        'throttle_per_minute', 'max_contacts_override', 'status', 'total_contacts', 'sent',
         'delivered', 'read', 'failed', 'pending', 'wallet_debited',
-        'scheduled_at', 'started_at', 'completed_at',
+        'scheduled_at', 'starts_at', 'ends_at', 'source_tracking_id', 'started_at', 'completed_at',
     ];
 
     protected $casts = [
         'template_variables' => 'array',
         'target_labels'      => 'array',
         'scheduled_at'       => 'datetime',
+        'starts_at'          => 'datetime',
+        'ends_at'            => 'datetime',
         'started_at'         => 'datetime',
         'completed_at'       => 'datetime',
     ];
@@ -34,6 +44,7 @@ class Campaign extends Model
     public function company(): BelongsTo    { return $this->belongsTo(Company::class); }
     public function creator(): BelongsTo    { return $this->belongsTo(User::class, 'created_by'); }
     public function template(): BelongsTo   { return $this->belongsTo(WaTemplate::class, 'template_id'); }
+    public function waPhoneNumber(): BelongsTo { return $this->belongsTo(WaPhoneNumber::class, 'wa_phone_number_id'); }
     public function contacts(): HasMany     { return $this->hasMany(CampaignContact::class); }
 
     // ── Scopes ────────────────────────────────────────────────────────────────

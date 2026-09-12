@@ -337,6 +337,13 @@ Route::prefix('v1')->group(function () {
             Route::get('messages',  [AnalyticsController::class, 'messages'])->name('messages');
         });
 
+        // NB: create/edit/delete/launch below all gate on 'campaigns.manage' — they used
+        // to reference 'campaigns.create'/'campaigns.edit'/'campaigns.delete'/'campaigns.launch',
+        // none of which were ever real Permission rows (same legacy-seeder leftover pattern
+        // as the old 'staff.create'/'staff.edit'/'staff.delete'). Owner/admin still worked by
+        // accident via a stale JSON leftover; team_lead — seeded fresh from the real catalogue
+        // — has never actually been able to create, edit, delete, or launch a campaign despite
+        // holding 'campaigns.manage', because that's not the key these routes checked.
         Route::prefix('campaigns')->name('campaigns.')->group(function () {
 
             Route::middleware('permission:campaigns.view')->group(function () {
@@ -347,15 +354,15 @@ Route::prefix('v1')->group(function () {
             });
 
             Route::post('/', [CampaignController::class, 'store'])
-                ->middleware('permission:campaigns.create')->name('store');
+                ->middleware('permission:campaigns.manage')->name('store');
 
             Route::put('/{campaign}', [CampaignController::class, 'update'])
-                ->middleware('permission:campaigns.edit')->name('update');
+                ->middleware('permission:campaigns.manage')->name('update');
 
             Route::delete('/{campaign}', [CampaignController::class, 'destroy'])
-                ->middleware('permission:campaigns.delete')->name('destroy');
+                ->middleware('permission:campaigns.manage')->name('destroy');
 
-            Route::middleware('permission:campaigns.launch')->group(function () {
+            Route::middleware('permission:campaigns.manage')->group(function () {
                 Route::post('/{campaign}/launch',       [CampaignController::class, 'launch'])->name('launch');
                 Route::post('/{campaign}/pause',        [CampaignController::class, 'pause'])->name('pause');
                 Route::post('/{campaign}/resume',       [CampaignController::class, 'resume'])->name('resume');

@@ -13,9 +13,9 @@ use Illuminate\Support\Collection;
 
 interface CampaignRepositoryInterface
 {
-    public function paginate(int $companyId, CampaignFilterDTO $filter): LengthAwarePaginator;
+    public function paginate(int $companyId, CampaignFilterDTO $filter, ?array $allowedNumberIds = null): LengthAwarePaginator;
 
-    public function findById(int $id, int $companyId): ?Campaign;
+    public function findById(int $id, int $companyId, ?array $allowedNumberIds = null): ?Campaign;
 
     public function create(int $companyId, int $userId, CreateCampaignDTO $dto): Campaign;
 

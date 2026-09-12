@@ -24,13 +24,17 @@ class CampaignController extends Controller
 
     public function index(CampaignFilterRequest $request): JsonResponse
     {
-        $paginator = $this->campaignService->list(auth()->user()->company_id, CampaignFilterDTO::fromRequest($request->validated()));
+        $paginator = $this->campaignService->list(
+            auth()->user()->company_id,
+            CampaignFilterDTO::fromRequest($request->validated()),
+            auth()->user()->allowedAccountIds('phone_number')
+        );
         return (new CampaignCollection($paginator))->response();
     }
 
     public function show(int $campaign): JsonResponse
     {
-        $c = $this->campaignService->show($campaign, auth()->user()->company_id);
+        $c = $this->campaignService->show($campaign, auth()->user()->company_id, auth()->user()->allowedAccountIds('phone_number'));
         return response()->json(['campaign' => new CampaignResource($c)]);
     }
 

@@ -27,15 +27,15 @@ class CampaignService
     ) {}
 
     // ─── List ─────────────────────────────────────────────────────────────────
-    public function list(int $companyId, CampaignFilterDTO $filter): LengthAwarePaginator
+    public function list(int $companyId, CampaignFilterDTO $filter, ?array $allowedNumberIds = null): LengthAwarePaginator
     {
-        return $this->campaignRepository->paginate($companyId, $filter);
+        return $this->campaignRepository->paginate($companyId, $filter, $allowedNumberIds);
     }
 
     // ─── Show ─────────────────────────────────────────────────────────────────
-    public function show(int $id, int $companyId): Campaign
+    public function show(int $id, int $companyId, ?array $allowedNumberIds = null): Campaign
     {
-        $campaign = $this->campaignRepository->findById($id, $companyId);
+        $campaign = $this->campaignRepository->findById($id, $companyId, $allowedNumberIds);
         if (!$campaign) throw CampaignException::notFound();
         return $campaign;
     }

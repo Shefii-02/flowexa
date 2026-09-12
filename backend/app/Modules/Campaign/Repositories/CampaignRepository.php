@@ -17,21 +17,33 @@ use Illuminate\Support\Facades\Storage;
 class CampaignRepository implements CampaignRepositoryInterface
 {
     // ─── Paginate campaigns ───────────────────────────────────────────────────
-    public function paginate(int $companyId, CampaignFilterDTO $filter): LengthAwarePaginator
+    /**
+     * @param array<int>|null $allowedNumberIds Restricts to campaigns on these WA Cloud
+     *   numbers, plus any campaign with no number attached. Null = unrestricted — see
+     *   User::allowedAccountIds('phone_number').
+     */
+    public function paginate(int $companyId, CampaignFilterDTO $filter, ?array $allowedNumberIds = null): LengthAwarePaginator
     {
         return Campaign::with(['creator:id,name,email', 'template:id,name,category'])
             ->where('company_id', $companyId)
+            ->when($allowedNumberIds !== null, fn ($q) => $q->where(
+                fn ($qq) => $qq->whereNull('wa_phone_number_id')->orWhereIn('wa_phone_number_id', $allowedNumberIds)
+            ))
             ->when($filter->status, fn($q) => $q->where('status', $filter->status))
             ->latest()
             ->paginate($filter->perPage, ['*'], 'page', $filter->page);
     }
 
     // ─── Find by ID ───────────────────────────────────────────────────────────
-    public function findById(int $id, int $companyId): ?Campaign
+    /** @param array<int>|null $allowedNumberIds see paginate() */
+    public function findById(int $id, int $companyId, ?array $allowedNumberIds = null): ?Campaign
     {
         return Campaign::with(['creator:id,name,email', 'template'])
             ->where('id', $id)
             ->where('company_id', $companyId)
+            ->when($allowedNumberIds !== null, fn ($q) => $q->where(
+                fn ($qq) => $qq->whereNull('wa_phone_number_id')->orWhereIn('wa_phone_number_id', $allowedNumberIds)
+            ))
             ->first();
     }
 
