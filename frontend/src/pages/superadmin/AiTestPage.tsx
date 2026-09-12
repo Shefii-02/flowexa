@@ -11,7 +11,7 @@ import toast from 'react-hot-toast'
 type Turn = {
   query: string
   response?: string
-  status?: 'answered' | 'fallback'
+  status?: 'answered' | 'fallback' | 'no_rag'
   language?: string
   intent?: string
   confidence?: number
@@ -28,6 +28,7 @@ export default function AiTestPage() {
   const [settings, setSettings] = useState<any>(null)
   const [settingsLoading, setSettingsLoading] = useState(false)
 
+  const [useRag, setUseRag] = useState(true)
   const [forceOverride, setForceOverride] = useState(false)
   const [forceProvider, setForceProvider] = useState('anthropic')
   const [forceModel, setForceModel] = useState('')
@@ -67,7 +68,7 @@ export default function AiTestPage() {
         aiConfig.api_key = forceApiKey || undefined
       }
 
-      const { data } = await superadminApi.aiTest({ company_id: companyId, query: thisQuery, ai_config: aiConfig })
+      const { data } = await superadminApi.aiTest({ company_id: companyId, query: thisQuery, ai_config: aiConfig, use_rag: useRag })
       setTurns((prev) => [{
         query: thisQuery,
         response: data.response,
@@ -130,6 +131,18 @@ export default function AiTestPage() {
           )}
 
           <div className="card">
+            <div className="card-header"><h3 className="card-title">Knowledge base</h3></div>
+            <div className="card-body">
+              <button
+                onClick={() => setUseRag((v) => !v)}
+                className={`w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border text-sm font-medium transition-colors ${useRag ? 'bg-green-50 border-green-200 text-green-700' : 'bg-gray-100 border-gray-200 text-gray-600'}`}
+              >
+                {useRag ? '✅ With RAG (stored knowledge base)' : '⬜ Without RAG (raw model, no grounding)'}
+              </button>
+            </div>
+          </div>
+
+          <div className="card">
             <div className="card-header">
               <h3 className="card-title">Force a provider</h3>
               <label className="flex items-center gap-1.5 text-xs text-gray-500">
@@ -174,7 +187,7 @@ export default function AiTestPage() {
               <div className="card-body space-y-2">
                 <div className="flex items-center justify-between">
                   <p className="text-xs text-gray-400">{new Date(t.at).toLocaleTimeString()}</p>
-                  {t.status && <Badge variant={t.status === 'answered' ? 'green' : 'yellow'}>{t.status}</Badge>}
+                  {t.status && <Badge variant={t.status === 'answered' ? 'green' : t.status === 'no_rag' ? 'purple' : 'yellow'}>{t.status === 'no_rag' ? 'no RAG' : t.status}</Badge>}
                   {t.error && <Badge variant="red">error</Badge>}
                 </div>
                 <p className="text-sm font-medium text-gray-900">{t.query}</p>

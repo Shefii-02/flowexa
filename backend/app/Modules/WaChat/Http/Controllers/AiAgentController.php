@@ -28,16 +28,27 @@ class AiAgentController extends Controller
             'contact_phone'  => 'required|string',
             'session_id'     => 'required|string',
             'ai_config'      => 'nullable|array',
+            'use_rag'        => 'nullable|boolean',
         ]);
 
         $companyId = Auth::user()->company_id;
 
         $result = $this->rag->answer(
-            query:         $request->query,
+            // request->query is Symfony's own $query property (the URL query-string bag), NOT
+            // Laravel's dynamic input accessor — it silently shadows the 'query' field entirely
+            // and previously threw a TypeError on every single call (an InputBag where the
+            // strictly-typed `string $query` parameter expects a string). ->input('query')
+            // reads the validated field the same way contact_phone/session_id already do.
+            query:         $request->input('query'),
             contactPhone:  $request->contact_phone,
             wahaSessionId: $request->session_id,
             companyId:     $companyId,
             aiConfig:      $request->input('ai_config', []),
+            // /wa-agent/ask has no real caller besides this dashboard's own test chat (real
+            // inbound messages go through ConversationalAgentService/RagOrchestrator directly) —
+            // always test-mode, so repeated testing never creates a fake Contact/Lead/session.
+            isTest:        true,
+            useRag:        $request->boolean('use_rag', true),
         );
 
         return response()->json($result);
@@ -52,6 +63,8 @@ class AiAgentController extends Controller
             'contact_phone' => 'required|string',
             'session_id'    => 'required|string',
             'response_mode' => 'nullable|string|in:text,voice,document,video',
+            'use_rag'       => 'nullable|boolean',
+            'ai_config'     => 'nullable|string', // JSON-encoded (multipart form can't nest arrays)
         ]);
 
         $company = Company::find(Auth::user()->company_id) ?? new Company();
@@ -64,12 +77,16 @@ class AiAgentController extends Controller
             ], 422);
         }
 
+        $forcedConfig = json_decode((string) $request->input('ai_config', '{}'), true) ?: [];
+
         $result = $this->rag->answer(
             query:         $transcript,
             contactPhone:  $request->contact_phone,
             wahaSessionId: $request->session_id,
             companyId:     $company->id,
-            aiConfig:      ['response_mode' => $request->input('response_mode', 'text')],
+            aiConfig:      array_merge(['response_mode' => $request->input('response_mode', 'text')], $forcedConfig),
+            isTest:        true,
+            useRag:        $request->boolean('use_rag', true),
         );
 
         return response()->json(array_merge($result, ['transcript' => $transcript]));

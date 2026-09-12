@@ -40,7 +40,7 @@ type ChatMessage = {
   docUrl?: string
   docFilename?: string
   videoUrl?: string
-  meta?: { confidence?: number | string; language?: string; status?: string }
+  meta?: { confidence?: number | string; language?: string; status?: string; usedRag?: boolean }
 }
 
 // ── Utilities ──────────────────────────────────────────────────────────────────
@@ -262,6 +262,15 @@ function LiveChatDrawer({ open, onClose, waSessions, companyName }: {
   const [input, setInput]               = useState('')
   const [history, setHistory]           = useState<ChatMessage[]>([])
   const [thinking, setThinking]         = useState(false)
+  // With/without RAG + which stored key to test against (empty = company default)
+  const [useRag, setUseRag]             = useState(true)
+  const [providerGroups, setProviderGroups] = useState<ProviderGroup[]>([])
+  const [forceProvider, setForceProvider]   = useState('')
+  const [forceModel, setForceModel]         = useState('')
+
+  useEffect(() => {
+    api.get('/wa-agent/available-models').then(r => setProviderGroups(r.data)).catch(() => {})
+  }, [])
   // recording
   const [recording, setRecording]       = useState(false)
   const [recordSecs, setRecordSecs]     = useState(0)
@@ -289,14 +298,16 @@ function LiveChatDrawer({ open, onClose, waSessions, companyName }: {
     setHistory(h => [...h, userMsg])
     setThinking(true)
     try {
+      const ai_config = forceProvider ? { provider: forceProvider, model: forceModel || undefined } : undefined
       const res = await api.post('/wa-agent/ask', {
         query: q, contact_phone: phone, session_id: sessionId, response_mode: responseMode,
+        use_rag: useRag, ai_config,
       })
       appendAgentResponse(res.data)
     } catch {
       appendError()
     } finally { setThinking(false) }
-  }, [input, sessionId, phone, responseMode, thinking])
+  }, [input, sessionId, phone, responseMode, thinking, useRag, forceProvider, forceModel])
 
   // ── voice recording ────────────────────────────────────────────────────────
 
@@ -346,6 +357,10 @@ function LiveChatDrawer({ open, onClose, waSessions, companyName }: {
       form.append('contact_phone', phone)
       form.append('session_id', sessionId)
       form.append('response_mode', responseMode)
+      form.append('use_rag', String(useRag))
+      if (forceProvider) {
+        form.append('ai_config', JSON.stringify({ provider: forceProvider, model: forceModel || undefined }))
+      }
       const res = await api.post('/wa-agent/voice-test', form)
       const d = res.data
       // update voice msg with transcript
@@ -377,6 +392,7 @@ function LiveChatDrawer({ open, onClose, waSessions, companyName }: {
         confidence: d.confidence as number | string | undefined,
         language:   d.language   as string | undefined,
         status:     d.status     as string | undefined,
+        usedRag:    d.used_rag   as boolean | undefined,
       },
     }])
   }
@@ -448,6 +464,46 @@ function LiveChatDrawer({ open, onClose, waSessions, companyName }: {
               <ChevronDown size={13} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
             </div>
           </div>
+
+          {/* RAG toggle + provider override */}
+          <div className="flex gap-3">
+            <div className="flex-1">
+              <label className="text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-1 block">Knowledge base</label>
+              <button
+                onClick={() => setUseRag(v => !v)}
+                className={`w-full flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-medium transition-colors ${
+                  useRag ? 'bg-green-50 border-green-200 text-green-700' : 'bg-gray-100 border-gray-200 text-gray-600'
+                }`}
+              >
+                {useRag ? '✅ With RAG' : '⬜ Without RAG (raw model)'}
+              </button>
+            </div>
+            <div className="flex-1">
+              <label className="text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-1 block">AI key to test</label>
+              <select
+                value={forceProvider}
+                onChange={e => { setForceProvider(e.target.value); setForceModel('') }}
+                className="w-full px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400"
+              >
+                <option value="">Company default</option>
+                {providerGroups.filter(g => g.has_key).map(g => (
+                  <option key={g.provider} value={g.provider}>{g.provider} ({g.active_key_hint})</option>
+                ))}
+              </select>
+            </div>
+          </div>
+          {forceProvider && (
+            <select
+              value={forceModel}
+              onChange={e => setForceModel(e.target.value)}
+              className="w-full px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400"
+            >
+              <option value="">Default model for {forceProvider}</option>
+              {providerGroups.find(g => g.provider === forceProvider)?.models.map(m => (
+                <option key={m.id} value={m.id}>{m.label}</option>
+              ))}
+            </select>
+          )}
 
           <div className="flex gap-3">
             {/* Phone */}
@@ -550,6 +606,15 @@ function LiveChatDrawer({ open, onClose, waSessions, companyName }: {
                       {msg.meta.language && (
                         <span className="text-[10px] bg-blue-50 text-blue-600 px-1.5 py-px rounded-full border border-blue-100">
                           {msg.meta.language}
+                        </span>
+                      )}
+                      {msg.meta.status && (
+                        <span className={`text-[10px] px-1.5 py-px rounded-full border ${
+                          msg.meta.status === 'answered' ? 'bg-green-50 text-green-600 border-green-100' :
+                          msg.meta.status === 'no_rag' ? 'bg-purple-50 text-purple-600 border-purple-100' :
+                          'bg-yellow-50 text-yellow-700 border-yellow-100'
+                        }`}>
+                          {msg.meta.status === 'no_rag' ? 'no RAG' : msg.meta.status}
                         </span>
                       )}
                     </div>

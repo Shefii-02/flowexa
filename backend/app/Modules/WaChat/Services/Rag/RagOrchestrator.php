@@ -20,10 +20,14 @@ class RagOrchestrator
     ) {}
 
     /**
-     * @param bool $isTest When true (superadmin AI test tool), this call leaves no trace in the
-     *   company's own data: no Contact/Lead is created, and the scratch AiAgentSession used to
-     *   carry conversation history through this one call is deleted again before returning —
-     *   so a superadmin probing a company's AI setup never pollutes their real CRM/session list.
+     * @param bool $isTest When true (superadmin/dashboard AI test tools), this call leaves no
+     *   trace in the company's own data: no Contact/Lead is created, and the scratch
+     *   AiAgentSession used to carry conversation history through this one call is deleted
+     *   again before returning — so testing a company's AI setup never pollutes its real
+     *   CRM/session list.
+     * @param bool $useRag When false, skips knowledge-base retrieval entirely and asks the
+     *   model directly with no grounding context — lets a test show what the raw model says
+     *   on its own vs. what it says once the company's stored knowledge base is applied.
      */
     public function answer(
         string $query,
@@ -31,7 +35,8 @@ class RagOrchestrator
         string $wahaSessionId,
         int    $companyId,
         array  $aiConfig = [],
-        bool   $isTest = false
+        bool   $isTest = false,
+        bool   $useRag = true
     ): array {
         // 1. Detect language
         $language = $this->languageDetector->detect($query);
@@ -66,28 +71,39 @@ class RagOrchestrator
 
         $history = $agentSession->conversation_history ?? [];
 
-        // 4. Plan: decompose query into sub-queries
-        $subQueries = $this->planner->decompose($query);
-        $intent     = $this->planner->classifyIntent($query);
-
-        // 5. Retrieve evidence
-        $evidence = $this->collector->collect($subQueries, $companyId);
-        $context  = $this->collector->buildContext($evidence);
-
-        // 6. Verify relevance
-        $isRelevant = $this->verifier->verify($evidence, $query);
-        $confidence = $this->verifier->confidenceScore($evidence, $query);
-
         // Load Company model for key resolution (single query, cached by Eloquent)
         $company = Company::find($companyId) ?? new Company();
 
-        // 7. Generate response
-        if ($isRelevant) {
-            $response = $this->generator->generate($query, $context, $language, $history, $aiConfig, $company);
-            $status   = 'answered';
+        $intent = $this->planner->classifyIntent($query);
+
+        if ($useRag) {
+            // 4. Plan: decompose query into sub-queries
+            $subQueries = $this->planner->decompose($query);
+
+            // 5. Retrieve evidence
+            $evidence = $this->collector->collect($subQueries, $companyId);
+            $context  = $this->collector->buildContext($evidence);
+
+            // 6. Verify relevance
+            $isRelevant = $this->verifier->verify($evidence, $query);
+            $confidence = $this->verifier->confidenceScore($evidence, $query);
+
+            // 7. Generate response
+            if ($isRelevant) {
+                $response = $this->generator->generate($query, $context, $language, $history, $aiConfig, $company);
+                $status   = 'answered';
+            } else {
+                $response = $this->noAnswerResponse($language, $aiConfig);
+                $status   = 'fallback';
+            }
+            $evidenceCount = count($evidence);
         } else {
-            $response = $this->noAnswerResponse($language, $aiConfig);
-            $status   = 'fallback';
+            // Raw model call, no knowledge-base grounding at all — always "answers" since
+            // there's no relevance gate to fail.
+            $response      = $this->generator->generate($query, '', $language, $history, $aiConfig, $company);
+            $status        = 'no_rag';
+            $confidence    = 0.0;
+            $evidenceCount = 0;
         }
 
         // 8. Update conversation history
@@ -113,12 +129,13 @@ class RagOrchestrator
         }
 
         return [
-            'response'   => $response,
-            'language'   => $language,
-            'intent'     => $intent,
-            'confidence' => round($confidence, 3),
-            'status'     => $status,
-            'evidence_count' => count($evidence),
+            'response'       => $response,
+            'language'       => $language,
+            'intent'         => $intent,
+            'confidence'     => round($confidence, 3),
+            'status'         => $status,
+            'evidence_count' => $evidenceCount,
+            'used_rag'       => $useRag,
         ];
     }
 

@@ -174,232 +174,231 @@ export default function App() {
     <Provider store={store}>
       <BrowserRouter>
         <ErrorBoundary>
-        <Routes>
-          {/* Public routes */}
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="/register" element={<RegisterPage />} />
-          <Route path="/forgot-password" element={<ForgotPassword />} />
-          <Route path="/reset-password" element={<ResetPassword />} />
+          <Routes>
+            {/* Public routes */}
+            <Route path="/login" element={<LoginPage />} />
+            <Route path="/register" element={<RegisterPage />} />
+            <Route path="/forgot-password" element={<ForgotPassword />} />
+            <Route path="/reset-password" element={<ResetPassword />} />
 
-          {/* Protected routes — inside dashboard layout */}
-          <Route
-            path="/"
-            element={
-              <ProtectedRoute>
-                <DashboardLayout />
-              </ProtectedRoute>
-            }
-          >
-            <Route index element={<RoleBasedRedirect />} />
+            {/* Protected routes — inside dashboard layout */}
+            <Route
+              path="/"
+              element={
+                <ProtectedRoute>
+                  <DashboardLayout />
+                </ProtectedRoute>
+              }
+            >
+              <Route index element={<RoleBasedRedirect />} />
 
-            {/* Main app */}
-            <Route path="dashboard" element={<DashboardRouter />} />
+              {/* Main app */}
+              <Route path="dashboard" element={<DashboardRouter />} />
 
-            {/* WA Chat module (embedded WAHA dashboard → unichatwa.univexa.in) */}
-            <Route path="wa-chat" element={<WaChatShell />}>
-              <Route index element={<Navigate to="dashboard" replace />} />
-              <Route path="dashboard" element={<WaChatDashboard />} />
-              <Route path="analytics" element={<WaChatAnalytics />} />
-              <Route path="sessions" element={<WaChatSessions />} />
-              <Route path="chats" element={<WaChatChats />} />
-              <Route path="message-sender" element={<MessageSender />} />
-              <Route path="plugins" element={<WaChatPlugins />} />
-              <Route path="webhooks" element={<WaChatWebhooks />} />
-              <Route path="templates" element={<WaChatTemplatesPage />} />
-              <Route path="logs" element={<WaChatLogs />} />
-              <Route path="otp-service" element={<WaOtpServicePage />} />
-              <Route path="api-services" element={<WaOtpServicePage />} />
-              <Route path="export" element={<WaDataExportPage />} />
-              <Route path="media-library" element={<WaMediaLibraryPage />} />
-              <Route path="api-keys" element={<RequireWaAdmin><WaChatApiKeys /></RequireWaAdmin>} />
-              <Route path="automation" element={<WaAutomationPage />} />
-              <Route path="groups" element={<WaGroupsPage />} />
+              {/* WA Chat module (embedded WAHA dashboard → unichatwa.univexa.in) */}
+              <Route path="wa-chat" element={<WaChatShell />}>
+                <Route index element={<Navigate to="dashboard" replace />} />
+                <Route path="dashboard" element={<WaChatDashboard />} />
+                <Route path="analytics" element={<WaChatAnalytics />} />
+                <Route path="sessions" element={<WaChatSessions />} />
+                <Route path="chats" element={<WaChatChats />} />
+                <Route path="message-sender" element={<MessageSender />} />
+                <Route path="plugins" element={<WaChatPlugins />} />
+                <Route path="webhooks" element={<WaChatWebhooks />} />
+                <Route path="templates" element={<WaChatTemplatesPage />} />
+                <Route path="logs" element={<WaChatLogs />} />
+                <Route path="otp-service" element={<WaOtpServicePage />} />
+                <Route path="api-services" element={<WaOtpServicePage />} />
+                <Route path="export" element={<WaDataExportPage />} />
+                <Route path="media-library" element={<WaMediaLibraryPage />} />
+                <Route path="api-keys" element={<RequireWaAdmin><WaChatApiKeys /></RequireWaAdmin>} />
+                <Route path="automation" element={<WaAutomationPage />} />
+                <Route path="groups" element={<WaGroupsPage />} />
+              </Route>
+
+              <Route path="catalog" element={<CatalogPage />} />
+              <Route path="website-widget" element={<WidgetPage />} />
+              {/* WA Agent module */}
+              <Route path="wa-agent" element={<WaAgentShell />}>
+
+                <Route index element={<Navigate to="automations" replace />} />
+                <Route path="automations" element={<WaAgentAutomations />} />
+                <Route path="automation" element={<Navigate to="/wa-agent/automations" replace />} />
+                <Route path="knowledge-base" element={<WaAgentKnowledgeBase />} />
+                <Route path="pipelines" element={<WaAgentPipelines />} />
+                <Route path="ai-agent" element={<WaAgentAiAgent />} />
+                <Route path="playbook" element={<WaAgentPlaybookPage />} />
+                <Route path="lead-intelligence" element={<LeadIntelligencePage />} />
+                <Route path="meta-ai" element={<MetaAiConfigPage />} />
+                <Route path="logs" element={<WaAgentLogs />} />
+                <Route path="settings" element={<WaAgentSettingsPage />} />
+              </Route>
+
+              <Route path="setup-guide" element={<SetupGuidePage />} />
+              <Route path="staff/index" element={<StaffPage />} />
+              <Route path="staff/roles" element={<RolesPage />} />
+              <Route path="staff/account-access" element={<StaffAccountAccessPage />} />
+              <Route path="contacts" element={<ContactsPage />} />
+              <Route path="labels" element={<LabelsPage />} />
+              {/* <Route path="flow" element={<FlowPage />} /> */}
+              <Route path="/flow-builders" element={<FlowBuildersPage />} />
+              <Route path="/flow" element={<FlowNodesPage />} />
+
+              <Route path="leads" element={<LeadsPage />} />
+              <Route path="leads/by-staff" element={<LeadsByStaffPage />} />
+              <Route path="leads/logs" element={<LeadLogsPage />} />
+              <Route path="leads/staff/:staffId" element={<StaffLeadsPage />} />
+              <Route path="leads/:id" element={<LeadDetailPage />} />
+              <Route path="leads/summary" element={<LeadsSummaryPage />} />
+              <Route path="leads/report" element={<LeadsReportPage />} />
+              <Route path="leads/assignments" element={<AssignmentPage />} />
+              <Route path="leads/staff-availability" element={<Navigate to="/leads/assignment-rules" replace />} />
+              <Route path="leads/assignment-rules" element={<AssignmentRulesPage />} />
+              <Route path="wallet" element={<WalletPage />} />
+              <Route path="analytics" element={<AnalyticsPage />} />
+              <Route path="settings/index" element={<SettingsPage />} />
+              <Route path="settings/integrations" element={<IntegrationsPage />} />
+              <Route path="settings/api-keys" element={<Navigate to="/wa-agent/settings" replace />} />
+
+              {/* V2 routes */}
+              <Route path="wa-cloud/phone-numbers" element={<PhoneNumbersPage />} />
+              <Route path="templates" element={<TemplatesPage />} />
+              <Route path="templates/:id" element={<TemplateDetailPage />} />
+              <Route path="plan-purchase" element={<PlanPurchasePage />} />
+              <Route path="blacklist" element={<BlacklistPage />} />
+              <Route path="leads/categories" element={<LeadCategoriesPage />} />
+
+              {/* Advanced CRM */}
+              <Route path="crm/deals" element={<DealsPage />} />
+              <Route path="crm/tasks" element={<CrmTasksPage />} />
+              <Route path="crm/segments" element={<SegmentsPage />} />
+
+              {/* HR */}
+              <Route path="hr/attendance" element={<AttendancePage />} />
+              <Route path="hr/admin" element={<Navigate to="/hr/admin/attendance" replace />} />
+              <Route path="hr/admin/attendance" element={<HrAttendanceAdminPage />} />
+              <Route path="hr/admin/payroll" element={<HrPayrollPage />} />
+              <Route path="hr/admin/sales" element={<HrSalesPage />} />
+              <Route path="hr/admin/incentives" element={<HrIncentivesPage />} />
+              <Route path="hr/admin/leave" element={<HrLeaveRequestsPage />} />
+              <Route path="hr/admin/break-types" element={<HrBreakTypesPage />} />
+              <Route path="hr/admin/leave-types" element={<HrLeaveTypesPage />} />
+              <Route path="hr/admin/staff-setup" element={<HrStaffSetupPage />} />
+              <Route path="hr/admin/office" element={<HrOfficeDetailsPage />} />
+
+              {/* WA Cloud routes */}
+              <Route path="wa-cloud/dashboard" element={<WaCloudDashboardPage />} />
+              <Route path="wa-cloud/templates" element={<TemplatesPage />} />
+              <Route path="wa-cloud/api-service" element={<WaCloudOtpPage />} />
+              <Route path="wa-cloud/otp-service" element={<Navigate to="/wa-cloud/api-service" replace />} />
+              <Route path="wa-cloud/otp-services" element={<Navigate to="/wa-cloud/api-service" replace />} />
+              <Route path="wa-cloud/settings" element={<WaCloudSettingsPage />} />
+              <Route path="wa-cloud/automations" element={<WaCloudAutomationsPage />} />
+              <Route path="wa-cloud/inbox" element={<InboxPage />} />
+              <Route path="wa-cloud/analytics" element={<WaCloudInboxAnalytics />} />
+              <Route path="wa-cloud/inbox-analytics" element={<Navigate to="/wa-cloud/analytics" replace />} />
+              <Route path="wa-cloud/phone-numbers" element={<PhoneNumbersPage />} />
+              <Route path="wa-chat/automations" element={<WaChatAutomationsPage />} />
+              <Route path="wa-cloud/audit-log" element={<WaCloudAuditLogPage />} />
+              <Route path="/wa-cloud/campaigns" element={<CampaignsPage />} />
+              <Route path="/wa-cloud/survey-forms" element={<SurveyFormsPage />} />
+              <Route path="/wa-cloud/otp" element={<OtpPage />} />
+              <Route path="/wa-cloud/message-logs" element={<MessageLogsPage lockChannel="meta" />} />
+              <Route path='/wa-cloud/inbox' element={<InboxPage />} />
+
+
+              {/* Meta Ads Manager */}
+              <Route path="meta-ads" element={<Navigate to="/meta-ads/campaigns" replace />} />
+              <Route path="meta-ads/accounts" element={<AdAccountPage />} />
+              <Route path="meta-ads/campaigns" element={<MetaCampaignsPage />} />
+              <Route path="meta-ads/campaigns/:campaignId" element={<AdSetPage />} />
+              <Route path="meta-ads/audiences" element={<AudienceSetsPage />} />
+              <Route path="meta-ads/lead-ads" element={<LeadAdsPage />} />
+              <Route path="meta-ads/creatives" element={<CreativeStudioPage />} />
+              <Route path="meta-ads/media" element={<MediaLibraryPage />} />
+              <Route path="meta-ads/insights" element={<AdsInsightsDashboard />} />
+
+              <Route path="instagram" element={<Navigate to="/instagram/accounts" replace />} />
+              <Route path="instagram/accounts" element={<InstagramAccountsPage />} />
+              <Route path="instagram/automations" element={<InstagramAutomationsPage />} />
+              <Route path="instagram/inbox" element={<InstagramInboxPage />} />
+              <Route path="instagram/comments" element={<InstagramCommentsPage />} />
+              <Route path="instagram/insights" element={<InstagramInsightsPage />} />
+
+              {/* SuperAdmin — each route redirects non-superadmins to /dashboard */}
+              <Route
+                path="superadmin"
+                element={<SuperAdminRoute><SuperAdminStats /></SuperAdminRoute>}
+              />
+              <Route
+                path="superadmin/companies"
+                element={<SuperAdminRoute><SuperAdminCompanies /></SuperAdminRoute>}
+              />
+              <Route
+                path="superadmin/plans"
+                element={<SuperAdminRoute><SuperAdminPlans /></SuperAdminRoute>}
+              />
+              <Route
+                path="superadmin/stats"
+                element={<SuperAdminRoute><SuperAdminStats /></SuperAdminRoute>}
+              />
+              <Route
+                path="superadmin/billing"
+                element={<SuperAdminRoute><SuperAdminBilling /></SuperAdminRoute>}
+              />
+              <Route
+                path="superadmin/staff"
+                element={<SuperAdminRoute><SuperAdminStaffPage /></SuperAdminRoute>}
+              />
+              <Route
+                path="superadmin/permissions"
+                element={<SuperAdminRoute><PermissionsEditorPage /></SuperAdminRoute>}
+              />
+              <Route
+                path="superadmin/companies/:id/permissions"
+                element={<SuperAdminRoute><CompanyPermissionsPage /></SuperAdminRoute>}
+              />
+              <Route
+                path="superadmin/companies/:id"
+                element={<SuperAdminRoute><CompanyDetailPage /></SuperAdminRoute>}
+              />
+              <Route
+                path="superadmin/topup"
+                element={<SuperAdminRoute><TopupPackagesPage /></SuperAdminRoute>}
+              />
+              <Route
+                path="superadmin/prebuilt-templates"
+                element={<SuperAdminRoute><PrebuiltTemplatesPage /></SuperAdminRoute>}
+              />
+              <Route
+                path="superadmin/reports"
+                element={<SuperAdminRoute><ReportsPage /></SuperAdminRoute>}
+              />
+              <Route
+                path="superadmin/api-logs"
+                element={<SuperAdminRoute><ApiLogsPage /></SuperAdminRoute>}
+              />
+              <Route
+                path="superadmin/errors"
+                element={<SuperAdminRoute><ErrorLogsPage /></SuperAdminRoute>}
+              />
+              <Route
+                path="superadmin/system-log"
+                element={<SuperAdminRoute><SystemLogPage /></SuperAdminRoute>}
+              />
+              <Route
+                path="superadmin/ai-test"
+                element={<SuperAdminRoute><AiTestPage /></SuperAdminRoute>}
+              />
+              <Route
+                path="superadmin/failed-jobs"
+                element={<SuperAdminRoute><FailedJobsPage /></SuperAdminRoute>}
+              />
             </Route>
 
-            <Route path="catalog"         element={<CatalogPage />} />
-            {/* WA Agent module */}
-            <Route path="wa-agent" element={<WaAgentShell />}>
-              
-              <Route index element={<Navigate to="automations" replace />} />
-              <Route path="automations"       element={<WaAgentAutomations />} />
-              <Route path="automation"        element={<Navigate to="/wa-agent/automations" replace />} />
-              <Route path="knowledge-base"  element={<WaAgentKnowledgeBase />} />
-  
-              <Route path="website-widget"  element={<WidgetPage />} />
-              <Route path="pipelines"       element={<WaAgentPipelines />} />
-              <Route path="ai-agent"        element={<WaAgentAiAgent />} />
-              <Route path="playbook"        element={<WaAgentPlaybookPage />} />
-              <Route path="lead-intelligence" element={<LeadIntelligencePage />} />
-              <Route path="meta-ai"         element={<MetaAiConfigPage />} />
-              <Route path="logs"            element={<WaAgentLogs />} />
-              <Route path="settings"        element={<WaAgentSettingsPage />} />
-            </Route>
-
-            <Route path="setup-guide" element={<SetupGuidePage />} />
-            <Route path="staff/index" element={<StaffPage />} />
-            <Route path="staff/roles" element={<RolesPage />} />
-            <Route path="staff/account-access" element={<StaffAccountAccessPage />} />
-            <Route path="contacts" element={<ContactsPage />} />
-            <Route path="labels" element={<LabelsPage />} />
-            {/* <Route path="flow" element={<FlowPage />} /> */}
-            <Route path="/flow-builders" element={<FlowBuildersPage />} />
-            <Route path="/flow" element={<FlowNodesPage />} />
-            
-            <Route path="leads" element={<LeadsPage />} />
-            <Route path="leads/by-staff"          element={<LeadsByStaffPage />} />
-            <Route path="leads/logs"              element={<LeadLogsPage />} />
-            <Route path="leads/staff/:staffId"    element={<StaffLeadsPage />} />
-            <Route path="leads/:id"               element={<LeadDetailPage />} />
-            <Route path="leads/summary"           element={<LeadsSummaryPage />} />
-            <Route path="leads/report"            element={<LeadsReportPage />} />
-            <Route path="leads/assignments"       element={<AssignmentPage />} />
-            <Route path="leads/staff-availability" element={<Navigate to="/leads/assignment-rules" replace />} />
-            <Route path="leads/assignment-rules"  element={<AssignmentRulesPage />} />
-            <Route path="wallet" element={<WalletPage />} />
-            <Route path="analytics" element={<AnalyticsPage />} />
-            <Route path="settings/index" element={<SettingsPage />} />
-            <Route path="settings/integrations" element={<IntegrationsPage />} />
-            <Route path="settings/api-keys" element={<Navigate to="/wa-agent/settings" replace />} />
-            
-            {/* V2 routes */}
-            <Route path="wa-cloud/phone-numbers" element={<PhoneNumbersPage />} />
-            <Route path="templates" element={<TemplatesPage />} />
-            <Route path="templates/:id" element={<TemplateDetailPage />} />
-            <Route path="plan-purchase" element={<PlanPurchasePage />} />
-            <Route path="blacklist" element={<BlacklistPage />} />
-            <Route path="leads/categories" element={<LeadCategoriesPage />} />
-
-            {/* Advanced CRM */}
-            <Route path="crm/deals" element={<DealsPage />} />
-            <Route path="crm/tasks" element={<CrmTasksPage />} />
-            <Route path="crm/segments" element={<SegmentsPage />} />
-
-            {/* HR */}
-            <Route path="hr/attendance" element={<AttendancePage />} />
-            <Route path="hr/admin" element={<Navigate to="/hr/admin/attendance" replace />} />
-            <Route path="hr/admin/attendance" element={<HrAttendanceAdminPage />} />
-            <Route path="hr/admin/payroll" element={<HrPayrollPage />} />
-            <Route path="hr/admin/sales" element={<HrSalesPage />} />
-            <Route path="hr/admin/incentives" element={<HrIncentivesPage />} />
-            <Route path="hr/admin/leave" element={<HrLeaveRequestsPage />} />
-            <Route path="hr/admin/break-types" element={<HrBreakTypesPage />} />
-            <Route path="hr/admin/leave-types" element={<HrLeaveTypesPage />} />
-            <Route path="hr/admin/staff-setup" element={<HrStaffSetupPage />} />
-            <Route path="hr/admin/office" element={<HrOfficeDetailsPage />} />
-
-            {/* WA Cloud routes */}
-            <Route path="wa-cloud/dashboard" element={<WaCloudDashboardPage />} />
-            <Route path="wa-cloud/templates" element={<TemplatesPage />} />
-            <Route path="wa-cloud/api-service" element={<WaCloudOtpPage />} />
-            <Route path="wa-cloud/otp-service" element={<Navigate to="/wa-cloud/api-service" replace />} />
-            <Route path="wa-cloud/otp-services" element={<Navigate to="/wa-cloud/api-service" replace />} />
-            <Route path="wa-cloud/settings" element={<WaCloudSettingsPage />} />
-            <Route path="wa-cloud/automations" element={<WaCloudAutomationsPage />} />
-            <Route path="wa-cloud/inbox" element={<InboxPage />} />
-            <Route path="wa-cloud/analytics" element={<WaCloudInboxAnalytics />} />
-            <Route path="wa-cloud/inbox-analytics" element={<Navigate to="/wa-cloud/analytics" replace />} />
-            <Route path="wa-cloud/phone-numbers" element={<PhoneNumbersPage />} />
-            <Route path="wa-chat/automations" element={<WaChatAutomationsPage />} />
-            <Route path="wa-cloud/audit-log" element={<WaCloudAuditLogPage />} />
-            <Route path="/wa-cloud/campaigns" element={<CampaignsPage />} />
-            <Route path="/wa-cloud/survey-forms" element={<SurveyFormsPage />} />
-            <Route path="/wa-cloud/otp" element={<OtpPage />} />
-            <Route path="/wa-cloud/message-logs" element={<MessageLogsPage lockChannel="meta" />} />
-            <Route path='/wa-cloud/inbox' element={<InboxPage />} />
-
-
-            {/* Meta Ads Manager */}
-            <Route path="meta-ads" element={<Navigate to="/meta-ads/campaigns" replace />} />
-            <Route path="meta-ads/accounts" element={<AdAccountPage />} />
-            <Route path="meta-ads/campaigns" element={<MetaCampaignsPage />} />
-            <Route path="meta-ads/campaigns/:campaignId" element={<AdSetPage />} />
-            <Route path="meta-ads/audiences" element={<AudienceSetsPage />} />
-            <Route path="meta-ads/lead-ads" element={<LeadAdsPage />} />
-            <Route path="meta-ads/creatives" element={<CreativeStudioPage />} />
-            <Route path="meta-ads/media" element={<MediaLibraryPage />} />
-            <Route path="meta-ads/insights" element={<AdsInsightsDashboard />} />
-
-            <Route path="instagram" element={<Navigate to="/instagram/accounts" replace />} />
-            <Route path="instagram/accounts" element={<InstagramAccountsPage />} />
-            <Route path="instagram/automations" element={<InstagramAutomationsPage />} />
-            <Route path="instagram/inbox" element={<InstagramInboxPage />} />
-            <Route path="instagram/comments" element={<InstagramCommentsPage />} />
-            <Route path="instagram/insights" element={<InstagramInsightsPage />} />
-
-            {/* SuperAdmin — each route redirects non-superadmins to /dashboard */}
-            <Route
-              path="superadmin"
-              element={<SuperAdminRoute><SuperAdminStats /></SuperAdminRoute>}
-            />
-            <Route
-              path="superadmin/companies"
-              element={<SuperAdminRoute><SuperAdminCompanies /></SuperAdminRoute>}
-            />
-            <Route
-              path="superadmin/plans"
-              element={<SuperAdminRoute><SuperAdminPlans /></SuperAdminRoute>}
-            />
-            <Route
-              path="superadmin/stats"
-              element={<SuperAdminRoute><SuperAdminStats /></SuperAdminRoute>}
-            />
-            <Route
-              path="superadmin/billing"
-              element={<SuperAdminRoute><SuperAdminBilling /></SuperAdminRoute>}
-            />
-            <Route
-              path="superadmin/staff"
-              element={<SuperAdminRoute><SuperAdminStaffPage /></SuperAdminRoute>}
-            />
-            <Route
-              path="superadmin/permissions"
-              element={<SuperAdminRoute><PermissionsEditorPage /></SuperAdminRoute>}
-            />
-            <Route
-              path="superadmin/companies/:id/permissions"
-              element={<SuperAdminRoute><CompanyPermissionsPage /></SuperAdminRoute>}
-            />
-            <Route
-              path="superadmin/companies/:id"
-              element={<SuperAdminRoute><CompanyDetailPage /></SuperAdminRoute>}
-            />
-            <Route
-              path="superadmin/topup"
-              element={<SuperAdminRoute><TopupPackagesPage /></SuperAdminRoute>}
-            />
-            <Route
-              path="superadmin/prebuilt-templates"
-              element={<SuperAdminRoute><PrebuiltTemplatesPage /></SuperAdminRoute>}
-            />
-            <Route
-              path="superadmin/reports"
-              element={<SuperAdminRoute><ReportsPage /></SuperAdminRoute>}
-            />
-            <Route
-              path="superadmin/api-logs"
-              element={<SuperAdminRoute><ApiLogsPage /></SuperAdminRoute>}
-            />
-            <Route
-              path="superadmin/errors"
-              element={<SuperAdminRoute><ErrorLogsPage /></SuperAdminRoute>}
-            />
-            <Route
-              path="superadmin/system-log"
-              element={<SuperAdminRoute><SystemLogPage /></SuperAdminRoute>}
-            />
-            <Route
-              path="superadmin/ai-test"
-              element={<SuperAdminRoute><AiTestPage /></SuperAdminRoute>}
-            />
-            <Route
-              path="superadmin/failed-jobs"
-              element={<SuperAdminRoute><FailedJobsPage /></SuperAdminRoute>}
-            />
-          </Route>
-
-          {/* Catch-all */}
-          <Route path="*" element={<RoleBasedRedirect />} />
-        </Routes>
+            {/* Catch-all */}
+            <Route path="*" element={<RoleBasedRedirect />} />
+          </Routes>
         </ErrorBoundary>
       </BrowserRouter>
     </Provider>

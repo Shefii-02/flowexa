@@ -212,6 +212,7 @@ class SuperAdminController extends Controller
             'company_id' => ['required', 'integer', 'exists:companies,id'],
             'query'      => ['required', 'string', 'max:2000'],
             'ai_config'  => ['nullable', 'array'],
+            'use_rag'    => ['nullable', 'boolean'],
         ]);
 
         $result = $rag->answer(
@@ -221,6 +222,7 @@ class SuperAdminController extends Controller
             companyId:     (int) $data['company_id'],
             aiConfig:      $data['ai_config'] ?? [],
             isTest:        true,
+            useRag:        $data['use_rag'] ?? true,
         );
 
         return response()->json($result);

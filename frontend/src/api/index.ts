@@ -321,7 +321,7 @@ export const superadminApi = {
   waChatStatus: (id: number) => api.get(`/superadmin/companies/${id}/wa-chat/status`),
   waChatProvision: (id: number) => api.post(`/superadmin/companies/${id}/wa-chat/provision`),
   companyAiSettings: (id: number) => api.get(`/superadmin/companies/${id}/ai-settings`),
-  aiTest: (d: { company_id: number; query: string; ai_config?: Record<string, unknown> }) =>
+  aiTest: (d: { company_id: number; query: string; ai_config?: Record<string, unknown>; use_rag?: boolean }) =>
     api.post('/superadmin/ai-test', d),
   failedJobs: (p?: Record<string, unknown>) => api.get('/superadmin/failed-jobs', { params: p }),
   retryFailedJob: (uuid: string) => api.post(`/superadmin/failed-jobs/${uuid}/retry`),
