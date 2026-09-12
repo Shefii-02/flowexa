@@ -2,6 +2,7 @@ import api from '@/api/client'
 
 export const instagramApi = {
   // Accounts
+  discoverPages: (userAccessToken: string) => api.post('/instagram/accounts/discover-pages', { user_access_token: userAccessToken }),
   accounts: () => api.get('/instagram/accounts'),
   connect: (d: Record<string, unknown>) => api.post('/instagram/accounts', d),
   updateAccount: (id: number, d: Record<string, unknown>) => api.put(`/instagram/accounts/${id}`, d),
@@ -10,6 +11,16 @@ export const instagramApi = {
   accountMedia: (id: number) => api.get(`/instagram/accounts/${id}/media`),
   importListings: (id: number, mediaIds?: string[]) =>
     api.post(`/instagram/accounts/${id}/import-listings`, mediaIds ? { media_ids: mediaIds } : {}),
+  accountInsights: (id: number) => api.get(`/instagram/accounts/${id}/insights`),
+
+  // Comment moderation: read, reply to, hide and delete
+  mediaComments: (accountId: number, mediaId: string) => api.get(`/instagram/accounts/${accountId}/media/${mediaId}/comments`),
+  replyComment: (accountId: number, commentId: string, text: string) =>
+    api.post(`/instagram/accounts/${accountId}/comments/${commentId}/reply`, { text }),
+  hideComment: (accountId: number, commentId: string, hide: boolean) =>
+    api.post(`/instagram/accounts/${accountId}/comments/${commentId}/hide`, { hide }),
+  deleteComment: (accountId: number, commentId: string) =>
+    api.delete(`/instagram/accounts/${accountId}/comments/${commentId}`),
 
   // Automations (keyword → auto-DM)
   automations: (accountId?: number) =>
@@ -86,6 +97,30 @@ export interface IgConversation {
   last_message_preview: string | null
   last_message_at: string | null
   account?: { id: number; username: string | null }
+}
+
+export interface IgPage {
+  page_id: string
+  page_name: string | null
+  page_token: string | null
+  fan_count: number | null
+  page_link: string | null
+  ig_linked: boolean
+  ig_user_id: string | null
+  ig_username: string | null
+  ig_name: string | null
+  ig_avatar: string | null
+  ig_followers: number | null
+}
+
+export interface IgComment {
+  id: string
+  text: string
+  username: string | null
+  timestamp: string
+  like_count?: number
+  hidden?: boolean
+  replies?: { data: IgComment[] } | IgComment[]
 }
 
 export interface IgMessage {

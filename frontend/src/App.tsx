@@ -21,13 +21,25 @@ import ContactsPage from '@/pages/contacts/ContactsPage'
 // import FlowPage from '@/pages/flow/FlowPage'
 import CampaignsPage from '@/pages/meta-ads/campaigns/CampaignsPage'
 import LeadsPage from '@/pages/leads/LeadsPage'
+import StaffLeadsPage from '@/pages/leads/StaffLeadsPage'
+import LeadsByStaffPage from '@/pages/leads/LeadsByStaffPage'
+import LeadLogsPage from '@/pages/leads/LeadLogsPage'
+import LeadDetailPage from '@/pages/leads/LeadDetailPage'
 import LeadsSummaryPage from '@/pages/leads/LeadsSummaryPage'
 import LeadsReportPage from '@/pages/leads/LeadsReportPage'
 import DealsPage from '@/pages/crm/DealsPage'
 import CrmTasksPage from '@/pages/crm/TasksPage'
 import SegmentsPage from '@/pages/crm/SegmentsPage'
 import AttendancePage from '@/pages/hr/AttendancePage'
-import HrAdminPage from '@/pages/hr/HrAdminPage'
+import HrAttendanceAdminPage from '@/pages/hr/HrAttendanceAdminPage'
+import HrPayrollPage from '@/pages/hr/HrPayrollPage'
+import HrSalesPage from '@/pages/hr/HrSalesPage'
+import HrIncentivesPage from '@/pages/hr/HrIncentivesPage'
+import HrLeaveRequestsPage from '@/pages/hr/HrLeaveRequestsPage'
+import HrBreakTypesPage from '@/pages/hr/HrBreakTypesPage'
+import HrLeaveTypesPage from '@/pages/hr/HrLeaveTypesPage'
+import HrStaffSetupPage from '@/pages/hr/HrStaffSetupPage'
+import HrOfficeDetailsPage from '@/pages/hr/HrOfficeDetailsPage'
 import AssignmentPage from '@/pages/leads/AssignmentPage'
 import AssignmentRulesPage from '@/pages/leads/AssignmentRulesPage'
 import LeadNotificationPopup from '@/components/leads/LeadNotificationPopup'
@@ -60,6 +72,8 @@ import CreativeStudioPage from '@/pages/meta-ads/creatives/CreativeStudioPage'
 import InstagramAccountsPage from '@/pages/instagram/InstagramAccountsPage'
 import InstagramAutomationsPage from '@/pages/instagram/InstagramAutomationsPage'
 import InstagramInboxPage from '@/pages/instagram/InstagramInboxPage'
+import InstagramCommentsPage from '@/pages/instagram/InstagramCommentsPage'
+import InstagramInsightsPage from '@/pages/instagram/InstagramInsightsPage'
 import MediaLibraryPage from '@/pages/meta-ads/media-library/MediaLibraryPage'
 import AdsInsightsDashboard from '@/pages/meta-ads/insights/AdsInsightsDashboard'
 import ReportsPage from '@/pages/reports/ReportsPage'
@@ -195,6 +209,7 @@ export default function App() {
               <Route path="groups" element={<WaGroupsPage />} />
             </Route>
 
+            <Route path="catalog"         element={<CatalogPage />} />
             {/* WA Agent module */}
             <Route path="wa-agent" element={<WaAgentShell />}>
               
@@ -202,7 +217,7 @@ export default function App() {
               <Route path="automations"       element={<WaAgentAutomations />} />
               <Route path="automation"        element={<Navigate to="/wa-agent/automations" replace />} />
               <Route path="knowledge-base"  element={<WaAgentKnowledgeBase />} />
-              <Route path="catalog"         element={<CatalogPage />} />
+  
               <Route path="website-widget"  element={<WidgetPage />} />
               <Route path="pipelines"       element={<WaAgentPipelines />} />
               <Route path="ai-agent"        element={<WaAgentAiAgent />} />
@@ -214,7 +229,7 @@ export default function App() {
             </Route>
 
             <Route path="setup-guide" element={<SetupGuidePage />} />
-            <Route path="staff" element={<StaffPage />} />
+            <Route path="staff/index" element={<StaffPage />} />
             <Route path="staff/roles" element={<RolesPage />} />
             <Route path="contacts" element={<ContactsPage />} />
             <Route path="labels" element={<LabelsPage />} />
@@ -223,6 +238,10 @@ export default function App() {
             <Route path="/flow" element={<FlowNodesPage />} />
             
             <Route path="leads" element={<LeadsPage />} />
+            <Route path="leads/by-staff"          element={<LeadsByStaffPage />} />
+            <Route path="leads/logs"              element={<LeadLogsPage />} />
+            <Route path="leads/staff/:staffId"    element={<StaffLeadsPage />} />
+            <Route path="leads/:id"               element={<LeadDetailPage />} />
             <Route path="leads/summary"           element={<LeadsSummaryPage />} />
             <Route path="leads/report"            element={<LeadsReportPage />} />
             <Route path="leads/assignments"       element={<AssignmentPage />} />
@@ -234,14 +253,13 @@ export default function App() {
             <Route path="settings/integrations" element={<IntegrationsPage />} />
             <Route path="settings/api-keys" element={<Navigate to="/wa-agent/settings" replace />} />
             
-            
             {/* V2 routes */}
             <Route path="wa-cloud/phone-numbers" element={<PhoneNumbersPage />} />
             <Route path="templates" element={<TemplatesPage />} />
             <Route path="templates/:id" element={<TemplateDetailPage />} />
             <Route path="plan-purchase" element={<PlanPurchasePage />} />
             <Route path="blacklist" element={<BlacklistPage />} />
-            <Route path="lead-categories" element={<LeadCategoriesPage />} />
+            <Route path="leads/categories" element={<LeadCategoriesPage />} />
 
             {/* Advanced CRM */}
             <Route path="crm/deals" element={<DealsPage />} />
@@ -251,7 +269,15 @@ export default function App() {
             {/* HR */}
             <Route path="hr/attendance" element={<AttendancePage />} />
             <Route path="hr/admin" element={<Navigate to="/hr/admin/attendance" replace />} />
-            <Route path="hr/admin/:tab" element={<HrAdminPage />} />
+            <Route path="hr/admin/attendance" element={<HrAttendanceAdminPage />} />
+            <Route path="hr/admin/payroll" element={<HrPayrollPage />} />
+            <Route path="hr/admin/sales" element={<HrSalesPage />} />
+            <Route path="hr/admin/incentives" element={<HrIncentivesPage />} />
+            <Route path="hr/admin/leave" element={<HrLeaveRequestsPage />} />
+            <Route path="hr/admin/break-types" element={<HrBreakTypesPage />} />
+            <Route path="hr/admin/leave-types" element={<HrLeaveTypesPage />} />
+            <Route path="hr/admin/staff-setup" element={<HrStaffSetupPage />} />
+            <Route path="hr/admin/office" element={<HrOfficeDetailsPage />} />
 
             {/* WA Cloud routes */}
             <Route path="wa-cloud/dashboard" element={<WaCloudDashboardPage />} />
@@ -289,6 +315,8 @@ export default function App() {
             <Route path="instagram/accounts" element={<InstagramAccountsPage />} />
             <Route path="instagram/automations" element={<InstagramAutomationsPage />} />
             <Route path="instagram/inbox" element={<InstagramInboxPage />} />
+            <Route path="instagram/comments" element={<InstagramCommentsPage />} />
+            <Route path="instagram/insights" element={<InstagramInsightsPage />} />
 
             {/* SuperAdmin — each route redirects non-superadmins to /dashboard */}
             <Route

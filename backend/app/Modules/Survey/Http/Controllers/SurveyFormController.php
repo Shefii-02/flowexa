@@ -292,13 +292,16 @@ class SurveyFormController extends Controller
                 continue;
             }
             Lead::create([
-                'company_id'  => $companyId,
-                'contact_id'  => $cid,
-                'assigned_to' => $d['assigned_to'] ?? null,
-                'stage'       => $d['stage'] ?? 'new',
-                'category'    => $d['category'] ?? null,
-                'source'      => 'survey_form',
-                'notes'       => "Auto-created from survey “{$form->name}”.",
+                'company_id'   => $companyId,
+                'contact_id'   => $cid,
+                'assigned_to'  => $d['assigned_to'] ?? null,
+                'stage'        => $d['stage'] ?? 'new',
+                'category'     => $d['category'] ?? null,
+                'source'       => 'survey_form',
+                'origin_type'  => 'survey_form',
+                'origin_id'    => $form->id,
+                'origin_label' => $form->name,
+                'notes'        => "Auto-created from survey “{$form->name}”.",
             ]);
             $created++;
         }

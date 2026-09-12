@@ -88,8 +88,11 @@ class GoogleIntegrationController extends Controller
     public function createSync(Request $request): JsonResponse
     {
         $d = $request->validate([
-            'name'   => ['required', 'string', 'max:150'],
-            'source' => ['required', Rule::in(['leads', 'widget', 'meta_leads', 'instagram', 'whatsapp'])],
+            'name'             => ['required', 'string', 'max:150'],
+            'source'           => ['required', Rule::in(['leads', 'widget', 'meta_leads', 'instagram', 'whatsapp'])],
+            // Presets: 10 min / 30 min / 1h / 6h / 24h. Leads default to a tight 10-minute
+            // cadence; message logs are heavier so 6h+ is the sane floor in the UI.
+            'interval_minutes' => ['nullable', 'integer', Rule::in([10, 30, 60, 360, 1440])],
         ]);
         $i = $this->integration();
 
@@ -111,12 +114,24 @@ class GoogleIntegrationController extends Controller
             'source'                => $d['source'],
             'spreadsheet_id'        => $sheet['id'],
             'sheet_url'             => $sheet['url'],
+            'interval_minutes'      => $d['interval_minutes'] ?? 10,
         ]);
 
         // First fill immediately so the sheet isn't empty.
         try { $this->sync->syncOne($sync); } catch (\Throwable $e) { /* logged in service */ }
 
         return response()->json(['message' => 'Sheet created and linked.', 'sync' => $sync->fresh()], 201);
+    }
+
+    public function updateSync(Request $request, int $id): JsonResponse
+    {
+        $d = $request->validate([
+            'interval_minutes' => ['sometimes', 'integer', Rule::in([10, 30, 60, 360, 1440])],
+            'is_active'        => ['sometimes', 'boolean'],
+        ]);
+        $sync = $this->findSync($id);
+        $sync->update($d);
+        return response()->json(['sync' => $sync->fresh()]);
     }
 
     public function syncNow(int $id): JsonResponse
@@ -136,12 +151,14 @@ class GoogleIntegrationController extends Controller
         return response()->json(['message' => 'Sync removed. The sheet stays in your Drive.']);
     }
 
-    // ── Drive as external file storage (listing media) ────────────────────
+    // ── Drive — full file manager (browse/upload/rename/delete anywhere in the account) ────
 
+    /** Any file type, up to 100MB — this is a general-purpose Drive browser, not just media. */
     public function driveUpload(Request $request): JsonResponse
     {
-        $request->validate([
-            'file' => ['required', 'file', 'max:51200', 'mimes:jpg,jpeg,png,gif,webp,mp4,mov,pdf'],
+        $d = $request->validate([
+            'file'      => ['required', 'file', 'max:102400'],
+            'folder_id' => ['nullable', 'string', 'max:100'],
         ]);
         $i = $this->integration();
         $file = $request->file('file');
@@ -152,7 +169,7 @@ class GoogleIntegrationController extends Controller
                 file_get_contents($file->getRealPath()),
                 $file->getClientOriginalName(),
                 $file->getMimeType() ?: 'application/octet-stream',
-                $i->drive_folder_id,
+                $d['folder_id'] ?? $i->drive_folder_id,
             );
         } catch (\Throwable $e) {
             return response()->json(['message' => $e->getMessage()], 422);
@@ -160,14 +177,56 @@ class GoogleIntegrationController extends Controller
         return response()->json(['file' => $result], 201);
     }
 
-    public function driveFiles(): JsonResponse
+    public function driveFiles(Request $request): JsonResponse
     {
         $i = $this->integration();
         try {
-            return response()->json(['files' => $this->google->listFiles($i, $i->drive_folder_id, 120)]);
+            $files = $this->google->listFiles($i, $request->query('folder_id'), 150, $request->query('q'));
         } catch (\Throwable $e) {
             return response()->json(['message' => $e->getMessage()], 422);
         }
+        return response()->json([
+            'files'     => $files,
+            'folder_id' => $request->query('folder_id') ?: \App\Modules\Google\GoogleClient::ROOT,
+        ]);
+    }
+
+    public function driveCreateFolder(Request $request): JsonResponse
+    {
+        $d = $request->validate([
+            'name'      => ['required', 'string', 'max:200'],
+            'folder_id' => ['nullable', 'string', 'max:100'],
+        ]);
+        $i = $this->integration();
+        try {
+            $folder = $this->google->createFolder($i, $d['name'], $d['folder_id'] ?? null);
+        } catch (\Throwable $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+        return response()->json(['folder' => $folder], 201);
+    }
+
+    public function driveRename(Request $request, string $fileId): JsonResponse
+    {
+        $d = $request->validate(['name' => ['required', 'string', 'max:200']]);
+        $i = $this->integration();
+        try {
+            $file = $this->google->renameFile($i, $fileId, $d['name']);
+        } catch (\Throwable $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+        return response()->json(['file' => $file]);
+    }
+
+    public function driveDelete(string $fileId): JsonResponse
+    {
+        $i = $this->integration();
+        try {
+            $this->google->trashFile($i, $fileId);
+        } catch (\Throwable $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+        return response()->json(['message' => 'Moved to Drive trash.']);
     }
 
     private function integration(): GoogleIntegration

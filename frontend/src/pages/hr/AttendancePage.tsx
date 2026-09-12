@@ -33,6 +33,7 @@ type LeaveRequest = {
   id: number; status: string; start_date: string; end_date: string; days: number; half_day: boolean
   reason: string | null; leave_type?: { name: string; color: string } | null; review_note: string | null
 }
+type HistoryDay = Attendance & { work_date: string; status: string }
 
 const COLOR: Record<string, string> = {
   danger: 'bg-red-50 text-red-700 border-red-200',
@@ -63,18 +64,31 @@ export default function AttendancePage() {
   const [breakTypeId, setBreakTypeId] = useState<string>('')
   const [note, setNote] = useState('')
 
+  const [month, setMonth] = useState(new Date().toISOString().slice(0, 7))
+  const [history, setHistory] = useState<HistoryDay[]>([])
+  const [historyLeave, setHistoryLeave] = useState<LeaveRequest[]>([])
+  const [historyLoading, setHistoryLoading] = useState(true)
+
   const load = useCallback(() => {
     setLoading(true)
     api.get('/hr/attendance/me').then(r => setMe(r.data)).finally(() => setLoading(false))
   }, [])
   useEffect(() => { load() }, [load])
 
+  const loadHistory = useCallback(() => {
+    setHistoryLoading(true)
+    api.get('/hr/attendance/me/history', { params: { month } })
+      .then(r => { setHistory(r.data?.data ?? []); setHistoryLeave(r.data?.leave ?? []) })
+      .finally(() => setHistoryLoading(false))
+  }, [month])
+  useEffect(() => { loadHistory() }, [loadHistory])
+
   const act = async (path: string, body: Record<string, unknown> = {}) => {
     setBusy(true)
     try {
       const pos = await getPosition()
       await api.post(path, { ...body, ...(pos ?? {}), source: 'web', note: note || undefined })
-      setNote(''); load()
+      setNote(''); load(); loadHistory()
     } catch (e: any) {
       toast.error(e.response?.data?.message ?? (Object.values(e.response?.data?.errors ?? {})[0] as string[] | undefined)?.[0] ?? 'Failed')
     } finally { setBusy(false) }
@@ -179,6 +193,64 @@ export default function AttendancePage() {
                 <div className="text-lg font-bold text-gray-900">{v}</div><div className="text-[11px] text-gray-400">{k}</div>
               </div>
             ))}
+          </div>
+
+          {/* Day-by-day history — clock in/out, every break in/out, and leave days */}
+          <div className="bg-white border border-gray-200 rounded-xl p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-semibold text-gray-700">Attendance history</h3>
+              <input type="month" value={month} onChange={e => setMonth(e.target.value)}
+                className="text-sm border border-gray-200 rounded-lg px-2 py-1" />
+            </div>
+            {historyLoading ? (
+              <p className="text-sm text-gray-400 text-center py-6">Loading…</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead><tr className="text-left text-gray-400 border-b border-gray-100">
+                    <th className="p-2">Date</th><th className="p-2">Clock in</th><th className="p-2">Clock out</th>
+                    <th className="p-2">Breaks</th><th className="p-2">Worked</th><th className="p-2">Status</th>
+                  </tr></thead>
+                  <tbody>
+                    {history.map(d => (
+                      <tr key={d.id} className="border-b border-gray-50 align-top">
+                        <td className="p-2 text-gray-500 whitespace-nowrap">{d.work_date.slice(0, 10)}</td>
+                        <td className="p-2">{time(d.clock_in_at)}</td>
+                        <td className="p-2">{time(d.clock_out_at)}</td>
+                        <td className="p-2">
+                          {d.breaks?.length ? d.breaks.map(b => (
+                            <div key={b.id} className="text-xs text-gray-500 whitespace-nowrap">
+                              {b.break_type?.name ?? 'Break'}: {time(b.start_at)}–{time(b.end_at)}
+                            </div>
+                          )) : <span className="text-gray-300">—</span>}
+                        </td>
+                        <td className="p-2">{d.worked_minutes ? hm(d.worked_minutes) : '—'}
+                          {d.late_minutes > 0 && <div className="text-[11px] text-amber-600">Late {d.late_minutes}m</div>}
+                          {d.overtime_minutes > 0 && <div className="text-[11px] text-indigo-500">OT {hm(d.overtime_minutes)}</div>}
+                        </td>
+                        <td className="p-2">
+                          <span className={`text-xs px-1.5 py-0.5 rounded ${d.status === 'present' ? 'bg-green-100 text-green-700' : d.status === 'on_leave' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'}`}>{d.status}</span>
+                        </td>
+                      </tr>
+                    ))}
+                    {history.length === 0 && historyLeave.length === 0 && (
+                      <tr><td colSpan={6} className="p-4 text-center text-gray-400">No records this month.</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            {historyLeave.length > 0 && (
+              <div className="mt-3 pt-3 border-t border-gray-100 space-y-1.5">
+                <p className="text-xs font-medium text-gray-500">Leave this month</p>
+                {historyLeave.map(l => (
+                  <div key={l.id} className="flex items-center justify-between text-xs">
+                    <span>{l.leave_type?.name} · {l.start_date} → {l.end_date} ({l.days}d){l.reason ? ` · ${l.reason}` : ''}</span>
+                    <span className={`px-2 py-0.5 rounded-full ${l.status === 'approved' ? 'bg-green-100 text-green-700' : l.status === 'rejected' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>{l.status}</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </>
       )}

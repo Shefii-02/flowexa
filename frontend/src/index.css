@@ -266,6 +266,34 @@
   .modal-footer {
     @apply px-6 py-4 border-t border-gray-100 flex gap-3 justify-end;
   }
+
+  /* Drawer — a Modal that slides in from the right edge instead of centering, so a long list
+     (e.g. checking leads off one by one) gets the full viewport height to scroll in. */
+  .drawer-overlay {
+    @apply fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex justify-end;
+  }
+
+  .drawer-panel {
+    @apply bg-white h-full shadow-2xl border-l border-gray-100 flex flex-col;
+    animation: drawer-slide-in 0.22s ease-out;
+  }
+
+  .drawer-header {
+    @apply flex items-center justify-between px-6 py-4 border-b border-gray-100 shrink-0;
+  }
+
+  .drawer-body {
+    @apply px-6 py-5 space-y-4 flex-1 overflow-y-auto;
+  }
+
+  .drawer-footer {
+    @apply px-6 py-4 border-t border-gray-100 flex gap-3 justify-end shrink-0;
+  }
+}
+
+@keyframes drawer-slide-in {
+  from { transform: translateX(100%); }
+  to   { transform: translateX(0); }
 }
 
 

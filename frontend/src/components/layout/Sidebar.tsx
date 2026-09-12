@@ -507,7 +507,10 @@ export const Sidebar = () => {
               <SubLink to="/instagram/accounts" icon="🔗" label="Accounts" />
               <SubLink to="/instagram/automations" icon="⚡" label="Auto-DM Rules" />
               <SubLink to="/instagram/inbox" icon="💬" label="DM Inbox" />
+              <SubLink to="/instagram/comments" icon="🗨️" label="Comments" />
+              <SubLink to="/instagram/insights" icon="📊" label="Insights" />
             </Accordion>
+            <FlatLink to="/catalog" icon="📦" label="Catalog" />
 
             {/* ── CRM ── */}
             <SectionHeader label="CRM" />
@@ -517,24 +520,23 @@ export const Sidebar = () => {
               basePaths={['/contacts', '/labels', '/blacklist', '/lead-categories', '/crm']}
               defaultOpen
             >
-              <NestedAccordion icon="🟢" label="Basic CRM" basePaths={['/contacts', '/labels', '/blacklist']}>
+              {/* <NestedAccordion icon="🟢" label="Basic CRM" basePaths={['/contacts', '/labels', '/blacklist']}>
                 <SubLink to="/contacts" icon="👥" label="Contacts" />
                 <SubLink to="/labels" icon="🏷️" label="Labels" />
                 <SubLink to="/blacklist" icon="🚫" label="Blacklist" />
-              </NestedAccordion>
+              </NestedAccordion> */}
 
-              <NestedAccordion icon="🔷" label="Advanced CRM" basePaths={['/crm', '/lead-categories']}>
+              {/* <NestedAccordion icon="🔷" label="Advanced CRM" basePaths={['/crm', '/lead-categories']}> */}
                 <SubLink to="/contacts" icon="👥" label="Contacts" />
                 <SubLink to="/labels" icon="🏷️" label="Labels" />
                 <SubLink to="/crm/deals" icon="💼" label="Deals Pipeline" />
                 <SubLink to="/crm/tasks" icon="📋" label="Tasks & Follow-ups" />
                 <SubLink to="/crm/segments" icon="🧩" label="Segments" />
                 <SubLink to="/blacklist" icon="🚫" label="Blacklist" />
-                <SubLink to="/lead-categories" icon="📂" label="Lead Categories" />
-              </NestedAccordion>
+              {/* </NestedAccordion> */}
             </NestedAccordion>
 
-            <FlatLink to="/wa-agent/catalog" icon="📦" label="Catalog" />
+
 
             {/* ── LEADS ── */}
             <SectionHeader label="Leads" />
@@ -544,24 +546,31 @@ export const Sidebar = () => {
               basePaths={['/leads']}
               defaultOpen
             >
-              {/* Shared by both views — the lead list itself */}
+                {/* Shared by both views — the lead list itself */}
               <SubLink to="/leads" icon="🎯" label="All Leads" end />
+              <SubLink to="/leads/categories" icon="📂" label="Lead Categories" />
+
+              <SubLink to="/leads/by-staff" icon="👤" label="Leads by Staff" />
+              <SubLink to="/leads/logs" icon="📜" label="Lead Logs" />
 
               {/* Basic — at-a-glance metrics */}
-              <NestedAccordion icon="🟢" label="Basic" basePaths={['/leads/summary']}>
-                <SubLink to="/leads/summary" icon="📈" label="Leads Summary" />
-              </NestedAccordion>
+              {/* <NestedAccordion icon="🟢" label="Basic" basePaths={['/leads/summary']}>
+    
+              </NestedAccordion> */}
+
+              <SubLink to="/leads/summary" icon="📈" label="Leads Summary" />
+              <SubLink to="/leads/report" icon="📊" label="Leads Report" />
+              <SubLink to="/leads/assignments" icon="🧭" label="Assignment Queues" />
+              <SubLink to="/leads/assignment-rules" icon="📋" label="Assignment Rules" />
 
               {/* Advanced — filtered reporting + assignment engine */}
-              <NestedAccordion
+              {/* <NestedAccordion
                 icon="🔷"
                 label="Advanced"
                 basePaths={['/leads/report', '/leads/assignments', '/leads/assignment-rules', '/leads/staff-availability']}
               >
-                <SubLink to="/leads/report" icon="📊" label="Leads Report" />
-                <SubLink to="/leads/assignments" icon="🧭" label="Assignment Queues" />
-                <SubLink to="/leads/assignment-rules" icon="📋" label="Assignment Rules" />
-              </NestedAccordion>
+                
+              </NestedAccordion> */}
             </NestedAccordion>
 
             {/* ── HR ── */}
@@ -589,7 +598,7 @@ export const Sidebar = () => {
             {/* ── STAFF ── */}
             <SectionHeader label="Staff" />
             {/* {canViewStaff &&  */}
-            <FlatLink to="/staff" icon="👤" label="Staff" />
+            <FlatLink to="/staff/index" icon="👤" label="Staff" />
             {/* Assignment Rules now lives under Leads → Advanced */}
             {/* {canViewRoles &&  */}
             <FlatLink to="/staff/roles" icon="🎭" label="Roles" />

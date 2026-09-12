@@ -349,13 +349,13 @@ console.log( contact)
                   </div>
 
                   {/* Lead timeline mini */}
-                  {l.events?.length > 0 && (
+                  {l.activities?.length > 0 && (
                     <div className="mt-3 pt-3 border-t border-gray-100 space-y-1">
-                      {l.events.slice(0, 3).map((e: any) => (
+                      {l.activities.slice(0, 3).map((e: any) => (
                         <div key={e.id} className="flex gap-2 text-xs text-gray-400">
                           <span className="w-20 flex-shrink-0">{fmt.relative?.(e.created_at) || ''}</span>
-                          <span className="capitalize">{e.type?.replace(/_/g,' ')}</span>
-                          {e.user && <span>by {e.user}</span>}
+                          <span className="capitalize">{e.event?.replace(/_/g,' ')}</span>
+                          {e.by && <span>by {e.by}</span>}
                         </div>
                       ))}
                     </div>

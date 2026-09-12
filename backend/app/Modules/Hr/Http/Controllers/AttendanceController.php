@@ -63,6 +63,36 @@ class AttendanceController extends Controller
         ]);
     }
 
+    /**
+     * GET /hr/attendance/me/history?month=YYYY-MM — every day in that month (default: current),
+     * clock in/out + every break in/out, plus leave requests overlapping the month. Always
+     * self-scoped (no HR permission needed) — this is "My Attendance", not the admin view.
+     */
+    public function myHistory(Request $request): JsonResponse
+    {
+        $companyId = $this->companyId();
+        $userId    = (int) auth()->id();
+        $month     = $request->filled('month') ? Carbon::parse($request->string('month') . '-01') : now();
+        $start     = $month->copy()->startOfMonth();
+        $end       = $month->copy()->endOfMonth();
+
+        $days = HrAttendance::where('company_id', $companyId)->where('user_id', $userId)
+            ->whereBetween('work_date', [$start, $end])
+            ->with('breaks.breakType:id,name')
+            ->orderByDesc('work_date')
+            ->get();
+
+        $leave = \App\Modules\Hr\Models\HrLeaveRequest::where('company_id', $companyId)->where('user_id', $userId)
+            ->whereIn('status', ['approved', 'pending'])
+            ->where('start_date', '<=', $end)
+            ->where('end_date', '>=', $start)
+            ->with('leaveType:id,name,color')
+            ->orderByDesc('start_date')
+            ->get();
+
+        return response()->json(['data' => $days, 'leave' => $leave, 'month' => $start->format('Y-m')]);
+    }
+
     /** POST /hr/attendance/clock-in */
     public function clockIn(Request $request): JsonResponse
     {

@@ -1,8 +1,8 @@
 // External integrations — Google Sheets & Drive lead sync (per company).
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Button, Input, Badge, Modal, ConfirmModal } from '@/components/ui'
-import { getError } from '@/utils'
+import { fmt, getError } from '@/utils'
 import toast from 'react-hot-toast'
 import api from '@/api/client'
 
@@ -14,7 +14,23 @@ interface Sync {
   last_row_count: number
   last_synced_at: string | null
   interval_hours: number
+  interval_minutes: number | null
   is_active: boolean
+}
+
+const INTERVAL_PRESETS: { minutes: number; label: string }[] = [
+  { minutes: 10, label: 'Every 10 minutes' },
+  { minutes: 30, label: 'Every 30 minutes' },
+  { minutes: 60, label: 'Every hour' },
+  { minutes: 360, label: 'Every 6 hours' },
+  { minutes: 1440, label: 'Once a day' },
+]
+
+const cadenceLabel = (s: Sync) => {
+  const m = s.interval_minutes || s.interval_hours * 60
+  const preset = INTERVAL_PRESETS.find(p => p.minutes === m)
+  if (preset) return preset.label.toLowerCase().replace('every ', 'every ')
+  return m % 60 === 0 ? `every ${m / 60}h` : `every ${m}min`
 }
 interface Integration {
   id: number
@@ -39,7 +55,7 @@ export default function IntegrationsPage() {
   const [integration, setIntegration] = useState<Integration | null>(null)
   const [loading, setLoading] = useState(true)
   const [creating, setCreating] = useState(false)
-  const [newSync, setNewSync] = useState<{ name: string; source: Sync['source'] } | null>(null)
+  const [newSync, setNewSync] = useState<{ name: string; source: Sync['source']; interval_minutes: number } | null>(null)
   const [disconnectOpen, setDisconnectOpen] = useState(false)
   const [busy, setBusy] = useState<string | null>(null)
 
@@ -111,7 +127,7 @@ export default function IntegrationsPage() {
           <div className="flex-1">
             <p className="font-semibold text-gray-900">Google Sheets &amp; Drive</p>
             <p className="text-sm text-gray-500 mt-0.5">
-              Every captured lead is appended to a Google Sheet in your Drive, refreshed every 6 hours.
+              Every captured lead is appended to a Google Sheet in your Drive, refreshed as often as every 10 minutes.
               Your team keeps using the tools they already know.
             </p>
           </div>
@@ -149,7 +165,7 @@ export default function IntegrationsPage() {
                 <div key={s.id} className="p-3 flex items-center gap-3 text-sm">
                   <div className="flex-1">
                     <p className="font-medium text-gray-800">{s.name}</p>
-                    <p className="text-xs text-gray-400">{SOURCE_LABEL[s.source]} · {s.last_row_count} rows · every {s.interval_hours}h
+                    <p className="text-xs text-gray-400">{SOURCE_LABEL[s.source]} · {s.last_row_count} rows · {cadenceLabel(s)}
                       {s.last_synced_at && ` · synced ${new Date(s.last_synced_at).toLocaleString('en-IN')}`}</p>
                   </div>
                   {s.sheet_url && <a href={s.sheet_url} target="_blank" rel="noreferrer" className="text-brand-600 hover:underline text-xs">Open sheet ↗</a>}
@@ -161,10 +177,12 @@ export default function IntegrationsPage() {
               ))}
             </div>
 
-            <Button variant="secondary" onClick={() => setNewSync({ name: 'Leads', source: 'leads' })}>+ New synced sheet</Button>
+            <Button variant="secondary" onClick={() => setNewSync({ name: 'Leads', source: 'leads', interval_minutes: 10 })}>+ New synced sheet</Button>
           </div>
         )}
       </div>
+
+      {integration?.is_active && <DriveFileManager />}
 
       <Modal open={newSync !== null} onClose={() => setNewSync(null)} title="New synced sheet"
         footer={
@@ -182,7 +200,14 @@ export default function IntegrationsPage() {
                 {Object.entries(SOURCE_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
               </select>
             </div>
-            <p className="text-xs text-gray-400">A new Google Sheet is created in your Drive folder and filled now, then kept current every 6 hours.</p>
+            <div>
+              <label className="label">How often</label>
+              <select className="select" value={newSync.interval_minutes}
+                onChange={e => setNewSync({ ...newSync, interval_minutes: Number(e.target.value) })}>
+                {INTERVAL_PRESETS.map(p => <option key={p.minutes} value={p.minutes}>{p.label}</option>)}
+              </select>
+            </div>
+            <p className="text-xs text-gray-400">A new Google Sheet is created in your Drive folder and filled now, then kept current on the schedule above.</p>
           </div>
         )}
       </Modal>
@@ -190,6 +215,232 @@ export default function IntegrationsPage() {
       <ConfirmModal open={disconnectOpen} title="Disconnect Google?"
         message="Syncing stops. The sheets already created stay in your Drive."
         onConfirm={disconnect} onCancel={() => setDisconnectOpen(false)} />
+    </div>
+  )
+}
+
+// ── Drive file manager ───────────────────────────────────────────────────
+// Full browse of the connected account's own Drive (not just files this app created):
+// navigate folders, upload, create a folder, rename, delete (moves to Drive's Trash),
+// and switch between a grid and a list view — like Drive's own UI.
+
+interface DriveFile {
+  id: string
+  name: string | null
+  mime: string | null
+  is_folder: boolean
+  size: number
+  view_url: string | null
+  download_url: string
+  thumbnail: string | null
+  modified_at: string | null
+}
+
+const fileSize = (bytes: number) => {
+  if (!bytes) return ''
+  const units = ['B', 'KB', 'MB', 'GB']
+  let n = bytes, i = 0
+  while (n >= 1024 && i < units.length - 1) { n /= 1024; i++ }
+  return `${n.toFixed(n < 10 && i > 0 ? 1 : 0)} ${units[i]}`
+}
+
+const fileIcon = (mime: string | null) => {
+  if (!mime) return '📄'
+  if (mime.startsWith('image/')) return '🖼️'
+  if (mime.startsWith('video/')) return '🎞️'
+  if (mime === 'application/pdf') return '📕'
+  if (mime.includes('spreadsheet')) return '📊'
+  if (mime.includes('document')) return '📝'
+  return '📄'
+}
+
+function DriveFileManager() {
+  const [crumbs, setCrumbs] = useState<{ id: string; name: string }[]>([{ id: 'root', name: 'My Drive' }])
+  const [files, setFiles] = useState<DriveFile[]>([])
+  const [loading, setLoading] = useState(true)
+  const [view, setView] = useState<'grid' | 'list'>('grid')
+  const [search, setSearch] = useState('')
+  const [uploading, setUploading] = useState(false)
+  const [newFolderOpen, setNewFolderOpen] = useState(false)
+  const [newFolderName, setNewFolderName] = useState('')
+  const [renaming, setRenaming] = useState<DriveFile | null>(null)
+  const [renameValue, setRenameValue] = useState('')
+  const [deleting, setDeleting] = useState<DriveFile | null>(null)
+  const fileInput = useRef<HTMLInputElement>(null)
+
+  const folderId = crumbs[crumbs.length - 1].id
+
+  const load = async (q?: string) => {
+    setLoading(true)
+    try {
+      const r = await api.get('/google/drive/files', { params: q ? { q } : { folder_id: folderId } })
+      setFiles(r.data.files ?? [])
+    } catch (e) { toast.error(getError(e)) }
+    finally { setLoading(false) }
+  }
+  useEffect(() => { void load() }, [folderId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const search_ = async () => {
+    if (!search.trim()) { void load(); return }
+    void load(search.trim())
+  }
+
+  const openFile = (f: DriveFile) => {
+    if (f.is_folder) { setCrumbs(c => [...c, { id: f.id, name: f.name || 'Untitled' }]); setSearch('') }
+    else if (f.view_url) window.open(f.view_url, '_blank', 'noreferrer')
+  }
+
+  const upload = async (fileList: FileList | null) => {
+    if (!fileList?.length) return
+    setUploading(true)
+    try {
+      for (const file of Array.from(fileList)) {
+        const fd = new FormData()
+        fd.append('file', file)
+        fd.append('folder_id', folderId)
+        await api.post('/google/drive/upload', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+      }
+      toast.success(`${fileList.length} file(s) uploaded.`)
+      void load()
+    } catch (e) { toast.error(getError(e)) }
+    finally { setUploading(false); if (fileInput.current) fileInput.current.value = '' }
+  }
+
+  const createFolder = async () => {
+    if (!newFolderName.trim()) return
+    try {
+      await api.post('/google/drive/folders', { name: newFolderName.trim(), folder_id: folderId })
+      toast.success('Folder created.')
+      setNewFolderOpen(false); setNewFolderName(''); void load()
+    } catch (e) { toast.error(getError(e)) }
+  }
+
+  const rename = async () => {
+    if (!renaming || !renameValue.trim()) return
+    try {
+      await api.patch(`/google/drive/files/${renaming.id}`, { name: renameValue.trim() })
+      toast.success('Renamed.')
+      setRenaming(null); void load()
+    } catch (e) { toast.error(getError(e)) }
+  }
+
+  const remove = async () => {
+    if (!deleting) return
+    try {
+      await api.delete(`/google/drive/files/${deleting.id}`)
+      toast.success('Moved to Drive trash.')
+      setDeleting(null); void load()
+    } catch (e) { toast.error(getError(e)) }
+  }
+
+  return (
+    <div className="card p-5">
+      <div className="flex items-start gap-4 mb-4">
+        <div className="w-12 h-12 rounded-xl bg-blue-50 flex items-center justify-center text-2xl">🗂️</div>
+        <div className="flex-1">
+          <p className="font-semibold text-gray-900">Drive files</p>
+          <p className="text-sm text-gray-500 mt-0.5">Browse, upload and manage every file and folder in your connected Google account.</p>
+        </div>
+      </div>
+
+      {/* Toolbar */}
+      <div className="flex flex-wrap items-center gap-2 mb-3">
+        <div className="flex items-center gap-1 text-sm text-gray-500 flex-1 min-w-0 overflow-x-auto">
+          {crumbs.map((c, i) => (
+            <span key={c.id} className="flex items-center gap-1 shrink-0">
+              {i > 0 && <span className="text-gray-300">/</span>}
+              <button
+                className={i === crumbs.length - 1 ? 'font-medium text-gray-900' : 'hover:underline'}
+                onClick={() => setCrumbs(crumbs.slice(0, i + 1))}
+                disabled={i === crumbs.length - 1}
+              >
+                {c.name}
+              </button>
+            </span>
+          ))}
+        </div>
+        <Input placeholder="Search this Drive…" value={search} onChange={e => setSearch(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && search_()} className="w-48" />
+        <div className="flex rounded-lg border border-gray-200 overflow-hidden">
+          <button onClick={() => setView('grid')} className={`px-2.5 py-1.5 text-sm ${view === 'grid' ? 'bg-gray-100' : 'bg-white'}`} title="Grid view">▦</button>
+          <button onClick={() => setView('list')} className={`px-2.5 py-1.5 text-sm border-l border-gray-200 ${view === 'list' ? 'bg-gray-100' : 'bg-white'}`} title="List view">☰</button>
+        </div>
+        <Button size="sm" variant="secondary" onClick={() => setNewFolderOpen(true)}>+ Folder</Button>
+        <Button size="sm" onClick={() => fileInput.current?.click()} loading={uploading}>Upload</Button>
+        <input ref={fileInput} type="file" multiple hidden onChange={e => upload(e.target.files)} />
+      </div>
+
+      {/* Files */}
+      {loading ? (
+        <p className="text-sm text-gray-400 py-8 text-center">Loading…</p>
+      ) : files.length === 0 ? (
+        <p className="text-sm text-gray-400 py-8 text-center">This folder is empty.</p>
+      ) : view === 'grid' ? (
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
+          {files.map(f => (
+            <div key={f.id} className="group relative border border-gray-200 rounded-lg p-2 hover:border-brand-300 cursor-pointer"
+              onClick={() => openFile(f)}>
+              <div className="aspect-square rounded-md bg-gray-50 flex items-center justify-center overflow-hidden mb-1.5">
+                {f.thumbnail ? <img src={f.thumbnail} alt="" className="w-full h-full object-cover" />
+                  : <span className="text-3xl">{f.is_folder ? '📁' : fileIcon(f.mime)}</span>}
+              </div>
+              <p className="text-xs font-medium text-gray-800 truncate" title={f.name ?? ''}>{f.name}</p>
+              <p className="text-[10px] text-gray-400">{f.is_folder ? 'Folder' : fileSize(f.size)}</p>
+              <FileMenu f={f} onRename={() => { setRenaming(f); setRenameValue(f.name ?? '') }} onDelete={() => setDeleting(f)} />
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="border border-gray-200 rounded-lg divide-y divide-gray-100">
+          {files.map(f => (
+            <div key={f.id} className="flex items-center gap-3 p-2.5 hover:bg-gray-50 cursor-pointer group" onClick={() => openFile(f)}>
+              <span className="text-lg w-6 text-center shrink-0">{f.is_folder ? '📁' : fileIcon(f.mime)}</span>
+              <span className="flex-1 text-sm text-gray-800 truncate">{f.name}</span>
+              <span className="text-xs text-gray-400 w-20 text-right shrink-0">{f.is_folder ? '—' : fileSize(f.size)}</span>
+              <span className="text-xs text-gray-400 w-32 text-right shrink-0 hidden sm:block">
+                {f.modified_at ? fmt.date(f.modified_at) : ''}
+              </span>
+              <FileMenu f={f} onRename={() => { setRenaming(f); setRenameValue(f.name ?? '') }} onDelete={() => setDeleting(f)} />
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* New folder */}
+      <Modal open={newFolderOpen} onClose={() => setNewFolderOpen(false)} title="New folder"
+        footer={<div className="flex justify-end gap-2">
+          <Button variant="secondary" onClick={() => setNewFolderOpen(false)}>Cancel</Button>
+          <Button onClick={createFolder}>Create</Button>
+        </div>}>
+        <Input label="Folder name" value={newFolderName} onChange={e => setNewFolderName(e.target.value)} autoFocus />
+      </Modal>
+
+      {/* Rename */}
+      <Modal open={renaming !== null} onClose={() => setRenaming(null)} title="Rename"
+        footer={<div className="flex justify-end gap-2">
+          <Button variant="secondary" onClick={() => setRenaming(null)}>Cancel</Button>
+          <Button onClick={rename}>Save</Button>
+        </div>}>
+        <Input label="Name" value={renameValue} onChange={e => setRenameValue(e.target.value)} autoFocus />
+      </Modal>
+
+      <ConfirmModal open={deleting !== null} title={`Delete "${deleting?.name}"?`}
+        message="Moves it to Drive's own Trash — recoverable from drive.google.com for 30 days."
+        confirmLabel="Delete" confirmVariant="danger"
+        onConfirm={remove} onCancel={() => setDeleting(null)} />
+    </div>
+  )
+}
+
+function FileMenu({ f, onRename, onDelete }: { f: DriveFile; onRename: () => void; onDelete: () => void }) {
+  return (
+    <div className="absolute top-1 right-1 hidden group-hover:flex gap-1 bg-white/90 rounded-md shadow-sm p-0.5">
+      {f.view_url && (
+        <a href={f.view_url} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}
+          className="w-6 h-6 flex items-center justify-center text-xs rounded hover:bg-gray-100" title="Open">↗</a>
+      )}
+      <button onClick={e => { e.stopPropagation(); onRename() }} className="w-6 h-6 flex items-center justify-center text-xs rounded hover:bg-gray-100" title="Rename">✎</button>
+      <button onClick={e => { e.stopPropagation(); onDelete() }} className="w-6 h-6 flex items-center justify-center text-xs rounded hover:bg-gray-100 text-red-500" title="Delete">🗑</button>
     </div>
   )
 }

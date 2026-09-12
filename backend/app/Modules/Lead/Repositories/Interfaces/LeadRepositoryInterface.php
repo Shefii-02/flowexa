@@ -20,11 +20,14 @@ interface LeadRepositoryInterface
     public function create(int $companyId, CreateLeadDTO $dto): Lead;
     public function update(Lead $lead, UpdateLeadDTO $dto): Lead;
     public function assign(Lead $lead, int $assignedTo, int $assignedBy): Lead;
+    public function reassignBulk(int $companyId, int $fromUserId, int $toUserId, bool $includeClosed): int;
     public function delete(Lead $lead): void;
+    public function deleteBulk(int $companyId, array $leadIds): int;
     public function logEvent(Lead $lead, string $event, array $payload): LeadEvent;
     public function findCounsellor(int $userId, int $companyId): ?User;
     public function countActiveLeadsFor(int $userId): int;
     public function analytics(int $companyId): array;
+    public function logs(int $companyId, int $userId, bool $viewAll, array $filter): LengthAwarePaginator;
     public function pushCrmOutbox(Lead $lead, string $event): void;
     public function exportAll(int $companyId, LeadFilterDTO $filter): Collection;
     public function import(int $companyId, int $userId, ImportLeadDTO $dto): \App\Models\LeadImport;

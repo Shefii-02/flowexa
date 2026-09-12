@@ -13,7 +13,6 @@ type Holiday = { id: number; date: string; name: string }
 const t = (s: string) => (s ?? '').slice(0, 5)
 
 export default function AssignmentRulesPage() {
-  const [tab, setTab] = useState<'basic' | 'advanced'>('basic')
   const [rule, setRule] = useState<Rule | null>(null)
   const [hours, setHours] = useState<Hour[]>([])
   const [holidays, setHolidays] = useState<Holiday[]>([])
@@ -32,17 +31,13 @@ export default function AssignmentRulesPage() {
   const setHour = (wd: number, patch: Partial<Hour>) => setHours(hs => hs.map(h => (h.weekday === wd ? { ...h, ...patch } : h)))
 
   const totalWeight = (rule?.weight_availability ?? 0) + (rule?.weight_max_leads ?? 0) + (rule?.weight_performance ?? 0) + (rule?.weight_workload ?? 0)
-  const isAdvanced = tab === 'advanced'
-  const weightsOk = !isAdvanced || rule?.strategy !== 'algorithm' || totalWeight === 100
+  const weightsOk = rule?.strategy !== 'algorithm' || totalWeight === 100
 
   const save = async () => {
     if (!rule) return
     setSaving(true)
     try {
-      await leadAssignmentApi.saveRule({
-        ...rule,
-        strategy: isAdvanced ? (rule.strategy ?? 'algorithm') : 'round_robin',
-      })
+      await leadAssignmentApi.saveRule(rule)
       await leadAssignmentApi.saveWorkingHours(hours)
       toast.success('Assignment rules saved')
       load()
@@ -69,50 +64,34 @@ export default function AssignmentRulesPage() {
         <p className="text-sm text-gray-500 mt-1">How incoming leads are routed to staff</p>
       </div>
 
-      <div className="flex gap-1 border-b border-gray-200">
-        {(['basic', 'advanced'] as const).map(x => (
-          <button key={x} onClick={() => setTab(x)}
-            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px capitalize ${tab === x ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500'}`}>
-            {x} CRM assignment
-          </button>
-        ))}
-      </div>
-
-      {/* Strategy summary */}
+      {/* Routing strategy */}
       <section className={card}>
-        <h2 className="font-semibold text-gray-800">{isAdvanced ? 'Advanced routing' : 'Basic routing'}</h2>
-        {!isAdvanced ? (
-          <p className="text-sm text-gray-500">
-            <strong>Round robin</strong> — leads are handed to staff <strong>one by one, equally</strong>. The least-loaded
-            available agent gets the next lead. Falls back to notifications / AI when nobody is available.
-          </p>
-        ) : (
-          <>
-            <p className="text-sm text-gray-500">Priority-ranked (Uber-style) routing with a weighted algorithm and an AI fallback.</p>
-            {(['algorithm', 'round_robin'] as const).map(s => (
-              <label key={s} className="flex items-start gap-2 text-sm cursor-pointer">
-                <input type="radio" name="strategy" checked={(rule.strategy ?? 'algorithm') === s} onChange={() => set('strategy', s)} className="mt-0.5" />
-                <span>{s === 'algorithm' ? 'Weighted algorithm (priority person first, one by one)' : 'Simple round robin'}</span>
-              </label>
-            ))}
-            <div>
-              <label className="block text-sm text-gray-600 mb-1">Notification mode</label>
-              <select className={input} value={rule.notification_mode ?? 'hybrid'} onChange={e => set('notification_mode', e.target.value)}>
-                <option value="uber">Notification (Uber) — offer to staff one by one, first to accept wins</option>
-                <option value="hybrid">Hybrid — auto-assign, fall back to notifications</option>
-                <option value="auto">Auto — algorithm assigns directly</option>
-              </select>
-            </div>
-          </>
-        )}
+        <h2 className="font-semibold text-gray-800">Routing</h2>
+        <p className="text-sm text-gray-500">How the next lead picks its staff member.</p>
+        {(['algorithm', 'round_robin'] as const).map(s => (
+          <label key={s} className="flex items-start gap-2 text-sm cursor-pointer">
+            <input type="radio" name="strategy" checked={(rule.strategy ?? 'algorithm') === s} onChange={() => set('strategy', s)} className="mt-0.5" />
+            <span>{s === 'algorithm'
+              ? 'Weighted algorithm — score every available agent (availability, capacity, performance, workload) and offer it to the top scorer first'
+              : 'Simple round robin — offer it to the least-loaded, longest-idle available agent'}</span>
+          </label>
+        ))}
+        <div>
+          <label className="block text-sm text-gray-600 mb-1">Notification mode</label>
+          <select className={input} value={rule.notification_mode ?? 'hybrid'} onChange={e => set('notification_mode', e.target.value)}>
+            <option value="uber">Notify one at a time — staff must Accept/Decline; declines and timeouts move to the next agent</option>
+            <option value="hybrid">Hybrid — same notify → Accept/Decline → cascade flow (kept for older saved rules)</option>
+            <option value="auto">Auto-assign — skip the accept/decline step, assign the top pick directly</option>
+          </select>
+        </div>
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={!!rule.auto_assign_enabled} onChange={e => set('auto_assign_enabled', e.target.checked)} />
           Auto-assign new leads
         </label>
       </section>
 
-      {/* Advanced-only: weights */}
-      {isAdvanced && (rule.strategy ?? 'algorithm') === 'algorithm' && (
+      {/* Weighted-algorithm weights */}
+      {(rule.strategy ?? 'algorithm') === 'algorithm' && (
         <section className={card}>
           <div className="flex items-center justify-between">
             <h2 className="font-semibold text-gray-800">Algorithm weights</h2>
@@ -141,37 +120,34 @@ export default function AssignmentRulesPage() {
         </div>
       </section>
 
-      {/* Advanced-only: notification tuning + duplicate action */}
-      {isAdvanced && (
-        <>
-          {(rule.notification_mode === 'uber' || rule.notification_mode === 'hybrid') && (
-            <section className={card}>
-              <h2 className="font-semibold text-gray-800">Notification settings</h2>
-              <div className="grid grid-cols-3 gap-4">
-                <label className="text-sm text-gray-600">Gap between staff (sec)<input type="number" min={5} className={`mt-1 ${input}`} value={rule.notification_gap_seconds ?? 30} onChange={e => set('notification_gap_seconds', Number(e.target.value))} /></label>
-                <label className="text-sm text-gray-600">Acceptance timeout (sec)<input type="number" min={10} className={`mt-1 ${input}`} value={rule.notification_timeout_seconds ?? 60} onChange={e => set('notification_timeout_seconds', Number(e.target.value))} /></label>
-                <label className="text-sm text-gray-600">Max staff to notify<input type="number" min={1} max={10} className={`mt-1 ${input}`} value={rule.max_notification_rounds ?? 3} onChange={e => set('max_notification_rounds', Number(e.target.value))} /></label>
-              </div>
-            </section>
-          )}
-          <section className={card}>
-            <h2 className="font-semibold text-gray-800">Duplicate lead handling</h2>
-            <div className="grid grid-cols-2 gap-4">
-              <label className="text-sm text-gray-600">Duplicate window (days)<input type="number" min={1} className={`mt-1 ${input}`} value={rule.duplicate_window_days ?? 90} onChange={e => set('duplicate_window_days', Number(e.target.value))} /></label>
-              <label className="text-sm text-gray-600">Action on duplicate
-                <select className={`mt-1 ${input}`} value={rule.duplicate_action ?? 'assign_same_staff'} onChange={e => set('duplicate_action', e.target.value)}>
-                  <option value="assign_same_staff">Assign to same staff</option>
-                  <option value="create_new">Create new lead</option>
-                  <option value="merge">Merge into existing</option>
-                  <option value="notify_admin">Notify admin</option>
-                </select>
-              </label>
-            </div>
-          </section>
-        </>
+      {/* Notification tuning + duplicate action */}
+      {(rule.notification_mode === 'uber' || rule.notification_mode === 'hybrid') && (
+        <section className={card}>
+          <h2 className="font-semibold text-gray-800">Notification settings</h2>
+          <div className="grid grid-cols-3 gap-4">
+            <label className="text-sm text-gray-600">Gap between staff (sec)<input type="number" min={5} className={`mt-1 ${input}`} value={rule.notification_gap_seconds ?? 30} onChange={e => set('notification_gap_seconds', Number(e.target.value))} /></label>
+            <label className="text-sm text-gray-600">Acceptance timeout (sec)<input type="number" min={10} className={`mt-1 ${input}`} value={rule.notification_timeout_seconds ?? 60} onChange={e => set('notification_timeout_seconds', Number(e.target.value))} /></label>
+            <label className="text-sm text-gray-600">Max staff to notify<input type="number" min={1} max={10} className={`mt-1 ${input}`} value={rule.max_notification_rounds ?? 3} onChange={e => set('max_notification_rounds', Number(e.target.value))} /></label>
+          </div>
+          <p className="text-xs text-gray-400">When nobody accepts within the max rounds, the AI agent takes over automatically.</p>
+        </section>
       )}
+      <section className={card}>
+        <h2 className="font-semibold text-gray-800">Duplicate lead handling</h2>
+        <div className="grid grid-cols-2 gap-4">
+          <label className="text-sm text-gray-600">Duplicate window (days)<input type="number" min={1} className={`mt-1 ${input}`} value={rule.duplicate_window_days ?? 90} onChange={e => set('duplicate_window_days', Number(e.target.value))} /></label>
+          <label className="text-sm text-gray-600">Action on duplicate
+            <select className={`mt-1 ${input}`} value={rule.duplicate_action ?? 'assign_same_staff'} onChange={e => set('duplicate_action', e.target.value)}>
+              <option value="assign_same_staff">Assign to same staff</option>
+              <option value="create_new">Create new lead</option>
+              <option value="merge">Merge into existing</option>
+              <option value="notify_admin">Notify admin</option>
+            </select>
+          </label>
+        </div>
+      </section>
 
-      {/* Working hours — per day, both tabs */}
+      {/* Working hours — per day */}
       <section className={card}>
         <h2 className="font-semibold text-gray-800">Working hours <span className="text-xs font-normal text-gray-400">(leads outside these hours go straight to the AI agent)</span></h2>
         <div className="space-y-1.5">

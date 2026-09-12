@@ -5,6 +5,7 @@ namespace App\Jobs;
 use App\Models\LeadAssignment;
 use App\Models\LeadAssignmentNotification;
 use App\Models\LeadAssignmentRule;
+use App\Services\LeadAssignment\LeadActivityLogger;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -21,7 +22,7 @@ class CheckNotificationResponse implements ShouldQueue
         private readonly int $ruleId,
     ) {}
 
-    public function handle(): void
+    public function handle(LeadActivityLogger $activity): void
     {
         $notification = LeadAssignmentNotification::find($this->notificationId);
         $assignment   = LeadAssignment::find($this->assignmentId);
@@ -35,6 +36,12 @@ class CheckNotificationResponse implements ShouldQueue
         // Staff didn't respond in time
         if (!$notification->responded_at) {
             $notification->update(['response' => 'no_response', 'responded_at' => now()]);
+
+            $activity->log($assignment, 'lead_assignment_timeout', [
+                'staff_id' => $notification->staff_id,
+                'staff_name' => $notification->staff?->name,
+                'timeout_seconds' => $rule->notification_timeout_seconds,
+            ]);
 
             // Wait gap then notify next staff
             dispatch(new SendLeadNotifications($this->assignmentId, $this->ruleId))

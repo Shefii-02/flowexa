@@ -17,12 +17,26 @@ class LeadResource extends JsonResource
             'priority'       => $this->priority,
             'category'       => $this->category,
             'source'         => $this->source,
+            'source_label'   => $this->source_label,
+            'origin_type'    => $this->origin_type,
+            'origin_label'   => $this->origin_label,
             'notes'          => $this->notes,
             'crm_id'         => $this->crm_id,
             'followed_up_at' => $this->followed_up_at?->toIso8601String(),
             'enrolled_at'    => $this->enrolled_at?->toIso8601String(),
+            'lost_at'        => $this->lost_at?->toIso8601String(),
             'assigned_at'    => $this->assigned_at?->toIso8601String(),
             'created_at'     => $this->created_at->toIso8601String(),
+            // Opportunity — the catalog item + amount this lead converts on. Set both and reach
+            // "enrolled" to auto-record a sale and post the counsellor's incentive.
+            'listing_id'  => $this->listing_id,
+            'sale_value'  => $this->sale_value !== null ? (float) $this->sale_value : null,
+            'listing'     => $this->whenLoaded('listing', fn() => $this->listing ? [
+                'id' => $this->listing->id, 'title' => $this->listing->title, 'price' => (float) $this->listing->price,
+            ] : null),
+            'sale'        => $this->whenLoaded('sale', fn() => $this->sale ? [
+                'id' => $this->sale->id, 'amount' => (float) $this->sale->amount, 'sold_at' => $this->sale->sold_at?->toDateString(),
+            ] : null),
             'contact'    => $this->whenLoaded('contact', fn() => [
                 'id'    => $this->contact->id,
                 'name'  => $this->contact->name,

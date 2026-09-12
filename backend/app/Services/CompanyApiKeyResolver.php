@@ -24,6 +24,21 @@ class CompanyApiKeyResolver
 {
     private const DEFAULT_MODEL = 'claude-haiku-4-5-20251001';
 
+    /**
+     * Per-provider fallback model, used only when nobody has ever picked one (no
+     * Company.ai_model / platform.ai_model set). Keep in sync with the first entry
+     * per provider in AiAgentController::modelCatalogue(). Every prior fallback in
+     * this class returned the Anthropic default regardless of provider — so a
+     * company running on google_ai or openai with no ai_model set would end up
+     * asking Gemini/OpenAI for a Claude model id, the call would fail, and the
+     * agent would silently drop to its generic "I couldn't find an answer" reply.
+     */
+    private const DEFAULT_MODELS = [
+        'anthropic' => 'claude-haiku-4-5-20251001',
+        'openai'    => 'gpt-4o-mini',
+        'google_ai' => 'gemini-1.5-flash',
+    ];
+
     /** Cached platform company lookup (slug = "platform", seeded by SuperAdminSeeder). */
     private static ?Company $platform = null;
     private static bool $platformLoaded = false;
@@ -89,21 +104,44 @@ class CompanyApiKeyResolver
         return $own;
     }
 
+    /**
+     * `ai_model` is a single free-text column shared across every provider — if a company
+     * switches provider (e.g. Anthropic → Gemini) without also repicking a model, the column
+     * still holds the old provider's model id ("claude-haiku-…"), which the *new* provider's
+     * API will reject outright. This is a same-family sanity check, not full validation.
+     */
+    private static function modelMatchesProvider(string $model, string $provider): bool
+    {
+        $prefix = match ($provider) {
+            'anthropic' => 'claude',
+            'openai'    => 'gpt',
+            'google_ai' => 'gemini',
+            default     => null,
+        };
+        return $prefix === null || str_starts_with($model, $prefix);
+    }
+
     public static function model(Company $company): string
     {
-        if ($company->ai_model && self::activeKeyModel($company, $company->ai_provider ?: 'anthropic')) {
+        $provider = $company->ai_provider ?: 'anthropic';
+
+        if ($company->ai_model && self::modelMatchesProvider($company->ai_model, $provider)
+            && self::activeKeyModel($company, $provider)) {
             return $company->ai_model;
         }
 
         $platform = self::platformCompany();
         if ($platform && $platform->id !== $company->id && $platform->ai_model) {
-            if (self::activeKeyModel($platform, $platform->ai_provider ?: 'anthropic')) {
+            $platformProvider = $platform->ai_provider ?: 'anthropic';
+            if (self::modelMatchesProvider($platform->ai_model, $platformProvider)
+                && self::activeKeyModel($platform, $platformProvider)) {
                 return $platform->ai_model;
             }
         }
 
-        return $company->ai_model
-            ?? config('services.anthropic.model', self::DEFAULT_MODEL);
+        return ($company->ai_model && self::modelMatchesProvider($company->ai_model, $provider))
+            ? $company->ai_model
+            : (self::DEFAULT_MODELS[$provider] ?? self::DEFAULT_MODEL);
     }
 
     /**
@@ -135,7 +173,8 @@ class CompanyApiKeyResolver
                 return [
                     'provider'  => $pProvider,
                     'key'       => ApiKeyEncryption::decrypt($key->api_key),
-                    'model'     => $platform->ai_model ?: self::DEFAULT_MODEL,
+                    'model'     => (self::modelMatchesProvider($platform->ai_model ?: '', $pProvider) ? $platform->ai_model : null)
+                                    ?: (self::DEFAULT_MODELS[$pProvider] ?? self::DEFAULT_MODEL),
                     'source'    => 'platform',
                     'key_model' => $key,
                 ];
@@ -147,7 +186,8 @@ class CompanyApiKeyResolver
             return [
                 'provider'  => $provider,
                 'key'       => $envKey,
-                'model'     => $company->ai_model ?: self::DEFAULT_MODEL,
+                'model'     => (self::modelMatchesProvider($company->ai_model ?: '', $provider) ? $company->ai_model : null)
+                                ?: (self::DEFAULT_MODELS[$provider] ?? self::DEFAULT_MODEL),
                 'source'    => 'env',
                 'key_model' => null,
             ];

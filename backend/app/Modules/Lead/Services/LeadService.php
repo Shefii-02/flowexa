@@ -90,6 +90,16 @@ class LeadService
         return $assigned;
     }
 
+    /** Bulk-switch every (open, unless includeClosed) lead from one employee to another. No capacity gate — this is a deliberate administrative transfer, not a new assignment. */
+    public function bulkReassign(int $companyId, \App\Modules\Lead\DTOs\BulkReassignDTO $dto): int
+    {
+        $from = $this->leadRepository->findCounsellor($dto->fromUserId, $companyId);
+        $to   = $this->leadRepository->findCounsellor($dto->toUserId, $companyId);
+        if (!$from || !$to) throw LeadException::counsellorNotFound();
+
+        return $this->leadRepository->reassignBulk($companyId, $dto->fromUserId, $dto->toUserId, $dto->includeClosed);
+    }
+
     public function addNote(int $leadId, int $companyId, int $userId, bool $viewAll, CreateNoteDTO $dto): void
     {
         $lead = $this->show($leadId, $companyId, $userId, $viewAll);
@@ -103,11 +113,21 @@ class LeadService
         $this->leadRepository->delete($lead);
     }
 
+    public function bulkDelete(int $companyId, \App\Modules\Lead\DTOs\BulkDeleteDTO $dto): int
+    {
+        return $this->leadRepository->deleteBulk($companyId, $dto->leadIds);
+    }
+
     public function crmSync(int $id, int $companyId): void
     {
         $lead = $this->leadRepository->findById($id, $companyId);
         if (!$lead) throw LeadException::notFound();
         $this->leadRepository->pushCrmOutbox($lead, 'manual_sync');
+    }
+
+    public function logs(int $companyId, int $userId, bool $viewAll, array $filter): \Illuminate\Pagination\LengthAwarePaginator
+    {
+        return $this->leadRepository->logs($companyId, $userId, $viewAll, $filter);
     }
 
     public function analytics(int $companyId): array
@@ -137,7 +157,7 @@ class LeadService
             throw new \RuntimeException("Unable to open export file for writing: {$path}");
         }
 
-        fputcsv($handle, ['id', 'phone', 'name', 'email', 'stage', 'priority', 'category', 'source', 'assigned_to', 'notes', 'created_at']);
+        fputcsv($handle, ['id', 'phone', 'name', 'email', 'stage', 'priority', 'category', 'source', 'assigned_to', 'notes', 'created_at', 'closed_at']);
 
         foreach ($leads as $lead) {
             fputcsv($handle, [
@@ -152,6 +172,7 @@ class LeadService
                 $lead->assignedTo?->name,
                 $lead->notes,
                 $lead->created_at?->toDateTimeString(),
+                $lead->closed_at?->toDateTimeString(),
             ]);
         }
 

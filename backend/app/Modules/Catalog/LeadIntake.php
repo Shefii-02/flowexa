@@ -23,10 +23,14 @@ class LeadIntake
 
     /**
      * @param array<string,mixed> $fields  collected fields — must contain a usable `phone`
+     * @param string|null $originType  which specific number/session/account this came from —
+     *   see the leads.origin_type doc-comment in the migration for the vocabulary
      * @return array{contact:Contact, lead:?Lead, assigned:bool}
      */
-    public function capture(Company $company, array $fields, string $source, ?string $sourceRef = null): array
-    {
+    public function capture(
+        Company $company, array $fields, string $source, ?string $sourceRef = null,
+        ?string $originType = null, ?int $originId = null, ?string $originLabel = null,
+    ): array {
         $phone = $this->normalizePhone($fields['phone'] ?? '');
         if (!$phone) {
             return ['contact' => null, 'lead' => null, 'assigned' => false];
@@ -43,11 +47,11 @@ class LeadIntake
             ]))->save();
         }
 
-        $lead = $this->createLead($company->id, $contact->id, $fields, $source);
+        $lead = $this->createLead($company->id, $contact->id, $fields, $source, $originType, $originId, $originLabel);
 
         $assigned = false;
         try {
-            $this->assignment->assign($company, $contact->fresh(), $this->sourceType($source), null, $sourceRef);
+            $this->assignment->assign($company, $contact->fresh(), $this->sourceType($source), null, $sourceRef, 'auto', $lead);
             $assigned = true;
         } catch (\Throwable $e) {
             Log::warning('LeadIntake: assignment engine failed', ['source' => $source, 'error' => $e->getMessage()]);
@@ -56,8 +60,10 @@ class LeadIntake
         return ['contact' => $contact, 'lead' => $lead, 'assigned' => $assigned];
     }
 
-    private function createLead(int $companyId, int $contactId, array $fields, string $source): ?Lead
-    {
+    private function createLead(
+        int $companyId, int $contactId, array $fields, string $source,
+        ?string $originType, ?int $originId, ?string $originLabel,
+    ): ?Lead {
         $existing = Lead::where('company_id', $companyId)->where('contact_id', $contactId)
             ->whereNotIn('stage', ['enrolled', 'lost'])->latest()->first();
         if ($existing) {
@@ -76,12 +82,16 @@ class LeadIntake
                 contactId: $contactId,
                 source: $this->sourceType($source),
                 notes: $note,
+                originType: $originType,
+                originId: $originId,
+                originLabel: $originLabel,
             ));
         } catch (\Throwable $e) {
             Log::warning('LeadIntake: repo create failed, bare Lead', ['error' => $e->getMessage()]);
             return Lead::create([
                 'company_id' => $companyId, 'contact_id' => $contactId,
                 'stage' => 'new', 'priority' => 'high', 'source' => $this->sourceType($source), 'notes' => $note,
+                'origin_type' => $originType, 'origin_id' => $originId, 'origin_label' => $originLabel,
             ]);
         }
     }

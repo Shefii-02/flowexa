@@ -29,7 +29,9 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withSchedule(function (\Illuminate\Console\Scheduling\Schedule $schedule): void {
         $schedule->command('wachat:process-scheduled-messages')->everyMinute();
         $schedule->command('campaigns:dispatch-scheduled')->everyMinute()->withoutOverlapping();
-        $schedule->command('google:sync-sheets')->everySixHours()->withoutOverlapping();
+        // Ticks every 5 min; each sync only actually fires once its own cadence
+        // (as fast as every 10 minutes) is due — see GoogleSheetSync::isDue().
+        $schedule->command('google:sync-sheets')->everyFiveMinutes()->withoutOverlapping();
         $schedule->command('wachat:process-automations')->everyFiveMinutes();
         $schedule->command('wachat:process-followups')->everyFifteenMinutes();
         $schedule->command('ai:reset-monthly-tokens')->monthlyOn(1, '00:00');

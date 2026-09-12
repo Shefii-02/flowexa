@@ -43,6 +43,14 @@ export const catalogApi = {
   remove: (id: number) => api.delete(`/listings/${id}`),
   match: (requirements: Record<string, unknown>) => api.post('/listings/match', { requirements }),
 
+  // Bulk CSV — attributes/media travel as JSON/pipe-joined columns so export → edit → import round-trips.
+  export: (p?: Record<string, unknown>) => api.get('/listings/export', { params: p, responseType: 'blob' }),
+  import: (file: File) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    return api.post('/listings/import', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+  },
+
   // Google Drive as external storage for listing media
   googleStatus: () => api.get<{ configured: boolean; integration: { drive_folder_url: string | null } | null }>('/google/status'),
   driveFiles: () => api.get<{ files: DriveFile[] }>('/google/drive/files'),

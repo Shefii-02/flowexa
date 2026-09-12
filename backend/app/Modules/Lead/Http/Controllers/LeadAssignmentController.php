@@ -7,7 +7,9 @@ use App\Models\LeadAssignmentNotification;
 use App\Models\LeadAssignmentRule;
 use App\Models\StaffAvailability;
 use App\Models\User;
+use App\Jobs\SendLeadNotifications;
 use App\Services\LeadAssignment\LeadAssignmentEngine;
+use App\Services\LeadAssignment\LeadActivityLogger;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
@@ -16,7 +18,10 @@ use Illuminate\Support\Facades\DB;
 
 class LeadAssignmentController extends Controller
 {
-    public function __construct(private readonly LeadAssignmentEngine $engine) {}
+    public function __construct(
+        private readonly LeadAssignmentEngine $engine,
+        private readonly LeadActivityLogger $activity,
+    ) {}
 
     // GET /api/v1/lead-assignments
     public function index(Request $request): JsonResponse
@@ -159,6 +164,9 @@ class LeadAssignmentController extends Controller
             'accepted_at' => now(),
         ]);
 
+        $this->activity->syncAssignee($assignment, $user->id);
+        $this->activity->log($assignment, 'lead_assignment_accepted', ['staff_id' => $user->id, 'staff_name' => $user->name], $user->id);
+
         return response()->json(['data' => $assignment->fresh()]);
     }
 
@@ -175,7 +183,19 @@ class LeadAssignmentController extends Controller
             ->whereNull('responded_at')
             ->update(['response' => 'declined', 'responded_at' => now()]);
 
-        return response()->json(['message' => 'Declined']);
+        $this->activity->log($assignment, 'lead_assignment_declined', ['staff_id' => $user->id, 'staff_name' => $user->name], $user->id);
+
+        // A decline is exactly like a notification timeout — hand off to the next candidate
+        // (round robin or weighted, per the rule) rather than leaving the lead stranded.
+        if (!in_array($assignment->status, ['accepted', 'completed', 'dropped'], true)) {
+            $rule = LeadAssignmentRule::where('company_id', $company->id)->first();
+            if ($rule) {
+                dispatch(new SendLeadNotifications($assignment->id, $rule->id))
+                    ->delay(now()->addSeconds($rule->notification_gap_seconds));
+            }
+        }
+
+        return response()->json(['message' => 'Declined. Offering this lead to another team member.']);
     }
 
     // POST /api/v1/lead-assignments/{id}/complete
@@ -185,6 +205,7 @@ class LeadAssignmentController extends Controller
         $assignment = LeadAssignment::where('company_id', $company->id)->findOrFail($id);
 
         $assignment->update(['status' => 'completed']);
+        $this->activity->log($assignment, 'lead_assignment_completed', ['staff_id' => $assignment->staff_id]);
 
         if ($assignment->contact) {
             $assignment->contact->update(['lead_stage' => 'converted']);
@@ -220,6 +241,7 @@ class LeadAssignmentController extends Controller
         $rule       = LeadAssignmentRule::where('company_id', $company->id)->firstOrNew();
 
         $oldStaffId = $assignment->staff_id;
+        $oldStaffName = $oldStaffId ? User::find($oldStaffId)?->name : null;
         $assignment->update([
             'transferred_from' => $oldStaffId,
             'transfer_reason'  => $request->reason ?? 'Manual transfer',
@@ -237,6 +259,11 @@ class LeadAssignmentController extends Controller
         }
 
         $this->engine->assignToStaff($assignment, $newStaff, $rule);
+        $this->activity->log($assignment, 'lead_assignment_transferred', [
+            'from_staff_id' => $oldStaffId, 'from_staff_name' => $oldStaffName,
+            'to_staff_id'   => $newStaff->id, 'to_staff_name' => $newStaff->name,
+            'reason'        => $request->reason,
+        ], Auth::id());
 
         return response()->json(['data' => $assignment->fresh(['contact', 'staff'])]);
     }

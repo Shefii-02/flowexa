@@ -2,7 +2,7 @@
 // against (properties / clinic services / courses / products). Fields adapt to the chosen industry.
 import { useEffect, useMemo, useState } from 'react'
 import { Button, Input, Textarea, Badge, EmptyState, Modal, ConfirmModal } from '@/components/ui'
-import { fmt, getError } from '@/utils'
+import { fmt, getError, downloadBlob } from '@/utils'
 import toast from 'react-hot-toast'
 import { catalogApi, type IndustryTemplate, type Listing, type AttributeField, type DriveFile } from './api'
 
@@ -69,6 +69,11 @@ export default function CatalogPage() {
   const [uploading, setUploading] = useState(false)
   const [drivePicker, setDrivePicker] = useState<DriveFile[] | null>(null)
 
+  const [showImport, setShowImport] = useState(false)
+  const [csvFile, setCsvFile] = useState<File | null>(null)
+  const [importing, setImporting] = useState(false)
+  const [exporting, setExporting] = useState(false)
+
   const template = templates[activeKey]
   const listingType = template?.listing_type ?? 'product'
 
@@ -132,6 +137,47 @@ export default function CatalogPage() {
     catch (e) { toast.error(getError(e)) }
   }
 
+  const handleExport = async () => {
+    setExporting(true)
+    try {
+      const { data } = await catalogApi.export({ type: listingType })
+      downloadBlob(new Blob([data]), `${listingType}s.csv`)
+      toast.success('Export downloaded.')
+    } catch (e) { toast.error(getError(e)) }
+    finally { setExporting(false) }
+  }
+
+  const handleImport = async () => {
+    if (!csvFile) return
+    setImporting(true)
+    try {
+      const { data } = await catalogApi.import(csvFile)
+      toast.success(data.message ?? 'Imported.')
+      setShowImport(false); setCsvFile(null); void load()
+    } catch (e) { toast.error(getError(e)) }
+    finally { setImporting(false) }
+  }
+
+  const csvCell = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`
+
+  const downloadSampleCsv = () => {
+    const schema = template?.attribute_schema ?? []
+    const sampleAttrs: Record<string, unknown> = {}
+    schema.forEach((f) => {
+      sampleAttrs[f.key] = f.type === 'enum' ? (f.options?.[0] ?? '')
+        : f.type === 'number' ? 1
+        : f.type === 'boolean' ? true
+        : `Sample ${f.label}`
+    })
+    const header = ['title', 'description', 'status', 'price', 'price_unit', 'currency', 'location', 'incentive_percentage', 'attributes_json', 'media_urls']
+    const row = [
+      `Sample ${listingType}`, 'Describe it here', 'active', '10000', 'total', 'INR', 'Kochi', '',
+      JSON.stringify(sampleAttrs), 'https://example.com/photo1.jpg|https://example.com/photo2.jpg',
+    ]
+    const csv = header.map(csvCell).join(',') + '\n' + row.map(csvCell).join(',')
+    downloadBlob(new Blob([csv], { type: 'text/csv' }), `${listingType}_sample.csv`)
+  }
+
   const toDraft = (l: Listing): Draft => ({
     id: l.id, type: l.type, title: l.title, description: l.description ?? '', status: l.status,
     price: l.price ?? '', price_unit: l.price_unit ?? '', incentive_percentage: (l as any).incentive_percentage ?? '', currency: l.currency, location: l.location ?? '',
@@ -154,6 +200,8 @@ export default function CatalogPage() {
             {template.name}
           </span>
         )}
+        <Button variant="secondary" loading={exporting} onClick={handleExport}>↓ Export</Button>
+        <Button variant="secondary" onClick={() => setShowImport(true)}>↑ Import CSV</Button>
         <Button onClick={() => setEditor(emptyDraft(listingType))}>+ Add {listingType}</Button>
       </div>
 
@@ -285,6 +333,35 @@ export default function CatalogPage() {
             ))}
           </div>
         )}
+      </Modal>
+
+      {/* Import */}
+      <Modal open={showImport} onClose={() => setShowImport(false)} title={`Import ${listingType}s (CSV)`} size="md"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setShowImport(false)}>Cancel</Button>
+            <Button onClick={handleImport} loading={importing} disabled={!csvFile}>Import</Button>
+          </>
+        }>
+        <div className="space-y-4">
+          <div className="flex justify-end">
+            <button onClick={downloadSampleCsv} className="text-xs text-brand-600 hover:underline">↓ Download sample CSV</button>
+          </div>
+          <div className="bg-gray-50 border-2 border-dashed border-gray-200 rounded-xl p-6 text-center">
+            <input type="file" accept=".csv,.txt" onChange={e => setCsvFile(e.target.files?.[0] || null)} className="hidden" id="listing-csv-input" />
+            <label htmlFor="listing-csv-input" className="cursor-pointer">
+              <p className="text-2xl mb-2">📂</p>
+              <p className="text-sm font-medium text-gray-700">{csvFile ? csvFile.name : 'Click to select CSV file'}</p>
+              <p className="text-xs text-gray-400 mt-1">Required column: <strong>title</strong>. Optional: description, status, price, price_unit, currency, location, incentive_percentage, attributes_json, media_urls</p>
+            </label>
+          </div>
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-700">
+            <strong>attributes_json</strong> holds the {template?.name ?? 'vertical'}-specific fields
+            ({template?.attribute_schema.map(f => f.key).join(', ') || 'none for this template'}) as a JSON object.
+            <strong className="ml-1">media_urls</strong> is one or more photo/video links separated by <code>|</code>.
+          </div>
+          <p className="text-xs text-gray-400">Matched by title (case-insensitive) within this listing type — a row for a title that already exists is skipped.</p>
+        </div>
       </Modal>
     </div>
   )

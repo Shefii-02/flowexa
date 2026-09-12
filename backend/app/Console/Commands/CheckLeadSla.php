@@ -5,13 +5,14 @@ namespace App\Console\Commands;
 use Illuminate\Console\Command;
 use App\Models\LeadAssignment;
 use App\Services\LeadAssignment\LeadAssignmentEngine;
+use App\Services\LeadAssignment\LeadActivityLogger;
 
 class CheckLeadSla extends Command
 {
     protected $signature   = 'leads:check-sla';
     protected $description = 'Check for SLA breaches on active lead assignments and trigger AI fallback';
 
-    public function handle(LeadAssignmentEngine $engine): void
+    public function handle(LeadAssignmentEngine $engine, LeadActivityLogger $activity): void
     {
         $now = now();
 
@@ -35,9 +36,14 @@ class CheckLeadSla extends Command
 
             $this->warn("SLA breached: assignment #{$assignment->id} (contact: {$assignment->contact?->name})");
 
-            if ($assignment->status !== 'ai_handling') {
+            $activity->log($assignment, 'lead_sla_breached', [
+                'staff_id' => $assignment->staff_id,
+                'sla_minutes' => $assignment->response_sla_minutes,
+            ]);
+
+            if ($assignment->status !== 'ai_handling' && $assignment->company && $assignment->contact) {
                 try {
-                    $engine->startAiAgent($assignment);
+                    $engine->startAiAgent($assignment, $assignment->company, $assignment->contact);
                     $this->info("  → AI agent started for #{$assignment->id}");
                 } catch (\Exception $e) {
                     $this->error("  → Failed to start AI: {$e->getMessage()}");

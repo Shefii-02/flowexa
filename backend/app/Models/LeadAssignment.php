@@ -10,7 +10,7 @@ use App\Modules\WaChat\Models\AiAgentSession;
 class LeadAssignment extends Model
 {
     protected $fillable = [
-        'company_id', 'contact_id', 'staff_id', 'ai_agent_session_id', 'campaign_id',
+        'company_id', 'contact_id', 'lead_id', 'staff_id', 'ai_agent_session_id', 'campaign_id',
         'source_type', 'source_ref', 'status', 'assignment_type', 'priority',
         'accepted_at', 'first_reply_at', 'response_sla_minutes',
         'sla_breached', 'sla_breached_at',
@@ -30,6 +30,7 @@ class LeadAssignment extends Model
 
     public function company(): BelongsTo        { return $this->belongsTo(Company::class); }
     public function contact(): BelongsTo        { return $this->belongsTo(Contact::class); }
+    public function lead(): BelongsTo           { return $this->belongsTo(Lead::class); }
     public function staff(): BelongsTo          { return $this->belongsTo(User::class, 'staff_id'); }
     public function campaign(): BelongsTo       { return $this->belongsTo(Campaign::class); }
     public function transferredFrom(): BelongsTo{ return $this->belongsTo(User::class, 'transferred_from'); }

@@ -19,6 +19,10 @@ class LeadFilterRequest extends FormRequest
             'assigned_to' => ['nullable', 'integer'],
             'source'      => ['nullable', 'string'],
             'search'      => ['nullable', 'string', 'max:100'],
+            'created_from'=> ['nullable', 'date'],
+            'created_to'  => ['nullable', 'date'],
+            'closed_from' => ['nullable', 'date'],
+            'closed_to'   => ['nullable', 'date'],
             'per_page'    => ['nullable', 'integer', 'min:5', 'max:100'],
             'page'        => ['nullable', 'integer', 'min:1'],
         ];

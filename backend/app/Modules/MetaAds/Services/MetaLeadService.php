@@ -220,7 +220,7 @@ class MetaLeadService
                 ]))->save();
             }
 
-            $crmLead = $this->attachCrmLead($contact->id, $account->company_id, $metaLead, $campaign?->name);
+            $crmLead = $this->attachCrmLead($contact->id, $account->company_id, $metaLead, $campaign?->id, $campaign?->name);
 
             $metaLead->update([
                 'contact_id'     => $contact->id,
@@ -234,7 +234,7 @@ class MetaLeadService
     }
 
     /** Reuse an active CRM lead for this contact, else create one attributed to Meta Ads. */
-    private function attachCrmLead(int $contactId, int $companyId, MetaLead $metaLead, ?string $campaignName): ?Lead
+    private function attachCrmLead(int $contactId, int $companyId, MetaLead $metaLead, ?int $campaignId, ?string $campaignName): ?Lead
     {
         $existing = Lead::where('company_id', $companyId)
             ->where('contact_id', $contactId)
@@ -247,6 +247,9 @@ class MetaLeadService
             . ($campaignName ? " · campaign: {$campaignName}" : '')
             . ($metaLead->form?->name ? " · form: {$metaLead->form->name}" : '');
 
+        // A company can run several ad campaigns at once — record which one this lead came from.
+        $originLabel = $campaignName ?: $metaLead->form?->name;
+
         try {
             /** @var \App\Modules\Lead\Repositories\Interfaces\LeadRepositoryInterface $repo */
             $repo = app(\App\Modules\Lead\Repositories\Interfaces\LeadRepositoryInterface::class);
@@ -254,16 +257,22 @@ class MetaLeadService
                 contactId: $contactId,
                 source: 'meta_ads',
                 notes: $note,
+                originType: $originLabel ? 'ad_campaign' : null,
+                originId: $campaignId,
+                originLabel: $originLabel,
             ));
         } catch (\Throwable $e) {
             Log::warning('MetaLeadService: LeadRepository::create failed, writing a bare Lead', ['error' => $e->getMessage()]);
             return Lead::create([
-                'company_id' => $companyId,
-                'contact_id' => $contactId,
-                'stage'      => 'new',
-                'priority'   => 'medium',
-                'source'     => 'meta_ads',
-                'notes'      => $note,
+                'company_id'   => $companyId,
+                'contact_id'   => $contactId,
+                'stage'        => 'new',
+                'priority'     => 'medium',
+                'source'       => 'meta_ads',
+                'notes'        => $note,
+                'origin_type'  => $originLabel ? 'ad_campaign' : null,
+                'origin_id'    => $campaignId,
+                'origin_label' => $originLabel,
             ]);
         }
     }

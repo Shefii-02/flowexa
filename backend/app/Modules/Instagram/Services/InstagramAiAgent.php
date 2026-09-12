@@ -78,7 +78,13 @@ class InstagramAiAgent
 
         // Phone captured → routed CRM lead (once).
         if (!$convo->lead_id && !empty($collected['phone'])) {
-            $result = $this->intake->capture($company, $collected, 'instagram_dm', "ig:{$convo->id}");
+            // A company can connect several Instagram accounts — record which one this came in on.
+            $result = $this->intake->capture(
+                $company, $collected, 'instagram_dm', "ig:{$convo->id}",
+                originType: 'instagram_account',
+                originId: $account->id,
+                originLabel: $account->username ? "@{$account->username}" : $account->name,
+            );
             if ($result['contact']) {
                 $convo->update([
                     'contact_id'      => $result['contact']->id,

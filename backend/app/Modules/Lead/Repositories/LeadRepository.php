@@ -23,9 +23,20 @@ class LeadRepository implements LeadRepositoryInterface
 {
     public function paginate(int $companyId, int $userId, bool $viewAll, LeadFilterDTO $filter): LengthAwarePaginator
     {
-        return Lead::with(['contact:id,name,phone,email', 'assignedTo:id,name,email,department'])
-            ->where('company_id', $companyId)
-            ->when(!$viewAll, fn($q) => $q->where('assigned_to', $userId))
+        return $this->applyFilters(
+            Lead::with(['contact:id,name,phone,email', 'assignedTo:id,name,email,department'])
+                ->where('company_id', $companyId)
+                ->when(!$viewAll, fn($q) => $q->where('assigned_to', $userId)),
+            $filter,
+        )
+            ->latest()
+            ->paginate($filter->perPage, ['*'], 'page', $filter->page);
+    }
+
+    /** Shared WHERE chain for both the listing and the export queries. */
+    private function applyFilters($query, LeadFilterDTO $filter)
+    {
+        return $query
             ->when($filter->stage,      fn($q) => $q->where('stage', $filter->stage))
             ->when($filter->priority,   fn($q) => $q->where('priority', $filter->priority))
             ->when($filter->category,   fn($q) => $q->where('category', $filter->category))
@@ -37,8 +48,18 @@ class LeadRepository implements LeadRepositoryInterface
                       ->orWhere('phone','like', "%{$filter->search}%")
                 )
             )
-            ->latest()
-            ->paginate($filter->perPage, ['*'], 'page', $filter->page);
+            ->when($filter->createdFrom, fn($q) => $q->whereDate('created_at', '>=', $filter->createdFrom))
+            ->when($filter->createdTo,   fn($q) => $q->whereDate('created_at', '<=', $filter->createdTo))
+            // "Closed" = whichever terminal stage the lead reached (enrolled or lost).
+            ->when($filter->closedFrom || $filter->closedTo, fn($q) => $q->where(fn($w) =>
+                $w->whereNotNull('enrolled_at')->orWhereNotNull('lost_at')
+            ))
+            ->when($filter->closedFrom, fn($q) => $q->where(fn($w) =>
+                $w->whereDate('enrolled_at', '>=', $filter->closedFrom)->orWhereDate('lost_at', '>=', $filter->closedFrom)
+            ))
+            ->when($filter->closedTo, fn($q) => $q->where(fn($w) =>
+                $w->whereDate('enrolled_at', '<=', $filter->closedTo)->orWhereDate('lost_at', '<=', $filter->closedTo)
+            ));
     }
 
     public function findById(int $id, int $companyId): ?Lead
@@ -49,6 +70,8 @@ class LeadRepository implements LeadRepositoryInterface
             'assignedBy:id,name',
             'flowNode:id,title,type',
             'campaign:id,name',
+            'listing:id,title,price',
+            'sale',
             'events' => fn($q) => $q->latest()->with('user:id,name'),
         ])->where('id', $id)->where('company_id', $companyId)->first();
     }
@@ -75,12 +98,17 @@ class LeadRepository implements LeadRepositoryInterface
             'campaign_id'  => $dto->campaignId,
             'category'     => $dto->category,
             'source'       => $dto->source,
+            'origin_type'  => $dto->originType,
+            'origin_id'    => $dto->originId,
+            'origin_label' => $dto->originLabel,
             'stage'        => 'new',
             'priority'     => $dto->priority,
             'notes'        => $dto->notes,
         ]);
 
-        $this->logEvent($lead, 'lead_created', ['source' => $dto->source, 'category' => $dto->category]);
+        $this->logEvent($lead, 'lead_created', [
+            'source' => $dto->source, 'category' => $dto->category, 'origin' => $dto->originLabel,
+        ]);
 
         return $lead->load(['contact:id,name,phone', 'assignedTo:id,name']);
     }
@@ -100,6 +128,9 @@ class LeadRepository implements LeadRepositoryInterface
 
         if (isset($data['stage']) && $data['stage'] === 'enrolled') {
             $data['enrolled_at'] = now();
+        }
+        if (isset($data['stage']) && $data['stage'] === 'lost') {
+            $data['lost_at'] = now();
         }
 
         $lead->update($data);
@@ -153,9 +184,32 @@ class LeadRepository implements LeadRepositoryInterface
         return $lead->fresh(['contact', 'assignedTo']);
     }
 
+    /** Bulk-switch every lead assigned to one employee over to another — e.g. when someone goes on leave or leaves the team. */
+    public function reassignBulk(int $companyId, int $fromUserId, int $toUserId, bool $includeClosed): int
+    {
+        $leads = Lead::where('company_id', $companyId)
+            ->where('assigned_to', $fromUserId)
+            ->when(!$includeClosed, fn($q) => $q->whereNotIn('stage', ['enrolled', 'lost']))
+            ->get();
+
+        $assignedBy = auth()->id();
+        foreach ($leads as $lead) {
+            $lead->update(['assigned_to' => $toUserId, 'assigned_by' => $assignedBy, 'assigned_at' => now()]);
+            $this->logEvent($lead, 'reassigned_bulk', ['from' => $fromUserId, 'to' => $toUserId]);
+        }
+
+        return $leads->count();
+    }
+
     public function delete(Lead $lead): void
     {
         $lead->delete();
+    }
+
+    /** Delete several selected leads at once — scoped to the company so a stray id can't reach another tenant's data. */
+    public function deleteBulk(int $companyId, array $leadIds): int
+    {
+        return Lead::where('company_id', $companyId)->whereIn('id', $leadIds)->delete();
     }
 
     public function logEvent(Lead $lead, string $event, array $payload): LeadEvent
@@ -177,6 +231,28 @@ class LeadRepository implements LeadRepositoryInterface
     public function countActiveLeadsFor(int $userId): int
     {
         return Lead::where('assigned_to', $userId)->whereNotIn('stage', ['enrolled', 'lost'])->count();
+    }
+
+    /**
+     * Company-wide feed of lead activity — every stage change, note, assignment, accept/decline,
+     * timeout-and-reassign, AI hand-off, etc. across every lead, newest first. Scoped to only the
+     * leads a non-view_all user is assigned when $viewAll is false, same as the list endpoint.
+     */
+    public function logs(int $companyId, int $userId, bool $viewAll, array $filter): LengthAwarePaginator
+    {
+        return LeadEvent::where('company_id', $companyId)
+            ->when(!$viewAll, fn ($q) => $q->whereHas('lead', fn ($l) => $l->where('assigned_to', $userId)))
+            ->when($filter['event'] ?? null, fn ($q, $e) => $q->where('event', $e))
+            ->when($filter['from'] ?? null, fn ($q, $f) => $q->whereDate('created_at', '>=', $f))
+            ->when($filter['to'] ?? null, fn ($q, $t) => $q->whereDate('created_at', '<=', $t))
+            ->with([
+                'lead:id,stage,contact_id,assigned_to',
+                'lead.contact:id,name,phone',
+                'lead.assignedTo:id,name',
+                'user:id,name',
+            ])
+            ->latest()
+            ->paginate((int) ($filter['per_page'] ?? 30), ['*'], 'page', (int) ($filter['page'] ?? 1));
     }
 
     public function analytics(int $companyId): array
@@ -226,19 +302,10 @@ class LeadRepository implements LeadRepositoryInterface
 
     public function exportAll(int $companyId, LeadFilterDTO $filter): Collection
     {
-        return Lead::with(['contact', 'assignedTo', 'contact.labels'])
-            ->where('company_id', $companyId)
-            ->when($filter->stage, fn($q) => $q->where('stage', $filter->stage))
-            ->when($filter->priority, fn($q) => $q->where('priority', $filter->priority))
-            ->when($filter->category, fn($q) => $q->where('category', $filter->category))
-            ->when($filter->assignedTo, fn($q) => $q->where('assigned_to', $filter->assignedTo))
-            ->when($filter->source, fn($q) => $q->where('source', $filter->source))
-            ->when($filter->search, fn($q) =>
-                $q->whereHas('contact', fn($c) =>
-                    $c->where('name', 'like', "%{$filter->search}%")
-                      ->orWhere('phone', 'like', "%{$filter->search}%")
-                )
-            )
+        return $this->applyFilters(
+            Lead::with(['contact', 'assignedTo', 'contact.labels'])->where('company_id', $companyId),
+            $filter,
+        )
             ->latest()
             ->get();
     }

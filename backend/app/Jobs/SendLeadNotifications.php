@@ -41,19 +41,19 @@ class SendLeadNotifications implements ShouldQueue
             return;
         }
 
-        $ranked = $scorer->rankStaff(
-            $assignment->company,
-            $rule,
-            null,
-            $alreadyNotified
-        );
+        // Who gets notified next follows the rule's own routing strategy — least-loaded /
+        // longest-idle for round robin, the weighted score for the algorithm strategy.
+        if (($rule->strategy ?? 'algorithm') === 'round_robin') {
+            $nextStaff = $engine->roundRobinPick($assignment->company, $alreadyNotified);
+        } else {
+            $ranked    = $scorer->rankStaff($assignment->company, $rule, null, $alreadyNotified);
+            $nextStaff = $ranked->first()->staff ?? null;
+        }
 
-        if ($ranked->isEmpty()) {
+        if (!$nextStaff) {
             $engine->startAiAgent($assignment, $assignment->company, $assignment->contact);
             return;
         }
-
-        $nextStaff = $ranked->first()->staff;
 
         $notification = LeadAssignmentNotification::create([
             'company_id'        => $assignment->company_id,

@@ -190,9 +190,14 @@ class ConversationalAgentService
 
     private function ensureContactAndLead(AgentInbound $in): Contact
     {
+        // A company can run several WhatsApp Cloud numbers and WA Chat sessions at once —
+        // "Lead Source" says which channel, "Lead Origin" says which specific one.
+        $source = $in->channel === 'open_wa' ? 'wa_chat' : 'whatsapp_cloud';
+        [$originType, $originId, $originLabel] = $this->resolveOrigin($in);
+
         $contact = Contact::firstOrCreate(
             ['company_id' => $in->companyId, 'phone' => $in->phone],
-            ['name' => $in->phone, 'source' => 'whatsapp_ai'],
+            ['name' => $in->phone, 'source' => $source],
         );
 
         $hasOpenLead = Lead::where('company_id', $in->companyId)
@@ -202,15 +207,34 @@ class ConversationalAgentService
 
         if (!$hasOpenLead) {
             Lead::create([
-                'company_id' => $in->companyId,
-                'contact_id' => $contact->id,
-                'stage'      => 'new',
-                'source'     => 'whatsapp_ai',
-                'notes'      => 'Auto-created by AI Agent on first WhatsApp message.',
+                'company_id'   => $in->companyId,
+                'contact_id'   => $contact->id,
+                'stage'        => 'new',
+                'source'       => $source,
+                'origin_type'  => $originType,
+                'origin_id'    => $originId,
+                'origin_label' => $originLabel,
+                'notes'        => 'Auto-created by AI Agent on first WhatsApp message.',
             ]);
         }
 
         return $contact;
+    }
+
+    /** @return array{0:?string,1:?int,2:?string} [originType, originId, originLabel] */
+    private function resolveOrigin(AgentInbound $in): array
+    {
+        if ($in->channel === 'open_wa') {
+            $session = \App\Modules\WaChat\Models\WahaSession::where('company_id', $in->companyId)
+                ->where('session_name', $in->sessionRef)->first();
+            if (!$session) return [null, null, null];
+            return ['wa_session', $session->id, $session->display_name ?: $session->session_name];
+        }
+
+        $number = \App\Models\WaPhoneNumber::where('company_id', $in->companyId)
+            ->where('phone_number_id', $in->sessionRef)->first();
+        if (!$number) return [null, null, null];
+        return ['phone_number', $number->id, $number->label ?: $number->display_number];
     }
 
     private function completeQualification(AgentInbound $in, AiAgentSession $session, AgentPlaybook $playbook): void

@@ -15,6 +15,23 @@ class InstagramAccountController extends Controller
         private readonly InstagramListingImporter $importer,
     ) {}
 
+    /**
+     * "Connect via Facebook" account picker: given a short-lived User access token (from the Meta
+     * Graph API Explorer, or a Facebook Login flow), list the Pages it can manage — each already
+     * carrying its own Page access token — plus the linked Instagram Business Account, if any, so
+     * the company can pick a page instead of hand-typing IDs.
+     */
+    public function discoverPages(Request $request): JsonResponse
+    {
+        $token = $request->validate(['user_access_token' => ['required', 'string']])['user_access_token'];
+        try {
+            $pages = $this->client->listPages($token);
+        } catch (\Throwable $e) {
+            return response()->json(['message' => 'Could not list pages for that token: ' . $e->getMessage()], 422);
+        }
+        return response()->json(['pages' => $pages]);
+    }
+
     public function index(): JsonResponse
     {
         $accounts = InstagramAccount::where('company_id', auth()->user()->company_id)

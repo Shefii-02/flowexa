@@ -1,19 +1,27 @@
 // Connect an Instagram business account and control the DM AI agent.
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { Button, Input, Textarea, Badge, EmptyState, Modal, ConfirmModal } from '@/components/ui'
 import { fmt, getError } from '@/utils'
 import toast from 'react-hot-toast'
-import { instagramApi, type IgAccount, type IgMedia } from './api/instagram'
+import { instagramApi, type IgAccount, type IgMedia, type IgPage } from './api/instagram'
 
 export default function InstagramAccountsPage() {
   const [accounts, setAccounts] = useState<IgAccount[]>([])
   const [loading, setLoading] = useState(true)
   const [connectOpen, setConnectOpen] = useState(false)
+  const [connectTab, setConnectTab] = useState<'discover' | 'manual'>('discover')
   const [saving, setSaving] = useState(false)
   const [disconnectId, setDisconnectId] = useState<number | null>(null)
   const [form, setForm] = useState({ ig_user_id: '', access_token: '', page_id: '', page_name: '' })
   const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }))
   const [importFor, setImportFor] = useState<IgAccount | null>(null)
+
+  // "Find my pages" — paste a User access token, list the Facebook Pages it can manage
+  // (pages_show_list / pages_read_engagement) with their linked Instagram Business Account.
+  const [userToken, setUserToken] = useState('')
+  const [discovering, setDiscovering] = useState(false)
+  const [pages, setPages] = useState<IgPage[] | null>(null)
 
   const load = async () => {
     setLoading(true)
@@ -29,8 +37,38 @@ export default function InstagramAccountsPage() {
     try {
       const r = await instagramApi.connect(form)
       toast.success(r.data.message ?? 'Connected.')
-      setConnectOpen(false); setForm({ ig_user_id: '', access_token: '', page_id: '', page_name: '' })
+      closeConnect()
       void load()
+    } catch (e) { toast.error(getError(e)) }
+    finally { setSaving(false) }
+  }
+
+  const closeConnect = () => {
+    setConnectOpen(false); setConnectTab('discover')
+    setForm({ ig_user_id: '', access_token: '', page_id: '', page_name: '' })
+    setUserToken(''); setPages(null)
+  }
+
+  const findPages = async () => {
+    if (!userToken.trim()) { toast.error('Paste a User access token first.'); return }
+    setDiscovering(true)
+    try {
+      const r = await instagramApi.discoverPages(userToken.trim())
+      setPages(r.data.pages ?? [])
+      if (!(r.data.pages ?? []).length) toast('No Facebook Pages found for this token.', { icon: 'ℹ️' })
+    } catch (e) { toast.error(getError(e)) }
+    finally { setDiscovering(false) }
+  }
+
+  const connectPage = async (p: IgPage) => {
+    if (!p.ig_linked || !p.ig_user_id || !p.page_token) return
+    setSaving(true)
+    try {
+      const r = await instagramApi.connect({
+        ig_user_id: p.ig_user_id, access_token: p.page_token, page_id: p.page_id, page_name: p.page_name,
+      })
+      toast.success(r.data.message ?? `Connected @${p.ig_username}.`)
+      closeConnect(); void load()
     } catch (e) { toast.error(getError(e)) }
     finally { setSaving(false) }
   }
@@ -88,6 +126,7 @@ export default function InstagramAccountsPage() {
                   </p>
                 </div>
                 <div className="flex gap-2 text-xs">
+                  <Link to={`/instagram/comments?account=${a.id}`} className="text-brand-600 hover:underline">Comments</Link>
                   <button onClick={() => sync(a)} className="text-brand-600 hover:underline">Sync</button>
                   <button onClick={() => setImportFor(a)} className="text-brand-600 hover:underline">Import posts</button>
                   <button onClick={() => patch(a, { is_active: !a.is_active })} className="text-gray-500 hover:underline">{a.is_active ? 'Pause' : 'Resume'}</button>
@@ -124,27 +163,88 @@ export default function InstagramAccountsPage() {
       )}
 
       {/* Connect modal */}
-      <Modal open={connectOpen} onClose={() => setConnectOpen(false)} title="Connect Instagram account"
-        footer={
+      <Modal open={connectOpen} onClose={closeConnect} title="Connect Instagram account" size="lg"
+        footer={connectTab === 'manual' ? (
           <div className="flex justify-end gap-2">
-            <Button variant="secondary" onClick={() => setConnectOpen(false)}>Cancel</Button>
+            <Button variant="secondary" onClick={closeConnect}>Cancel</Button>
             <Button onClick={connect} loading={saving}>Connect</Button>
           </div>
-        }>
-        <div className="space-y-3">
-          <p className="text-xs text-gray-500">
-            From your Facebook app: the <b>Instagram Business Account ID</b> and a <b>Page access token</b> with
-            <code className="mx-1">instagram_manage_messages</code>,
-            <code className="mx-1">instagram_manage_comments</code> and
-            <code className="mx-1">pages_messaging</code>.
-          </p>
-          <Input label="Instagram Business Account ID *" value={form.ig_user_id} onChange={e => set('ig_user_id', e.target.value)} placeholder="17841400000000000" />
-          <Input label="Page access token *" value={form.access_token} onChange={e => set('access_token', e.target.value)} type="password" />
-          <div className="grid grid-cols-2 gap-3">
-            <Input label="Page ID" value={form.page_id} onChange={e => set('page_id', e.target.value)} />
-            <Input label="Page name" value={form.page_name} onChange={e => set('page_name', e.target.value)} />
+        ) : (
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" onClick={closeConnect}>Cancel</Button>
           </div>
-          <p className="text-xs text-gray-400">
+        )}>
+        <div className="space-y-4">
+          <div className="flex gap-1 rounded-lg bg-gray-100 p-1 text-sm w-fit">
+            <button type="button" onClick={() => setConnectTab('discover')}
+              className={`px-3 py-1.5 rounded-md font-medium ${connectTab === 'discover' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500'}`}>
+              Find my pages
+            </button>
+            <button type="button" onClick={() => setConnectTab('manual')}
+              className={`px-3 py-1.5 rounded-md font-medium ${connectTab === 'manual' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500'}`}>
+              Enter IDs manually
+            </button>
+          </div>
+
+          {connectTab === 'discover' ? (
+            <div className="space-y-3">
+              <p className="text-xs text-gray-500">
+                Paste a <b>User access token</b> (Graph API Explorer, or your login flow) granted with{' '}
+                <code>pages_show_list</code>, <code>pages_read_engagement</code> and{' '}
+                <code>instagram_basic</code>. We'll list the Facebook Pages it can manage — pick the
+                one linked to your Instagram Business Account.
+              </p>
+              <div className="flex gap-2">
+                <Input className="flex-1" value={userToken} onChange={e => setUserToken(e.target.value)}
+                  type="password" placeholder="EAAG... user access token" />
+                <Button variant="secondary" onClick={findPages} loading={discovering}>Find pages</Button>
+              </div>
+
+              {pages !== null && (
+                <div className="border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-72 overflow-y-auto">
+                  {pages.length === 0 ? (
+                    <p className="p-3 text-sm text-gray-400">No pages found for this token.</p>
+                  ) : pages.map(p => (
+                    <div key={p.page_id} className="p-3 flex items-center gap-3">
+                      {p.ig_avatar
+                        ? <img src={p.ig_avatar} alt="" className="w-9 h-9 rounded-full object-cover" />
+                        : <div className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center text-sm">{p.ig_linked ? '📸' : '📄'}</div>}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-gray-900 truncate">{p.page_name}</p>
+                        <p className="text-xs text-gray-400 truncate">
+                          {p.ig_linked
+                            ? <>@{p.ig_username} · {fmt.number(p.ig_followers ?? 0)} followers</>
+                            : 'No Instagram Business Account linked'}
+                        </p>
+                      </div>
+                      <Button size="sm" disabled={!p.ig_linked} onClick={() => connectPage(p)} loading={saving}>
+                        Connect
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <p className="text-xs text-gray-500">
+                From your Facebook app: the <b>Instagram Business Account ID</b> and a <b>Page access token</b> with
+                <code className="mx-1">instagram_basic</code>,
+                <code className="mx-1">instagram_manage_messages</code>,
+                <code className="mx-1">instagram_manage_comments</code>,
+                <code className="mx-1">instagram_manage_insights</code> and
+                <code className="mx-1">pages_messaging</code>.
+              </p>
+              <Input label="Instagram Business Account ID *" value={form.ig_user_id} onChange={e => set('ig_user_id', e.target.value)} placeholder="17841400000000000" />
+              <Input label="Page access token *" value={form.access_token} onChange={e => set('access_token', e.target.value)} type="password" />
+              <div className="grid grid-cols-2 gap-3">
+                <Input label="Page ID" value={form.page_id} onChange={e => set('page_id', e.target.value)} />
+                <Input label="Page name" value={form.page_name} onChange={e => set('page_name', e.target.value)} />
+              </div>
+            </div>
+          )}
+
+          <p className="text-xs text-gray-400 border-t border-gray-100 pt-3">
             Webhook URL for your app: <code>{window.location.origin.replace(/^http/, 'https')}/api/v1/instagram/webhook</code>
             {' '}— subscribe to <b>comments</b> and <b>messages</b>.
           </p>

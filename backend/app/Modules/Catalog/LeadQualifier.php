@@ -53,7 +53,14 @@ class LeadQualifier
             'phone' => $collected['phone'] ?? $convo->visitor_phone,
         ]));
 
-        $result = $this->intake->capture($convo->company, $fields, 'website_widget', "widget:{$convo->id}");
+        // A company can run several widgets (different site pages) — record which one.
+        $widget = $convo->relationLoaded('widget') ? $convo->widget : $convo->widget()->first();
+        $result = $this->intake->capture(
+            $convo->company, $fields, 'website_widget', "widget:{$convo->id}",
+            originType: $widget ? 'widget' : null,
+            originId: $widget?->id,
+            originLabel: $widget?->name,
+        );
 
         $convo->update([
             'status'        => 'qualified',

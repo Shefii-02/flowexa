@@ -22,6 +22,12 @@ export function connectStaffSocket(staffId: number, companyId: number): void {
     socket!.emit('staff_online', { staff_id: staffId, company_id: companyId })
   })
 
+  // Ask once, up front, so a real OS-level notification can fire even when this tab
+  // isn't focused — the in-app popup below only shows while the dashboard is open.
+  if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
+    void Notification.requestPermission()
+  }
+
   socket.on('new_lead_notification', (data: LeadNotification) => {
     store.dispatch(addNotification(data))
 
@@ -32,6 +38,20 @@ export function connectStaffSocket(staffId: number, companyId: number): void {
       void audio.play()
     } catch {
       // Audio might be blocked — ignore
+    }
+
+    // Desktop notification — only worth showing if the dashboard tab isn't the one in focus.
+    try {
+      if (typeof Notification !== 'undefined' && Notification.permission === 'granted' && document.hidden) {
+        const n = new Notification('🔔 New lead assigned to you', {
+          body: `${data.contact_name} · ${data.contact_phone}\nAccept within ${data.timeout_seconds}s`,
+          tag: `lead-assignment-${data.assignment_id}`,
+          requireInteraction: true,
+        })
+        n.onclick = () => { window.focus(); n.close() }
+      }
+    } catch {
+      // Notification API might be unavailable — ignore
     }
   })
 

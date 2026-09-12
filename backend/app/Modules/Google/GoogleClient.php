@@ -10,16 +10,23 @@ use RuntimeException;
  * Google OAuth + Sheets v4 + Drive v3, over plain HTTP (no SDK dependency). Per-company: each
  * company connects its own Google account, and its leads land in a Sheet in ITS Drive.
  *
- * Scopes: drive.file (only files this app creates) + spreadsheets.
+ * Scopes: full `drive` (browse/upload/rename/delete anything in the connected account's own
+ * Drive — not just files this app created) + `spreadsheets`. Full Drive access is a Google
+ * "restricted scope": before going to production with real users, the OAuth consent screen
+ * needs Google's verification (Cloud Console → OAuth consent screen → Data Access →
+ * Add or remove scopes → submit for verification) or it stays capped at 100 test users.
  */
 class GoogleClient
 {
     public const SCOPES = [
-        'https://www.googleapis.com/auth/drive.file',
+        'https://www.googleapis.com/auth/drive',
         'https://www.googleapis.com/auth/spreadsheets',
         'https://www.googleapis.com/auth/userinfo.email',
         'openid',
     ];
+
+    /** The pseudo-id Drive uses for "My Drive" itself — the default browse root. */
+    public const ROOT = 'root';
 
     public function configured(): bool
     {
@@ -102,12 +109,13 @@ class GoogleClient
     // ── Drive ────────────────────────────────────────────────────────────
 
     /** @return array{id:string, url:string} */
-    public function createFolder(GoogleIntegration $i, string $name): array
+    public function createFolder(GoogleIntegration $i, string $name, ?string $parentId = null): array
     {
-        $res = Http::withToken($this->token($i))->post('https://www.googleapis.com/drive/v3/files', [
-            'name'     => $name,
-            'mimeType' => 'application/vnd.google-apps.folder',
-        ]);
+        $meta = ['name' => $name, 'mimeType' => 'application/vnd.google-apps.folder'];
+        if ($parentId) {
+            $meta['parents'] = [$parentId];
+        }
+        $res = Http::withToken($this->token($i))->post('https://www.googleapis.com/drive/v3/files', $meta);
         $this->guard($res, 'create Drive folder');
         $id = $res->json('id');
         return ['id' => $id, 'url' => "https://drive.google.com/drive/folders/{$id}"];
@@ -117,6 +125,23 @@ class GoogleClient
     {
         Http::withToken($this->token($i))
             ->patch("https://www.googleapis.com/drive/v3/files/{$fileId}?addParents={$folderId}&removeParents=root", []);
+    }
+
+    /** Rename a file or folder (Drive's own "edit" — content editing is left to Google's own apps). */
+    public function renameFile(GoogleIntegration $i, string $fileId, string $newName): array
+    {
+        $res = Http::withToken($this->token($i))
+            ->patch("https://www.googleapis.com/drive/v3/files/{$fileId}?fields=id,name,mimeType", ['name' => $newName]);
+        $this->guard($res, 'rename Drive file');
+        return ['id' => $res->json('id'), 'name' => $res->json('name')];
+    }
+
+    /** Move to Drive's own Trash (recoverable from drive.google.com — safer than a hard delete). */
+    public function trashFile(GoogleIntegration $i, string $fileId): void
+    {
+        $res = Http::withToken($this->token($i))
+            ->patch("https://www.googleapis.com/drive/v3/files/{$fileId}", ['trashed' => true]);
+        $this->guard($res, 'delete Drive file');
     }
 
     /**
@@ -162,15 +187,23 @@ class GoogleClient
         ];
     }
 
-    /** List files in the integration's Drive folder (most recent first). */
-    public function listFiles(GoogleIntegration $i, ?string $folderId, int $limit = 100): array
+    /**
+     * List the contents of a Drive folder (default: "My Drive" root) — or search by name across
+     * the whole Drive when $search is given. Folders sort first, then most recently modified.
+     */
+    public function listFiles(GoogleIntegration $i, ?string $folderId = null, int $limit = 100, ?string $search = null): array
     {
-        $q = $folderId ? "'{$folderId}' in parents and trashed=false" : 'trashed=false';
+        if ($search) {
+            $q = "trashed=false and name contains '" . str_replace("'", "\\'", $search) . "'";
+        } else {
+            $q = "'" . ($folderId ?: self::ROOT) . "' in parents and trashed=false";
+        }
+
         $res = Http::withToken($this->token($i))->get('https://www.googleapis.com/drive/v3/files', [
             'q'        => $q,
-            'orderBy'  => 'createdTime desc',
+            'orderBy'  => 'folder,modifiedTime desc',
             'pageSize' => min($limit, 200),
-            'fields'   => 'files(id,name,mimeType,size,thumbnailLink,webViewLink,createdTime)',
+            'fields'   => 'files(id,name,mimeType,size,thumbnailLink,webViewLink,createdTime,modifiedTime,parents)',
         ]);
         $this->guard($res, 'list Drive files');
 
@@ -178,11 +211,13 @@ class GoogleClient
             'id'           => $f['id'],
             'name'         => $f['name'] ?? null,
             'mime'         => $f['mimeType'] ?? null,
+            'is_folder'    => ($f['mimeType'] ?? null) === 'application/vnd.google-apps.folder',
             'size'         => (int) ($f['size'] ?? 0),
             'view_url'     => $f['webViewLink'] ?? null,
             'download_url' => "https://drive.google.com/uc?export=view&id={$f['id']}",
             'thumbnail'    => $f['thumbnailLink'] ?? null,
             'created_at'   => $f['createdTime'] ?? null,
+            'modified_at'  => $f['modifiedTime'] ?? null,
         ])->all();
     }
 

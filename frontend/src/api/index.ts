@@ -213,9 +213,14 @@ export const leadApi = {
   update: (id: number, d: Record<string, unknown>) => api.put(`/leads/${id}`, d),
   assign: (id: number, userId: number) => api.post(`/leads/${id}/assign`, { user_id: userId }),
   bulkAssign: (leadIds: number[], userIds: number[]) => api.post('/leads/bulk-assign', { lead_ids: leadIds, user_ids: userIds, mode: 'round_robin' }),
+  bulkReassign: (fromUserId: number, toUserId: number, includeClosed = false) =>
+    api.post('/leads/bulk-reassign', { from_user_id: fromUserId, to_user_id: toUserId, include_closed: includeClosed }),
+  bulkDelete: (leadIds: number[]) => api.post('/leads/bulk-delete', { lead_ids: leadIds }),
   delete: (id: number) => api.delete(`/leads/${id}`),
   crmSync: (id: number) => api.post(`/leads/${id}/crm-sync`),
   analytics: () => api.get('/leads/analytics'),
+  logs: (p?: Record<string, unknown>) => api.get('/leads/logs', { params: p }),
+  sources: () => api.get('/leads/sources'),
   notes: (id: number) => api.get(`/leads/${id}/notes`),
   addNote: (id: number, content: string) => api.post(`/leads/${id}/notes`, { content }),
 }

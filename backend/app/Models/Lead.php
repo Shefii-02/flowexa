@@ -17,13 +17,15 @@ class Lead extends Model
     protected $fillable = [
         'company_id', 'contact_id', 'assigned_to', 'assigned_by',
         'flow_node_id', 'campaign_id', 'stage', 'priority', 'category',
-        'source', 'notes', 'crm_id', 'followed_up_at', 'enrolled_at', 'assigned_at',
+        'source', 'origin_type', 'origin_id', 'origin_label',
+        'notes', 'crm_id', 'followed_up_at', 'enrolled_at', 'lost_at', 'assigned_at',
         'listing_id', 'sale_value',
     ];
 
     protected $casts = [
         'followed_up_at' => 'datetime',
         'enrolled_at'    => 'datetime',
+        'lost_at'        => 'datetime',
         'assigned_at'    => 'datetime',
         'sale_value'     => 'decimal:2',
     ];
@@ -38,6 +40,8 @@ class Lead extends Model
     public function listing(): BelongsTo    { return $this->belongsTo(Listing::class); }
     public function sale(): \Illuminate\Database\Eloquent\Relations\HasOne { return $this->hasOne(ListingSale::class); }
     public function events(): HasMany       { return $this->hasMany(LeadEvent::class)->latest(); }
+    /** Routing/notification history from the assignment engine — see LeadAssignment::lead_id. */
+    public function assignments(): HasMany  { return $this->hasMany(LeadAssignment::class); }
 
     // ── Scopes ────────────────────────────────────────────────────────────────
     public function scopeActive($q)     { return $q->whereNotIn('stage', ['enrolled', 'lost']); }
@@ -49,6 +53,18 @@ class Lead extends Model
     public function isActive(): bool   { return !in_array($this->stage, ['enrolled', 'lost']); }
     public function isEnrolled(): bool { return $this->stage === 'enrolled'; }
     public function isLost(): bool     { return $this->stage === 'lost'; }
+
+    /** When this lead reached a terminal stage, whichever outcome — used by the "closed date" filter. */
+    public function getClosedAtAttribute(): ?\Illuminate\Support\Carbon
+    {
+        return $this->enrolled_at ?? $this->lost_at;
+    }
+
+    /** Display label for `source` from config/lead_sources.php — falls back to the raw slug. */
+    public function getSourceLabelAttribute(): string
+    {
+        return config("lead_sources.{$this->source}.label") ?? str_replace('_', ' ', (string) $this->source);
+    }
 }
 
 

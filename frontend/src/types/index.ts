@@ -194,7 +194,9 @@ export interface CampaignContact {
 
 export type LeadStage = 'new' | 'contacted' | 'follow_up' | 'enrolled' | 'lost'
 export type LeadPriority = 'low' | 'medium' | 'high'
-export type LeadSource = 'flow' | 'campaign' | 'manual' | 'api'
+// Open-ended — the canonical set lives server-side in config/lead_sources.php (GET /leads/sources)
+// so a new channel can be added without a frontend release.
+export type LeadSource = string
 
 export interface Lead {
   id: number
@@ -202,12 +204,23 @@ export interface Lead {
   priority: LeadPriority
   category: string | null
   source: LeadSource
+  source_label?: string
+  // "Lead Origin" — which specific number/session/account/campaign within `source` (a company can
+  // run several WhatsApp Cloud numbers, WA Chat sessions, Instagram accounts and ad campaigns).
+  origin_type?: string | null
+  origin_label?: string | null
   notes: string | null
   crm_id: string | null
   followed_up_at: string | null
   enrolled_at: string | null
+  lost_at?: string | null
   assigned_at: string | null
   created_at: string
+  // Opportunity — the catalog item + amount this lead converts on.
+  listing_id?: number | null
+  sale_value?: number | null
+  listing?: { id: number; title: string; price: number } | null
+  sale?: { id: number; amount: number; sold_at: string | null } | null
   contact: {
     id: number
     name: string | null

@@ -375,6 +375,7 @@ Route::prefix('v1')->group(function () {
         Route::prefix('hr')->middleware(['company.active'])->group(function () {
             // Self service
             Route::get('attendance/me',          [AttendanceController::class, 'me']);
+            Route::get('attendance/me/history',  [AttendanceController::class, 'myHistory']);
             Route::post('attendance/clock-in',   [AttendanceController::class, 'clockIn']);
             Route::post('attendance/clock-out',  [AttendanceController::class, 'clockOut']);
             Route::post('attendance/break/start', [AttendanceController::class, 'breakStart']);
@@ -460,6 +461,8 @@ Route::prefix('v1')->group(function () {
 
             Route::get('/',           [LeadController::class, 'index'])->name('index');
             Route::get('/analytics',  [LeadController::class, 'analytics'])->name('analytics');
+            Route::get('/logs',       [LeadController::class, 'logs'])->name('logs');
+            Route::get('/sources',    [LeadController::class, 'sources'])->name('sources');
             Route::post('/import', [LeadController::class, 'import'])->middleware('permission:leads.create');
             Route::get('/export',  [LeadController::class, 'export'])->middleware('permission:leads.view_all');
 
@@ -480,10 +483,12 @@ Route::prefix('v1')->group(function () {
             Route::post('/{lead}/assign', [LeadController::class, 'assign'])->middleware('permission:leads.assign')->name('assign');
 
             Route::post('/bulk-assign', [LeadController::class, 'bulkAssign'])->middleware('permission:leads.assign')->name('bulk-assign');
+            Route::post('/bulk-reassign', [LeadController::class, 'bulkReassign'])->middleware('permission:leads.assign')->name('bulk-reassign');
 
             Route::post('/{lead}/crm-sync', [LeadController::class, 'crmSync'])->middleware('permission:crm.sync')->name('crm-sync');
 
             Route::delete('/{lead}', [LeadController::class, 'destroy'])->middleware('permission:leads.delete')->name('destroy');
+            Route::post('/bulk-delete', [LeadController::class, 'bulkDelete'])->middleware('permission:leads.delete')->name('bulk-delete');
 
             Route::get('/{lead}/notes',    [LeadNoteController::class, 'index'])->name('notes.index');
             // Notes
@@ -879,10 +884,14 @@ Route::prefix('v1')->group(function () {
             Route::get('/status',        [\App\Modules\Google\Http\Controllers\GoogleIntegrationController::class, 'status']);
             Route::delete('/disconnect', [\App\Modules\Google\Http\Controllers\GoogleIntegrationController::class, 'disconnect']);
             Route::post('/syncs',        [\App\Modules\Google\Http\Controllers\GoogleIntegrationController::class, 'createSync']);
+            Route::patch('/syncs/{id}',  [\App\Modules\Google\Http\Controllers\GoogleIntegrationController::class, 'updateSync']);
             Route::post('/syncs/{id}/run', [\App\Modules\Google\Http\Controllers\GoogleIntegrationController::class, 'syncNow']);
             Route::delete('/syncs/{id}', [\App\Modules\Google\Http\Controllers\GoogleIntegrationController::class, 'deleteSync']);
             Route::get('/drive/files',    [\App\Modules\Google\Http\Controllers\GoogleIntegrationController::class, 'driveFiles']);
             Route::post('/drive/upload',  [\App\Modules\Google\Http\Controllers\GoogleIntegrationController::class, 'driveUpload']);
+            Route::post('/drive/folders', [\App\Modules\Google\Http\Controllers\GoogleIntegrationController::class, 'driveCreateFolder']);
+            Route::patch('/drive/files/{fileId}',  [\App\Modules\Google\Http\Controllers\GoogleIntegrationController::class, 'driveRename']);
+            Route::delete('/drive/files/{fileId}', [\App\Modules\Google\Http\Controllers\GoogleIntegrationController::class, 'driveDelete']);
         });
 
         // ── Website chat widget management ──
@@ -900,6 +909,8 @@ Route::prefix('v1')->group(function () {
             Route::get('/templates',       [\App\Modules\Catalog\Http\Controllers\ListingController::class, 'templates']);
             Route::post('/templates',      [\App\Modules\Catalog\Http\Controllers\ListingController::class, 'setTemplate']);
             Route::post('/match',          [\App\Modules\Catalog\Http\Controllers\ListingController::class, 'match']);
+            Route::get('/export',          [\App\Modules\Catalog\Http\Controllers\ListingController::class, 'export']);
+            Route::post('/import',         [\App\Modules\Catalog\Http\Controllers\ListingController::class, 'import']);
             Route::get('/',                [\App\Modules\Catalog\Http\Controllers\ListingController::class, 'index']);
             Route::post('/',               [\App\Modules\Catalog\Http\Controllers\ListingController::class, 'store']);
             Route::get('/{id}',            [\App\Modules\Catalog\Http\Controllers\ListingController::class, 'show']);
@@ -909,13 +920,21 @@ Route::prefix('v1')->group(function () {
 
         // ── Instagram: connected account, keyword auto-DM bot, DM inbox + AI agent ──
         Route::prefix('/instagram')->name('instagram.')->middleware(['company.active'])->group(function () {
+            Route::post('accounts/discover-pages', [\App\Modules\Instagram\Http\Controllers\InstagramAccountController::class, 'discoverPages']);
             Route::get('accounts',                 [\App\Modules\Instagram\Http\Controllers\InstagramAccountController::class, 'index']);
             Route::post('accounts',                [\App\Modules\Instagram\Http\Controllers\InstagramAccountController::class, 'store']);
             Route::put('accounts/{id}',            [\App\Modules\Instagram\Http\Controllers\InstagramAccountController::class, 'update']);
             Route::delete('accounts/{id}',         [\App\Modules\Instagram\Http\Controllers\InstagramAccountController::class, 'destroy']);
             Route::post('accounts/{id}/sync',      [\App\Modules\Instagram\Http\Controllers\InstagramAccountController::class, 'sync']);
             Route::get('accounts/{id}/media',      [\App\Modules\Instagram\Http\Controllers\InstagramAccountController::class, 'media']);
+            Route::get('accounts/{id}/insights',   [\App\Modules\Instagram\Http\Controllers\InstagramCommentController::class, 'insights']);
             Route::post('accounts/{id}/import-listings', [\App\Modules\Instagram\Http\Controllers\InstagramAccountController::class, 'importListings']);
+
+            // Comment moderation: read, reply to, hide and delete comments on a post/reel.
+            Route::get('accounts/{id}/media/{mediaId}/comments',      [\App\Modules\Instagram\Http\Controllers\InstagramCommentController::class, 'index']);
+            Route::post('accounts/{id}/comments/{commentId}/reply',   [\App\Modules\Instagram\Http\Controllers\InstagramCommentController::class, 'reply']);
+            Route::post('accounts/{id}/comments/{commentId}/hide',    [\App\Modules\Instagram\Http\Controllers\InstagramCommentController::class, 'hide']);
+            Route::delete('accounts/{id}/comments/{commentId}',       [\App\Modules\Instagram\Http\Controllers\InstagramCommentController::class, 'destroy']);
 
             Route::get('automations',              [\App\Modules\Instagram\Http\Controllers\InstagramAutomationController::class, 'index']);
             Route::post('automations',             [\App\Modules\Instagram\Http\Controllers\InstagramAutomationController::class, 'store']);

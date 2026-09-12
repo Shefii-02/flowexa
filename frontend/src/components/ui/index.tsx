@@ -80,15 +80,21 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(({ label, error
 Select.displayName = 'Select'
 
 // ── Modal ─────────────────────────────────────────────────────────────────────
-interface ModalProps { open: boolean; onClose: () => void; title: string; children: ReactNode; size?: 'sm'|'md'|'lg'|'xl'|'default'; footer?: ReactNode }
-export const Modal = ({ open, onClose, title, children, size = 'default', footer }: ModalProps) => {
+// ── Modal / Drawer ───────────────────────────────────────────────────────────
+// One implementation, two names: every dialog in the app slides in from the right
+// edge and uses the full viewport height, rather than centering — easier to manage
+// for anything with a list or a form (more room to scroll, page context stays
+// visible behind it). `Modal` is kept as the name because ~50 call sites already
+// use it; `Drawer` is the same component for call sites written with that name.
+interface DrawerProps { open: boolean; onClose: () => void; title: string; children: ReactNode; size?: 'sm'|'md'|'lg'|'xl'|'default'; footer?: ReactNode }
+const DrawerImpl = ({ open, onClose, title, children, size = 'default', footer }: DrawerProps) => {
   if (!open) return null
-  const maxW = { sm: 'max-w-sm', md: 'max-w-md', lg: 'max-w-lg', xl: 'max-w-2xl',default:'max-w-[85%]' }[size]
+  const width = { sm: 'max-w-sm', md: 'max-w-md', lg: 'max-w-lg', xl: 'max-w-2xl', default: 'max-w-[85%]' }[size]
 
   return (
-    <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div className={cn('modal-box w-full', maxW)}>
-        <div className="modal-header">
+    <div className="drawer-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div className={cn('drawer-panel w-full', width)}>
+        <div className="drawer-header">
           <h3 className="text-sm font-semibold text-gray-900">{title}</h3>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -96,12 +102,17 @@ export const Modal = ({ open, onClose, title, children, size = 'default', footer
             </svg>
           </button>
         </div>
-        <div className="modal-body">{children}</div>
-        {footer && <div className="modal-footer">{footer}</div>}
+        <div className="drawer-body">{children}</div>
+        {footer && <div className="drawer-footer">{footer}</div>}
       </div>
     </div>
   )
 }
+// Modal keeps its historical default width (~85% — most existing call sites never set `size`
+// and were sized for a near-full-width dialog); Drawer defaults to a narrower `md` since new
+// call sites are written with an explicit panel in mind.
+export const Modal = (props: DrawerProps) => <DrawerImpl {...props} size={props.size ?? 'default'} />
+export const Drawer = (props: DrawerProps) => <DrawerImpl {...props} size={props.size ?? 'md'} />
 
 // ── Confirm Modal ─────────────────────────────────────────────────────────────
 interface ConfirmProps { open: boolean; title: string; message: string; onConfirm: () => void; onCancel: () => void; loading?: boolean; danger?: boolean; confirmLabel?: string, cancelLabel?: string,confirmVariant?: 'primary'|'danger' }

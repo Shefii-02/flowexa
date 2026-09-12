@@ -84,34 +84,61 @@ const SECTIONS: Section[] = [
         body: (
           <>
             In the same Meta app you made for WhatsApp, add the <b>Instagram</b> product (or{' '}
-            <b>Instagram Graph API</b>). Request the permissions{' '}
-            <code>instagram_manage_messages</code>, <code>instagram_manage_comments</code>,{' '}
-            <code>pages_show_list</code> and <code>pages_messaging</code>.
+            <b>Instagram Graph API</b>). Under App Review → Permissions, request every one of these
+            — the platform uses all of them:
+            <ul className="list-disc ml-5 mt-1 space-y-0.5">
+              <li><code>instagram_basic</code> — read the account's own profile and media</li>
+              <li><code>instagram_manage_comments</code> — read, reply to, delete and hide comments</li>
+              <li><code>instagram_manage_insights</code> — reach, impressions and engagement analytics</li>
+              <li><code>instagram_manage_messages</code> — send and receive DMs</li>
+              <li><code>pages_show_list</code> — list the Pages the token can manage (the account picker below)</li>
+              <li><code>pages_read_engagement</code> — read each Page's engagement stats in that picker</li>
+              <li><code>pages_manage_metadata</code> — subscribe the Page to webhook events</li>
+              <li><code>pages_messaging</code> — send messages as the Page (private replies, DM fallback)</li>
+            </ul>
+            While the app is in Development mode these all work for the app's own admins/testers
+            without review; submit for App Review only once you need other businesses to connect.
           </>
         ),
       },
       {
-        h: '3 · Get the IDs and token',
-        body: (
-          <ul className="list-disc ml-5 space-y-1">
-            <li><b>Instagram Business Account ID</b> — Graph API Explorer: <code>GET /me/accounts</code> → your page → <code>?fields=instagram_business_account</code></li>
-            <li><b>Page access token</b> — a long-lived Page token for that Page (System User → generate token, same as WhatsApp step 4)</li>
-          </ul>
-        ),
-      },
-      {
-        h: '4 · Connect it here',
+        h: '3 · Get a User access token',
         body: (
           <>
-            <b>Instagram → Accounts → Connect account</b>. Paste the IG Business Account ID and Page
-            token. Then in your Meta app → Webhooks, subscribe the Instagram object to{' '}
-            <code>comments</code> and <code>messages</code> using the Webhook URL and Verify token
-            shown on the connect screen.
+            Graph API Explorer → select your app → select the same permissions as above → <b>Generate
+            Access Token</b> → log in as the Page's admin. Copy the token — it's short-lived, but
+            that's fine, it's only used once to discover your pages (next step).
           </>
         ),
       },
       {
-        h: '5 · Set up the comment bot',
+        h: '4 · Connect via the page picker',
+        body: (
+          <>
+            <b>Instagram → Accounts → Connect account → Find my pages</b>. Paste the User token from
+            step 3 and click <b>Find pages</b> — every Facebook Page it can manage is listed, each
+            with its linked Instagram Business Account (if any) already resolved. Click{' '}
+            <b>Connect</b> on the right one; the platform stores that Page's own long-lived access
+            token for you, so no manual ID lookup is needed. (The <b>Enter IDs manually</b> tab is
+            still there as a fallback.) Then in your Meta app → Webhooks, subscribe the Instagram
+            object to <code>comments</code> and <code>messages</code> using the Webhook URL and
+            Verify token shown on the connect screen.
+          </>
+        ),
+      },
+      {
+        h: '5 · Moderate comments',
+        body: (
+          <>
+            <b>Instagram → Comments</b>. Pick a post or reel on the left, and every comment (with its
+            replies) shows on the right — <b>Reply</b> publicly, <b>Hide</b> it from the public thread
+            (reversible), or <b>Delete</b> it outright. This uses{' '}
+            <code>instagram_manage_comments</code> directly against that comment, live.
+          </>
+        ),
+      },
+      {
+        h: '6 · Set up the comment bot',
         body: (
           <>
             <b>Instagram → Auto-DM Rules → New automation</b>. Add trigger keywords (e.g. “price”,
@@ -367,9 +394,13 @@ const SECTIONS: Section[] = [
           <>
             <b>APIs &amp; Services → OAuth consent screen</b>. Choose <b>External</b>, fill the app
             name, support email and developer email. Under <b>Scopes</b> you don’t need to add any by
-            hand — the app requests <code>drive.file</code>, <code>spreadsheets</code> and{' '}
-            <code>userinfo.email</code> at connect time. While the app is in <b>Testing</b>, add the
-            Google accounts that will connect as <b>Test users</b>; publish it later to remove that limit.
+            hand — the app requests <code>drive</code> (full Drive access — browse, upload, rename
+            and delete anything in the connected account, not just files it created itself),{' '}
+            <code>spreadsheets</code> and <code>userinfo.email</code> at connect time. Because{' '}
+            <code>drive</code> is a Google <b>restricted scope</b>, going to production with real
+            (non-test) users requires submitting the app for <b>verification</b> under Scopes →
+            "Add or remove scopes" first — until then it works for up to 100 <b>Test users</b> you
+            add here.
           </>
         ),
       },
@@ -417,9 +448,24 @@ GOOGLE_CLIENT_SECRET=GOCSPX-xxxxxxxx
         h: '7 · Connect a Google account',
         body: (
           <>
-            Open <b>Settings → Integrations</b> and click <b>Connect Google</b>. Sign in, approve the
-            Sheets + Drive access, and you’re done — set up a Sheet sync there, and Drive becomes
-            available as media storage in the catalog editor.
+            Open <b>Settings → Integrations</b> and click <b>Connect Google</b>. Sign in and approve
+            access. Below the sheet syncs you'll find <b>Drive files</b> — a full file manager for
+            the connected account: browse every folder (grid or list view, toggle top-right),
+            upload, create folders, rename and delete (delete moves a file to Drive's own Trash,
+            recoverable from drive.google.com). A company already connected from before this scope
+            widened needs to click <b>Disconnect</b> then <b>Connect Google</b> again once to grant
+            the broader Drive access.
+          </>
+        ),
+      },
+      {
+        h: '8 · Choose a sync cadence',
+        body: (
+          <>
+            When creating a synced sheet, pick <b>How often</b>: as tight as <b>every 10 minutes</b>{' '}
+            for leads so a new lead lands in the sheet almost immediately, or every hour / 6 hours /
+            daily for a heavier feed like the WhatsApp message log. Change it anytime, or hit{' '}
+            <b>Sync now</b> for an on-demand refresh.
           </>
         ),
       },

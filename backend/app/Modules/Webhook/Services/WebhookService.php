@@ -1258,6 +1258,7 @@ class WebhookService
             contactId: $contact->id,
             flowNodeId: $node->id,
             category: $node->lead_category,
+            originLabel: $node->title,
         );
 
         try {

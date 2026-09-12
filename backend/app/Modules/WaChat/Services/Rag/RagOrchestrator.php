@@ -6,6 +6,7 @@ use App\Models\Company;
 use App\Models\Contact;
 use App\Models\Lead;
 use App\Modules\WaChat\Models\AiAgentSession;
+use App\Modules\WaChat\Models\WahaSession;
 use Illuminate\Support\Facades\Log;
 
 class RagOrchestrator
@@ -53,7 +54,7 @@ class RagOrchestrator
 
         // 3. On new session: ensure Contact exists and auto-create a Lead
         if ($isNewSession) {
-            $this->ensureContactAndLead($companyId, $contactPhone);
+            $this->ensureContactAndLead($companyId, $contactPhone, $wahaSessionId);
         }
 
         $history = $agentSession->conversation_history ?? [];
@@ -113,14 +114,18 @@ class RagOrchestrator
      * Lead for it if one does not already exist in a non-terminal stage.
      * Called only when a brand-new AI agent session is opened.
      */
-    private function ensureContactAndLead(int $companyId, string $contactPhone): void
+    private function ensureContactAndLead(int $companyId, string $contactPhone, string $wahaSessionId): void
     {
         try {
+            // A company can run several WA Chat sessions — record which one this came in on.
+            $session = WahaSession::where('company_id', $companyId)->where('session_name', $wahaSessionId)->first();
+            $originLabel = $session ? ($session->display_name ?: $session->session_name) : null;
+
             $contact = Contact::firstOrCreate(
                 ['company_id' => $companyId, 'phone' => $contactPhone],
                 [
                     'name'   => $contactPhone,
-                    'source' => 'whatsapp_ai',
+                    'source' => 'wa_chat',
                 ]
             );
 
@@ -132,11 +137,14 @@ class RagOrchestrator
 
             if (!$hasOpenLead) {
                 Lead::create([
-                    'company_id' => $companyId,
-                    'contact_id' => $contact->id,
-                    'stage'      => 'new',
-                    'source'     => 'whatsapp_ai',
-                    'notes'      => 'Auto-created by AI Agent on first WhatsApp message.',
+                    'company_id'   => $companyId,
+                    'contact_id'   => $contact->id,
+                    'stage'        => 'new',
+                    'source'       => 'wa_chat',
+                    'origin_type'  => $session ? 'wa_session' : null,
+                    'origin_id'    => $session?->id,
+                    'origin_label' => $originLabel,
+                    'notes'        => 'Auto-created by AI Agent on first WhatsApp message.',
                 ]);
             }
         } catch (\Exception $e) {
