@@ -25,6 +25,7 @@ return Application::configure(basePath: dirname(__DIR__))
         \App\Console\Commands\SetupExistingCompanies::class,
         \App\Modules\WaCloud\Console\Commands\RunWaCloudAutomations::class,
         \App\Modules\Campaign\Console\Commands\DispatchScheduledCampaigns::class,
+        \App\Console\Commands\PruneLogs::class,
     ])
     ->withSchedule(function (\Illuminate\Console\Scheduling\Schedule $schedule): void {
         $schedule->command('wachat:process-scheduled-messages')->everyMinute();
@@ -38,12 +39,16 @@ return Application::configure(basePath: dirname(__DIR__))
         $schedule->command('ai:update-summaries')->everySixHours();
         $schedule->command('ai:recalculate-scores')->dailyAt('02:00');
         $schedule->command('ai:cleanup-analyses')->weeklyOn(0, '03:00');
+        $schedule->command('logs:prune')->dailyAt('03:30');
     })
     ->withMiddleware(function (Middleware $middleware): void {
         //
         // ── Global API middleware ──────────────────────────────────────────────
         $middleware->api(prepend: [
             \Illuminate\Http\Middleware\HandleCors::class,
+        ]);
+        $middleware->api(append: [
+            \App\Http\Middleware\LogApiRequest::class,
         ]);
 
 
@@ -80,6 +85,52 @@ return Application::configure(basePath: dirname(__DIR__))
         \App\Modules\Settings\SettingsServiceProvider::class,
     ])
     ->withExceptions(function (Exceptions $exceptions): void {
+
+        // Company-scoped bug tracking — every real exception (not routine 401/403/404/422s)
+        // is stashed in error_logs tagged with whichever company/user hit it, so superadmin
+        // can see "what bug did this company run into" instead of grepping the shared log file.
+        $exceptions->report(function (\Throwable $e): void {
+            $routine = [
+                \Illuminate\Validation\ValidationException::class,
+                \Illuminate\Auth\AuthenticationException::class,
+                \Illuminate\Auth\Access\AuthorizationException::class,
+                \Illuminate\Database\Eloquent\ModelNotFoundException::class,
+                \Symfony\Component\HttpKernel\Exception\NotFoundHttpException::class,
+                \Symfony\Component\HttpKernel\Exception\MethodNotAllowedHttpException::class,
+            ];
+            foreach ($routine as $class) {
+                if ($e instanceof $class) {
+                    return;
+                }
+            }
+
+            try {
+                $request = request();
+                $user = null;
+                try {
+                    $user = auth('api')->user();
+                } catch (\Throwable) {
+                    // no authenticated actor for this request
+                }
+
+                \App\Models\ErrorLog::create([
+                    'company_id'      => $user?->company_id,
+                    'user_id'         => $user?->id,
+                    'actor_role'      => $user?->role?->name,
+                    'exception_class' => get_class($e),
+                    'message'         => mb_substr($e->getMessage(), 0, 2000),
+                    'file'            => $e->getFile(),
+                    'line'            => $e->getLine(),
+                    'trace'           => mb_substr($e->getTraceAsString(), 0, 8000),
+                    'method'          => $request?->method(),
+                    'url'             => $request ? mb_substr($request->fullUrl(), 0, 500) : null,
+                    'status_code'     => method_exists($e, 'getStatusCode') ? $e->getStatusCode() : null,
+                    'created_at'      => now(),
+                ]);
+            } catch (\Throwable) {
+                // Error-logging must never itself throw.
+            }
+        });
 
         // Force JSON responses for API routes
         $exceptions->shouldRenderJsonWhen(

@@ -12,13 +12,21 @@ class MetaCampaignController extends Controller
     public function __construct(private MetaAdsService $svc) {}
 
     public function index(): JsonResponse {
+        $allowed = auth()->user()->allowedAccountIds('meta_ads_account');
+
         $campaigns = MetaCampaign::with(['adAccount','adSets'])
-            ->where('company_id', auth()->user()->company_id)->latest()->paginate(20);
+            ->where('company_id', auth()->user()->company_id)
+            ->when($allowed !== null, fn ($q) => $q->whereIn('meta_ad_account_id', $allowed))
+            ->latest()->paginate(20);
         return response()->json($campaigns);
     }
 
     public function show(int $id): JsonResponse {
-        $c = MetaCampaign::with(['adAccount','adSets.ads'])->where('id',$id)->where('company_id',auth()->user()->company_id)->firstOrFail();
+        $allowed = auth()->user()->allowedAccountIds('meta_ads_account');
+
+        $c = MetaCampaign::with(['adAccount','adSets.ads'])->where('id',$id)->where('company_id',auth()->user()->company_id)
+            ->when($allowed !== null, fn ($q) => $q->whereIn('meta_ad_account_id', $allowed))
+            ->firstOrFail();
         return response()->json(['campaign' => $c]);
     }
 

@@ -27,7 +27,9 @@ class TemplateController extends Controller
     // ── List / show ────────────────────────────────────────────────────
     public function index(Request $request): JsonResponse
     {
-        $paginated = $this->templates->list(auth()->user()->company_id, $request->all());
+        $paginated = $this->templates->list(
+            auth()->user()->company_id, $request->all(), auth()->user()->allowedAccountIds('phone_number')
+        );
         return response()->json([
             'templates' => $paginated->items(),
             'total'     => $paginated->total(),
@@ -36,7 +38,8 @@ class TemplateController extends Controller
 
     public function show(int $id): JsonResponse
     {
-        return response()->json(['template' => $this->templates->show($id, auth()->user()->company_id)]);
+        $template = $this->templates->show($id, auth()->user()->company_id, auth()->user()->allowedAccountIds('phone_number'));
+        return response()->json(['template' => $template]);
     }
 
     // ── Create as DRAFT — does NOT push to Meta yet ───────────────────────

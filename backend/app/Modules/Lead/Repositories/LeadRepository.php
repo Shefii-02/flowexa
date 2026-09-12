@@ -23,10 +23,20 @@ class LeadRepository implements LeadRepositoryInterface
 {
     public function paginate(int $companyId, int $userId, bool $viewAll, LeadFilterDTO $filter): LengthAwarePaginator
     {
+        // Restricted users also see leads sourced from a WA session / WA Cloud number /
+        // Instagram account they've been explicitly granted access to — not just leads
+        // assigned to them — so a shared-session queue works for a team, not just 1:1.
+        $scopedOrigin = $viewAll ? [] : (($user = User::find($userId)) ? Lead::scopedOriginAccessFor($user) : []);
+
         return $this->applyFilters(
             Lead::with(['contact:id,name,phone,email', 'assignedTo:id,name,email,department'])
                 ->where('company_id', $companyId)
-                ->when(!$viewAll, fn($q) => $q->where('assigned_to', $userId)),
+                ->when(!$viewAll, fn($q) => $q->where(function ($qq) use ($userId, $scopedOrigin) {
+                    $qq->where('assigned_to', $userId);
+                    foreach ($scopedOrigin as $originType => $ids) {
+                        $qq->orWhere(fn ($o) => $o->where('origin_type', $originType)->whereIn('origin_id', $ids));
+                    }
+                })),
             $filter,
         )
             ->latest()

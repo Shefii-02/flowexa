@@ -2,7 +2,9 @@
 
 namespace App\Modules\Settings\Services;
 
+use App\Models\ApiRequestLog;
 use App\Models\Company;
+use App\Models\ErrorLog;
 use App\Models\Plan;
 use App\Models\Role;
 use App\Models\User;
@@ -126,6 +128,212 @@ class SuperAdminService
             ->update(array_filter($ownerData, fn($v) => !is_null($v)));
 
         return $company->fresh(['plan','wallet']);
+    }
+
+    /**
+     * Full Company-table config update for the superadmin "Company Config" page.
+     * Secret fields (wa_access_token, wa_chat_token) are only overwritten when a
+     * genuinely new, non-empty value is submitted — the config page always shows
+     * them masked, so an untouched masked value is never round-tripped back in.
+     */
+    public function updateCompanyConfig(Company $company, array $data): Company
+    {
+        $update = [];
+
+        foreach (['name', 'email', 'phone', 'website', 'wa_phone_id', 'wa_business_id',
+                  'meta_app_id', 'wa_profile_id', 'wa_webhook_token', 'suspended_reason'] as $f) {
+            if (array_key_exists($f, $data)) {
+                $update[$f] = $data[$f] === '' ? null : $data[$f];
+            }
+        }
+
+        foreach (['storage_limit_bytes', 'max_devices_per_user', 'waha_max_sessions',
+                  'waha_max_webhooks', 'waha_media_limit_mb'] as $f) {
+            if (array_key_exists($f, $data) && $data[$f] !== null && $data[$f] !== '') {
+                $update[$f] = (int) $data[$f];
+            }
+        }
+
+        foreach (['waha_enabled', 'wa_auth_enabled'] as $f) {
+            if (array_key_exists($f, $data)) {
+                $update[$f] = (bool) $data[$f];
+            }
+        }
+
+        if (!empty($data['industry_template'])) {
+            $update['industry_template'] = $data['industry_template'];
+        }
+
+        if (!empty($data['status'])) {
+            $update['status'] = $data['status'];
+        }
+
+        foreach (['trial_ends_at', 'plan_expires_at', 'wa_chat_token_expires_at'] as $f) {
+            if (array_key_exists($f, $data)) {
+                $update[$f] = $data[$f] ? \Carbon\Carbon::parse($data[$f]) : null;
+            }
+        }
+
+        // Secrets: only overwrite when a real new value came in.
+        if (!empty($data['wa_access_token'])) {
+            $update['wa_access_token'] = encrypt($data['wa_access_token']);
+        }
+        if (!empty($data['wa_chat_token'])) {
+            $update['wa_chat_token'] = $data['wa_chat_token']; // stored plain — sent as the X-API-Key header
+        }
+
+        if (array_key_exists('settings', $data)) {
+            $decoded = is_array($data['settings']) ? $data['settings'] : json_decode((string) $data['settings'], true);
+            if (json_last_error() === JSON_ERROR_NONE) {
+                $update['settings'] = $decoded;
+            }
+        }
+
+        $company->update($update);
+
+        return $company->fresh();
+    }
+
+    // ── Observability: API request log / activity feed ──────────────────────────
+
+    public function apiLogs(array $filters): LengthAwarePaginator
+    {
+        $mutating = ['POST', 'PUT', 'PATCH', 'DELETE'];
+
+        return ApiRequestLog::with(['company:id,name', 'user:id,name'])
+            ->when($filters['company_id'] ?? null, fn ($q, $c) => $q->where('company_id', $c))
+            ->when($filters['method'] ?? null, fn ($q, $m) => $q->where('method', $m))
+            ->when($filters['activity_only'] ?? null, fn ($q) => $q->whereIn('method', $mutating))
+            ->when(isset($filters['is_error']) && $filters['is_error'] !== '', fn ($q) => $q->where('is_error', filter_var($filters['is_error'], FILTER_VALIDATE_BOOLEAN)))
+            ->when($filters['search'] ?? null, fn ($q, $s) => $q->where(fn ($qq) => $qq->where('path', 'like', "%{$s}%")->orWhere('route_name', 'like', "%{$s}%")))
+            ->when($filters['from'] ?? null, fn ($q, $f) => $q->whereDate('created_at', '>=', $f))
+            ->when($filters['to'] ?? null, fn ($q, $t) => $q->whereDate('created_at', '<=', $t))
+            ->latest('id')
+            ->paginate((int) ($filters['per_page'] ?? 40), ['*'], 'page', (int) ($filters['page'] ?? 1));
+    }
+
+    public function apiLogStats(array $filters): array
+    {
+        $range = (int) ($filters['days'] ?? 7);
+        $since = now()->subDays($range)->startOfDay();
+
+        $base = fn () => ApiRequestLog::where('created_at', '>=', $since)
+            ->when($filters['company_id'] ?? null, fn ($q, $c) => $q->where('company_id', $c));
+
+        $total  = $base()->count();
+        $errors = $base()->where('is_error', true)->count();
+        $avgMs  = (float) ($base()->avg('duration_ms') ?? 0);
+
+        $byDay = $base()
+            ->selectRaw('DATE(created_at) as day, COUNT(*) as total, SUM(is_error) as errors, AVG(duration_ms) as avg_ms')
+            ->groupBy('day')->orderBy('day')->get()
+            ->map(fn ($r) => ['day' => $r->day, 'total' => (int) $r->total, 'errors' => (int) $r->errors, 'avg_ms' => round((float) $r->avg_ms, 1)]);
+
+        $topCompanies = $base()
+            ->whereNotNull('company_id')
+            ->selectRaw('company_id, COUNT(*) as total, SUM(is_error) as errors, AVG(duration_ms) as avg_ms')
+            ->groupBy('company_id')->orderByDesc('total')->limit(10)
+            ->with('company:id,name')->get()
+            ->map(fn ($r) => [
+                'company_id' => $r->company_id,
+                'company'    => $r->company?->name,
+                'total'      => (int) $r->total,
+                'errors'     => (int) $r->errors,
+                'avg_ms'     => round((float) $r->avg_ms, 1),
+            ]);
+
+        $topRoutes = $base()
+            ->whereNotNull('route_name')
+            ->selectRaw('route_name, COUNT(*) as total, AVG(duration_ms) as avg_ms')
+            ->groupBy('route_name')->orderByDesc('total')->limit(10)->get()
+            ->map(fn ($r) => ['route_name' => $r->route_name, 'total' => (int) $r->total, 'avg_ms' => round((float) $r->avg_ms, 1)]);
+
+        $statusBreakdown = $base()
+            ->selectRaw('status_code, COUNT(*) as total')
+            ->groupBy('status_code')->orderByDesc('total')->get()
+            ->map(fn ($r) => ['status_code' => $r->status_code, 'total' => (int) $r->total]);
+
+        return [
+            'range_days'      => $range,
+            'total_requests'  => $total,
+            'error_count'     => $errors,
+            'error_rate'      => $total > 0 ? round($errors / $total * 100, 2) : 0.0,
+            'avg_duration_ms' => round($avgMs, 1),
+            'requests_today'  => ApiRequestLog::whereDate('created_at', now())
+                ->when($filters['company_id'] ?? null, fn ($q, $c) => $q->where('company_id', $c))->count(),
+            'by_day'          => $byDay,
+            'top_companies'   => $topCompanies,
+            'top_routes'      => $topRoutes,
+            'status_breakdown'=> $statusBreakdown,
+        ];
+    }
+
+    // ── Observability: company-scoped error log ──────────────────────────────────
+
+    public function errorLogs(array $filters): LengthAwarePaginator
+    {
+        return ErrorLog::with(['company:id,name', 'user:id,name'])
+            ->when($filters['company_id'] ?? null, fn ($q, $c) => $q->where('company_id', $c))
+            ->when($filters['exception'] ?? null, fn ($q, $e) => $q->where('exception_class', 'like', "%{$e}%"))
+            ->when($filters['search'] ?? null, fn ($q, $s) => $q->where('message', 'like', "%{$s}%"))
+            ->when($filters['from'] ?? null, fn ($q, $f) => $q->whereDate('created_at', '>=', $f))
+            ->when($filters['to'] ?? null, fn ($q, $t) => $q->whereDate('created_at', '<=', $t))
+            ->latest('id')
+            ->paginate((int) ($filters['per_page'] ?? 40), ['*'], 'page', (int) ($filters['page'] ?? 1));
+    }
+
+    public function errorLog(int $id): ErrorLog
+    {
+        return ErrorLog::with(['company:id,name', 'user:id,name'])->findOrFail($id);
+    }
+
+    // ── Observability: raw Laravel log file viewer ────────────────────────────────
+
+    public function systemLogFiles(): array
+    {
+        $files = glob(storage_path('logs/*.log')) ?: [];
+
+        return collect($files)
+            ->map(fn ($f) => ['name' => basename($f), 'size' => filesize($f), 'modified_at' => date('c', filemtime($f))])
+            ->sortByDesc('modified_at')->values()->all();
+    }
+
+    /**
+     * Tail-reads a log file without loading the whole thing into memory — only
+     * the last ~1MB is scanned. Entries are split on the "[YYYY-MM-DD HH:MM:SS]"
+     * marker Laravel's formatter starts every entry with, so a multi-line stack
+     * trace stays attached to the entry it belongs to instead of being chopped
+     * into separate "lines".
+     */
+    public function systemLog(string $file, int $lines = 300, ?string $search = null): array
+    {
+        $safe = basename($file);
+        $path = storage_path("logs/{$safe}");
+
+        if (!str_ends_with($safe, '.log') || !is_file($path)) {
+            return ['file' => $safe, 'entries' => [], 'error' => 'File not found.'];
+        }
+
+        $maxBytes = 1_000_000;
+        $size = filesize($path);
+        $handle = fopen($path, 'r');
+
+        if ($size > $maxBytes) {
+            fseek($handle, -$maxBytes, SEEK_END);
+            fgets($handle); // discard a possibly-partial first line
+        }
+        $content = stream_get_contents($handle);
+        fclose($handle);
+
+        $entries = preg_split('/(?=\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\])/', (string) $content, -1, PREG_SPLIT_NO_EMPTY) ?: [];
+
+        if ($search) {
+            $entries = array_values(array_filter($entries, fn ($e) => stripos($e, $search) !== false));
+        }
+
+        $entries = array_map('trim', array_slice($entries, -$lines));
+
+        return ['file' => $safe, 'size' => $size, 'entries' => $entries];
     }
 
     public function updateStatus(Company $company, UpdateCompanyStatusDTO $dto): Company

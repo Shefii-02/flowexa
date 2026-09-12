@@ -67,6 +67,7 @@ class CompanySetupService
                         'wa_chat.message_sender.manage',
                         'wa_agent.automations.manage', 'wa_agent.leads.manage',
                         'staff.manage',
+                        'instagram.manage', 'catalog.manage', 'integrations.manage', 'lead_assignment.manage',
                     ])
                 )),
             ],

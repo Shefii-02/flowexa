@@ -65,6 +65,35 @@ class Lead extends Model
     {
         return config("lead_sources.{$this->source}.label") ?? str_replace('_', ' ', (string) $this->source);
     }
+
+    /**
+     * Account-scoped visibility widening: origin_type => allowed origin_id list, for
+     * every origin type the given user is actually restricted on (StaffAccountAccess).
+     * A type the user is unrestricted for is simply absent from the result — used
+     * alongside "assigned_to = user" so a restricted user also sees unassigned/shared
+     * leads that came in through a WA session, WA Cloud number, or Instagram account
+     * they've been explicitly granted access to.
+     */
+    public static function scopedOriginAccessFor(User $user): array
+    {
+        $result = [];
+        foreach (['wa_session', 'phone_number', 'instagram_account'] as $type) {
+            $ids = $user->allowedAccountIds($type);
+            if ($ids !== null) {
+                $result[$type] = $ids;
+            }
+        }
+        return $result;
+    }
+
+    /** @param array<string,array<int>> $scopedOriginAccess from scopedOriginAccessFor() */
+    public function isVisibleByOrigin(array $scopedOriginAccess): bool
+    {
+        if (!$this->origin_type || !isset($scopedOriginAccess[$this->origin_type])) {
+            return false;
+        }
+        return in_array($this->origin_id, $scopedOriginAccess[$this->origin_type], true);
+    }
 }
 
 

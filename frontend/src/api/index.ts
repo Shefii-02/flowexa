@@ -39,6 +39,14 @@ export const staffApi = {
   delete: (id: number) => api.delete(`/staff/${id}`),
 }
 
+// ── Staff Account Access (WA sessions / WA Cloud numbers / Instagram accounts) ─
+export const staffAccountAccessApi = {
+  options: () => api.get('/staff/account-access/options'),
+  show: (userId: number) => api.get(`/staff/${userId}/account-access`),
+  update: (userId: number, d: { account_type: string; account_ids: number[] }) =>
+    api.put(`/staff/${userId}/account-access`, d),
+}
+
 // ── Contacts ──────────────────────────────────────────────────────────────────
 export const contactApi = {
   list: (p?: Record<string, unknown>) => api.get('/contacts', { params: p }),
@@ -308,6 +316,14 @@ export const superadminApi = {
   deleteCompany: (id: number) => api.delete(`/superadmin/companies/${id}`),
   topUp: (id: number, amount: number, description?: string) => api.post(`/superadmin/companies/${id}/top-up`, { amount, description }),
   resetApiKey: (id: number) => api.post(`/superadmin/companies/${id}/reset-api-key`),
+  companyConfig: (id: number) => api.get(`/superadmin/companies/${id}/config`),
+  updateCompanyConfig: (id: number, d: Record<string, unknown>) => api.put(`/superadmin/companies/${id}/config`, d),
+  apiLogs: (p?: Record<string, unknown>) => api.get('/superadmin/api-logs', { params: p }),
+  apiLogStats: (p?: Record<string, unknown>) => api.get('/superadmin/api-logs/stats', { params: p }),
+  errorLogs: (p?: Record<string, unknown>) => api.get('/superadmin/errors', { params: p }),
+  showError: (id: number) => api.get(`/superadmin/errors/${id}`),
+  systemLogFiles: () => api.get('/superadmin/system-log/files'),
+  systemLog: (p?: Record<string, unknown>) => api.get('/superadmin/system-log', { params: p }),
   impersonate: (id: number) => api.post(`/superadmin/companies/${id}/impersonate`),
   plans: () => api.get('/superadmin/plans'),
   createPlan: (d: Record<string, unknown>) => api.post('/superadmin/plans', d),

@@ -66,7 +66,10 @@ class WahaSessionController extends Controller
 
     public function index(): JsonResponse
     {
+        $allowed = auth()->user()->allowedAccountIds('wa_session');
+
         $sessions = WahaSession::where('company_id', auth()->user()->company_id)
+            ->when($allowed !== null, fn ($q) => $q->whereIn('id', $allowed))
             ->orderBy('created_at', 'desc')->get();
         return response()->json(['data' => $sessions]);
     }

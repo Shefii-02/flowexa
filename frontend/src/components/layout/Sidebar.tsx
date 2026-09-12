@@ -602,6 +602,7 @@ export const Sidebar = () => {
             {/* Assignment Rules now lives under Leads → Advanced */}
             {/* {canViewRoles &&  */}
             <FlatLink to="/staff/roles" icon="🎭" label="Roles" />
+            <FlatLink to="/staff/account-access" icon="🔐" label="Account Access" />
             {/* } */}
 
 
@@ -630,6 +631,9 @@ export const Sidebar = () => {
             <FlatLink to="/superadmin/topup" icon="💬" label="Top-up Packages" />
             <FlatLink to="/superadmin/prebuilt-templates" icon="🧩" label="Prebuilt Templates" />
             <FlatLink to="/superadmin/reports" icon="📊" label="Reports" />
+            <FlatLink to="/superadmin/api-logs" icon="📈" label="API & Activity" />
+            <FlatLink to="/superadmin/errors" icon="🐞" label="Error Logs" />
+            <FlatLink to="/superadmin/system-log" icon="📜" label="System Log" />
             {/* } */}
             <FlatLink to="/setup-guide" icon="🧭" label="Setup Guide" />
           </>

@@ -32,7 +32,11 @@ class LeadService
         if (!$lead) throw LeadException::notFound();
 
         if (!$viewAll && $lead->assigned_to !== $userId) {
-            throw LeadException::forbidden();
+            $user = \App\Models\User::find($userId);
+            $scopedOrigin = $user ? Lead::scopedOriginAccessFor($user) : [];
+            if (!$lead->isVisibleByOrigin($scopedOrigin)) {
+                throw LeadException::forbidden();
+            }
         }
 
         return $lead;

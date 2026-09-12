@@ -11,7 +11,10 @@ class InstagramAutomationController extends Controller
 {
     public function index(Request $request): JsonResponse
     {
+        $allowed = auth()->user()->allowedAccountIds('instagram_account');
+
         $rules = InstagramAutomation::whereHas('account', fn ($q) => $q->where('company_id', auth()->user()->company_id))
+            ->when($allowed !== null, fn ($q) => $q->whereIn('instagram_account_id', $allowed))
             ->when($request->account_id, fn ($q, $id) => $q->where('instagram_account_id', $id))
             ->orderByDesc('priority')->orderByDesc('updated_at')
             ->get();

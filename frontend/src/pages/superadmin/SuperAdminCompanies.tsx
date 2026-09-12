@@ -685,6 +685,15 @@ export default function SuperAdminCompanies() {
 
                           <div className="absolute right-0 top-9 z-30 w-40 bg-white border border-gray-200 rounded-lg shadow-lg py-1">
 
+                            {/* View / Config */}
+                            <Link
+                              to={`/superadmin/companies/${company.id}`}
+                              onClick={() => setOpenMenuId(null)}
+                              className="block w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                            >
+                              🔎 View / Config
+                            </Link>
+
                             {/* Edit */}
                             <button
                               onClick={() =>

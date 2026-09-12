@@ -8,6 +8,12 @@ export const fmt = {
   number: (n: number) => new Intl.NumberFormat('en-IN').format(n),
   currency: (n: number) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(n),
   percent: (n: number) => `${n.toFixed(1)}%`,
+  bytes: (n: number) => {
+    if (!n) return '0 B'
+    const units = ['B', 'KB', 'MB', 'GB', 'TB']
+    const i = Math.min(units.length - 1, Math.floor(Math.log(n) / Math.log(1024)))
+    return `${(n / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 1)} ${units[i]}`
+  },
   date: (d: string) => new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
   datetime: (d: string) => new Date(d).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }),
   relative: (d: string) => {

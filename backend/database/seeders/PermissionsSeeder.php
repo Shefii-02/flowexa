@@ -32,18 +32,46 @@ class PermissionsSeeder extends Seeder
         // Inbox
         ['key' => 'inbox.view',        'label' => 'View Inbox',               'group' => 'Inbox',                        'type' => 'viewer', 'sort_order' => 70],
         ['key' => 'inbox.manage',      'label' => 'Manage Inbox',             'group' => 'Inbox',                        'type' => 'manage', 'sort_order' => 71],
+        // A company can connect multiple WA Cloud numbers — without this, a staff member
+        // only sees conversations on numbers they've been explicitly given account access to
+        // (see StaffAccountAccess / User::allowedAccountIds()).
+        ['key' => 'inbox.view_all',    'label' => 'View inbox on every WhatsApp number', 'group' => 'Inbox',              'type' => 'viewer', 'sort_order' => 72],
         // Leads
         ['key' => 'leads.view',        'label' => 'View Leads',               'group' => 'Leads Management',             'type' => 'viewer', 'sort_order' => 80],
         ['key' => 'leads.manage',      'label' => 'Manage Leads',             'group' => 'Leads Management',             'type' => 'manage', 'sort_order' => 81],
+        // Without this, a staff member only ever sees leads assigned to them (see
+        // LeadController::canViewAll()). A legacy seeder (RolesSeeder) once wrote this
+        // same key straight into owner/admin's JSON permissions column without it ever
+        // existing as a real catalogue row — it worked by accident and would have been
+        // silently wiped the next time someone ran the "sync to catalogue" action.
+        ['key' => 'leads.view_all',    'label' => 'View leads assigned to anyone', 'group' => 'Leads Management',        'type' => 'viewer', 'sort_order' => 82],
+        // Assignment-rule / routing config — distinct from day-to-day lead work above.
+        ['key' => 'lead_assignment.manage', 'label' => 'Configure lead assignment rules', 'group' => 'Leads Management', 'type' => 'manage', 'sort_order' => 83],
         // Message Logs
         ['key' => 'message_logs.view',   'label' => 'View Message Logs',      'group' => 'Message Logs',                 'type' => 'viewer', 'sort_order' => 90],
         ['key' => 'message_logs.manage', 'label' => 'Manage Message Logs',    'group' => 'Message Logs',                 'type' => 'manage', 'sort_order' => 91],
         // Meta Ads
         ['key' => 'meta_ads.view',     'label' => 'View Meta Ads',            'group' => 'Meta Ads',                     'type' => 'viewer', 'sort_order' => 100],
         ['key' => 'meta_ads.manage',   'label' => 'Manage Meta Ads',          'group' => 'Meta Ads',                     'type' => 'manage', 'sort_order' => 101],
+        // A company can connect multiple ad accounts; without this a staff member only
+        // sees ad accounts they've been explicitly granted access to (StaffAccountAccess).
+        ['key' => 'meta_ads.view_all', 'label' => 'View every connected ad account', 'group' => 'Meta Ads', 'type' => 'viewer', 'sort_order' => 102],
         // WA Cloud
         ['key' => 'wa_cloud.view',   'label' => 'View WA Cloud',   'group' => 'WA Cloud', 'type' => 'viewer', 'sort_order' => 105],
         ['key' => 'wa_cloud.manage', 'label' => 'Manage WA Cloud', 'group' => 'WA Cloud', 'type' => 'manage', 'sort_order' => 106],
+        // Instagram — connected accounts, keyword auto-DM bot, comment moderation, DM inbox.
+        // A company can connect multiple IG accounts; view_all mirrors inbox.view_all/
+        // wa_chat.sessions.view_all — without it a staff member only sees accounts they've
+        // been explicitly granted access to.
+        ['key' => 'instagram.view',      'label' => 'View Instagram',                    'group' => 'Instagram', 'type' => 'viewer', 'sort_order' => 112],
+        ['key' => 'instagram.manage',    'label' => 'Manage Instagram (connect, automations, comments)', 'group' => 'Instagram', 'type' => 'manage', 'sort_order' => 113],
+        ['key' => 'instagram.view_all',  'label' => 'View every connected Instagram account', 'group' => 'Instagram', 'type' => 'viewer', 'sort_order' => 114],
+        // Catalog — listings/products the AI agent answers about and matches leads against.
+        ['key' => 'catalog.view',   'label' => 'View Catalog',   'group' => 'Catalog', 'type' => 'viewer', 'sort_order' => 115],
+        ['key' => 'catalog.manage', 'label' => 'Manage Catalog (incl. import/export)', 'group' => 'Catalog', 'type' => 'manage', 'sort_order' => 116],
+        // Integrations — Google Sheets/Drive connect + sync config.
+        ['key' => 'integrations.view',   'label' => 'View Integrations',   'group' => 'Integrations', 'type' => 'viewer', 'sort_order' => 117],
+        ['key' => 'integrations.manage', 'label' => 'Manage Integrations', 'group' => 'Integrations', 'type' => 'manage', 'sort_order' => 118],
         // HR / Attendance
         ['key' => 'hr.manage',            'label' => 'Manage HR settings, break & leave types', 'group' => 'HR', 'type' => 'manage', 'sort_order' => 107],
         ['key' => 'hr.attendance.view_all', 'label' => 'View team attendance',                  'group' => 'HR', 'type' => 'viewer', 'sort_order' => 108],
@@ -81,6 +109,10 @@ class PermissionsSeeder extends Seeder
         // WA Chat — Sessions
         ['key' => 'wa_chat.sessions.view',   'label' => 'View WA Sessions',   'group' => 'WA Chat — Sessions',           'type' => 'viewer', 'sort_order' => 210],
         ['key' => 'wa_chat.sessions.manage', 'label' => 'Manage WA Sessions', 'group' => 'WA Chat — Sessions',           'type' => 'manage', 'sort_order' => 211],
+        // A company can run multiple WA Chat (open-wa) sessions/numbers; without this a
+        // staff member only sees sessions — and leads sourced from them — that they've
+        // been explicitly granted access to (see StaffAccountAccess).
+        ['key' => 'wa_chat.sessions.view_all', 'label' => 'View every WA Chat session', 'group' => 'WA Chat — Sessions', 'type' => 'viewer', 'sort_order' => 212],
         // WA Chat — Chats
         ['key' => 'wa_chat.chats.view',   'label' => 'View WA Chats',         'group' => 'WA Chat — Chats',              'type' => 'viewer', 'sort_order' => 220],
         ['key' => 'wa_chat.chats.manage', 'label' => 'Manage WA Chats',       'group' => 'WA Chat — Chats',              'type' => 'manage', 'sort_order' => 221],
@@ -145,6 +177,11 @@ class PermissionsSeeder extends Seeder
                 'wa_chat.message_sender.manage',
                 'wa_agent.automations.manage', 'wa_agent.leads.manage',
                 'staff.manage', 'devices.manage',
+                'instagram.manage', 'catalog.manage', 'integrations.manage', 'lead_assignment.manage',
+                // "view_all" scoping doesn't end in ".view" so it isn't in $allViewer —
+                // a team lead should see everyone's leads/sessions/inbox/IG accounts, not
+                // just the ones they've been individually granted account access to.
+                'leads.view_all', 'wa_chat.sessions.view_all', 'inbox.view_all', 'instagram.view_all', 'meta_ads.view_all',
             ],
 
             'counsellor' => [
@@ -157,7 +194,11 @@ class PermissionsSeeder extends Seeder
                 'wa_agent.leads.view',
             ],
 
-            'viewer' => $allViewer,
+            'viewer' => [
+                ...$allViewer,
+                // Read-only-into-everything shouldn't be narrowed by account scoping either.
+                'leads.view_all', 'wa_chat.sessions.view_all', 'inbox.view_all', 'instagram.view_all', 'meta_ads.view_all',
+            ],
         ];
     }
 

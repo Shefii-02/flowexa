@@ -34,7 +34,10 @@ class InstagramAccountController extends Controller
 
     public function index(): JsonResponse
     {
+        $allowed = auth()->user()->allowedAccountIds('instagram_account');
+
         $accounts = InstagramAccount::where('company_id', auth()->user()->company_id)
+            ->when($allowed !== null, fn ($q) => $q->whereIn('id', $allowed))
             ->withCount(['automations', 'conversations'])
             ->get();
         return response()->json(['accounts' => $accounts]);

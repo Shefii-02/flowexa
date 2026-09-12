@@ -156,10 +156,15 @@ class RoleController extends Controller
         $allManage = array_values(array_filter($allKeys, fn($k) => str_ends_with($k, '.manage')));
 
         return match ($roleName) {
-            'superadmin', 'owner' => array_merge($allViewer, $allManage),
+            // $allKeys, not array_merge($allViewer, $allManage) — some catalogue keys
+            // (hr.attendance.view_all, hr.leave.approve, leads.view_all, inbox.view_all,
+            // wa_chat.sessions.view_all, instagram.view_all, ...) don't end in exactly
+            // ".view"/".manage" and would otherwise silently drop out of owner/admin's
+            // "full access" set the moment someone hits Reset-to-defaults or Sync-catalogue.
+            'superadmin', 'owner' => $allKeys,
 
             'admin' => array_values(array_filter(
-                array_merge($allViewer, $allManage),
+                $allKeys,
                 fn($k) => !in_array($k, ['plans.manage', 'roles.manage'])
             )),
 
@@ -172,6 +177,8 @@ class RoleController extends Controller
                 'wa_chat.message_sender.manage',
                 'wa_agent.automations.manage', 'wa_agent.leads.manage',
                 'staff.manage',
+                'instagram.manage', 'catalog.manage', 'integrations.manage', 'lead_assignment.manage',
+                'leads.view_all', 'wa_chat.sessions.view_all', 'inbox.view_all', 'instagram.view_all', 'meta_ads.view_all',
             ])),
 
             'counsellor' => [
@@ -184,7 +191,10 @@ class RoleController extends Controller
                 'wa_agent.leads.view',
             ],
 
-            'viewer' => $allViewer,
+            'viewer' => array_values(array_unique([
+                ...$allViewer,
+                'leads.view_all', 'wa_chat.sessions.view_all', 'inbox.view_all', 'instagram.view_all', 'meta_ads.view_all',
+            ])),
 
             default => [], // custom roles have no predefined defaults
         };

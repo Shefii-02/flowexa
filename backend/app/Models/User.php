@@ -68,6 +68,35 @@ class User extends Authenticatable implements JWTSubject
         return $this->role?->hasAnyPermission($permissions) ?? false;
     }
 
+    /** Permission key that fully unrestricts each account_type — see StaffAccountAccess. */
+    private const ACCOUNT_VIEW_ALL_PERMISSION = [
+        'wa_session'        => 'wa_chat.sessions.view_all',
+        'phone_number'      => 'inbox.view_all',
+        'instagram_account' => 'instagram.view_all',
+        'meta_ads_account'  => 'meta_ads.view_all',
+    ];
+
+    /**
+     * The account ids of the given type this user may see, or null when unrestricted.
+     *
+     * Restriction is opt-in: a user with the matching "view_all" permission, or one
+     * who has never been given any StaffAccountAccess row of this type at all, is
+     * unrestricted — so granting a company multiple WA Chat sessions / WA Cloud numbers
+     * / Instagram accounts / ad accounts never silently locks existing staff out of
+     * everything. Restriction only starts once an admin explicitly grants at least one
+     * row for that (user, account_type).
+     */
+    public function allowedAccountIds(string $type): ?array
+    {
+        if ($this->isSuperAdmin() || $this->isOwner()) return null;
+
+        $viewAllPermission = self::ACCOUNT_VIEW_ALL_PERMISSION[$type] ?? null;
+        if ($viewAllPermission && $this->hasPermission($viewAllPermission)) return null;
+
+        $ids = StaffAccountAccess::where('user_id', $this->id)->where('account_type', $type)->pluck('account_id');
+        return $ids->isEmpty() ? null : $ids->all();
+    }
+
     // ── Scopes ────────────────────────────────────────────────────────────────
     public function scopeActive($q)  { return $q->where('is_active', true); }
     public function scopeForCompany($q, int $companyId) { return $q->where('company_id', $companyId); }

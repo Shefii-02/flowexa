@@ -17,6 +17,7 @@ import ResetPassword from '@/pages/settings/ResetPassword'
 import DashboardPage from '@/pages/dashboard/DashboardPage'
 import StaffPage from '@/pages/staff/StaffPage'
 import RolesPage from '@/pages/staff/RolesPage'
+import StaffAccountAccessPage from '@/pages/staff/StaffAccountAccessPage'
 import ContactsPage from '@/pages/contacts/ContactsPage'
 // import FlowPage from '@/pages/flow/FlowPage'
 import CampaignsPage from '@/pages/meta-ads/campaigns/CampaignsPage'
@@ -61,6 +62,10 @@ import PermissionsEditorPage from '@/pages/superadmin/PermissionsEditorPage'
 import CompanyPermissionsPage from '@/pages/superadmin/CompanyPermissionsPage'
 import TopupPackagesPage from '@/pages/superadmin/TopupPackagesPage'
 import PrebuiltTemplatesPage from '@/pages/superadmin/PrebuiltTemplatesPage'
+import CompanyDetailPage from '@/pages/superadmin/CompanyDetailPage'
+import ApiLogsPage from '@/pages/superadmin/ApiLogsPage'
+import ErrorLogsPage from '@/pages/superadmin/ErrorLogsPage'
+import SystemLogPage from '@/pages/superadmin/SystemLogPage'
 
 // Meta Ads pages
 import AdAccountPage from '@/pages/meta-ads/ad-account/AdAccountPage'
@@ -231,6 +236,7 @@ export default function App() {
             <Route path="setup-guide" element={<SetupGuidePage />} />
             <Route path="staff/index" element={<StaffPage />} />
             <Route path="staff/roles" element={<RolesPage />} />
+            <Route path="staff/account-access" element={<StaffAccountAccessPage />} />
             <Route path="contacts" element={<ContactsPage />} />
             <Route path="labels" element={<LabelsPage />} />
             {/* <Route path="flow" element={<FlowPage />} /> */}
@@ -352,6 +358,10 @@ export default function App() {
               element={<SuperAdminRoute><CompanyPermissionsPage /></SuperAdminRoute>}
             />
             <Route
+              path="superadmin/companies/:id"
+              element={<SuperAdminRoute><CompanyDetailPage /></SuperAdminRoute>}
+            />
+            <Route
               path="superadmin/topup"
               element={<SuperAdminRoute><TopupPackagesPage /></SuperAdminRoute>}
             />
@@ -362,6 +372,18 @@ export default function App() {
             <Route
               path="superadmin/reports"
               element={<SuperAdminRoute><ReportsPage /></SuperAdminRoute>}
+            />
+            <Route
+              path="superadmin/api-logs"
+              element={<SuperAdminRoute><ApiLogsPage /></SuperAdminRoute>}
+            />
+            <Route
+              path="superadmin/errors"
+              element={<SuperAdminRoute><ErrorLogsPage /></SuperAdminRoute>}
+            />
+            <Route
+              path="superadmin/system-log"
+              element={<SuperAdminRoute><SystemLogPage /></SuperAdminRoute>}
             />
           </Route>
 

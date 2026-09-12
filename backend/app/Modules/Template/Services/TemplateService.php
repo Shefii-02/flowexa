@@ -8,9 +8,17 @@ use Illuminate\Support\Facades\Http;
 
 class TemplateService
 {
-    public function list(int $companyId, array $filters = []): LengthAwarePaginator
+    /**
+     * @param array<int>|null $allowedNumberIds Restricts to templates on these WA Cloud
+     *   numbers, plus any template with no number attached (company-wide/shared). Null
+     *   means unrestricted — see User::allowedAccountIds('phone_number').
+     */
+    public function list(int $companyId, array $filters = [], ?array $allowedNumberIds = null): LengthAwarePaginator
     {
         return WaTemplate::where('company_id', $companyId)
+            ->when($allowedNumberIds !== null, fn ($q) => $q->where(
+                fn ($qq) => $qq->whereNull('wa_phone_number_id')->orWhereIn('wa_phone_number_id', $allowedNumberIds)
+            ))
             ->when(
                 $filters['search'] ?? null,
                 fn($q) =>
@@ -23,9 +31,17 @@ class TemplateService
             ->paginate($filters['per_page'] ?? 20, ['*'], 'page', $filters['page'] ?? 1);
     }
 
-    public function show(int $id, int $companyId): WaTemplate
+    /** @param array<int>|null $allowedNumberIds see list() */
+    public function show(int $id, int $companyId, ?array $allowedNumberIds = null): WaTemplate
     {
-        return WaTemplate::where('id', $id)->where('company_id', $companyId)->firstOrFail();
+        $template = WaTemplate::where('id', $id)->where('company_id', $companyId)->firstOrFail();
+
+        if ($allowedNumberIds !== null && $template->wa_phone_number_id !== null
+            && !in_array($template->wa_phone_number_id, $allowedNumberIds, true)) {
+            abort(404, 'Template not found.');
+        }
+
+        return $template;
     }
 
     public function create(int $companyId, array $data): WaTemplate

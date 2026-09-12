@@ -18,8 +18,10 @@ class ConversationController extends Controller
     public function index(Request $request): JsonResponse
     {
         $companyId = auth()->user()->company_id;
+        $allowedNumbers = auth()->user()->allowedAccountIds('phone_number');
 
         $conversations = WaConversation::where('company_id', $companyId)
+            ->when($allowedNumbers !== null, fn ($q) => $q->whereIn('wa_phone_number_id', $allowedNumbers))
             ->when($request->status, fn ($q, $s) => $q->where('status', $s))
             ->when($request->boolean('mine'), fn ($q) => $q->where('assigned_to', auth()->id()))
             ->when($request->boolean('unassigned'), fn ($q) => $q->whereNull('assigned_to'))
@@ -92,7 +94,12 @@ class ConversationController extends Controller
     public function release(int $id): JsonResponse
     {
         $user = auth()->user();
-        $canManageAny = in_array($user->role, ['admin', 'team_leader'], true);
+        // Was in_array($user->role, ['admin', 'team_leader'], true) — $user->role is the
+        // Role *model* (a BelongsTo relation), never equal to a string under strict
+        // comparison, and 'team_leader' doesn't match the real role name ('team_lead').
+        // Net effect: this override never actually fired; only the exact assignee could
+        // release a conversation. Driven by the real permission now instead of a role-name list.
+        $canManageAny = $user->hasPermission('inbox.view_all');
 
         $conversation = WaConversation::where('id', $id)
             ->where('company_id', $user->company_id)
@@ -119,11 +126,10 @@ class ConversationController extends Controller
 
         $user = auth()->user();
 
-        // Assigned agent can reply to their own conversation. Admin/team_leader can
-        // reply to ANY conversation regardless of assignment — a supervising override,
-        // not something a regular agent gets. Adjust the role check to match your
-        // actual role names/enum if they differ from 'admin'/'team_leader'.
-        $canReplyToAny = in_array($user->role, ['admin', 'team_leader'], true);
+        // Assigned agent can reply to their own conversation. Anyone with inbox.view_all
+        // (owner/admin/team_lead by default) can reply to ANY conversation regardless of
+        // assignment — a supervising override, not something a regular agent gets.
+        $canReplyToAny = $user->hasPermission('inbox.view_all');
         $isAssignedToMe = $conversation->assigned_to === $user->id;
 
         if (!$canReplyToAny && !$isAssignedToMe) {

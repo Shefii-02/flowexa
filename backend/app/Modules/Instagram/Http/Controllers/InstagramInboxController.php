@@ -14,7 +14,10 @@ class InstagramInboxController extends Controller
 
     public function index(Request $request): JsonResponse
     {
+        $allowed = auth()->user()->allowedAccountIds('instagram_account');
+
         $threads = InstagramConversation::where('company_id', auth()->user()->company_id)
+            ->when($allowed !== null, fn ($q) => $q->whereIn('instagram_account_id', $allowed))
             ->when($request->account_id, fn ($q, $id) => $q->where('instagram_account_id', $id))
             ->when($request->status, fn ($q, $s) => $q->where('status', $s))
             ->with('account:id,username')

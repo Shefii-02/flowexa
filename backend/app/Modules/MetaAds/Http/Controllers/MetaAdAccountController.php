@@ -12,7 +12,10 @@ class MetaAdAccountController extends Controller
     public function __construct(private MetaAdsService $svc) {}
 
     public function index(): JsonResponse {
-        return response()->json(['accounts' => MetaAdAccount::where('company_id', auth()->user()->company_id)->get()]);
+        $allowed = auth()->user()->allowedAccountIds('meta_ads_account');
+        return response()->json(['accounts' => MetaAdAccount::where('company_id', auth()->user()->company_id)
+            ->when($allowed !== null, fn ($q) => $q->whereIn('id', $allowed))
+            ->get()]);
     }
 
     public function store(Request $request): JsonResponse {
