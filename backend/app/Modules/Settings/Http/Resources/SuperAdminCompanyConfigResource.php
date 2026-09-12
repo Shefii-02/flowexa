@@ -47,9 +47,12 @@ class SuperAdminCompanyConfigResource extends JsonResource
             'wa_access_token_masked' => $this->mask($this->decrypt_wa_access_token),
 
             'wa_auth_enabled'          => (bool) $this->wa_auth_enabled,
+            'wa_chat_key_id'           => $this->wa_chat_key_id,
             'wa_chat_token_set'        => (bool) $this->wa_chat_token,
             'wa_chat_token_masked'     => $this->mask($this->wa_chat_token),
             'wa_chat_token_expires_at' => $this->wa_chat_token_expires_at,
+            'wa_chat_token_expired'    => $this->wa_chat_token_expired,
+            'wa_chat_token_status'     => $this->wa_chat_token_status, // not_connected | expired | active
 
             'waha_enabled'        => (bool) $this->waha_enabled,
             'waha_max_sessions'   => $this->waha_max_sessions,

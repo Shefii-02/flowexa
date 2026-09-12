@@ -19,12 +19,19 @@ class RagOrchestrator
         private readonly ResponseGenerator $generator,
     ) {}
 
+    /**
+     * @param bool $isTest When true (superadmin AI test tool), this call leaves no trace in the
+     *   company's own data: no Contact/Lead is created, and the scratch AiAgentSession used to
+     *   carry conversation history through this one call is deleted again before returning —
+     *   so a superadmin probing a company's AI setup never pollutes their real CRM/session list.
+     */
     public function answer(
         string $query,
         string $contactPhone,
         string $wahaSessionId,
         int    $companyId,
-        array  $aiConfig = []
+        array  $aiConfig = [],
+        bool   $isTest = false
     ): array {
         // 1. Detect language
         $language = $this->languageDetector->detect($query);
@@ -53,7 +60,7 @@ class RagOrchestrator
         }
 
         // 3. On new session: ensure Contact exists and auto-create a Lead
-        if ($isNewSession) {
+        if ($isNewSession && !$isTest) {
             $this->ensureContactAndLead($companyId, $contactPhone, $wahaSessionId);
         }
 
@@ -92,12 +99,18 @@ class RagOrchestrator
             $history = array_slice($history, -20);
         }
 
-        $agentSession->update([
-            'conversation_history' => $history,
-            'current_intent'       => $intent,
-            'last_message_at'      => now(),
-            'ai_config'            => array_merge($agentSession->ai_config ?? [], $aiConfig),
-        ]);
+        if ($isTest) {
+            // Leave nothing behind for a test call — delete the scratch session outright
+            // rather than updating it.
+            $agentSession->delete();
+        } else {
+            $agentSession->update([
+                'conversation_history' => $history,
+                'current_intent'       => $intent,
+                'last_message_at'      => now(),
+                'ai_config'            => array_merge($agentSession->ai_config ?? [], $aiConfig),
+            ]);
+        }
 
         return [
             'response'   => $response,

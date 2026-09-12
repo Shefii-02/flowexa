@@ -66,7 +66,12 @@ class CompanyResource extends JsonResource
                 'is_low'              => $this->wallet->balance <= $this->wallet->low_balance_alert,
             ]),
 
-            'wa_chat_token' => $this->wa_chat_token
+            'wa_chat_token' => $this->wa_chat_token,
+            'wa_chat' => [
+                'status'      => $this->wa_chat_token_status, // not_connected | expired | active
+                'expired'     => $this->wa_chat_token_expired,
+                'expires_at'  => $this->wa_chat_token_expires_at?->toIso8601String(),
+            ],
         ];
     }
 }

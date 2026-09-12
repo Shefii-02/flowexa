@@ -1,6 +1,8 @@
 // src/pages/superadmin/CompanyDetailPage.tsx
 // Full company profile for superadmin: read-only overview + usage, and a full
 // Company-table config editor (WhatsApp Cloud, WA Chat/WAHA, storage, AI, etc).
+// Each section saves independently — fixing just the WA Chat token, say, never
+// re-submits the Advanced JSON textarea or any other section's fields.
 import { useEffect, useState, useCallback } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { superadminApi } from '@/api'
@@ -17,13 +19,14 @@ const INDUSTRY_TYPES = [
 
 const STATUS_OPTIONS = ['active', 'trial', 'suspended', 'expired']
 
-const Section = ({ title, desc, children }: { title: string; desc?: string; children: React.ReactNode }) => (
+const Section = ({ title, desc, footer, children }: { title: string; desc?: string; footer?: React.ReactNode; children: React.ReactNode }) => (
   <div className="card">
     <div className="card-header flex-col items-start gap-0.5">
       <h3 className="card-title">{title}</h3>
       {desc && <p className="text-xs text-gray-400">{desc}</p>}
     </div>
     <div className="card-body grid grid-cols-1 sm:grid-cols-2 gap-4">{children}</div>
+    {footer && <div className="px-5 py-3 border-t border-gray-100 flex justify-end">{footer}</div>}
   </div>
 )
 
@@ -48,7 +51,7 @@ export default function CompanyDetailPage() {
   const navigate = useNavigate()
 
   const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
+  const [savingSection, setSavingSection] = useState<string | null>(null)
   const [company, setCompany] = useState<any>(null)
   const [cfg, setCfg] = useState<any>(null)
   const [form, setForm] = useState<any>(null)
@@ -57,6 +60,11 @@ export default function CompanyDetailPage() {
   const [editWaAccessToken, setEditWaAccessToken] = useState(false)
   const [newWaChatToken, setNewWaChatToken] = useState('')
   const [editWaChatToken, setEditWaChatToken] = useState(false)
+
+  const [waChatStatus, setWaChatStatus] = useState<any>(null)
+  const [checkingStatus, setCheckingStatus] = useState(false)
+  const [provisionConfirm, setProvisionConfirm] = useState(false)
+  const [provisioning, setProvisioning] = useState(false)
 
   const [resetConfirm, setResetConfirm] = useState(false)
   const [resettingKey, setResettingKey] = useState(false)
@@ -104,7 +112,65 @@ export default function CompanyDetailPage() {
 
   const set = (key: string, value: unknown) => setForm((prev: any) => ({ ...prev, [key]: value }))
 
-  const handleSave = async () => {
+  /** Saves only the given fields — every section calls this with its own subset. */
+  const savePartial = async (section: string, payload: Record<string, unknown>, onSuccess?: () => void) => {
+    setSavingSection(section)
+    try {
+      const { data } = await superadminApi.updateCompanyConfig(companyId, payload)
+      setCfg(data.config)
+      setForm(hydrateForm(data.config))
+      toast.success(`${section} saved.`)
+      onSuccess?.()
+    } catch (e) {
+      toast.error(getError(e))
+    } finally {
+      setSavingSection(null)
+    }
+  }
+
+  const saveGeneral = () => savePartial('General', {
+    name: form.name,
+    email: form.email || null,
+    phone: form.phone || null,
+    website: form.website || null,
+    industry_template: form.industry_template,
+    status: form.status,
+    suspended_reason: form.status === 'suspended' ? (form.suspended_reason || null) : null,
+    max_devices_per_user: Number(form.max_devices_per_user) || 2,
+    trial_ends_at: form.trial_ends_at || null,
+    plan_expires_at: form.plan_expires_at || null,
+  })
+
+  const saveStorage = () => savePartial('Storage', {
+    storage_limit_bytes: Math.max(0, Math.round(Number(form.storage_limit_mb) * 1024 * 1024)),
+  })
+
+  const saveWhatsAppCloud = () => {
+    const payload: Record<string, unknown> = {
+      wa_phone_id: form.wa_phone_id || null,
+      wa_business_id: form.wa_business_id || null,
+      meta_app_id: form.meta_app_id || null,
+      wa_profile_id: form.wa_profile_id || null,
+      wa_webhook_token: form.wa_webhook_token || null,
+    }
+    if (newWaAccessToken.trim()) payload.wa_access_token = newWaAccessToken.trim()
+    savePartial('WhatsApp Cloud', payload, () => { setNewWaAccessToken(''); setEditWaAccessToken(false) })
+  }
+
+  const saveWaChat = () => {
+    const payload: Record<string, unknown> = {
+      wa_auth_enabled: form.wa_auth_enabled,
+      wa_chat_token_expires_at: form.wa_chat_token_expires_at || null,
+      waha_enabled: form.waha_enabled,
+      waha_max_sessions: Number(form.waha_max_sessions) || 0,
+      waha_max_webhooks: Number(form.waha_max_webhooks) || 0,
+      waha_media_limit_mb: Number(form.waha_media_limit_mb) || 0,
+    }
+    if (newWaChatToken.trim()) payload.wa_chat_token = newWaChatToken.trim()
+    savePartial('WA Chat', payload, () => { setNewWaChatToken(''); setEditWaChatToken(false) })
+  }
+
+  const saveSettingsJson = () => {
     let settingsParsed: unknown
     try {
       settingsParsed = form.settings_json.trim() ? JSON.parse(form.settings_json) : {}
@@ -112,47 +178,33 @@ export default function CompanyDetailPage() {
       toast.error('Advanced settings must be valid JSON.')
       return
     }
+    savePartial('Advanced settings', { settings: settingsParsed })
+  }
 
-    setSaving(true)
+  const checkWaChatStatus = async () => {
+    setCheckingStatus(true)
     try {
-      const payload: Record<string, unknown> = {
-        name: form.name,
-        email: form.email || null,
-        phone: form.phone || null,
-        website: form.website || null,
-        industry_template: form.industry_template,
-        status: form.status,
-        suspended_reason: form.status === 'suspended' ? (form.suspended_reason || null) : null,
-        max_devices_per_user: Number(form.max_devices_per_user) || 2,
-        trial_ends_at: form.trial_ends_at || null,
-        plan_expires_at: form.plan_expires_at || null,
-        storage_limit_bytes: Math.max(0, Math.round(Number(form.storage_limit_mb) * 1024 * 1024)),
-        wa_phone_id: form.wa_phone_id || null,
-        wa_business_id: form.wa_business_id || null,
-        meta_app_id: form.meta_app_id || null,
-        wa_profile_id: form.wa_profile_id || null,
-        wa_webhook_token: form.wa_webhook_token || null,
-        wa_auth_enabled: form.wa_auth_enabled,
-        wa_chat_token_expires_at: form.wa_chat_token_expires_at || null,
-        waha_enabled: form.waha_enabled,
-        waha_max_sessions: Number(form.waha_max_sessions) || 0,
-        waha_max_webhooks: Number(form.waha_max_webhooks) || 0,
-        waha_media_limit_mb: Number(form.waha_media_limit_mb) || 0,
-        settings: settingsParsed,
-      }
-      if (newWaAccessToken.trim()) payload.wa_access_token = newWaAccessToken.trim()
-      if (newWaChatToken.trim()) payload.wa_chat_token = newWaChatToken.trim()
-
-      const { data } = await superadminApi.updateCompanyConfig(companyId, payload)
-      setCfg(data.config)
-      setForm(hydrateForm(data.config))
-      setNewWaAccessToken(''); setEditWaAccessToken(false)
-      setNewWaChatToken(''); setEditWaChatToken(false)
-      toast.success('Company config updated.')
+      const { data } = await superadminApi.waChatStatus(companyId)
+      setWaChatStatus(data)
     } catch (e) {
       toast.error(getError(e))
     } finally {
-      setSaving(false)
+      setCheckingStatus(false)
+    }
+  }
+
+  const provisionWaChatToken = async () => {
+    setProvisioning(true)
+    try {
+      const { data } = await superadminApi.waChatProvision(companyId)
+      setWaChatStatus(data.status)
+      toast.success('WA Chat token provisioned.')
+      setProvisionConfirm(false)
+      load()
+    } catch (e) {
+      toast.error(getError(e))
+    } finally {
+      setProvisioning(false)
     }
   }
 
@@ -188,6 +240,7 @@ export default function CompanyDetailPage() {
           <div className="flex items-center gap-2">
             <h1 className="page-title">{company.name}</h1>
             <Badge variant={{ active: 'green', trial: 'yellow', suspended: 'red', expired: 'gray' }[cfg.status as string] as any || 'gray'}>{cfg.status}</Badge>
+            {cfg.wa_chat_token_status === 'expired' && <Badge variant="red">⚠️ WA Chat expired</Badge>}
           </div>
           <p className="page-sub">{company.email} {company.phone ? `· ${company.phone}` : ''}</p>
         </div>
@@ -230,7 +283,7 @@ export default function CompanyDetailPage() {
       </div>
 
       {/* General */}
-      <Section title="General">
+      <Section title="General" footer={<Button size="sm" loading={savingSection === 'General'} onClick={saveGeneral}>Save General</Button>}>
         <Input label="Company name" value={form.name} onChange={(e) => set('name', e.target.value)} />
         <Input label="Company email" type="email" value={form.email} onChange={(e) => set('email', e.target.value)} />
         <Input label="Company phone" value={form.phone} onChange={(e) => set('phone', e.target.value)} />
@@ -256,7 +309,8 @@ export default function CompanyDetailPage() {
       </Section>
 
       {/* Storage */}
-      <Section title="Storage" desc="Media/flow-attachment storage cap for this company.">
+      <Section title="Storage" desc="Media/flow-attachment storage cap for this company."
+        footer={<Button size="sm" loading={savingSection === 'Storage'} onClick={saveStorage}>Save Storage</Button>}>
         <Input label="Storage limit (MB)" type="number" min={0} value={form.storage_limit_mb} onChange={(e) => set('storage_limit_mb', e.target.value)} />
         <div>
           <label className="label">Storage used</label>
@@ -265,7 +319,8 @@ export default function CompanyDetailPage() {
       </Section>
 
       {/* WhatsApp Cloud */}
-      <Section title="WhatsApp Cloud (Meta)">
+      <Section title="WhatsApp Cloud (Meta)"
+        footer={<Button size="sm" loading={savingSection === 'WhatsApp Cloud'} onClick={saveWhatsAppCloud}>Save WhatsApp Cloud</Button>}>
         <Input label="Phone number ID" value={form.wa_phone_id} onChange={(e) => set('wa_phone_id', e.target.value)} />
         <Input label="Business account ID" value={form.wa_business_id} onChange={(e) => set('wa_business_id', e.target.value)} />
         <Input label="Meta app ID" value={form.meta_app_id} onChange={(e) => set('meta_app_id', e.target.value)} />
@@ -285,7 +340,19 @@ export default function CompanyDetailPage() {
       </Section>
 
       {/* WA Chat / WAHA */}
-      <Section title="WA Chat (open-wa / WAHA)">
+      <Section title="WA Chat (open-wa / WAHA)"
+        desc="Gateway API key this company's open-wa sessions authenticate with."
+        footer={<Button size="sm" loading={savingSection === 'WA Chat'} onClick={saveWaChat}>Save WA Chat</Button>}>
+        {cfg.wa_chat_token_status !== 'active' && (
+          <div className={`sm:col-span-2 rounded-lg px-3 py-2 text-xs flex items-center justify-between gap-3 ${cfg.wa_chat_token_status === 'expired' ? 'bg-red-50 border border-red-200 text-red-700' : 'bg-amber-50 border border-amber-200 text-amber-700'}`}>
+            <span>
+              {cfg.wa_chat_token_status === 'expired'
+                ? `⚠️ Token expired ${cfg.wa_chat_token_expires_at ? 'on ' + fmt.date(cfg.wa_chat_token_expires_at) : ''} — this company's WA Chat access is blocked until it's re-provisioned.`
+                : '⚪ Never connected — this company has no WA Chat gateway key yet.'}
+            </span>
+            <Button size="sm" variant="secondary" onClick={() => setProvisionConfirm(true)}>Provision now</Button>
+          </div>
+        )}
         <label className="flex items-center gap-2 text-sm text-gray-700">
           <input type="checkbox" checked={form.waha_enabled} onChange={(e) => set('waha_enabled', e.target.checked)} /> WA Chat enabled
         </label>
@@ -311,6 +378,17 @@ export default function CompanyDetailPage() {
           )}
         </div>
         <Input label="WA Chat token expires" type="date" value={form.wa_chat_token_expires_at} onChange={(e) => set('wa_chat_token_expires_at', e.target.value)} />
+
+        {/* Live gateway check + one-click re-provision — the actual fix for "Invalid API key" */}
+        <div className="sm:col-span-2 flex items-center gap-3 pt-2 border-t border-gray-100 mt-1">
+          <Button variant="secondary" size="sm" loading={checkingStatus} onClick={checkWaChatStatus}>🔍 Check gateway status</Button>
+          <Button variant="secondary" size="sm" onClick={() => setProvisionConfirm(true)}>♻️ Provision new token</Button>
+          {waChatStatus && (
+            <span className={`text-xs ${waChatStatus.valid ? 'text-green-600' : 'text-red-600'}`}>
+              {waChatStatus.valid ? '✅ Gateway accepts this token' : `⚠️ ${waChatStatus.reason}`}
+            </span>
+          )}
+        </div>
       </Section>
 
       {/* AI provider — read-only overview; keys are managed from the company's own AI settings */}
@@ -332,11 +410,9 @@ export default function CompanyDetailPage() {
         <div className="card-body">
           <textarea className="textarea font-mono text-xs" rows={8} value={form.settings_json} onChange={(e) => set('settings_json', e.target.value)} />
         </div>
-      </div>
-
-      {/* Save bar */}
-      <div className="flex justify-end gap-3 sticky bottom-4">
-        <Button onClick={handleSave} loading={saving}>Save changes</Button>
+        <div className="px-5 py-3 border-t border-gray-100 flex justify-end">
+          <Button size="sm" loading={savingSection === 'Advanced settings'} onClick={saveSettingsJson}>Save Advanced settings</Button>
+        </div>
       </div>
 
       {/* Danger zone */}
@@ -360,6 +436,17 @@ export default function CompanyDetailPage() {
         onConfirm={handleResetApiKey}
         onCancel={() => setResetConfirm(false)}
         loading={resettingKey}
+      />
+
+      {/* Provision WA Chat token confirm */}
+      <ConfirmModal
+        open={provisionConfirm}
+        title="Provision a new WA Chat token?"
+        message={`Mints a fresh open-wa gateway key for "${company.name}", scoped to its own sessions, and revokes its previous key (only if that previous key's id is on file). Existing WA Chat sessions keep working.`}
+        confirmLabel="Provision"
+        onConfirm={provisionWaChatToken}
+        onCancel={() => setProvisionConfirm(false)}
+        loading={provisioning}
       />
 
       {/* New API key — shown once */}

@@ -62,6 +62,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'company.active' => \App\Modules\Auth\Http\Middleware\EnsureCompanyActive::class,
             'permission'     => \App\Modules\Auth\Http\Middleware\CheckPermission::class,
             'plan.limit'      => \App\Http\Middleware\PlanLimitMiddleware::class,
+            'wa_chat.valid'   => \App\Modules\WaChat\Http\Middleware\EnsureWaChatTokenValid::class,
 
             // OTP external API key auth
             'otp.auth'       => \App\Modules\Otp\Http\Middleware\OtpApiAuth::class,

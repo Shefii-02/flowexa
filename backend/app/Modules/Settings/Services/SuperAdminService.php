@@ -273,6 +273,7 @@ class SuperAdminService
     public function errorLogs(array $filters): LengthAwarePaginator
     {
         return ErrorLog::with(['company:id,name', 'user:id,name'])
+            ->where('source', $filters['source'] ?? ErrorLog::SOURCE_LARAVEL)
             ->when($filters['company_id'] ?? null, fn ($q, $c) => $q->where('company_id', $c))
             ->when($filters['exception'] ?? null, fn ($q, $e) => $q->where('exception_class', 'like', "%{$e}%"))
             ->when($filters['search'] ?? null, fn ($q, $s) => $q->where('message', 'like', "%{$s}%"))
@@ -285,6 +286,12 @@ class SuperAdminService
     public function errorLog(int $id): ErrorLog
     {
         return ErrorLog::with(['company:id,name', 'user:id,name'])->findOrFail($id);
+    }
+
+    /** Deletes stored (Laravel/frontend) error_logs rows for one source. Returns rows deleted. */
+    public function clearErrorLogs(string $source): int
+    {
+        return ErrorLog::where('source', $source)->delete();
     }
 
     // ── Observability: raw Laravel log file viewer ────────────────────────────────
@@ -334,6 +341,49 @@ class SuperAdminService
         $entries = array_map('trim', array_slice($entries, -$lines));
 
         return ['file' => $safe, 'size' => $size, 'entries' => $entries];
+    }
+
+    // ── Observability: failed queue jobs ──────────────────────────────────────────
+
+    public function failedJobs(array $filters): LengthAwarePaginator
+    {
+        return DB::table('failed_jobs')
+            ->when($filters['search'] ?? null, fn ($q, $s) => $q->where(
+                fn ($qq) => $qq->where('payload', 'like', "%{$s}%")->orWhere('exception', 'like', "%{$s}%")
+            ))
+            ->when($filters['queue'] ?? null, fn ($q, $qu) => $q->where('queue', $qu))
+            ->orderByDesc('id')
+            ->paginate((int) ($filters['per_page'] ?? 30), ['*'], 'page', (int) ($filters['page'] ?? 1));
+    }
+
+    /** Re-queues a failed job (and removes it from failed_jobs) via the same mechanism as `queue:retry`. */
+    public function retryFailedJob(string $uuid): void
+    {
+        \Illuminate\Support\Facades\Artisan::call('queue:retry', ['id' => [$uuid]]);
+    }
+
+    public function deleteFailedJob(string $uuid): bool
+    {
+        return DB::table('failed_jobs')->where('uuid', $uuid)->delete() > 0;
+    }
+
+    public function flushFailedJobs(): int
+    {
+        return DB::table('failed_jobs')->delete();
+    }
+
+    /** Truncates a log file in place (rather than deleting it) so an open file handle stays valid. */
+    public function clearSystemLog(string $file): bool
+    {
+        $safe = basename($file);
+        $path = storage_path("logs/{$safe}");
+
+        if (!str_ends_with($safe, '.log') || !is_file($path)) {
+            return false;
+        }
+
+        file_put_contents($path, '');
+        return true;
     }
 
     public function updateStatus(Company $company, UpdateCompanyStatusDTO $dto): Company

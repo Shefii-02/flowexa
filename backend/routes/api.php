@@ -155,14 +155,26 @@ Route::prefix('v1')->group(function () {
                 Route::post('companies/{company}/reset-api-key', [SuperAdminController::class, 'resetApiKey'])->name('companies.reset-api-key');
                 Route::get('companies/{company}/config',       [SuperAdminController::class, 'showCompanyConfig'])->name('companies.config.show');
                 Route::put('companies/{company}/config',       [SuperAdminController::class, 'updateCompanyConfig'])->name('companies.config.update');
+                Route::get('companies/{company}/wa-chat/status',    [SuperAdminController::class, 'waChatStatus'])->name('companies.wa-chat.status');
+                Route::post('companies/{company}/wa-chat/provision', [SuperAdminController::class, 'waChatProvision'])->name('companies.wa-chat.provision');
+                Route::get('companies/{company}/ai-settings',       [SuperAdminController::class, 'companyAiSettings'])->name('companies.ai-settings');
+                Route::post('ai-test',                              [SuperAdminController::class, 'aiTest'])->name('ai-test');
+
+                // Failed queue jobs
+                Route::get('failed-jobs',              [SuperAdminController::class, 'failedJobs'])->name('failed-jobs.index');
+                Route::delete('failed-jobs',            [SuperAdminController::class, 'flushFailedJobs'])->name('failed-jobs.flush');
+                Route::post('failed-jobs/{uuid}/retry', [SuperAdminController::class, 'retryFailedJob'])->name('failed-jobs.retry');
+                Route::delete('failed-jobs/{uuid}',     [SuperAdminController::class, 'deleteFailedJob'])->name('failed-jobs.destroy');
 
                 // Observability: API request/activity log, error log, raw system log file
                 Route::get('api-logs',            [SuperAdminController::class, 'apiLogs'])->name('api-logs.index');
                 Route::get('api-logs/stats',      [SuperAdminController::class, 'apiLogStats'])->name('api-logs.stats');
                 Route::get('errors',              [SuperAdminController::class, 'errorLogs'])->name('errors.index');
+                Route::delete('errors',           [SuperAdminController::class, 'clearErrorLogs'])->name('errors.clear');
                 Route::get('errors/{id}',         [SuperAdminController::class, 'showError'])->name('errors.show');
                 Route::get('system-log/files',    [SuperAdminController::class, 'systemLogFiles'])->name('system-log.files');
                 Route::get('system-log',          [SuperAdminController::class, 'systemLog'])->name('system-log.show');
+                Route::delete('system-log',       [SuperAdminController::class, 'clearSystemLog'])->name('system-log.clear');
                 Route::post('companies/{company}/impersonate', [SuperAdminController::class, 'impersonate'])->name('companies.impersonate');
                 Route::patch('companies/{company}/status',     [SuperAdminController::class, 'updateStatus'])->name('companies.status');
                 Route::get('plans',                            [SuperAdminController::class, 'plans'])->name('plans.index');
@@ -1136,19 +1148,25 @@ Route::prefix('v1/{waChatToken}')
 // ── WAHA session webhook receiver (public — called by WAHA server) ──
 Route::post('v1/waha/webhook', [WahaSessionController::class, 'webhook']);
 
+// ── Frontend crash reports (public — a crash can happen before login) ──
+Route::post('v1/frontend-errors', [\App\Http\Controllers\FrontendErrorController::class, 'store'])
+    ->middleware('throttle:30,1');
+
 // ── Protected WA Chat routes ─────────────────────────────────────────────
 Route::prefix('v1')->middleware(['jwt.auth'])->group(function () {
 
-    // Gateway API-key status / reconnect
+    // Gateway API-key status / reconnect — must stay reachable even with an expired
+    // token, since reconnecting IS how a company recovers from that exact state.
     Route::get('waha/token',            [WahaSessionController::class, 'tokenStatus']);
     Route::post('waha/token/reconnect', [WahaSessionController::class, 'reconnectToken'])
         ->middleware('permission:settings.manage');
 
     // Company-scoped WA Chat analytics (aggregates per-session gateway stats)
-    Route::get('wa-chat/analytics', [WaChatAnalyticsController::class, 'index']);
+    Route::get('wa-chat/analytics', [WaChatAnalyticsController::class, 'index'])
+        ->middleware('wa_chat.valid');
 
     // Sessions
-    Route::prefix('waha/sessions')->middleware('permission:wa_chat.sessions.view')->group(function () {
+    Route::prefix('waha/sessions')->middleware(['wa_chat.valid', 'permission:wa_chat.sessions.view'])->group(function () {
         Route::get('/',              [WahaSessionController::class, 'index']);
         Route::get('/health',        [WahaSessionController::class, 'health']);
         Route::get('/{id}',          [WahaSessionController::class, 'show']);
@@ -1165,7 +1183,7 @@ Route::prefix('v1')->middleware(['jwt.auth'])->group(function () {
     });
 
     // WA Groups proxy (calls WAHA)
-    Route::prefix('waha')->group(function () {
+    Route::prefix('waha')->middleware('wa_chat.valid')->group(function () {
         Route::get('groups',                              [WahaSessionController::class, 'groups']);
         Route::post('groups',                             [WahaSessionController::class, 'createGroup']);
         Route::post('groups/join',                        [WahaSessionController::class, 'joinGroup']);
@@ -1192,7 +1210,7 @@ Route::prefix('v1')->middleware(['jwt.auth'])->group(function () {
     });
 
     // Webhook configs
-    Route::prefix('waha/webhooks')->group(function () {
+    Route::prefix('waha/webhooks')->middleware('wa_chat.valid')->group(function () {
         Route::get('/',          [WahaWebhookConfigController::class, 'index']);
         Route::post('/',         [WahaWebhookConfigController::class, 'store']);
         Route::patch('/{id}',    [WahaWebhookConfigController::class, 'update']);
@@ -1201,7 +1219,7 @@ Route::prefix('v1')->middleware(['jwt.auth'])->group(function () {
     });
 
     // Message Sender
-    Route::prefix('message-sender')->group(function () {
+    Route::prefix('message-sender')->middleware('wa_chat.valid')->group(function () {
         Route::get('/',              [MessageSenderController::class, 'index']);
         Route::post('/',             [MessageSenderController::class, 'store']);
         Route::get('/stats',         [MessageSenderController::class, 'stats']);
@@ -1214,7 +1232,7 @@ Route::prefix('v1')->middleware(['jwt.auth'])->group(function () {
     });
 
     // Media Library
-    Route::prefix('media-library')->group(function () {
+    Route::prefix('media-library')->middleware('wa_chat.valid')->group(function () {
         Route::get('/',               [MediaLibraryController::class, 'index']);
         Route::post('/upload',        [MediaLibraryController::class, 'upload']);
         Route::post('/bulk/move',     [MediaLibraryController::class, 'bulkMove']);
@@ -1232,7 +1250,7 @@ Route::prefix('v1')->middleware(['jwt.auth'])->group(function () {
     });
 
     // WA Chat Templates
-    Route::prefix('wa-chat-templates')->group(function () {
+    Route::prefix('wa-chat-templates')->middleware('wa_chat.valid')->group(function () {
         Route::get('/',        [WaChatTemplateController::class, 'index']);
         Route::post('/',       [WaChatTemplateController::class, 'store']);
         Route::get('/{id}',    [WaChatTemplateController::class, 'show']);

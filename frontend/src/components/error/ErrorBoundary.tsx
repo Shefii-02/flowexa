@@ -1,5 +1,6 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react'
 import { buildErrorReport, type ErrorReport } from '@/utils/errorReport'
+import { reportErrorToServer } from '@/utils/errorReporter'
 import { ErrorScreen } from './ErrorScreen'
 
 interface Props {
@@ -33,15 +34,15 @@ export class ErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error, info: ErrorInfo) {
     // Re-build with the component stack now that we have it.
-    this.setState({
-      report: buildErrorReport({
-        kind: 'render',
-        title: 'Unhandled UI error',
-        message: error?.message || 'The page crashed while rendering.',
-        error,
-        componentStack: info.componentStack ?? undefined,
-      }),
+    const report = buildErrorReport({
+      kind: 'render',
+      title: 'Unhandled UI error',
+      message: error?.message || 'The page crashed while rendering.',
+      error,
+      componentStack: info.componentStack ?? undefined,
     })
+    this.setState({ report })
+    reportErrorToServer(report)
     // eslint-disable-next-line no-console
     console.error('[ErrorBoundary]', error, info)
   }

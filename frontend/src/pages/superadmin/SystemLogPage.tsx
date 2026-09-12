@@ -2,7 +2,7 @@
 // Raw Laravel log file viewer — tails storage/logs/*.log without shelling in.
 import { useEffect, useState, useCallback } from 'react'
 import { superadminApi } from '@/api'
-import { Button, EmptyState, Spinner } from '@/components/ui'
+import { Button, ConfirmModal, EmptyState, Spinner } from '@/components/ui'
 import { getError } from '@/utils'
 import toast from 'react-hot-toast'
 
@@ -19,6 +19,8 @@ export default function SystemLogPage() {
   const [search, setSearch] = useState('')
   const [entries, setEntries] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
+  const [clearConfirm, setClearConfirm] = useState(false)
+  const [clearing, setClearing] = useState(false)
 
   useEffect(() => {
     superadminApi.systemLogFiles().then((r) => {
@@ -38,11 +40,28 @@ export default function SystemLogPage() {
 
   useEffect(() => { load() }, [load])
 
+  const handleClear = async () => {
+    setClearing(true)
+    try {
+      const { data } = await superadminApi.clearSystemLog(file)
+      toast.success(data.message)
+      setClearConfirm(false)
+      load()
+    } catch (e) {
+      toast.error(getError(e))
+    } finally {
+      setClearing(false)
+    }
+  }
+
   return (
     <div className="space-y-5">
-      <div>
-        <h1 className="page-title">System Log</h1>
-        <p className="page-sub">Raw laravel.log — the last {lines} entries, newest last.</p>
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="page-title">System Log</h1>
+          <p className="page-sub">Raw {file || 'laravel.log'} — the last {lines} entries, newest last.</p>
+        </div>
+        <Button variant="danger" disabled={!file} onClick={() => setClearConfirm(true)}>🗑 Clear log</Button>
       </div>
 
       <div className="card">
@@ -71,6 +90,16 @@ export default function SystemLogPage() {
           )}
         </div>
       </div>
+
+      <ConfirmModal
+        open={clearConfirm}
+        title={`Clear ${file}?`}
+        message="Truncates the file in place. This cannot be undone."
+        confirmLabel="Clear log"
+        onConfirm={handleClear}
+        onCancel={() => setClearConfirm(false)}
+        loading={clearing}
+      />
     </div>
   )
 }

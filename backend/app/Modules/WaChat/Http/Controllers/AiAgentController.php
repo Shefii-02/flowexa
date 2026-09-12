@@ -146,7 +146,13 @@ class AiAgentController extends Controller
 
     public function aiSettings(): JsonResponse
     {
-        $company   = Company::find(Auth::user()->company_id) ?? new Company();
+        $company = Company::find(Auth::user()->company_id) ?? new Company();
+        return response()->json(self::buildAiSettings($company));
+    }
+
+    /** Shared by aiSettings() (self, via the JWT) and SuperAdminController (any company, by id). */
+    public static function buildAiSettings(Company $company): array
+    {
         $platform  = CompanyApiKeyResolver::platformCompany();
         $isPlatform = $platform && $platform->id === $company->id;
         $catalogue = self::modelCatalogue();
@@ -171,13 +177,13 @@ class AiAgentController extends Controller
 
         $resolved = CompanyApiKeyResolver::resolve($company);
 
-        return response()->json([
+        return [
             'active_provider'   => CompanyApiKeyResolver::provider($company),
             'active_model'      => CompanyApiKeyResolver::model($company),
             'resolved_source'   => $resolved['source'] ?? 'none',
             'is_platform_admin' => $isPlatform,
             'providers'         => $providers,
-        ]);
+        ];
     }
 
     // ── Save AI agent config (provider/model) ──────────────────────────────────

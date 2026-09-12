@@ -66,6 +66,8 @@ import CompanyDetailPage from '@/pages/superadmin/CompanyDetailPage'
 import ApiLogsPage from '@/pages/superadmin/ApiLogsPage'
 import ErrorLogsPage from '@/pages/superadmin/ErrorLogsPage'
 import SystemLogPage from '@/pages/superadmin/SystemLogPage'
+import AiTestPage from '@/pages/superadmin/AiTestPage'
+import FailedJobsPage from '@/pages/superadmin/FailedJobsPage'
 
 // Meta Ads pages
 import AdAccountPage from '@/pages/meta-ads/ad-account/AdAccountPage'
@@ -384,6 +386,14 @@ export default function App() {
             <Route
               path="superadmin/system-log"
               element={<SuperAdminRoute><SystemLogPage /></SuperAdminRoute>}
+            />
+            <Route
+              path="superadmin/ai-test"
+              element={<SuperAdminRoute><AiTestPage /></SuperAdminRoute>}
+            />
+            <Route
+              path="superadmin/failed-jobs"
+              element={<SuperAdminRoute><FailedJobsPage /></SuperAdminRoute>}
             />
           </Route>
 

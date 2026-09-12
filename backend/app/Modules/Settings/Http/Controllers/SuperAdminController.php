@@ -21,6 +21,7 @@ use App\Modules\Settings\Http\Resources\SuperAdminCompanyConfigResource;
 use App\Modules\Settings\Http\Resources\SuperAdminCompanyResource;
 use App\Modules\Settings\Services\SettingsService;
 use App\Modules\Settings\Services\SuperAdminService;
+use App\Modules\WaChat\Services\WaChatTokenService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -147,28 +148,231 @@ class SuperAdminController extends Controller
         return response()->json(['message' => 'Company config updated.', 'config' => new SuperAdminCompanyConfigResource($company)]);
     }
 
+    // ── Observability: failed queue jobs ──────────────────────────────────────────
+
+    public function failedJobs(Request $request): JsonResponse
+    {
+        $paginator = $this->superAdminService->failedJobs($request->all());
+
+        $paginator->getCollection()->transform(function ($row) {
+            $payload = json_decode($row->payload, true) ?: [];
+            $jobClass = $payload['displayName'] ?? ($payload['job'] ?? 'Unknown job');
+
+            return [
+                'id'             => $row->id,
+                'uuid'           => $row->uuid,
+                'connection'     => $row->connection,
+                'queue'          => $row->queue,
+                'job'            => $jobClass,
+                'exception'      => \Illuminate\Support\Str::limit((string) $row->exception, 300),
+                'exception_full' => $row->exception,
+                'failed_at'      => $row->failed_at,
+            ];
+        });
+
+        return response()->json($paginator);
+    }
+
+    public function retryFailedJob(string $uuid): JsonResponse
+    {
+        $this->superAdminService->retryFailedJob($uuid);
+        return response()->json(['message' => 'Job re-queued.']);
+    }
+
+    public function deleteFailedJob(string $uuid): JsonResponse
+    {
+        $ok = $this->superAdminService->deleteFailedJob($uuid);
+        return $ok
+            ? response()->json(['message' => 'Job deleted.'])
+            : response()->json(['message' => 'Not found.'], 404);
+    }
+
+    public function flushFailedJobs(): JsonResponse
+    {
+        $n = $this->superAdminService->flushFailedJobs();
+        return response()->json(['message' => "Deleted {$n} failed job(s)."]);
+    }
+
+    // ── AI response testing (superadmin's own token — no impersonation needed) ───
+
+    /** GET /superadmin/companies/{company}/ai-settings — resolved provider/model/keys for any company. */
+    public function companyAiSettings(Company $company): JsonResponse
+    {
+        return response()->json(\App\Modules\WaChat\Http\Controllers\AiAgentController::buildAiSettings($company));
+    }
+
+    /**
+     * POST /superadmin/ai-test — ask the AI agent a question as any company, using the
+     * superadmin's own session. Leaves no trace in that company's data (see
+     * RagOrchestrator::answer()'s $isTest param) — no Contact/Lead, no lingering session.
+     */
+    public function aiTest(Request $request, \App\Modules\WaChat\Services\Rag\RagOrchestrator $rag): JsonResponse
+    {
+        $data = $request->validate([
+            'company_id' => ['required', 'integer', 'exists:companies,id'],
+            'query'      => ['required', 'string', 'max:2000'],
+            'ai_config'  => ['nullable', 'array'],
+        ]);
+
+        $result = $rag->answer(
+            query:         $data['query'],
+            contactPhone:  '00000000000',
+            wahaSessionId: 'superadmin-test',
+            companyId:     (int) $data['company_id'],
+            aiConfig:      $data['ai_config'] ?? [],
+            isTest:        true,
+        );
+
+        return response()->json($result);
+    }
+
+    // ── WA Chat gateway token (open-wa) ──────────────────────────────────────────
+
+    /** GET /superadmin/companies/{company}/wa-chat/status — live check against the gateway. */
+    public function waChatStatus(Company $company, WaChatTokenService $waChatTokens): JsonResponse
+    {
+        return response()->json($waChatTokens->status($company));
+    }
+
+    /** POST /superadmin/companies/{company}/wa-chat/provision — mint a fresh gateway key. */
+    public function waChatProvision(Company $company, WaChatTokenService $waChatTokens): JsonResponse
+    {
+        try {
+            $waChatTokens->provision($company);
+        } catch (\Throwable $e) {
+            return response()->json(['message' => $e->getMessage()], 502);
+        }
+
+        return response()->json([
+            'message' => 'WA Chat token provisioned.',
+            'status'  => $waChatTokens->status($company->fresh()),
+        ]);
+    }
+
     // ── Observability: API request log / activity feed ──────────────────────────
 
-    public function apiLogs(Request $request): JsonResponse
+    public function apiLogs(Request $request, WaChatTokenService $waChatTokens): JsonResponse
     {
+        if ($request->input('source') === 'backend_node') {
+            return $this->backendNodeActivity($request, $waChatTokens);
+        }
+
         return response()->json($this->superAdminService->apiLogs($request->all()));
     }
 
     public function apiLogStats(Request $request): JsonResponse
     {
+        if ($request->input('source') === 'backend_node') {
+            // Per-day/per-route breakdowns aren't worth proxying for this — the list view
+            // (with its own total) already tells the story; the dashboard stays Laravel-only.
+            return response()->json(['range_days' => 0, 'total_requests' => 0, 'error_count' => 0,
+                'error_rate' => 0, 'avg_duration_ms' => 0, 'requests_today' => 0,
+                'by_day' => [], 'top_companies' => [], 'top_routes' => [], 'status_breakdown' => []]);
+        }
+
         return response()->json($this->superAdminService->apiLogStats($request->all()));
     }
 
-    // ── Observability: company-scoped error log ──────────────────────────────────
-
-    public function errorLogs(Request $request): JsonResponse
+    /** Live proxy — every action backend-node's own audit trail recorded, any severity. */
+    private function backendNodeActivity(Request $request, WaChatTokenService $waChatTokens): JsonResponse
     {
+        $perPage = max(1, (int) $request->input('per_page', 40));
+        $page    = max(1, (int) $request->input('page', 1));
+
+        try {
+            $result = $waChatTokens->gatewayActivity($perPage, ($page - 1) * $perPage);
+        } catch (\Throwable $e) {
+            return response()->json(['message' => $e->getMessage()], 502);
+        }
+
+        $rows = collect($result['data'])->map(fn ($row) => [
+            'id'          => $row['id'] ?? null,
+            'created_at'  => $row['createdAt'] ?? null,
+            'company'     => null,
+            'user'        => !empty($row['apiKeyName']) ? ['name' => $row['apiKeyName']] : null,
+            'actor_role'  => null,
+            'method'      => $row['method'] ?? '—',
+            'path'        => $row['path'] ?? ($row['sessionName'] ?? ''),
+            'route_name'  => $row['action'] ?? null,
+            'status_code' => $row['statusCode'] ?? (($row['severity'] ?? 'info') === 'error' ? 500 : 200),
+            'duration_ms' => 0,
+            'is_error'    => ($row['severity'] ?? 'info') === 'error',
+        ])->values();
+
+        return response()->json([
+            'data'         => $rows,
+            'total'        => $result['total'],
+            'current_page' => $page,
+            'per_page'     => $perPage,
+            'last_page'    => (int) ceil(max($result['total'], 1) / $perPage),
+        ]);
+    }
+
+    // ── Observability: error log (Laravel / frontend, stored — or backend_node, proxied live) ────
+
+    public function errorLogs(Request $request, WaChatTokenService $waChatTokens): JsonResponse
+    {
+        if ($request->input('source') === 'backend_node') {
+            return $this->backendNodeErrors($request, $waChatTokens);
+        }
+
         return response()->json($this->superAdminService->errorLogs($request->all()));
     }
 
     public function showError(int $id): JsonResponse
     {
         return response()->json(['error' => $this->superAdminService->errorLog($id)]);
+    }
+
+    /** DELETE /superadmin/errors?source=laravel|frontend|backend_node — wipe that source's trail. */
+    public function clearErrorLogs(Request $request, WaChatTokenService $waChatTokens): JsonResponse
+    {
+        $source = (string) $request->input('source', 'laravel');
+
+        if ($source === 'backend_node') {
+            try {
+                $deleted = $waChatTokens->clearGatewayErrors();
+            } catch (\Throwable $e) {
+                return response()->json(['message' => $e->getMessage()], 502);
+            }
+            return response()->json(['message' => "Cleared {$deleted} gateway error log(s).", 'deleted' => $deleted]);
+        }
+
+        $deleted = $this->superAdminService->clearErrorLogs($source);
+        return response()->json(['message' => "Cleared {$deleted} error log(s).", 'deleted' => $deleted]);
+    }
+
+    /** Live proxy — nothing from backend-node's own audit trail is stored in Flowexa's DB. */
+    private function backendNodeErrors(Request $request, WaChatTokenService $waChatTokens): JsonResponse
+    {
+        $perPage = max(1, (int) $request->input('per_page', 40));
+        $page    = max(1, (int) $request->input('page', 1));
+
+        try {
+            $result = $waChatTokens->gatewayErrors($perPage, ($page - 1) * $perPage);
+        } catch (\Throwable $e) {
+            return response()->json(['message' => $e->getMessage()], 502);
+        }
+
+        $rows = collect($result['data'])->map(fn ($row) => [
+            'id'              => $row['id'] ?? null,
+            'created_at'      => $row['createdAt'] ?? null,
+            'company'         => null,
+            'user'            => null,
+            'actor_role'      => null,
+            'exception_class' => $row['action'] ?? 'gateway_error',
+            'message'         => $row['errorMessage'] ?: ($row['sessionName'] ?? $row['apiKeyName'] ?? '—'),
+            'file'            => $row['sessionName'] ?? $row['apiKeyName'] ?? null,
+            'line'            => null,
+        ])->values();
+
+        return response()->json([
+            'data'         => $rows,
+            'total'        => $result['total'],
+            'current_page' => $page,
+            'per_page'     => $perPage,
+            'last_page'    => (int) ceil(max($result['total'], 1) / $perPage),
+        ]);
     }
 
     // ── Observability: raw Laravel log file viewer ────────────────────────────────
@@ -191,6 +395,18 @@ class SuperAdminController extends Controller
             (int) ($data['lines'] ?? 300),
             $data['search'] ?? null
         ));
+    }
+
+    /** DELETE /superadmin/system-log — truncate a log file in place. */
+    public function clearSystemLog(Request $request): JsonResponse
+    {
+        $data = $request->validate(['file' => ['required', 'string', 'max:100']]);
+
+        $ok = $this->superAdminService->clearSystemLog($data['file']);
+
+        return $ok
+            ? response()->json(['message' => "{$data['file']} cleared."])
+            : response()->json(['message' => 'File not found.'], 404);
     }
 
     public function updateStatus(UpdateCompanyStatusRequest $request, Company $company): JsonResponse

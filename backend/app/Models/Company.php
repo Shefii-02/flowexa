@@ -59,6 +59,9 @@ class Company extends Model
         'settings'         => 'array',
         'trial_ends_at'    => 'datetime',
         'plan_expires_at'  => 'datetime',
+        // Was uncast: wa_chat_token_expires_at came back as a plain string, so any
+        // ->isPast()/->isFuture() call on it would fatal rather than compare a date.
+        'wa_chat_token_expires_at' => 'datetime',
     ];
 
     // ── Relationships ─────────────────────────────────────────────────────────
@@ -129,6 +132,20 @@ class Company extends Model
 
         // Tolerate a stale APP_KEY or a value that was stored in plain text.
         return rescue(fn () => decrypt($this->wa_access_token), null, false);
+    }
+
+    /** True once wa_chat_token_expires_at is set and in the past. Null (no expiry set) is never "expired". */
+    public function getWaChatTokenExpiredAttribute(): bool
+    {
+        return $this->wa_chat_token_expires_at !== null && $this->wa_chat_token_expires_at->isPast();
+    }
+
+    /** 'not_connected' (never provisioned) | 'expired' | 'active' — the whole story in one value. */
+    public function getWaChatTokenStatusAttribute(): string
+    {
+        if (blank($this->wa_chat_key_id)) return 'not_connected';
+        if ($this->wa_chat_token_expired) return 'expired';
+        return 'active';
     }
 
     // ── Scopes ───────────────────────────────────────────────────────────────

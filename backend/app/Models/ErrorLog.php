@@ -14,8 +14,12 @@ class ErrorLog extends Model
 {
     const UPDATED_AT = null;
 
+    /** 'laravel' (default) | 'frontend' — see the migration for why. */
+    const SOURCE_LARAVEL  = 'laravel';
+    const SOURCE_FRONTEND = 'frontend';
+
     protected $fillable = [
-        'company_id', 'user_id', 'actor_role', 'exception_class', 'message',
+        'company_id', 'user_id', 'actor_role', 'source', 'exception_class', 'message',
         'file', 'line', 'trace', 'method', 'url', 'status_code', 'created_at',
     ];
 

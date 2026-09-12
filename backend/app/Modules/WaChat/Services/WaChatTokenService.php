@@ -133,10 +133,17 @@ class WaChatTokenService
             'wa_auth_enabled'          => true,
         ])->save();
 
+        // Only ever revoke by a known, trusted key id. The old prefix-guess fallback here —
+        // revokeByPrefix($previousToken) whenever wa_chat_key_id was empty — searched the
+        // ENTIRE gateway key list for any key whose first 12 characters matched the company's
+        // stale token and revoked whatever it found, with no check that the match actually
+        // belonged to this company. In production this revoked a DIFFERENT, unrelated
+        // company's valid key (a prefix collision) the moment a company with no recorded
+        // key id was (re)provisioned. A company with no known previous key id simply gets a
+        // fresh key here and any orphaned gateway-side key from its stale token is left alone
+        // — harmless clutter is a vastly safer failure mode than revoking a stranger's key.
         if ($previousKeyId !== '' && $previousKeyId !== $keyId) {
             $this->revokeById($previousKeyId);
-        } elseif ($previousToken !== '' && $previousToken !== $raw) {
-            $this->revokeByPrefix($previousToken);
         }
 
         return $raw;
@@ -165,6 +172,62 @@ class WaChatTokenService
         }
     }
 
+    // ── Gateway's own error/audit trail (platform-wide, not company-scoped) ─────────
+
+    /**
+     * Live proxy to backend-node's own error trail (severity=error rows in its
+     * audit_logs table) — read on demand, nothing is mirrored into Flowexa's DB.
+     *
+     * @return array{data: array, total: int}
+     */
+    public function gatewayErrors(int $limit = 40, int $offset = 0): array
+    {
+        $res = Http::withHeaders(['X-API-Key' => $this->adminKey()])
+            ->timeout(10)->connectTimeout(4)
+            ->get("{$this->base}/audit", ['severity' => 'error', 'limit' => $limit, 'offset' => $offset]);
+
+        if (! $res->successful()) {
+            throw new RuntimeException("Gateway returned HTTP {$res->status()} for /audit.");
+        }
+
+        return ['data' => $res->json('data') ?? [], 'total' => (int) ($res->json('total') ?? 0)];
+    }
+
+    /**
+     * Live proxy to backend-node's full audit trail (every action, any severity) —
+     * the "activity" counterpart to gatewayErrors()'s severity=error-only view.
+     *
+     * @return array{data: array, total: int}
+     */
+    public function gatewayActivity(int $limit = 40, int $offset = 0): array
+    {
+        $res = Http::withHeaders(['X-API-Key' => $this->adminKey()])
+            ->timeout(10)->connectTimeout(4)
+            ->get("{$this->base}/audit", ['limit' => $limit, 'offset' => $offset]);
+
+        if (! $res->successful()) {
+            throw new RuntimeException("Gateway returned HTTP {$res->status()} for /audit.");
+        }
+
+        return ['data' => $res->json('data') ?? [], 'total' => (int) ($res->json('total') ?? 0)];
+    }
+
+    /** Deletes every row (or only rows older than $olderThanDays) from the gateway's audit trail. */
+    public function clearGatewayErrors(?int $olderThanDays = null): int
+    {
+        $url = "{$this->base}/audit" . ($olderThanDays !== null ? '?days=' . $olderThanDays : '');
+
+        $res = Http::withHeaders(['X-API-Key' => $this->adminKey()])
+            ->timeout(10)
+            ->delete($url);
+
+        if (! $res->successful()) {
+            throw new RuntimeException("Gateway returned HTTP {$res->status()} clearing /audit.");
+        }
+
+        return (int) ($res->json('deleted') ?? 0);
+    }
+
     public function revokeById(string $keyId): void
     {
         try {
@@ -183,6 +246,14 @@ class WaChatTokenService
         }
     }
 
+    /**
+     * UNSAFE — kept only as a manually-invoked last resort, never call this automatically.
+     * A 12-character prefix match against the WHOLE gateway key list is not proof of
+     * ownership: two different companies' keys can share the same prefix (this has
+     * happened in production — see the comment in provision()), and this method will
+     * revoke whichever key it finds first with no way to verify it's the right one.
+     * Prefer revokeById() with a real, known key id every time.
+     */
     public function revokeByPrefix(string $rawToken): void
     {
         if ($rawToken === $this->adminKey()) {

@@ -634,6 +634,8 @@ export const Sidebar = () => {
             <FlatLink to="/superadmin/api-logs" icon="📈" label="API & Activity" />
             <FlatLink to="/superadmin/errors" icon="🐞" label="Error Logs" />
             <FlatLink to="/superadmin/system-log" icon="📜" label="System Log" />
+            <FlatLink to="/superadmin/ai-test" icon="🤖" label="AI Response Testing" />
+            <FlatLink to="/superadmin/failed-jobs" icon="🧯" label="Failed Jobs" />
             {/* } */}
             <FlatLink to="/setup-guide" icon="🧭" label="Setup Guide" />
           </>
