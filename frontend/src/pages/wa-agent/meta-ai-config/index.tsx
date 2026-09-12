@@ -121,7 +121,7 @@ export default function MetaAiConfigPage() {
     setTestResult(null)
     try {
       const r = await api.post('/meta-ai/test-analysis', { message: testMsg })
-      setTestResult(r.data.analysis)
+      setTestResult(r.data.analysis ?? { error: r.data.error ?? 'Analysis returned no result.' })
     } catch (e: any) {
       setTestResult({ error: e.response?.data?.error ?? 'Analysis failed' })
     } finally { setTesting(false) }

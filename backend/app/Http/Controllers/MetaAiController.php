@@ -8,6 +8,7 @@ use App\Models\Contact;
 use App\Models\ConversationAnalysis;
 use App\Models\LeadConversionEvent;
 use App\Models\MetaAiConfig;
+use App\Services\CompanyApiKeyResolver;
 use App\Services\MetaAI\LeadScoreCalculator;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -240,8 +241,28 @@ class MetaAiController extends Controller
         // Temporarily enable for test even if analyze_on_message is off
         $config->analyze_on_message = true;
 
+        // ConversationAnalyzer::analyze() returns a bare null on failure — no-key, a
+        // failed AI call, and an unparseable AI response are all indistinguishable to
+        // the caller. Check the most common cause (no key at all) up front so the test
+        // tool can say something actionable instead of silently showing nothing.
+        $hasMetaKey = $config->meta_ai_enabled && $config->meta_ai_api_key;
+        if (!$hasMetaKey && !CompanyApiKeyResolver::resolve($company)) {
+            return response()->json([
+                'error' => 'No AI provider is configured for this company yet. Add and activate an API '
+                    . 'key under WA Agent → Settings (or enable "Meta AI" with its own key above), then try again.',
+            ], 422);
+        }
+
         try {
             $analysis = $analyzer->analyze($company, $contact, $contact->phone ?? 'test', $request->message, [], $config);
+
+            if (!$analysis) {
+                return response()->json([
+                    'error' => 'The AI call did not return a usable analysis — check that the configured '
+                        . 'API key is valid and the model is reachable, then try again.',
+                ], 422);
+            }
+
             return response()->json(['analysis' => $analysis]);
         } catch (\Exception $e) {
             return response()->json(['error' => $e->getMessage()], 500);
