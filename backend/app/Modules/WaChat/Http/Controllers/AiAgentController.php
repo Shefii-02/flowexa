@@ -159,12 +159,35 @@ class AiAgentController extends Controller
         $company   = Company::find(Auth::user()->company_id) ?? new Company();
         $catalogue = self::modelCatalogue();
 
-        return response()->json(collect($catalogue)->map(fn($models, $provider) => [
-            'provider'        => $provider,
-            'has_key'         => !empty(CompanyApiKeyResolver::keyForProvider($company, $provider)),
-            'active_key_hint' => CompanyApiKeyResolver::activeKeyModel($company, $provider)?->api_key_hint,
-            'models'          => $models,
-        ])->values());
+        return response()->json(collect($catalogue)->map(function ($models, $provider) use ($company) {
+            $hasKey = !empty(CompanyApiKeyResolver::keyForProvider($company, $provider));
+
+            // Google renames/retires pinned Gemini model ids over time (this is exactly what
+            // happened with gemini-1.5-flash) — a hardcoded id list goes stale silently and
+            // the only symptom is a cryptic "model not found for generateContent" at send time.
+            // Once a company has a real key, ask Google what's actually valid for it right now
+            // instead of trusting our static guess.
+            if ($provider === 'google_ai' && $hasKey) {
+                $live = $this->fetchLiveGoogleModels($company);
+                if ($live) {
+                    $models = $live;
+                }
+            }
+
+            return [
+                'provider'        => $provider,
+                'has_key'         => $hasKey,
+                'active_key_hint' => CompanyApiKeyResolver::activeKeyModel($company, $provider)?->api_key_hint,
+                'models'          => $models,
+            ];
+        })->values());
+    }
+
+    /** Live list of Gemini models this company's key can actually call generateContent on. */
+    private function fetchLiveGoogleModels(Company $company): ?array
+    {
+        $apiKey = CompanyApiKeyResolver::google($company);
+        return $apiKey ? \App\Services\GoogleAiModelService::liveModels($apiKey) : null;
     }
 
     // ── Consolidated AI settings (wa-agent → Settings tab) ────────────────────

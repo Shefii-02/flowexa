@@ -196,10 +196,29 @@ class CompanyApiKeyController extends Controller
         $field = \App\Models\Company::providerKeyColumn($key->provider);
 
         if ($field) {
-            $company->update([
+            $update = [
                 $field        => $key->id,
                 'ai_provider' => $key->provider,
-            ]);
+            ];
+
+            // Google retires/renames pinned Gemini model ids over time — rather than leave
+            // ai_model pointing at whatever static default might now be stale (this is
+            // exactly how a company ends up with a key that's "Verified" but every real
+            // call still fails with "model not found for generateContent"), ask Google what
+            // this specific key can actually use right now and pre-select a real one.
+            if ($key->provider === 'google_ai') {
+                try {
+                    $rawKey = \App\Services\ApiKeyEncryption::decrypt($key->api_key);
+                    $picked = \App\Services\GoogleAiModelService::pickDefaultModel($rawKey);
+                    if ($picked) {
+                        $update['ai_model'] = $picked;
+                    }
+                } catch (\Throwable) {
+                    // best-effort — worst case ai_model keeps its previous value
+                }
+            }
+
+            $company->update($update);
         }
     }
 }
