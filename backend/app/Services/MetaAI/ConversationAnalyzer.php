@@ -18,13 +18,21 @@ class ConversationAnalyzer
         private readonly LeadScoreCalculator   $scoreCalculator,
     ) {}
 
+    /**
+     * @param array|null $debug Optional out-param (pass by reference) that gets filled with
+     *   why a null return happened — 'no_key' | 'ai_call_failed' | 'parse_failed', plus
+     *   whatever detail is available (HTTP status/body, or the unparseable raw text).
+     *   Existing callers that don't pass it are unaffected; MetaAiController::testAnalysis()
+     *   uses it to show a specific, actionable reason instead of a generic error.
+     */
     public function analyze(
         Company      $company,
         Contact      $contact,
         string       $phone,
         string       $latestMessage,
         array        $conversationHistory,
-        MetaAiConfig $config
+        MetaAiConfig $config,
+        ?array       &$debug = null
     ): ?ConversationAnalysis {
         $start = microtime(true);
 
@@ -36,15 +44,23 @@ class ConversationAnalyzer
 
         if (!$apiKey) {
             Log::info("ConversationAnalyzer: no API key for company {$company->id}");
+            $debug = ['reason' => 'no_key'];
             return null;
         }
 
         // Call AI
-        $raw = $this->callAI($apiKey, $model, $provider, $company->name, $context, $latestMessage);
-        if (!$raw) return null;
+        $callDebug = [];
+        $raw = $this->callAI($apiKey, $model, $provider, $company->name, $context, $latestMessage, $callDebug);
+        if (!$raw) {
+            $debug = ['reason' => 'ai_call_failed', 'provider' => $provider, 'model' => $model] + $callDebug;
+            return null;
+        }
 
         $parsed = $this->parseResponse($raw);
-        if (!$parsed) return null;
+        if (!$parsed) {
+            $debug = ['reason' => 'parse_failed', 'raw' => mb_substr($raw, 0, 500)];
+            return null;
+        }
 
         $ms = (int) ((microtime(true) - $start) * 1000);
 
@@ -100,7 +116,8 @@ class ConversationAnalyzer
 
     private function callAI(
         string $apiKey, string $model, string $provider,
-        string $companyName, string $context, string $latestMessage
+        string $companyName, string $context, string $latestMessage,
+        array  &$debug = []
     ): ?string {
         $systemPrompt = "You are a sales conversation analyst for {$companyName}.
 Analyze the latest customer message in context of the full conversation.
@@ -135,19 +152,20 @@ Analyze and return ONLY valid JSON (no markdown, no extra text):
 
         try {
             return match($provider) {
-                'anthropic' => $this->callAnthropic($apiKey, $model, $systemPrompt, $latestMessage),
-                'openai'    => $this->callOpenAI($apiKey, $model, $messages),
-                'google_ai' => $this->callGoogle($apiKey, $model, $systemPrompt, $latestMessage),
-                'meta_ai'   => $this->callMetaOrTogether($apiKey, $model, $messages),
+                'anthropic' => $this->callAnthropic($apiKey, $model, $systemPrompt, $latestMessage, $debug),
+                'openai'    => $this->callOpenAI($apiKey, $model, $messages, $debug),
+                'google_ai' => $this->callGoogle($apiKey, $model, $systemPrompt, $latestMessage, $debug),
+                'meta_ai'   => $this->callMetaOrTogether($apiKey, $model, $messages, $debug),
                 default     => null,
             };
         } catch (\Exception $e) {
             Log::error("ConversationAnalyzer AI call failed: " . $e->getMessage());
+            $debug = ['detail' => $e->getMessage()];
             return null;
         }
     }
 
-    private function callAnthropic(string $apiKey, string $model, string $system, string $userMsg): ?string
+    private function callAnthropic(string $apiKey, string $model, string $system, string $userMsg, array &$debug = []): ?string
     {
         $response = Http::withHeaders([
             'x-api-key'         => $apiKey,
@@ -163,10 +181,11 @@ Analyze and return ONLY valid JSON (no markdown, no extra text):
 
         if ($response->successful()) return $response->json('content.0.text');
         Log::warning('ConversationAnalyzer Anthropic error: ' . $response->body());
+        $debug = ['status' => $response->status(), 'detail' => $response->json('error.message') ?? mb_substr($response->body(), 0, 300)];
         return null;
     }
 
-    private function callOpenAI(string $apiKey, string $model, array $messages): ?string
+    private function callOpenAI(string $apiKey, string $model, array $messages, array &$debug = []): ?string
     {
         $response = Http::withToken($apiKey)->timeout(30)->post('https://api.openai.com/v1/chat/completions', [
             'model'       => $model,
@@ -177,10 +196,11 @@ Analyze and return ONLY valid JSON (no markdown, no extra text):
 
         if ($response->successful()) return $response->json('choices.0.message.content');
         Log::warning('ConversationAnalyzer OpenAI error: ' . $response->body());
+        $debug = ['status' => $response->status(), 'detail' => $response->json('error.message') ?? mb_substr($response->body(), 0, 300)];
         return null;
     }
 
-    private function callGoogle(string $apiKey, string $model, string $system, string $userMsg): ?string
+    private function callGoogle(string $apiKey, string $model, string $system, string $userMsg, array &$debug = []): ?string
     {
         $response = Http::timeout(30)->post(
             "https://generativelanguage.googleapis.com/v1beta/models/{$model}:generateContent?key={$apiKey}",
@@ -191,15 +211,34 @@ Analyze and return ONLY valid JSON (no markdown, no extra text):
             ]
         );
 
-        if ($response->successful()) return $response->json('candidates.0.content.parts.0.text');
+        if ($response->successful()) {
+            $text = $response->json('candidates.0.content.parts.0.text');
+            if ($text !== null) return $text;
+
+            // A 200 with no usable text usually means Gemini's safety filter blocked either
+            // the prompt or its own answer — the HTTP call "succeeded" but there's nothing
+            // to parse, which would otherwise show up as a mystifying generic failure.
+            $blockReason  = $response->json('promptFeedback.blockReason');
+            $finishReason = $response->json('candidates.0.finishReason');
+            Log::warning('ConversationAnalyzer Google AI returned no text: ' . $response->body());
+            $debug = ['status' => 200, 'detail' => $blockReason
+                ? "Blocked by Gemini safety filter ({$blockReason})"
+                : ('No content returned' . ($finishReason ? " (finishReason: {$finishReason})" : '')),
+            ];
+            return null;
+        }
+
         Log::warning('ConversationAnalyzer Google AI error: ' . $response->body());
+        $debug = ['status' => $response->status(), 'detail' => $response->json('error.message') ?? mb_substr($response->body(), 0, 300)];
         return null;
     }
 
-    private function callMetaOrTogether(string $apiKey, string $model, array $messages): ?string
+    private function callMetaOrTogether(string $apiKey, string $model, array $messages, array &$debug = []): ?string
     {
         $result = MetaAiClient::chat($messages, $apiKey, $model, 800, 0.1);
-        return $result['content'] ?? null;
+        if (!empty($result['content'])) return $result['content'];
+        $debug = ['detail' => $result['error'] ?? 'No content returned'];
+        return null;
     }
 
     private function parseResponse(string $raw): ?array

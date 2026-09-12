@@ -254,13 +254,25 @@ class MetaAiController extends Controller
         }
 
         try {
-            $analysis = $analyzer->analyze($company, $contact, $contact->phone ?? 'test', $request->message, [], $config);
+            $debug = null;
+            $analysis = $analyzer->analyze($company, $contact, $contact->phone ?? 'test', $request->message, [], $config, $debug);
 
             if (!$analysis) {
-                return response()->json([
-                    'error' => 'The AI call did not return a usable analysis — check that the configured '
+                $reason = $debug['reason'] ?? null;
+                $detail = $debug['detail'] ?? null;
+
+                $message = match ($reason) {
+                    'no_key' => 'No AI provider is configured for this company yet. Add and activate an API '
+                        . 'key under WA Agent → Settings, then try again.',
+                    'ai_call_failed' => "The {$debug['provider']} API rejected the request"
+                        . ($detail ? ": {$detail}." : '.') . ' Check that the key and model are correct.',
+                    'parse_failed' => 'The AI responded, but not as valid JSON — this usually means the model '
+                        . 'ignored the formatting instructions. Raw response: ' . ($debug['raw'] ?? ''),
+                    default => 'The AI call did not return a usable analysis — check that the configured '
                         . 'API key is valid and the model is reachable, then try again.',
-                ], 422);
+                };
+
+                return response()->json(['error' => $message, 'debug' => $debug], 422);
             }
 
             return response()->json(['analysis' => $analysis]);
