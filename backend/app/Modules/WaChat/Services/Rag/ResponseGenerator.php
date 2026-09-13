@@ -154,6 +154,28 @@ class ResponseGenerator
         $agentName    = $aiConfig['agent_name']    ?? 'AI Assistant';
         $customPrompt = $aiConfig['system_prompt'] ?? '';
 
+        // RagOrchestrator only ever calls generate() with an empty $context in one case:
+        // useRag=false ("without RAG (raw model, no grounding)" in the test tool). When RAG
+        // is on but nothing relevant was found, it shows a canned fallback instead of calling
+        // generate() at all — so empty context here reliably means "raw mode", never "RAG
+        // found nothing". That distinction matters: the old prompt always said "answer only
+        // from the provided context, otherwise say you'll connect them with a human agent"
+        // even when there was never any context to begin with, so every no-RAG question got
+        // refused with "not in my knowledge base" — the exact opposite of what "raw model, no
+        // grounding" is supposed to demonstrate.
+        if (empty($context)) {
+            $base  = "You are {$agentName} for {$companyName}. ";
+            $base .= "Answer the user's question helpfully and naturally using your own general knowledge — you have no company knowledge base loaded right now. ";
+            $base .= "Be concise and friendly. Reply in the same language as the user (detected: {$language}). ";
+            $base .= "Keep responses under 150 words.\n\n";
+
+            if ($customPrompt) {
+                $base .= $customPrompt . "\n\n";
+            }
+
+            return $base;
+        }
+
         $base  = "You are {$agentName} for {$companyName}. ";
         $base .= "Answer only based on the provided knowledge base context. ";
         $base .= "Be concise and friendly. Reply in the same language as the user (detected: {$language}). ";
@@ -164,9 +186,7 @@ class ResponseGenerator
             $base .= $customPrompt . "\n\n";
         }
 
-        if (!empty($context)) {
-            $base .= "KNOWLEDGE BASE CONTEXT:\n{$context}";
-        }
+        $base .= "KNOWLEDGE BASE CONTEXT:\n{$context}";
 
         return $base;
     }
