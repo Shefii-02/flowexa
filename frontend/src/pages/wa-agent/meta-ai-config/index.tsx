@@ -39,6 +39,8 @@ const DEFAULT_CONFIG: Config = {
   max_context_messages: 20,
 }
 
+type StoredKey = { id: number; provider: string; key_label: string; api_key_hint: string; is_active: boolean; is_verified: boolean }
+
 const META_MODELS = [
   { id: 'meta-llama/Llama-3.1-8B-Instruct',        label: 'Llama 3.1 8B — Fast & cheap' },
   { id: 'meta-llama/Llama-3.1-70B-Instruct',       label: 'Llama 3.1 70B — Higher accuracy' },
@@ -93,13 +95,29 @@ export default function MetaAiConfigPage() {
   const [testMsg, setTestMsg]       = useState('')
   const [testing, setTesting]       = useState(false)
   const [testResult, setTestResult] = useState<any>(null)
+  // Which provider/key to test against — same two-step picker as the Live AI Agent Test
+  // tool, since a company can hold several keys per provider and Test Analysis previously
+  // had no way to try anything but whichever one happens to be globally active.
+  const [storedKeys, setStoredKeys]     = useState<StoredKey[]>([])
+  const [testProvider, setTestProvider] = useState('')
+  const [testKeyId, setTestKeyId]       = useState('')
 
   useEffect(() => {
     api.get('/meta-ai/config')
       .then(r => setConfig({ ...DEFAULT_CONFIG, ...r.data }))
       .catch(() => {})
       .finally(() => setLoading(false))
+    api.get('/settings/api-keys').then(r => setStoredKeys(r.data ?? [])).catch(() => {})
   }, [])
+
+  const providersWithKeys = Array.from(new Set(storedKeys.map(k => k.provider)))
+  const keysForTestProvider = storedKeys.filter(k => k.provider === testProvider)
+
+  const chooseTestProvider = (p: string) => {
+    setTestProvider(p)
+    const keys = storedKeys.filter(k => k.provider === p)
+    setTestKeyId(String(keys.find(k => k.is_active)?.id ?? keys[0]?.id ?? ''))
+  }
 
   const set = (key: keyof Config, value: any) => setConfig(c => ({ ...c, [key]: value }))
 
@@ -120,7 +138,10 @@ export default function MetaAiConfigPage() {
     setTesting(true)
     setTestResult(null)
     try {
-      const r = await api.post('/meta-ai/test-analysis', { message: testMsg })
+      const ai_config = testProvider
+        ? { provider: testProvider, key_id: testKeyId ? Number(testKeyId) : undefined }
+        : undefined
+      const r = await api.post('/meta-ai/test-analysis', { message: testMsg, ai_config })
       setTestResult(r.data.analysis ?? { error: r.data.error ?? 'Analysis returned no result.' })
     } catch (e: any) {
       setTestResult({ error: e.response?.data?.error ?? 'Analysis failed' })
@@ -251,6 +272,39 @@ export default function MetaAiConfigPage() {
       {/* Test analysis */}
       <Section title="Test Analysis">
         <p className="text-xs text-gray-500">Paste a customer message to see what the AI would detect.</p>
+
+        {providersWithKeys.length > 0 && (
+          <div className="flex gap-3">
+            <div className="flex-1">
+              <label className="text-xs font-medium text-gray-500 mb-1 block">AI provider to test</label>
+              <select
+                value={testProvider}
+                onChange={e => chooseTestProvider(e.target.value)}
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              >
+                <option value="">Company default</option>
+                {providersWithKeys.map(p => <option key={p} value={p}>{p}</option>)}
+              </select>
+            </div>
+            {testProvider && (
+              <div className="flex-1">
+                <label className="text-xs font-medium text-gray-500 mb-1 block">API key</label>
+                <select
+                  value={testKeyId}
+                  onChange={e => setTestKeyId(e.target.value)}
+                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-xl bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                >
+                  {keysForTestProvider.map(k => (
+                    <option key={k.id} value={k.id}>
+                      {k.key_label} ({k.api_key_hint}){k.is_active ? ' · active' : ''}{!k.is_verified ? ' · unverified' : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
+        )}
+
         <textarea
           value={testMsg}
           onChange={e => setTestMsg(e.target.value)}

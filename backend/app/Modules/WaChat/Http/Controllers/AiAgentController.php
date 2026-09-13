@@ -151,6 +151,7 @@ class AiAgentController extends Controller
                 // company has a key; once one exists, availableModels() below overrides
                 // this with a live fetch from Google so it can never go stale again.
                 ['id' => 'gemini-3.6-flash',      'label' => 'Gemini 3.6 Flash',      'speed' => 'fast', 'cost' => '$',  'description' => 'Recommended — production workhorse'],
+                ['id' => 'gemini-3.7-flash',      'label' => 'Gemini 3.7 Flash',      'speed' => 'fast', 'cost' => '$',  'description' => 'Balanced speed and quality'],
                 ['id' => 'gemini-3.8-flash',      'label' => 'Gemini 3.8 Flash',      'speed' => 'fast', 'cost' => '$$', 'description' => 'Complex agents / long-horizon tasks'],
                 ['id' => 'gemini-3.5-flash-lite', 'label' => 'Gemini 3.5 Flash Lite', 'speed' => 'fast', 'cost' => '$',  'description' => 'High-throughput classification'],
             ],

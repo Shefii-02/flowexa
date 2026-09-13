@@ -32,19 +32,26 @@ class ConversationAnalyzer
         string       $latestMessage,
         array        $conversationHistory,
         MetaAiConfig $config,
-        ?array       &$debug = null
+        ?array       &$debug = null,
+        array        $override = []
     ): ?ConversationAnalysis {
         $start = microtime(true);
 
         // Build context
         $context = $this->contextBuilder->build($company, $contact, $conversationHistory);
 
-        // Resolve API key + model
-        [$apiKey, $model, $provider] = $this->resolveApiKey($company, $config);
+        // Resolve API key + model. $override lets the Test Analysis tool run against a
+        // specific provider/key instead of always using whichever one is globally active —
+        // the same picker as the Live AI Agent Test tool (provider, then which of that
+        // provider's stored keys).
+        [$apiKey, $model, $provider] = $this->resolveApiKey($company, $config, $override);
 
         if (!$apiKey) {
             Log::info("ConversationAnalyzer: no API key for company {$company->id}");
-            $debug = ['reason' => 'no_key'];
+            $debug = ['reason' => 'no_key'] + array_filter([
+                'requested_provider' => $override['provider'] ?? null,
+                'requested_key_id'   => $override['key_id']   ?? null,
+            ]);
             return null;
         }
 
@@ -94,8 +101,31 @@ class ConversationAnalyzer
         return $analysis;
     }
 
-    private function resolveApiKey(Company $company, MetaAiConfig $config): array
+    private function resolveApiKey(Company $company, MetaAiConfig $config, array $override = []): array
     {
+        // Test tool asked for one specific stored key row — a company can hold several
+        // keys per provider (e.g. two google_ai keys for two projects), so this is checked
+        // before falling back to "the" active key for a provider.
+        if (!empty($override['key_id'])) {
+            $resolved = CompanyApiKeyResolver::resolveByKeyId($company, (int) $override['key_id']);
+            if (!$resolved) {
+                return [null, null, null];
+            }
+            $model = $resolved['provider'] === 'openai' ? 'gpt-4o-mini' : $resolved['model'];
+            return [$resolved['key'], $model, $resolved['provider']];
+        }
+
+        // Test tool asked for a specific provider (its own stored key), regardless of
+        // which provider is globally active for the company.
+        if (!empty($override['provider'])) {
+            $resolved = CompanyApiKeyResolver::resolveForProvider($company, $override['provider']);
+            if (!$resolved) {
+                return [null, null, null];
+            }
+            $model = $resolved['provider'] === 'openai' ? 'gpt-4o-mini' : $resolved['model'];
+            return [$resolved['key'], $model, $resolved['provider']];
+        }
+
         // Try Meta AI key first
         if ($config->meta_ai_enabled && $config->meta_ai_api_key) {
             try {

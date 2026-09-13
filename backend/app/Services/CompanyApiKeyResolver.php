@@ -108,18 +108,32 @@ class CompanyApiKeyResolver
         return $own;
     }
 
+    /** Only these Gemini generations are considered current/supported (per explicit product decision). */
+    private const GOOGLE_AI_MODEL_PATTERN = '/^gemini-3\.[5-8](-|$)/';
+
     /**
      * `ai_model` is a single free-text column shared across every provider — if a company
      * switches provider (e.g. Anthropic → Gemini) without also repicking a model, the column
      * still holds the old provider's model id ("claude-haiku-…"), which the *new* provider's
      * API will reject outright. This is a same-family sanity check, not full validation.
+     *
+     * For google_ai specifically this is an *allowlist* (gemini-3.5 – 3.8 only) rather than
+     * a loose "starts with gemini" prefix check — a plain prefix check let a stale, already-
+     * persisted "gemini-1.5-flash" (still starts with "gemini") sail through as "valid" even
+     * after Google retired it, and every real call kept failing with "model not found" despite
+     * the default for *new* companies having been updated. An allowlist also means any other
+     * retired or future-but-unsupported id is rejected automatically, not just the ones we
+     * happen to already know about.
      */
     private static function modelMatchesProvider(string $model, string $provider): bool
     {
+        if ($provider === 'google_ai') {
+            return (bool) preg_match(self::GOOGLE_AI_MODEL_PATTERN, $model);
+        }
+
         $prefix = match ($provider) {
             'anthropic' => 'claude',
             'openai'    => 'gpt',
-            'google_ai' => 'gemini',
             default     => null,
         };
         return $prefix === null || str_starts_with($model, $prefix);

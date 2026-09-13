@@ -219,6 +219,7 @@ class MetaAiController extends Controller
         $request->validate([
             'message'    => 'required|string|max:2000',
             'contact_id' => 'nullable|integer',
+            'ai_config'  => 'nullable|array',
         ]);
 
         $companyId = Auth::user()->company_id;
@@ -241,12 +242,19 @@ class MetaAiController extends Controller
         // Temporarily enable for test even if analyze_on_message is off
         $config->analyze_on_message = true;
 
+        // Same provider/key override as the Live AI Agent Test tool — lets you test a
+        // specific stored key (or a provider other than whichever is globally active)
+        // instead of only ever exercising the one key that happens to be active right now.
+        $override = $request->input('ai_config', []);
+
         // ConversationAnalyzer::analyze() returns a bare null on failure — no-key, a
         // failed AI call, and an unparseable AI response are all indistinguishable to
         // the caller. Check the most common cause (no key at all) up front so the test
-        // tool can say something actionable instead of silently showing nothing.
+        // tool can say something actionable instead of silently showing nothing. Skipped
+        // when an override is given — its own key/provider may exist even when the
+        // company's globally-active provider and Meta AI key don't.
         $hasMetaKey = $config->meta_ai_enabled && $config->meta_ai_api_key;
-        if (!$hasMetaKey && !CompanyApiKeyResolver::resolve($company)) {
+        if (empty($override) && !$hasMetaKey && !CompanyApiKeyResolver::resolve($company)) {
             return response()->json([
                 'error' => 'No AI provider is configured for this company yet. Add and activate an API '
                     . 'key under WA Agent → Settings (or enable "Meta AI" with its own key above), then try again.',
@@ -255,15 +263,19 @@ class MetaAiController extends Controller
 
         try {
             $debug = null;
-            $analysis = $analyzer->analyze($company, $contact, $contact->phone ?? 'test', $request->message, [], $config, $debug);
+            $analysis = $analyzer->analyze($company, $contact, $contact->phone ?? 'test', $request->message, [], $config, $debug, $override);
 
             if (!$analysis) {
                 $reason = $debug['reason'] ?? null;
                 $detail = $debug['detail'] ?? null;
 
                 $message = match ($reason) {
-                    'no_key' => 'No AI provider is configured for this company yet. Add and activate an API '
-                        . 'key under WA Agent → Settings, then try again.',
+                    'no_key' => !empty($debug['requested_provider'] ?? null)
+                        ? "No {$debug['requested_provider']} key is configured for this company yet. Add one under WA Agent → Settings → API Keys."
+                        : (!empty($debug['requested_key_id'] ?? null)
+                            ? 'That API key could not be found — it may have been deleted or belongs to a different company.'
+                            : 'No AI provider is configured for this company yet. Add and activate an API '
+                                . 'key under WA Agent → Settings, then try again.'),
                     'ai_call_failed' => "The {$debug['provider']} API rejected the request"
                         . ($detail ? ": {$detail}." : '.') . ' Check that the key and model are correct.',
                     'parse_failed' => 'The AI responded, but not as valid JSON — this usually means the model '

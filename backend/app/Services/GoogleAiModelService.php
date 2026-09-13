@@ -22,12 +22,20 @@ class GoogleAiModelService
      * guess: gemini-3.6-flash (production default), gemini-3.8-flash (complex agents),
      * gemini-3.5-flash-lite (high-throughput classification). Kept short and only used as
      * a last resort — liveModels() below is the source of truth whenever it succeeds.
+     *
+     * Per explicit product decision, only the 3.5–3.8 generation is offered at all — see
+     * MODEL_ALLOWLIST_PATTERN below, which enforces the same restriction on live-fetched
+     * models too, not just this fallback list.
      */
     private const FALLBACK_MODELS = [
         ['id' => 'gemini-3.6-flash',     'label' => 'Gemini 3.6 Flash',      'speed' => 'fast', 'cost' => '$',  'description' => 'Recommended — production workhorse'],
+        ['id' => 'gemini-3.7-flash',     'label' => 'Gemini 3.7 Flash',      'speed' => 'fast', 'cost' => '$',  'description' => 'Balanced speed and quality'],
         ['id' => 'gemini-3.8-flash',     'label' => 'Gemini 3.8 Flash',      'speed' => 'fast', 'cost' => '$$', 'description' => 'Complex agents / long-horizon tasks'],
         ['id' => 'gemini-3.5-flash-lite','label' => 'Gemini 3.5 Flash Lite', 'speed' => 'fast', 'cost' => '$',  'description' => 'High-throughput classification'],
     ];
+
+    /** Keep in sync with CompanyApiKeyResolver::GOOGLE_AI_MODEL_PATTERN. */
+    private const MODEL_ALLOWLIST_PATTERN = '/^gemini-3\.[5-8](-|$)/';
 
     /** @return array<int, array{id:string,label:string,speed:string,cost:string,description:string}>|null */
     public static function liveModels(string $apiKey): ?array
@@ -53,6 +61,15 @@ class GoogleAiModelService
                 // trusting a method string that might not describe the new API at all.
                 if ($usable->isEmpty()) {
                     $usable = $raw->reject(fn ($m) => str_contains($m['name'] ?? '', 'embedding') || str_contains($m['name'] ?? '', 'aqa'));
+                }
+
+                // Per explicit product decision, only the 3.5–3.8 generation is offered —
+                // even a live, working model outside that range (an older 1.x/2.x id Google
+                // hasn't fully retired yet, or a future 3.9/4.x) is filtered out here rather
+                // than surfaced as a pickable option.
+                $usable = $usable->filter(fn ($m) => preg_match(self::MODEL_ALLOWLIST_PATTERN, str_replace('models/', '', $m['name'] ?? '')));
+                if ($usable->isEmpty()) {
+                    return self::FALLBACK_MODELS;
                 }
 
                 $models = $usable
