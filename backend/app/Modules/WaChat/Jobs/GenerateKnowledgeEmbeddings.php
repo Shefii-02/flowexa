@@ -40,7 +40,19 @@ class GenerateKnowledgeEmbeddings implements ShouldQueue
             // Delete existing chunks
             AiKnowledgeChunk::where('knowledge_base_id', $kb->id)->delete();
 
-            $chunks = $this->splitIntoChunks($content);
+            // A generic "tell me about the company" / "what is this?" style question shares
+            // essentially no words with a document's body text, but very often shares words
+            // with the document's own *title* — a doc literally named "About Univexa
+            // Technologies" has the word "about" right there, which the body text never uses.
+            // Folding name + description into the text before chunking (so it lands in the
+            // first chunk only, not diluted across every chunk of a longer document) lets
+            // that title-level signal actually count during retrieval instead of being
+            // invisible to it. word_count below is still measured from the real content only,
+            // so the displayed stat isn't inflated by this.
+            $titlePrefix   = trim($kb->name . '. ' . ($kb->description ? $kb->description . '. ' : ''));
+            $indexedContent = $titlePrefix !== '' ? "{$titlePrefix} {$content}" : $content;
+
+            $chunks = $this->splitIntoChunks($indexedContent);
             $count  = 0;
 
             foreach ($chunks as $index => $chunk) {

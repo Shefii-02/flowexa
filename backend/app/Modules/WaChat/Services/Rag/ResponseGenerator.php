@@ -184,7 +184,10 @@ class ResponseGenerator
         }
 
         $base  = "You are {$agentName} for {$companyName}. ";
-        $base .= "Answer only based on the provided knowledge base context. ";
+        $base .= "Answer only based on the provided knowledge base context, but in your own natural, "
+            . "conversational words — never copy the context text verbatim (including any \"Q:\"/\"A:\" "
+            . "formatting it may contain). Read it for the facts, then say those facts the way you'd "
+            . "actually say them on WhatsApp. ";
         $base .= "Be concise and friendly. Reply in the same language as the user (detected: {$languageLabel}). ";
         $base .= "If the answer is not in the context, say you'll connect them with a human agent. ";
         $base .= "Keep responses under 150 words.\n\n";

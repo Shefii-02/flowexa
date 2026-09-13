@@ -5,6 +5,7 @@ namespace App\Modules\WaChat\Services\Rag;
 use App\Models\Company;
 use App\Models\Contact;
 use App\Models\Lead;
+use App\Modules\WaChat\Models\AgentPlaybook;
 use App\Modules\WaChat\Models\AiAgentSession;
 use App\Modules\WaChat\Models\WahaSession;
 use Illuminate\Support\Facades\Log;
@@ -76,7 +77,28 @@ class RagOrchestrator
 
         $intent = $this->planner->classifyIntent($query);
 
-        if ($useRag) {
+        // A bare greeting ("hi", "hello", "good morning") shares essentially no words with
+        // any knowledge base content, so running it through RAG retrieval always failed and
+        // returned the generic "couldn't find an answer" fallback — the single most common
+        // first message on WhatsApp always looked like the AI was broken. Real inbound
+        // WhatsApp messages go through ConversationalAgentService, which already sends the
+        // configured playbook greeting on a new session — this reuses that same playbook
+        // (falling back to a language-aware default if none is configured) so the test tool
+        // and any other RagOrchestrator caller behave the same way, without spending an LLM
+        // call on something fully deterministic.
+        if ($this->planner->isGreeting($query)) {
+            $playbook = AgentPlaybook::resolveFor($companyId, $wahaSessionId);
+            $isFirstMessage = empty($history);
+
+            $response = $isFirstMessage
+                ? $playbook?->greeting_new
+                : ($playbook?->greeting_returning ?: $playbook?->greeting_new);
+            $response = $response ?: $this->defaultGreeting($language);
+
+            $status        = 'greeting';
+            $confidence    = 1.0;
+            $evidenceCount = 0;
+        } elseif ($useRag) {
             // 3.5. A short follow-up referencing a numbered item from the assistant's own
             // last reply ("i choosed 3") carries almost no lexical signal on its own — blend
             // in that list item's actual text for retrieval/relevance purposes only. The
@@ -187,6 +209,18 @@ class RagOrchestrator
         } catch (\Exception $e) {
             Log::warning('RagOrchestrator: failed to ensure contact/lead for ' . $contactPhone . ': ' . $e->getMessage());
         }
+    }
+
+    /** Used only when a company has no AgentPlaybook configured at all yet. */
+    private function defaultGreeting(string $language): string
+    {
+        return match ($language) {
+            'ar'      => 'أهلاً! كيف يمكنني مساعدتك اليوم؟',
+            'hi'      => 'नमस्ते! मैं आपकी कैसे मदद कर सकता हूँ?',
+            'ml'      => 'ഹലോ! ഞാൻ നിങ്ങളെ എങ്ങനെ സഹായിക്കും?',
+            'ml-Latn' => 'Hai! Enik ningale engane sahayikkam?',
+            default   => "Hi there! 👋 How can I help you today?",
+        };
     }
 
     private function noAnswerResponse(string $language, array $aiConfig): string

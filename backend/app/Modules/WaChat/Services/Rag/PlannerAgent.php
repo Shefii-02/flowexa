@@ -10,6 +10,21 @@ class PlannerAgent
     ];
 
     /**
+     * A bare greeting ("hi", "hello", "hai", "good morning") is the single most common
+     * first message on WhatsApp, and it shares essentially no words with any knowledge base
+     * content — running it through RAG retrieval always fails and returns the generic
+     * "couldn't find an answer" fallback, which reads as broken even though nothing actually
+     * went wrong. Covers common English forms plus a few frequently-used non-English/Manglish
+     * greetings; anything with real content attached ("hi, what's your pricing") correctly
+     * falls through to normal RAG since not every word in the message is a greeting word.
+     */
+    private const GREETING_WORDS = [
+        'hi', 'hii', 'hiii', 'hello', 'hey', 'heya', 'hai', 'yo', 'sup',
+        'greetings', 'morning', 'afternoon', 'evening', 'good', 'namaste', 'salam',
+        'assalamualaikum', 'vanakkam', 'namaskar', 'namaskaram',
+    ];
+
+    /**
      * When the user's message references a numbered item from the assistant's own last
      * reply ("i choosed 3", "tell me about option 2", "the third one") — a common WhatsApp
      * pattern right after the agent lists several options — this pulls that specific list
@@ -46,6 +61,23 @@ class PlannerAgent
         }
 
         return null;
+    }
+
+    /**
+     * True only when EVERY word in the message is a greeting word — "hi" or "good morning"
+     * qualifies, but "hi, what's your pricing" does not, because "pricing" isn't one. That
+     * keeps this from swallowing a real question that merely opens with a greeting.
+     */
+    public function isGreeting(string $query): bool
+    {
+        $words = preg_split('/\W+/u', mb_strtolower(trim($query)), -1, PREG_SPLIT_NO_EMPTY);
+        if (empty($words)) return false;
+
+        foreach ($words as $word) {
+            if (!in_array($word, self::GREETING_WORDS, true)) return false;
+        }
+
+        return true;
     }
 
     /**

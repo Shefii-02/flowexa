@@ -100,6 +100,9 @@ STILL MISSING (required): {$this->missingLabel($missing)}
 RULES
 - If the customer asks a question that the KNOWLEDGE BASE below can answer, answer
   it briefly first, then continue with the next missing field.
+- Answer in your own natural, conversational words — never copy KNOWLEDGE BASE
+  text verbatim (including any "Q:"/"A:" formatting it may contain). Read it for
+  the facts, then say those facts the way you'd actually say them on WhatsApp.
 - If the KNOWLEDGE BASE cannot answer it, say a team member will follow up with
   the exact details, then continue.
 - When every REQUIRED field is collected, set "qualification_done": true and make

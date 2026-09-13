@@ -50,6 +50,12 @@ class UnivexaCompanyContentSeeder extends Seeder
             ->where('name', 'Frequently Asked Questions')
             ->delete();
 
+        // Superseded by the script-split "Malayalam Quick Facts" / "Manglish Quick Facts"
+        // docs below — see the comment above them.
+        AiKnowledgeBase::where('company_id', self::COMPANY_ID)
+            ->where('name', 'Malayalam & Manglish Quick Facts')
+            ->delete();
+
         $docs = [
             [
                 'name' => 'About Univexa Technologies',
@@ -274,15 +280,26 @@ web and mobile apps, and API integrations. Contact us to book a free discovery c
 以及 API 集成服务。请联系我们预约免费咨询电话以获取报价。
 TXT,
             ],
+            // Split by script rather than kept as one "Malayalam & Manglish" doc — the two
+            // scripts share zero literal characters, so mixing them in one chunk means a
+            // Manglish query's matching words are diluted against an equal amount of
+            // Malayalam-script text it can never match anyway (and vice versa). Same root
+            // cause as the earlier FAQ chunk-dilution fix, just from mixed scripts instead
+            // of mixed topics.
             [
-                'name' => 'Malayalam & Manglish Quick Facts',
-                'description' => 'Company summary in Malayalam script and in Manglish (Malayalam typed in English letters)',
+                'name' => 'Malayalam Quick Facts',
+                'description' => 'Company summary in native Malayalam script',
                 'raw_content' => <<<TXT
 [മലയാളം] യൂനിവെക്സ ടെക്നോളജീസ് കസ്റ്റം സോഫ്റ്റ്‌വെയറും SaaS ഉൽപ്പന്നങ്ങളും നിർമ്മിക്കുന്നു — വാട്സ്ആപ്പ്/AI
 ഓട്ടോമേഷൻ, വെബ്, മൊബൈൽ ആപ്പുകൾ, API ഇന്റഗ്രേഷനുകൾ എന്നിവയുൾപ്പെടെ. വില അറിയാൻ ഒരു സൗജന്യ ഡിസ്കവറി കോൾ
 ബുക്ക് ചെയ്യാൻ ഞങ്ങളെ ബന്ധപ്പെടുക.
-
-[Manglish] Univexa Technologies custom software um SaaS products um undakkunnu — WhatsApp/AI automation,
+TXT,
+            ],
+            [
+                'name' => 'Manglish Quick Facts',
+                'description' => 'Company summary and FAQ in Manglish (Malayalam typed in English letters)',
+                'raw_content' => <<<TXT
+Univexa Technologies custom software um SaaS products um undakkunnu — WhatsApp/AI automation,
 web, mobile apps, API integrations okke ulppede. Vila ariyan oru free discovery call book cheyyan
 njangale contact cheyyu.
 
