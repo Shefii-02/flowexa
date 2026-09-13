@@ -102,29 +102,19 @@ class ResponseGenerator
 
     private function callGoogle(string $apiKey, string $model, string $system, array $messages): ?string
     {
-        $contents = [];
-        foreach ($messages as $m) {
-            $contents[] = [
-                'role'  => $m['role'] === 'assistant' ? 'model' : 'user',
-                'parts' => [['text' => $m['content']]],
-            ];
-        }
+        // Interactions API (POST /v1beta/interactions, x-goog-api-key header, {model, input})
+        // — the old /v1beta/models/{model}:generateContent + ?key= shape is what returned
+        // "model not found for generateContent" for current Gemini models (confirmed live).
+        // A structured multi-turn `input` array isn't confirmed for this endpoint, so the
+        // conversation is folded into one plain-text transcript instead — guaranteed to
+        // actually reach the model rather than risking an unconfirmed field being ignored.
+        $transcript = collect($messages)
+            ->map(fn ($m) => ($m['role'] === 'assistant' ? 'Assistant' : 'User') . ': ' . $m['content'])
+            ->implode("\n");
 
-        $response = Http::timeout(30)->post(
-            "https://generativelanguage.googleapis.com/v1beta/models/{$model}:generateContent?key={$apiKey}",
-            [
-                'systemInstruction' => ['parts' => [['text' => $system]]],
-                'contents'          => $contents,
-                'generationConfig'  => ['maxOutputTokens' => self::MAX_TOKENS],
-            ]
-        );
+        $input = "{$system}\n\nConversation so far:\n{$transcript}\n\nAssistant:";
 
-        if ($response->successful()) {
-            return $response->json('candidates.0.content.parts.0.text');
-        }
-
-        Log::warning('ResponseGenerator Google AI error: ' . $response->body());
-        return null;
+        return \App\Services\GoogleAiModelService::generate($apiKey, $model, $input);
     }
 
     // ── Prompt building ──────────────────────────────────────────────────────

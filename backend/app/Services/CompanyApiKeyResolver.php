@@ -36,7 +36,11 @@ class CompanyApiKeyResolver
     private const DEFAULT_MODELS = [
         'anthropic' => 'claude-haiku-4-5-20251001',
         'openai'    => 'gpt-4o-mini',
-        'google_ai' => 'gemini-1.5-flash',
+        // gemini-1.5-flash was retired from generateContent (confirmed live, 2026-09) —
+        // Google's current models sit behind the new Interactions API instead. See
+        // GoogleAiModelService for the live-fetch path; this is only the synchronous
+        // hot-path fallback used when no live fetch has happened.
+        'google_ai' => 'gemini-3.6-flash',
     ];
 
     /** Cached platform company lookup (slug = "platform", seeded by SuperAdminSeeder). */
@@ -255,11 +259,21 @@ class CompanyApiKeyResolver
 
     public static function recordUsage(CompanyApiKey $key, float $costUsd = 0.0): void
     {
-        $key->increment('usage_count');
-        $key->update([
+        // Going through $key->update() here throws "Object of class ... Expression could not
+        // be converted to string" — monthly_used_usd is cast to 'float' on the model, and
+        // Eloquent's attribute casting tries to coerce the DB::raw() Expression itself rather
+        // than letting it pass through to SQL untouched. Because every caller (LlmClient,
+        // ResponseGenerator) awaits this call before returning its result, that exception was
+        // being caught by their surrounding try/catch and silently turning every *successful*
+        // AI response into a null — a real response was generated, then thrown away. Using the
+        // query builder directly bypasses Eloquent's attribute casting, so the raw expression
+        // reaches the database as SQL instead of being cast.
+        CompanyApiKey::where('id', $key->id)->update([
+            'usage_count'      => DB::raw('usage_count + 1'),
             'last_used_at'     => now(),
             'monthly_used_usd' => DB::raw("monthly_used_usd + {$costUsd}"),
         ]);
+        $key->refresh();
     }
 
     public static function checkLimit(CompanyApiKey $key): bool

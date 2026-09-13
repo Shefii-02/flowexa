@@ -74,14 +74,36 @@ class ApiKeyVerifier
     public static function verifyGoogleAI(string $apiKey): array
     {
         try {
-            $response = Http::timeout(10)
-                ->get("https://generativelanguage.googleapis.com/v1/models?key={$apiKey}");
+            // Header auth (x-goog-api-key), not ?key= — the old query-param form matched
+            // the now-defunct generateContent endpoint. ListModels only proves the key is
+            // accepted, not that a call can actually generate a response — this is exactly
+            // how a key ended up "Verified" while every real message still failed with
+            // "model not found for generateContent" — so a real Interactions API call is
+            // made against the key's own best available model instead of just listing.
+            $response = Http::withHeaders(['x-goog-api-key' => $apiKey])
+                ->timeout(10)
+                ->get('https://generativelanguage.googleapis.com/v1beta/models');
 
-            return match (true) {
-                $response->status() === 200         => ['valid' => true,  'message' => 'Google AI key is valid'],
-                in_array($response->status(), [400, 403]) => ['valid' => false, 'message' => 'Invalid API key'],
-                default => ['valid' => false, 'message' => "Unexpected status: {$response->status()}"],
-            };
+            if (in_array($response->status(), [400, 401, 403], true)) {
+                return ['valid' => false, 'message' => 'Invalid API key'];
+            }
+            if (!$response->successful()) {
+                return ['valid' => false, 'message' => "Unexpected status: {$response->status()}"];
+            }
+
+            $model = GoogleAiModelService::pickDefaultModel($apiKey);
+            if (!$model) {
+                return ['valid' => false, 'message' => 'Key accepted, but no usable model was found for it'];
+            }
+
+            $debug = [];
+            $text  = GoogleAiModelService::generate($apiKey, $model, 'Reply with the single word: OK', $debug);
+
+            if ($text !== null) {
+                return ['valid' => true, 'message' => 'Google AI key is valid', 'model' => $model];
+            }
+
+            return ['valid' => false, 'message' => 'Key accepted but a test generation failed: ' . ($debug['detail'] ?? 'unknown error')];
         } catch (\Exception $e) {
             Log::warning('ApiKeyVerifier::verifyGoogleAI: ' . $e->getMessage());
             return ['valid' => false, 'message' => 'Connection failed: ' . $e->getMessage()];

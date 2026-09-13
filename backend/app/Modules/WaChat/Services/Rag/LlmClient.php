@@ -87,25 +87,18 @@ class LlmClient
 
     private function google(string $key, string $model, string $system, array $messages, int $maxTokens): ?string
     {
-        $contents = array_map(fn($m) => [
-            'role'  => $m['role'] === 'assistant' ? 'model' : 'user',
-            'parts' => [['text' => $m['content']]],
-        ], $messages);
+        // Interactions API (POST /v1beta/interactions, x-goog-api-key header, {model, input})
+        // — the old /v1beta/models/{model}:generateContent + ?key= shape is what returned
+        // "model not found for generateContent" for current Gemini models (confirmed live).
+        // A structured multi-turn `input` array isn't confirmed for this endpoint, so the
+        // conversation is folded into one plain-text transcript instead — guaranteed to
+        // actually reach the model rather than risking an unconfirmed field being ignored.
+        $transcript = collect($messages)
+            ->map(fn ($m) => ($m['role'] === 'assistant' ? 'Assistant' : 'User') . ': ' . $m['content'])
+            ->implode("\n");
 
-        $res = Http::timeout(30)->post(
-            "https://generativelanguage.googleapis.com/v1beta/models/{$model}:generateContent?key={$key}",
-            [
-                'systemInstruction' => ['parts' => [['text' => $system]]],
-                'contents'          => $contents,
-                'generationConfig'  => ['maxOutputTokens' => $maxTokens],
-            ]
-        );
+        $input = "{$system}\n\nConversation so far:\n{$transcript}\n\nAssistant:";
 
-        if ($res->successful()) {
-            return $res->json('candidates.0.content.parts.0.text');
-        }
-
-        Log::warning('LlmClient Google AI error: ' . $res->body());
-        return null;
+        return \App\Services\GoogleAiModelService::generate($key, $model, $input);
     }
 }

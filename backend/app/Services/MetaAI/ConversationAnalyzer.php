@@ -202,35 +202,11 @@ Analyze and return ONLY valid JSON (no markdown, no extra text):
 
     private function callGoogle(string $apiKey, string $model, string $system, string $userMsg, array &$debug = []): ?string
     {
-        $response = Http::timeout(30)->post(
-            "https://generativelanguage.googleapis.com/v1beta/models/{$model}:generateContent?key={$apiKey}",
-            [
-                'systemInstruction' => ['parts' => [['text' => $system]]],
-                'contents'          => [['role' => 'user', 'parts' => [['text' => "Latest customer message: \"{$userMsg}\""]]]],
-                'generationConfig'  => ['maxOutputTokens' => 800, 'temperature' => 0.1],
-            ]
-        );
-
-        if ($response->successful()) {
-            $text = $response->json('candidates.0.content.parts.0.text');
-            if ($text !== null) return $text;
-
-            // A 200 with no usable text usually means Gemini's safety filter blocked either
-            // the prompt or its own answer — the HTTP call "succeeded" but there's nothing
-            // to parse, which would otherwise show up as a mystifying generic failure.
-            $blockReason  = $response->json('promptFeedback.blockReason');
-            $finishReason = $response->json('candidates.0.finishReason');
-            Log::warning('ConversationAnalyzer Google AI returned no text: ' . $response->body());
-            $debug = ['status' => 200, 'detail' => $blockReason
-                ? "Blocked by Gemini safety filter ({$blockReason})"
-                : ('No content returned' . ($finishReason ? " (finishReason: {$finishReason})" : '')),
-            ];
-            return null;
-        }
-
-        Log::warning('ConversationAnalyzer Google AI error: ' . $response->body());
-        $debug = ['status' => $response->status(), 'detail' => $response->json('error.message') ?? mb_substr($response->body(), 0, 300)];
-        return null;
+        // Interactions API (POST /v1beta/interactions, x-goog-api-key header, {model, input})
+        // — the old /v1beta/models/{model}:generateContent + ?key= shape is what returned
+        // "model not found for generateContent" for current Gemini models (confirmed live).
+        $input = $system . "\n\nLatest customer message: \"{$userMsg}\"";
+        return \App\Services\GoogleAiModelService::generate($apiKey, $model, $input, $debug);
     }
 
     private function callMetaOrTogether(string $apiKey, string $model, array $messages, array &$debug = []): ?string

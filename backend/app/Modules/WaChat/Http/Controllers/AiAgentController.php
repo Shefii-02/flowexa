@@ -146,8 +146,13 @@ class AiAgentController extends Controller
                 ['id' => 'gpt-4o',      'label' => 'GPT-4o',      'speed' => 'medium', 'cost' => '$$', 'description' => 'Best OpenAI model'],
             ],
             'google_ai' => [
-                ['id' => 'gemini-1.5-flash', 'label' => 'Gemini 1.5 Flash', 'speed' => 'fast',   'cost' => '$',  'description' => 'Free tier available'],
-                ['id' => 'gemini-1.5-pro',   'label' => 'Gemini 1.5 Pro',   'speed' => 'medium', 'cost' => '$$', 'description' => 'Best Gemini model'],
+                // gemini-1.5-flash/-pro were retired from generateContent (confirmed live,
+                // 2026-09) — replaced with the current model line. Only shown before a
+                // company has a key; once one exists, availableModels() below overrides
+                // this with a live fetch from Google so it can never go stale again.
+                ['id' => 'gemini-3.6-flash',      'label' => 'Gemini 3.6 Flash',      'speed' => 'fast', 'cost' => '$',  'description' => 'Recommended — production workhorse'],
+                ['id' => 'gemini-3.8-flash',      'label' => 'Gemini 3.8 Flash',      'speed' => 'fast', 'cost' => '$$', 'description' => 'Complex agents / long-horizon tasks'],
+                ['id' => 'gemini-3.5-flash-lite', 'label' => 'Gemini 3.5 Flash Lite', 'speed' => 'fast', 'cost' => '$',  'description' => 'High-throughput classification'],
             ],
         ];
     }
