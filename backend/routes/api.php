@@ -1346,6 +1346,8 @@ Route::prefix('v1')->middleware(['jwt.auth'])->group(function () {
         Route::get('/',                  [KnowledgeBaseController::class, 'index']);
         Route::post('/',                 [KnowledgeBaseController::class, 'store']);
         Route::post('/upload',           [KnowledgeBaseController::class, 'upload']);
+        Route::post('/sync-catalog',         [KnowledgeBaseController::class, 'syncFromCatalog']);
+        Route::post('/sync-company-details', [KnowledgeBaseController::class, 'syncFromCompanyDetails']);
         Route::get('/{id}',              [KnowledgeBaseController::class, 'show']);
         Route::patch('/{id}',            [KnowledgeBaseController::class, 'update']);
         Route::delete('/{id}',           [KnowledgeBaseController::class, 'destroy']);

@@ -119,6 +119,17 @@ class FlowNode extends Model
         return $this->type === 'text';
     }
 
+    /**
+     * A "Knowledge Base" node hands the conversation over to the RAG-powered AI agent —
+     * once a customer reaches it, their free-text messages are answered from the company's
+     * knowledge base instead of being matched against fixed child button/list options, until
+     * they type "menu" to go back. See WebhookService::matchTextToNode().
+     */
+    public function isKnowledgeBase(): bool
+    {
+        return $this->type === 'knowledge_base';
+    }
+
     public function maxChildren(): int
     {
         return match ($this->type) {

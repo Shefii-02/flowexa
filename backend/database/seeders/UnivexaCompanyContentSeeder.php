@@ -2,6 +2,7 @@
 
 namespace Database\Seeders;
 
+use App\Models\Listing;
 use App\Modules\WaChat\Jobs\GenerateKnowledgeEmbeddings;
 use App\Modules\WaChat\Models\AgentPlaybook;
 use App\Modules\WaChat\Models\AiKnowledgeBase;
@@ -39,6 +40,7 @@ class UnivexaCompanyContentSeeder extends Seeder
         $this->seedKnowledgeBase();
         $this->seedPlaybooks();
         $this->seedPipelines();
+        $this->seedCatalog();
     }
 
     private function seedKnowledgeBase(): void
@@ -565,5 +567,73 @@ TXT,
         }
 
         $this->command?->info('  └─ Pipelines: ' . count($pipelines) . ' seeded (all inactive).');
+    }
+
+    /**
+     * Mirrors the 6 services already described in the "Services We Offer" knowledge base
+     * document, but as real Catalog (Listing) rows with actual pricing/attributes — the data
+     * KnowledgeBaseController::syncFromCatalog() turns into a searchable KB document. Having
+     * both means there's something real to test that sync feature against, not just prose.
+     */
+    private function seedCatalog(): void
+    {
+        $listings = [
+            [
+                'title' => 'Custom Software Development',
+                'description' => 'Bespoke internal tools, dashboards, and business systems built around how your team actually works.',
+                'price' => 2500, 'price_unit' => 'starting price', 'location' => 'Remote',
+                'attributes' => ['timeline' => '2-4 weeks for a focused tool', 'delivery' => 'Fixed-price or milestone-based'],
+            ],
+            [
+                'title' => 'SaaS Product Development',
+                'description' => 'End-to-end SaaS builds: multi-tenant architecture, billing/subscriptions, role-based permissions, and admin tooling.',
+                'price' => 8000, 'price_unit' => 'starting price', 'location' => 'Remote',
+                'attributes' => ['timeline' => '3+ months for a full platform', 'delivery' => 'Milestone-based'],
+            ],
+            [
+                'title' => 'WhatsApp & AI Automation',
+                'description' => 'Conversational AI agents, WhatsApp Business API / Cloud API integration, lead capture and CRM automation.',
+                'price' => 1500, 'price_unit' => 'starting price', 'location' => 'Remote',
+                'attributes' => ['timeline' => '2-3 weeks', 'example' => 'Powers our own product, Flowexa'],
+            ],
+            [
+                'title' => 'Web & Mobile Applications',
+                'description' => 'Customer-facing apps and portals, built with modern frameworks (React, React Native).',
+                'price' => 3000, 'price_unit' => 'starting price', 'location' => 'Remote',
+                'attributes' => ['timeline' => '3-6 weeks'],
+            ],
+            [
+                'title' => 'API Integrations',
+                'description' => 'Connecting your existing tools — CRMs (Zoho, Salesforce), payment providers (Stripe), and ERPs — into one working system.',
+                'price' => 800, 'price_unit' => 'per integration', 'location' => 'Remote',
+                'attributes' => ['timeline' => '1-2 weeks per integration'],
+            ],
+            [
+                'title' => 'Ongoing Maintenance & Support',
+                'description' => 'Monthly retainer support: bug fixes, minor feature additions, server monitoring, priority WhatsApp/email support.',
+                'price' => 300, 'price_unit' => 'per month', 'location' => 'Remote',
+                'attributes' => ['response_time' => '1 business day (same-day for critical issues)', 'contract' => 'No long lock-in, pause or scale anytime'],
+            ],
+        ];
+
+        foreach ($listings as $i => $l) {
+            Listing::updateOrCreate(
+                ['company_id' => self::COMPANY_ID, 'title' => $l['title']],
+                [
+                    'type'        => 'service',
+                    'description' => $l['description'],
+                    'status'      => 'active',
+                    'price'       => $l['price'],
+                    'price_unit'  => $l['price_unit'],
+                    'currency'    => 'USD',
+                    'location'    => $l['location'],
+                    'attributes'  => $l['attributes'],
+                    'source'      => 'seeder',
+                    'sort_order'  => $i + 1,
+                ]
+            );
+        }
+
+        $this->command?->info('  └─ Catalog: ' . count($listings) . ' service listings seeded.');
     }
 }

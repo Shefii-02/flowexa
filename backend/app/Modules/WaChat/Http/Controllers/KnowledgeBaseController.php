@@ -3,6 +3,8 @@
 namespace App\Modules\WaChat\Http\Controllers;
 
 use App\Http\Controllers\Controller;
+use App\Models\Company;
+use App\Models\Listing;
 use App\Modules\WaChat\Models\AiKnowledgeBase;
 use App\Modules\WaChat\Models\AiKnowledgeChunk;
 use App\Modules\WaChat\Jobs\GenerateKnowledgeEmbeddings;
@@ -130,5 +132,92 @@ class KnowledgeBaseController extends Controller
         dispatch(new GenerateKnowledgeEmbeddings($kb->id));
 
         return response()->json(['message' => 'Reprocessing started.']);
+    }
+
+    // ── Auto-generate KB content from data the company already has ────────────
+
+    /**
+     * Turns the company's own active Catalog listings (products/services/properties — see
+     * {@see Listing}) into one knowledge base document, re-indexed synchronously so it's
+     * immediately searchable. Re-running this replaces the previous version rather than
+     * duplicating it, so it can be used as a repeatable "keep the KB in sync with the
+     * catalog" action whenever listings change, not just a one-time import.
+     */
+    public function syncFromCatalog(): JsonResponse
+    {
+        $companyId = Auth::user()->company_id;
+
+        $listings = Listing::where('company_id', $companyId)->active()->orderBy('sort_order')->get();
+        if ($listings->isEmpty()) {
+            return response()->json(['message' => 'No active catalog listings to sync yet.'], 422);
+        }
+
+        $sections = $listings->map(function (Listing $l) {
+            $lines = [$l->title];
+            if ($l->description) $lines[] = $l->description;
+            if ($l->price) {
+                $priceLine = number_format((float) $l->price) . ' ' . $l->currency . ($l->price_unit ? " ({$l->price_unit})" : '');
+                $lines[] = "Price: {$priceLine}";
+            }
+            if ($l->location) $lines[] = "Location: {$l->location}";
+            foreach ((array) ($l->attributes ?? []) as $key => $value) {
+                if ($value === null || $value === '') continue;
+                $lines[] = ucfirst(str_replace('_', ' ', (string) $key)) . ': ' . (is_array($value) ? implode(', ', $value) : $value);
+            }
+            return implode("\n", $lines);
+        })->implode("\n\n---\n\n");
+
+        $kb = AiKnowledgeBase::updateOrCreate(
+            ['company_id' => $companyId, 'name' => 'Product & Service Catalog'],
+            [
+                'description'   => 'Auto-generated from your Catalog — re-sync after adding or changing listings.',
+                'document_type' => 'text',
+                'raw_content'   => $sections,
+                'status'        => 'pending',
+            ]
+        );
+
+        GenerateKnowledgeEmbeddings::dispatchSync($kb->id);
+
+        return response()->json($kb->fresh());
+    }
+
+    /**
+     * Turns the company's own profile fields into one knowledge base document — the basic
+     * "who are we / how do we reach you" facts a customer asks about most often. Only fields
+     * the company has actually filled in are included; re-running replaces the previous
+     * version so it stays current as the profile changes.
+     */
+    public function syncFromCompanyDetails(): JsonResponse
+    {
+        $company = Company::findOrFail(Auth::user()->company_id);
+
+        $lines = ["Company name: {$company->name}"];
+        if ($company->website) $lines[] = "Website: {$company->website}";
+        if ($company->email)   $lines[] = "Email: {$company->email}";
+        if ($company->phone)   $lines[] = "Phone: {$company->phone}";
+        if ($company->industry_template) {
+            $lines[] = 'Industry: ' . ucfirst(str_replace('_', ' ', $company->industry_template));
+        }
+
+        if (count($lines) <= 1) {
+            return response()->json([
+                'message' => 'Not enough company profile info filled in yet (add a website, email, or phone under company settings first).',
+            ], 422);
+        }
+
+        $kb = AiKnowledgeBase::updateOrCreate(
+            ['company_id' => $company->id, 'name' => 'Company Details'],
+            [
+                'description'   => 'Auto-generated from your company profile — re-sync after updating company settings.',
+                'document_type' => 'text',
+                'raw_content'   => implode("\n", $lines),
+                'status'        => 'pending',
+            ]
+        );
+
+        GenerateKnowledgeEmbeddings::dispatchSync($kb->id);
+
+        return response()->json($kb->fresh());
     }
 }

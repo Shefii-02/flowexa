@@ -18,6 +18,12 @@ use App\Modules\Lead\DTOs\CreateLeadDTO;
 use App\Modules\Lead\Repositories\Interfaces\LeadRepositoryInterface;
 use App\Modules\Webhook\DTOs\InboundMessageDTO;
 use App\Modules\Webhook\DTOs\StatusUpdateDTO;
+use App\Modules\WaChat\Services\Rag\EvidenceCollector;
+use App\Modules\WaChat\Services\Rag\LanguageDetector;
+use App\Modules\WaChat\Services\Rag\PlannerAgent;
+use App\Modules\WaChat\Services\Rag\QueryRewriter;
+use App\Modules\WaChat\Services\Rag\ResponseGenerator;
+use App\Modules\WaChat\Services\Rag\Verifier;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -43,6 +49,12 @@ class WebhookService
 
     public function __construct(
         private readonly LeadRepositoryInterface $leadRepository,
+        private readonly PlannerAgent            $ragPlanner,
+        private readonly EvidenceCollector       $ragCollector,
+        private readonly Verifier                $ragVerifier,
+        private readonly ResponseGenerator       $ragGenerator,
+        private readonly QueryRewriter           $ragQueryRewriter,
+        private readonly LanguageDetector        $ragLanguageDetector,
     ) {}
 
     // ─── Handle inbound message ───────────────────────────────────────────────
@@ -899,6 +911,14 @@ class WebhookService
         $currentNode = FlowNode::find($session->current_node_id);
         if (!$currentNode) return false;
 
+        // Knowledge Base node: every message here is a question for the AI agent, not a menu
+        // pick — answer it and stay parked on this node so the customer can keep asking
+        // follow-ups until they type "menu" (handled earlier in handleInbound) to leave.
+        if ($currentNode->isKnowledgeBase()) {
+            $this->answerFromKnowledgeBase($company, $dto->phone, $dto->text ?? '');
+            return true;
+        }
+
         $children = $currentNode->children()->where('is_active', true)->get();
         $msgText  = strtolower(trim($dto->text ?? ''));
 
@@ -926,6 +946,37 @@ class WebhookService
 
         $this->sendNodeResponse($company, $dto->phone, $currentNode);
         return true;
+    }
+
+    // ─── Knowledge Base flow node: answer a free-text question from the company's own
+    // AI knowledge base. Reuses the same retrieval/generation components (and every fix
+    // already made to them — stemming, script-aware tokenization, query rewriting) as the
+    // main WA Chat/WA Cloud AI agent, WITHOUT going through RagOrchestrator's own session
+    // handling — the flow builder already tracks the conversation via FlowSession, so a
+    // second parallel session/Contact/Lead record would just be redundant.
+    private function answerFromKnowledgeBase(Company $company, string $phone, string $query): void
+    {
+        $query = trim($query);
+        if ($query === '') {
+            $this->sendText($company, $phone, "I didn't catch a question there — what would you like to know?");
+            return;
+        }
+
+        $language    = $this->ragLanguageDetector->detect($query);
+        $searchQuery = $this->ragQueryRewriter->rewrite($company, $query, []) ?: $query;
+        $subQueries  = $this->ragPlanner->decompose($searchQuery);
+        $evidence    = $this->ragCollector->collect($subQueries, $company->id);
+        $context     = $this->ragCollector->buildContext($evidence);
+        $isRelevant  = $this->ragVerifier->verify($evidence, $searchQuery);
+
+        if ($isRelevant) {
+            $response = $this->ragGenerator->generate($query, $context, $language, [], [], $company);
+        } else {
+            $response = "I couldn't find a specific answer to that in our knowledge base. "
+                . "You can try rephrasing, or reply *menu* to see our other options and reach the team.";
+        }
+
+        $this->sendText($company, $phone, $response);
     }
 
     // ─── Send welcome menu (root node) ────────────────────────────────────────
@@ -1024,6 +1075,15 @@ class WebhookService
 
     private function sendNodeResponse(Company $company, string $phone, FlowNode $node): void
     {
+        // ── Knowledge Base node ────────────────────────────────────────────
+        // Just landed here — send the node's own prompt (or a sensible default) and wait for
+        // the customer's actual question. matchTextToNode() below handles every message after
+        // this while the flow session stays parked on this node.
+        if ($node->isKnowledgeBase()) {
+            $this->sendText($company, $phone, $node->message ?: "Sure — what would you like to know? Ask me anything, or reply *menu* to go back.");
+            return;
+        }
+
         // ── Dynamic node ──────────────────────────────────────────────────
         if ($node->is_dynamic && $node->dynamic_api_url) {
             if ($node->message) {

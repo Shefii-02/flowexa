@@ -19,6 +19,7 @@ class RagOrchestrator
         private readonly Verifier          $verifier,
         private readonly ResponseGenerator $generator,
         private readonly FallbackReasoner  $fallbackReasoner,
+        private readonly QueryRewriter     $queryRewriter,
     ) {}
 
     /**
@@ -106,6 +107,16 @@ class RagOrchestrator
             // literal $query (not $searchQuery) is still what's sent to the model below.
             $referenced  = $this->planner->resolveListReference($query, $history);
             $searchQuery = $referenced ? "{$query} {$referenced}" : $query;
+
+            // 3.6. Rewrite the (possibly typo'd/informal/incomplete) message into a clear,
+            // correctly-spelled question for search purposes only — generalizes past the
+            // fixed rules above to whatever a real customer actually types. Never affects the
+            // literal $query used for generation or conversation history below; a failed or
+            // low-quality rewrite can only make retrieval no-better-than-before, never worse.
+            $rewritten = $this->queryRewriter->rewrite($company, $searchQuery, $history);
+            if ($rewritten) {
+                $searchQuery = $rewritten;
+            }
 
             // 4. Plan: decompose query into sub-queries
             $subQueries = $this->planner->decompose($searchQuery);

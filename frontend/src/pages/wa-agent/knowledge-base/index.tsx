@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { api } from '@/api/client'
+import { toast } from 'react-hot-toast'
 
 type KB = {
   id: number
@@ -104,6 +105,37 @@ export default function KnowledgeBasePage() {
     load()
   }
 
+  // ── Sync from data the company already has ──────────────────────────────────
+
+  const [syncingCatalog, setSyncingCatalog] = useState(false)
+  const [syncingCompany, setSyncingCompany] = useState(false)
+
+  const syncFromCatalog = async () => {
+    setSyncingCatalog(true)
+    try {
+      await api.post('/wa-agent/knowledge-base/sync-catalog')
+      toast.success('Catalog synced into the knowledge base.')
+      load()
+    } catch (e: unknown) {
+      toast.error((e as { response?: { data?: { message?: string } } })?.response?.data?.message ?? 'Sync failed.')
+    } finally {
+      setSyncingCatalog(false)
+    }
+  }
+
+  const syncFromCompanyDetails = async () => {
+    setSyncingCompany(true)
+    try {
+      await api.post('/wa-agent/knowledge-base/sync-company-details')
+      toast.success('Company details synced into the knowledge base.')
+      load()
+    } catch (e: unknown) {
+      toast.error((e as { response?: { data?: { message?: string } } })?.response?.data?.message ?? 'Sync failed.')
+    } finally {
+      setSyncingCompany(false)
+    }
+  }
+
   const deleteKb = async (id: number) => {
     if (!confirm('Delete this knowledge base? This will remove all chunks.')) return
     await api.delete(`/wa-agent/knowledge-base/${id}`)
@@ -180,7 +212,23 @@ export default function KnowledgeBasePage() {
           <h1 className="text-xl font-bold text-gray-900">Knowledge Base</h1>
           <p className="text-sm text-gray-500 mt-1">Documents used by the AI agent to answer questions</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2 justify-end">
+          <button
+            onClick={syncFromCatalog}
+            disabled={syncingCatalog}
+            title="Turns your active Catalog listings into a knowledge base document"
+            className="px-3 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg text-sm hover:bg-gray-50 disabled:opacity-50"
+          >
+            {syncingCatalog ? 'Syncing…' : '🔄 Sync Catalog'}
+          </button>
+          <button
+            onClick={syncFromCompanyDetails}
+            disabled={syncingCompany}
+            title="Turns your company profile (name, email, phone, website) into a knowledge base document"
+            className="px-3 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg text-sm hover:bg-gray-50 disabled:opacity-50"
+          >
+            {syncingCompany ? 'Syncing…' : '🔄 Sync Company Details'}
+          </button>
           <button
             onClick={() => openModal('text')}
             className="px-3 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg text-sm hover:bg-gray-50"

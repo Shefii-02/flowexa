@@ -48,6 +48,7 @@ const NODE_TYPES = [
   { value: 'button', label: 'Button', desc: '≤3 options', icon: '🔘' },
   { value: 'text', label: 'Text', desc: 'Terminal', icon: '💬' },
   { value: 'survey', label: 'Survey', desc: 'Form', icon: '📝' },
+  { value: 'knowledge_base', label: 'Knowledge Base', desc: 'AI Q&A', icon: '🧠' },
   // { value: 'template', label: 'Template', desc: 'WA tpl', icon: '📨' },
 ]
 const MSG_TYPES = [
@@ -237,7 +238,7 @@ function FlowTestPreview({ nodes, startId, nonce, onRestart, builderName, onClos
   useEffect(() => { const t = startId ?? root?.id ?? null; setCurId(t); setHist([]); setBotTyping(false); setLog(t && byId[t] ? [{ from: 'bot', text: byId[t].message || '[no message]', id: nid(), time: nowTime() }] : []) }, [startId, nonce, root?.id])
   useEffect(() => { scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' }) }, [log, botTyping])
   const cur = curId ? byId[curId] : null, children = curId ? (byPid[String(curId)] || []) : []
-  const isDeadEnd = !!cur && children.length === 0 && !cur.is_dead_end && cur.type !== 'text' && cur.type !== 'survey' && cur.type !== 'template'
+  const isDeadEnd = !!cur && children.length === 0 && !cur.is_dead_end && cur.type !== 'text' && cur.type !== 'survey' && cur.type !== 'template' && cur.type !== 'knowledge_base'
   const goTo = (nodeId: number) => { const n = byId[nodeId]; setCurId(nodeId); sayBot(n?.message || '[no message]') }
   const goChild = (child: any) => { say('user', child.title); setHist(h => curId !== null ? [...h, curId] : h); goTo(child.id) }
   const goMenu = (label: string) => { if (!root) return; say('user', label); setHist([]); goTo(root.id) }
@@ -459,7 +460,7 @@ export default function FlowNodesPage() {
   const renderNode = (n: FlowNode, depth = 0) => {
     const children = (byParent[String(n.id)] || []).slice().sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
     const isCol = collapsed.has(n.id), dead = isDeadEnd(n)
-    const bc = n.type === 'list' ? '#3b82f6' : n.type === 'button' ? '#8b5cf6' : n.type === 'survey' ? '#f59e0b' : n.type === 'template' ? '#ec4899' : dead ? '#ef4444' : '#10b981'
+    const bc = n.type === 'list' ? '#3b82f6' : n.type === 'button' ? '#8b5cf6' : n.type === 'survey' ? '#f59e0b' : n.type === 'template' ? '#ec4899' : n.type === 'knowledge_base' ? '#14b8a6' : dead ? '#ef4444' : '#10b981'
     const isDraggingThis = dragEnabled && dragging === n.id
     const intoZone = `into-${n.id}`, beforeZone = `before-${n.id}`, afterZone = `after-${n.id}`
     // Collapse control is disabled while drag mode is on — every node must
@@ -493,7 +494,7 @@ export default function FlowNodesPage() {
           <span className="text-[10px] bg-gray-100 text-gray-400 font-mono px-1 py-0.5 rounded flex-shrink-0">#{n.sort_order ?? 0}</span>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-1.5 flex-wrap">
-              <span className={`text-xs font-semibold px-1.5 py-0.5 capitalize rounded-full ${n.type === 'list' ? 'bg-blue-50 text-blue-600' : n.type === 'button' ? 'bg-purple-50 text-purple-600' : n.type === 'survey' ? 'bg-amber-50 text-amber-600' : n.type === 'template' ? 'bg-pink-50 text-pink-600' : 'bg-green-50 text-green-600'}`}>{n.type}</span>
+              <span className={`text-xs font-semibold px-1.5 py-0.5 capitalize rounded-full ${n.type === 'list' ? 'bg-blue-50 text-blue-600' : n.type === 'button' ? 'bg-purple-50 text-purple-600' : n.type === 'survey' ? 'bg-amber-50 text-amber-600' : n.type === 'template' ? 'bg-pink-50 text-pink-600' : n.type === 'knowledge_base' ? 'bg-teal-50 text-teal-600' : 'bg-green-50 text-green-600'}`}>{n.type}</span>
               <span className="font-semibold text-sm text-gray-900 truncate">{n.title}</span>
               {n.lead_category ? <span className="text-xs bg-orange-50 text-orange-600 border border-orange-200 px-1.5 py-0.5 rounded-full">🎯 {n.lead_category}</span> : ''}
               {n.redirect_to_reply_id ? <span className="text-xs bg-indigo-50 text-indigo-600 border border-indigo-200 px-1.5 py-0.5 rounded-full" title={`→ ${n.redirect_to_reply_id}`}>↩ {n.redirect_to_reply_id === 'WELCOME' ? 'Menu' : n.redirect_to_reply_id.slice(0, 10)}</span> : ''}
