@@ -18,6 +18,7 @@ class RagOrchestrator
         private readonly EvidenceCollector $collector,
         private readonly Verifier          $verifier,
         private readonly ResponseGenerator $generator,
+        private readonly FallbackReasoner  $fallbackReasoner,
     ) {}
 
     /**
@@ -122,8 +123,23 @@ class RagOrchestrator
                 $response = $this->generator->generate($query, $context, $language, $history, $aiConfig, $company);
                 $status   = 'answered';
             } else {
-                $response = $this->noAnswerResponse($language, $aiConfig);
-                $status   = 'fallback';
+                // Secondary path: the knowledge base had nothing relevant, but that doesn't
+                // mean the question is unanswerable — try one more LLM call armed with the
+                // customer's own stored CRM data and general knowledge before giving up with
+                // the static template. This is deliberately kept as a fallback ON TOP of the
+                // already-working RAG path above, not a replacement for it.
+                $contact = Contact::where('company_id', $companyId)->where('phone', $contactPhone)->first();
+                $reasoned = $this->fallbackReasoner->reason(
+                    $company, $contact, $query, $history, $this->languageDetector->label($language)
+                );
+
+                if ($reasoned) {
+                    $response = $reasoned['reply'];
+                    $status   = $reasoned['can_answer'] ? 'answered_general' : 'clarification';
+                } else {
+                    $response = $this->noAnswerResponse($language, $aiConfig);
+                    $status   = 'fallback';
+                }
             }
             $evidenceCount = count($evidence);
         } else {
