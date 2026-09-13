@@ -49,11 +49,19 @@ class QueryAgent
      */
     public function buildVector(string $text): array
     {
-        $words = preg_split('/\W+/u', mb_strtolower($text), -1, PREG_SPLIT_NO_EMPTY);
+        // [^\p{L}\p{M}\p{N}]+ (not \W+) — \W excludes combining marks (Unicode category Mn/Mc),
+        // which shatters Devanagari/Malayalam/etc. words at every vowel sign into meaningless
+        // single-consonant fragments ("कीमत" -> "क","मत"). Those fragments are common enough
+        // across unrelated text that a totally off-topic query in that script could spuriously
+        // "match" any other content in the same script. Keeping marks attached to their base
+        // letter keeps real words intact for every script, and is a no-op for scripts (Latin,
+        // Arabic, CJK, digits) that don't use marks this way.
+        $words = preg_split('/[^\p{L}\p{M}\p{N}]+/u', mb_strtolower($text), -1, PREG_SPLIT_NO_EMPTY);
         $tf    = [];
 
         foreach ($words as $word) {
             if (strlen($word) < 3 || in_array($word, self::STOP_WORDS)) continue;
+            $word = self::stem($word);
             $tf[$word] = ($tf[$word] ?? 0) + 1;
         }
 
@@ -66,6 +74,37 @@ class QueryAgent
         }
 
         return $tf;
+    }
+
+    /**
+     * Reduces a word to a rough common stem so "service"/"services", "product"/"products",
+     * "price"/"prices" etc. count as the same term. This is not linguistically precise (it
+     * won't handle irregular plurals, and it can produce a non-word stem like "busines" for
+     * "business") — that's fine here, since TF-IDF only needs the SAME real-world word to map
+     * to the SAME token consistently, not a dictionary-correct root. Applied identically to
+     * both knowledge base content (at indexing time) and the live query (at search time), so
+     * whichever form a customer happens to type, it lines up with whichever form the
+     * knowledge base happens to use. Without this, a customer saying "I need your service"
+     * against content that only ever says "services" shares zero literal words and always
+     * fails to match, despite being exactly the question the knowledge base answers.
+     */
+    public static function stem(string $word): string
+    {
+        $len = strlen($word);
+
+        if ($len > 4 && str_ends_with($word, 'ies')) {
+            return substr($word, 0, -3) . 'y'; // companies -> company
+        }
+
+        if ($len > 4 && preg_match('/(?:s|x|z|ch|sh)es$/', $word)) {
+            return substr($word, 0, -2); // boxes -> box, matches -> match
+        }
+
+        if ($len > 3 && str_ends_with($word, 's') && !str_ends_with($word, 'ss')) {
+            return substr($word, 0, -1); // services -> service, products -> product
+        }
+
+        return $word;
     }
 
     private function cosineSimilarity(array $a, array $b): float

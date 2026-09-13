@@ -122,7 +122,9 @@ class PlannerAgent
                       'is','are','do','does','the','a','an','and','or','for','in','on',
                       'at','to','of','with','this','that','i','my','me','please','help'];
 
-        $words = preg_split('/\W+/u', mb_strtolower($text), -1, PREG_SPLIT_NO_EMPTY);
+        // [^\p{L}\p{M}\p{N}]+ (not \W+) keeps Devanagari/Malayalam/etc. words intact across
+        // their combining vowel signs — see QueryAgent::buildVector() for the full rationale.
+        $words = preg_split('/[^\p{L}\p{M}\p{N}]+/u', mb_strtolower($text), -1, PREG_SPLIT_NO_EMPTY);
 
         return array_values(array_filter($words, fn($w) =>
             strlen($w) >= 3 && !in_array($w, $stopWords)

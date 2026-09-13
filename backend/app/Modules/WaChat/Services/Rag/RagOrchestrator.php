@@ -223,6 +223,16 @@ class RagOrchestrator
         };
     }
 
+    /**
+     * RAG finding nothing relevant doesn't necessarily mean the question is unanswerable —
+     * often it means the message was too vague/general for keyword matching to pin down
+     * ("i need your service"), not that the customer needs a human. Flatly declaring defeat
+     * and promising a human follow-up reads as broken on exactly the messages a real person
+     * would just ask a clarifying question about. This asks for that clarification instead —
+     * in the customer's own detected language — while still keeping the human-handoff safety
+     * net for the genuinely unanswerable case, just as a second sentence instead of the whole
+     * reply.
+     */
     private function noAnswerResponse(string $language, array $aiConfig): string
     {
         $transfer = $aiConfig['transfer_message'] ?? null;
@@ -230,11 +240,11 @@ class RagOrchestrator
         if ($transfer) return $transfer;
 
         return match($language) {
-            'ar' => 'شكراً لتواصلك. لم أجد إجابة مناسبة، سيتواصل معك أحد ممثلينا قريباً.',
-            'hi' => 'धन्यवाद! मुझे इसका उत्तर नहीं मिला। हमारा एजेंट जल्द आपसे जुड़ेगा।',
-            'ml' => 'നന്ദി! ഇതിന് കൃത്യമായ ഉത്തരം എനിക്ക് കണ്ടെത്താനായില്ല. ഞങ്ങളുടെ ടീം ഉടൻ നിങ്ങളെ ബന്ധപ്പെടും.',
-            'ml-Latn' => 'Nandi! Ithinu krithyamaya utharam enikku kandethaan pattiyilla. Njangalude team udan ningale contact cheyyum.',
-            default => "Thank you for reaching out! I couldn't find a specific answer to your question. A team member will follow up with you shortly.",
+            'ar'      => 'أحب أن أتأكد من فهمي الصحيح — هل يمكنك وصف ما تبحث عنه بمزيد من التفصيل؟ وإذا لزم الأمر، سيتواصل معك أحد ممثلينا.',
+            'hi'      => 'मैं यह सुनिश्चित करना चाहता हूँ कि मैं आपको सही ढंग से समझूँ — क्या आप थोड़ा और बता सकते हैं कि आपको क्या चाहिए? ज़रूरत पड़ने पर हमारी टीम आपसे संपर्क करेगी।',
+            'ml'      => 'എനിക്ക് ശരിയായി മനസ്സിലായെന്ന് ഉറപ്പാക്കാൻ ആഗ്രഹിക്കുന്നു — നിങ്ങൾക്ക് എന്താണ് വേണ്ടതെന്ന് കുറച്ചുകൂടി വിശദമായി പറയാമോ? ആവശ്യമെങ്കിൽ ഞങ്ങളുടെ ടീം ബന്ധപ്പെടും.',
+            'ml-Latn' => 'Enikku shariyayi manasilayo ennu urapp cheyyan agrahikkunnu — ningalkku enthu venamennu kurachukoodi vishadamayi parayamo? Aavashyamenkil njangalude team contact cheyyum.',
+            default   => "I want to make sure I understand you correctly — could you describe what you're looking for in a bit more detail? If needed, I'll connect you with our team.",
         };
     }
 }

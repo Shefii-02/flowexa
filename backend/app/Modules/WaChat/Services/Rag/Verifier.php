@@ -48,7 +48,14 @@ class Verifier
 
     private function tokenize(string $text): array
     {
-        $words = preg_split('/\W+/u', mb_strtolower($text), -1, PREG_SPLIT_NO_EMPTY);
-        return array_unique(array_filter($words, fn($w) => strlen($w) >= 3));
+        // Same fix as QueryAgent::buildVector() — \W+ shatters Devanagari/Malayalam words at
+        // every combining vowel sign; this keeps them intact across every script.
+        $words = preg_split('/[^\p{L}\p{M}\p{N}]+/u', mb_strtolower($text), -1, PREG_SPLIT_NO_EMPTY);
+        $words = array_filter($words, fn($w) => strlen($w) >= 3);
+        // Same stemming QueryAgent applies at retrieval time — without it, "service" (query)
+        // vs "services" (knowledge base) share zero overlap here even when QueryAgent's own
+        // cosine score already recognizes them as a match, and this overlap check would then
+        // incorrectly veto an otherwise-good match.
+        return array_unique(array_map([QueryAgent::class, 'stem'], $words));
     }
 }
