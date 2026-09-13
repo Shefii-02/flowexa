@@ -200,6 +200,64 @@ class CompanyApiKeyResolver
         return null;
     }
 
+    /**
+     * Same as resolve(), but pinned to a *specific* provider instead of walking
+     * provider($company) (the company's one globally-active provider). Used by the AI
+     * test tools' "test with a different provider" pickers — without this, picking
+     * e.g. google_ai there had no effect at all, because resolve() would still return
+     * whatever provider the company actually has active, silently ignoring the pick.
+     *
+     * @return array{provider:string, key:string, model:string, source:string, key_model:?CompanyApiKey}|null
+     */
+    public static function resolveForProvider(Company $company, string $provider): ?array
+    {
+        // Company's own key for this provider
+        if ($key = self::activeKeyModel($company, $provider)) {
+            $model = ($company->ai_provider === $provider && $company->ai_model && self::modelMatchesProvider($company->ai_model, $provider))
+                ? $company->ai_model
+                : (self::DEFAULT_MODELS[$provider] ?? self::DEFAULT_MODEL);
+
+            return [
+                'provider'  => $provider,
+                'key'       => ApiKeyEncryption::decrypt($key->api_key),
+                'model'     => $model,
+                'source'    => 'company',
+                'key_model' => $key,
+            ];
+        }
+
+        // Platform key for this provider
+        $platform = self::platformCompany();
+        if ($platform && $platform->id !== $company->id) {
+            if ($key = self::activeKeyModel($platform, $provider)) {
+                $model = ($platform->ai_provider === $provider && $platform->ai_model && self::modelMatchesProvider($platform->ai_model, $provider))
+                    ? $platform->ai_model
+                    : (self::DEFAULT_MODELS[$provider] ?? self::DEFAULT_MODEL);
+
+                return [
+                    'provider'  => $provider,
+                    'key'       => ApiKeyEncryption::decrypt($key->api_key),
+                    'model'     => $model,
+                    'source'    => 'platform',
+                    'key_model' => $key,
+                ];
+            }
+        }
+
+        // .env fallback for this provider
+        if ($envKey = self::envKey($provider)) {
+            return [
+                'provider'  => $provider,
+                'key'       => $envKey,
+                'model'     => self::DEFAULT_MODELS[$provider] ?? self::DEFAULT_MODEL,
+                'source'    => 'env',
+                'key_model' => null,
+            ];
+        }
+
+        return null;
+    }
+
     // ── Key model lookup ──────────────────────────────────────────────────────
 
     /** The company's active, verified, in-limit key row for a provider (or null). */

@@ -25,6 +25,22 @@ class ResponseGenerator
             $apiKey   = $aiConfig['api_key'];
             $model    = $aiConfig['model'] ?? CompanyApiKeyResolver::model($company);
             $keyModel = null;
+        } elseif (!empty($aiConfig['provider'])) {
+            // Test tool asked to try a *specific* provider using the company's own stored
+            // key for it — not a pasted key (that's the branch above), and not necessarily
+            // the company's one globally-active provider. Previously this case fell through
+            // to CompanyApiKeyResolver::resolve() below, which always returns the active
+            // provider regardless — so picking a different provider in the test tool had no
+            // effect at all. Model comes from whatever was chosen for that provider under
+            // Settings; there's no separate model picker here on purpose.
+            $resolved = CompanyApiKeyResolver::resolveForProvider($company, $aiConfig['provider']);
+            if (!$resolved) {
+                return "No {$aiConfig['provider']} key is configured for this company yet. Add one under WA Agent → Settings → API Keys.";
+            }
+            $provider = $resolved['provider'];
+            $apiKey   = $resolved['key'];
+            $model    = $aiConfig['model'] ?? $resolved['model'];
+            $keyModel = $resolved['key_model'];
         } else {
             $resolved = CompanyApiKeyResolver::resolve($company);
             if (!$resolved) {

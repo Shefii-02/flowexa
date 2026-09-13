@@ -270,7 +270,6 @@ function LiveChatDrawer({ open, onClose, waSessions, companyName }: {
   const [useRag, setUseRag]             = useState(true)
   const [providerGroups, setProviderGroups] = useState<ProviderGroup[]>([])
   const [forceProvider, setForceProvider]   = useState('')
-  const [forceModel, setForceModel]         = useState('')
 
   useEffect(() => {
     api.get('/wa-agent/available-models').then(r => setProviderGroups(r.data)).catch(() => {})
@@ -311,7 +310,7 @@ function LiveChatDrawer({ open, onClose, waSessions, companyName }: {
     setHistory(h => [...h, userMsg])
     setThinking(true)
     try {
-      const ai_config = forceProvider ? { provider: forceProvider, model: forceModel || undefined } : undefined
+      const ai_config = forceProvider ? { provider: forceProvider } : undefined
       const res = await api.post('/wa-agent/ask', {
         query: q, contact_phone: phone, session_id: sessionId, response_mode: responseMode,
         use_rag: useRag, ai_config,
@@ -320,7 +319,7 @@ function LiveChatDrawer({ open, onClose, waSessions, companyName }: {
     } catch {
       appendError()
     } finally { setThinking(false) }
-  }, [input, sessionId, phone, responseMode, thinking, useRag, forceProvider, forceModel])
+  }, [input, sessionId, phone, responseMode, thinking, useRag, forceProvider])
 
   // ── voice recording ────────────────────────────────────────────────────────
 
@@ -372,7 +371,7 @@ function LiveChatDrawer({ open, onClose, waSessions, companyName }: {
       form.append('response_mode', responseMode)
       form.append('use_rag', String(useRag))
       if (forceProvider) {
-        form.append('ai_config', JSON.stringify({ provider: forceProvider, model: forceModel || undefined }))
+        form.append('ai_config', JSON.stringify({ provider: forceProvider }))
       }
       const res = await api.post('/wa-agent/voice-test', form)
       const d = res.data
@@ -532,7 +531,7 @@ function LiveChatDrawer({ open, onClose, waSessions, companyName }: {
               <label className="text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-1 block">AI key to test</label>
               <select
                 value={forceProvider}
-                onChange={e => { setForceProvider(e.target.value); setForceModel('') }}
+                onChange={e => setForceProvider(e.target.value)}
                 className="w-full px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400"
               >
                 <option value="">Company default</option>
@@ -540,20 +539,10 @@ function LiveChatDrawer({ open, onClose, waSessions, companyName }: {
                   <option key={g.provider} value={g.provider}>{g.provider} ({g.active_key_hint})</option>
                 ))}
               </select>
+              {/* Model isn't picked here — whichever provider is chosen runs with the model
+                  already configured for it under AI Model Configuration above. */}
             </div>
           </div>
-          {forceProvider && (
-            <select
-              value={forceModel}
-              onChange={e => setForceModel(e.target.value)}
-              className="w-full px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400"
-            >
-              <option value="">Default model for {forceProvider}</option>
-              {providerGroups.find(g => g.provider === forceProvider)?.models.map(m => (
-                <option key={m.id} value={m.id}>{m.label}</option>
-              ))}
-            </select>
-          )}
 
           <div className="flex gap-3">
             {/* Phone */}
