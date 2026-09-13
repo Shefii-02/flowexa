@@ -20,6 +20,7 @@ class RagOrchestrator
         private readonly ResponseGenerator $generator,
         private readonly FallbackReasoner  $fallbackReasoner,
         private readonly QueryRewriter     $queryRewriter,
+        private readonly HumanHandoffService $humanHandoff,
     ) {}
 
     /**
@@ -77,7 +78,45 @@ class RagOrchestrator
         // Load Company model for key resolution (single query, cached by Eloquent)
         $company = Company::find($companyId) ?? new Company();
 
+        // If the AI genuinely failed to answer last turn (see the providerFailed handling
+        // further down), the customer was offered a callback slot to pick from and this
+        // session is now waiting on that pick — resolve it before anything else, so a reply
+        // like "2" gets treated as "book that slot", not run through greeting/RAG/etc.
+        $pendingSlots = $agentSession->ai_config['pending_callback_offer'] ?? null;
+        if ($pendingSlots) {
+            $confirmed = $this->humanHandoff->confirmCallback($company, $contactPhone, $query, $pendingSlots);
+            if ($confirmed) {
+                $history[] = ['role' => 'user',      'content' => $query];
+                $history[] = ['role' => 'assistant', 'content' => $confirmed];
+                if (count($history) > 20) $history = array_slice($history, -20);
+
+                if ($isTest) {
+                    $agentSession->delete();
+                } else {
+                    $agentSession->update([
+                        'conversation_history' => $history,
+                        'last_message_at'      => now(),
+                        'ai_config'            => array_diff_key($agentSession->ai_config ?? [], ['pending_callback_offer' => 1]),
+                    ]);
+                }
+
+                return [
+                    'response'       => $confirmed,
+                    'language'       => $language,
+                    'intent'         => $this->planner->classifyIntent($query),
+                    'confidence'     => 1.0,
+                    'status'         => 'callback_scheduled',
+                    'evidence_count' => 0,
+                    'used_rag'       => $useRag,
+                ];
+            }
+        }
+
         $intent = $this->planner->classifyIntent($query);
+        // Set by handleProviderFailure() below only when the customer was just offered
+        // callback slots (outside office hours) — persisted onto the session so the NEXT
+        // message can be resolved as a slot pick, via the pendingSlots check above.
+        $pendingCallbackSlots = null;
 
         // A bare greeting ("hi", "hello", "good morning") shares essentially no words with
         // any knowledge base content, so running it through RAG retrieval always failed and
@@ -131,8 +170,12 @@ class RagOrchestrator
 
             // 7. Generate response
             if ($isRelevant) {
-                $response = $this->generator->generate($query, $context, $language, $history, $aiConfig, $company);
+                $providerFailed = false;
+                $response = $this->generator->generate($query, $context, $language, $history, $aiConfig, $company, $providerFailed);
                 $status   = 'answered';
+                if ($providerFailed) {
+                    [$response, $status, $pendingCallbackSlots] = $this->handleProviderFailure($company, $contactPhone, $wahaSessionId, $response);
+                }
             } else {
                 // Secondary path: the knowledge base had nothing relevant, but that doesn't
                 // mean the question is unanswerable — try one more LLM call armed with the
@@ -156,10 +199,14 @@ class RagOrchestrator
         } else {
             // Raw model call, no knowledge-base grounding at all — always "answers" since
             // there's no relevance gate to fail.
-            $response      = $this->generator->generate($query, '', $language, $history, $aiConfig, $company);
+            $providerFailed = false;
+            $response      = $this->generator->generate($query, '', $language, $history, $aiConfig, $company, $providerFailed);
             $status        = 'no_rag';
             $confidence    = 0.0;
             $evidenceCount = 0;
+            if ($providerFailed) {
+                [$response, $status, $pendingCallbackSlots] = $this->handleProviderFailure($company, $contactPhone, $wahaSessionId, $response);
+            }
         }
 
         // 8. Update conversation history
@@ -176,11 +223,18 @@ class RagOrchestrator
             // rather than updating it.
             $agentSession->delete();
         } else {
+            $mergedConfig = array_merge($agentSession->ai_config ?? [], $aiConfig);
+            if ($pendingCallbackSlots) {
+                $mergedConfig['pending_callback_offer'] = $pendingCallbackSlots;
+            } else {
+                unset($mergedConfig['pending_callback_offer']);
+            }
+
             $agentSession->update([
                 'conversation_history' => $history,
                 'current_intent'       => $intent,
                 'last_message_at'      => now(),
-                'ai_config'            => array_merge($agentSession->ai_config ?? [], $aiConfig),
+                'ai_config'            => $mergedConfig,
             ]);
         }
 
@@ -193,6 +247,29 @@ class RagOrchestrator
             'evidence_count' => $evidenceCount,
             'used_rag'       => $useRag,
         ];
+    }
+
+    /**
+     * The AI provider call itself genuinely failed (not just "nothing in the knowledge
+     * base") — ResponseGenerator's generic fallback text promises a human will help, so this
+     * is what actually makes that true: notifies staff live during office hours, or offers
+     * the customer a scheduled callback slot when they're not around.
+     *
+     * @return array{0:string, 1:string, 2:?array} [response text, status, slots to persist]
+     */
+    private function handleProviderFailure(Company $company, string $contactPhone, string $wahaSessionId, string $fallbackText): array
+    {
+        $offeredSlots = [];
+        $offerMessage = $this->humanHandoff->escalate($company, $contactPhone, $wahaSessionId, $offeredSlots);
+
+        if ($offerMessage) {
+            return [$offerMessage, 'afterhours_callback_offer', $offeredSlots];
+        }
+
+        // Within office hours (or no working-hours schedule configured at all) — staff were
+        // already notified live if possible; the existing fallback text already tells the
+        // customer a human will help, so it's left as-is.
+        return [$fallbackText, 'escalated', null];
     }
 
     /**

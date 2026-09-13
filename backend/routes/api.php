@@ -85,6 +85,7 @@ use App\Modules\WaChat\Http\Controllers\KnowledgeBaseController;
 use App\Modules\WaChat\Http\Controllers\PipelineController;
 use App\Modules\WaChat\Http\Controllers\AiAgentController;
 use App\Modules\WaChat\Http\Controllers\AgentPlaybookController;
+use App\Modules\WaChat\Http\Controllers\AiScheduleController;
 use App\Modules\WaChat\Http\Controllers\AgentPlaybookTemplateController;
 use App\Http\Controllers\CompanyApiKeyController;
 use App\Http\Controllers\MetaAiController;
@@ -1372,6 +1373,14 @@ Route::prefix('v1')->middleware(['jwt.auth'])->group(function () {
         Route::patch('/{id}',      [AgentPlaybookController::class, 'update']);
         Route::post('/{id}/toggle',[AgentPlaybookController::class, 'toggle']);
         Route::delete('/{id}',     [AgentPlaybookController::class, 'destroy']);
+    });
+
+    // WA Agent — AI schedule (always-on vs scheduled hours), per WA Chat session / WA Cloud
+    // number / Instagram account
+    Route::prefix('wa-agent/ai-schedule')->group(function () {
+        Route::get('/',                          [AiScheduleController::class, 'index']);
+        Route::patch('/wa/{sessionId}',           [AiScheduleController::class, 'updateWaSchedule']);
+        Route::patch('/instagram/{accountId}',    [AiScheduleController::class, 'updateInstagramSchedule']);
     });
 
     // WA Agent — AI Agent

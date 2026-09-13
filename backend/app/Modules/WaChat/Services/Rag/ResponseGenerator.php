@@ -11,13 +11,21 @@ class ResponseGenerator
 {
     private const MAX_TOKENS = 400;
 
+    /**
+     * @param bool &$providerFailed Set true only when the AI provider call itself genuinely
+     *   failed (exception, or the provider returned nothing usable) — the case where the
+     *   customer is about to receive the generic "I'm sorry, I couldn't find an answer...
+     *   a human agent will assist you shortly" text. Callers use this as the signal to
+     *   actually trigger that human handoff, rather than just saying it happens.
+     */
     public function generate(
         string  $query,
         string  $context,
         string  $language,
         array   $conversationHistory,
         array   $aiConfig,
-        Company $company
+        Company $company,
+        bool    &$providerFailed = false
     ): string {
         // Legacy test calls may pass an explicit key/provider in aiConfig.
         if (!empty($aiConfig['api_key'])) {
@@ -85,6 +93,7 @@ class ResponseGenerator
             Log::error("ResponseGenerator ({$provider}) exception: " . $e->getMessage());
         }
 
+        $providerFailed = true;
         return $this->fallbackResponse($language);
     }
 

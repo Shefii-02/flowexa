@@ -466,6 +466,7 @@ export const Sidebar = () => {
               <SubLink to="/wa-agent/pipelines" icon="🔄" label="Pipelines" />
               {/* } */}
               <SubLink to="/wa-agent/ai-agent" icon="🤖" label="AI Agent" />
+              <SubLink to="/wa-agent/ai-schedule" icon="🕒" label="AI Schedule" />
               <SubLink to="/wa-agent/playbook" icon="📖" label="Playbook" />
               {/* {canViewAgLeads &&  */}
               <SubLink to="/wa-agent/lead-intelligence" icon="🎯" label="Lead Intelligence" />

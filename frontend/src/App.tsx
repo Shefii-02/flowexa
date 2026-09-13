@@ -123,6 +123,7 @@ import WaAgentAutomations from '@/pages/wa-agent/automations'
 import WaAgentKnowledgeBase from '@/pages/wa-agent/knowledge-base'
 import WaAgentPipelines from '@/pages/wa-agent/pipelines'
 import WaAgentAiAgent from '@/pages/wa-agent/ai-agent'
+import WaAgentAiSchedule from '@/pages/wa-agent/ai-schedule'
 import CatalogPage from '@/pages/wa-agent/catalog/CatalogPage'
 import WidgetPage from '@/pages/wa-agent/widget/WidgetPage'
 import SetupGuidePage from '@/pages/setup-guide/SetupGuidePage'
@@ -227,6 +228,7 @@ export default function App() {
                 <Route path="knowledge-base" element={<WaAgentKnowledgeBase />} />
                 <Route path="pipelines" element={<WaAgentPipelines />} />
                 <Route path="ai-agent" element={<WaAgentAiAgent />} />
+                <Route path="ai-schedule" element={<WaAgentAiSchedule />} />
                 <Route path="playbook" element={<WaAgentPlaybookPage />} />
                 <Route path="lead-intelligence" element={<LeadIntelligencePage />} />
                 <Route path="meta-ai" element={<MetaAiConfigPage />} />

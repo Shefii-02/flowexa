@@ -3,13 +3,18 @@
 namespace App\Modules\WaChat\Services\Agent;
 
 use App\Jobs\AnalyzeConversation;
+use App\Jobs\NotifyStaffAiHandoff;
+use App\Models\Company;
 use App\Models\Contact;
+use App\Models\CrmTask;
 use App\Models\Lead;
 use App\Modules\WaChat\Models\AgentPlaybook;
 use App\Modules\WaChat\Models\AiAgentSession;
 use App\Modules\WaChat\Models\AutomationLog;
 use App\Modules\WaChat\Services\Rag\EvidenceCollector;
 use App\Modules\WaChat\Services\Rag\PlannerAgent;
+use App\Services\AgentScheduleChecker;
+use App\Services\LeadAssignment\LeadAssignmentEngine;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -24,6 +29,7 @@ class ConversationalAgentService
         private readonly AgentTurnPlanner    $planner,
         private readonly EvidenceCollector   $evidence,
         private readonly PlannerAgent        $subQueryPlanner,
+        private readonly LeadAssignmentEngine $assignmentEngine,
     ) {}
 
     /** @return bool  true if the agent handled the message (caller should stop). */
@@ -38,6 +44,20 @@ class ConversationalAgentService
             return false;
         }
 
+        // The AI agent's own on/off schedule — separate from staff working hours, since a
+        // company might want the AI running 24/7 on one WA session but only during set hours
+        // on another (or on Instagram). Configured per playbook (which is itself scoped per
+        // WA session/number, or company-wide as the default).
+        if (!AgentScheduleChecker::isActiveNow(
+            $playbook->ai_schedule_mode ?? 'always',
+            $playbook->ai_schedule_days,
+            $playbook->ai_schedule_start,
+            $playbook->ai_schedule_end,
+            $playbook->ai_schedule_timezone,
+        )) {
+            return $this->handleOutsideSchedule($in, $playbook);
+        }
+
         try {
             return $this->run($in, $playbook);
         } catch (\Throwable $e) {
@@ -46,6 +66,48 @@ class ConversationalAgentService
             ]);
             return false;
         }
+    }
+
+    /**
+     * The AI agent is outside its configured hours — don't run the AI turn at all, but still
+     * capture the lead, tell the customer honestly, and create a CrmTask + live notification
+     * for a staff member so the message doesn't just sit unanswered until someone happens to
+     * check the inbox.
+     */
+    private function handleOutsideSchedule(AgentInbound $in, AgentPlaybook $playbook): bool
+    {
+        $company = Company::find($in->companyId);
+        if (!$company) {
+            return false;
+        }
+
+        $gateway = $this->gateways->for($in->channel);
+        $contact = $this->ensureContactAndLead($in);
+
+        $message = $playbook->fallback_transfer_message
+            ?: "Thanks for reaching out! We're outside our usual reply hours right now — our team will get back to you as soon as we're back.";
+        $gateway->sendText($in->companyId, $in->sessionRef, $in->phone, $message);
+
+        $staff = $this->assignmentEngine->roundRobinPick($company);
+        $task  = CrmTask::create([
+            'company_id'  => $company->id,
+            'contact_id'  => $contact->id,
+            'assigned_to' => $staff?->id,
+            'title'       => 'Customer messaged outside AI agent hours',
+            'description' => "Phone: {$in->phone}. Message: \"{$in->text}\"",
+            'type'        => 'whatsapp',
+            'priority'    => 'medium',
+            'status'      => 'open',
+            'due_at'      => now(),
+        ]);
+
+        if ($staff) {
+            dispatch(new NotifyStaffAiHandoff($task->id, $staff->id));
+        }
+
+        $this->log($in, $playbook, 'outside_ai_schedule', ['task_id' => $task->id]);
+
+        return true;
     }
 
     private function run(AgentInbound $in, AgentPlaybook $playbook): bool

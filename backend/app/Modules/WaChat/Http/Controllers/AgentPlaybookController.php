@@ -35,6 +35,12 @@ class AgentPlaybookController extends Controller
         'escalation'                => 'sometimes|nullable|array',
         'payment'                   => 'sometimes|nullable|array',
         'is_active'                 => 'sometimes|boolean',
+        'ai_schedule_mode'          => 'sometimes|string|in:always,scheduled',
+        'ai_schedule_days'          => 'sometimes|nullable|array',
+        'ai_schedule_days.*'        => 'integer|min:0|max:6',
+        'ai_schedule_start'         => 'sometimes|nullable|date_format:H:i',
+        'ai_schedule_end'           => 'sometimes|nullable|date_format:H:i',
+        'ai_schedule_timezone'      => 'sometimes|nullable|string|max:64',
     ];
 
     public function index(Request $request): JsonResponse

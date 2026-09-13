@@ -2,12 +2,16 @@
 
 namespace App\Modules\Instagram\Services;
 
+use App\Jobs\NotifyStaffAiHandoff;
+use App\Models\CrmTask;
 use App\Models\InstagramAccount;
 use App\Models\InstagramConversation;
 use App\Modules\Catalog\AgentContext;
 use App\Modules\Catalog\IndustryTemplates;
 use App\Modules\Catalog\LeadIntake;
 use App\Modules\WaChat\Services\Rag\LlmClient;
+use App\Services\AgentScheduleChecker;
+use App\Services\LeadAssignment\LeadAssignmentEngine;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -27,6 +31,7 @@ class InstagramAiAgent
         private readonly AgentContext $context,
         private readonly LeadIntake $intake,
         private readonly InstagramConversationService $conversations,
+        private readonly LeadAssignmentEngine $assignmentEngine,
     ) {}
 
     public function shouldHandle(InstagramAccount $account, InstagramConversation $convo): bool
@@ -36,11 +41,33 @@ class InstagramAiAgent
             && $convo->ai_enabled
             && $convo->status !== 'closed'
             && $convo->withinMessagingWindow()
+            && $this->isWithinSchedule($account)
             && $this->llm->isConfigured($account->company);
+    }
+
+    private function isWithinSchedule(InstagramAccount $account): bool
+    {
+        return AgentScheduleChecker::isActiveNow(
+            $account->ai_schedule_mode ?? 'always',
+            $account->ai_schedule_days,
+            $account->ai_schedule_start,
+            $account->ai_schedule_end,
+            $account->ai_schedule_timezone,
+        );
     }
 
     public function handle(InstagramAccount $account, InstagramConversation $convo): void
     {
+        // Outside the account's own configured hours — same everything-else-still-applies
+        // gate as shouldHandle(), just called out separately so this specific reason gets a
+        // reply + staff task instead of silently leaving the DM unanswered.
+        if ($account->ai_enabled && $account->is_active && $convo->ai_enabled
+            && $convo->status !== 'closed' && $convo->withinMessagingWindow()
+            && !$this->isWithinSchedule($account)) {
+            $this->handleOutsideSchedule($account, $convo);
+            return;
+        }
+
         if (!$this->shouldHandle($account, $convo)) {
             return;
         }
@@ -155,5 +182,38 @@ class InstagramAiAgent
         if (preg_match('/\{.*\}/s', $raw, $m)) $raw = $m[0];
         $d = json_decode($raw, true);
         return is_array($d) ? $d : null;
+    }
+
+    /**
+     * Outside the account's own configured AI hours — reply honestly instead of leaving the
+     * DM unanswered, and create a CrmTask + live notification so a staff member actually
+     * follows up. Mirrors ConversationalAgentService::handleOutsideSchedule() for WA.
+     */
+    private function handleOutsideSchedule(InstagramAccount $account, InstagramConversation $convo): void
+    {
+        $this->conversations->send(
+            $convo,
+            "Thanks for messaging! We're outside our usual reply hours right now — our team will get back to you as soon as we're back.",
+            'ai'
+        );
+
+        $company = $account->company;
+        $staff   = $this->assignmentEngine->roundRobinPick($company);
+
+        $task = CrmTask::create([
+            'company_id'  => $company->id,
+            'contact_id'  => $convo->contact_id,
+            'assigned_to' => $staff?->id,
+            'title'       => 'Instagram DM outside AI agent hours' . ($account->username ? " — @{$account->username}" : ''),
+            'description' => "Conversation ID: {$convo->id}.",
+            'type'        => 'todo',
+            'priority'    => 'medium',
+            'status'      => 'open',
+            'due_at'      => now(),
+        ]);
+
+        if ($staff) {
+            dispatch(new NotifyStaffAiHandoff($task->id, $staff->id));
+        }
     }
 }
