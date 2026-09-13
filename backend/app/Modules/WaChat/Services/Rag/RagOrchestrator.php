@@ -198,6 +198,8 @@ class RagOrchestrator
         return match($language) {
             'ar' => 'شكراً لتواصلك. لم أجد إجابة مناسبة، سيتواصل معك أحد ممثلينا قريباً.',
             'hi' => 'धन्यवाद! मुझे इसका उत्तर नहीं मिला। हमारा एजेंट जल्द आपसे जुड़ेगा।',
+            'ml' => 'നന്ദി! ഇതിന് കൃത്യമായ ഉത്തരം എനിക്ക് കണ്ടെത്താനായില്ല. ഞങ്ങളുടെ ടീം ഉടൻ നിങ്ങളെ ബന്ധപ്പെടും.',
+            'ml-Latn' => 'Nandi! Ithinu krithyamaya utharam enikku kandethaan pattiyilla. Njangalude team udan ningale contact cheyyum.',
             default => "Thank you for reaching out! I couldn't find a specific answer to your question. A team member will follow up with you shortly.",
         };
     }

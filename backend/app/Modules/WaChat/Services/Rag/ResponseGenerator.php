@@ -154,6 +154,13 @@ class ResponseGenerator
         $agentName    = $aiConfig['agent_name']    ?? 'AI Assistant';
         $customPrompt = $aiConfig['system_prompt'] ?? '';
 
+        // A raw code like "ml-Latn" means nothing to the model on its own — label() turns
+        // it into an actual instruction. This matters most for Manglish (Malayalam typed in
+        // Latin letters): telling the model "detected: ml-Latn" without explanation risks it
+        // replying in the Malayalam script instead of the Latin-letter style the customer
+        // actually used, which would look like gibberish to them.
+        $languageLabel = (new LanguageDetector())->label($language);
+
         // RagOrchestrator only ever calls generate() with an empty $context in one case:
         // useRag=false ("without RAG (raw model, no grounding)" in the test tool). When RAG
         // is on but nothing relevant was found, it shows a canned fallback instead of calling
@@ -166,7 +173,7 @@ class ResponseGenerator
         if (empty($context)) {
             $base  = "You are {$agentName} for {$companyName}. ";
             $base .= "Answer the user's question helpfully and naturally using your own general knowledge — you have no company knowledge base loaded right now. ";
-            $base .= "Be concise and friendly. Reply in the same language as the user (detected: {$language}). ";
+            $base .= "Be concise and friendly. Reply in the same language as the user (detected: {$languageLabel}). ";
             $base .= "Keep responses under 150 words.\n\n";
 
             if ($customPrompt) {
@@ -178,7 +185,7 @@ class ResponseGenerator
 
         $base  = "You are {$agentName} for {$companyName}. ";
         $base .= "Answer only based on the provided knowledge base context. ";
-        $base .= "Be concise and friendly. Reply in the same language as the user (detected: {$language}). ";
+        $base .= "Be concise and friendly. Reply in the same language as the user (detected: {$languageLabel}). ";
         $base .= "If the answer is not in the context, say you'll connect them with a human agent. ";
         $base .= "Keep responses under 150 words.\n\n";
 
@@ -208,9 +215,11 @@ class ResponseGenerator
     private function fallbackResponse(string $language): string
     {
         return match ($language) {
-            'ar'    => 'عذراً، لم أتمكن من الإجابة. سيتواصل معك أحد ممثلينا قريباً.',
-            'hi'    => 'क्षमा करें, मैं अभी उत्तर नहीं दे सकता। हमारा एजेंट जल्द आपसे संपर्क करेगा।',
-            default => "I'm sorry, I couldn't find an answer to that. A human agent will assist you shortly.",
+            'ar'      => 'عذراً، لم أتمكن من الإجابة. سيتواصل معك أحد ممثلينا قريباً.',
+            'hi'      => 'क्षमा करें, मैं अभी उत्तर नहीं दे सकता। हमारा एजेंट जल्द आपसे संपर्क करेगा।',
+            'ml'      => 'ക്ഷമിക്കണം, എനിക്ക് ഇപ്പോൾ ഉത്തരം നൽകാൻ കഴിഞ്ഞില്ല. ഞങ്ങളുടെ ടീം ഉടൻ ബന്ധപ്പെടും.',
+            'ml-Latn' => 'Ksamikkanam, enikku ippol utharam nalkan pattiyilla. Njangalude team udan contact cheyyum.',
+            default   => "I'm sorry, I couldn't find an answer to that. A human agent will assist you shortly.",
         };
     }
 }

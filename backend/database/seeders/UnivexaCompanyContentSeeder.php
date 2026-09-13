@@ -274,6 +274,31 @@ web and mobile apps, and API integrations. Contact us to book a free discovery c
 以及 API 集成服务。请联系我们预约免费咨询电话以获取报价。
 TXT,
             ],
+            [
+                'name' => 'Malayalam & Manglish Quick Facts',
+                'description' => 'Company summary in Malayalam script and in Manglish (Malayalam typed in English letters)',
+                'raw_content' => <<<TXT
+[മലയാളം] യൂനിവെക്സ ടെക്നോളജീസ് കസ്റ്റം സോഫ്റ്റ്‌വെയറും SaaS ഉൽപ്പന്നങ്ങളും നിർമ്മിക്കുന്നു — വാട്സ്ആപ്പ്/AI
+ഓട്ടോമേഷൻ, വെബ്, മൊബൈൽ ആപ്പുകൾ, API ഇന്റഗ്രേഷനുകൾ എന്നിവയുൾപ്പെടെ. വില അറിയാൻ ഒരു സൗജന്യ ഡിസ്കവറി കോൾ
+ബുക്ക് ചെയ്യാൻ ഞങ്ങളെ ബന്ധപ്പെടുക.
+
+[Manglish] Univexa Technologies custom software um SaaS products um undakkunnu — WhatsApp/AI automation,
+web, mobile apps, API integrations okke ulppede. Vila ariyan oru free discovery call book cheyyan
+njangale contact cheyyu.
+
+Q: entha price / vila enthanu?
+A: Project scope anusarich vila vyathyasappedum — free discovery call kazhinjittu quote parayum. Cheriya
+tool aanenkil 2-4 azhcha, full SaaS platform aanenkil 3+ maasam edukkum.
+
+Q: whatsapp bot undo / ningal chatbot undakkumo?
+A: Undu — WhatsApp & AI automation njangalude oru main service aanu, WhatsApp Business API integration um
+AI agent um ulppede.
+
+Q: engane start cheyyam / next step entha?
+A: Oru free discovery call book cheyyu, ningalude requirement manasilakkiyathinu shesham njangal proposal
+ayakkum.
+TXT,
+            ],
         ];
 
         foreach ($docs as $doc) {
