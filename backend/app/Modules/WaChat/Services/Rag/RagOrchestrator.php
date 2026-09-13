@@ -77,16 +77,23 @@ class RagOrchestrator
         $intent = $this->planner->classifyIntent($query);
 
         if ($useRag) {
+            // 3.5. A short follow-up referencing a numbered item from the assistant's own
+            // last reply ("i choosed 3") carries almost no lexical signal on its own — blend
+            // in that list item's actual text for retrieval/relevance purposes only. The
+            // literal $query (not $searchQuery) is still what's sent to the model below.
+            $referenced  = $this->planner->resolveListReference($query, $history);
+            $searchQuery = $referenced ? "{$query} {$referenced}" : $query;
+
             // 4. Plan: decompose query into sub-queries
-            $subQueries = $this->planner->decompose($query);
+            $subQueries = $this->planner->decompose($searchQuery);
 
             // 5. Retrieve evidence
             $evidence = $this->collector->collect($subQueries, $companyId);
             $context  = $this->collector->buildContext($evidence);
 
             // 6. Verify relevance
-            $isRelevant = $this->verifier->verify($evidence, $query);
-            $confidence = $this->verifier->confidenceScore($evidence, $query);
+            $isRelevant = $this->verifier->verify($evidence, $searchQuery);
+            $confidence = $this->verifier->confidenceScore($evidence, $searchQuery);
 
             // 7. Generate response
             if ($isRelevant) {
