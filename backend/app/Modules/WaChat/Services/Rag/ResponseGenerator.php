@@ -25,6 +25,19 @@ class ResponseGenerator
             $apiKey   = $aiConfig['api_key'];
             $model    = $aiConfig['model'] ?? CompanyApiKeyResolver::model($company);
             $keyModel = null;
+        } elseif (!empty($aiConfig['key_id'])) {
+            // Test tool picked one specific stored key row — a company can hold several keys
+            // for the same provider (e.g. two google_ai keys for two projects) with only one
+            // marked active, so "pick a provider" alone isn't precise enough to test a
+            // non-active key. This resolves that exact row regardless of its active flag.
+            $resolved = CompanyApiKeyResolver::resolveByKeyId($company, (int) $aiConfig['key_id']);
+            if (!$resolved) {
+                return "That API key could not be found — it may have been deleted or belongs to a different company.";
+            }
+            $provider = $resolved['provider'];
+            $apiKey   = $resolved['key'];
+            $model    = $aiConfig['model'] ?? $resolved['model'];
+            $keyModel = $resolved['key_model'];
         } elseif (!empty($aiConfig['provider'])) {
             // Test tool asked to try a *specific* provider using the company's own stored
             // key for it — not a pasted key (that's the branch above), and not necessarily

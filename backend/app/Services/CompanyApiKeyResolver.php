@@ -258,6 +258,36 @@ class CompanyApiKeyResolver
         return null;
     }
 
+    /**
+     * Resolve a specific stored key row by id, regardless of whether it's the provider's
+     * *active* key — a company can hold several keys per provider (e.g. two google_ai keys
+     * for two different projects) with only one marked active, and the AI test tools let
+     * testing against any of them, not just whichever one happens to be active right now.
+     * Returns null if the key doesn't exist or doesn't belong to this company (never leaks
+     * another company's key by id).
+     *
+     * @return array{provider:string, key:string, model:string, source:string, key_model:CompanyApiKey}|null
+     */
+    public static function resolveByKeyId(Company $company, int $keyId): ?array
+    {
+        $key = CompanyApiKey::where('id', $keyId)->where('company_id', $company->id)->first();
+        if (!$key || $key->isAtLimit()) {
+            return null;
+        }
+
+        $model = ($company->ai_provider === $key->provider && $company->ai_model && self::modelMatchesProvider($company->ai_model, $key->provider))
+            ? $company->ai_model
+            : (self::DEFAULT_MODELS[$key->provider] ?? self::DEFAULT_MODEL);
+
+        return [
+            'provider'  => $key->provider,
+            'key'       => ApiKeyEncryption::decrypt($key->api_key),
+            'model'     => $model,
+            'source'    => 'company',
+            'key_model' => $key,
+        ];
+    }
+
     // ── Key model lookup ──────────────────────────────────────────────────────
 
     /** The company's active, verified, in-limit key row for a provider (or null). */

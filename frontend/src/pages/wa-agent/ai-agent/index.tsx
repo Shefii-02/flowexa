@@ -27,6 +27,7 @@ type Stats = {
 
 type WaSession = { session_id: string; session_name: string; status?: string }
 type WaCloudNumber = { id: number; phone_number_id: string; label: string; display_number: string; is_active: boolean }
+type StoredKey = { id: number; provider: string; key_label: string; api_key_hint: string; is_active: boolean; is_verified: boolean }
 
 type ResponseMode = 'text' | 'voice' | 'document' | 'video'
 
@@ -268,12 +269,33 @@ function LiveChatDrawer({ open, onClose, waSessions, companyName }: {
   const [thinking, setThinking]         = useState(false)
   // With/without RAG + which stored key to test against (empty = company default)
   const [useRag, setUseRag]             = useState(true)
-  const [providerGroups, setProviderGroups] = useState<ProviderGroup[]>([])
+  const [storedKeys, setStoredKeys]         = useState<StoredKey[]>([])
   const [forceProvider, setForceProvider]   = useState('')
+  const [forceKeyId, setForceKeyId]         = useState('')
 
   useEffect(() => {
-    api.get('/wa-agent/available-models').then(r => setProviderGroups(r.data)).catch(() => {})
+    api.get('/settings/api-keys').then(r => setStoredKeys(r.data ?? [])).catch(() => {})
   }, [])
+
+  // Providers that actually have at least one stored key — a company can hold several
+  // keys for the same provider (e.g. two google_ai keys for two projects), so the picker
+  // is two steps: provider, then which specific key of that provider's to run with.
+  const providersWithKeys = useMemo(
+    () => Array.from(new Set(storedKeys.map(k => k.provider))),
+    [storedKeys]
+  )
+  const keysForProvider = useMemo(
+    () => storedKeys.filter(k => k.provider === forceProvider),
+    [storedKeys, forceProvider]
+  )
+
+  // Picking a provider defaults to its active key, but the key dropdown stays open to
+  // test a different (non-active) one for that same provider.
+  const chooseProvider = (p: string) => {
+    setForceProvider(p)
+    const keys = storedKeys.filter(k => k.provider === p)
+    setForceKeyId(String(keys.find(k => k.is_active)?.id ?? keys[0]?.id ?? ''))
+  }
 
   useEffect(() => {
     if (channel !== 'wa_cloud' || phoneNumbers.length > 0) return
@@ -310,7 +332,9 @@ function LiveChatDrawer({ open, onClose, waSessions, companyName }: {
     setHistory(h => [...h, userMsg])
     setThinking(true)
     try {
-      const ai_config = forceProvider ? { provider: forceProvider } : undefined
+      const ai_config = forceProvider
+        ? { provider: forceProvider, key_id: forceKeyId ? Number(forceKeyId) : undefined }
+        : undefined
       const res = await api.post('/wa-agent/ask', {
         query: q, contact_phone: phone, session_id: sessionId, response_mode: responseMode,
         use_rag: useRag, ai_config,
@@ -319,7 +343,7 @@ function LiveChatDrawer({ open, onClose, waSessions, companyName }: {
     } catch {
       appendError()
     } finally { setThinking(false) }
-  }, [input, sessionId, phone, responseMode, thinking, useRag, forceProvider])
+  }, [input, sessionId, phone, responseMode, thinking, useRag, forceProvider, forceKeyId])
 
   // ── voice recording ────────────────────────────────────────────────────────
 
@@ -371,7 +395,7 @@ function LiveChatDrawer({ open, onClose, waSessions, companyName }: {
       form.append('response_mode', responseMode)
       form.append('use_rag', String(useRag))
       if (forceProvider) {
-        form.append('ai_config', JSON.stringify({ provider: forceProvider }))
+        form.append('ai_config', JSON.stringify({ provider: forceProvider, key_id: forceKeyId ? Number(forceKeyId) : undefined }))
       }
       const res = await api.post('/wa-agent/voice-test', form)
       const d = res.data
@@ -528,21 +552,41 @@ function LiveChatDrawer({ open, onClose, waSessions, companyName }: {
               </button>
             </div>
             <div className="flex-1">
-              <label className="text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-1 block">AI key to test</label>
+              <label className="text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-1 block">AI provider to test</label>
               <select
                 value={forceProvider}
-                onChange={e => setForceProvider(e.target.value)}
+                onChange={e => chooseProvider(e.target.value)}
                 className="w-full px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400"
               >
                 <option value="">Company default</option>
-                {providerGroups.filter(g => g.has_key).map(g => (
-                  <option key={g.provider} value={g.provider}>{g.provider} ({g.active_key_hint})</option>
+                {providersWithKeys.map(p => (
+                  <option key={p} value={p}>{p}</option>
                 ))}
               </select>
-              {/* Model isn't picked here — whichever provider is chosen runs with the model
-                  already configured for it under AI Model Configuration above. */}
+              {/* Model isn't picked here — whichever key is chosen runs with the model
+                  already configured for its provider under AI Model Configuration above. */}
             </div>
           </div>
+
+          {/* Which specific key of that provider — a company can hold more than one
+              (e.g. two google_ai keys for two projects); only one is "active", but any
+              of them can be tested here. */}
+          {forceProvider && (
+            <div>
+              <label className="text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-1 block">API key</label>
+              <select
+                value={forceKeyId}
+                onChange={e => setForceKeyId(e.target.value)}
+                className="w-full px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400"
+              >
+                {keysForProvider.map(k => (
+                  <option key={k.id} value={k.id}>
+                    {k.key_label} ({k.api_key_hint}){k.is_active ? ' · active' : ''}{!k.is_verified ? ' · unverified' : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
           <div className="flex gap-3">
             {/* Phone */}
