@@ -120,6 +120,68 @@ return [
         'lead_source' => 'website_widget',
     ],
 
+    'software_company' => [
+        'name'          => 'Software / SaaS Company',
+        'listing_type'  => 'service',
+        'attribute_schema' => [
+            ['key' => 'project_type',   'label' => 'Project type',   'type' => 'enum', 'options' => ['custom_software', 'saas_product', 'whatsapp_ai_automation', 'web_mobile_app', 'api_integration', 'maintenance_support'], 'matchable' => true],
+            ['key' => 'starting_price', 'label' => 'Starting price', 'type' => 'number'],
+            ['key' => 'price_unit',     'label' => 'Price unit',     'type' => 'text'],
+            ['key' => 'typical_timeline', 'label' => 'Typical timeline', 'type' => 'text'],
+            ['key' => 'tech_stack',     'label' => 'Tech stack',     'type' => 'text'],
+        ],
+        'qualification_fields' => [
+            ['key' => 'name',         'label' => 'Name',                'type' => 'text',  'required' => true],
+            ['key' => 'phone',        'label' => 'Phone',               'type' => 'phone', 'required' => true],
+            ['key' => 'project_type', 'label' => 'Project type',        'type' => 'text',  'required' => true],
+            ['key' => 'budget_range', 'label' => 'Budget range',        'type' => 'text',  'required' => false],
+            ['key' => 'timeline',     'label' => 'Timeline to start',   'type' => 'text',  'required' => false],
+        ],
+        'question_flow' => [
+            'What are you looking to build — custom software, a SaaS product, WhatsApp/AI automation, or something else?',
+            "What's your approximate budget range?",
+            "What's your ideal timeline to get started?",
+            'Can I get your name and phone number so our team can follow up with a proposal?',
+        ],
+        'agent_prompt' => 'You are helping a prospective client scope a software project. Match what they describe '
+                        . 'to the service catalog, answer pricing/timeline/tech-stack questions ONLY from the '
+                        . 'knowledge base and catalog, and move them towards booking a free discovery call. Never '
+                        . 'invent prices, timelines or capabilities not in the provided data.',
+        'lead_source' => 'website_widget',
+    ],
+
+    'construction' => [
+        'name'          => 'Construction & Infrastructure',
+        'listing_type'  => 'service',
+        'attribute_schema' => [
+            ['key' => 'project_type',  'label' => 'Project type', 'type' => 'enum', 'options' => ['residential', 'commercial', 'renovation', 'infrastructure'], 'matchable' => true],
+            ['key' => 'typical_area',  'label' => 'Typical project size', 'type' => 'text'],
+            ['key' => 'starting_price', 'label' => 'Starting price', 'type' => 'number'],
+            ['key' => 'typical_timeline', 'label' => 'Typical timeline', 'type' => 'text'],
+            ['key' => 'materials',     'label' => 'Materials / scope',  'type' => 'text'],
+        ],
+        'qualification_fields' => [
+            ['key' => 'name',          'label' => 'Name',            'type' => 'text',  'required' => true],
+            ['key' => 'phone',         'label' => 'Phone',           'type' => 'phone', 'required' => true],
+            ['key' => 'project_type',  'label' => 'Project type',    'type' => 'text',  'required' => true],
+            ['key' => 'site_location', 'label' => 'Site location',   'type' => 'text',  'required' => true],
+            ['key' => 'budget',        'label' => 'Budget range',    'type' => 'text',  'required' => false],
+            ['key' => 'timeline',      'label' => 'Timeline to start', 'type' => 'text', 'required' => false],
+        ],
+        'question_flow' => [
+            'Is this a residential, commercial, renovation, or infrastructure project?',
+            'Where is the site located?',
+            'Do you have a budget range in mind?',
+            "What's your timeline to get started?",
+            'Can I get your name and phone number so our team can schedule a site visit?',
+        ],
+        'agent_prompt' => 'You are helping a prospective client scope a construction project. Understand the '
+                        . 'project type, site location, and scale, answer pricing/timeline questions ONLY from the '
+                        . 'knowledge base and catalog, and move them towards scheduling a site visit. Never invent '
+                        . 'prices, timelines or capabilities not in the provided data.',
+        'lead_source' => 'website_widget',
+    ],
+
     'generic' => [
         'name'         => 'Other business',
         'listing_type' => 'product',

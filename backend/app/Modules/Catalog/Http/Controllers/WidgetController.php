@@ -22,7 +22,17 @@ class WidgetController extends Controller
 
     public function store(Request $request): JsonResponse
     {
-        $w = ChatWidget::create(array_merge($this->validated($request), [
+        $data = $this->validated($request);
+
+        // Default to the company's own business type (set once at signup/company creation)
+        // instead of asking again per-widget — a company only gets asked to override this
+        // if they explicitly want a widget to represent a different business type than the
+        // one already on file.
+        if (!array_key_exists('industry_template', $data) || $data['industry_template'] === null) {
+            $data['industry_template'] = auth()->user()->company->industry_template;
+        }
+
+        $w = ChatWidget::create(array_merge($data, [
             'company_id' => auth()->user()->company_id,
         ]));
         return response()->json(['message' => 'Widget created.', 'widget' => $this->present($w)], 201);

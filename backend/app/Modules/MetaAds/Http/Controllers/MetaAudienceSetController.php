@@ -34,11 +34,19 @@ class MetaAudienceSetController extends Controller
             'geo_locations'               => ['nullable', 'array'],
             'interests'                   => ['nullable', 'array'],
             'behaviors'                   => ['nullable', 'array'],
+            // Detailed-targeting categories beyond interests/behaviors — a flat object keyed
+            // by category (life_events, family_statuses, relationship_statuses,
+            // education_statuses, income, industries, job_titles, generation), each an array
+            // of {id, name} pairs from MetaAdsService::searchTargeting(..., 'adTargetingCategory').
+            'demographics'                => ['nullable', 'array'],
             'locales'                     => ['nullable', 'array'],
             'custom_audiences'            => ['nullable', 'array'],
             'excluded_custom_audiences'   => ['nullable', 'array'],
             'flexible_spec'               => ['nullable', 'array'],
             'exclusions'                  => ['nullable', 'array'],
+            // Advantage+ detailed targeting expansion — off unless explicitly set.
+            'targeting_relaxation_types'  => ['nullable', 'array'],
+            'targeting_optimization'      => ['nullable', 'string', Rule::in(['none', 'expansion_all'])],
             'placements'                  => ['nullable', 'array'],
             'is_favorite'                 => ['nullable', 'boolean'],
         ];

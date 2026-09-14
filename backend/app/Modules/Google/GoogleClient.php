@@ -21,6 +21,7 @@ class GoogleClient
     public const SCOPES = [
         'https://www.googleapis.com/auth/drive',
         'https://www.googleapis.com/auth/spreadsheets',
+        'https://www.googleapis.com/auth/calendar',
         'https://www.googleapis.com/auth/userinfo.email',
         'openid',
     ];
@@ -251,6 +252,90 @@ class GoogleClient
             ['values' => $rows],
         );
         $this->guard($res, 'append rows');
+    }
+
+    // ── Calendar ─────────────────────────────────────────────────────────
+    // Booking itself never depends on this — CalendarService always writes the local
+    // calendar_events row first and treats every call here as a best-effort mirror, so a
+    // missing/expired Calendar scope (e.g. a company that connected before this scope existed)
+    // degrades to "not synced to Google" rather than blocking the booking.
+
+    /** @return array{id:string, html_link:?string, meet_link:?string} */
+    public function createEvent(GoogleIntegration $i, array $data): array
+    {
+        $calendarId = rawurlencode($i->calendar_id ?: 'primary');
+        $body = $this->eventBody($data);
+
+        $res = Http::withToken($this->token($i))->post(
+            "https://www.googleapis.com/calendar/v3/calendars/{$calendarId}/events?conferenceDataVersion=1&sendUpdates=all",
+            $body,
+        );
+        $this->guard($res, 'create calendar event');
+
+        return [
+            'id'        => $res->json('id'),
+            'html_link' => $res->json('htmlLink'),
+            'meet_link' => $res->json('conferenceData.entryPoints.0.uri') ?? $res->json('hangoutLink'),
+        ];
+    }
+
+    public function updateEvent(GoogleIntegration $i, string $eventId, array $data): void
+    {
+        $calendarId = rawurlencode($i->calendar_id ?: 'primary');
+        $res = Http::withToken($this->token($i))->patch(
+            "https://www.googleapis.com/calendar/v3/calendars/{$calendarId}/events/{$eventId}?sendUpdates=all",
+            $this->eventBody($data),
+        );
+        $this->guard($res, 'update calendar event');
+    }
+
+    public function deleteEvent(GoogleIntegration $i, string $eventId): void
+    {
+        $calendarId = rawurlencode($i->calendar_id ?: 'primary');
+        $res = Http::withToken($this->token($i))
+            ->delete("https://www.googleapis.com/calendar/v3/calendars/{$calendarId}/events/{$eventId}?sendUpdates=all");
+        // Google returns 410 Gone if it was already deleted on the Google side — not an error for us.
+        if ($res->failed() && $res->status() !== 410 && $res->status() !== 404) {
+            $this->guard($res, 'delete calendar event');
+        }
+    }
+
+    /** Busy blocks on the connected calendar between $timeMin and $timeMax (both ISO-8601), for conflict checks before booking. */
+    public function freeBusy(GoogleIntegration $i, string $timeMin, string $timeMax): array
+    {
+        $calendarId = $i->calendar_id ?: 'primary';
+        $res = Http::withToken($this->token($i))->post('https://www.googleapis.com/calendar/v3/freeBusy', [
+            'timeMin' => $timeMin,
+            'timeMax' => $timeMax,
+            'items'   => [['id' => $calendarId]],
+        ]);
+        $this->guard($res, 'check calendar availability');
+
+        return $res->json("calendars.{$calendarId}.busy") ?? [];
+    }
+
+    /**
+     * @param array{title:string, description:?string, location:?string, starts_at:string,
+     *   ends_at:string, timezone:string, attendee_email:?string, want_meet_link:?bool} $data
+     */
+    private function eventBody(array $data): array
+    {
+        $body = [
+            'summary'     => $data['title'],
+            'description' => $data['description'] ?? '',
+            'location'    => $data['location'] ?? null,
+            'start'       => ['dateTime' => $data['starts_at'], 'timeZone' => $data['timezone']],
+            'end'         => ['dateTime' => $data['ends_at'], 'timeZone' => $data['timezone']],
+        ];
+        if (!empty($data['attendee_email'])) {
+            $body['attendees'] = [['email' => $data['attendee_email']]];
+        }
+        if (!empty($data['want_meet_link'])) {
+            $body['conferenceData'] = [
+                'createRequest' => ['requestId' => bin2hex(random_bytes(8)), 'conferenceSolutionKey' => ['type' => 'hangoutsMeet']],
+            ];
+        }
+        return $body;
     }
 
     private function guard(\Illuminate\Http\Client\Response $res, string $what): void

@@ -30,6 +30,7 @@ import LeadsSummaryPage from '@/pages/leads/LeadsSummaryPage'
 import LeadsReportPage from '@/pages/leads/LeadsReportPage'
 import DealsPage from '@/pages/crm/DealsPage'
 import CrmTasksPage from '@/pages/crm/TasksPage'
+import CalendarPage from '@/pages/crm/CalendarPage'
 import SegmentsPage from '@/pages/crm/SegmentsPage'
 import AttendancePage from '@/pages/hr/AttendancePage'
 import HrAttendanceAdminPage from '@/pages/hr/HrAttendanceAdminPage'
@@ -68,6 +69,8 @@ import ErrorLogsPage from '@/pages/superadmin/ErrorLogsPage'
 import SystemLogPage from '@/pages/superadmin/SystemLogPage'
 import AiTestPage from '@/pages/superadmin/AiTestPage'
 import FailedJobsPage from '@/pages/superadmin/FailedJobsPage'
+import IndustryTemplatesPage from '@/pages/superadmin/IndustryTemplatesPage'
+import AgentPlaybookTemplatesPage from '@/pages/superadmin/AgentPlaybookTemplatesPage'
 
 // Meta Ads pages
 import AdAccountPage from '@/pages/meta-ads/ad-account/AdAccountPage'
@@ -123,7 +126,6 @@ import WaAgentAutomations from '@/pages/wa-agent/automations'
 import WaAgentKnowledgeBase from '@/pages/wa-agent/knowledge-base'
 import WaAgentPipelines from '@/pages/wa-agent/pipelines'
 import WaAgentAiAgent from '@/pages/wa-agent/ai-agent'
-import WaAgentAiSchedule from '@/pages/wa-agent/ai-schedule'
 import CatalogPage from '@/pages/wa-agent/catalog/CatalogPage'
 import WidgetPage from '@/pages/wa-agent/widget/WidgetPage'
 import SetupGuidePage from '@/pages/setup-guide/SetupGuidePage'
@@ -228,7 +230,10 @@ export default function App() {
                 <Route path="knowledge-base" element={<WaAgentKnowledgeBase />} />
                 <Route path="pipelines" element={<WaAgentPipelines />} />
                 <Route path="ai-agent" element={<WaAgentAiAgent />} />
-                <Route path="ai-schedule" element={<WaAgentAiSchedule />} />
+                {/* AI Schedule now lives as a section inside each channel's own automation page
+                    (WA Chat Automation → AI Schedule tab, WA Cloud Automations, Instagram
+                    Automations) rather than a separate page — redirect old links there. */}
+                <Route path="ai-schedule" element={<Navigate to="/wa-chat/automations" replace />} />
                 <Route path="playbook" element={<WaAgentPlaybookPage />} />
                 <Route path="lead-intelligence" element={<LeadIntelligencePage />} />
                 <Route path="meta-ai" element={<MetaAiConfigPage />} />
@@ -273,6 +278,7 @@ export default function App() {
               {/* Advanced CRM */}
               <Route path="crm/deals" element={<DealsPage />} />
               <Route path="crm/tasks" element={<CrmTasksPage />} />
+              <Route path="crm/calendar" element={<CalendarPage />} />
               <Route path="crm/segments" element={<SegmentsPage />} />
 
               {/* HR */}
@@ -395,6 +401,14 @@ export default function App() {
               <Route
                 path="superadmin/failed-jobs"
                 element={<SuperAdminRoute><FailedJobsPage /></SuperAdminRoute>}
+              />
+              <Route
+                path="superadmin/industry-templates"
+                element={<SuperAdminRoute><IndustryTemplatesPage /></SuperAdminRoute>}
+              />
+              <Route
+                path="superadmin/agent-playbook-templates"
+                element={<SuperAdminRoute><AgentPlaybookTemplatesPage /></SuperAdminRoute>}
               />
             </Route>
 

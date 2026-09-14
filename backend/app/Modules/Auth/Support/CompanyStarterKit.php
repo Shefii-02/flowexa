@@ -20,10 +20,12 @@ class CompanyStarterKit
 {
     /** industry_templates key  ->  AgentPlaybookTemplate key */
     private const PLAYBOOK_TEMPLATE_MAP = [
-        'real_estate'   => 'real_estate',
-        'health_clinic' => 'services',
-        'education'     => 'lms',
-        'generic'       => 'services',
+        'real_estate'      => 'real_estate',
+        'health_clinic'    => 'health_clinic',
+        'education'        => 'lms',
+        'software_company' => 'software_company',
+        'construction'     => 'construction',
+        'generic'          => 'services',
     ];
 
     public function seed(Company $company, string $businessType = 'generic'): void

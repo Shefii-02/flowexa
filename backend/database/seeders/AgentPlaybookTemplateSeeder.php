@@ -168,6 +168,183 @@ TXT;
                 ],
             ],
 
+            // ── Health Clinic (appointments) ───────────────────────────────────
+            [
+                'key'         => 'health_clinic',
+                'name'        => 'Health Clinic',
+                'description' => 'Appointment enquiries → department/doctor match → confirmed booking. For clinics, hospitals, diagnostic centres.',
+                'icon'        => '🏥',
+                'is_active'   => true,
+                'sort_order'  => 4,
+                'default_config' => [
+                    'agent_name' => 'Clinic Assistant',
+                    'tone'       => 'calm, reassuring, professional',
+                    'languages'  => ['auto'],
+                    'system_prompt' =>
+                        "You are a clinic front-desk assistant. Help patients find the right department or doctor, "
+                        . "answer fee/insurance/availability questions using ONLY the knowledge base, and collect "
+                        . "their preferred date/time and contact details so the desk can confirm the appointment. "
+                        . "Never give medical advice or diagnose symptoms — for any health concern, say booking a "
+                        . "consultation is the right next step.",
+                    'greeting_new' =>
+                        "Hi! 👋 I can help you book an appointment. Which department or specialist do you need to see?",
+                    'greeting_returning' =>
+                        "Welcome back! 👋 Would you like to book another appointment?",
+                    'closing_message' =>
+                        "You're all set — our front desk will confirm your appointment shortly. 🏥",
+                    'fallback_transfer_message' =>
+                        "Let me check with our front desk and get back to you with the exact details.",
+                    'qualification_questions' => [
+                        ['key' => 'department',     'question' => 'Which department or specialist do you need to see?', 'type' => 'text', 'required' => true],
+                        ['key' => 'doctor',         'question' => 'Do you have a preferred doctor, or should we suggest one?', 'type' => 'text', 'required' => false],
+                        ['key' => 'preferred_time', 'question' => 'What day and time works best for you?', 'type' => 'text', 'required' => true],
+                        ['key' => 'concern',        'question' => 'Briefly, what is the visit for? (optional, helps us prepare)', 'type' => 'text', 'required' => false],
+                        ['key' => 'insurance',      'question' => 'Will you be using insurance for this visit?', 'type' => 'choice', 'options' => ['Yes', 'No', 'Not sure'], 'required' => false],
+                    ],
+                    'handoff' => [
+                        'on_complete'       => 'update_lead',
+                        'lead_stage'        => 'qualified',
+                        'lead_category'     => 'appointment_request',
+                        'assign_strategy'   => 'round_robin',
+                        'notify_roles'      => ['front_desk', 'admin'],
+                        'task_template'     => 'Confirm appointment for {contact_name} — {department} at {preferred_time}',
+                        'pipeline_key'      => null,
+                        'transfer_to_human' => true,
+                    ],
+                    'escalation' => [
+                        'buying_signal_score' => 70,
+                        'keywords'            => ['emergency', 'urgent', 'call me', 'speak to someone', 'human'],
+                        'max_unanswered'      => 3,
+                        'on_escalate_message' => "I'm connecting you with our front desk now — they'll assist you directly.",
+                    ],
+                    'payment' => [
+                        'enabled'            => false,
+                        'mode'               => 'manual',
+                        'provider'           => null,
+                        'currency'           => 'INR',
+                        'instructions'       => 'Consultation fee is collected at the clinic unless otherwise noted.',
+                        'on_confirm_message' => "Here's your payment link if you'd like to pay in advance: {payment_link}",
+                    ],
+                ],
+            ],
+
+            // ── Software / SaaS Company ─────────────────────────────────────────
+            [
+                'key'         => 'software_company',
+                'name'        => 'Software / SaaS Company',
+                'description' => 'Project enquiry → scope capture → discovery call. For dev agencies, SaaS builders, IT consultancies.',
+                'icon'        => '💻',
+                'is_active'   => true,
+                'sort_order'  => 5,
+                'default_config' => [
+                    'agent_name' => 'Project Assistant',
+                    'tone'       => 'professional, concise, technical when needed',
+                    'languages'  => ['auto'],
+                    'system_prompt' =>
+                        "You are a project assistant for a custom software / SaaS development company. Understand "
+                        . "what the prospect wants to build, answer questions about services, tech stack, pricing "
+                        . "approach and process using ONLY the knowledge base, and move them towards booking a free "
+                        . "discovery call. Never invent prices, timelines or capabilities not in the provided data — "
+                        . "say a team member will confirm specifics instead.",
+                    'greeting_new' =>
+                        "👋 Hi! We build custom software and SaaS products. What are you looking to build?",
+                    'greeting_returning' =>
+                        "Welcome back! 👋 Want to continue where we left off on your project?",
+                    'closing_message' =>
+                        "Great — I have what I need. Our team will follow up with a proposal shortly. 🚀",
+                    'fallback_transfer_message' =>
+                        "I'll connect you with our team for a detailed answer on that.",
+                    'qualification_questions' => [
+                        ['key' => 'project_type', 'question' => 'What type of project are you looking for — custom software, a SaaS product, WhatsApp/AI automation, or something else?', 'type' => 'text', 'required' => true],
+                        ['key' => 'budget_range', 'question' => "What's your approximate budget range?", 'type' => 'text', 'required' => false],
+                        ['key' => 'timeline',     'question' => "What's your ideal timeline to get started?", 'type' => 'text', 'required' => false],
+                    ],
+                    'handoff' => [
+                        'on_complete'       => 'update_lead',
+                        'lead_stage'        => 'qualified',
+                        'lead_category'     => 'project_enquiry',
+                        'assign_strategy'   => 'round_robin',
+                        'notify_roles'      => ['sales', 'admin'],
+                        'task_template'     => 'Send proposal to {contact_name} — {project_type}',
+                        'pipeline_key'      => null,
+                        'transfer_to_human' => true,
+                    ],
+                    'escalation' => [
+                        'buying_signal_score' => 75,
+                        'keywords'            => ['call me', 'speak to someone', 'human', 'agent', 'discovery call'],
+                        'max_unanswered'      => 3,
+                        'on_escalate_message' => "One moment — I'm connecting you with our team now.",
+                    ],
+                    'payment' => [
+                        'enabled'            => false,
+                        'mode'               => 'manual',
+                        'provider'           => null,
+                        'currency'           => 'USD',
+                        'instructions'       => 'Team shares a milestone-based invoice after the proposal is accepted.',
+                        'on_confirm_message' => "Here's your payment link for this milestone: {payment_link}",
+                    ],
+                ],
+            ],
+
+            // ── Construction & Infrastructure ───────────────────────────────────
+            [
+                'key'         => 'construction',
+                'name'        => 'Construction & Infrastructure',
+                'description' => 'Project enquiry → scope capture → site visit. For builders, contractors, infrastructure firms.',
+                'icon'        => '🏗️',
+                'is_active'   => true,
+                'sort_order'  => 6,
+                'default_config' => [
+                    'agent_name' => 'Project Assistant',
+                    'tone'       => 'professional, reassuring, detail-oriented',
+                    'languages'  => ['auto'],
+                    'system_prompt' =>
+                        "You are a project assistant for a construction / infrastructure company. Understand the "
+                        . "project type (residential, commercial, renovation, infrastructure), site location and "
+                        . "scale, answer pricing/timeline questions using ONLY the knowledge base, and move them "
+                        . "towards scheduling a site visit. Never invent prices, timelines or capabilities not in "
+                        . "the provided data.",
+                    'greeting_new' =>
+                        "👋 Hi! Thanks for reaching out. What kind of project are you planning — residential, commercial, renovation, or infrastructure?",
+                    'greeting_returning' =>
+                        "Welcome back! 👋 Shall we continue with your project enquiry?",
+                    'closing_message' =>
+                        "Great — I've noted your project details. Our team will contact you to schedule a site visit. 🏗️",
+                    'fallback_transfer_message' =>
+                        "Let me connect you with our team for the exact details on that.",
+                    'qualification_questions' => [
+                        ['key' => 'project_type',  'question' => 'Is this a residential, commercial, renovation, or infrastructure project?', 'type' => 'choice', 'options' => ['Residential', 'Commercial', 'Renovation', 'Infrastructure'], 'required' => true],
+                        ['key' => 'site_location', 'question' => 'Where is the site located?', 'type' => 'text', 'required' => true],
+                        ['key' => 'budget',        'question' => 'Do you have a budget range in mind?', 'type' => 'text', 'required' => false],
+                        ['key' => 'timeline',      'question' => "What's your timeline to get started?", 'type' => 'text', 'required' => false],
+                    ],
+                    'handoff' => [
+                        'on_complete'       => 'update_lead',
+                        'lead_stage'        => 'qualified',
+                        'lead_category'     => 'project_enquiry',
+                        'assign_strategy'   => 'round_robin',
+                        'notify_roles'      => ['site_engineer', 'admin'],
+                        'task_template'     => 'Schedule site visit for {contact_name} — {project_type} at {site_location}',
+                        'pipeline_key'      => null,
+                        'transfer_to_human' => true,
+                    ],
+                    'escalation' => [
+                        'buying_signal_score' => 75,
+                        'keywords'            => ['call me', 'speak to someone', 'human', 'agent', 'site visit'],
+                        'max_unanswered'      => 3,
+                        'on_escalate_message' => "I'm connecting you with our team now — they'll arrange a site visit.",
+                    ],
+                    'payment' => [
+                        'enabled'            => false,
+                        'mode'               => 'manual',
+                        'provider'           => null,
+                        'currency'           => 'INR',
+                        'instructions'       => 'Team shares a milestone-based payment schedule after the site visit.',
+                        'on_confirm_message' => "Here's your payment link for this milestone: {payment_link}",
+                    ],
+                ],
+            ],
+
             // ── Generic Services / Products ───────────────────────────────────
             [
                 'key'         => 'services',

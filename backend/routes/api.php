@@ -37,6 +37,8 @@ use App\Modules\Otp\Http\Controllers\OtpController;
 use App\Modules\PhoneNumber\Http\Controllers\PhoneNumberController;
 use App\Modules\PlanPurchase\Http\Controllers\PlanPurchaseController;
 use App\Modules\Report\Http\Controllers\ReportController;
+use App\Modules\Settings\Http\Controllers\AgentPlaybookTemplateAdminController;
+use App\Modules\Settings\Http\Controllers\IndustryTemplateAdminController;
 use App\Modules\Settings\Http\Controllers\MessageLogController;
 use App\Modules\Settings\Http\Controllers\PrebuiltTemplateController;
 use App\Modules\Settings\Http\Controllers\SettingsController;
@@ -502,6 +504,15 @@ Route::prefix('v1')->group(function () {
             Route::post('tasks/{id}/toggle', [TaskController::class, 'toggle']);
             Route::delete('tasks/{id}',      [TaskController::class, 'destroy']);
 
+            // Appointments / followups — mirrors to Google Calendar when connected (see
+            // /google integration below), but booking itself never requires that connection.
+            Route::get('calendar-events',                [\App\Modules\Calendar\Http\Controllers\CalendarController::class, 'index']);
+            Route::post('calendar-events',                [\App\Modules\Calendar\Http\Controllers\CalendarController::class, 'store']);
+            Route::patch('calendar-events/{id}',          [\App\Modules\Calendar\Http\Controllers\CalendarController::class, 'update']);
+            Route::post('calendar-events/{id}/complete',  [\App\Modules\Calendar\Http\Controllers\CalendarController::class, 'complete']);
+            Route::post('calendar-events/{id}/no-show',   [\App\Modules\Calendar\Http\Controllers\CalendarController::class, 'noShow']);
+            Route::delete('calendar-events/{id}',         [\App\Modules\Calendar\Http\Controllers\CalendarController::class, 'destroy']);
+
             Route::get('segments',           [SegmentController::class, 'index']);
             Route::post('segments',          [SegmentController::class, 'store']);
             Route::post('segments/preview',  [SegmentController::class, 'preview']);
@@ -751,6 +762,20 @@ Route::prefix('v1')->group(function () {
             Route::post('topup-packages',   [PlanPurchaseController::class, 'createTopupPackage'])->name('sa.topup.store');
             Route::put('topup-packages/{id}', [PlanPurchaseController::class, 'updateTopupPackage'])->name('sa.topup.update');
             Route::delete('topup-packages/{id}', [PlanPurchaseController::class, 'deleteTopupPackage'])->name('sa.topup.destroy');
+
+            // Business type / industry catalog templates (Catalog listing schema + qualification)
+            Route::get('industry-templates',          [IndustryTemplateAdminController::class, 'index'])->name('sa.industry-templates.index');
+            Route::get('industry-templates/{id}',     [IndustryTemplateAdminController::class, 'show'])->name('sa.industry-templates.show');
+            Route::post('industry-templates',         [IndustryTemplateAdminController::class, 'store'])->name('sa.industry-templates.store');
+            Route::put('industry-templates/{id}',     [IndustryTemplateAdminController::class, 'update'])->name('sa.industry-templates.update');
+            Route::delete('industry-templates/{id}',  [IndustryTemplateAdminController::class, 'destroy'])->name('sa.industry-templates.destroy');
+
+            // Conversational agent playbook templates (per-industry AI agent behavior)
+            Route::get('agent-playbook-templates',         [AgentPlaybookTemplateAdminController::class, 'index'])->name('sa.agent-playbook-templates.index');
+            Route::get('agent-playbook-templates/{id}',     [AgentPlaybookTemplateAdminController::class, 'show'])->name('sa.agent-playbook-templates.show');
+            Route::post('agent-playbook-templates',         [AgentPlaybookTemplateAdminController::class, 'store'])->name('sa.agent-playbook-templates.store');
+            Route::put('agent-playbook-templates/{id}',     [AgentPlaybookTemplateAdminController::class, 'update'])->name('sa.agent-playbook-templates.update');
+            Route::delete('agent-playbook-templates/{id}',  [AgentPlaybookTemplateAdminController::class, 'destroy'])->name('sa.agent-playbook-templates.destroy');
         });
 
         Route::prefix('templates')->name('templates.')
@@ -895,6 +920,7 @@ Route::prefix('v1')->group(function () {
                 Route::delete('campaigns/{id}',         [MetaCampaignController::class, 'destroy']);
                 Route::patch('campaigns/{id}/status',   [MetaCampaignController::class, 'updateStatus']);
                 Route::post('campaigns/{id}/duplicate', [MetaCampaignController::class, 'duplicate']);
+                Route::post('ad-accounts/{accountId}/campaigns/import', [MetaCampaignController::class, 'importFromMeta']);
 
                 // Ad sets
                 Route::post('campaigns/{cid}/adsets',   [MetaAdSetController::class, 'store']);
@@ -951,6 +977,21 @@ Route::prefix('v1')->group(function () {
                 Route::post('/drive/folders', [\App\Modules\Google\Http\Controllers\GoogleIntegrationController::class, 'driveCreateFolder']);
                 Route::patch('/drive/files/{fileId}',  [\App\Modules\Google\Http\Controllers\GoogleIntegrationController::class, 'driveRename']);
                 Route::delete('/drive/files/{fileId}', [\App\Modules\Google\Http\Controllers\GoogleIntegrationController::class, 'driveDelete']);
+            });
+        });
+
+        // ── Email: per-company SMTP connection for alerts / notifications / announcements ──
+        Route::prefix('/email')->middleware(['company.active', 'permission:integrations.view'])->group(function () {
+            Route::get('/status', [\App\Modules\Email\Http\Controllers\EmailIntegrationController::class, 'status']);
+            Route::get('/logs',   [\App\Modules\Email\Http\Controllers\EmailIntegrationController::class, 'logs']);
+
+            Route::middleware('permission:integrations.manage')->group(function () {
+                Route::post('/test',       [\App\Modules\Email\Http\Controllers\EmailIntegrationController::class, 'test']);
+                Route::post('/connect',    [\App\Modules\Email\Http\Controllers\EmailIntegrationController::class, 'store']);
+                Route::patch('/',          [\App\Modules\Email\Http\Controllers\EmailIntegrationController::class, 'update']);
+                Route::delete('/',         [\App\Modules\Email\Http\Controllers\EmailIntegrationController::class, 'destroy']);
+                Route::post('/send',       [\App\Modules\Email\Http\Controllers\EmailIntegrationController::class, 'send']);
+                Route::post('/broadcast',  [\App\Modules\Email\Http\Controllers\EmailIntegrationController::class, 'broadcast']);
             });
         });
 

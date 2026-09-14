@@ -585,6 +585,38 @@ class MetaAdsService
         ])['data'] ?? [];
     }
 
+    /**
+     * Pulls in campaigns that already exist on this ad account (created directly in Meta
+     * Ads Manager, not through this app) and turns each one into a local MetaCampaign row —
+     * listCampaignsFromMeta() above only ever fetched the raw data, nothing persisted it or
+     * exposed it through the API. Keyed on meta_campaign_id, so re-running this updates
+     * already-imported campaigns (status changes, etc.) rather than duplicating them.
+     *
+     * @return \Illuminate\Support\Collection<int, MetaCampaign>
+     */
+    public function importCampaignsFromMeta(MetaAdAccount $account, int $importedByUserId): \Illuminate\Support\Collection
+    {
+        $raw = $this->listCampaignsFromMeta($account);
+
+        return collect($raw)->map(function (array $c) use ($account, $importedByUserId) {
+            $campaign = MetaCampaign::where('meta_campaign_id', $c['id'])->first();
+
+            return MetaCampaign::updateOrCreate(
+                ['meta_campaign_id' => $c['id']],
+                [
+                    'company_id'         => $account->company_id,
+                    'meta_ad_account_id' => $account->id,
+                    'created_by'         => $campaign->created_by ?? $importedByUserId,
+                    'name'               => $c['name'] ?? '(untitled campaign)',
+                    'objective'          => $c['objective'] ?? null,
+                    'status'             => $c['status'] ?? $c['effective_status'] ?? 'PAUSED',
+                    'spend_cap'          => $c['spend_cap'] ?? null,
+                    'meta_response'      => $c,
+                ]
+            );
+        });
+    }
+
     // ── Get audience template ──────────────────────────────────────────────
     public function getAudienceTemplates(): \Illuminate\Database\Eloquent\Collection
     {
@@ -622,16 +654,39 @@ class MetaAdsService
             ], fn ($v) => !empty($v));
         }
 
-        // Interests + behaviours go into a single flexible_spec group (an AND across groups, OR
-        // within one). A saved set can also carry its own verbatim flexible_spec for advanced cases.
+        // Interests, behaviours, and detailed demographics all go into a single flexible_spec
+        // group (an AND across groups, OR within one). Demographics covers the other
+        // standard Meta detailed-targeting categories beyond interests/behaviors — life
+        // events, family/relationship status, education, income bracket, industry, job
+        // title, generation — stored as one flat, category-keyed object so any subset of
+        // them can be present. A saved set can also carry its own verbatim flexible_spec
+        // for advanced cases not covered by these structured fields.
         if (!empty($set['flexible_spec']) && is_array($set['flexible_spec'])) {
             $spec['flexible_spec'] = $set['flexible_spec'];
         } else {
-            $group = array_filter([
+            $demographics = array_filter(
+                collect($set['demographics'] ?? [])
+                    ->mapWithKeys(fn ($list, $category) => [$category => $this->idNamePairs($list)])
+                    ->all(),
+                fn ($v) => !empty($v)
+            );
+
+            $group = array_filter(array_merge($demographics, [
                 'interests' => $this->idNamePairs($set['interests'] ?? []),
                 'behaviors' => $this->idNamePairs($set['behaviors'] ?? []),
-            ], fn ($v) => !empty($v));
+            ]), fn ($v) => !empty($v));
             if ($group) $spec['flexible_spec'] = [$group];
+        }
+
+        // Advantage+ detailed targeting — lets Meta automatically expand delivery beyond the
+        // exact detailed targeting above (and/or beyond a lookalike/custom audience) when it
+        // predicts better results. Off unless explicitly set, since silently broadening who a
+        // campaign reaches is not something to do without the company choosing it.
+        if (!empty($set['targeting_relaxation_types']) && is_array($set['targeting_relaxation_types'])) {
+            $spec['targeting_relaxation_types'] = $set['targeting_relaxation_types'];
+        }
+        if (!empty($set['targeting_optimization'])) {
+            $spec['targeting_optimization'] = $set['targeting_optimization'];
         }
 
         $exclusions = array_filter([

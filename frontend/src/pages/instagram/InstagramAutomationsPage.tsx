@@ -4,6 +4,7 @@ import { Button, Input, Textarea, Badge, EmptyState, Modal, ConfirmModal } from 
 import { getError } from '@/utils'
 import toast from 'react-hot-toast'
 import { instagramApi, type IgAccount, type IgAutomation, type IgMedia } from './api/instagram'
+import { AiScheduleSection } from '@/components/ai/AiScheduleSection'
 
 interface RuleDraft {
   id?: number
@@ -135,6 +136,16 @@ export default function InstagramAutomationsPage() {
         )}
         {account && <Button onClick={() => setEditor(emptyRule(account.id))}>+ New automation</Button>}
       </div>
+
+      {account && (
+        <div className="card p-4">
+          <h2 className="text-sm font-semibold text-gray-900 mb-1">🕒 AI Schedule</h2>
+          <p className="text-xs text-gray-500 mb-3">
+            Always on, or only during set hours, for @{account.username}. Outside scheduled hours a task goes to a staff member instead.
+          </p>
+          <AiScheduleSection channel="instagram" only={account.id} emptyText="Schedule settings will appear once this account is connected." />
+        </div>
+      )}
 
       {loading ? (
         <p className="text-sm text-gray-400">Loading…</p>

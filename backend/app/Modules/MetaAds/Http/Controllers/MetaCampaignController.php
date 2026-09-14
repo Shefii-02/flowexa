@@ -80,4 +80,19 @@ class MetaCampaignController extends Controller
         $campaign->delete();
         return response()->json(['message' => 'Campaign deleted.']);
     }
+
+    /**
+     * Pulls in campaigns that already exist on this ad account from being created directly
+     * in Meta Ads Manager rather than through this app — index() above only ever shows
+     * campaigns already known locally, so an account connected after already running
+     * campaigns showed none of them until this ran.
+     */
+    public function importFromMeta(int $accountId): JsonResponse {
+        $account = MetaAdAccount::where('id', $accountId)->where('company_id', auth()->user()->company_id)->firstOrFail();
+        $imported = $this->svc->importCampaignsFromMeta($account, auth()->id());
+        return response()->json([
+            'message'   => "Imported {$imported->count()} campaign(s) from Meta.",
+            'campaigns' => $imported,
+        ]);
+    }
 }

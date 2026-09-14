@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { api } from '@/api/client'
+import { AiScheduleSection } from '@/components/ai/AiScheduleSection'
 
 const RULE_TYPES = [
   { value: 'welcome_message',    label: 'Welcome Message' },
@@ -164,6 +165,14 @@ export default function WaCloudAutomations() {
         <button onClick={openCreate} className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700">
           + New Rule
         </button>
+      </div>
+
+      <div className="bg-white border border-gray-200 rounded-xl p-4 mb-6">
+        <h2 className="text-sm font-semibold text-gray-900 mb-1">🕒 AI Schedule</h2>
+        <p className="text-xs text-gray-500 mb-3">
+          Always on, or only during set hours — per number. Outside scheduled hours a task goes to a staff member instead.
+        </p>
+        <AiScheduleSection channel="wa_cloud" emptyText="No WhatsApp Cloud numbers connected yet." />
       </div>
 
       {loading ? (

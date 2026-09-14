@@ -62,6 +62,7 @@ export default function CatalogPage() {
   const [listings, setListings] = useState<Listing[]>([])
   const [loading, setLoading] = useState(true)
   const [editor, setEditor] = useState<Draft | null>(null)
+  const [customRows, setCustomRows] = useState<{ key: string; value: string }[]>([])
   const [saving, setSaving] = useState(false)
   const [deleteId, setDeleteId] = useState<number | null>(null)
   const [mediaUrl, setMediaUrl] = useState('')
@@ -117,8 +118,14 @@ export default function CatalogPage() {
     if (!editor.title.trim()) { toast.error('Give the listing a title.'); return }
     setSaving(true)
     try {
+      const schemaKeys = new Set((template?.attribute_schema ?? []).map(f => f.key))
+      const attributes: Record<string, unknown> = {}
+      Object.entries(editor.attributes).forEach(([k, v]) => { if (schemaKeys.has(k)) attributes[k] = v })
+      customRows.forEach(({ key, value }) => { if (key.trim()) attributes[key.trim()] = value })
+
       const payload = {
         ...editor,
+        attributes,
         price: editor.price === '' ? null : +editor.price,
         price_unit: editor.price_unit || null,
         incentive_percentage: editor.incentive_percentage === '' ? null : +editor.incentive_percentage,
@@ -186,6 +193,24 @@ export default function CatalogPage() {
 
   const setAttr = (k: string, v: unknown) => setEditor(d => d && ({ ...d, attributes: { ...d.attributes, [k]: v } }))
 
+  // Extra key/value pairs beyond the industry's fixed attribute_schema — e.g. a one-off spec a
+  // particular listing needs that the shared schema doesn't cover. Kept as its own row list (not
+  // folded straight into `editor.attributes`) so a field can be renamed mid-edit without two rows
+  // momentarily colliding on the same key; merged back into `attributes` in save().
+  const openEditor = (d: Draft) => {
+    const schemaKeys = new Set((template?.attribute_schema ?? []).map(f => f.key))
+    setCustomRows(
+      Object.entries(d.attributes)
+        .filter(([k]) => !schemaKeys.has(k))
+        .map(([key, value]) => ({ key, value: value === undefined || value === null ? '' : String(value) }))
+    )
+    setEditor(d)
+  }
+  const addCustomRow = () => setCustomRows(rows => [...rows, { key: '', value: '' }])
+  const updateCustomRow = (i: number, patch: Partial<{ key: string; value: string }>) =>
+    setCustomRows(rows => rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r)))
+  const removeCustomRow = (i: number) => setCustomRows(rows => rows.filter((_, idx) => idx !== i))
+
   const shown = useMemo(() => listings.filter(l => l.type === listingType), [listings, listingType])
 
   return (
@@ -202,7 +227,7 @@ export default function CatalogPage() {
         )}
         <Button variant="secondary" loading={exporting} onClick={handleExport}>↓ Export</Button>
         <Button variant="secondary" onClick={() => setShowImport(true)}>↑ Import CSV</Button>
-        <Button onClick={() => setEditor(emptyDraft(listingType))}>+ Add {listingType}</Button>
+        <Button onClick={() => openEditor(emptyDraft(listingType))}>+ Add {listingType}</Button>
       </div>
 
       {template && (
@@ -217,7 +242,7 @@ export default function CatalogPage() {
       ) : shown.length === 0 ? (
         <EmptyState icon="📦" title={`No ${listingType}s yet`}
           desc="Add your catalog so the AI can answer accurately and match customer requirements"
-          action={<Button onClick={() => setEditor(emptyDraft(listingType))}>Add {listingType}</Button>} />
+          action={<Button onClick={() => openEditor(emptyDraft(listingType))}>Add {listingType}</Button>} />
       ) : (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {shown.map(l => (
@@ -236,7 +261,7 @@ export default function CatalogPage() {
               </div>
               <div className="flex-1" />
               <div className="flex gap-3 mt-3 pt-2 border-t border-gray-100 text-xs">
-                <button onClick={() => setEditor(toDraft(l))} className="text-brand-600 hover:underline">Edit</button>
+                <button onClick={() => openEditor(toDraft(l))} className="text-brand-600 hover:underline">Edit</button>
                 <button onClick={() => setDeleteId(l.id)} className="text-red-500 hover:underline ml-auto">Delete</button>
               </div>
             </div>
@@ -281,6 +306,26 @@ export default function CatalogPage() {
                 </div>
               </div>
             )}
+
+            <div className="rounded-lg border border-gray-200 p-3">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-xs font-medium text-gray-600">Custom fields</p>
+                <button type="button" onClick={addCustomRow} className="text-xs text-brand-600 hover:underline">+ Add custom field</button>
+              </div>
+              {customRows.length === 0 ? (
+                <p className="text-xs text-gray-400">Anything this listing needs that isn't already covered above — add your own name and value.</p>
+              ) : (
+                <div className="space-y-2">
+                  {customRows.map((row, i) => (
+                    <div key={i} className="flex gap-2 items-start">
+                      <Input placeholder="Field name" value={row.key} onChange={e => updateCustomRow(i, { key: e.target.value })} className="flex-1" />
+                      <Input placeholder="Value" value={row.value} onChange={e => updateCustomRow(i, { value: e.target.value })} className="flex-1" />
+                      <button type="button" onClick={() => removeCustomRow(i)} className="text-red-500 text-xs hover:underline shrink-0 mt-2.5">Remove</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
 
             <div>
               <label className="label">Photos / videos</label>

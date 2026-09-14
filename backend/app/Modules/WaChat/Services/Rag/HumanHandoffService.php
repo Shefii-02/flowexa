@@ -9,6 +9,7 @@ use App\Models\CompanyWorkingHour;
 use App\Models\Contact;
 use App\Models\CrmTask;
 use App\Models\LeadAssignmentRule;
+use App\Modules\Calendar\Services\CalendarService;
 use App\Services\LeadAssignment\LeadAssignmentEngine;
 use Illuminate\Support\Carbon;
 
@@ -32,7 +33,10 @@ use Illuminate\Support\Carbon;
  */
 class HumanHandoffService
 {
-    public function __construct(private readonly LeadAssignmentEngine $assignmentEngine) {}
+    public function __construct(
+        private readonly LeadAssignmentEngine $assignmentEngine,
+        private readonly CalendarService $calendar,
+    ) {}
 
     /**
      * @param string[] &$offeredSlots Set to the ISO-8601 datetimes shown to the customer, in
@@ -98,19 +102,23 @@ class HumanHandoffService
         $slot    = Carbon::parse($offeredSlots[$choice - 1]);
         $contact = Contact::where('company_id', $company->id)->where('phone', $phone)->first();
 
-        $this->createTaskAndNotify(
+        $task = $this->createTaskAndNotify(
             $company, $contact, $phone, $slot,
             'Scheduled callback' . ($contact?->name && $contact->name !== $phone ? " — {$contact->name}" : ''),
             "Customer asked a question our AI agent couldn't answer and requested a callback "
                 . "since it was outside office hours. Phone: {$phone}."
         );
 
+        // Puts it on the assigned staff member's calendar (and their real Google Calendar, if
+        // connected) — best-effort, so a sync hiccup never affects the confirmation the customer sees.
+        $this->calendar->bookFromTask($company, $task, 'callback');
+
         return "You're booked for {$slot->format('l, M j \a\t g:i A')} — one of our team will call you then. Thanks for your patience!";
     }
 
     private function createTaskAndNotify(
         Company $company, ?Contact $contact, string $phone, Carbon $dueAt, string $title, string $description
-    ): void {
+    ): CrmTask {
         $staff = $this->assignmentEngine->roundRobinPick($company);
 
         $task = CrmTask::create([
@@ -128,6 +136,8 @@ class HumanHandoffService
         if ($staff) {
             dispatch(new NotifyStaffAiHandoff($task->id, $staff->id));
         }
+
+        return $task;
     }
 
     /** Next $count valid office-hour start times, walking forward day by day (skips holidays/closed days). */

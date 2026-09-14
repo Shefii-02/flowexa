@@ -7,10 +7,11 @@ import {
 } from 'lucide-react'
 import { api } from '@/api/client'
 import { toast } from 'react-hot-toast'
+import { AiScheduleSection } from '@/components/ai/AiScheduleSection'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
-type AutoTab = 'welcome' | 'ooo' | 'lead' | 'agent' | 'sources' | 'flows'
+type AutoTab = 'welcome' | 'ooo' | 'lead' | 'agent' | 'schedule' | 'sources' | 'flows'
 
 type AutoRule = {
   id?: number
@@ -504,6 +505,20 @@ function AgentTab({ rules, saving, onSave }: { rules: AutoRule[]; saving: boolea
         className="flex items-center gap-2 px-4 py-2 bg-brand-500 text-white text-sm rounded-lg hover:bg-brand-600 disabled:opacity-50">
         {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Save
       </button>
+    </SectionCard>
+  )
+}
+
+// ── Tab: AI Schedule — when the AI answers vs when a human takes over ──────────
+
+function ScheduleTab() {
+  return (
+    <SectionCard title="AI Schedule" icon={<Clock size={16} />}>
+      <p className="text-xs text-gray-500">
+        Choose whether the AI agent replies around the clock or only during set hours, for each
+        WhatsApp Chat session separately. Outside scheduled hours a task goes to a staff member instead.
+      </p>
+      <AiScheduleSection channel="wa_chat" emptyText="No WhatsApp Chat sessions connected yet." />
     </SectionCard>
   )
 }
@@ -1128,6 +1143,7 @@ const TABS: { id: AutoTab; label: string; icon: React.ReactNode }[] = [
   { id: 'ooo',     label: 'Out of Office', icon: <Clock size={14} /> },
   { id: 'lead',    label: 'Lead Qualifier',icon: <Zap size={14} /> },
   { id: 'agent',   label: 'Chat Agent',    icon: <Bot size={14} /> },
+  { id: 'schedule',label: 'AI Schedule',   icon: <Clock size={14} /> },
   { id: 'sources', label: 'AI Sources',    icon: <Database size={14} /> },
   { id: 'flows',   label: 'Flow Builder',  icon: <GitBranch size={14} /> },
 ]
@@ -1179,6 +1195,7 @@ export default function WaAutomationPage() {
           {tab === 'ooo'     && <OooTab     rules={rules} saving={saving} onSave={saveRule} />}
           {tab === 'lead'    && <LeadTab    rules={rules} saving={saving} onSave={saveRule} />}
           {tab === 'agent'   && <AgentTab   rules={rules} saving={saving} onSave={saveRule} />}
+          {tab === 'schedule' && <ScheduleTab />}
           {tab === 'sources' && <SourcesTab />}
           {tab === 'flows'   && <FlowsTab />}
         </>

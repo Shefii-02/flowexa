@@ -466,7 +466,6 @@ export const Sidebar = () => {
               <SubLink to="/wa-agent/pipelines" icon="🔄" label="Pipelines" />
               {/* } */}
               <SubLink to="/wa-agent/ai-agent" icon="🤖" label="AI Agent" />
-              <SubLink to="/wa-agent/ai-schedule" icon="🕒" label="AI Schedule" />
               <SubLink to="/wa-agent/playbook" icon="📖" label="Playbook" />
               {/* {canViewAgLeads &&  */}
               <SubLink to="/wa-agent/lead-intelligence" icon="🎯" label="Lead Intelligence" />
@@ -532,6 +531,7 @@ export const Sidebar = () => {
                 <SubLink to="/labels" icon="🏷️" label="Labels" />
                 <SubLink to="/crm/deals" icon="💼" label="Deals Pipeline" />
                 <SubLink to="/crm/tasks" icon="📋" label="Tasks & Follow-ups" />
+                <SubLink to="/crm/calendar" icon="📅" label="Calendar" />
                 <SubLink to="/crm/segments" icon="🧩" label="Segments" />
                 <SubLink to="/blacklist" icon="🚫" label="Blacklist" />
               {/* </NestedAccordion> */}
@@ -637,6 +637,8 @@ export const Sidebar = () => {
             <FlatLink to="/superadmin/system-log" icon="📜" label="System Log" />
             <FlatLink to="/superadmin/ai-test" icon="🤖" label="AI Response Testing" />
             <FlatLink to="/superadmin/failed-jobs" icon="🧯" label="Failed Jobs" />
+            <FlatLink to="/superadmin/industry-templates" icon="🏭" label="Business Types / Industries" />
+            <FlatLink to="/superadmin/agent-playbook-templates" icon="🗒️" label="Agent Playbook Templates" />
             {/* } */}
             <FlatLink to="/setup-guide" icon="🧭" label="Setup Guide" />
           </>
