@@ -44,6 +44,7 @@ class DeviceController extends Controller
             ->get()
             ->map(fn (UserDevice $d) => [
                 'id'             => $d->id,
+                'device_uid'     => $d->device_uid,
                 'device_name'    => $d->device_name,
                 'platform'       => $d->platform,
                 'app_version'    => $d->app_version,

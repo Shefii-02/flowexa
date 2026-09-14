@@ -36,6 +36,9 @@ interface OtpLog {
   created_at: string
 }
 
+interface AutomationRule { id: number; is_active: boolean }
+interface ScheduleRow { schedule: { mode: 'always' | 'scheduled' } }
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 const qualityBadge = (q?: string) => {
@@ -110,15 +113,19 @@ export default function WaCloudDashboardPage() {
   const [phones, setPhones]         = useState<PhoneNumber[]>([])
   const [otpService, setOtpService] = useState<OtpService | null>(null)
   const [otpLogs, setOtpLogs]       = useState<OtpLog[]>([])
+  const [rules, setRules]           = useState<AutomationRule[]>([])
+  const [schedules, setSchedules]   = useState<ScheduleRow[]>([])
   const [loading, setLoading]       = useState(true)
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const [overviewRes, phonesRes, otpRes] = await Promise.allSettled([
+      const [overviewRes, phonesRes, otpRes, rulesRes, scheduleRes] = await Promise.allSettled([
         api.get('/analytics/overview'),
         api.get('/phone-numbers'),
         api.get('/wa-cloud/otp-service'),
+        api.get('/wa-cloud/automations'),
+        api.get('/wa-agent/ai-schedule'),
       ])
       if (overviewRes.status === 'fulfilled') setOverview(overviewRes.value.data)
       if (phonesRes.status  === 'fulfilled') {
@@ -129,6 +136,13 @@ export default function WaCloudDashboardPage() {
       if (otpRes.status === 'fulfilled') {
         const d = otpRes.value.data
         setOtpService(d.data ?? d)
+      }
+      if (rulesRes.status === 'fulfilled') {
+        const d = rulesRes.value.data
+        setRules(Array.isArray(d) ? d : Array.isArray(d?.data) ? d.data : [])
+      }
+      if (scheduleRes.status === 'fulfilled') {
+        setSchedules(scheduleRes.value.data?.wa_cloud ?? [])
       }
       try {
         const logsRes = await api.get('/wa-cloud/otp-service/logs')
@@ -144,6 +158,8 @@ export default function WaCloudDashboardPage() {
 
   const activePhones = phones.filter(p => p.is_active)
   const defaultPhone = phones.find(p => p.is_default)
+  const activeRules = rules.filter(r => r.is_active)
+  const scheduledNumbers = schedules.filter(s => s.schedule.mode === 'scheduled')
 
   if (loading) {
     return (
@@ -185,12 +201,12 @@ export default function WaCloudDashboardPage() {
         <div className="lg:col-span-2 bg-white border border-gray-200 rounded-xl overflow-hidden">
           <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
             <h2 className="text-sm font-semibold text-gray-900">📱 Connected Phone Numbers</h2>
-            <Link to="/phone-numbers" className="text-xs text-indigo-600 hover:underline">Manage →</Link>
+            <Link to="/wa-cloud/phone-numbers" className="text-xs text-indigo-600 hover:underline">Manage →</Link>
           </div>
           {phones.length === 0 ? (
             <div className="px-5 py-10 text-center text-sm text-gray-400">
               No phone numbers registered.{' '}
-              <Link to="/phone-numbers" className="text-indigo-600 hover:underline">Add one →</Link>
+              <Link to="/wa-cloud/phone-numbers" className="text-indigo-600 hover:underline">Add one →</Link>
             </div>
           ) : (
             <div className="divide-y divide-gray-50">
@@ -261,6 +277,48 @@ export default function WaCloudDashboardPage() {
         </div>
       </div>
 
+      {/* Automation & AI Agent widgets */}
+      <div>
+        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Automation &amp; AI Agent</p>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+              <h2 className="text-sm font-semibold text-gray-900">⚡ Automation Rules</h2>
+              <Link to="/wa-cloud/automations" className="text-xs text-indigo-600 hover:underline">Manage →</Link>
+            </div>
+            <div className="px-5 py-4 space-y-3">
+              <Row label="Active rules">
+                <span className="text-xs font-medium text-gray-700">{activeRules.length} of {rules.length}</span>
+              </Row>
+              {rules.length === 0 && (
+                <p className="text-xs text-gray-400">
+                  No automation rules yet.{' '}
+                  <Link to="/wa-cloud/automations" className="text-indigo-600 hover:underline">Create one →</Link>
+                </p>
+              )}
+            </div>
+          </div>
+
+          <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+              <h2 className="text-sm font-semibold text-gray-900">🕒 AI Schedule</h2>
+              <Link to="/wa-cloud/automations" className="text-xs text-indigo-600 hover:underline">Manage →</Link>
+            </div>
+            <div className="px-5 py-4 space-y-3">
+              <Row label="Always on">
+                <span className="text-xs font-medium text-gray-700">{schedules.length - scheduledNumbers.length} number(s)</span>
+              </Row>
+              <Row label="On a schedule">
+                <span className="text-xs font-medium text-gray-700">{scheduledNumbers.length} number(s)</span>
+              </Row>
+              {schedules.length === 0 && (
+                <p className="text-xs text-gray-400">No numbers connected yet.</p>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* Secondary stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard icon="👥" label="Total Contacts"      value={overview?.contacts.total ?? 0}          sub={`+${overview?.contacts.new_today ?? 0} today`} accent="teal" />
@@ -315,9 +373,13 @@ export default function WaCloudDashboardPage() {
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {[
             { label: 'API Service',   icon: '🔑', to: '/wa-cloud/api-service' },
-            { label: 'Phone Numbers', icon: '📱', to: '/phone-numbers' },
+            { label: 'Phone Numbers', icon: '📱', to: '/wa-cloud/phone-numbers' },
             { label: 'WA Templates',  icon: '📋', to: '/wa-cloud/templates' },
-            { label: 'Campaigns',     icon: '📢', to: '/campaigns' },
+            { label: 'Campaigns',     icon: '📢', to: '/wa-cloud/campaigns' },
+            { label: 'Inbox',         icon: '📥', to: '/wa-cloud/inbox' },
+            { label: 'Automations',   icon: '⚡', to: '/wa-cloud/automations' },
+            { label: 'Survey Forms',  icon: '📝', to: '/wa-cloud/survey-forms' },
+            { label: 'Settings',      icon: '⚙️', to: '/wa-cloud/settings' },
           ].map(a => (
             <Link
               key={a.to}

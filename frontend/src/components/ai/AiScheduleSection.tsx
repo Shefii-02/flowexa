@@ -2,17 +2,22 @@
 // automation page (WA Chat, WA Cloud, Instagram) so the schedule for an account/number/session
 // sits right next to that channel's other automation settings, instead of a separate page.
 // Backed by the same AiScheduleController used by all three channels: one unified GET returns
-// every account across all channels, and each channel PATCHes its own row.
+// every account across all channels, and each channel PATCHes its own row. Each day of the week
+// has its own start/end time — a day missing from `hours` means the AI is off that day.
 import { useEffect, useState } from 'react'
 import { toast } from 'react-hot-toast'
 import api from '@/api/client'
 
+export type DayHours = { start: string; end: string }
 export type Schedule = {
   mode: 'always' | 'scheduled'
-  days: number[] | null
-  start: string | null
-  end: string | null
+  hours: Record<string, DayHours> | null
   timezone: string | null
+  // Legacy shape some rows may still carry (one shared range across a set of days) — read-only
+  // here, folded into `hours` the moment the editor opens so old configs still show correctly.
+  days?: number[] | null
+  start?: string | null
+  end?: string | null
 }
 
 type WaRow = { session_id: string; label: string; has_own_playbook: boolean; schedule: Schedule }
@@ -27,63 +32,91 @@ type ScheduleData = {
 export type ChannelKind = 'wa_chat' | 'wa_cloud' | 'instagram'
 
 const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-export const DEFAULT_SCHEDULE: Schedule = { mode: 'always', days: [1, 2, 3, 4, 5], start: '09:00', end: '18:00', timezone: 'Asia/Kolkata' }
 
-export function ScheduleEditor({ schedule, onChange }: { schedule: Schedule; onChange: (s: Schedule) => void }) {
-  const toggleDay = (d: number) => {
-    const days = schedule.days ?? []
-    onChange({ ...schedule, days: days.includes(d) ? days.filter((x) => x !== d) : [...days, d].sort() })
+type DayRow = { active: boolean; start: string; end: string }
+type WeekRows = DayRow[] // index 0..6, Sunday..Saturday
+
+const emptyWeek = (): WeekRows => Array.from({ length: 7 }, () => ({ active: false, start: '09:00', end: '18:00' }))
+
+/** Folds either shape (new per-day `hours`, or the legacy shared-range `days`/`start`/`end`) into 7 editable rows. */
+function scheduleToRows(schedule: Schedule): WeekRows {
+  const rows = emptyWeek()
+  if (schedule.hours && Object.keys(schedule.hours).length > 0) {
+    Object.entries(schedule.hours).forEach(([day, h]) => {
+      const i = Number(day)
+      if (i >= 0 && i <= 6 && h?.start && h?.end) rows[i] = { active: true, start: h.start, end: h.end }
+    })
+  } else if (schedule.days?.length && schedule.start && schedule.end) {
+    schedule.days.forEach(i => { if (i >= 0 && i <= 6) rows[i] = { active: true, start: schedule.start!, end: schedule.end! } })
+  }
+  return rows
+}
+
+function rowsToHours(rows: WeekRows): Record<string, DayHours> {
+  const out: Record<string, DayHours> = {}
+  rows.forEach((r, i) => { if (r.active) out[String(i)] = { start: r.start, end: r.end } })
+  return out
+}
+
+export function ScheduleEditor({ mode, rows, timezone, onChange }: {
+  mode: 'always' | 'scheduled'
+  rows: WeekRows
+  timezone: string | null
+  onChange: (v: { mode: 'always' | 'scheduled'; rows: WeekRows; timezone: string | null }) => void
+}) {
+  const setDay = (i: number, patch: Partial<DayRow>) => {
+    const next = rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r))
+    onChange({ mode, rows: next, timezone })
   }
 
   return (
     <div className="space-y-3">
       <div className="flex gap-2">
-        <button type="button" onClick={() => onChange({ ...schedule, mode: 'always' })}
+        <button type="button" onClick={() => onChange({ mode: 'always', rows, timezone })}
           className={`flex-1 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
-            schedule.mode === 'always' ? 'bg-green-50 border-green-300 text-green-700' : 'border-gray-200 text-gray-500 hover:border-gray-300'
+            mode === 'always' ? 'bg-green-50 border-green-300 text-green-700' : 'border-gray-200 text-gray-500 hover:border-gray-300'
           }`}>
           ✅ Always On
         </button>
         <button type="button"
-          onClick={() => onChange({ ...DEFAULT_SCHEDULE, ...schedule, mode: 'scheduled', days: schedule.days ?? DEFAULT_SCHEDULE.days, start: schedule.start ?? DEFAULT_SCHEDULE.start, end: schedule.end ?? DEFAULT_SCHEDULE.end, timezone: schedule.timezone ?? DEFAULT_SCHEDULE.timezone })}
+          onClick={() => onChange({ mode: 'scheduled', rows: rows.some(r => r.active) ? rows : rows.map((r, i) => ({ ...r, active: i >= 1 && i <= 5 })), timezone: timezone ?? 'Asia/Kolkata' })}
           className={`flex-1 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
-            schedule.mode === 'scheduled' ? 'bg-indigo-50 border-indigo-300 text-indigo-700' : 'border-gray-200 text-gray-500 hover:border-gray-300'
+            mode === 'scheduled' ? 'bg-indigo-50 border-indigo-300 text-indigo-700' : 'border-gray-200 text-gray-500 hover:border-gray-300'
           }`}>
           🕒 Scheduled Hours
         </button>
       </div>
 
-      {schedule.mode === 'scheduled' && (
+      {mode === 'scheduled' && (
         <div className="space-y-2 bg-gray-50 border border-gray-200 rounded-lg p-3">
-          <div>
-            <label className="text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-1 block">Active days</label>
-            <div className="flex gap-1">
-              {DAY_LABELS.map((d, i) => (
-                <button key={i} type="button" onClick={() => toggleDay(i)}
-                  className={`w-9 h-8 rounded text-[11px] font-medium border transition-colors ${
-                    (schedule.days ?? []).includes(i) ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white border-gray-200 text-gray-500'
+          <label className="text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-1 block">Hours per day</label>
+          <div className="space-y-1.5">
+            {DAY_LABELS.map((label, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <button type="button" onClick={() => setDay(i, { active: !rows[i].active })}
+                  className={`w-11 h-8 shrink-0 rounded text-[11px] font-medium border transition-colors ${
+                    rows[i].active ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white border-gray-200 text-gray-400'
                   }`}>
-                  {d}
+                  {label}
                 </button>
-              ))}
-            </div>
+                {rows[i].active ? (
+                  <>
+                    <input type="time" value={rows[i].start} onChange={e => setDay(i, { start: e.target.value })}
+                      className="flex-1 px-2 py-1.5 text-sm border border-gray-200 rounded-lg" />
+                    <span className="text-gray-300 text-xs">to</span>
+                    <input type="time" value={rows[i].end} onChange={e => setDay(i, { end: e.target.value })}
+                      className="flex-1 px-2 py-1.5 text-sm border border-gray-200 rounded-lg" />
+                  </>
+                ) : (
+                  <span className="text-xs text-gray-400">Off</span>
+                )}
+              </div>
+            ))}
           </div>
-          <div className="flex gap-2 items-end">
-            <div className="flex-1">
-              <label className="text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-1 block">From</label>
-              <input type="time" value={schedule.start ?? '09:00'} onChange={(e) => onChange({ ...schedule, start: e.target.value })}
-                className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded-lg" />
-            </div>
-            <div className="flex-1">
-              <label className="text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-1 block">To</label>
-              <input type="time" value={schedule.end ?? '18:00'} onChange={(e) => onChange({ ...schedule, end: e.target.value })}
-                className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded-lg" />
-            </div>
-            <div className="flex-1">
-              <label className="text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-1 block">Timezone</label>
-              <input type="text" value={schedule.timezone ?? 'Asia/Kolkata'} onChange={(e) => onChange({ ...schedule, timezone: e.target.value })}
-                placeholder="Asia/Kolkata" className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded-lg" />
-            </div>
+          <div>
+            <label className="text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-1 block">Timezone</label>
+            <input type="text" value={timezone ?? 'Asia/Kolkata'} onChange={(e) => onChange({ mode, rows, timezone: e.target.value })}
+              placeholder="Asia/Kolkata" className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded-lg" />
           </div>
           <p className="text-[11px] text-gray-400">
             Outside these hours, the AI won't reply — instead the customer gets a quick "we're
@@ -95,23 +128,33 @@ export function ScheduleEditor({ schedule, onChange }: { schedule: Schedule; onC
   )
 }
 
-function ScheduleAccountRow({ label, schedule, saving, onSave }: { label: string; schedule: Schedule; saving: boolean; onSave: (s: Schedule) => void }) {
-  const [draft, setDraft] = useState<Schedule>(schedule)
-  useEffect(() => setDraft(schedule), [schedule]) // eslint-disable-line react-hooks/exhaustive-deps
-  const dirty = JSON.stringify(draft) !== JSON.stringify(schedule)
+function ScheduleAccountRow({ label, schedule, saving, onSave }: { label: string; schedule: Schedule; saving: boolean; onSave: (s: { mode: 'always' | 'scheduled'; hours: Record<string, DayHours>; timezone: string | null }) => void }) {
+  const [mode, setMode] = useState<'always' | 'scheduled'>(schedule.mode)
+  const [rows, setRows] = useState<WeekRows>(() => scheduleToRows(schedule))
+  const [timezone, setTimezone] = useState(schedule.timezone)
+
+  useEffect(() => {
+    setMode(schedule.mode); setRows(scheduleToRows(schedule)); setTimezone(schedule.timezone)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [schedule.mode, JSON.stringify(schedule.hours), schedule.timezone])
+
+  const dirty = mode !== schedule.mode
+    || JSON.stringify(rowsToHours(rows)) !== JSON.stringify(schedule.hours ?? {})
+    || timezone !== schedule.timezone
 
   return (
     <div className="bg-white border border-gray-200 rounded-xl p-4 space-y-3">
       <div className="flex items-center justify-between">
         <span className="font-medium text-sm text-gray-900">{label}</span>
         {dirty && (
-          <button onClick={() => onSave(draft)} disabled={saving}
+          <button onClick={() => onSave({ mode, hours: rowsToHours(rows), timezone })} disabled={saving}
             className="px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-xs font-medium hover:bg-indigo-700 disabled:opacity-50">
             {saving ? 'Saving…' : 'Save'}
           </button>
         )}
       </div>
-      <ScheduleEditor schedule={draft} onChange={setDraft} />
+      <ScheduleEditor mode={mode} rows={rows} timezone={timezone}
+        onChange={(v) => { setMode(v.mode); setRows(v.rows); setTimezone(v.timezone) }} />
     </div>
   )
 }
@@ -136,25 +179,23 @@ export function AiScheduleSection({ channel, only, emptyText }: { channel: Chann
   }
   useEffect(() => { void load() }, [])
 
-  const saveWa = async (sessionId: string, schedule: Schedule) => {
+  const saveWa = async (sessionId: string, s: { mode: string; hours: Record<string, DayHours>; timezone: string | null }) => {
     setSavingKey(sessionId)
     try {
       await api.patch(`/wa-agent/ai-schedule/wa/${encodeURIComponent(sessionId)}`, {
-        ai_schedule_mode: schedule.mode, ai_schedule_days: schedule.days,
-        ai_schedule_start: schedule.start, ai_schedule_end: schedule.end, ai_schedule_timezone: schedule.timezone,
+        ai_schedule_mode: s.mode, ai_schedule_hours: s.hours, ai_schedule_timezone: s.timezone,
       })
       toast.success('Saved.'); void load()
     } catch { toast.error('Failed to save.') }
     finally { setSavingKey(null) }
   }
 
-  const saveInstagram = async (accountId: number, schedule: Schedule) => {
+  const saveInstagram = async (accountId: number, s: { mode: string; hours: Record<string, DayHours>; timezone: string | null }) => {
     const key = `ig-${accountId}`
     setSavingKey(key)
     try {
       await api.patch(`/wa-agent/ai-schedule/instagram/${accountId}`, {
-        ai_schedule_mode: schedule.mode, ai_schedule_days: schedule.days,
-        ai_schedule_start: schedule.start, ai_schedule_end: schedule.end, ai_schedule_timezone: schedule.timezone,
+        ai_schedule_mode: s.mode, ai_schedule_hours: s.hours, ai_schedule_timezone: s.timezone,
       })
       toast.success('Saved.'); void load()
     } catch { toast.error('Failed to save.') }

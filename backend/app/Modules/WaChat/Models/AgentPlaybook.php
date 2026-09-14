@@ -19,6 +19,7 @@ class AgentPlaybook extends Model
         'greeting_new', 'greeting_returning', 'closing_message', 'fallback_transfer_message',
         'qualification_questions', 'handoff', 'escalation', 'payment', 'meta',
         'ai_schedule_mode', 'ai_schedule_days', 'ai_schedule_start', 'ai_schedule_end', 'ai_schedule_timezone',
+        'ai_schedule_hours',
     ];
 
     protected $casts = [
@@ -30,6 +31,7 @@ class AgentPlaybook extends Model
         'payment'                 => 'array',
         'meta'                    => 'array',
         'ai_schedule_days'        => 'array',
+        'ai_schedule_hours'       => 'array',
     ];
 
     public function company(): BelongsTo

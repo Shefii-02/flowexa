@@ -55,6 +55,7 @@ class ConversationalAgentService
             $playbook->ai_schedule_start,
             $playbook->ai_schedule_end,
             $playbook->ai_schedule_timezone,
+            $playbook->ai_schedule_hours,
         )) {
             return $this->handleOutsideSchedule($in, $playbook);
         }

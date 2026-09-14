@@ -22,6 +22,7 @@ class InstagramAccount extends Model
         'mirror_customer_style' => 'boolean',
         'is_active'             => 'boolean',
         'ai_schedule_days'      => 'array',
+        'ai_schedule_hours'     => 'array',
         'token_expires_at'      => 'datetime',
         'last_synced_at'        => 'datetime',
         'created_at'            => 'datetime',

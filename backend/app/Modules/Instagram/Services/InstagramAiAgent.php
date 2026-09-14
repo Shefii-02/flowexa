@@ -53,6 +53,7 @@ class InstagramAiAgent
             $account->ai_schedule_start,
             $account->ai_schedule_end,
             $account->ai_schedule_timezone,
+            $account->ai_schedule_hours,
         );
     }
 

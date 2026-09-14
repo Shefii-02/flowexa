@@ -26,11 +26,19 @@ class AiScheduleController extends Controller
 {
     private const SCHEDULE_RULES = [
         'ai_schedule_mode'     => 'required|string|in:always,scheduled',
+        // Legacy shape — kept for old clients/rows; superseded by ai_schedule_hours whenever present.
         'ai_schedule_days'     => 'nullable|array',
         'ai_schedule_days.*'   => 'integer|min:0|max:6',
         'ai_schedule_start'    => 'nullable|date_format:H:i',
         'ai_schedule_end'      => 'nullable|date_format:H:i',
         'ai_schedule_timezone' => 'nullable|string|max:64',
+        // Per-day hours: { "0": {"start":"09:00","end":"18:00"}, ... } keyed 0=Sunday..6=Saturday.
+        // A day missing from the map means the AI is off that day. `sometimes` (not `nullable`)
+        // so sending an empty object `{}` — every day switched off — is distinguishable from not
+        // sending the field at all.
+        'ai_schedule_hours'                => 'sometimes|array',
+        'ai_schedule_hours.*.start'        => 'required|date_format:H:i',
+        'ai_schedule_hours.*.end'          => 'required|date_format:H:i',
     ];
 
     public function index(): JsonResponse
@@ -62,6 +70,7 @@ class AiScheduleController extends Controller
                 'start'    => $a->ai_schedule_start,
                 'end'      => $a->ai_schedule_end,
                 'timezone' => $a->ai_schedule_timezone,
+                'hours'    => $a->ai_schedule_hours,
             ],
         ])->values();
 
@@ -75,6 +84,7 @@ class AiScheduleController extends Controller
                 'start'    => $default->ai_schedule_start,
                 'end'      => $default->ai_schedule_end,
                 'timezone' => $default->ai_schedule_timezone,
+                'hours'    => $default->ai_schedule_hours,
             ] : null,
         ]);
     }
@@ -91,6 +101,7 @@ class AiScheduleController extends Controller
                 'start'    => $playbook?->ai_schedule_start,
                 'end'      => $playbook?->ai_schedule_end,
                 'timezone' => $playbook?->ai_schedule_timezone,
+                'hours'    => $playbook?->ai_schedule_hours,
             ],
         ];
     }
