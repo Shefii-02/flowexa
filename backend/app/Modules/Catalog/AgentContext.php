@@ -41,6 +41,7 @@ class AgentContext
     public function catalog(int $companyId, string $type): string
     {
         $rows = Listing::where('company_id', $companyId)->where('type', $type)->active()
+            ->with('customFields:id,listing_id,key,value')
             ->orderBy('sort_order')->limit(60)->get();
 
         if ($rows->isEmpty()) {
@@ -51,7 +52,10 @@ class AgentContext
         foreach ($rows as $l) {
             $attrs = collect($l->attributes ?? [])
                 ->reject(fn ($v, $k) => str_starts_with($k, 'instagram_'))
-                ->map(fn ($v, $k) => "$k=" . (is_bool($v) ? ($v ? 'yes' : 'no') : $v))->implode(', ');
+                ->map(fn ($v, $k) => "$k=" . (is_bool($v) ? ($v ? 'yes' : 'no') : $v));
+            // Extra ad-hoc fields a company added beyond the industry schema — same visibility
+            // to the agent as the schema-driven attributes above, just sourced from their own table.
+            $attrs = $attrs->merge($l->customFields->map(fn ($f) => "{$f->key}={$f->value}"))->implode(', ');
             $line = "• {$l->summaryLine()}"
                 . ($l->description ? ' — ' . mb_substr($l->description, 0, 180) : '')
                 . ($attrs ? " [{$attrs}]" : '') . "\n";

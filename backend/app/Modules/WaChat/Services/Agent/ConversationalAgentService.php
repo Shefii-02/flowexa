@@ -30,6 +30,7 @@ class ConversationalAgentService
         private readonly EvidenceCollector   $evidence,
         private readonly PlannerAgent        $subQueryPlanner,
         private readonly LeadAssignmentEngine $assignmentEngine,
+        private readonly FollowupTaskScheduler $followupScheduler,
     ) {}
 
     /** @return bool  true if the agent handled the message (caller should stop). */
@@ -173,6 +174,12 @@ class ConversationalAgentService
         $this->sendAndRecord($gateway, $in, $session, $plan['reply'], 'assistant', $in->text);
 
         // ── Outcomes ────────────────────────────────────────────────────────
+        // Customer explicitly asked to be contacted later, rather than right now — schedule it
+        // regardless of what else happens this turn (human handoff / qualification below).
+        if ($plan['followup']['requested']) {
+            $this->scheduleRequestedFollowup($in, $plan['followup']);
+        }
+
         if ($plan['wants_human']) {
             return $this->escalate($gateway, $in, $session, $playbook, 'requested', sendMessage: false);
         }
@@ -315,11 +322,11 @@ class ConversationalAgentService
             ->latest()
             ->first();
 
-        if ($lead) {
-            $summary = collect($session->collected_slots ?? [])
-                ->map(fn($v, $k) => "• {$k}: {$v}")
-                ->implode("\n");
+        $summary = collect($session->collected_slots ?? [])
+            ->map(fn($v, $k) => "• {$k}: {$v}")
+            ->implode("\n");
 
+        if ($lead) {
             $lead->update([
                 'stage'    => $handoff['lead_stage'] ?? $lead->stage ?? 'qualified',
                 'category' => $handoff['lead_category'] ?? $lead->category,
@@ -334,10 +341,36 @@ class ConversationalAgentService
         AnalyzeConversation::dispatch($in->companyId, $contact->id, $in->phone, $lastUser, $in->sessionRef)
             ->onQueue('analysis');
 
-        $this->log($in, $playbook, 'qualification_complete', ['slots' => $session->collected_slots]);
+        // Safety net: qualification finished but nothing here actually confirms a booking/sale —
+        // put a default check-in on a staff member's plate a week out so a qualified lead never
+        // just goes quiet. Staff can complete it early the moment the deal actually closes.
+        $company = Company::find($in->companyId);
+        if ($company) {
+            $this->followupScheduler->schedule(
+                $company, $contact,
+                'Follow up — AI-qualified lead' . ($contact->name && $contact->name !== $contact->phone ? " ({$contact->name})" : ''),
+                "AI agent finished qualifying this lead but the conversation didn't end in a confirmed booking/sale:\n{$summary}",
+            );
+        }
 
-        // Phase 3 will add: staff assignment, notifications, task creation,
-        // payment link. For now the lead + score + closing message are live.
+        $this->log($in, $playbook, 'qualification_complete', ['slots' => $session->collected_slots]);
+    }
+
+    /** Customer explicitly asked the AI to be contacted later — schedule it for the day they named (or a week out if unspecified). */
+    private function scheduleRequestedFollowup(AgentInbound $in, array $followup): void
+    {
+        $company = Company::find($in->companyId);
+        $contact = Contact::where('company_id', $in->companyId)->where('phone', $in->phone)->first();
+        if (!$company || !$contact) {
+            return;
+        }
+
+        $this->followupScheduler->schedule(
+            $company, $contact,
+            'Follow up — customer asked to be contacted later',
+            $followup['note'] ?: 'Customer asked to be contacted later during a WhatsApp conversation with the AI agent.',
+            $followup['day'] ?? null,
+        );
     }
 
     // ── Escalation ──────────────────────────────────────────────────────────

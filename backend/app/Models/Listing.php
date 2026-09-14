@@ -6,12 +6,15 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 /**
  * A catalog item the AI agent answers questions about and matches leads against — a property, a
  * clinic service, a course, or a generic product. Vertical-specific fields live in `attributes`,
- * keyed per config/industry_templates.php.
+ * keyed per config/industry_templates.php. One-off extra fields a company adds beyond that fixed
+ * schema live in their own `customFields` table instead, so ad-hoc info never gets mixed into the
+ * schema-driven attributes the matcher and CSV import/export rely on.
  */
 class Listing extends Model
 {
@@ -32,6 +35,7 @@ class Listing extends Model
 
     public function company(): BelongsTo { return $this->belongsTo(Company::class); }
     public function creator(): BelongsTo { return $this->belongsTo(User::class, 'created_by'); }
+    public function customFields(): HasMany { return $this->hasMany(ListingCustomField::class)->orderBy('sort_order'); }
 
     public function scopeActive(Builder $q): Builder
     {

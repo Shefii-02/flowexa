@@ -29,6 +29,7 @@ export interface Listing {
   currency: string
   location: string | null
   attributes: Record<string, unknown> | null
+  custom_fields?: { id?: number; key: string; value: string | null }[]
   media: { url: string; type?: string }[] | null
   source: string
   sort_order: number

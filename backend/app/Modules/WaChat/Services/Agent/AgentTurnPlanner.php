@@ -24,7 +24,8 @@ class AgentTurnPlanner
      *   style: ?string,
      *   extracted_slots: array<string,string>,
      *   wants_human: bool,
-     *   qualification_done: bool
+     *   qualification_done: bool,
+     *   followup: array{requested: bool, day: ?string, note: ?string}
      * }|null
      */
     public function plan(
@@ -53,8 +54,11 @@ class AgentTurnPlanner
                 'extracted_slots'    => [],
                 'wants_human'        => false,
                 'qualification_done' => false,
+                'followup'           => ['requested' => false, 'day' => null, 'note' => null],
             ];
         }
+
+        $followup = is_array($parsed['followup'] ?? null) ? $parsed['followup'] : [];
 
         return [
             'reply'              => trim((string) $parsed['reply']),
@@ -63,6 +67,11 @@ class AgentTurnPlanner
             'extracted_slots'    => is_array($parsed['extracted_slots'] ?? null) ? $parsed['extracted_slots'] : [],
             'wants_human'        => (bool) ($parsed['wants_human'] ?? false),
             'qualification_done' => (bool) ($parsed['qualification_done'] ?? false),
+            'followup'           => [
+                'requested' => (bool) ($followup['requested'] ?? false),
+                'day'       => $followup['day'] ?? null,
+                'note'      => $followup['note'] ?? null,
+            ],
         ];
     }
 
@@ -109,6 +118,14 @@ RULES
   "reply" a short closing/confirmation message.
 - If the customer clearly asks for a human / phone call / to speak to an agent,
   set "wants_human": true.
+- If the customer asks to be contacted/called/followed up LATER instead of now
+  ("call me next week", "remind me Monday", "let me think and get back to you",
+  "I'm busy, try me tomorrow"), set followup.requested=true, followup.day to the
+  day they mentioned (one of: today, tomorrow, monday, tuesday, wednesday,
+  thursday, friday, saturday, sunday — or null if they didn't name a specific
+  day), and followup.note to a short summary of what they're interested in, in
+  English, for the staff member who will call them. Otherwise leave
+  followup.requested as false.
 - Detect the customer's language and writing style (native script, romanised such
   as Manglish/Hinglish, or code-mixed) and write "reply" in that SAME language
   and style. Keep it short and WhatsApp-friendly.
@@ -123,7 +140,8 @@ RESPOND WITH ONLY THIS JSON (no markdown fences, no extra text):
   "style": "native | romanised | mixed | english",
   "extracted_slots": { "field_key": "value" },
   "wants_human": false,
-  "qualification_done": false
+  "qualification_done": false,
+  "followup": { "requested": false, "day": null, "note": null }
 }
 TXT;
 

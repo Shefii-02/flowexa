@@ -253,7 +253,7 @@ export const Sidebar = () => {
 
   // ── Accordion state ───────────────────────────────────────────────────────────
   // Only ONE top-level accordion open at a time
-  type AccordionId = 'wa-chat' | 'wa-cloud' | 'wa-agent' | 'meta-ads' | 'instagram' | null
+  type AccordionId = 'wa-chat' | 'wa-cloud' | 'wa-agent' | 'meta-ads' | 'instagram' | 'integrations' | null
 
   const detectOpen = (path: string): AccordionId => {
     if (path.startsWith('/wa-chat')) return 'wa-chat'
@@ -261,6 +261,7 @@ export const Sidebar = () => {
     if (path.startsWith('/wa-agent')) return 'wa-agent'
     if (path.startsWith('/meta-ads')) return 'meta-ads'
     if (path.startsWith('/instagram')) return 'instagram'
+    if (path.startsWith('/settings/integrations')) return 'integrations'
     return null
   }
 
@@ -611,7 +612,18 @@ export const Sidebar = () => {
             {/* ── SYSTEM ── */}
             <SectionHeader label="System" />
             <FlatLink to="/settings/index" icon="⚙️" label="Settings" />
-            <FlatLink to="/settings/integrations" icon="🔌" label="Integrations" />
+            <Accordion
+              icon="🔌"
+              label="Integrations"
+              basePaths={['/settings/integrations']}
+              isOpen={openAccordion === 'integrations'}
+              onToggle={() => toggle('integrations')}
+            >
+              <SubLink to="/settings/integrations/google-sheets" icon="📊" label="Google Sheets" />
+              <SubLink to="/settings/integrations/drive" icon="🗂️" label="Drive" />
+              <SubLink to="/settings/integrations/calendar" icon="📅" label="Calendar" />
+              <SubLink to="/settings/integrations/email" icon="✉️" label="Email" />
+            </Accordion>
             {/* } */}
             <FlatLink to="/wallet" icon="👛" label="Wallet" />
             <FlatLink to="/plan-purchase" icon="💳" label="Plans & Billing" />

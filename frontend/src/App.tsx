@@ -49,7 +49,10 @@ import AiHandoffOfferPopup from '@/components/leads/AiHandoffOfferPopup'
 import WalletPage from '@/pages/wallet/WalletPage'
 import AnalyticsPage from '@/pages/analytics/AnalyticsPage'
 import SettingsPage from '@/pages/settings/SettingsPage'
-import IntegrationsPage from '@/pages/settings/IntegrationsPage'
+import GoogleSheetsPage from '@/pages/settings/integrations/GoogleSheetsPage'
+import DrivePage from '@/pages/settings/integrations/DrivePage'
+import CalendarIntegrationPage from '@/pages/settings/integrations/CalendarIntegrationPage'
+import EmailIntegrationPage from '@/pages/settings/integrations/EmailPage'
 import OtpPage from '@/pages/otp/OtpPage'
 import MessageLogsPage from '@/pages/message-logs/MessageLogsPage'
 
@@ -264,7 +267,11 @@ export default function App() {
               <Route path="wallet" element={<WalletPage />} />
               <Route path="analytics" element={<AnalyticsPage />} />
               <Route path="settings/index" element={<SettingsPage />} />
-              <Route path="settings/integrations" element={<IntegrationsPage />} />
+              <Route path="settings/integrations" element={<Navigate to="/settings/integrations/google-sheets" replace />} />
+              <Route path="settings/integrations/google-sheets" element={<GoogleSheetsPage />} />
+              <Route path="settings/integrations/drive" element={<DrivePage />} />
+              <Route path="settings/integrations/calendar" element={<CalendarIntegrationPage />} />
+              <Route path="settings/integrations/email" element={<EmailIntegrationPage />} />
               <Route path="settings/api-keys" element={<Navigate to="/wa-agent/settings" replace />} />
 
               {/* V2 routes */}

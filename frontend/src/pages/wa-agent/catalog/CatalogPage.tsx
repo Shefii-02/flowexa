@@ -118,14 +118,13 @@ export default function CatalogPage() {
     if (!editor.title.trim()) { toast.error('Give the listing a title.'); return }
     setSaving(true)
     try {
-      const schemaKeys = new Set((template?.attribute_schema ?? []).map(f => f.key))
-      const attributes: Record<string, unknown> = {}
-      Object.entries(editor.attributes).forEach(([k, v]) => { if (schemaKeys.has(k)) attributes[k] = v })
-      customRows.forEach(({ key, value }) => { if (key.trim()) attributes[key.trim()] = value })
+      const custom_fields = customRows
+        .map(({ key, value }) => ({ key: key.trim(), value }))
+        .filter(f => f.key)
 
       const payload = {
         ...editor,
-        attributes,
+        custom_fields,
         price: editor.price === '' ? null : +editor.price,
         price_unit: editor.price_unit || null,
         incentive_percentage: editor.incentive_percentage === '' ? null : +editor.incentive_percentage,
@@ -194,16 +193,11 @@ export default function CatalogPage() {
   const setAttr = (k: string, v: unknown) => setEditor(d => d && ({ ...d, attributes: { ...d.attributes, [k]: v } }))
 
   // Extra key/value pairs beyond the industry's fixed attribute_schema — e.g. a one-off spec a
-  // particular listing needs that the shared schema doesn't cover. Kept as its own row list (not
-  // folded straight into `editor.attributes`) so a field can be renamed mid-edit without two rows
-  // momentarily colliding on the same key; merged back into `attributes` in save().
-  const openEditor = (d: Draft) => {
-    const schemaKeys = new Set((template?.attribute_schema ?? []).map(f => f.key))
-    setCustomRows(
-      Object.entries(d.attributes)
-        .filter(([k]) => !schemaKeys.has(k))
-        .map(([key, value]) => ({ key, value: value === undefined || value === null ? '' : String(value) }))
-    )
+  // particular listing needs that the shared schema doesn't cover. Stored in their own table
+  // (listing_custom_fields) rather than inside `attributes`, so kept as a separate row list here
+  // too and sent to the API as its own `custom_fields` field.
+  const openEditor = (d: Draft, source?: Listing) => {
+    setCustomRows((source?.custom_fields ?? []).map(f => ({ key: f.key, value: f.value ?? '' })))
     setEditor(d)
   }
   const addCustomRow = () => setCustomRows(rows => [...rows, { key: '', value: '' }])
@@ -258,10 +252,13 @@ export default function CatalogPage() {
                 {Object.entries(l.attributes ?? {}).slice(0, 4).map(([k, v]) => (
                   <span key={k} className="text-[11px] bg-gray-100 text-gray-500 rounded px-1.5 py-0.5">{k}: {String(v)}</span>
                 ))}
+                {(l.custom_fields ?? []).slice(0, 4).map(f => (
+                  <span key={f.key} className="text-[11px] bg-brand-50 text-brand-600 rounded px-1.5 py-0.5">{f.key}: {f.value}</span>
+                ))}
               </div>
               <div className="flex-1" />
               <div className="flex gap-3 mt-3 pt-2 border-t border-gray-100 text-xs">
-                <button onClick={() => openEditor(toDraft(l))} className="text-brand-600 hover:underline">Edit</button>
+                <button onClick={() => openEditor(toDraft(l), l)} className="text-brand-600 hover:underline">Edit</button>
                 <button onClick={() => setDeleteId(l.id)} className="text-red-500 hover:underline ml-auto">Delete</button>
               </div>
             </div>

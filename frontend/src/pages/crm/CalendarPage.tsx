@@ -172,7 +172,7 @@ export default function CalendarPage() {
       {!googleConnected && (
         <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 text-xs text-amber-800">
           Google Calendar isn't connected — bookings are still saved and tracked here, but won't show up on staff's Google Calendar.{' '}
-          <a href="/settings/integrations" className="underline font-medium">Connect Google</a> to enable that.
+          <a href="/settings/integrations/calendar" className="underline font-medium">Connect Google</a> to enable that.
         </div>
       )}
 

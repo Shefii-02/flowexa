@@ -4,6 +4,7 @@ namespace App\Modules\Catalog\Http\Controllers;
 
 use App\Http\Controllers\Controller;
 use App\Models\Listing;
+use App\Models\ListingCustomField;
 use App\Modules\Catalog\IndustryTemplates;
 use App\Modules\Catalog\ListingMatcher;
 use Illuminate\Http\{JsonResponse, Request};
@@ -39,6 +40,7 @@ class ListingController extends Controller
             ->when($request->type, fn ($q, $t) => $q->where('type', $t))
             ->when($request->status, fn ($q, $s) => $q->where('status', $s))
             ->when($request->q, fn ($q, $s) => $q->where('title', 'like', "%{$s}%"))
+            ->with('customFields:id,listing_id,key,value')
             ->orderBy('sort_order')->orderByDesc('updated_at')
             ->paginate(50);
         return response()->json($listings);
@@ -47,23 +49,70 @@ class ListingController extends Controller
     public function store(Request $request): JsonResponse
     {
         $d = $this->validated($request);
+        $customFields = $d['custom_fields'] ?? null;
+        unset($d['custom_fields']);
+
         $listing = Listing::create(array_merge($d, [
             'company_id' => auth()->user()->company_id,
             'created_by' => auth()->id(),
         ]));
-        return response()->json(['message' => 'Listing added.', 'listing' => $listing], 201);
+        $this->syncCustomFields($listing, $customFields);
+
+        return response()->json(['message' => 'Listing added.', 'listing' => $listing->load('customFields')], 201);
     }
 
     public function show(int $id): JsonResponse
     {
-        return response()->json(['listing' => $this->find($id)]);
+        return response()->json(['listing' => $this->find($id)->load('customFields')]);
     }
 
     public function update(Request $request, int $id): JsonResponse
     {
         $listing = $this->find($id);
-        $listing->update($this->validated($request, false));
-        return response()->json(['message' => 'Listing updated.', 'listing' => $listing->fresh()]);
+        $d = $this->validated($request, false);
+        $customFields = $d['custom_fields'] ?? null;
+        unset($d['custom_fields']);
+
+        $listing->update($d);
+        if ($request->has('custom_fields')) {
+            $this->syncCustomFields($listing, $customFields);
+        }
+
+        return response()->json(['message' => 'Listing updated.', 'listing' => $listing->fresh()->load('customFields')]);
+    }
+
+    /**
+     * Replaces this listing's extra key/value fields wholesale with $fields (each
+     * {key, value}) — the editor always sends its full current set, so a full sync (rather than
+     * a diff) keeps this simple and correct even when a field was renamed or removed.
+     */
+    private function syncCustomFields(Listing $listing, ?array $fields): void
+    {
+        if ($fields === null) {
+            return;
+        }
+        $listing->customFields()->delete();
+
+        $rows = collect($fields)
+            ->map(fn ($f) => ['key' => trim((string) ($f['key'] ?? '')), 'value' => $f['value'] ?? null])
+            ->filter(fn ($f) => $f['key'] !== '')
+            ->unique('key')
+            ->values();
+
+        if ($rows->isEmpty()) {
+            return;
+        }
+
+        $now = now();
+        $listing->customFields()->insert($rows->map(fn ($f, $i) => [
+            'listing_id' => $listing->id,
+            'company_id' => $listing->company_id,
+            'key'        => $f['key'],
+            'value'      => $f['value'],
+            'sort_order' => $i,
+            'created_at' => $now,
+            'updated_at' => $now,
+        ])->all());
     }
 
     public function destroy(int $id): JsonResponse
@@ -79,6 +128,7 @@ class ListingController extends Controller
             ->when($request->type, fn ($q, $t) => $q->where('type', $t))
             ->when($request->status, fn ($q, $s) => $q->where('status', $s))
             ->when($request->q, fn ($q, $s) => $q->where('title', 'like', "%{$s}%"))
+            ->with('customFields:id,listing_id,key,value')
             ->orderBy('sort_order')->orderByDesc('updated_at')
             ->get();
 
@@ -93,12 +143,13 @@ class ListingController extends Controller
             throw new \RuntimeException("Unable to open export file for writing: {$path}");
         }
 
-        fputcsv($handle, ['id', 'type', 'title', 'description', 'status', 'price', 'price_unit', 'currency', 'location', 'incentive_percentage', 'attributes_json', 'media_urls', 'created_at']);
+        fputcsv($handle, ['id', 'type', 'title', 'description', 'status', 'price', 'price_unit', 'currency', 'location', 'incentive_percentage', 'attributes_json', 'custom_fields_json', 'media_urls', 'created_at']);
         foreach ($listings as $l) {
             fputcsv($handle, [
                 $l->id, $l->type, $l->title, $l->description, $l->status,
                 $l->price, $l->price_unit, $l->currency, $l->location, $l->incentive_percentage,
                 $l->attributes ? json_encode($l->attributes) : '',
+                $l->customFields->isNotEmpty() ? json_encode($l->customFields->map->only(['key', 'value'])->all()) : '',
                 $l->media ? implode('|', array_filter(array_column($l->media, 'url'))) : '',
                 $l->created_at?->toDateTimeString(),
             ]);
@@ -146,13 +197,20 @@ class ListingController extends Controller
                     $attributes = $decoded;
                 }
 
+                $customFields = null;
+                if (!empty($data['custom_fields_json'])) {
+                    $decoded = json_decode($data['custom_fields_json'], true);
+                    if (json_last_error() !== JSON_ERROR_NONE) { $errors[] = "Row {$row}: custom_fields_json is not valid JSON"; $failed++; continue; }
+                    $customFields = $decoded;
+                }
+
                 $media = null;
                 if (!empty($data['media_urls'])) {
                     $media = collect(preg_split('/[|,]/', $data['media_urls']))
                         ->map(fn ($u) => trim($u))->filter()->map(fn ($u) => ['url' => $u])->values()->all();
                 }
 
-                Listing::create([
+                $listing = Listing::create([
                     'company_id'   => $companyId,
                     'created_by'   => auth()->id(),
                     'type'         => $type,
@@ -167,6 +225,7 @@ class ListingController extends Controller
                     'attributes'   => $attributes,
                     'media'        => $media,
                 ]);
+                $this->syncCustomFields($listing, $customFields);
                 $imported++;
             } catch (\Throwable $e) {
                 $errors[] = "Row {$row}: " . $e->getMessage();
@@ -215,6 +274,11 @@ class ListingController extends Controller
             'currency'     => ['sometimes', 'string', 'max:8'],
             'location'     => ['nullable', 'string', 'max:160'],
             'attributes'   => ['nullable', 'array'],
+            // Ad-hoc extra fields beyond the industry's fixed attribute_schema — stored in their
+            // own table (see Listing::customFields()), never merged into `attributes`.
+            'custom_fields'         => ['nullable', 'array'],
+            'custom_fields.*.key'   => ['required_with:custom_fields', 'string', 'max:100'],
+            'custom_fields.*.value' => ['nullable', 'string', 'max:2000'],
             'media'        => ['nullable', 'array'],
             'media.*.url'  => ['required_with:media', 'string'],
             'sort_order'   => ['sometimes', 'integer'],
