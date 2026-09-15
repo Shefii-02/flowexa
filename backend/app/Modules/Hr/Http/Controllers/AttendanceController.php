@@ -339,7 +339,7 @@ class AttendanceController extends Controller
             'late_note'               => $data['note'] ?? null,
             'status'                  => 'present',
             'note_color'              => $noteColor,
-            'note_message'            => $data['note'] ? ($noteMsg . ' — ' . $data['note']) : $noteMsg,
+            'note_message'            => ($data['note'] ?? null) ? ($noteMsg . ' — ' . $data['note']) : $noteMsg,
         ])->save();
 
         $this->svc->syncAvailability($settings, $companyId, $userId, 'working');
