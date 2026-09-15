@@ -120,6 +120,10 @@ class CompanySetupService
                     'is_system'   => false,
                     'is_active'   => true,
                     'permissions' => $permKeys,
+                    // "Admin" is this company's de facto full-access tier — protect it from
+                    // being edited down to nothing or deleted, so a company can never end up
+                    // with no admin-tier role at all (see RoleController::update()/destroy()).
+                    'protected'   => $def['name'] === 'Admin',
                 ])
             );
 

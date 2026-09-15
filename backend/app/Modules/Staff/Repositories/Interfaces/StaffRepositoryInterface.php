@@ -33,7 +33,7 @@ interface StaffRepositoryInterface
 
     public function getRoles(?int $companyId = null): Collection;
 
-    public function findRole(int $roleId): ?Role;
+    public function findRole(int $roleId, ?int $companyId = null): ?Role;
 
     public function countActiveLeads(int $userId): int;
 

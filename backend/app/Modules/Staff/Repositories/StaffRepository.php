@@ -185,9 +185,14 @@ class StaffRepository implements StaffRepositoryInterface
     }
 
     // ─── Find a role by ID ────────────────────────────────────────────────────
-    public function findRole(int $roleId): ?Role
+    // Scoped to the given company (or a global system role, company_id null) — a bare
+    // Role::find() would let a company assign another tenant's custom role by id, handing
+    // the assigned staff member whatever permission set that other company configured.
+    public function findRole(int $roleId, ?int $companyId = null): ?Role
     {
-        return Role::find($roleId);
+        return Role::where('id', $roleId)
+            ->when($companyId, fn ($q) => $q->where(fn ($q2) => $q2->where('company_id', $companyId)->orWhereNull('company_id')))
+            ->first();
     }
 
     // ─── Count active leads for a user ────────────────────────────────────────

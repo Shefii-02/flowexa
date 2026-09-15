@@ -177,4 +177,52 @@ class DeviceController extends Controller
 
         return response()->json(['message' => 'Device removed.']);
     }
+
+    // ── POST /devices/unlink-all — revoke every OTHER active device ────────
+    // Deliberately never touches the device making this request (identified by the
+    // X-Device-Uid header the app sends on every call) — this is "sign out
+    // everywhere else", not a way to lock yourself out from the device list; use
+    // Logout for the current device instead.
+    public function unlinkAll(Request $request): JsonResponse
+    {
+        $user = $this->me();
+        $currentUid = $request->header('X-Device-Uid');
+
+        $devices = UserDevice::where('user_id', $user->id)->active()
+            ->when($currentUid, fn ($q) => $q->where('device_uid', '!=', $currentUid))
+            ->get();
+
+        foreach ($devices as $device) {
+            $device->revoke($user->id);
+            broadcast(new DeviceRevoked($device->user_id, $device->id, $device->device_uid));
+        }
+
+        return response()->json(['message' => "{$devices->count()} device(s) unlinked.", 'count' => $devices->count()]);
+    }
+
+    // ── DELETE /devices/history/{id} — permanently delete ONE already-revoked device's record ──
+    public function destroyHistory(int $id): JsonResponse
+    {
+        $device = UserDevice::where('company_id', $this->me()->company_id)->findOrFail($id);
+
+        if ($device->user_id !== $this->me()->id && !$this->canManageStaffDevices()) {
+            abort(403, 'You can only clear your own device history.');
+        }
+        if ($device->isActive()) {
+            abort(422, 'This device is still linked — unlink it first.');
+        }
+
+        $device->delete();
+
+        return response()->json(['message' => 'Removed from history.']);
+    }
+
+    // ── DELETE /devices/history — permanently delete every revoked device record ──
+    public function clearHistory(): JsonResponse
+    {
+        $user = $this->me();
+        $count = UserDevice::where('user_id', $user->id)->whereNotNull('revoked_at')->delete();
+
+        return response()->json(['message' => "{$count} record(s) cleared.", 'count' => $count]);
+    }
 }

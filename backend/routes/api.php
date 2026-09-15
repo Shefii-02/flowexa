@@ -91,7 +91,6 @@ use App\Modules\WaChat\Http\Controllers\AiScheduleController;
 use App\Modules\WaChat\Http\Controllers\AgentPlaybookTemplateController;
 use App\Http\Controllers\CompanyApiKeyController;
 use App\Http\Controllers\MetaAiController;
-use App\Modules\CompanyRole\Http\Controllers\CompanyRoleController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
@@ -138,6 +137,11 @@ Route::prefix('v1')->group(function () {
             Route::post('/login-challenge',          [\App\Modules\Auth\Http\Controllers\DeviceController::class, 'createChallenge']);
             Route::get('/login-challenge/{id}',      [\App\Modules\Auth\Http\Controllers\DeviceController::class, 'challengeStatus']);
             Route::post('/login-challenge/{id}/cancel', [\App\Modules\Auth\Http\Controllers\DeviceController::class, 'cancelChallenge']);
+            Route::post('/unlink-all',               [\App\Modules\Auth\Http\Controllers\DeviceController::class, 'unlinkAll']);
+            // Must be registered before /{id} — both are single-segment paths, and Laravel
+            // matches route patterns in registration order when segment counts tie.
+            Route::delete('/history',                [\App\Modules\Auth\Http\Controllers\DeviceController::class, 'clearHistory']);
+            Route::delete('/history/{id}',           [\App\Modules\Auth\Http\Controllers\DeviceController::class, 'destroyHistory']);
             Route::delete('/{id}',                   [\App\Modules\Auth\Http\Controllers\DeviceController::class, 'destroy']);
         });
 
@@ -427,7 +431,7 @@ Route::prefix('v1')->group(function () {
 
         // ── HR — Attendance / Breaks / Leave (mobile app + web) ──────────────
         Route::prefix('hr')->middleware(['company.active'])->group(function () {
-            // Self service
+            // Self service — every staff member manages their own attendance/leave, no permission needed.
             Route::get('attendance/me',          [AttendanceController::class, 'me']);
             Route::get('attendance/me/history',  [AttendanceController::class, 'myHistory']);
             Route::post('attendance/clock-in',   [AttendanceController::class, 'clockIn']);
@@ -435,57 +439,68 @@ Route::prefix('v1')->group(function () {
             Route::post('attendance/break/start', [AttendanceController::class, 'breakStart']);
             Route::post('attendance/break/end',  [AttendanceController::class, 'breakEnd']);
 
-            // Team / admin (permission checked in the controller)
-            Route::get('attendance',             [AttendanceController::class, 'index']);
-            Route::get('attendance/payroll',     [AttendanceController::class, 'payroll']);
-            Route::post('attendance',            [AttendanceController::class, 'storeEntry']);
-            Route::patch('attendance/{id}',      [AttendanceController::class, 'update']);
-            Route::post('attendance/{id}/overtime', [AttendanceController::class, 'reviewOvertime']);
+            // Team / admin — route middleware now mirrors each controller's own in-controller
+            // OR-check exactly (previously enforced only in PHP, with no route middleware at all).
+            Route::middleware('permission:hr.manage,hr.attendance.view_all,staff.view')->group(function () {
+                Route::get('attendance',             [AttendanceController::class, 'index']);
+                Route::get('attendance/payroll',     [AttendanceController::class, 'payroll']);
+                Route::post('attendance',            [AttendanceController::class, 'storeEntry']);
+                Route::patch('attendance/{id}',      [AttendanceController::class, 'update']);
+            });
+            Route::post('attendance/{id}/overtime', [AttendanceController::class, 'reviewOvertime'])
+                ->middleware('permission:hr.leave.approve,hr.manage');
 
             // Incentives
-            Route::get('incentive-rules',        [IncentiveController::class, 'rules']);
-            Route::post('incentive-rules',       [IncentiveController::class, 'storeRule']);
-            Route::patch('incentive-rules/{id}', [IncentiveController::class, 'updateRule']);
-            Route::delete('incentive-rules/{id}', [IncentiveController::class, 'destroyRule']);
-            Route::get('incentives',             [IncentiveController::class, 'index']);
-            Route::post('incentives',            [IncentiveController::class, 'store']);
-            Route::patch('incentives/{id}',      [IncentiveController::class, 'update']);
-            Route::delete('incentives/{id}',     [IncentiveController::class, 'destroy']);
+            Route::middleware('permission:hr.manage,hr.leave.approve')->group(function () {
+                Route::get('incentive-rules',        [IncentiveController::class, 'rules']);
+                Route::post('incentive-rules',       [IncentiveController::class, 'storeRule']);
+                Route::patch('incentive-rules/{id}', [IncentiveController::class, 'updateRule']);
+                Route::delete('incentive-rules/{id}', [IncentiveController::class, 'destroyRule']);
+                Route::get('incentives',             [IncentiveController::class, 'index']);
+                Route::post('incentives',            [IncentiveController::class, 'store']);
+                Route::patch('incentives/{id}',      [IncentiveController::class, 'update']);
+                Route::delete('incentives/{id}',     [IncentiveController::class, 'destroy']);
+
+                // Payroll
+                Route::get('payroll/runs',              [PayrollController::class, 'runs']);
+                Route::post('payroll/runs',             [PayrollController::class, 'generate']);
+                Route::get('payroll/runs/{id}',         [PayrollController::class, 'show']);
+                Route::get('payroll/runs/{id}/report',  [PayrollController::class, 'report']);
+                Route::post('payroll/runs/{id}/release', [PayrollController::class, 'release']);
+                Route::patch('payroll/items/{id}',      [PayrollController::class, 'updateItem']);
+            });
 
             // Sales — catalog item sold / admission taken → auto-posts an incentive
-            Route::get('sales',          [\App\Modules\Hr\Http\Controllers\SalesController::class, 'index']);
-            Route::get('sales/summary',  [\App\Modules\Hr\Http\Controllers\SalesController::class, 'summary']);
-            Route::post('sales',         [\App\Modules\Hr\Http\Controllers\SalesController::class, 'store']);
-            Route::delete('sales/{id}',  [\App\Modules\Hr\Http\Controllers\SalesController::class, 'destroy']);
+            Route::middleware('permission:hr.manage,leads.manage')->group(function () {
+                Route::get('sales',          [\App\Modules\Hr\Http\Controllers\SalesController::class, 'index']);
+                Route::get('sales/summary',  [\App\Modules\Hr\Http\Controllers\SalesController::class, 'summary']);
+                Route::post('sales',         [\App\Modules\Hr\Http\Controllers\SalesController::class, 'store']);
+                Route::delete('sales/{id}',  [\App\Modules\Hr\Http\Controllers\SalesController::class, 'destroy']);
+            });
 
-            // Payroll
-            Route::get('payroll/runs',              [PayrollController::class, 'runs']);
-            Route::post('payroll/runs',             [PayrollController::class, 'generate']);
-            Route::get('payroll/runs/{id}',         [PayrollController::class, 'show']);
-            Route::get('payroll/runs/{id}/report',  [PayrollController::class, 'report']);
-            Route::post('payroll/runs/{id}/release', [PayrollController::class, 'release']);
-            Route::patch('payroll/items/{id}',      [PayrollController::class, 'updateItem']);
-
-            // Leave
+            // Leave — types/index/store/cancel are self-service; review is the manage action.
             Route::get('leave/types',   [LeaveController::class, 'types']);
             Route::get('leave',         [LeaveController::class, 'index']);
             Route::post('leave',        [LeaveController::class, 'store']);
             Route::post('leave/{id}/cancel', [LeaveController::class, 'cancel']);
-            Route::post('leave/{id}/review', [LeaveController::class, 'review']);
+            Route::post('leave/{id}/review', [LeaveController::class, 'review'])
+                ->middleware('permission:hr.leave.approve,hr.manage');
 
             // Config
-            Route::get('settings',      [HrConfigController::class, 'showSettings']);
-            Route::put('settings',      [HrConfigController::class, 'updateSettings']);
-            Route::get('break-types',   [HrConfigController::class, 'breakTypes']);
-            Route::post('break-types',  [HrConfigController::class, 'storeBreakType']);
-            Route::patch('break-types/{id}',  [HrConfigController::class, 'updateBreakType']);
-            Route::delete('break-types/{id}', [HrConfigController::class, 'destroyBreakType']);
-            Route::get('leave-types',   [HrConfigController::class, 'leaveTypes']);
-            Route::post('leave-types',  [HrConfigController::class, 'storeLeaveType']);
-            Route::patch('leave-types/{id}',  [HrConfigController::class, 'updateLeaveType']);
-            Route::delete('leave-types/{id}', [HrConfigController::class, 'destroyLeaveType']);
-            Route::get('staff-profiles',          [HrConfigController::class, 'staffProfiles']);
-            Route::put('staff-profiles/{userId}', [HrConfigController::class, 'updateStaffProfile']);
+            Route::middleware('permission:hr.manage,staff.manage')->group(function () {
+                Route::get('settings',      [HrConfigController::class, 'showSettings']);
+                Route::put('settings',      [HrConfigController::class, 'updateSettings']);
+                Route::get('break-types',   [HrConfigController::class, 'breakTypes']);
+                Route::post('break-types',  [HrConfigController::class, 'storeBreakType']);
+                Route::patch('break-types/{id}',  [HrConfigController::class, 'updateBreakType']);
+                Route::delete('break-types/{id}', [HrConfigController::class, 'destroyBreakType']);
+                Route::get('leave-types',   [HrConfigController::class, 'leaveTypes']);
+                Route::post('leave-types',  [HrConfigController::class, 'storeLeaveType']);
+                Route::patch('leave-types/{id}',  [HrConfigController::class, 'updateLeaveType']);
+                Route::delete('leave-types/{id}', [HrConfigController::class, 'destroyLeaveType']);
+                Route::get('staff-profiles',          [HrConfigController::class, 'staffProfiles']);
+                Route::put('staff-profiles/{userId}', [HrConfigController::class, 'updateStaffProfile']);
+            });
         });
 
         // ── Advanced CRM — Deals / Tasks / Segments ──────────────────────────
@@ -522,36 +537,41 @@ Route::prefix('v1')->group(function () {
 
         Route::prefix('leads')->name('leads.')->group(function () {
 
-            Route::get('/',           [LeadController::class, 'index'])->name('index');
-            Route::get('/analytics',  [LeadController::class, 'analytics'])->name('analytics');
-            Route::get('/logs',       [LeadController::class, 'logs'])->name('logs');
-            Route::get('/sources',    [LeadController::class, 'sources'])->name('sources');
-            Route::post('/import', [LeadController::class, 'import'])->middleware('permission:leads.create');
+            // Reads — every action below requires at least leads.view (previously ungated).
+            Route::get('/',           [LeadController::class, 'index'])->middleware('permission:leads.view')->name('index');
+            Route::get('/analytics',  [LeadController::class, 'analytics'])->middleware('permission:leads.view')->name('analytics');
+            Route::get('/logs',       [LeadController::class, 'logs'])->middleware('permission:leads.view')->name('logs');
+            Route::get('/sources',    [LeadController::class, 'sources'])->middleware('permission:leads.view')->name('sources');
+            // Writes below previously checked leads.create/leads.edit/leads.assign/leads.delete —
+            // none of those keys exist in the PermissionsSeeder catalogue, so every one of these
+            // was unusable by any role (owner included) purely due to the key mismatch. Consolidated
+            // onto the real catalogue key, leads.manage, matching how "Sales Agent" is actually seeded.
+            Route::post('/import', [LeadController::class, 'import'])->middleware('permission:leads.manage');
             Route::get('/export',  [LeadController::class, 'export'])->middleware('permission:leads.view_all');
 
             // Leads → Summary (Basic) + Report (Advanced). Declared before /{lead}.
-            Route::get('/summary', [LeadReportController::class, 'summary'])->name('summary');
-            Route::get('/report',  [LeadReportController::class, 'report'])->name('report');
-            Route::get('/saved-reports',        [LeadReportController::class, 'savedReports']);
-            Route::post('/saved-reports',       [LeadReportController::class, 'storeSavedReport']);
-            Route::patch('/saved-reports/{id}', [LeadReportController::class, 'updateSavedReport']);
-            Route::delete('/saved-reports/{id}',[LeadReportController::class, 'destroySavedReport']);
+            Route::get('/summary', [LeadReportController::class, 'summary'])->middleware('permission:leads.view')->name('summary');
+            Route::get('/report',  [LeadReportController::class, 'report'])->middleware('permission:leads.view')->name('report');
+            Route::get('/saved-reports',        [LeadReportController::class, 'savedReports'])->middleware('permission:leads.view');
+            Route::post('/saved-reports',       [LeadReportController::class, 'storeSavedReport'])->middleware('permission:leads.manage');
+            Route::patch('/saved-reports/{id}', [LeadReportController::class, 'updateSavedReport'])->middleware('permission:leads.manage');
+            Route::delete('/saved-reports/{id}',[LeadReportController::class, 'destroySavedReport'])->middleware('permission:leads.manage');
 
-            Route::get('/{lead}',     [LeadController::class, 'show'])->name('show');
+            Route::get('/{lead}',     [LeadController::class, 'show'])->middleware('permission:leads.view')->name('show');
 
-            Route::post('/', [LeadController::class, 'store'])->middleware('permission:leads.create')->name('store');
+            Route::post('/', [LeadController::class, 'store'])->middleware('permission:leads.manage')->name('store');
 
-            Route::put('/{lead}', [LeadController::class, 'update'])->middleware('permission:leads.edit')->name('update');
+            Route::put('/{lead}', [LeadController::class, 'update'])->middleware('permission:leads.manage')->name('update');
 
-            Route::post('/{lead}/assign', [LeadController::class, 'assign'])->middleware('permission:leads.assign')->name('assign');
+            Route::post('/{lead}/assign', [LeadController::class, 'assign'])->middleware('permission:leads.manage')->name('assign');
 
-            Route::post('/bulk-assign', [LeadController::class, 'bulkAssign'])->middleware('permission:leads.assign')->name('bulk-assign');
-            Route::post('/bulk-reassign', [LeadController::class, 'bulkReassign'])->middleware('permission:leads.assign')->name('bulk-reassign');
+            Route::post('/bulk-assign', [LeadController::class, 'bulkAssign'])->middleware('permission:leads.manage')->name('bulk-assign');
+            Route::post('/bulk-reassign', [LeadController::class, 'bulkReassign'])->middleware('permission:leads.manage')->name('bulk-reassign');
 
-            Route::post('/{lead}/crm-sync', [LeadController::class, 'crmSync'])->middleware('permission:crm.sync')->name('crm-sync');
+            Route::post('/{lead}/crm-sync', [LeadController::class, 'crmSync'])->middleware('permission:lead_assignment.manage')->name('crm-sync');
 
-            Route::delete('/{lead}', [LeadController::class, 'destroy'])->middleware('permission:leads.delete')->name('destroy');
-            Route::post('/bulk-delete', [LeadController::class, 'bulkDelete'])->middleware('permission:leads.delete')->name('bulk-delete');
+            Route::delete('/{lead}', [LeadController::class, 'destroy'])->middleware('permission:leads.manage')->name('destroy');
+            Route::post('/bulk-delete', [LeadController::class, 'bulkDelete'])->middleware('permission:leads.manage')->name('bulk-delete');
 
             Route::get('/{lead}/notes',    [LeadNoteController::class, 'index'])->name('notes.index');
             // Notes
@@ -628,24 +648,27 @@ Route::prefix('v1')->group(function () {
                 Route::get('/{contact}/campaigns', [ContactController::class, 'campaigns'])->name('campaigns');
             });
 
+            // Below previously checked contacts.import/create/edit/delete — none of those keys
+            // exist in the PermissionsSeeder catalogue, so these were unusable by any role
+            // (owner included). Consolidated onto the real catalogue key, contacts.manage.
             Route::post('/import', [ContactController::class, 'import'])
-                ->middleware('permission:contacts.import')
+                ->middleware('permission:contacts.manage')
                 ->name('import');
 
             Route::post('/', [ContactController::class, 'store'])
-                ->middleware('permission:contacts.create')
+                ->middleware('permission:contacts.manage')
                 ->name('store');
 
             Route::put('/{contact}', [ContactController::class, 'update'])
-                ->middleware('permission:contacts.edit')
+                ->middleware('permission:contacts.manage')
                 ->name('update');
 
             Route::patch('/{contact}/opt-out', [ContactController::class, 'optOut'])
-                ->middleware('permission:contacts.edit')
+                ->middleware('permission:contacts.manage')
                 ->name('opt-out');
 
             Route::patch('/{contact}/opt-in', [ContactController::class, 'optIn'])
-                ->middleware('permission:contacts.edit')
+                ->middleware('permission:contacts.manage')
                 ->name('opt-in');
 
             // Label assignment is a lightweight tagging action, not a contact edit: any authenticated
@@ -657,7 +680,7 @@ Route::prefix('v1')->group(function () {
                 ->name('remove-labels');
 
             Route::delete('/{contact}', [ContactController::class, 'destroy'])
-                ->middleware('permission:contacts.delete')
+                ->middleware('permission:contacts.manage')
                 ->name('destroy');
         });
 
@@ -712,7 +735,10 @@ Route::prefix('v1')->group(function () {
         //     });
         // });
 
-        Route::prefix('wallet')->name('wallet.')->group(function () {
+        // Previously entirely ungated except /settings, which itself checked billing.manage — a key
+        // that doesn't exist in the PermissionsSeeder catalogue (the real key is wallet.manage), so
+        // wallet reads were open to any authenticated staff member and settings was unusable by anyone.
+        Route::prefix('wallet')->name('wallet.')->middleware('permission:wallet.view')->group(function () {
 
             // Overview + transactions
             Route::get('/',             [WalletController::class, 'index'])->name('index');
@@ -721,12 +747,12 @@ Route::prefix('v1')->group(function () {
 
             // Settings (owner/admin)
             Route::put('/settings', [WalletController::class, 'updateSettings'])
-                ->middleware('permission:billing.manage')
+                ->middleware('permission:wallet.manage')
                 ->name('settings');
 
-            // Razorpay: create order + verify
-            Route::post('/create-order',   [PaymentController::class, 'createOrder'])->name('create-order');
-            Route::post('/verify-payment', [PaymentController::class, 'verifyPayment'])->name('verify-payment');
+            // Razorpay: create order + verify — real money movement, requires manage tier.
+            Route::post('/create-order',   [PaymentController::class, 'createOrder'])->middleware('permission:wallet.manage')->name('create-order');
+            Route::post('/verify-payment', [PaymentController::class, 'verifyPayment'])->middleware('permission:wallet.manage')->name('verify-payment');
         });
 
 
@@ -812,41 +838,32 @@ Route::prefix('v1')->group(function () {
                 });
             });
 
-        // Route::get('flow-builders',             [FlowBuilderController::class, 'index']);
-        // Route::post('flow-builders',             [FlowBuilderController::class, 'store']);
-        // Route::put('flow-builders/{id}',        [FlowBuilderController::class, 'update']);
-        // Route::delete('flow-builders/{id}',        [FlowBuilderController::class, 'destroy']);
-        // Route::post('flow-builders/{id}/activate', [FlowBuilderController::class, 'activate']);
 
-
-
-
-
-        // Flow Builders
-        Route::get('flow-builders',                 [FlowBuilderController::class, 'index']);
-        Route::post('flow-builders',                 [FlowBuilderController::class, 'store']);
-        Route::post('flow-builders/import',      [FlowImportExportController::class, 'import']);
-        Route::get('flow-builders/{id}/export', [FlowImportExportController::class, 'export']);
-        Route::get('flow-builders/{id}',            [FlowBuilderController::class, 'show']);
-        Route::put('flow-builders/{id}',            [FlowBuilderController::class, 'update']);
-        Route::delete('flow-builders/{id}',            [FlowBuilderController::class, 'destroy']);
-        Route::post('flow-builders/{id}/activate',   [FlowBuilderController::class, 'activate']);
-        Route::post('flow-builders/{id}/deactivate', [FlowBuilderController::class, 'deactivate']);
+        // Flow Builders — previously had no permission middleware at all (the catalogue's
+        // flow_builder.view/manage keys existed but were never wired up here).
+        Route::get('flow-builders',                 [FlowBuilderController::class, 'index'])->middleware('permission:flow_builder.view');
+        Route::post('flow-builders',                 [FlowBuilderController::class, 'store'])->middleware('permission:flow_builder.manage');
+        Route::post('flow-builders/import',      [FlowImportExportController::class, 'import'])->middleware('permission:flow_builder.manage');
+        Route::get('flow-builders/{id}/export', [FlowImportExportController::class, 'export'])->middleware('permission:flow_builder.view');
+        Route::get('flow-builders/{id}',            [FlowBuilderController::class, 'show'])->middleware('permission:flow_builder.view');
+        Route::put('flow-builders/{id}',            [FlowBuilderController::class, 'update'])->middleware('permission:flow_builder.manage');
+        Route::delete('flow-builders/{id}',            [FlowBuilderController::class, 'destroy'])->middleware('permission:flow_builder.manage');
+        Route::post('flow-builders/{id}/activate',   [FlowBuilderController::class, 'activate'])->middleware('permission:flow_builder.manage');
+        Route::post('flow-builders/{id}/deactivate', [FlowBuilderController::class, 'deactivate'])->middleware('permission:flow_builder.manage');
 
         // Flow Nodes (nested under builder)
-        Route::get('flow-builders/{bid}/nodes',            [FlowNodeController::class, 'index']);
-        Route::post('flow-builders/{bid}/nodes',            [FlowNodeController::class, 'store']);
-        Route::put('flow-builders/{bid}/nodes/{id}',       [FlowNodeController::class, 'update']);
-        Route::delete('flow-builders/{bid}/nodes/{id}',       [FlowNodeController::class, 'destroy']);
-        Route::post('flow-builders/{bid}/nodes/{id}/toggle', [FlowNodeController::class, 'toggle']);
-        Route::post('flow-builders/{bid}/nodes/{id}/activate', [FlowNodeController::class, 'activate']);
-        Route::post('flow-builders/{bid}/nodes/{id}/deactivate', [FlowNodeController::class, 'deactivate']);
-        Route::post('flow-builders/{bid}/nodes/{id}/move', [FlowNodeController::class, 'move']);
+        Route::get('flow-builders/{bid}/nodes',            [FlowNodeController::class, 'index'])->middleware('permission:flow_builder.view');
+        Route::post('flow-builders/{bid}/nodes',            [FlowNodeController::class, 'store'])->middleware('permission:flow_builder.manage');
+        Route::put('flow-builders/{bid}/nodes/{id}',       [FlowNodeController::class, 'update'])->middleware('permission:flow_builder.manage');
+        Route::delete('flow-builders/{bid}/nodes/{id}',       [FlowNodeController::class, 'destroy'])->middleware('permission:flow_builder.manage');
+        Route::post('flow-builders/{bid}/nodes/{id}/toggle', [FlowNodeController::class, 'toggle'])->middleware('permission:flow_builder.manage');
+        Route::post('flow-builders/{bid}/nodes/{id}/activate', [FlowNodeController::class, 'activate'])->middleware('permission:flow_builder.manage');
+        Route::post('flow-builders/{bid}/nodes/{id}/deactivate', [FlowNodeController::class, 'deactivate'])->middleware('permission:flow_builder.manage');
+        Route::post('flow-builders/{bid}/nodes/{id}/move', [FlowNodeController::class, 'move'])->middleware('permission:flow_builder.manage');
 
-
-        Route::post('flow-builders/{bid}/nodes/reorder',    [FlowNodeController::class, 'reorder']);
-        Route::get('flow-builders/{builder}/nodes/check-reply-id', [FlowNodeController::class, 'checkReplyId']);
-        Route::post('flow-builders/{builder}/nodes/upload-media', [FlowNodeController::class, 'uploadMedia']);
+        Route::post('flow-builders/{bid}/nodes/reorder',    [FlowNodeController::class, 'reorder'])->middleware('permission:flow_builder.manage');
+        Route::get('flow-builders/{builder}/nodes/check-reply-id', [FlowNodeController::class, 'checkReplyId'])->middleware('permission:flow_builder.view');
+        Route::post('flow-builders/{builder}/nodes/upload-media', [FlowNodeController::class, 'uploadMedia'])->middleware('permission:flow_builder.manage');
 
         // ── Flow Builders ───────────────────────────────────────────────────────────
         // Route::get('flow-builders',                 [FlowBuilderController::class, 'index']);
@@ -866,12 +883,6 @@ Route::prefix('v1')->group(function () {
         // Route::post('flow-builders/{builderId}/nodes/{id}/activate',   [FlowNodeController::class, 'activate']);
         // Route::post('flow-builders/{builderId}/nodes/{id}/deactivate', [FlowNodeController::class, 'deactivate']);
         // Route::post('flow-builders/{builderId}/nodes/reorder',         [FlowNodeController::class, 'reorder']);
-
-
-
-        Route::get('company-roles',      [CompanyRoleController::class, 'index']);
-        Route::post('company-roles',      [CompanyRoleController::class, 'store']);
-        Route::put('company-roles/{id}', [CompanyRoleController::class, 'update']);
 
 
 
@@ -1056,8 +1067,6 @@ Route::prefix('v1')->group(function () {
             });
         });
 
-
-        Route::delete('company-roles/{id}', [CompanyRoleController::class, 'destroy']); // is_system check
 
         Route::prefix('push')->name('push.')
             ->middleware(['company.active'])
@@ -1279,7 +1288,7 @@ Route::prefix('v1')->middleware(['jwt.auth'])->group(function () {
         Route::post('/upload',        [MediaLibraryController::class, 'upload']);
         Route::post('/bulk/move',     [MediaLibraryController::class, 'bulkMove']);
         Route::post('/bulk/copy',     [MediaLibraryController::class, 'bulkCopy']);
-        Route::post('/bulk/delete',   [MediaLibraryController::class, 'bulkDestroy']);
+        Route::post('/bulk/delete',   [MediaLibraryController::class, 'bulkDestroy'])->middleware('permission:wa_chat.message_sender.manage');
         Route::patch('/{id}/rename',  [MediaLibraryController::class, 'rename']);
         Route::patch('/{id}/move',    [MediaLibraryController::class, 'move']);
         Route::post('/{id}/copy',     [MediaLibraryController::class, 'copy']);
@@ -1324,46 +1333,54 @@ Route::prefix('v1')->middleware(['jwt.auth'])->group(function () {
 
     // WA Cloud OTP Service (management — protected). Independent of the wa-chat
     // "otp-service" block above: own tables, own controller, sends via Meta.
-    Route::prefix('wa-cloud/otp-service')->middleware(['company.active'])->group(function () {
+    // wa_cloud.view/manage already existed in the catalogue but were never referenced anywhere
+    // in this file — every WA Cloud settings/analytics/automation route below was reachable by
+    // any authenticated staff member regardless of role.
+    Route::prefix('wa-cloud/otp-service')->middleware(['company.active', 'permission:wa_cloud.view'])->group(function () {
         Route::get('/',            [WaCloudApiServiceController::class, 'show']);
-        Route::post('/',           [WaCloudApiServiceController::class, 'storeOrUpdate']);
-        Route::post('/reset-token', [WaCloudApiServiceController::class, 'resetToken']);
-        Route::post('/stop-token',  [WaCloudApiServiceController::class, 'stopToken']);
-        Route::post('/test-send',   [WaCloudApiServiceController::class, 'testSend']);
         Route::get('/logs',        [WaCloudApiServiceController::class, 'logs']);
-
-        // Literal paths before "/configs/{id}".
         Route::get('/prebuilt-templates',   [WaCloudApiConfigController::class, 'prebuiltTemplates']);
         Route::get('/configs',              [WaCloudApiConfigController::class, 'index']);
-        Route::post('/configs',             [WaCloudApiConfigController::class, 'store']);
-        Route::patch('/configs/{id}',       [WaCloudApiConfigController::class, 'update']);
-        Route::delete('/configs/{id}',      [WaCloudApiConfigController::class, 'destroy']);
         Route::get('/configs/{id}/stats',   [WaCloudApiConfigController::class, 'stats']);
-        Route::post('/configs/{id}/submit', [WaCloudApiConfigController::class, 'submit']);
-        Route::post('/configs/{id}/sync',   [WaCloudApiConfigController::class, 'sync']);
-        Route::post('/configs/{id}/upload-header-media',   [WaCloudApiConfigController::class, 'uploadHeaderMedia']);
-        Route::delete('/configs/{id}/delete-header-media', [WaCloudApiConfigController::class, 'deleteHeaderMedia']);
+
+        Route::middleware('permission:wa_cloud.manage')->group(function () {
+            Route::post('/',           [WaCloudApiServiceController::class, 'storeOrUpdate']);
+            Route::post('/reset-token', [WaCloudApiServiceController::class, 'resetToken']);
+            Route::post('/stop-token',  [WaCloudApiServiceController::class, 'stopToken']);
+            Route::post('/test-send',   [WaCloudApiServiceController::class, 'testSend']);
+            Route::post('/configs',             [WaCloudApiConfigController::class, 'store']);
+            Route::patch('/configs/{id}',       [WaCloudApiConfigController::class, 'update']);
+            Route::delete('/configs/{id}',      [WaCloudApiConfigController::class, 'destroy']);
+            Route::post('/configs/{id}/submit', [WaCloudApiConfigController::class, 'submit']);
+            Route::post('/configs/{id}/sync',   [WaCloudApiConfigController::class, 'sync']);
+            Route::post('/configs/{id}/upload-header-media',   [WaCloudApiConfigController::class, 'uploadHeaderMedia']);
+            Route::delete('/configs/{id}/delete-header-media', [WaCloudApiConfigController::class, 'deleteHeaderMedia']);
+        });
     });
 
     // WA Cloud → Inbox Analytics (messages + calls + conversations, filterable)
-    Route::prefix('wa-cloud/inbox-analytics')->middleware(['company.active'])->group(function () {
+    Route::prefix('wa-cloud/inbox-analytics')->middleware(['company.active', 'permission:wa_cloud.view'])->group(function () {
         Route::get('/',       [WaCloudInboxAnalyticsController::class, 'summary']);
         Route::get('/agents', [WaCloudInboxAnalyticsController::class, 'agents']);
     });
 
     // WA Cloud → Automation Rules (own tables — separate from /wa-agent/automations)
-    Route::prefix('wa-cloud/automations')->middleware(['company.active'])->group(function () {
+    Route::prefix('wa-cloud/automations')->middleware(['company.active', 'permission:wa_cloud.view'])->group(function () {
         Route::get('/',             [WaCloudAutomationController::class, 'index']);
-        Route::post('/',            [WaCloudAutomationController::class, 'store']);
         Route::get('/logs',         [WaCloudAutomationController::class, 'logs']);
         Route::get('/{id}',         [WaCloudAutomationController::class, 'show']);
-        Route::patch('/{id}',       [WaCloudAutomationController::class, 'update']);
-        Route::delete('/{id}',      [WaCloudAutomationController::class, 'destroy']);
-        Route::post('/{id}/toggle', [WaCloudAutomationController::class, 'toggleActive']);
+
+        Route::middleware('permission:wa_cloud.manage')->group(function () {
+            Route::post('/',            [WaCloudAutomationController::class, 'store']);
+            Route::patch('/{id}',       [WaCloudAutomationController::class, 'update']);
+            Route::delete('/{id}',      [WaCloudAutomationController::class, 'destroy']);
+            Route::post('/{id}/toggle', [WaCloudAutomationController::class, 'toggleActive']);
+        });
     });
 
-    // Data Export
-    Route::prefix('wa-export')->group(function () {
+    // Data Export — bulk chat/contact/group export was previously reachable by any authenticated
+    // user with no permission check and no company.active scoping at all.
+    Route::prefix('wa-export')->middleware('permission:reports.manage')->group(function () {
         Route::get('/',                  [WaExportController::class, 'listJobs']);
         Route::post('/chats',            [WaExportController::class, 'exportChats']);
         Route::post('/contacts',         [WaExportController::class, 'exportContacts']);
@@ -1372,70 +1389,88 @@ Route::prefix('v1')->middleware(['jwt.auth'])->group(function () {
         Route::delete('/{id}',           [WaExportController::class, 'destroy']);
     });
 
+    // WA Agent routes below were previously reachable by any authenticated user with no
+    // permission check at all, despite the wa_agent.* catalogue keys already existing.
+
     // WA Agent — Automation Rules
-    Route::prefix('wa-agent/automations')->group(function () {
+    Route::prefix('wa-agent/automations')->middleware('permission:wa_agent.automations.view')->group(function () {
         Route::get('/',                  [AutomationController::class, 'index']);
-        Route::post('/',                 [AutomationController::class, 'store']);
         Route::get('/logs',              [AutomationController::class, 'logs']);
         Route::get('/{id}',              [AutomationController::class, 'show']);
-        Route::patch('/{id}',            [AutomationController::class, 'update']);
-        Route::delete('/{id}',           [AutomationController::class, 'destroy']);
-        Route::post('/{id}/toggle',      [AutomationController::class, 'toggleActive']);
+
+        Route::middleware('permission:wa_agent.automations.manage')->group(function () {
+            Route::post('/',                 [AutomationController::class, 'store']);
+            Route::patch('/{id}',            [AutomationController::class, 'update']);
+            Route::delete('/{id}',           [AutomationController::class, 'destroy']);
+            Route::post('/{id}/toggle',      [AutomationController::class, 'toggleActive']);
+        });
     });
 
     // WA Agent — Knowledge Base
-    Route::prefix('wa-agent/knowledge-base')->group(function () {
+    Route::prefix('wa-agent/knowledge-base')->middleware('permission:wa_agent.knowledge.view')->group(function () {
         Route::get('/',                  [KnowledgeBaseController::class, 'index']);
-        Route::post('/',                 [KnowledgeBaseController::class, 'store']);
-        Route::post('/upload',           [KnowledgeBaseController::class, 'upload']);
-        Route::post('/sync-catalog',         [KnowledgeBaseController::class, 'syncFromCatalog']);
-        Route::post('/sync-company-details', [KnowledgeBaseController::class, 'syncFromCompanyDetails']);
         Route::get('/{id}',              [KnowledgeBaseController::class, 'show']);
-        Route::patch('/{id}',            [KnowledgeBaseController::class, 'update']);
-        Route::delete('/{id}',           [KnowledgeBaseController::class, 'destroy']);
-        Route::post('/{id}/reprocess',   [KnowledgeBaseController::class, 'reprocess']);
+
+        Route::middleware('permission:wa_agent.knowledge.manage')->group(function () {
+            Route::post('/',                 [KnowledgeBaseController::class, 'store']);
+            Route::post('/upload',           [KnowledgeBaseController::class, 'upload']);
+            Route::post('/sync-catalog',         [KnowledgeBaseController::class, 'syncFromCatalog']);
+            Route::post('/sync-company-details', [KnowledgeBaseController::class, 'syncFromCompanyDetails']);
+            Route::patch('/{id}',            [KnowledgeBaseController::class, 'update']);
+            Route::delete('/{id}',           [KnowledgeBaseController::class, 'destroy']);
+            Route::post('/{id}/reprocess',   [KnowledgeBaseController::class, 'reprocess']);
+        });
     });
 
     // WA Agent — Pipelines
-    Route::prefix('wa-agent/pipelines')->group(function () {
+    Route::prefix('wa-agent/pipelines')->middleware('permission:wa_agent.pipelines.view')->group(function () {
         Route::get('/',                  [PipelineController::class, 'index']);
-        Route::post('/',                 [PipelineController::class, 'store']);
         Route::get('/{id}',              [PipelineController::class, 'show']);
-        Route::patch('/{id}',            [PipelineController::class, 'update']);
-        Route::delete('/{id}',           [PipelineController::class, 'destroy']);
-        Route::post('/{id}/run',         [PipelineController::class, 'run']);
         Route::get('/{id}/runs',         [PipelineController::class, 'runs']);
+
+        Route::middleware('permission:wa_agent.pipelines.manage')->group(function () {
+            Route::post('/',                 [PipelineController::class, 'store']);
+            Route::patch('/{id}',            [PipelineController::class, 'update']);
+            Route::delete('/{id}',           [PipelineController::class, 'destroy']);
+            Route::post('/{id}/run',         [PipelineController::class, 'run']);
+        });
     });
 
     // WA Agent — Playbook (per-company agent configuration)
-    Route::prefix('wa-agent/playbook')->group(function () {
+    Route::prefix('wa-agent/playbook')->middleware('permission:wa_agent.ai.view')->group(function () {
         Route::get('/',            [AgentPlaybookController::class, 'index']);
-        Route::post('/',           [AgentPlaybookController::class, 'store']);
-        Route::patch('/{id}',      [AgentPlaybookController::class, 'update']);
-        Route::post('/{id}/toggle',[AgentPlaybookController::class, 'toggle']);
-        Route::delete('/{id}',     [AgentPlaybookController::class, 'destroy']);
+
+        Route::middleware('permission:wa_agent.ai.manage')->group(function () {
+            Route::post('/',           [AgentPlaybookController::class, 'store']);
+            Route::patch('/{id}',      [AgentPlaybookController::class, 'update']);
+            Route::post('/{id}/toggle',[AgentPlaybookController::class, 'toggle']);
+            Route::delete('/{id}',     [AgentPlaybookController::class, 'destroy']);
+        });
     });
 
     // WA Agent — AI schedule (always-on vs scheduled hours), per WA Chat session / WA Cloud
     // number / Instagram account
-    Route::prefix('wa-agent/ai-schedule')->group(function () {
+    Route::prefix('wa-agent/ai-schedule')->middleware('permission:wa_agent.ai.view')->group(function () {
         Route::get('/',                          [AiScheduleController::class, 'index']);
-        Route::patch('/wa/{sessionId}',           [AiScheduleController::class, 'updateWaSchedule']);
-        Route::patch('/instagram/{accountId}',    [AiScheduleController::class, 'updateInstagramSchedule']);
+        Route::patch('/wa/{sessionId}',           [AiScheduleController::class, 'updateWaSchedule'])->middleware('permission:wa_agent.ai.manage');
+        Route::patch('/instagram/{accountId}',    [AiScheduleController::class, 'updateInstagramSchedule'])->middleware('permission:wa_agent.ai.manage');
     });
 
     // WA Agent — AI Agent
-    Route::prefix('wa-agent')->group(function () {
-        Route::post('/ask',              [AiAgentController::class, 'ask']);
-        Route::post('/voice-test',       [AiAgentController::class, 'voiceTest']);
+    Route::prefix('wa-agent')->middleware('permission:wa_agent.ai.view')->group(function () {
         Route::get('/available-models',  [AiAgentController::class, 'availableModels']);
         Route::get('/ai-settings',       [AiAgentController::class, 'aiSettings']);
-        Route::post('/config',           [AiAgentController::class, 'saveConfig']);
         Route::get('/sessions',          [AiAgentController::class, 'sessions']);
         Route::get('/sessions/{id}',     [AiAgentController::class, 'sessionDetail']);
-        Route::post('/sessions/{id}/close',    [AiAgentController::class, 'closeSession']);
-        Route::post('/sessions/{id}/transfer', [AiAgentController::class, 'transferSession']);
         Route::get('/stats',             [AiAgentController::class, 'stats']);
+
+        Route::middleware('permission:wa_agent.ai.manage')->group(function () {
+            Route::post('/ask',              [AiAgentController::class, 'ask']);
+            Route::post('/voice-test',       [AiAgentController::class, 'voiceTest']);
+            Route::post('/config',           [AiAgentController::class, 'saveConfig']);
+            Route::post('/sessions/{id}/close',    [AiAgentController::class, 'closeSession']);
+            Route::post('/sessions/{id}/transfer', [AiAgentController::class, 'transferSession']);
+        });
     });
 
     // Meta AI / Conversation Intelligence
@@ -1455,14 +1490,19 @@ Route::prefix('v1')->middleware(['jwt.auth'])->group(function () {
     // Contact intelligence profile
     Route::get('/contacts/{id}/intelligence',     [MetaAiController::class, 'contactProfile']);
 
-    // Settings — Company API Keys
-    Route::prefix('settings/api-keys')->group(function () {
+    // Settings — Company API Keys (OpenAI/Anthropic/Google AI provider keys). Previously
+    // reachable by any authenticated staff member — wired onto the existing wa_chat.api_keys.*
+    // catalogue keys, which were seeded but never referenced anywhere in this file.
+    Route::prefix('settings/api-keys')->middleware('permission:wa_chat.api_keys.view')->group(function () {
         Route::get('/',                      [CompanyApiKeyController::class, 'index']);
-        Route::post('/test',                 [CompanyApiKeyController::class, 'testKey']);
-        Route::post('/',                     [CompanyApiKeyController::class, 'store']);
-        Route::patch('/{id}',                [CompanyApiKeyController::class, 'update']);
-        Route::delete('/{id}',               [CompanyApiKeyController::class, 'destroy']);
-        Route::post('/{id}/verify',          [CompanyApiKeyController::class, 'verify']);
-        Route::post('/{id}/set-active',      [CompanyApiKeyController::class, 'setActive']);
+
+        Route::middleware('permission:wa_chat.api_keys.manage')->group(function () {
+            Route::post('/test',                 [CompanyApiKeyController::class, 'testKey']);
+            Route::post('/',                     [CompanyApiKeyController::class, 'store']);
+            Route::patch('/{id}',                [CompanyApiKeyController::class, 'update']);
+            Route::delete('/{id}',               [CompanyApiKeyController::class, 'destroy']);
+            Route::post('/{id}/verify',          [CompanyApiKeyController::class, 'verify']);
+            Route::post('/{id}/set-active',      [CompanyApiKeyController::class, 'setActive']);
+        });
     });
 });

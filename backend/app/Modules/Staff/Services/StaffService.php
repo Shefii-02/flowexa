@@ -43,7 +43,7 @@ class StaffService
     public function create(int $companyId, CreateStaffDTO $dto): User
     {
         // Validate role
-        $role = $this->staffRepository->findRole($dto->roleId);
+        $role = $this->staffRepository->findRole($dto->roleId, $companyId);
 
         if (!$role) {
             throw StaffException::roleNotFound();
@@ -67,7 +67,7 @@ class StaffService
 
         // Validate new role if being changed
         if ($dto->roleId) {
-            $role = $this->staffRepository->findRole($dto->roleId);
+            $role = $this->staffRepository->findRole($dto->roleId, $companyId);
 
             if (!$role) {
                 throw StaffException::roleNotFound();

@@ -18,6 +18,16 @@ return [
         'key' => env('POSTMARK_API_KEY'),
     ],
 
+    // backend-node's staff-notify InternalController (real-time staff notifications) — a
+    // shared secret, not a per-company key. Must match INTERNAL_API_KEY in backend-node's own
+    // .env exactly, or NotifyStaffAiHandoff/NotifyStaffNewLead's calls will be rejected.
+    'node' => [
+        'url' => env('NODE_SERVICE_URL', 'http://localhost:3000'),
+    ],
+    'internal' => [
+        'key' => env('INTERNAL_API_KEY'),
+    ],
+
     'resend' => [
         'key' => env('RESEND_API_KEY'),
     ],

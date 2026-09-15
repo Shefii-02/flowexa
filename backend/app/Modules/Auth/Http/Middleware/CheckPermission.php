@@ -19,8 +19,10 @@ class CheckPermission
             return response()->json(['message' => 'Unauthenticated.'], 401);
         }
 
-        // Superadmin bypasses all checks
-        if ($user->isSuperAdmin()) {
+        // Superadmin and Owner bypass all checks — a real code-level guarantee rather
+        // than relying on the `owner` role's seeded permissions row staying complete
+        // (a permissions sync/reset could otherwise silently strip owner's access).
+        if ($user->isSuperAdmin() || $user->isOwner()) {
             return $next($request);
         }
 

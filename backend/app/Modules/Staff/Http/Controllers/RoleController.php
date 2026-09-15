@@ -87,7 +87,18 @@ class RoleController extends Controller
 
         $allPerms   = Permission::all();
         $permMap    = $allPerms->pluck('id', 'key');
-        $defaultKeys = $this->defaultPermissionsForRole($record->name, $allPerms->pluck('key')->toArray());
+        $allKeys    = $allPerms->pluck('key')->toArray();
+
+        // defaultPermissionsForRole() is keyed by the GLOBAL system role names
+        // (superadmin/owner/admin/team_lead/counsellor/viewer) — a per-company role literally
+        // named "Admin" (capital A, auto-seeded by CompanySetupService::syncDefaultRoles()) is
+        // a different row and would fall through to "custom roles have no predefined defaults"
+        // (an empty array), wiping this company's admin-tier role entirely on reset. Protected
+        // roles use CompanySetupService's own definition instead: every permission except
+        // plans.manage/roles.manage.
+        $defaultKeys = $record->protected
+            ? array_values(array_filter($allKeys, fn ($k) => !in_array($k, ['plans.manage', 'roles.manage'])))
+            : $this->defaultPermissionsForRole($record->name, $allKeys);
 
         $validKeys = array_values(array_unique(array_filter($defaultKeys, fn($k) => $permMap->has($k))));
         $permIds   = array_values($permMap->only($validKeys)->toArray());
@@ -319,6 +330,19 @@ class RoleController extends Controller
             }
         }
 
+        // A company's protected (de facto admin-tier) role can be relabelled/recolored freely,
+        // but must never lose its floor permission — otherwise a company could end up with no
+        // role capable of managing staff at all.
+        if ($record->protected && array_key_exists('permission_ids', $data)) {
+            $permIds  = $data['permission_ids'] ?? [];
+            $permKeys = Permission::whereIn('id', $permIds)->pluck('key')->toArray();
+            if (!in_array('staff.manage', $permKeys, true)) {
+                return response()->json([
+                    'message' => "This company's Admin role must always keep at least Manage Staff — remove it via a different admin-tier role first if you really need to.",
+                ], 422);
+            }
+        }
+
         DB::transaction(function () use ($record, $data) {
             $permIds = $data['permission_ids'] ?? null;
             unset($data['permission_ids']);
@@ -355,6 +379,10 @@ class RoleController extends Controller
 
         if ($record->is_system) {
             return response()->json(['message' => 'System roles cannot be deleted.'], 403);
+        }
+
+        if ($record->protected) {
+            return response()->json(['message' => "This company's Admin role cannot be deleted."], 403);
         }
 
         $userCount = $record->users()->count();

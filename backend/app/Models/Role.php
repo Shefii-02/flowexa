@@ -11,13 +11,14 @@ class Role extends Model
 {
     protected $fillable = [
         'company_id', 'name', 'label', 'description', 'color',
-        'permissions', 'is_system', 'is_active', 'sort_order',
+        'permissions', 'is_system', 'is_active', 'sort_order', 'protected',
     ];
 
     protected $casts = [
         'permissions' => 'array',
         'is_system'   => 'boolean',
         'is_active'   => 'boolean',
+        'protected'   => 'boolean',
     ];
 
     public function company(): BelongsTo
