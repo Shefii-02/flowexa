@@ -429,6 +429,12 @@ Route::prefix('v1')->group(function () {
 
 
 
+        // ── Notification preferences (mobile app + web, self-service) ─────────
+        Route::prefix('notification-preferences')->middleware(['company.active'])->group(function () {
+            Route::get('me', [\App\Http\Controllers\NotificationPreferenceController::class, 'me']);
+            Route::put('me', [\App\Http\Controllers\NotificationPreferenceController::class, 'update']);
+        });
+
         // ── HR — Attendance / Breaks / Leave (mobile app + web) ──────────────
         Route::prefix('hr')->middleware(['company.active'])->group(function () {
             // Self service — every staff member manages their own attendance/leave, no permission needed.
