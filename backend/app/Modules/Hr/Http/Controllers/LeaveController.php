@@ -8,6 +8,7 @@ use App\Modules\Hr\Models\HrLeaveRequest;
 use App\Modules\Hr\Models\HrLeaveType;
 use App\Modules\Hr\Models\HrSetting;
 use App\Modules\Hr\Support\AttendanceService;
+use App\Modules\Hr\Support\HrNotifier;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -16,7 +17,10 @@ use Illuminate\Validation\ValidationException;
 
 class LeaveController extends Controller
 {
-    public function __construct(private readonly AttendanceService $svc) {}
+    public function __construct(
+        private readonly AttendanceService $svc,
+        private readonly HrNotifier $notifier,
+    ) {}
 
     private function companyId(): int
     {
@@ -95,6 +99,16 @@ class LeaveController extends Controller
         if ($autoApprove) {
             $this->applyToAttendance($leave);
         }
+
+        $this->notifier->notify(
+            $settings->leave_request_notify_user_ids,
+            'hr_leave_request',
+            $autoApprove ? '🏖️ Leave request (auto-approved)' : '🏖️ New leave request',
+            auth()->user()->name . " requested {$type->name}: "
+                . $start->format('d M') . ' → ' . $end->format('d M')
+                . ($autoApprove ? ' (auto-approved)' : ' — needs review'),
+            ['leave_id' => $leave->id, 'user_id' => auth()->id()],
+        );
 
         return response()->json(['data' => $leave->load('leaveType')], 201);
     }

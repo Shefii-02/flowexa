@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react'
 import { api } from '@/api/client'
 import toast from 'react-hot-toast'
-import { PageHeader, err, inp } from './hrShared'
+import { PageHeader, StaffMultiSelect, err, inp } from './hrShared'
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 
@@ -26,6 +26,8 @@ export default function HrOfficeDetailsPage() {
         office_end: String(s.office_end).slice(0, 5),
         early_window_minutes: Number(s.early_window_minutes),
         grace_minutes: Number(s.grace_minutes),
+        clock_out_early_window_minutes: Number(s.clock_out_early_window_minutes ?? 15),
+        clock_out_grace_minutes: Number(s.clock_out_grace_minutes ?? 15),
         overtime_multiplier: Number(s.overtime_multiplier),
         late_penalty_amount: Number(s.late_penalty_amount ?? 0),
         payroll_working_days: Number(s.payroll_working_days ?? 26),
@@ -33,6 +35,15 @@ export default function HrOfficeDetailsPage() {
         overtime_needs_approval: s.overtime_needs_approval, auto_availability: s.auto_availability,
         leave_auto_approve: s.leave_auto_approve, deduct_unpaid_leave: s.deduct_unpaid_leave, deduct_absent_days: s.deduct_absent_days,
         timezone: s.timezone,
+        geofence_mandatory: !!s.geofence_mandatory,
+        selfie_required_clock_in: !!s.selfie_required_clock_in,
+        selfie_required_clock_out: !!s.selfie_required_clock_out,
+        selfie_required_break_start: !!s.selfie_required_break_start,
+        selfie_required_break_end: !!s.selfie_required_break_end,
+        late_clockin_notify_user_ids: s.late_clockin_notify_user_ids ?? [],
+        late_clockout_notify_user_ids: s.late_clockout_notify_user_ids ?? [],
+        break_overrun_notify_user_ids: s.break_overrun_notify_user_ids ?? [],
+        leave_request_notify_user_ids: s.leave_request_notify_user_ids ?? [],
       })
       toast.success('Saved')
     } catch (e) { toast.error(err(e)) }
@@ -65,12 +76,44 @@ export default function HrOfficeDetailsPage() {
               <label className="text-xs text-gray-500">Radius (m)<input type="number" value={s.geofence_radius_m} onChange={e => setF('geofence_radius_m', e.target.value)} className={`block mt-1 w-full ${inp}`} /></label>
             </div>
             <button onClick={useMyLocation} className="text-xs text-indigo-600 hover:underline">📍 Use my location</button>
+            <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={!!s.geofence_mandatory} onChange={e => setF('geofence_mandatory', e.target.checked)} /> Mandatory for WFO staff — block clock in/out/break outside the radius unless a reason is given (WFH staff are never checked)</label>
             <div className="grid grid-cols-2 gap-3">
               <label className="text-xs text-gray-500">Default start (fallback)<input type="time" value={String(s.office_start).slice(0, 5)} onChange={e => setF('office_start', e.target.value)} className={`block mt-1 w-full ${inp}`} /></label>
               <label className="text-xs text-gray-500">Default end (fallback)<input type="time" value={String(s.office_end).slice(0, 5)} onChange={e => setF('office_end', e.target.value)} className={`block mt-1 w-full ${inp}`} /></label>
-              <label className="text-xs text-gray-500">Early "success" window (min)<input type="number" value={s.early_window_minutes} onChange={e => setF('early_window_minutes', e.target.value)} className={`block mt-1 w-full ${inp}`} /></label>
-              <label className="text-xs text-gray-500">Grace / "warning" (min)<input type="number" value={s.grace_minutes} onChange={e => setF('grace_minutes', e.target.value)} className={`block mt-1 w-full ${inp}`} /></label>
+              <label className="text-xs text-gray-500">Clock-in early "success" window (min)<input type="number" value={s.early_window_minutes} onChange={e => setF('early_window_minutes', e.target.value)} className={`block mt-1 w-full ${inp}`} /></label>
+              <label className="text-xs text-gray-500">Clock-in grace / "late" (min)<input type="number" value={s.grace_minutes} onChange={e => setF('grace_minutes', e.target.value)} className={`block mt-1 w-full ${inp}`} /></label>
+              <label className="text-xs text-gray-500">Clock-out early-leave window (min)<input type="number" value={s.clock_out_early_window_minutes ?? 15} onChange={e => setF('clock_out_early_window_minutes', e.target.value)} className={`block mt-1 w-full ${inp}`} /></label>
+              <label className="text-xs text-gray-500">Clock-out grace / "late" (min)<input type="number" value={s.clock_out_grace_minutes ?? 15} onChange={e => setF('clock_out_grace_minutes', e.target.value)} className={`block mt-1 w-full ${inp}`} /></label>
             </div>
+          </div>
+
+          <div className="bg-white border border-gray-200 rounded-xl p-4 space-y-2">
+            <h3 className="text-sm font-semibold text-gray-700">Selfie verification</h3>
+            <p className="text-xs text-gray-400">Require a front-camera photo for specific punches. Photos go to Google Drive if connected, otherwise the local Media Library.</p>
+            {[
+              ['selfie_required_clock_in', 'Clock-in selfie'],
+              ['selfie_required_clock_out', 'Clock-out selfie'],
+              ['selfie_required_break_start', 'Break-in selfie'],
+              ['selfie_required_break_end', 'Break-out selfie'],
+            ].map(([k, label]) => (
+              <label key={k} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={!!s[k]} onChange={e => setF(k, e.target.checked)} /> {label}</label>
+            ))}
+          </div>
+
+          <div className="bg-white border border-gray-200 rounded-xl p-4 space-y-3">
+            <h3 className="text-sm font-semibold text-gray-700">Alerts</h3>
+            <p className="text-xs text-gray-400">Who gets a push notification for each event. Leave empty to notify no one.</p>
+            {[
+              ['late_clockin_notify_user_ids', 'Late clock-in'],
+              ['late_clockout_notify_user_ids', 'Early / late clock-out'],
+              ['break_overrun_notify_user_ids', 'Break runs over its limit'],
+              ['leave_request_notify_user_ids', 'New leave request'],
+            ].map(([k, label]) => (
+              <div key={k}>
+                <div className="text-xs text-gray-500 mb-1">{label}</div>
+                <StaffMultiSelect value={s[k] ?? []} onChange={ids => setF(k, ids)} />
+              </div>
+            ))}
           </div>
 
           <div className="bg-white border border-gray-200 rounded-xl p-4 space-y-3">

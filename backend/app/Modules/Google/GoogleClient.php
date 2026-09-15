@@ -122,6 +122,34 @@ class GoogleClient
         return ['id' => $id, 'url' => "https://drive.google.com/drive/folders/{$id}"];
     }
 
+    /**
+     * Find a folder by exact name directly under $parentId, or create it.
+     * Used for day-based subfolders (e.g. HR attendance selfies) where a
+     * fresh check-then-create is cheap and avoids caching a folder id that
+     * could go stale (renamed/trashed on the Google side).
+     *
+     * @return array{id:string, url:string}
+     */
+    public function findOrCreateFolder(GoogleIntegration $i, string $name, string $parentId): array
+    {
+        $q = "mimeType='application/vnd.google-apps.folder' and trashed=false and name='"
+            . str_replace("'", "\\'", $name) . "' and '{$parentId}' in parents";
+
+        $res = Http::withToken($this->token($i))->get('https://www.googleapis.com/drive/v3/files', [
+            'q'      => $q,
+            'fields' => 'files(id,name)',
+            'pageSize' => 1,
+        ]);
+        $this->guard($res, 'look up Drive folder');
+
+        $existing = $res->json('files.0.id');
+        if ($existing) {
+            return ['id' => $existing, 'url' => "https://drive.google.com/drive/folders/{$existing}"];
+        }
+
+        return $this->createFolder($i, $name, $parentId);
+    }
+
     private function moveToFolder(GoogleIntegration $i, string $fileId, string $folderId): void
     {
         Http::withToken($this->token($i))

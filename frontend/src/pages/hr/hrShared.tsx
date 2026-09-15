@@ -35,6 +35,26 @@ export function Modal({ title, onClose, children }: { title: string; onClose: ()
   )
 }
 
+// ── Multi-user picker — who gets notified for a given HR alert (late clock-in,
+// late/early clock-out, break overrun, new leave request). Value/onChange are
+// plain arrays of user ids, matching the hr_settings.*_notify_user_ids columns.
+export function StaffMultiSelect({ value, onChange }: { value: number[]; onChange: (ids: number[]) => void }) {
+  const [staff, setStaff] = useState<any[]>([])
+  useEffect(() => { api.get('/staff').then(r => setStaff(r.data?.data ?? r.data ?? [])).catch(() => {}) }, [])
+  const toggle = (id: number) => onChange(value.includes(id) ? value.filter(v => v !== id) : [...value, id])
+  return (
+    <div className="border border-gray-200 rounded-lg max-h-40 overflow-y-auto divide-y divide-gray-100">
+      {staff.length === 0 && <div className="px-3 py-2 text-xs text-gray-400">No staff found</div>}
+      {staff.map(u => (
+        <label key={u.id} className="flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-gray-50 cursor-pointer">
+          <input type="checkbox" checked={value.includes(u.id)} onChange={() => toggle(u.id)} />
+          {u.name}
+        </label>
+      ))}
+    </div>
+  )
+}
+
 // ── Break / Leave type CRUD — used by HrBreakTypesPage and HrLeaveTypesPage ──────
 export function TypeCrud({ kind }: { kind: 'break' | 'leave' }) {
   const base = kind === 'break' ? '/hr/break-types' : '/hr/leave-types'

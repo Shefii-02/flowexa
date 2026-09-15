@@ -8,8 +8,10 @@ use App\Modules\Hr\Models\HrBreakSession;
 use App\Modules\Hr\Models\HrBreakType;
 use App\Modules\Hr\Models\HrSetting;
 use App\Modules\Hr\Models\HrStaffProfile;
+use App\Modules\Hr\Support\AttendancePhotoStorage;
 use App\Modules\Hr\Support\AttendanceService;
 use App\Modules\Hr\Support\Geo;
+use App\Modules\Hr\Support\HrNotifier;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -17,7 +19,11 @@ use Illuminate\Validation\ValidationException;
 
 class AttendanceController extends Controller
 {
-    public function __construct(private readonly AttendanceService $svc) {}
+    public function __construct(
+        private readonly AttendanceService $svc,
+        private readonly AttendancePhotoStorage $photos,
+        private readonly HrNotifier $notifier,
+    ) {}
 
     private function companyId(): int
     {
@@ -28,6 +34,37 @@ class AttendanceController extends Controller
     {
         $u = auth()->user();
         return $u->isOwner() || $u->isSuperAdmin() || $u->hasAnyPermission(['hr.manage', 'hr.attendance.view_all', 'staff.view']);
+    }
+
+    /**
+     * A WFO punch outside the office geofence, on a company that made the
+     * radius mandatory, blocks until the staff member gives a reason — the
+     * message doubles as the "how far / how much allowed" the mobile app
+     * shows, since a validation error's message is the only field that's
+     * guaranteed to reach the caller unmodified.
+     */
+    private function guardMandatoryRadius(HrSetting $settings, string $workMode, array $geo, ?string $reason): void
+    {
+        if ($workMode !== 'wfo' || !$settings->geofence_mandatory || !$geo['out_of_geofence'] || filled($reason)) {
+            return;
+        }
+        $message = $geo['distance'] === null
+            ? ($geo['note_message'] ?? 'Your location could not be checked against the office radius.')
+            : "You're {$geo['distance']} m from the office (allowed: {$settings->geofence_radius_m} m).";
+        throw ValidationException::withMessages([
+            'radius_reason' => "{$message} Add a reason to continue.",
+        ]);
+    }
+
+    private function storeSelfie(Request $request, string $action, bool $required): ?string
+    {
+        if (!$request->hasFile('selfie')) {
+            if ($required) {
+                throw ValidationException::withMessages(['selfie' => 'A selfie is required for this action.']);
+            }
+            return null;
+        }
+        return $this->photos->store(auth()->user(), $request->file('selfie'), $action);
     }
 
     // ── Self service ────────────────────────────────────────────────────────
@@ -48,7 +85,13 @@ class AttendanceController extends Controller
 
         return response()->json([
             'profile'  => $profile,
-            'settings' => $settings->only(['office_start', 'office_end', 'geofence_radius_m', 'timezone', 'early_window_minutes', 'grace_minutes']),
+            'settings' => $settings->only([
+                'office_start', 'office_end', 'geofence_radius_m', 'geofence_mandatory', 'timezone',
+                'early_window_minutes', 'grace_minutes',
+                'clock_out_early_window_minutes', 'clock_out_grace_minutes',
+                'selfie_required_clock_in', 'selfie_required_clock_out',
+                'selfie_required_break_start', 'selfie_required_break_end',
+            ]),
             'schedule' => $this->svc->schedule($settings, $profile, now()),
             'today'    => $today,
             'open_break' => $today?->openBreak(),
@@ -100,8 +143,10 @@ class AttendanceController extends Controller
             'lat'    => 'nullable|numeric|between:-90,90',
             'lng'    => 'nullable|numeric|between:-180,180',
             'note'   => 'nullable|string|max:500',
+            'radius_reason' => 'nullable|string|max:500',
             'source' => 'nullable|in:mobile,web,admin',
             'work_mode' => 'nullable|in:wfo,wfh',
+            'selfie' => 'nullable|image|max:5120',
         ]);
 
         $companyId = $this->companyId();
@@ -117,13 +162,18 @@ class AttendanceController extends Controller
             throw ValidationException::withMessages(['clock_in' => 'Already clocked in today.']);
         }
 
+        $workMode = $data['work_mode'] ?? $profile->work_mode;
         $sched = $this->svc->schedule($settings, $profile, $now);
         $status = $this->svc->clockInStatus($now, $sched['start'], $settings->early_window_minutes, $settings->grace_minutes);
         $geo = $this->svc->geofence($settings, $profile, $data['lat'] ?? null, $data['lng'] ?? null);
 
+        $this->guardMandatoryRadius($settings, $workMode, $geo, $data['radius_reason'] ?? null);
+
         if ($status['requires_note'] && $settings->require_late_note && empty($data['note'])) {
             throw ValidationException::withMessages(['note' => 'A reason is required when clocking in late.']);
         }
+
+        $photoUrl = $this->storeSelfie($request, 'clock_in', (bool) $settings->selfie_required_clock_in);
 
         // note: geofence danger wins over the timing colour
         $noteColor = $geo['note_color'] ?? $status['color'];
@@ -136,8 +186,10 @@ class AttendanceController extends Controller
             'clock_in_lng'            => $data['lng'] ?? null,
             'clock_in_distance_m'     => $geo['distance'],
             'clock_in_out_of_geofence' => $geo['out_of_geofence'],
+            'clock_in_photo_url'      => $photoUrl,
+            'clock_in_radius_reason'  => $geo['out_of_geofence'] ? ($data['radius_reason'] ?? null) : null,
             'clock_in_status'         => $status['color'],
-            'work_mode'               => $data['work_mode'] ?? $profile->work_mode,
+            'work_mode'               => $workMode,
             'source'                  => $data['source'] ?? 'web',
             'late_minutes'            => $status['late_minutes'],
             'late_note'               => $data['note'] ?? null,
@@ -147,6 +199,17 @@ class AttendanceController extends Controller
         ])->save();
 
         $this->svc->syncAvailability($settings, $companyId, $userId, 'working');
+
+        if ($status['requires_note']) {
+            $this->notifier->notify(
+                $settings->late_clockin_notify_user_ids,
+                'hr_late_clock_in',
+                '⏰ Late clock-in',
+                auth()->user()->name . " clocked in {$status['late_minutes']} min late"
+                    . (!empty($data['note']) ? ": {$data['note']}" : '.'),
+                ['user_id' => $userId, 'attendance_id' => $att->id],
+            );
+        }
 
         return response()->json(['data' => $att->fresh()->load('breaks'), 'status' => $status, 'geofence' => $geo], 201);
     }
@@ -158,6 +221,8 @@ class AttendanceController extends Controller
             'lat'  => 'nullable|numeric|between:-90,90',
             'lng'  => 'nullable|numeric|between:-180,180',
             'note' => 'nullable|string|max:500',
+            'radius_reason' => 'nullable|string|max:500',
+            'selfie' => 'nullable|image|max:5120',
         ]);
 
         $companyId = $this->companyId();
@@ -181,18 +246,28 @@ class AttendanceController extends Controller
         $sched = $this->svc->schedule($settings, $profile, $now);
         $earlyLeave = $now->lt($sched['end']) ? (int) round($now->diffInSeconds($sched['end']) / 60) : 0;
         $overtime = $now->gt($sched['end']) ? (int) round($sched['end']->diffInSeconds($now) / 60) : 0;
-
-        if ($earlyLeave > 0 && $settings->require_early_leave_note && empty($data['note'])) {
-            throw ValidationException::withMessages(['note' => 'A reason is required when leaving before the scheduled end time.']);
-        }
+        $isEarly = $earlyLeave > $settings->clock_out_early_window_minutes;
+        $isLate = $overtime > $settings->clock_out_grace_minutes;
 
         $geo = $this->svc->geofence($settings, $profile, $data['lat'] ?? null, $data['lng'] ?? null);
+        $this->guardMandatoryRadius($settings, (string) ($att->work_mode ?: $profile->work_mode), $geo, $data['radius_reason'] ?? null);
+
+        if ($isEarly && $settings->require_early_leave_note && empty($data['note'])) {
+            throw ValidationException::withMessages(['note' => 'A reason is required when leaving before the scheduled end time.']);
+        }
+        if ($isLate && empty($data['note']) && $settings->require_early_leave_note) {
+            throw ValidationException::withMessages(['note' => 'A reason is required — this clock-out is later than usual.']);
+        }
+
+        $photoUrl = $this->storeSelfie($request, 'clock_out', (bool) $settings->selfie_required_clock_out);
 
         $att->fill([
             'clock_out_at'         => $now,
             'clock_out_lat'        => $data['lat'] ?? null,
             'clock_out_lng'        => $data['lng'] ?? null,
             'clock_out_distance_m' => $geo['distance'],
+            'clock_out_photo_url'  => $photoUrl,
+            'clock_out_radius_reason' => $geo['out_of_geofence'] ? ($data['radius_reason'] ?? null) : null,
             'early_leave_minutes'  => $earlyLeave,
             'early_leave_note'     => $earlyLeave > 0 ? ($data['note'] ?? null) : null,
             'overtime_minutes'     => $overtime,
@@ -202,6 +277,19 @@ class AttendanceController extends Controller
 
         $this->svc->recomputeTotals($att);
         $this->svc->syncAvailability($settings, $companyId, $userId, 'off');
+
+        if ($isEarly || $isLate) {
+            $this->notifier->notify(
+                $settings->late_clockout_notify_user_ids,
+                $isEarly ? 'hr_early_clock_out' : 'hr_late_clock_out',
+                $isEarly ? '⏰ Early clock-out' : '⏰ Late clock-out',
+                auth()->user()->name . ' ' . ($isEarly
+                    ? "left {$earlyLeave} min before their scheduled end time"
+                    : "clocked out {$overtime} min after their scheduled end time")
+                    . (!empty($data['note']) ? ": {$data['note']}" : '.'),
+                ['user_id' => $userId, 'attendance_id' => $att->id],
+            );
+        }
 
         return response()->json(['data' => $att->fresh()->load('breaks')]);
     }
@@ -214,6 +302,8 @@ class AttendanceController extends Controller
             'break_type_id' => 'nullable|integer',
             'lat' => 'nullable|numeric|between:-90,90',
             'lng' => 'nullable|numeric|between:-180,180',
+            'radius_reason' => 'nullable|string|max:500',
+            'selfie' => 'nullable|image|max:5120',
         ]);
 
         $companyId = $this->companyId();
@@ -242,6 +332,9 @@ class AttendanceController extends Controller
         }
 
         $geo = $this->svc->geofence($settings, $profile, $data['lat'] ?? null, $data['lng'] ?? null);
+        $this->guardMandatoryRadius($settings, (string) ($att->work_mode ?: $profile->work_mode), $geo, $data['radius_reason'] ?? null);
+
+        $photoUrl = $this->storeSelfie($request, 'break_start', (bool) $settings->selfie_required_break_start);
 
         $session = HrBreakSession::create([
             'company_id'      => $companyId,
@@ -253,6 +346,7 @@ class AttendanceController extends Controller
             'start_lng'       => $data['lng'] ?? null,
             'start_distance_m' => $geo['distance'],
             'start_status'    => $geo['out_of_geofence'] ? 'danger' : 'info',
+            'start_photo_url' => $photoUrl,
         ]);
 
         $this->svc->syncAvailability($settings, $companyId, $userId, 'on_break');
@@ -266,6 +360,8 @@ class AttendanceController extends Controller
             'lat'  => 'nullable|numeric|between:-90,90',
             'lng'  => 'nullable|numeric|between:-180,180',
             'note' => 'nullable|string|max:500',
+            'radius_reason' => 'nullable|string|max:500',
+            'selfie' => 'nullable|image|max:5120',
         ]);
 
         $companyId = $this->companyId();
@@ -280,12 +376,19 @@ class AttendanceController extends Controller
             throw ValidationException::withMessages(['break' => 'No running break.']);
         }
 
+        $geo = $this->svc->geofence($settings, $profile, $data['lat'] ?? null, $data['lng'] ?? null);
+        $this->guardMandatoryRadius($settings, (string) ($att->work_mode ?: $profile->work_mode), $geo, $data['radius_reason'] ?? null);
+
         $now = now();
         $minutes = max(0, (int) round($session->start_at->diffInSeconds($now) / 60));
         $type = $session->breakType;
         $overBy = ($type && $type->max_minutes && $minutes > $type->max_minutes) ? $minutes - $type->max_minutes : 0;
 
-        $geo = $this->svc->geofence($settings, $profile, $data['lat'] ?? null, $data['lng'] ?? null);
+        if ($overBy > 0 && empty($data['note'])) {
+            throw ValidationException::withMessages(['note' => "This break ran {$overBy} min over the limit — add a reason."]);
+        }
+
+        $photoUrl = $this->storeSelfie($request, 'break_end', (bool) $settings->selfie_required_break_end);
 
         $session->update([
             'end_at'          => $now,
@@ -296,10 +399,22 @@ class AttendanceController extends Controller
             'over_limit'      => $overBy > 0,
             'over_by_minutes' => $overBy,
             'note'            => $data['note'] ?? null,
+            'end_photo_url'   => $photoUrl,
         ]);
 
         $this->svc->recomputeTotals($att);
         $this->svc->syncAvailability($settings, $companyId, $userId, 'working');
+
+        if ($overBy > 0) {
+            $this->notifier->notify(
+                $settings->break_overrun_notify_user_ids,
+                'hr_break_overrun',
+                '⏰ Break ran over',
+                auth()->user()->name . " took a break {$overBy} min over the limit"
+                    . (!empty($data['note']) ? ": {$data['note']}" : '.'),
+                ['user_id' => $userId, 'attendance_id' => $att->id],
+            );
+        }
 
         return response()->json([
             'data' => $session->fresh()->load('breakType'),

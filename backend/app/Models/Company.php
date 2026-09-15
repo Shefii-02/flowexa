@@ -32,6 +32,7 @@ class Company extends Model
         'waha_max_sessions',
         'waha_max_webhooks',
         'waha_media_limit_mb',
+        'hr_storage_limit_mb',
         'wa_phone_id',
         'wa_access_token',
         'wa_business_id',

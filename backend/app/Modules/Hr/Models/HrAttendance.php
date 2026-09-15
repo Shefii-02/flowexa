@@ -16,6 +16,8 @@ class HrAttendance extends Model
         'clock_in_at', 'clock_out_at',
         'clock_in_lat', 'clock_in_lng', 'clock_out_lat', 'clock_out_lng',
         'clock_in_distance_m', 'clock_out_distance_m', 'clock_in_out_of_geofence',
+        'clock_in_photo_url', 'clock_out_photo_url',
+        'clock_in_radius_reason', 'clock_out_radius_reason',
         'clock_in_status', 'work_mode', 'source',
         'late_minutes', 'early_leave_minutes', 'overtime_minutes', 'break_minutes', 'worked_minutes',
         'late_note', 'early_leave_note', 'overtime_note', 'overtime_status',

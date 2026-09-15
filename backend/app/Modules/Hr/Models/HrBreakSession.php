@@ -13,6 +13,7 @@ class HrBreakSession extends Model
         'company_id', 'user_id', 'attendance_id', 'break_type_id',
         'start_at', 'end_at',
         'start_lat', 'start_lng', 'end_lat', 'end_lng', 'start_distance_m', 'end_distance_m',
+        'start_photo_url', 'end_photo_url',
         'minutes', 'over_limit', 'over_by_minutes', 'start_status', 'note',
     ];
 
