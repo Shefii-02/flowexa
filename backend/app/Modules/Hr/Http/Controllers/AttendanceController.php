@@ -136,6 +136,94 @@ class AttendanceController extends Controller
         return response()->json(['data' => $days, 'leave' => $leave, 'month' => $start->format('Y-m')]);
     }
 
+    /**
+     * POST /hr/attendance/precheck — dry run, writes nothing. Given the
+     * action the app is about to perform and the device's current position,
+     * reports whether a selfie/late-note/radius-reason would be needed —
+     * every check here mirrors the real endpoint's own validation exactly,
+     * but only ever the ones the company has actually turned on. Lets the
+     * app prompt for a reason before the real punch instead of reacting to
+     * a failed one; the real endpoint still re-validates everything itself,
+     * so this being stale (e.g. the clock ticks past the grace window
+     * between the two calls) never lets a bad punch through.
+     */
+    public function precheck(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'action' => 'required|in:clock_in,clock_out,break_start,break_end',
+            'lat'    => 'nullable|numeric|between:-90,90',
+            'lng'    => 'nullable|numeric|between:-180,180',
+        ]);
+
+        $companyId = $this->companyId();
+        $userId = (int) auth()->id();
+        $settings = HrSetting::forCompany($companyId);
+        $profile = HrStaffProfile::forUser($companyId, $userId);
+        $now = now();
+
+        $att = HrAttendance::where('company_id', $companyId)->where('user_id', $userId)
+            ->whereDate('work_date', $now->toDateString())->first();
+
+        $workMode = $att?->work_mode ?: $profile->work_mode;
+        $geo = $this->svc->geofence($settings, $profile, $data['lat'] ?? null, $data['lng'] ?? null);
+        $radiusReasonNeeded = $workMode === 'wfo' && $settings->geofence_mandatory && $geo['out_of_geofence'];
+
+        $result = [
+            'work_mode'            => $workMode,
+            'selfie_required'      => (bool) $settings->{"selfie_required_{$data['action']}"},
+            'radius_reason_needed' => $radiusReasonNeeded,
+            'radius_message'       => null,
+            'distance_m'           => $geo['distance'],
+            'allowed_m'            => $settings->geofence_radius_m,
+            'note_required'        => false,
+            'note_message'         => null,
+            'late_minutes'         => 0,
+        ];
+
+        if ($radiusReasonNeeded) {
+            $result['radius_message'] = $geo['distance'] === null
+                ? ($geo['note_message'] ?? 'Your location could not be checked against the office radius.')
+                : "You're {$geo['distance']} m from the office (allowed: {$settings->geofence_radius_m} m).";
+        }
+
+        if ($data['action'] === 'clock_in') {
+            $sched = $this->svc->schedule($settings, $profile, $now);
+            $status = $this->svc->clockInStatus($now, $sched['start'], $settings->early_window_minutes, $settings->grace_minutes);
+            $result['late_minutes'] = $status['late_minutes'];
+            if ($status['requires_note'] && $settings->require_late_note) {
+                $result['note_required'] = true;
+                $result['note_message'] = 'A reason is required when clocking in late.';
+            }
+        } elseif ($data['action'] === 'clock_out' && $att?->clock_in_at) {
+            $sched = $this->svc->schedule($settings, $profile, $now);
+            $earlyLeave = $now->lt($sched['end']) ? (int) round($now->diffInSeconds($sched['end']) / 60) : 0;
+            $overtime = $now->gt($sched['end']) ? (int) round($sched['end']->diffInSeconds($now) / 60) : 0;
+            $isEarly = $earlyLeave > $settings->clock_out_early_window_minutes;
+            $isLate = $overtime > $settings->clock_out_grace_minutes;
+            $result['late_minutes'] = $isEarly ? $earlyLeave : $overtime;
+            if (($isEarly || $isLate) && $settings->require_early_leave_note) {
+                $result['note_required'] = true;
+                $result['note_message'] = $isEarly
+                    ? 'A reason is required when leaving before the scheduled end time.'
+                    : 'A reason is required — this clock-out is later than usual.';
+            }
+        } elseif ($data['action'] === 'break_end') {
+            $session = $att?->openBreak();
+            $type = $session?->breakType;
+            if ($session && $type && $type->max_minutes) {
+                $minutes = max(0, (int) round($session->start_at->diffInSeconds($now) / 60));
+                $overBy = $minutes - $type->max_minutes;
+                if ($overBy > 0) {
+                    $result['late_minutes'] = $overBy;
+                    $result['note_required'] = true;
+                    $result['note_message'] = "This break ran {$overBy} min over the limit — add a reason.";
+                }
+            }
+        }
+
+        return response()->json($result);
+    }
+
     /** POST /hr/attendance/clock-in */
     public function clockIn(Request $request): JsonResponse
     {

@@ -438,6 +438,9 @@ Route::prefix('v1')->group(function () {
             Route::post('attendance/clock-out',  [AttendanceController::class, 'clockOut']);
             Route::post('attendance/break/start', [AttendanceController::class, 'breakStart']);
             Route::post('attendance/break/end',  [AttendanceController::class, 'breakEnd']);
+            // Dry run (no DB write) — lets the app ask for a late/radius reason
+            // before the real punch instead of reacting to a failed one.
+            Route::post('attendance/precheck',   [AttendanceController::class, 'precheck']);
 
             // Team / admin — route middleware now mirrors each controller's own in-controller
             // OR-check exactly (previously enforced only in PHP, with no route middleware at all).

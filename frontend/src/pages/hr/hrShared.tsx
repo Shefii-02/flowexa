@@ -38,19 +38,57 @@ export function Modal({ title, onClose, children }: { title: string; onClose: ()
 // ── Multi-user picker — who gets notified for a given HR alert (late clock-in,
 // late/early clock-out, break overrun, new leave request). Value/onChange are
 // plain arrays of user ids, matching the hr_settings.*_notify_user_ids columns.
+// Shows only the currently-selected people as removable chips (not the whole
+// staff list) — search to find and add more.
 export function StaffMultiSelect({ value, onChange }: { value: number[]; onChange: (ids: number[]) => void }) {
   const [staff, setStaff] = useState<any[]>([])
+  const [query, setQuery] = useState('')
+  const [open, setOpen] = useState(false)
   useEffect(() => { api.get('/staff').then(r => setStaff(r.data?.data ?? r.data ?? [])).catch(() => {}) }, [])
-  const toggle = (id: number) => onChange(value.includes(id) ? value.filter(v => v !== id) : [...value, id])
+
+  const selected = staff.filter(u => value.includes(u.id))
+  const q = query.trim().toLowerCase()
+  const results = staff.filter(u => !value.includes(u.id) && (!q || String(u.name ?? '').toLowerCase().includes(q)))
+
+  const add = (id: number) => { onChange([...value, id]); setQuery(''); setOpen(false) }
+  const remove = (id: number) => onChange(value.filter(v => v !== id))
+
   return (
-    <div className="border border-gray-200 rounded-lg max-h-40 overflow-y-auto divide-y divide-gray-100">
-      {staff.length === 0 && <div className="px-3 py-2 text-xs text-gray-400">No staff found</div>}
-      {staff.map(u => (
-        <label key={u.id} className="flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-gray-50 cursor-pointer">
-          <input type="checkbox" checked={value.includes(u.id)} onChange={() => toggle(u.id)} />
-          {u.name}
-        </label>
-      ))}
+    <div className="space-y-1.5">
+      <div className="flex flex-wrap gap-1.5 min-h-[1.5rem]">
+        {selected.length === 0 && <span className="text-xs text-gray-400">No one selected</span>}
+        {selected.map(u => (
+          <span key={u.id} className="inline-flex items-center gap-1 bg-indigo-50 text-indigo-700 text-xs pl-2 pr-1 py-1 rounded-full">
+            {u.name}
+            <button type="button" onClick={() => remove(u.id)} className="text-indigo-400 hover:text-indigo-700 leading-none px-0.5">&times;</button>
+          </span>
+        ))}
+      </div>
+      <div className="relative">
+        <input
+          value={query}
+          onChange={e => { setQuery(e.target.value); setOpen(true) }}
+          onFocus={() => setOpen(true)}
+          onBlur={() => setTimeout(() => setOpen(false), 150)}
+          placeholder="Search staff to add…"
+          className={`w-full ${inp}`}
+        />
+        {open && results.length > 0 && (
+          <div className="absolute z-10 mt-1 w-full max-h-40 overflow-y-auto bg-white border border-gray-200 rounded-lg shadow-lg">
+            {results.map(u => (
+              <button key={u.id} type="button" onMouseDown={() => add(u.id)}
+                className="block w-full text-left px-3 py-1.5 text-sm hover:bg-gray-50">
+                {u.name}
+              </button>
+            ))}
+          </div>
+        )}
+        {open && query && results.length === 0 && (
+          <div className="absolute z-10 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg px-3 py-2 text-xs text-gray-400">
+            No match
+          </div>
+        )}
+      </div>
     </div>
   )
 }
