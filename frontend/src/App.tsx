@@ -36,6 +36,8 @@ import AttendancePage from '@/pages/hr/AttendancePage'
 import HrAttendanceAdminPage from '@/pages/hr/HrAttendanceAdminPage'
 import HrPayrollPage from '@/pages/hr/HrPayrollPage'
 import HrSalesPage from '@/pages/hr/HrSalesPage'
+import MyTargetPage from '@/pages/hr/MyTargetPage'
+import MyPayrollPage from '@/pages/hr/MyPayrollPage'
 import HrIncentivesPage from '@/pages/hr/HrIncentivesPage'
 import HrLeaveRequestsPage from '@/pages/hr/HrLeaveRequestsPage'
 import HrBreakTypesPage from '@/pages/hr/HrBreakTypesPage'
@@ -290,6 +292,8 @@ export default function App() {
 
               {/* HR */}
               <Route path="hr/attendance" element={<AttendancePage />} />
+              <Route path="hr/target" element={<MyTargetPage />} />
+              <Route path="hr/payroll" element={<MyPayrollPage />} />
               <Route path="hr/admin" element={<Navigate to="/hr/admin/attendance" replace />} />
               <Route path="hr/admin/attendance" element={<HrAttendanceAdminPage />} />
               <Route path="hr/admin/payroll" element={<HrPayrollPage />} />

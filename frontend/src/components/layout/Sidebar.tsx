@@ -579,6 +579,8 @@ export const Sidebar = () => {
             <SectionHeader label="HR" />
             <NestedAccordion icon="👥" label="HR" basePaths={['/hr']} defaultOpen>
               <SubLink to="/hr/attendance" icon="🕒" label="My Attendance" />
+              <SubLink to="/hr/target" icon="🎯" label="My Target" />
+              <SubLink to="/hr/payroll" icon="💰" label="My Payroll" />
 
               <NestedAccordion icon="🛠️" label="Administration" basePaths={['/hr/admin']}>
                 <SubLink to="/hr/admin/attendance" icon="🗓️" label="Attendance" />

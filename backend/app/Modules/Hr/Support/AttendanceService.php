@@ -103,6 +103,24 @@ class AttendanceService
         ];
     }
 
+    /**
+     * Whether `$date` is a working day for this staff member — their own `weekly_off`
+     * override (if set) takes precedence over the company's per-weekday hours, which in turn
+     * fall back to Mon–Fri when the company hasn't configured any. Mirrors the same precedence
+     * PayrollService uses when counting a period's working days.
+     */
+    public function isWorkingDay(HrStaffProfile $profile, Carbon $date): bool
+    {
+        if (is_array($profile->weekly_off) && $profile->weekly_off !== []) {
+            return !in_array($date->dayOfWeek, $profile->weekly_off, true);
+        }
+
+        $openWeekdays = CompanyWorkingHour::where('company_id', $profile->company_id)
+            ->where('is_open', true)->pluck('weekday')->all();
+
+        return in_array($date->dayOfWeek, $openWeekdays ?: [1, 2, 3, 4, 5], true);
+    }
+
     /** Whether the staff member has an approved leave covering the date. */
     public function onApprovedLeave(int $companyId, int $userId, Carbon $date): bool
     {
@@ -145,5 +163,52 @@ class AttendanceService
         }
 
         $att->update(['break_minutes' => $breakMinutes, 'worked_minutes' => $worked]);
+    }
+
+    /**
+     * Minutes worked so far today, live — unlike `worked_minutes` (only stored at clock-out),
+     * this counts up to now (or to clock-out if already punched out) minus completed breaks
+     * and any break currently in progress. Used by the dashboard "worked today" tile while
+     * a staff member is still clocked in.
+     */
+    public function liveWorkedMinutes(HrAttendance $att): int
+    {
+        if (!$att->clock_in_at) {
+            return 0;
+        }
+        $end = $att->clock_out_at ?: now();
+        $completedBreaks = (int) $att->breaks()->whereNotNull('end_at')->sum('minutes');
+        $openBreak = $att->openBreak();
+        $openBreakMinutes = $openBreak ? max(0, (int) round($openBreak->start_at->diffInSeconds(now()) / 60)) : 0;
+
+        return max(0, (int) round($att->clock_in_at->diffInSeconds($end) / 60) - $completedBreaks - $openBreakMinutes);
+    }
+
+    /**
+     * Consecutive calendar days (ending today, or yesterday if today has no attendance yet)
+     * with a "present" attendance row. Powers the dashboard's day-streak tile.
+     */
+    public function dayStreak(int $companyId, int $userId): int
+    {
+        $presentDates = HrAttendance::where('company_id', $companyId)->where('user_id', $userId)
+            ->where('status', 'present')
+            ->orderByDesc('work_date')
+            ->limit(400)
+            ->pluck('work_date')
+            ->map(fn ($d) => $d->toDateString())
+            ->flip();
+
+        $cursor = today();
+        if (!$presentDates->has($cursor->toDateString())) {
+            $cursor = $cursor->copy()->subDay();
+        }
+
+        $streak = 0;
+        while ($presentDates->has($cursor->toDateString())) {
+            $streak++;
+            $cursor->subDay();
+        }
+
+        return $streak;
     }
 }

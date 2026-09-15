@@ -441,6 +441,20 @@ Route::prefix('v1')->group(function () {
             // Dry run (no DB write) — lets the app ask for a late/radius reason
             // before the real punch instead of reacting to a failed one.
             Route::post('attendance/precheck',   [AttendanceController::class, 'precheck']);
+            // Per-day status for a month (present/absent/on_leave/half_day/weekly_off/upcoming) —
+            // powers the mobile Attendance screen's calendar strip + month tile counts.
+            Route::get('attendance/me/calendar', [AttendanceController::class, 'myCalendar']);
+
+            // Home screen aggregate (mobile app + web) — attendance + sales target + streak +
+            // rank + leads/pipeline/follow-ups/tasks in one round trip. Self-scoped.
+            Route::get('dashboard/me', [\App\Modules\Hr\Http\Controllers\DashboardController::class, 'me']);
+
+            // Target screen — own progress, weekly breakdown, remaining/days-left + team standing.
+            Route::get('sales/me', [\App\Modules\Hr\Http\Controllers\SalesController::class, 'me']);
+
+            // Payroll — the caller's own released payslips (drafts stay admin-only).
+            Route::get('payroll/me',         [PayrollController::class, 'me']);
+            Route::get('payroll/me/history', [PayrollController::class, 'meHistory']);
 
             // Team / admin — route middleware now mirrors each controller's own in-controller
             // OR-check exactly (previously enforced only in PHP, with no route middleware at all).

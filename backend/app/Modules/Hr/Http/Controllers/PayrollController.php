@@ -138,6 +138,41 @@ class PayrollController extends Controller
         ]);
     }
 
+    /**
+     * GET /hr/payroll/me?period=YYYY-MM — the caller's own payslip for that period (default:
+     * latest released one). Only released runs are visible to staff — a draft's numbers aren't
+     * final and admins may still edit them.
+     */
+    public function me(Request $request): JsonResponse
+    {
+        $companyId = $this->companyId();
+        $userId = (int) auth()->id();
+
+        $query = HrPayrollItem::where('company_id', $companyId)->where('user_id', $userId)
+            ->whereHas('run', fn ($q) => $q->where('status', 'released'));
+
+        if ($request->filled('period')) {
+            $query->whereHas('run', fn ($q) => $q->where('period', $request->string('period')));
+        }
+
+        $item = $query->with('run:id,period,status,released_at')->latest('id')->first();
+
+        return response()->json(['data' => $item]);
+    }
+
+    /** GET /hr/payroll/me/history — the caller's past released payslips, most recent first. */
+    public function meHistory(): JsonResponse
+    {
+        $items = HrPayrollItem::where('company_id', $this->companyId())->where('user_id', auth()->id())
+            ->whereHas('run', fn ($q) => $q->where('status', 'released'))
+            ->with('run:id,period,status,released_at')
+            ->get()
+            ->sortByDesc(fn (HrPayrollItem $i) => $i->run->period)
+            ->values();
+
+        return response()->json(['data' => $items]);
+    }
+
     /** @return array<string, float> */
     private function runTotals(HrPayrollRun $run): array
     {

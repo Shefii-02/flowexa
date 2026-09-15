@@ -5,6 +5,54 @@ import { useCallback, useEffect, useState } from 'react'
 import { api } from '@/api/client'
 import toast from 'react-hot-toast'
 
+// ── Shared HR types — mirror the Laravel Hr models (hr_attendance, hr_break_sessions,
+// hr_break_types). Previously duplicated locally inside AttendancePage.tsx; centralised
+// here so any other page (e.g. a personal dashboard widget) can reuse them.
+export type BreakType = { id: number; name: string; max_minutes: number | null; daily_limit: number | null; requires_gps: boolean }
+export type BreakSession = { id: number; start_at: string; end_at: string | null; minutes: number | null; over_limit: boolean; break_type?: { name: string } | null }
+export type Attendance = {
+  id: number
+  clock_in_at: string | null
+  clock_out_at: string | null
+  clock_in_status: string | null
+  note_color: string | null
+  note_message: string | null
+  late_minutes: number
+  early_leave_minutes: number
+  overtime_minutes: number
+  overtime_status: string
+  worked_minutes: number
+  break_minutes: number
+  breaks: BreakSession[]
+}
+
+// ── GET /hr/dashboard/me — the sales-rep home-screen aggregate (attendance, sales
+// target, streak, rank, leads/pipeline/follow-ups/tasks) shared by the mobile app and
+// any future web "my dashboard" widget.
+export type DashboardFollowUp = {
+  id: number; title: string; type: 'call' | 'whatsapp' | 'email'
+  contact_name: string | null; contact_phone: string | null
+  due_at: string; bucket: 'missed' | 'late' | 'due_today' | 'upcoming'; days_late: number
+}
+export type DashboardTask = { id: number; title: string; status: 'open' | 'done' | 'cancelled'; priority: string; due_at: string | null }
+export type DashboardMe = {
+  greeting: { part: string; name: string; initials: string; avatar: string | null }
+  attendance: {
+    status: 'not_clocked_in' | 'clocked_in' | 'on_break' | 'clocked_out'
+    clock_in_at: string | null; clock_out_at: string | null
+    open_break: BreakSession | null; last_break_in: string | null; last_break_out: string | null
+    worked_minutes: number; break_minutes: number
+  }
+  sales_target: { month: string; target: number; achieved: number; progress: number | null; currency: string }
+  streak: { days: number }
+  rank: { position: number | null; total_staff: number }
+  leads: { new_today: number }
+  pipeline: { new: number; contacted: number; won: number }
+  follow_ups: { counts: { missed: number; late: number; due_today: number }; items: DashboardFollowUp[] }
+  tasks: { done: number; total: number; items: DashboardTask[] }
+  next_up: { title: string; subtitle: string; at: string } | null
+}
+
 export const hm = (m: number) => `${Math.floor(m / 60)}h ${m % 60}m`
 export const err = (e: any) => e.response?.data?.message ?? (Object.values(e.response?.data?.errors ?? {})[0] as string[] | undefined)?.[0] ?? 'Failed'
 export const inp = 'border border-gray-300 rounded-lg px-3 py-2 text-sm'

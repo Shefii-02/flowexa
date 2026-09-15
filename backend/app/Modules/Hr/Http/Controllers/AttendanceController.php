@@ -137,6 +137,62 @@ class AttendanceController extends Controller
     }
 
     /**
+     * GET /hr/attendance/me/calendar?month=YYYY-MM — one entry per day of the month with a
+     * single status (present/absent/on_leave/half_day/weekly_off/upcoming), for the mobile
+     * Attendance screen's calendar strip + month tile counts. Days with no `hr_attendance` row
+     * are inferred: a non-working day is `weekly_off`, a future day is `upcoming`, and a past
+     * working day with neither a row nor an approved leave is `absent` — attendance rows are
+     * only ever written by a clock-in or a leave decision, never by a nightly sweep.
+     */
+    public function myCalendar(Request $request): JsonResponse
+    {
+        $companyId = $this->companyId();
+        $userId = (int) auth()->id();
+        $profile = HrStaffProfile::forUser($companyId, $userId);
+        $month = $request->filled('month') ? Carbon::parse($request->string('month') . '-01') : now();
+        $start = $month->copy()->startOfMonth();
+        $end = $month->copy()->endOfMonth();
+        $today = today();
+
+        $rows = HrAttendance::where('company_id', $companyId)->where('user_id', $userId)
+            ->whereBetween('work_date', [$start, $end])
+            ->get(['work_date', 'status', 'late_minutes'])
+            ->keyBy(fn ($r) => $r->work_date->toDateString());
+
+        $days = [];
+        $counts = ['present' => 0, 'absent' => 0, 'late' => 0, 'leave' => 0];
+        for ($d = $start->copy(); $d->lte($end); $d->addDay()) {
+            $key = $d->toDateString();
+            $row = $rows->get($key);
+
+            if ($row) {
+                $status = $row->status;
+            } elseif ($d->gt($today)) {
+                $status = 'upcoming';
+            } elseif (!$this->svc->isWorkingDay($profile, $d)) {
+                $status = 'weekly_off';
+            } else {
+                $status = 'absent';
+            }
+
+            if ($status === 'present') {
+                $counts['present']++;
+                if ($row && $row->late_minutes > 0) {
+                    $counts['late']++;
+                }
+            } elseif ($status === 'absent') {
+                $counts['absent']++;
+            } elseif (in_array($status, ['on_leave', 'half_day'], true)) {
+                $counts['leave']++;
+            }
+
+            $days[] = ['date' => $key, 'status' => $status, 'late' => $status === 'present' && $row && $row->late_minutes > 0];
+        }
+
+        return response()->json(['month' => $start->format('Y-m'), 'days' => $days, 'counts' => $counts]);
+    }
+
+    /**
      * POST /hr/attendance/precheck — dry run, writes nothing. Given the
      * action the app is about to perform and the device's current position,
      * reports whether a selfie/late-note/radius-reason would be needed —
@@ -408,7 +464,7 @@ class AttendanceController extends Controller
             throw ValidationException::withMessages(['break' => 'A break is already running.']);
         }
 
-        $type = $data['break_type_id']
+        $type = ($data['break_type_id'] ?? null)
             ? HrBreakType::where('company_id', $companyId)->find($data['break_type_id'])
             : null;
 

@@ -1,24 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api } from '@/api/client'
 import toast from 'react-hot-toast'
+import type { BreakType, BreakSession, Attendance } from './hrShared'
 
-type BreakType = { id: number; name: string; max_minutes: number | null; daily_limit: number | null; requires_gps: boolean }
-type BreakSession = { id: number; start_at: string; end_at: string | null; minutes: number | null; over_limit: boolean; break_type?: { name: string } | null }
-type Attendance = {
-  id: number
-  clock_in_at: string | null
-  clock_out_at: string | null
-  clock_in_status: string | null
-  note_color: string | null
-  note_message: string | null
-  late_minutes: number
-  early_leave_minutes: number
-  overtime_minutes: number
-  overtime_status: string
-  worked_minutes: number
-  break_minutes: number
-  breaks: BreakSession[]
-}
 type MeResponse = {
   profile: { attendance_type: string; work_mode: string }
   settings: { office_start: string; office_end: string; geofence_radius_m: number }
@@ -68,6 +52,7 @@ export default function AttendancePage() {
   const [history, setHistory] = useState<HistoryDay[]>([])
   const [historyLeave, setHistoryLeave] = useState<LeaveRequest[]>([])
   const [historyLoading, setHistoryLoading] = useState(true)
+  const [calendarCounts, setCalendarCounts] = useState<{ present: number; absent: number; late: number; leave: number } | null>(null)
 
   const load = useCallback(() => {
     setLoading(true)
@@ -80,6 +65,8 @@ export default function AttendancePage() {
     api.get('/hr/attendance/me/history', { params: { month } })
       .then(r => { setHistory(r.data?.data ?? []); setHistoryLeave(r.data?.leave ?? []) })
       .finally(() => setHistoryLoading(false))
+    api.get('/hr/attendance/me/calendar', { params: { month } })
+      .then(r => setCalendarCounts(r.data?.counts ?? null)).catch(() => setCalendarCounts(null))
   }, [month])
   useEffect(() => { loadHistory() }, [loadHistory])
 
@@ -184,10 +171,11 @@ export default function AttendancePage() {
           )}
 
           {/* Month summary */}
-          <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
+          <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
             {[
               ['Present', me.month.present_days], ['Hours', me.month.worked_hours], ['Late', me.month.late_days],
               ['OT hrs', me.month.overtime_hours], ['Leave', me.month.on_leave_days],
+              ['Absent', calendarCounts?.absent ?? '—'],
             ].map(([k, v]) => (
               <div key={k} className="bg-white border border-gray-200 rounded-xl px-3 py-2 text-center">
                 <div className="text-lg font-bold text-gray-900">{v}</div><div className="text-[11px] text-gray-400">{k}</div>
