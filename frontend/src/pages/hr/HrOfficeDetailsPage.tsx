@@ -43,7 +43,7 @@ export default function HrOfficeDetailsPage() {
         payroll_working_days: Number(s.payroll_working_days ?? 26),
         require_late_note: s.require_late_note, require_early_leave_note: s.require_early_leave_note,
         overtime_needs_approval: s.overtime_needs_approval, auto_availability: s.auto_availability,
-        leave_auto_approve: s.leave_auto_approve, deduct_unpaid_leave: s.deduct_unpaid_leave, deduct_absent_days: s.deduct_absent_days,
+        leave_auto_approve: s.leave_auto_approve, reopen_auto_approve: s.reopen_auto_approve, deduct_unpaid_leave: s.deduct_unpaid_leave, deduct_absent_days: s.deduct_absent_days,
         timezone: s.timezone,
         geofence_mandatory: !!s.geofence_mandatory,
         selfie_required_clock_in: !!s.selfie_required_clock_in,
@@ -160,6 +160,7 @@ export default function HrOfficeDetailsPage() {
                 ['overtime_needs_approval', 'Overtime needs manager approval'],
                 ['auto_availability', 'Attendance controls lead-assignment availability'],
                 ['leave_auto_approve', 'Auto-approve leave requests'],
+                ['reopen_auto_approve', 'Auto-approve "accidentally clocked out" reopen requests (skips manager review)'],
               ].map(([k, label]) => (
                 <label key={k} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={!!s[k]} onChange={e => setF(k, e.target.checked)} /> {label}</label>
               ))}

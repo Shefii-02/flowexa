@@ -22,6 +22,8 @@ class HrAttendance extends Model
         'late_minutes', 'early_leave_minutes', 'overtime_minutes', 'break_minutes', 'worked_minutes',
         'late_note', 'early_leave_note', 'overtime_note', 'overtime_status',
         'overtime_approved_by', 'overtime_reviewed_at',
+        'reopen_status', 'reopen_reason', 'reopen_requested_at',
+        'reopen_reviewed_by', 'reopen_reviewed_at',
         'status', 'note_color', 'note_message',
     ];
 
@@ -30,6 +32,8 @@ class HrAttendance extends Model
         'clock_in_at'              => 'datetime',
         'clock_out_at'             => 'datetime',
         'overtime_reviewed_at'     => 'datetime',
+        'reopen_requested_at'      => 'datetime',
+        'reopen_reviewed_at'       => 'datetime',
         'clock_in_out_of_geofence' => 'boolean',
         'clock_in_lat'  => 'float', 'clock_in_lng'  => 'float',
         'clock_out_lat' => 'float', 'clock_out_lng' => 'float',

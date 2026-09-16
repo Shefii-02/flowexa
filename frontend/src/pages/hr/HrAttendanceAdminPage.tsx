@@ -8,6 +8,7 @@ import { PageHeader, Modal, hm, err, inp, hhmm, forInput } from './hrShared'
 export default function HrAttendanceAdminPage() {
   const [rows, setRows] = useState<any[]>([])
   const [staff, setStaff] = useState<any[]>([])
+  const [reopenRequests, setReopenRequests] = useState<any[]>([])
   const [filter, setFilter] = useState({ date: new Date().toISOString().slice(0, 10), user_id: '', status: '' })
   const [editing, setEditing] = useState<any | null>(null)
   const [adding, setAdding] = useState(false)
@@ -19,8 +20,20 @@ export default function HrAttendanceAdminPage() {
     if (filter.status) params.status = filter.status
     api.get('/hr/attendance', { params }).then(r => setRows(r.data?.data ?? [])).catch(() => {})
   }, [filter])
+  const loadReopenRequests = useCallback(() => {
+    api.get('/hr/attendance/reopen-requests').then(r => setReopenRequests(r.data?.data ?? [])).catch(() => {})
+  }, [])
   useEffect(() => { load() }, [load])
+  useEffect(() => { loadReopenRequests() }, [loadReopenRequests])
   useEffect(() => { api.get('/hr/staff-profiles').then(r => setStaff((r.data?.data ?? []).map((x: any) => x.user))).catch(() => {}) }, [])
+
+  const reviewReopen = async (id: number, decision: 'approved' | 'rejected') => {
+    try {
+      await api.post(`/hr/attendance/${id}/reopen`, { decision })
+      loadReopenRequests(); load()
+      toast.success(decision === 'approved' ? 'Reopened — they can clock in again.' : 'Rejected')
+    } catch (e) { toast.error(err(e)) }
+  }
 
   const saveEdit = async () => {
     try {
@@ -47,6 +60,24 @@ export default function HrAttendanceAdminPage() {
       <PageHeader icon="🗓️" title="Attendance" sub="Every staff member's daily clock in/out — fix or backfill an entry" />
 
       <div className="space-y-3">
+        {reopenRequests.length > 0 && (
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-2">
+            <h3 className="text-sm font-semibold text-amber-800">🔓 Reopen requests — "accidentally clocked out"</h3>
+            {reopenRequests.map(r => (
+              <div key={r.id} className="flex items-center justify-between gap-3 bg-white border border-amber-100 rounded-lg px-3 py-2">
+                <div className="min-w-0">
+                  <div className="text-sm font-medium text-gray-800">{r.user?.name}</div>
+                  <div className="text-xs text-gray-500 truncate">{r.reopen_reason}</div>
+                </div>
+                <div className="flex gap-2 shrink-0">
+                  <button onClick={() => reviewReopen(r.id, 'approved')} className="text-xs bg-green-600 text-white rounded-lg px-3 py-1.5">Approve</button>
+                  <button onClick={() => reviewReopen(r.id, 'rejected')} className="text-xs bg-red-600 text-white rounded-lg px-3 py-1.5">Reject</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
         <div className="flex flex-wrap items-end gap-2">
           <input type="date" value={filter.date} onChange={e => setFilter(f => ({ ...f, date: e.target.value }))} className={inp} />
           <select value={filter.user_id} onChange={e => setFilter(f => ({ ...f, user_id: e.target.value }))} className={inp}>

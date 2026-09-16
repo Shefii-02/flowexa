@@ -438,6 +438,128 @@ class AttendanceController extends Controller
         return response()->json(['data' => $att->fresh()->load('breaks')]);
     }
 
+    /**
+     * POST /hr/attendance/request-reopen — self-service "I accidentally clocked out".
+     * One clock-in/clock-out per day is enforced everywhere else (clockIn() rejects a second
+     * clock-in outright); this is the only door back in, and it always needs a manager's
+     * approval — clock_out_at is never cleared just because the staff member asked.
+     */
+    public function requestReopen(Request $request): JsonResponse
+    {
+        $data = $request->validate(['reason' => 'required|string|max:500']);
+
+        $companyId = $this->companyId();
+        $userId = (int) auth()->id();
+        $settings = HrSetting::forCompany($companyId);
+
+        $att = HrAttendance::where('company_id', $companyId)->where('user_id', $userId)
+            ->whereDate('work_date', today())->first();
+
+        if (!$att || !$att->clock_out_at) {
+            throw ValidationException::withMessages(['reopen' => "You're not clocked out today — nothing to reopen."]);
+        }
+        if ($att->reopen_status === 'pending') {
+            throw ValidationException::withMessages(['reopen' => 'A reopen request for today is already pending.']);
+        }
+
+        if ($settings->reopen_auto_approve) {
+            // No manager in the loop by company choice — grant it immediately, but still
+            // record the request as reviewed-by-nobody/auto so the audit trail (who asked,
+            // why, when) survives exactly as it would for a manually approved one.
+            $att->update([
+                'reopen_reason'       => $data['reason'],
+                'reopen_requested_at' => now(),
+                'reopen_reviewed_by'  => null,
+                'reopen_reviewed_at'  => now(),
+                ...$this->reopenApprovalFields(),
+            ]);
+
+            $this->notifier->notify(
+                $settings->late_clockout_notify_user_ids,
+                'hr_reopen_auto_approved',
+                '🔓 Attendance reopened (auto-approved)',
+                auth()->user()->name . " clocked back in after an auto-approved reopen: {$data['reason']}",
+                ['user_id' => $userId, 'attendance_id' => $att->id],
+            );
+
+            return response()->json(['data' => $att->fresh(), 'auto_approved' => true]);
+        }
+
+        $att->update([
+            'reopen_status'       => 'pending',
+            'reopen_reason'       => $data['reason'],
+            'reopen_requested_at' => now(),
+            'reopen_reviewed_by'  => null,
+            'reopen_reviewed_at'  => null,
+        ]);
+
+        $this->notifier->notify(
+            $settings->late_clockout_notify_user_ids,
+            'hr_reopen_request',
+            '🔓 Attendance reopen request',
+            auth()->user()->name . " wants today's clock-out undone: {$data['reason']}",
+            ['user_id' => $userId, 'attendance_id' => $att->id],
+        );
+
+        return response()->json(['data' => $att->fresh(), 'auto_approved' => false]);
+    }
+
+    /** Fields that undo a clock-out — shared by an admin approval and an auto-approval. */
+    private function reopenApprovalFields(): array
+    {
+        return [
+            'reopen_status'        => 'approved',
+            'clock_out_at'         => null,
+            'clock_out_lat'        => null,
+            'clock_out_lng'        => null,
+            'clock_out_distance_m' => null,
+            'clock_out_photo_url'  => null,
+            'clock_out_radius_reason' => null,
+            'early_leave_minutes'  => 0,
+            'early_leave_note'     => null,
+            'overtime_minutes'     => 0,
+            'overtime_note'        => null,
+            'overtime_status'      => 'none',
+        ];
+    }
+
+    /** GET /hr/attendance/reopen-requests — pending (default) or all reopen requests, for review. */
+    public function reopenRequests(Request $request): JsonResponse
+    {
+        abort_unless($this->canManage(), 403, 'No HR permission.');
+
+        $rows = HrAttendance::where('company_id', $this->companyId())
+            ->whereNotNull('reopen_status')
+            ->when(!$request->boolean('all'), fn ($q) => $q->where('reopen_status', 'pending'))
+            ->with('user:id,name,avatar,department')
+            ->orderByDesc('reopen_requested_at')
+            ->paginate((int) min(max($request->integer('per_page', 50), 1), 200));
+
+        return response()->json($rows);
+    }
+
+    /** POST /hr/attendance/{id}/reopen — approve (clears clock_out_at so they can clock back
+     *  in) or reject a staff member's reopen request. */
+    public function reviewReopen(Request $request, int $id): JsonResponse
+    {
+        abort_unless($this->canManage(), 403, 'No HR permission.');
+
+        $data = $request->validate(['decision' => 'required|in:approved,rejected']);
+        $att = HrAttendance::where('company_id', $this->companyId())->findOrFail($id);
+
+        if ($att->reopen_status !== 'pending') {
+            throw ValidationException::withMessages(['reopen' => 'This request has already been reviewed.']);
+        }
+
+        $att->update([
+            'reopen_reviewed_by' => auth()->id(),
+            'reopen_reviewed_at' => now(),
+            ...($data['decision'] === 'approved' ? $this->reopenApprovalFields() : ['reopen_status' => 'rejected']),
+        ]);
+
+        return response()->json(['data' => $att->fresh()]);
+    }
+
     // ── Breaks ─────────────────────────────────────────────────────────────
 
     public function breakStart(Request $request): JsonResponse

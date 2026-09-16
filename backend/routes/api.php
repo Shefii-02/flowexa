@@ -121,11 +121,19 @@ Route::prefix('v1')->group(function () {
         });
     });
 
+    // Deliberately outside `jwt.auth`: that middleware calls authenticate(), which hard-401s
+    // an expired token before this route would ever run — defeating the whole point of a
+    // refresh endpoint, since the standard case for calling it IS an expired-but-still-
+    // within-refresh-TTL token (see AuthService::refresh(), which reads the raw token via
+    // JWTAuth::getToken() and lets jwt-auth's own refresh() decide if it's still refreshable).
+    // Both the web app's 401 interceptor and the mobile app's splash-screen check rely on
+    // this actually working for an expired token, not just a still-valid one.
+    Route::post('auth/refresh', [AuthController::class, 'refresh'])->name('auth.refresh');
+
     Route::middleware(['jwt.auth'])->group(function () {
 
         Route::prefix('auth')->name('auth.')->group(function () {
             Route::get('me',       [AuthController::class, 'me'])->name('me');
-            Route::post('refresh', [AuthController::class, 'refresh'])->name('refresh');
             Route::post('logout',  [AuthController::class, 'logout'])->name('logout');
         });
 
@@ -450,6 +458,9 @@ Route::prefix('v1')->group(function () {
             // Per-day status for a month (present/absent/on_leave/half_day/weekly_off/upcoming) —
             // powers the mobile Attendance screen's calendar strip + month tile counts.
             Route::get('attendance/me/calendar', [AttendanceController::class, 'myCalendar']);
+            // "I accidentally clocked out" — one clock-in/out per day is enforced everywhere
+            // else, so this is the only door back in, and it always needs a manager's approval.
+            Route::post('attendance/request-reopen', [AttendanceController::class, 'requestReopen']);
 
             // Home screen aggregate (mobile app + web) — attendance + sales target + streak +
             // rank + leads/pipeline/follow-ups/tasks in one round trip. Self-scoped.
@@ -469,6 +480,8 @@ Route::prefix('v1')->group(function () {
                 Route::get('attendance/payroll',     [AttendanceController::class, 'payroll']);
                 Route::post('attendance',            [AttendanceController::class, 'storeEntry']);
                 Route::patch('attendance/{id}',      [AttendanceController::class, 'update']);
+                Route::get('attendance/reopen-requests', [AttendanceController::class, 'reopenRequests']);
+                Route::post('attendance/{id}/reopen', [AttendanceController::class, 'reviewReopen']);
             });
             Route::post('attendance/{id}/overtime', [AttendanceController::class, 'reviewOvertime'])
                 ->middleware('permission:hr.leave.approve,hr.manage');

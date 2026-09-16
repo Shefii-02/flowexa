@@ -53,6 +53,7 @@ class HrConfigController extends Controller
             'overtime_multiplier'     => 'nullable|numeric|min:1|max:5',
             'auto_availability'       => 'boolean',
             'leave_auto_approve'      => 'boolean',
+            'reopen_auto_approve'     => 'boolean',
             'timezone'                => 'nullable|string|max:64',
             'selfie_required_clock_in'    => 'boolean',
             'selfie_required_clock_out'   => 'boolean',
