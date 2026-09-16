@@ -680,7 +680,7 @@ class AttendanceController extends Controller
             'overtime_status'      => $data['decision'],
             'overtime_approved_by' => auth()->id(),
             'overtime_reviewed_at' => now(),
-            'overtime_note'        => $data['note'] ? ($att->overtime_note . ' | ' . $data['note']) : $att->overtime_note,
+            'overtime_note'        => ($data['note'] ?? null) ? ($att->overtime_note . ' | ' . $data['note']) : $att->overtime_note,
         ]);
 
         return response()->json(['data' => $att->fresh()]);
