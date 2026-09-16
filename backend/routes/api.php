@@ -68,6 +68,7 @@ use App\Modules\MetaAds\Http\Controllers\{
 };
 use App\Modules\Survey\Http\Controllers\SurveyFormController;
 use App\Modules\WaChat\Http\Controllers\WahaSessionController;
+use App\Modules\WaChat\Http\Controllers\WahaContactController;
 use App\Modules\WaChat\Http\Controllers\WaChatAnalyticsController;
 use App\Modules\WaChat\Http\Controllers\WahaWebhookConfigController;
 use App\Modules\WaChat\Http\Controllers\MessageSenderController;
@@ -1265,7 +1266,24 @@ Route::prefix('v1')->middleware(['jwt.auth'])->group(function () {
             Route::post('/{id}/start',   [WahaSessionController::class, 'start']);
             Route::post('/{id}/stop',    [WahaSessionController::class, 'stop']);
             Route::post('/{id}/logout',  [WahaSessionController::class, 'logout']);
+            Route::post('/{id}/force-kill',   [WahaSessionController::class, 'forceKill']);
+            Route::post('/{id}/pairing-code', [WahaSessionController::class, 'pairingCode']);
             Route::delete('/{id}',       [WahaSessionController::class, 'destroy']);
+        });
+
+        // WA contacts (see docs.open-wa.org/api-reference/contacts) — proxy + sync into
+        // this company's own CRM contacts/labels.
+        Route::get('/{id}/contacts',                  [WahaContactController::class, 'contacts']);
+        Route::get('/{id}/contacts/check/{number}',   [WahaContactController::class, 'checkContactExists']);
+        Route::get('/{id}/contacts/{contactId}/profile-picture', [WahaContactController::class, 'contactProfilePicture']);
+        Route::get('/{id}/labels',                    [WahaContactController::class, 'labels']);
+
+        Route::middleware('permission:wa_chat.sessions.manage')->group(function () {
+            Route::post('/{id}/contacts/sync',                [WahaContactController::class, 'syncAllContacts']);
+            Route::post('/{id}/contacts/{contactId}/sync',    [WahaContactController::class, 'syncContact']);
+            Route::post('/{id}/contacts/{contactId}/block',   [WahaContactController::class, 'blockContact']);
+            Route::delete('/{id}/contacts/{contactId}/block', [WahaContactController::class, 'unblockContact']);
+            Route::post('/{id}/labels/sync',                  [WahaContactController::class, 'syncLabels']);
         });
     });
 

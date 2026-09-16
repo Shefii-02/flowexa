@@ -138,19 +138,32 @@ class WahaSessionController extends Controller
         }
 
         // session_name is generated from the gateway id — the client only labels it.
+        // `config`/`proxyUrl`/`proxyType` mirror the gateway's own create-session shape
+        // (see https://docs.open-wa.org/api-reference/session-controller-create) — all
+        // optional, and passed straight through rather than persisted, since the gateway is
+        // the source of truth for a session's live engine settings, not this row.
         $data = $request->validate([
             'display_name'  => 'nullable|string|max:150',
             'engine'        => 'nullable|string|max:30',
             'webhook_url'   => 'nullable|url|max:500',
+            'config'                          => 'nullable|array',
+            'config.autoRejectCalls'          => 'nullable|boolean',
+            'config.maxReconnectAttempts'     => 'nullable|integer|min:0|max:50',
+            'config.reconnectBaseDelay'       => 'nullable|integer|min:0',
+            'proxyUrl'   => 'nullable|string|max:500',
+            'proxyType'  => 'nullable|string|in:http,https,socks4,socks5',
         ]);
 
         // Create the session on the gateway with the ADMIN key (a company's own
         // scoped key is not allowed to create sessions), then bind the new
         // session id into this company's key allowlist.
         $res = Http::withHeaders($this->adminHeaders())
-            ->post("{$this->wahaBase()}/api/sessions", [
+            ->post("{$this->wahaBase()}/api/sessions", array_filter([
                 'name' => 'co' . $companyId . '-' . \Illuminate\Support\Str::lower(\Illuminate\Support\Str::random(10)),
-            ]);
+                'config' => $data['config'] ?? null,
+                'proxyUrl' => $data['proxyUrl'] ?? null,
+                'proxyType' => $data['proxyType'] ?? null,
+            ], fn ($v) => !is_null($v)));
 
         if (! $res->successful()) {
             return response()->json([
@@ -160,11 +173,16 @@ class WahaSessionController extends Controller
 
         // waha_sessions.session_name holds the gateway session **id** (UUID) —
         // that is what allowedSessions matches and what the /{id} routes take.
-        $session = WahaSession::create(array_merge($data, [
+        // `config`/`proxyUrl`/`proxyType` were only ever meant for the gateway call above —
+        // WahaSession has no matching columns, so they're deliberately left out here.
+        $session = WahaSession::create([
+            'display_name'       => $data['display_name'] ?? null,
+            'engine'             => $data['engine'] ?? null,
+            'webhook_url'        => $data['webhook_url'] ?? null,
             'company_id'         => $companyId,
             'session_name'       => (string) $res->json('id'),
             'gateway_created_at' => now(),
-        ]));
+        ]);
 
         app(WaChatTokenService::class)->syncSessions($company);
 
@@ -207,6 +225,43 @@ class WahaSessionController extends Controller
         $res = Http::withHeaders($this->wahaHeaders())
             ->get("{$this->wahaBase()}/api/sessions/{$session->session_name}/auth/qr");
         return response()->json($res->json());
+    }
+
+    /**
+     * POST /waha/sessions/{id}/pairing-code — an 8-char code to link via phone number,
+     * as an alternative to scanning the QR (see qr() above). Same scoped-key shape as
+     * start/stop/logout/qr; the gateway ties the code to whichever session name we pass.
+     */
+    public function pairingCode(Request $request, int $id): JsonResponse
+    {
+        $session = WahaSession::where('company_id', auth()->user()->company_id)->findOrFail($id);
+        $data = $request->validate(['phoneNumber' => 'required|string|max:20']);
+
+        $res = Http::withHeaders($this->wahaHeaders())
+            ->post("{$this->wahaBase()}/api/sessions/{$session->session_name}/pairing-code", $data);
+
+        if (! $res->successful()) {
+            return response()->json([
+                'message' => 'Gateway could not issue a pairing code (HTTP ' . $res->status() . ').',
+            ], 502);
+        }
+
+        return response()->json($res->json());
+    }
+
+    /**
+     * POST /waha/sessions/{id}/force-kill — SIGKILLs a wedged engine and tears the session
+     * down on the gateway side, for a session that's stuck and won't respond to a normal
+     * stop. Mirrors stop()'s local bookkeeping (status + phone reset), since a force-killed
+     * session is no longer authenticated either.
+     */
+    public function forceKill(int $id): JsonResponse
+    {
+        $session = WahaSession::where('company_id', auth()->user()->company_id)->findOrFail($id);
+        $session->update(['status' => 'stopped', 'phone' => null]);
+        Http::withHeaders($this->wahaHeaders())
+            ->post("{$this->wahaBase()}/api/sessions/{$session->session_name}/force-kill");
+        return response()->json(['message' => 'Session force-killed.']);
     }
 
     public function destroy(int $id): JsonResponse
