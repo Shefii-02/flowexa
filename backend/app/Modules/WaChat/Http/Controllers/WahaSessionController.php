@@ -25,6 +25,25 @@ class WahaSessionController extends Controller
         return response()->json($tokens->status($company));
     }
 
+    /** GET /waha/audit — this company's own slice of the gateway's audit trail. */
+    public function auditLog(Request $request, WaChatTokenService $tokens): JsonResponse
+    {
+        $company = auth()->user()->company;
+        abort_unless($company, 404, 'No company on this account.');
+
+        $limit  = (int) $request->query('limit', 50);
+        $offset = (int) $request->query('offset', 0);
+
+        $result = $tokens->gatewayAudit(
+            $company,
+            $request->query('severity'),
+            $limit > 0 ? $limit : 50,
+            $offset > 0 ? $offset : 0,
+        );
+
+        return response()->json(['data' => $result]);
+    }
+
     /** POST /waha/token/reconnect — mint a fresh gateway key for this company. */
     public function reconnectToken(WaChatTokenService $tokens): JsonResponse
     {

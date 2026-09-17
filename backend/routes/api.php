@@ -1249,6 +1249,11 @@ Route::prefix('v1')->middleware(['jwt.auth'])->group(function () {
     Route::post('waha/token/reconnect', [WahaSessionController::class, 'reconnectToken'])
         ->middleware('permission:settings.manage');
 
+    // This company's own slice of the gateway's audit trail (see WahaSessionController::auditLog
+    // for why this can't just proxy /api/audit directly — the gateway key is OPERATOR-role).
+    Route::get('waha/audit', [WahaSessionController::class, 'auditLog'])
+        ->middleware('wa_chat.valid');
+
     // Company-scoped WA Chat analytics (aggregates per-session gateway stats)
     Route::get('wa-chat/analytics', [WaChatAnalyticsController::class, 'index'])
         ->middleware('wa_chat.valid');

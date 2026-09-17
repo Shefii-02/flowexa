@@ -212,6 +212,49 @@ class WaChatTokenService
         return ['data' => $res->json('data') ?? [], 'total' => (int) ($res->json('total') ?? 0)];
     }
 
+    /**
+     * Company-scoped view of the gateway's audit trail — the tenant-facing counterpart to
+     * gatewayActivity()/gatewayErrors(), which are platform-wide and superadmin-only.
+     *
+     * The gateway's own `/audit` endpoint requires an ADMIN-role, unscoped key to call at all
+     * (a per-company `wa_chat_token` is minted as an OPERATOR key and can never satisfy that
+     * guard — see `provision()`), and its `sessionId` filter only accepts one id at a time, so
+     * there is no single gateway call that returns "just this company's rows". Fan out with the
+     * admin key over this company's own session ids instead, merge, and paginate here. Each
+     * per-session fetch is capped at the gateway's own MAX_AUDIT_PAGE_SIZE (200), so `total` only
+     * reflects rows within that per-session cap — acceptable for a diagnostics screen, not meant
+     * to be an exact grand total for a company with a very high-volume single session.
+     *
+     * @return array{data: array, total: int}
+     */
+    public function gatewayAudit(Company $company, ?string $severity, int $limit, int $offset): array
+    {
+        $sessionIds = $this->sessionScope($company);
+        $perSessionLimit = min(200, max(1, $offset + $limit));
+
+        $rows = [];
+        foreach ($sessionIds as $sessionId) {
+            $res = Http::withHeaders(['X-API-Key' => $this->adminKey()])
+                ->timeout(10)->connectTimeout(4)
+                ->get("{$this->base}/audit", array_filter([
+                    'sessionId' => $sessionId,
+                    'severity'  => $severity,
+                    'limit'     => $perSessionLimit,
+                ], fn ($v) => $v !== null));
+
+            if ($res->successful()) {
+                $rows = array_merge($rows, $res->json('data') ?? []);
+            }
+        }
+
+        usort($rows, fn ($a, $b) => strcmp((string) ($b['createdAt'] ?? ''), (string) ($a['createdAt'] ?? '')));
+
+        return [
+            'data'  => array_values(array_slice($rows, $offset, $limit)),
+            'total' => count($rows),
+        ];
+    }
+
     /** Deletes every row (or only rows older than $olderThanDays) from the gateway's audit trail. */
     public function clearGatewayErrors(?int $olderThanDays = null): int
     {
