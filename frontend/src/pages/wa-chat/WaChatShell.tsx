@@ -6,7 +6,7 @@
 // routes declared in App.tsx render inside Project A's DashboardLayout <main>.
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Outlet, Link } from 'react-router-dom'
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import toast from 'react-hot-toast'
 import { RoleProvider } from './components/RoleProvider'
 import { ToastProvider } from './components/Toast'
@@ -113,7 +113,7 @@ function WaChatNotConnected({
           cta: 'Connect WhatsApp Chat',
         }
 
-  const reconnect = async () => {
+  const reconnect = async (auto = false) => {
     setBusy(true)
     try {
       const { data } = await api.post('/waha/token/reconnect')
@@ -124,11 +124,28 @@ function WaChatNotConnected({
       onRecheck()
       toast.success('WhatsApp Chat reconnected.')
     } catch (e) {
-      toast.error(getError(e))
+      // An automatic attempt failing is expected some of the time (e.g. the gateway is briefly
+      // unreachable) — don't toast an error the user didn't ask for; the button stays available
+      // for a manual retry, which does still toast.
+      if (!auto) toast.error(getError(e))
     } finally {
       setBusy(false)
     }
   }
+
+  // Default behavior: self-heal a missing/expired key automatically the moment this screen
+  // appears, same as opening this module previously required a manual "Reconnect" click for
+  // something the account can usually recover from on its own. Runs at most once per mount (this
+  // component unmounts once state flips to 'ok', so revisiting the disconnected screen later
+  // tries again) and only when the user actually has permission to mint a fresh key — otherwise
+  // it would just 403 silently on every visit.
+  const autoAttempted = useRef(false)
+  useEffect(() => {
+    if (autoAttempted.current || !canManage) return
+    autoAttempted.current = true
+    reconnect(true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   return (
     <div className="max-w-md mx-auto mt-16 text-center">
@@ -139,7 +156,7 @@ function WaChatNotConnected({
       <div className="mt-5 flex flex-wrap items-center justify-center gap-3">
         {canManage ? (
           <button
-            onClick={reconnect}
+            onClick={() => reconnect()}
             disabled={busy}
             className="px-4 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700 disabled:opacity-60"
           >
