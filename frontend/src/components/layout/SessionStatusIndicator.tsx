@@ -17,9 +17,13 @@ type Health = {
 }
 
 // Live WhatsApp session status in the dashboard header. Polls
-// GET /waha/sessions/health once a minute (plain fetch — this renders outside
+// GET /waha/sessions/health every 3 minutes (plain fetch — this renders outside
 // the wa-chat QueryClientProvider) and shows a pill; clicking it lists every
-// session one by one with a Reconnect link for the disconnected ones.
+// session one by one with a Reconnect link for the disconnected ones. This is
+// purely a UI convenience for whoever has a tab open right now — the
+// authoritative, always-on check is the server-side `wa-chat:check-health`
+// schedule (every 5 min, see backend/routes/console.php), which is what
+// actually fires each company's registered webhooks on a disconnect.
 export function SessionStatusIndicator() {
   const hasWaChat = !!useCurrentUser()?.company?.wa_chat_token
   const [health, setHealth] = useState<Health | null>(null)
@@ -38,7 +42,7 @@ export function SessionStatusIndicator() {
     }
 
     check()
-    const id = window.setInterval(check, 60_000)
+    const id = window.setInterval(check, 180_000)
     return () => { cancelled = true; window.clearInterval(id) }
   }, [hasWaChat])
 

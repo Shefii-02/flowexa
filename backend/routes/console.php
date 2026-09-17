@@ -19,6 +19,11 @@ Schedule::call(function () {
 // WA Cloud (Meta Cloud API) time-based automation rules
 Schedule::command('wa-cloud:run-automations')->everyFifteenMinutes()->withoutOverlapping();
 
+// WA Chat (open-wa) — server-side session health sweep across every company, independent of
+// whether anyone has a browser tab open. Fires each company's own registered webhooks
+// (WahaWebhookConfigController) on a connected→disconnected transition.
+Schedule::command('wa-chat:check-health')->everyFiveMinutes()->withoutOverlapping();
+
 // Subscriptions — expire trials + lapsed paid plans past their grace window
 Schedule::command('subscriptions:sweep')->dailyAt('00:30')->withoutOverlapping();
 
