@@ -6,7 +6,7 @@
 // routes declared in App.tsx render inside Project A's DashboardLayout <main>.
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { Outlet, Link } from 'react-router-dom'
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import toast from 'react-hot-toast'
 import { RoleProvider } from './components/RoleProvider'
 import { ToastProvider } from './components/Toast'
@@ -113,7 +113,16 @@ function WaChatNotConnected({
           cta: 'Connect WhatsApp Chat',
         }
 
-  const reconnect = async (auto = false) => {
+  // NOT auto-triggered on mount, deliberately: reconnecting mints a fresh gateway key and
+  // REVOKES THE OLD ONE (WaChatTokenService::provision), and that key is shared by every client
+  // on the company's account — every browser tab, every other device's mobile app, anyone else's
+  // open session. An earlier version of this called reconnect() automatically the moment this
+  // screen appeared; the result was that opening WA Chat on one device could silently kick every
+  // other concurrently-connected client, including ones whose key was actually still fine (a
+  // stale-looking key here doesn't mean the shared key itself is bad — it can just mean this
+  // one tab's cached copy is behind after someone else already rotated it). Reconnecting is a
+  // destructive, account-wide action and must stay behind the explicit button below.
+  const reconnect = async () => {
     setBusy(true)
     try {
       const { data } = await api.post('/waha/token/reconnect')
@@ -124,28 +133,11 @@ function WaChatNotConnected({
       onRecheck()
       toast.success('WhatsApp Chat reconnected.')
     } catch (e) {
-      // An automatic attempt failing is expected some of the time (e.g. the gateway is briefly
-      // unreachable) — don't toast an error the user didn't ask for; the button stays available
-      // for a manual retry, which does still toast.
-      if (!auto) toast.error(getError(e))
+      toast.error(getError(e))
     } finally {
       setBusy(false)
     }
   }
-
-  // Default behavior: self-heal a missing/expired key automatically the moment this screen
-  // appears, same as opening this module previously required a manual "Reconnect" click for
-  // something the account can usually recover from on its own. Runs at most once per mount (this
-  // component unmounts once state flips to 'ok', so revisiting the disconnected screen later
-  // tries again) and only when the user actually has permission to mint a fresh key — otherwise
-  // it would just 403 silently on every visit.
-  const autoAttempted = useRef(false)
-  useEffect(() => {
-    if (autoAttempted.current || !canManage) return
-    autoAttempted.current = true
-    reconnect(true)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
 
   return (
     <div className="max-w-md mx-auto mt-16 text-center">
