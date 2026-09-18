@@ -5,6 +5,7 @@ namespace App\Modules\WaChat\Http\Controllers;
 use App\Http\Controllers\Controller;
 use App\Modules\WaChat\Jobs\RunWaExport;
 use App\Modules\WaChat\Models\WaExportJob;
+use App\Modules\WaChat\Services\WaChatTokenService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -17,6 +18,10 @@ use Illuminate\Support\Facades\Storage;
  */
 class WaExportController extends Controller
 {
+    public function __construct(private readonly WaChatTokenService $tokens)
+    {
+    }
+
     public function listJobs(): JsonResponse
     {
         $jobs = WaExportJob::where('company_id', auth()->user()->company_id)
@@ -90,7 +95,8 @@ class WaExportController extends Controller
 
     private function queue(string $type, array $data): JsonResponse
     {
-        $companyId = auth()->user()->company_id;
+        $company   = auth()->user()->company;
+        $companyId = $company->id;
 
         // One export at a time per company — return the in-flight one rather than
         // stacking jobs (and keeping the front-end polling longer than needed).
@@ -105,6 +111,21 @@ class WaExportController extends Controller
                 'message' => 'An export is already running — wait for it to finish.',
                 'data'    => $running,
             ], 409);
+        }
+
+        // A company that has never connected WA Chat has no gateway key yet — the queued job
+        // would just fail later with an opaque "Gateway returned 401". Mint one now (safe: there
+        // is no existing key here to revoke, unlike reconnecting an already-issued one) so the
+        // export actually has something to authenticate with.
+        if (blank($company->wa_chat_token)) {
+            try {
+                $this->tokens->provision($company);
+                $company->refresh();
+            } catch (\Throwable $e) {
+                return response()->json([
+                    'message' => "Couldn't connect to WhatsApp Chat: " . $e->getMessage(),
+                ], 502);
+            }
         }
 
         $job = WaExportJob::create([
