@@ -67,8 +67,10 @@ export const loginThunk = createAsyncThunk(
 
 export const fetchMeThunk = createAsyncThunk('auth/me',
     async (_, { rejectWithValue }) => {
-        try { const { data } = await authApi.me(); console.log(data.user); return data.user }
-        catch (e: any) { return rejectWithValue(e.response?.data?.message) }
+        try { const { data } = await authApi.me(); return data.user }
+        catch (e: any) {
+            return rejectWithValue({ message: e.response?.data?.message, status: e.response?.status })
+        }
     })
 
 export const logoutThunk = createAsyncThunk('auth/logout', async () => {
@@ -116,9 +118,16 @@ export const authSlice = createSlice({
                 s.user = a.payload; s.isAuthenticated = true; s.error = null; s.loading = false
                 syncWaChatSession(a.payload)
             })
-            .addCase(fetchMeThunk.rejected, (s) => {
-                s.user = null; s.isAuthenticated = false; localStorage.removeItem('wa_token'); s.loading = false
-                clearWaChatSession()
+            .addCase(fetchMeThunk.rejected, (s, a) => {
+                s.loading = false
+                // Only a genuine auth failure (401) invalidates the session — a
+                // network blip or server error while restoring it on app load
+                // must not silently force a logout.
+                const status = (a.payload as { status?: number } | undefined)?.status
+                if (status === 401) {
+                    s.user = null; s.isAuthenticated = false; localStorage.removeItem('wa_token')
+                    clearWaChatSession()
+                }
             })
             .addCase(logoutThunk.fulfilled, (s) => {
                 s.user = null; s.token = null; s.isAuthenticated = false; localStorage.removeItem('wa_token')

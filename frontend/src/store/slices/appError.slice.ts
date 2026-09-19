@@ -17,11 +17,18 @@ export interface ForbiddenError {
   at: string // ISO timestamp
 }
 
-interface AppErrorState {
-  forbidden: ForbiddenError | null
+export interface SessionExpiredError {
+  message: string
+  at: string // ISO timestamp
 }
 
-const initialState: AppErrorState = { forbidden: null }
+interface AppErrorState {
+  forbidden: ForbiddenError | null
+  /** Set once a 401 is confirmed unrecoverable (refresh failed / not refreshable). */
+  sessionExpired: SessionExpiredError | null
+}
+
+const initialState: AppErrorState = { forbidden: null, sessionExpired: null }
 
 export const appErrorSlice = createSlice({
   name: 'appError',
@@ -33,8 +40,14 @@ export const appErrorSlice = createSlice({
     clearForbidden: (s) => {
       s.forbidden = null
     },
+    setSessionExpired: (s, a: PayloadAction<SessionExpiredError>) => {
+      s.sessionExpired = a.payload
+    },
+    clearSessionExpired: (s) => {
+      s.sessionExpired = null
+    },
   },
 })
 
-export const { setForbidden, clearForbidden } = appErrorSlice.actions
+export const { setForbidden, clearForbidden, setSessionExpired, clearSessionExpired } = appErrorSlice.actions
 export default appErrorSlice.reducer

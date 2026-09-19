@@ -1,5 +1,6 @@
 export { ErrorBoundary } from './ErrorBoundary'
 export { ErrorScreen } from './ErrorScreen'
 export { AccessDeniedScreen } from './AccessDeniedScreen'
+export { SessionExpiredScreen } from './SessionExpiredScreen'
 export { RequirePermission } from './RequirePermission'
 export { ErrorReportActions } from './ErrorReportActions'

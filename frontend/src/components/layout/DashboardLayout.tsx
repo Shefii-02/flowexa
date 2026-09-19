@@ -8,7 +8,7 @@ import { SessionStatusIndicator } from './SessionStatusIndicator'
 import LeadNotificationPopup from '@/components/leads/LeadNotificationPopup'
 import AiHandoffOfferPopup from '@/components/leads/AiHandoffOfferPopup'
 import { connectStaffSocket, disconnectStaffSocket } from '@/socket/staffSocket'
-import { ErrorBoundary, AccessDeniedScreen } from '@/components/error'
+import { ErrorBoundary, AccessDeniedScreen, SessionExpiredScreen } from '@/components/error'
 
 export const DashboardLayout = () => {
   const dispatch    = useAppDispatch()
@@ -16,6 +16,7 @@ export const DashboardLayout = () => {
   const sidebarOpen = useAppSelector((s) => s.ui.sidebarOpen)
   const user        = useAppSelector((s) => s.auth.user)
   const forbidden   = useAppSelector((s) => s.appError.forbidden)
+  const sessionExpired = useAppSelector((s) => s.appError.sessionExpired)
 
   useEffect(() => {
     if (user?.id && user.company?.id) {
@@ -58,7 +59,7 @@ export const DashboardLayout = () => {
         {/* Page content */}
         <main className="flex-1 overflow-y-auto p-6">
           <ErrorBoundary resetKey={location.pathname}>
-            {forbidden ? <AccessDeniedScreen /> : <Outlet />}
+            {sessionExpired ? <SessionExpiredScreen /> : forbidden ? <AccessDeniedScreen /> : <Outlet />}
           </ErrorBoundary>
         </main>
       </div>

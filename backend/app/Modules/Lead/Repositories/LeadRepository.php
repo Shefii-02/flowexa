@@ -29,7 +29,7 @@ class LeadRepository implements LeadRepositoryInterface
         $scopedOrigin = $viewAll ? [] : (($user = User::find($userId)) ? Lead::scopedOriginAccessFor($user) : []);
 
         return $this->applyFilters(
-            Lead::with(['contact:id,name,phone,email', 'assignedTo:id,name,email,department'])
+            Lead::with(['contact:id,name,phone,email,wa_id', 'assignedTo:id,name,email,department'])
                 ->where('company_id', $companyId)
                 ->when(!$viewAll, fn($q) => $q->where(function ($qq) use ($userId, $scopedOrigin) {
                     $qq->where('assigned_to', $userId);

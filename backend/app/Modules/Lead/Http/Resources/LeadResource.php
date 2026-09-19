@@ -42,6 +42,11 @@ class LeadResource extends JsonResource
                 'name'  => $this->contact->name,
                 'phone' => $this->contact->phone,
                 'email' => $this->contact->email,
+                // The originating WhatsApp chat id (@c.us or @lid) — an @lid contact never had a
+                // phone-derived chat id to re-derive, so callers matching a WA chat to this lead
+                // (e.g. the mobile app's Mine/Unassigned chat-list tabs) must match on this first
+                // and fall back to `phone` only when it's absent.
+                'wa_id' => $this->contact->wa_id,
                 'labels'=> $this->contact->relationLoaded('labels')
                     ? $this->contact->labels->map(fn($l) => ['id' => $l->id, 'name' => $l->name, 'color' => $l->color])
                     : [],
