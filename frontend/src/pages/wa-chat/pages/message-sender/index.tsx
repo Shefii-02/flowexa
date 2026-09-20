@@ -2153,12 +2153,12 @@ export function MessageSender() {
 
                 {/* Leads matching the range — every one starts checked; uncheck to exclude a
                     lead from this send without narrowing the range. */}
-                {(leadCreatedFrom || leadCreatedTo) && (
-                  <div>
-                    <p className="text-xs font-medium text-gray-500 mb-1">
+                {/* {(leadCreatedFrom || leadCreatedTo) && ( */}
+                  // <div>
+                    {/* <p className="text-xs font-medium text-gray-500 mb-1">
                       {leadRecipientsLoading ? 'Loading matching leads…' : `Matching leads (${leadRecipients.length - excludedLeadRecipientIds.size} of ${leadRecipients.length} selected)`}
-                    </p>
-                    {leadRecipientsLoading ? (
+                    </p> */}
+                    {/* {leadRecipientsLoading ? (
                       <div className="flex justify-center py-4"><Loader2 size={18} className="animate-spin text-gray-400" /></div>
                     ) : (
                       <div className="border border-gray-100 rounded-lg max-h-52 overflow-y-auto divide-y divide-gray-50">
@@ -2178,8 +2178,8 @@ export function MessageSender() {
                         {leadRecipients.length === 0 && <p className="text-xs text-gray-400 px-3 py-3">No leads were created in that range.</p>}
                       </div>
                     )}
-                  </div>
-                )}
+                  </div> */}
+                {/* )} */}
 
                 <button onClick={addLeadRecipients} disabled={leadRecipients.length - excludedLeadRecipientIds.size === 0}
                   className="px-4 py-2 bg-brand-500 text-white rounded-lg text-sm disabled:opacity-50 hover:bg-brand-600">
