@@ -2151,37 +2151,15 @@ export function MessageSender() {
                   </div>
                 </div>
 
-                {/* Leads matching the range — every one starts checked; uncheck to exclude a
-                    lead from this send without narrowing the range. */}
-                {/* {(leadCreatedFrom || leadCreatedTo) && ( */}
-                  // <div>
-                    {/* <p className="text-xs font-medium text-gray-500 mb-1">
-                      {leadRecipientsLoading ? 'Loading matching leads…' : `Matching leads (${leadRecipients.length - excludedLeadRecipientIds.size} of ${leadRecipients.length} selected)`}
-                    </p> */}
-                    {/* {leadRecipientsLoading ? (
-                      <div className="flex justify-center py-4"><Loader2 size={18} className="animate-spin text-gray-400" /></div>
-                    ) : (
-                      <div className="border border-gray-100 rounded-lg max-h-52 overflow-y-auto divide-y divide-gray-50">
-                        {leadRecipients.map(l => (
-                          <label key={l.id} className="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 cursor-pointer">
-                            <input type="checkbox" checked={!excludedLeadRecipientIds.has(l.id)}
-                              onChange={e => {
-                                const s = new Set(excludedLeadRecipientIds)
-                                e.target.checked ? s.delete(l.id) : s.add(l.id)
-                                setExcludedLeadRecipientIds(s)
-                              }}
-                              className="rounded" />
-                            <span className="text-sm font-medium text-gray-800 flex-1">{l.name ?? l.phone}</span>
-                            <span className="text-xs text-gray-400">{l.phone}</span>
-                          </label>
-                        ))}
-                        {leadRecipients.length === 0 && <p className="text-xs text-gray-400 px-3 py-3">No leads were created in that range.</p>}
-                      </div>
-                    )}
-                  </div> */}
-                {/* )} */}
+                {(leadCreatedFrom || leadCreatedTo) && (
+                  <p className="text-xs text-gray-500">
+                    {leadRecipientsLoading
+                      ? 'Loading matching leads…'
+                      : `${leadRecipients.length} lead${leadRecipients.length !== 1 ? 's' : ''} created in that range.`}
+                  </p>
+                )}
 
-                <button onClick={addLeadRecipients} disabled={leadRecipients.length - excludedLeadRecipientIds.size === 0}
+                <button onClick={addLeadRecipients} disabled={leadRecipientsLoading || leadRecipients.length - excludedLeadRecipientIds.size === 0}
                   className="px-4 py-2 bg-brand-500 text-white rounded-lg text-sm disabled:opacity-50 hover:bg-brand-600">
                   Add {leadRecipients.length - excludedLeadRecipientIds.size} lead{leadRecipients.length - excludedLeadRecipientIds.size !== 1 ? 's' : ''} to queue
                 </button>
