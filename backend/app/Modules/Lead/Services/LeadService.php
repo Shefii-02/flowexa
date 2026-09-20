@@ -13,6 +13,7 @@ use App\Modules\Lead\DTOs\UpdateLeadDTO;
 use App\Modules\Lead\Exceptions\LeadException;
 use App\Modules\Lead\Repositories\Interfaces\LeadRepositoryInterface;
 use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Storage;
 
 class LeadService
@@ -24,6 +25,11 @@ class LeadService
     public function list(int $companyId, int $userId, bool $viewAll, LeadFilterDTO $filter): LengthAwarePaginator
     {
         return $this->leadRepository->paginate($companyId, $userId, $viewAll, $filter);
+    }
+
+    public function recipients(int $companyId, int $userId, bool $viewAll, LeadFilterDTO $filter): Collection
+    {
+        return $this->leadRepository->recipients($companyId, $userId, $viewAll, $filter);
     }
 
     public function show(int $id, int $companyId, int $userId, bool $viewAll): Lead

@@ -579,6 +579,9 @@ Route::prefix('v1')->group(function () {
             Route::get('/analytics',  [LeadController::class, 'analytics'])->middleware('permission:leads.view')->name('analytics');
             Route::get('/logs',       [LeadController::class, 'logs'])->middleware('permission:leads.view')->name('logs');
             Route::get('/sources',    [LeadController::class, 'sources'])->middleware('permission:leads.view')->name('sources');
+            // Unpaginated id/name/phone list for a filter — feeds wa-chat message-sender's
+            // "Lead" recipient tab. Declared before /{lead}.
+            Route::get('/recipients', [LeadController::class, 'recipients'])->middleware('permission:leads.view')->name('recipients');
             // Writes below previously checked leads.create/leads.edit/leads.assign/leads.delete —
             // none of those keys exist in the PermissionsSeeder catalogue, so every one of these
             // was unusable by any role (owner included) purely due to the key mismatch. Consolidated

@@ -18,7 +18,7 @@ import MediaPickerModal from '@/components/MediaPickerModal'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
-type RecipientTab = 'personal' | 'group' | 'csv' | 'label' | 'chat'
+type RecipientTab = 'personal' | 'group' | 'csv' | 'label' | 'chat' | 'lead'
 type ComposerTab = 'text' | 'media' | 'template' | 'poll' | 'location' | 'contact' | 'audio'
 type PageTab = 'sender' | 'history'
 type SendStatus = 'pending' | 'sending' | 'sent' | 'failed' | 'paused' | 'scheduled'
@@ -323,6 +323,13 @@ export function MessageSender() {
   const [chatSearch, setChatSearch] = useState('')
   const [selectedChats, setSelectedChats] = useState<Set<string>>(new Set())
 
+  // Lead tab — recipients are every lead created within a from/to date range.
+  const [leadCreatedFrom, setLeadCreatedFrom] = useState('')
+  const [leadCreatedTo, setLeadCreatedTo] = useState('')
+  const [leadRecipients, setLeadRecipients] = useState<{ id: number; name: string | null; phone: string }[]>([])
+  const [leadRecipientsLoading, setLeadRecipientsLoading] = useState(false)
+  const [excludedLeadRecipientIds, setExcludedLeadRecipientIds] = useState<Set<number>>(new Set())
+
   // --- Composer state ---
   const [composerTab, setComposerTab] = useState<ComposerTab>('text')
   const [textBody, setTextBody] = useState('')
@@ -516,6 +523,30 @@ export function MessageSender() {
       .finally(() => { if (!cancelled) setLabelContactsLoading(false) })
     return () => { cancelled = true }
   }, [selectedLabels])
+
+  // Resolve the from/to date range into the leads created in it (name + real phone from the
+  // linked contact), same "everyone starts included, uncheck to exclude" pattern as labels.
+  useEffect(() => {
+    if (!leadCreatedFrom && !leadCreatedTo) {
+      setLeadRecipients([])
+      setExcludedLeadRecipientIds(new Set())
+      return
+    }
+    const params = new URLSearchParams()
+    if (leadCreatedFrom) params.set('created_from', leadCreatedFrom)
+    if (leadCreatedTo) params.set('created_to', leadCreatedTo)
+    setLeadRecipientsLoading(true)
+    let cancelled = false
+    api.get(`/leads/recipients?${params.toString()}`)
+      .then(r => {
+        if (cancelled) return
+        setLeadRecipients(r.data?.data ?? [])
+        setExcludedLeadRecipientIds(new Set())
+      })
+      .catch(() => { if (!cancelled) setLeadRecipients([]) })
+      .finally(() => { if (!cancelled) setLeadRecipientsLoading(false) })
+    return () => { cancelled = true }
+  }, [leadCreatedFrom, leadCreatedTo])
 
   // Resolve the selected group(s) into their member list, deduped by WA id across groups (the same
   // person may be in more than one selected group). Same picker pattern as labels: everyone starts
@@ -759,6 +790,20 @@ export function MessageSender() {
     const toAdd = labelContacts
       .filter(c => !excludedLabelContactIds.has(c.id))
       .map(c => ({ id: `label-contact-${c.id}`, name: c.name ?? c.phone, phone: c.phone, type: 'label' as const, category: 'Label' }))
+      .filter(r => {
+        const key = recipientDedupeKey(r)
+        if (seen.has(key)) return false
+        seen.add(key)
+        return true
+      })
+    setSelectedRecipients(prev => [...prev, ...toAdd])
+  }
+
+  const addLeadRecipients = () => {
+    const seen = new Set(selectedRecipients.map(recipientDedupeKey))
+    const toAdd = leadRecipients
+      .filter(l => !excludedLeadRecipientIds.has(l.id) && l.phone)
+      .map(l => ({ id: `lead-${l.id}`, name: l.name ?? l.phone, phone: l.phone, type: 'lead' as const, category: 'Lead' }))
       .filter(r => {
         const key = recipientDedupeKey(r)
         if (seen.has(key)) return false
@@ -1117,6 +1162,8 @@ export function MessageSender() {
         delay_ms: delaySeconds * 1000,
         unique_signature: uniqueSignature,
         scheduled_at: scheduledAtValue || undefined,
+        lead_created_from: leadCreatedFrom || undefined,
+        lead_created_to: leadCreatedTo || undefined,
         log: selectedRecipients.map(r => ({ recipient_name: r.name, phone: r.phone, status: 'pending' })),
         message_payload: toMessagePayload(templateText, extraPayload, selectedRecipients),
       })
@@ -1308,6 +1355,7 @@ export function MessageSender() {
     { id: 'csv',      label: 'Bulk CSV', icon: <FileText size={14} style={{margin: '0 auto 12px ' }} /> },
     { id: 'label',    label: 'Label',    icon: <Tag size={14} /> },
     { id: 'chat',     label: 'From Chat',icon: <MessageSquare size={14} /> },
+    { id: 'lead',     label: 'Lead',     icon: <Calendar size={14} /> },
   ]
 
   // ── Export log ─────────────────────────────────────────────────────────────
@@ -1623,6 +1671,61 @@ export function MessageSender() {
                   <button onClick={addLabelContacts} disabled={labelContacts.length - excludedLabelContactIds.size === 0}
                     className="px-4 py-2 bg-brand-500 text-white rounded-lg text-sm disabled:opacity-50 hover:bg-brand-600">
                     Add {labelContacts.length - excludedLabelContactIds.size} contact{labelContacts.length - excludedLabelContactIds.size !== 1 ? 's' : ''} to queue
+                  </button>
+                </div>
+              )}
+
+              {/* Lead — recipients are every lead created within a from/to date range */}
+              {recipientTab === 'lead' && (
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1">
+                      <label className="block text-xs font-medium text-gray-500 mb-1">From</label>
+                      <input type="date" value={leadCreatedFrom} onChange={e => setLeadCreatedFrom(e.target.value)}
+                        max={leadCreatedTo || undefined}
+                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" />
+                    </div>
+                    <div className="flex-1">
+                      <label className="block text-xs font-medium text-gray-500 mb-1">To</label>
+                      <input type="date" value={leadCreatedTo} onChange={e => setLeadCreatedTo(e.target.value)}
+                        min={leadCreatedFrom || undefined}
+                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" />
+                    </div>
+                  </div>
+
+                  {/* Leads matching the range — every one starts checked; uncheck to exclude a
+                      lead from this send without narrowing the range. */}
+                  {(leadCreatedFrom || leadCreatedTo) && (
+                    <div>
+                      <p className="text-xs font-medium text-gray-500 mb-1">
+                        {leadRecipientsLoading ? 'Loading matching leads…' : `Matching leads (${leadRecipients.length - excludedLeadRecipientIds.size} of ${leadRecipients.length} selected)`}
+                      </p>
+                      {leadRecipientsLoading ? (
+                        <div className="flex justify-center py-4"><Loader2 size={18} className="animate-spin text-gray-400" /></div>
+                      ) : (
+                        <div className="border border-gray-100 rounded-lg max-h-52 overflow-y-auto divide-y divide-gray-50">
+                          {leadRecipients.map(l => (
+                            <label key={l.id} className="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 cursor-pointer">
+                              <input type="checkbox" checked={!excludedLeadRecipientIds.has(l.id)}
+                                onChange={e => {
+                                  const s = new Set(excludedLeadRecipientIds)
+                                  e.target.checked ? s.delete(l.id) : s.add(l.id)
+                                  setExcludedLeadRecipientIds(s)
+                                }}
+                                className="rounded" />
+                              <span className="text-sm font-medium text-gray-800 flex-1">{l.name ?? l.phone}</span>
+                              <span className="text-xs text-gray-400">{l.phone}</span>
+                            </label>
+                          ))}
+                          {leadRecipients.length === 0 && <p className="text-xs text-gray-400 px-3 py-3">No leads were created in that range.</p>}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  <button onClick={addLeadRecipients} disabled={leadRecipients.length - excludedLeadRecipientIds.size === 0}
+                    className="px-4 py-2 bg-brand-500 text-white rounded-lg text-sm disabled:opacity-50 hover:bg-brand-600">
+                    Add {leadRecipients.length - excludedLeadRecipientIds.size} lead{leadRecipients.length - excludedLeadRecipientIds.size !== 1 ? 's' : ''} to queue
                   </button>
                 </div>
               )}

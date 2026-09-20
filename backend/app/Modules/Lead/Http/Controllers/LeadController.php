@@ -43,6 +43,23 @@ class LeadController extends Controller
         return (new LeadCollection($paginator))->response();
     }
 
+    // Unpaginated leads (id/name/phone) matching the filters — feeds the wa-chat
+    // message-sender "Lead" recipient tab, which resolves a from/to date range
+    // straight to a phone list rather than picking leads one by one.
+    public function recipients(LeadFilterRequest $request): JsonResponse
+    {
+        $leads = $this->leadService->recipients(
+            auth()->user()->company_id, auth()->id(), $this->canViewAll(),
+            LeadFilterDTO::fromRequest($request->validated())
+        );
+
+        return response()->json(['data' => $leads->map(fn($l) => [
+            'id'    => $l->id,
+            'name'  => $l->contact?->name,
+            'phone' => $l->contact?->phone,
+        ])->filter(fn($r) => $r['phone'])->values()]);
+    }
+
     public function show(int $lead): JsonResponse
     {
         $l = $this->leadService->show($lead, auth()->user()->company_id, auth()->id(), $this->canViewAll());

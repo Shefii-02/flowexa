@@ -43,6 +43,29 @@ class LeadRepository implements LeadRepositoryInterface
             ->paginate($filter->perPage, ['*'], 'page', $filter->page);
     }
 
+    // Unpaginated, capped list of leads (with contact phone) matching the same
+    // scoping/filters as paginate() — feeds the wa-chat message-sender "Lead"
+    // recipient tab, which needs every match at once rather than a page of 20.
+    public function recipients(int $companyId, int $userId, bool $viewAll, LeadFilterDTO $filter): Collection
+    {
+        $scopedOrigin = $viewAll ? [] : (($user = User::find($userId)) ? Lead::scopedOriginAccessFor($user) : []);
+
+        return $this->applyFilters(
+            Lead::with('contact:id,name,phone')
+                ->where('company_id', $companyId)
+                ->when(!$viewAll, fn($q) => $q->where(function ($qq) use ($userId, $scopedOrigin) {
+                    $qq->where('assigned_to', $userId);
+                    foreach ($scopedOrigin as $originType => $ids) {
+                        $qq->orWhere(fn ($o) => $o->where('origin_type', $originType)->whereIn('origin_id', $ids));
+                    }
+                })),
+            $filter,
+        )
+            ->latest()
+            ->limit(2000)
+            ->get();
+    }
+
     /** Shared WHERE chain for both the listing and the export queries. */
     private function applyFilters($query, LeadFilterDTO $filter)
     {

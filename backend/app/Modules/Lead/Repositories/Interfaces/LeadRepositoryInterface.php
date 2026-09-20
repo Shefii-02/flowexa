@@ -15,6 +15,7 @@ use Illuminate\Support\Collection;
 interface LeadRepositoryInterface
 {
     public function paginate(int $companyId, int $userId, bool $viewAll, LeadFilterDTO $filter): LengthAwarePaginator;
+    public function recipients(int $companyId, int $userId, bool $viewAll, LeadFilterDTO $filter): Collection;
     public function findById(int $id, int $companyId): ?Lead;
     public function findByContact(int $contactId, int $companyId, string $category = null): ?Lead;
     public function create(int $companyId, CreateLeadDTO $dto): Lead;

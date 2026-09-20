@@ -38,13 +38,15 @@ class MessageSenderController extends Controller
         $data = $request->validate([
             'campaign_name'   => 'nullable|string|max:200',
             'session_id'      => 'required|string|max:100',
-            'type'            => 'required|in:personal,group,csv,label,chat,from-chat,campaign',
+            'type'            => 'required|in:personal,group,csv,label,chat,from-chat,lead,campaign',
             'total'           => 'required|integer|min:1',
             'delay_ms'        => 'integer|min:0',
             'unique_signature'=> 'boolean',
             'scheduled_at'    => 'nullable|date|after:now',
             'log'             => 'nullable|array',
             'message_payload' => 'nullable|array',
+            'lead_created_from' => 'nullable|date',
+            'lead_created_to'   => 'nullable|date|after_or_equal:lead_created_from',
         ]);
 
         $job = MessageSenderJob::create(array_merge($data, [

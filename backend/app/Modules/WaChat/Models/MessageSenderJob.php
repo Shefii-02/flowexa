@@ -17,6 +17,7 @@ class MessageSenderJob extends Model
         'type', 'status', 'total', 'sent', 'failed',
         'scheduled_at', 'started_at', 'completed_at',
         'delay_ms', 'unique_signature', 'log', 'message_payload',
+        'lead_created_from', 'lead_created_to',
     ];
 
     protected $casts = [
@@ -26,6 +27,8 @@ class MessageSenderJob extends Model
         'scheduled_at'     => 'datetime',
         'started_at'       => 'datetime',
         'completed_at'     => 'datetime',
+        'lead_created_from'=> 'date',
+        'lead_created_to'  => 'date',
     ];
 
     protected $appends = ['session_name'];
