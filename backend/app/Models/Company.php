@@ -221,4 +221,14 @@ class Company extends Model
             default     => null,
         };
     }
+
+    // ── CRM auto-save toggles (Settings → WA Chat / WA Cloud) ──────────────────
+    // Whether an inbound message on the given channel ('wa_chat' | 'wa_cloud') should
+    // save/update its contact in CRM contacts, including bumping last_message_at.
+    // Defaults to true — this preserves the always-on behavior both channels had
+    // before the toggle existed.
+    public function crmAutoSaveEnabled(string $channel): bool
+    {
+        return (bool) ($this->settings["crm_auto_save_{$channel}"] ?? true);
+    }
 }

@@ -87,7 +87,12 @@ class WebhookService
             'cost'          => 0,
         ]);
 
-        $contact->update(['last_message_at' => now()]);
+        // Settings → WA Cloud → "Save to CRM contacts" toggle (default on). Contact
+        // creation above always happens — MessageLog/opt-out/automations all need it —
+        // this only gates recording the message's arrival time on the contact.
+        if ($company->crmAutoSaveEnabled('wa_cloud')) {
+            $contact->update(['last_message_at' => now()]);
+        }
 
         // 3a. Lead auto-creation + campaign attribution — runs for every reply regardless
         // of whether an AI playbook is configured (ConversationalAgentService's own lead

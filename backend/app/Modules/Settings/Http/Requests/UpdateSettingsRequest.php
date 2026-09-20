@@ -21,6 +21,8 @@ class UpdateSettingsRequest extends FormRequest
             'settings.language'        => ['sometimes','string','max:10'],
             'settings.otp_template'    => ['sometimes','string','max:100'],
             'settings.otp_language'    => ['sometimes','string','max:10'],
+            'settings.crm_auto_save_wa_chat'  => ['sometimes','boolean'],
+            'settings.crm_auto_save_wa_cloud' => ['sometimes','boolean'],
         ];
     }
     protected function failedValidation(Validator $v): void

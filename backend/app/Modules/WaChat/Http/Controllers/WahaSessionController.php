@@ -3,6 +3,8 @@
 namespace App\Modules\WaChat\Http\Controllers;
 
 use App\Http\Controllers\Controller;
+use App\Models\Company;
+use App\Models\Contact;
 use App\Modules\WaChat\Models\WahaSession;
 use App\Modules\WaChat\Services\AutomationEngine;
 use App\Modules\WaChat\Services\Agent\AgentInbound;
@@ -558,14 +560,32 @@ class WahaSessionController extends Controller
                 // of whether an AI playbook is configured (ConversationalAgentService's own
                 // lead creation below only fires when one is), skipping group chats.
                 if ($from && !str_ends_with((string) $from, '@g.us')) {
+                    $phone = preg_replace('/@.*/', '', (string) $from);
+
                     try {
                         app(WaChatLeadAttributionService::class)->handleInboundMessage(
                             $session->company_id,
                             $name,
-                            preg_replace('/@.*/', '', (string) $from),
+                            $phone,
                         );
                     } catch (\Throwable $e) {
                         Log::error('Webhook lead attribution error: ' . $e->getMessage());
+                    }
+
+                    // Settings → WA Chat → "Save to CRM contacts" toggle (default on).
+                    // Saves/creates the contact and records this message's arrival time on it —
+                    // independent of lead attribution above, which skips contacts that already
+                    // have an open lead.
+                    try {
+                        $company = Company::find($session->company_id);
+                        if ($company && $company->crmAutoSaveEnabled('wa_chat') && $phone !== '') {
+                            Contact::firstOrCreate(
+                                ['company_id' => $session->company_id, 'phone' => $phone],
+                                ['name' => $phone, 'source' => 'wa_chat'],
+                            )->update(['last_message_at' => now()]);
+                        }
+                    } catch (\Throwable $e) {
+                        Log::error('Webhook CRM contact save error: ' . $e->getMessage());
                     }
                 }
 
