@@ -60,6 +60,7 @@ class LeadResource extends JsonResource
             'assigned_by' => $this->whenLoaded('assignedBy', fn() => $this->assignedBy?->name),
             'flow_node'   => $this->whenLoaded('flowNode', fn() => $this->flowNode ? ['id' => $this->flowNode->id, 'title' => $this->flowNode->title] : null),
             'campaign'    => $this->whenLoaded('campaign', fn() => $this->campaign ? ['id' => $this->campaign->id, 'name' => $this->campaign->name] : null),
+            'wa_open_campaign' => $this->whenLoaded('waOpenCampaign', fn() => $this->waOpenCampaign ? ['id' => $this->waOpenCampaign->id, 'name' => $this->waOpenCampaign->campaign_name] : null),
             'events'      => $this->whenLoaded('events', fn() => $this->events->map(fn($e) => [
                 'id'         => $e->id,
                 'event'      => $e->event,

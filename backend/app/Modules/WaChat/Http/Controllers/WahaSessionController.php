@@ -9,6 +9,7 @@ use App\Modules\WaChat\Services\Agent\AgentInbound;
 use App\Modules\WaChat\Services\Agent\ConversationalAgentService;
 use App\Modules\WaChat\Services\Rag\RagOrchestrator;
 use App\Modules\WaChat\Services\WaChatTokenService;
+use App\Modules\WaChat\Services\WaChatLeadAttributionService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
@@ -552,6 +553,21 @@ class WahaSessionController extends Controller
                 $from = $payload['from'] ?? ($payload['chatId'] ?? null);
                 $body = $payload['body'] ?? ($payload['text'] ?? '');
                 $type = $payload['type'] ?? 'text';
+
+                // Lead auto-creation + campaign attribution — runs for every reply regardless
+                // of whether an AI playbook is configured (ConversationalAgentService's own
+                // lead creation below only fires when one is), skipping group chats.
+                if ($from && !str_ends_with((string) $from, '@g.us')) {
+                    try {
+                        app(WaChatLeadAttributionService::class)->handleInboundMessage(
+                            $session->company_id,
+                            $name,
+                            preg_replace('/@.*/', '', (string) $from),
+                        );
+                    } catch (\Throwable $e) {
+                        Log::error('Webhook lead attribution error: ' . $e->getMessage());
+                    }
+                }
 
                 try {
                     app(AutomationEngine::class)->handleIncomingMessage([

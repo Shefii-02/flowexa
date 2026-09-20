@@ -16,7 +16,7 @@ class Lead extends Model
 
     protected $fillable = [
         'company_id', 'contact_id', 'assigned_to', 'assigned_by',
-        'flow_node_id', 'campaign_id', 'stage', 'priority', 'category',
+        'flow_node_id', 'campaign_id', 'wa_open_campaign_id', 'stage', 'priority', 'category',
         'source', 'origin_type', 'origin_id', 'origin_label',
         'notes', 'crm_id', 'followed_up_at', 'enrolled_at', 'lost_at', 'assigned_at',
         'listing_id', 'sale_value',
@@ -37,6 +37,8 @@ class Lead extends Model
     public function assignedBy(): BelongsTo { return $this->belongsTo(User::class, 'assigned_by'); }
     public function flowNode(): BelongsTo   { return $this->belongsTo(FlowNode::class, 'flow_node_id'); }
     public function campaign(): BelongsTo   { return $this->belongsTo(Campaign::class); }
+    /** The open-wa bulk send (message_sender_jobs) this lead was attributed to via a reply — see WaChatLeadAttributionService. */
+    public function waOpenCampaign(): BelongsTo { return $this->belongsTo(\App\Modules\WaChat\Models\MessageSenderJob::class, 'wa_open_campaign_id'); }
     public function listing(): BelongsTo    { return $this->belongsTo(Listing::class); }
     public function sale(): \Illuminate\Database\Eloquent\Relations\HasOne { return $this->hasOne(ListingSale::class); }
     public function events(): HasMany       { return $this->hasMany(LeadEvent::class)->latest(); }

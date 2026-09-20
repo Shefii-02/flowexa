@@ -18,6 +18,7 @@ use App\Modules\Lead\DTOs\CreateLeadDTO;
 use App\Modules\Lead\Repositories\Interfaces\LeadRepositoryInterface;
 use App\Modules\Webhook\DTOs\InboundMessageDTO;
 use App\Modules\Webhook\DTOs\StatusUpdateDTO;
+use App\Modules\WaChat\Services\WaChatLeadAttributionService;
 use App\Modules\WaChat\Services\Rag\EvidenceCollector;
 use App\Modules\WaChat\Services\Rag\LanguageDetector;
 use App\Modules\WaChat\Services\Rag\PlannerAgent;
@@ -87,6 +88,20 @@ class WebhookService
         ]);
 
         $contact->update(['last_message_at' => now()]);
+
+        // 3a. Lead auto-creation + campaign attribution — runs for every reply regardless
+        // of whether an AI playbook is configured (ConversationalAgentService's own lead
+        // creation below only fires when one is). Best-effort, same as the automation
+        // engines below: a failure here must never break inbound message processing.
+        try {
+            app(WaChatLeadAttributionService::class)->handleInboundMetaCloudMessage(
+                $company->id,
+                (string) ($company->wa_phone_id ?: 'meta_cloud'),
+                $dto->phone,
+            );
+        } catch (\Throwable $e) {
+            Log::warning('WA Cloud lead attribution failed: ' . $e->getMessage());
+        }
 
         // 3b. Mirror into the realtime conversation inbox (wa_conversations/wa_messages) —
         // separate from MessageLog above, which is the flat audit trail. This is what
