@@ -25,7 +25,27 @@ class MetaAdAccountController extends Controller
             'page_id'       => ['nullable','string'],
             'page_name'     => ['nullable','string'],
         ]);
-        $account = $this->svc->connectAdAccount(auth()->user()->company_id, $d);
+
+        // Inline (not plan.limit route middleware): connectAdAccount is an updateOrCreate keyed on
+        // ad_account_id — a blunt count-vs-max check on the route would wrongly block
+        // reconnecting/refreshing the token on an account this company already has.
+        $companyId = auth()->user()->company_id;
+        $isNewAccount = !MetaAdAccount::where('company_id', $companyId)->where('ad_account_id', $d['ad_account_id'])->exists();
+        if ($isNewAccount) {
+            $limit = auth()->user()->company?->plan?->max_meta_ads_accounts;
+            if ($limit !== null) {
+                $count = MetaAdAccount::where('company_id', $companyId)->count();
+                if ($count >= $limit) {
+                    return response()->json([
+                        'message'    => "Your plan allows {$limit} Meta Ads account(s). Upgrade your plan to connect more.",
+                        'error_code' => 'plan_limit_reached',
+                        'resource'   => 'meta_ads_accounts',
+                    ], 403);
+                }
+            }
+        }
+
+        $account = $this->svc->connectAdAccount($companyId, $d);
         return response()->json(['message' => "Ad account {$account->ad_account_name} connected.", 'account' => $account], 201);
     }
 

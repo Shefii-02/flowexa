@@ -3,7 +3,10 @@ import { useEffect, useState } from 'react'
 import { Button, Input, Textarea, Badge, EmptyState, Modal, ConfirmModal } from '@/components/ui'
 import { getError } from '@/utils'
 import toast from 'react-hot-toast'
+import api from '@/api/client'
 import { widgetApi, type ChatWidget, type WidgetConversation, type WidgetMessage } from './api'
+
+type WaSession = { id: number; session_name: string; status: string }
 
 type Draft = {
   id?: number
@@ -30,6 +33,8 @@ const emptyDraft = (): Draft => ({
 export default function WidgetPage() {
   const [widgets, setWidgets] = useState<ChatWidget[]>([])
   const [templates, setTemplates] = useState<Record<string, { name: string }>>({})
+  const [companyIndustry, setCompanyIndustry] = useState<string | null>(null)
+  const [sessions, setSessions] = useState<WaSession[]>([])
   const [loading, setLoading] = useState(true)
   const [editor, setEditor] = useState<Draft | null>(null)
   const [saving, setSaving] = useState(false)
@@ -39,9 +44,14 @@ export default function WidgetPage() {
   const load = async () => {
     setLoading(true)
     try {
-      const r = await widgetApi.list()
+      const [r, sessRes] = await Promise.all([
+        widgetApi.list(),
+        api.get('/waha/sessions').catch(() => ({ data: { data: [] } })),
+      ])
       setWidgets(r.data.widgets ?? [])
       setTemplates(r.data.templates ?? {})
+      setCompanyIndustry(r.data.company_industry_template ?? null)
+      setSessions(sessRes.data?.data ?? [])
     } catch (e) { toast.error(getError(e)) }
     finally { setLoading(false) }
   }
@@ -152,9 +162,12 @@ export default function WidgetPage() {
               <div>
                 <label className="label">Industry</label>
                 <select className="select" value={editor.industry_template} onChange={e => setEditor({ ...editor, industry_template: e.target.value })}>
-                  <option value="">Company default</option>
+                  <option value="">
+                    Company default{companyIndustry && templates[companyIndustry] ? ` (${templates[companyIndustry].name})` : ''}
+                  </option>
                   {Object.entries(templates).map(([k, t]) => <option key={k} value={k}>{t.name}</option>)}
                 </select>
+                <p className="text-[11px] text-gray-400 mt-1">Leave on "Company default" to use the industry already set on your company — no need to pick it again here.</p>
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
@@ -185,7 +198,22 @@ export default function WidgetPage() {
               <Input label="Notify emails (comma separated)" value={editor.notify_emails} onChange={e => setEditor({ ...editor, notify_emails: e.target.value })} placeholder="sales@acme.com, owner@acme.com" />
               <div className="grid grid-cols-2 gap-3">
                 <Input label="Notify WhatsApp numbers" value={editor.notify_whatsapp} onChange={e => setEditor({ ...editor, notify_whatsapp: e.target.value })} placeholder="9198xxxxxxx" />
-                <Input label="WA session id (to send from)" value={editor.wa_session_id} onChange={e => setEditor({ ...editor, wa_session_id: e.target.value })} />
+                <div>
+                  <label className="label">WA session (to send from)</label>
+                  <select className="select" value={editor.wa_session_id} onChange={e => setEditor({ ...editor, wa_session_id: e.target.value })}>
+                    <option value="">None</option>
+                    {sessions.map(s => (
+                      <option key={s.id} value={s.session_name}>
+                        {s.session_name} {s.status === 'ready' ? '(available)' : `(${s.status})`}
+                      </option>
+                    ))}
+                    {/* Keeps a currently-set session selectable even if it's no longer in the live list
+                        (e.g. disconnected after this widget was configured) instead of silently dropping it. */}
+                    {editor.wa_session_id && !sessions.some(s => s.session_name === editor.wa_session_id) && (
+                      <option value={editor.wa_session_id}>{editor.wa_session_id} (not found)</option>
+                    )}
+                  </select>
+                </div>
               </div>
             </div>
 

@@ -289,7 +289,7 @@ Route::prefix('v1')->group(function () {
 
             // WRITE — restricted to role managers
             Route::middleware('permission:roles.manage')->group(function () {
-                Route::post('/',                         [RoleController::class, 'store'])->name('store');
+                Route::post('/',                         [RoleController::class, 'store'])->middleware('plan.limit:roles')->name('store');
                 Route::post('/sync-catalogue',           [RoleController::class, 'syncCatalogue'])->name('sync-catalogue');
                 Route::put('/{role}',                    [RoleController::class, 'update'])->name('update');
                 Route::delete('/{role}',                 [RoleController::class, 'destroy'])->name('destroy');
@@ -318,7 +318,7 @@ Route::prefix('v1')->group(function () {
 
             // Create staff (admin, owner)
             Route::post('/', [StaffController::class, 'store'])
-                ->middleware('permission:staff.manage')
+                ->middleware(['permission:staff.manage', 'plan.limit:users'])
                 ->name('store');
 
             // Edit staff (admin, owner)
@@ -405,7 +405,7 @@ Route::prefix('v1')->group(function () {
 
         Route::prefix('lead-categories')->name('lead-categories.')->group(function () {
             Route::get('/',           [LeadCategoryController::class, 'index'])->name('index');
-            Route::post('/',          [LeadCategoryController::class, 'store'])->name('store');
+            Route::post('/',          [LeadCategoryController::class, 'store'])->middleware('plan.limit:lead_categories')->name('store');
             Route::get('/{category}', [LeadCategoryController::class, 'show'])->name('show');
             Route::put('/{category}', [LeadCategoryController::class, 'update'])->name('update');
             Route::delete('/{category}', [LeadCategoryController::class, 'destroy'])->name('destroy');
@@ -559,7 +559,7 @@ Route::prefix('v1')->group(function () {
             // Appointments / followups — mirrors to Google Calendar when connected (see
             // /google integration below), but booking itself never requires that connection.
             Route::get('calendar-events',                [\App\Modules\Calendar\Http\Controllers\CalendarController::class, 'index']);
-            Route::post('calendar-events',                [\App\Modules\Calendar\Http\Controllers\CalendarController::class, 'store']);
+            Route::post('calendar-events',                [\App\Modules\Calendar\Http\Controllers\CalendarController::class, 'store'])->middleware('plan.feature:calendar');
             Route::patch('calendar-events/{id}',          [\App\Modules\Calendar\Http\Controllers\CalendarController::class, 'update']);
             Route::post('calendar-events/{id}/complete',  [\App\Modules\Calendar\Http\Controllers\CalendarController::class, 'complete']);
             Route::post('calendar-events/{id}/no-show',   [\App\Modules\Calendar\Http\Controllers\CalendarController::class, 'noShow']);
@@ -599,7 +599,7 @@ Route::prefix('v1')->group(function () {
 
             Route::get('/{lead}',     [LeadController::class, 'show'])->middleware('permission:leads.view')->name('show');
 
-            Route::post('/', [LeadController::class, 'store'])->middleware('permission:leads.manage')->name('store');
+            Route::post('/', [LeadController::class, 'store'])->middleware(['permission:leads.manage', 'plan.monthly_limit:leads'])->name('store');
 
             Route::put('/{lead}', [LeadController::class, 'update'])->middleware('permission:leads.manage')->name('update');
 
@@ -670,7 +670,7 @@ Route::prefix('v1')->group(function () {
             Route::get('/{label}', [LabelController::class, 'show'])->name('show');
 
             Route::middleware('permission:labels.manage')->group(function () {
-                Route::post('/',           [LabelController::class, 'store'])->name('store');
+                Route::post('/',           [LabelController::class, 'store'])->middleware('plan.limit:labels')->name('store');
                 Route::put('/{label}',     [LabelController::class, 'update'])->name('update');
                 Route::delete('/{label}',  [LabelController::class, 'destroy'])->name('destroy');
             });
@@ -696,7 +696,7 @@ Route::prefix('v1')->group(function () {
                 ->name('import');
 
             Route::post('/', [ContactController::class, 'store'])
-                ->middleware('permission:contacts.manage')
+                ->middleware(['permission:contacts.manage', 'plan.limit:contacts'])
                 ->name('store');
 
             Route::put('/{contact}', [ContactController::class, 'update'])
@@ -1020,14 +1020,16 @@ Route::prefix('v1')->group(function () {
             Route::middleware('permission:integrations.manage')->group(function () {
                 Route::get('/connect',       [\App\Modules\Google\Http\Controllers\GoogleIntegrationController::class, 'connectUrl']);
                 Route::delete('/disconnect', [\App\Modules\Google\Http\Controllers\GoogleIntegrationController::class, 'disconnect']);
-                Route::post('/syncs',        [\App\Modules\Google\Http\Controllers\GoogleIntegrationController::class, 'createSync']);
-                Route::patch('/syncs/{id}',  [\App\Modules\Google\Http\Controllers\GoogleIntegrationController::class, 'updateSync']);
-                Route::post('/syncs/{id}/run', [\App\Modules\Google\Http\Controllers\GoogleIntegrationController::class, 'syncNow']);
-                Route::delete('/syncs/{id}', [\App\Modules\Google\Http\Controllers\GoogleIntegrationController::class, 'deleteSync']);
-                Route::post('/drive/upload',  [\App\Modules\Google\Http\Controllers\GoogleIntegrationController::class, 'driveUpload']);
-                Route::post('/drive/folders', [\App\Modules\Google\Http\Controllers\GoogleIntegrationController::class, 'driveCreateFolder']);
-                Route::patch('/drive/files/{fileId}',  [\App\Modules\Google\Http\Controllers\GoogleIntegrationController::class, 'driveRename']);
-                Route::delete('/drive/files/{fileId}', [\App\Modules\Google\Http\Controllers\GoogleIntegrationController::class, 'driveDelete']);
+                // Sheets and Drive share one GoogleIntegration connection (connect/disconnect/status
+                // above stay ungated), but are independently plan-gated at their own write actions.
+                Route::post('/syncs',        [\App\Modules\Google\Http\Controllers\GoogleIntegrationController::class, 'createSync'])->middleware('plan.feature:google_sheets');
+                Route::patch('/syncs/{id}',  [\App\Modules\Google\Http\Controllers\GoogleIntegrationController::class, 'updateSync'])->middleware('plan.feature:google_sheets');
+                Route::post('/syncs/{id}/run', [\App\Modules\Google\Http\Controllers\GoogleIntegrationController::class, 'syncNow'])->middleware('plan.feature:google_sheets');
+                Route::delete('/syncs/{id}', [\App\Modules\Google\Http\Controllers\GoogleIntegrationController::class, 'deleteSync'])->middleware('plan.feature:google_sheets');
+                Route::post('/drive/upload',  [\App\Modules\Google\Http\Controllers\GoogleIntegrationController::class, 'driveUpload'])->middleware('plan.feature:google_drive');
+                Route::post('/drive/folders', [\App\Modules\Google\Http\Controllers\GoogleIntegrationController::class, 'driveCreateFolder'])->middleware('plan.feature:google_drive');
+                Route::patch('/drive/files/{fileId}',  [\App\Modules\Google\Http\Controllers\GoogleIntegrationController::class, 'driveRename'])->middleware('plan.feature:google_drive');
+                Route::delete('/drive/files/{fileId}', [\App\Modules\Google\Http\Controllers\GoogleIntegrationController::class, 'driveDelete'])->middleware('plan.feature:google_drive');
             });
         });
 
@@ -1038,18 +1040,18 @@ Route::prefix('v1')->group(function () {
 
             Route::middleware('permission:integrations.manage')->group(function () {
                 Route::post('/test',       [\App\Modules\Email\Http\Controllers\EmailIntegrationController::class, 'test']);
-                Route::post('/connect',    [\App\Modules\Email\Http\Controllers\EmailIntegrationController::class, 'store']);
+                Route::post('/connect',    [\App\Modules\Email\Http\Controllers\EmailIntegrationController::class, 'store'])->middleware('plan.feature:email_integration');
                 Route::patch('/',          [\App\Modules\Email\Http\Controllers\EmailIntegrationController::class, 'update']);
                 Route::delete('/',         [\App\Modules\Email\Http\Controllers\EmailIntegrationController::class, 'destroy']);
-                Route::post('/send',       [\App\Modules\Email\Http\Controllers\EmailIntegrationController::class, 'send']);
-                Route::post('/broadcast',  [\App\Modules\Email\Http\Controllers\EmailIntegrationController::class, 'broadcast']);
+                Route::post('/send',       [\App\Modules\Email\Http\Controllers\EmailIntegrationController::class, 'send'])->middleware('plan.feature:email_integration');
+                Route::post('/broadcast',  [\App\Modules\Email\Http\Controllers\EmailIntegrationController::class, 'broadcast'])->middleware('plan.feature:email_integration');
             });
         });
 
         // ── Website chat widget management ──
         Route::prefix('/widgets')->middleware(['company.active'])->group(function () {
             Route::get('/',        [\App\Modules\Catalog\Http\Controllers\WidgetController::class, 'index']);
-            Route::post('/',       [\App\Modules\Catalog\Http\Controllers\WidgetController::class, 'store']);
+            Route::post('/',       [\App\Modules\Catalog\Http\Controllers\WidgetController::class, 'store'])->middleware('plan.limit:website_widgets');
             Route::put('/{id}',    [\App\Modules\Catalog\Http\Controllers\WidgetController::class, 'update']);
             Route::delete('/{id}', [\App\Modules\Catalog\Http\Controllers\WidgetController::class, 'destroy']);
             Route::get('/{id}/conversations',       [\App\Modules\Catalog\Http\Controllers\WidgetController::class, 'conversations']);

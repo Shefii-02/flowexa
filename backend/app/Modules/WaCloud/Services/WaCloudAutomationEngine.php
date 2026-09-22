@@ -208,6 +208,7 @@ class WaCloudAutomationEngine
                 'company_id'    => $company->id,
                 'wa_message_id' => $waId,
                 'direction'     => 'outbound',
+                'channel'       => 'wa_cloud',
                 'type'          => 'text',
                 'phone'         => $phone,
                 'content'       => $text,

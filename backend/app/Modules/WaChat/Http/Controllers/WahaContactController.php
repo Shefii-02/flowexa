@@ -139,27 +139,84 @@ class WahaContactController extends Controller
 
     /**
      * POST /waha/sessions/{id}/contacts/sync — bulk version of the above, for "sync all my
-     * WhatsApp contacts into the CRM" in one action.
+     * WhatsApp contacts into the CRM" in one action. Optionally tags every synced contact
+     * with a label — either an existing one (`label_id`) or a brand-new one (`label_name`,
+     * optional `label_color`) — so the sync and the labeling happen as one action instead of
+     * requiring a second trip through the CRM's own per-contact label editor afterward.
      */
-    public function syncAllContacts(int $id): JsonResponse
+    public function syncAllContacts(Request $request, int $id): JsonResponse
     {
         $session = $this->session($id);
+        $companyId = auth()->user()->company_id;
+
+        $label = $this->resolveLabel($request, $companyId);
+        if ($label instanceof JsonResponse) return $label;
+
         $res = Http::withHeaders($this->wahaHeaders())
             ->get("{$this->wahaBase()}/api/sessions/{$session->session_name}/contacts");
         if (! $res->successful()) {
             return response()->json(['message' => 'Could not fetch contacts from the gateway.'], 502);
         }
 
-        $companyId = auth()->user()->company_id;
         $synced = 0;
         $skipped = 0;
+        $contactIds = [];
         foreach ((array) $res->json() as $waContact) {
             if (!is_array($waContact)) { $skipped++; continue; }
             $contact = $this->upsertContact($companyId, $waContact);
-            $contact !== null ? $synced++ : $skipped++;
+            if ($contact !== null) {
+                $synced++;
+                $contactIds[] = $contact->id;
+            } else {
+                $skipped++;
+            }
         }
 
-        return response()->json(['message' => "Synced {$synced} contacts.", 'synced' => $synced, 'skipped' => $skipped]);
+        // syncWithoutDetaching (not sync()) — adding this label must never strip labels a
+        // contact already carries from elsewhere in the CRM.
+        if ($label !== null && $contactIds !== []) {
+            $label->contacts()->syncWithoutDetaching($contactIds);
+        }
+
+        return response()->json([
+            'message' => "Synced {$synced} contacts." . ($label !== null ? " Tagged with \"{$label->name}\"." : ''),
+            'synced'  => $synced,
+            'skipped' => $skipped,
+            'label'   => $label,
+        ]);
+    }
+
+    /**
+     * Resolves the label to tag synced contacts with, from either an existing label id or a
+     * new label name — mirrors LabelController::store()'s plan-limit check for the "create a
+     * new label" path. Returns null if the request asked for no label at all (plain sync,
+     * unchanged behavior), or a JsonResponse to short-circuit the caller on a validation error.
+     */
+    private function resolveLabel(Request $request, int $companyId): ContactLabel|JsonResponse|null
+    {
+        $labelId = $request->input('label_id');
+        if ($labelId !== null) {
+            $label = ContactLabel::where('company_id', $companyId)->find($labelId);
+            return $label ?? response()->json(['message' => 'Label not found.'], 422);
+        }
+
+        $labelName = trim((string) $request->input('label_name', ''));
+        if ($labelName === '') return null;
+
+        $existing = ContactLabel::where('company_id', $companyId)->where('name', $labelName)->first();
+        if ($existing !== null) return $existing;
+
+        $limit = auth()->user()->company?->plan?->max_labels;
+        if ($limit !== null && ContactLabel::where('company_id', $companyId)->count() >= $limit) {
+            return response()->json(['message' => "Label limit ({$limit}) reached on your plan."], 422);
+        }
+
+        $color = $request->input('label_color');
+        if (!is_string($color) || !preg_match('/^#[0-9a-fA-F]{6}$/', $color)) {
+            $color = '#25D366';
+        }
+
+        return ContactLabel::create(['company_id' => $companyId, 'name' => $labelName, 'color' => $color]);
     }
 
     private function upsertContact(int $companyId, array $waContact): ?Contact

@@ -29,6 +29,19 @@ class UpdatePlansWithLimitsSeeder extends Seeder
                 'max_flow_nodes'        => 20,
                 'max_campaign_contacts' => 500,
                 'throttle_per_minute'   => 20,
+                // Every new company lands on this plan (see AuthRepository::createCompanyWithOwner).
+                // Kept at the minimum viable value (1) for every new count limit, except leads —
+                // 1 lead/month would make it impossible to evaluate the lead pipeline during a trial.
+                'max_leads_per_month'      => 50,
+                'max_lead_categories'      => 1,
+                'max_roles'                => 1,
+                'max_instagram_accounts'   => 1,
+                'max_meta_ads_accounts'    => 1,
+                'max_website_widgets'      => 1,
+                'google_sheets_enabled'      => true,
+                'google_drive_enabled'       => true,
+                'calendar_enabled'           => true,
+                'email_integration_enabled'  => true,
             ],
             'Starter' => [
                 'duration_type'         => 'monthly',
@@ -68,6 +81,16 @@ class UpdatePlansWithLimitsSeeder extends Seeder
                 'max_flow_nodes'        => null,
                 'max_campaign_contacts' => null,
                 'throttle_per_minute'   => 500,
+                'max_leads_per_month'      => null,  // unlimited
+                'max_lead_categories'      => null,
+                'max_roles'                => null,
+                'max_instagram_accounts'   => null,
+                'max_meta_ads_accounts'    => null,
+                'max_website_widgets'      => null,
+                'google_sheets_enabled'      => true,
+                'google_drive_enabled'       => true,
+                'calendar_enabled'           => true,
+                'email_integration_enabled'  => true,
             ],
         ];
 

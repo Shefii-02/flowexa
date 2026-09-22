@@ -314,7 +314,8 @@
       "reconnect": "Reconnect",
       "unlink": "Unlink",
       "delete": "Delete",
-      "killStuck": "Kill Stuck"
+      "killStuck": "Kill Stuck",
+      "syncContacts": "Sync Contacts"
     },
     "toasts": {
       "readyTitle": "Session Ready",
@@ -378,6 +379,21 @@
       "tos_block": "Blocked by WhatsApp",
       "proxy_block": "Connection blocked",
       "until": "until {{date}}"
+    },
+    "syncContacts": {
+      "title": "Sync Contacts to CRM",
+      "message": "Sync every WhatsApp contact from <strong>\"{{name}}\"</strong> into your CRM Contacts.",
+      "noLabel": "Sync without a label",
+      "existingLabel": "Tag with an existing label",
+      "noLabelsYet": "No labels yet — create one from the Contacts → Labels page, or choose \"Create a new label\" instead.",
+      "newLabel": "Create a new label",
+      "newLabelPlaceholder": "e.g. WhatsApp Leads",
+      "confirm": "Sync Contacts",
+      "successTitle": "Contacts Synced",
+      "successDefault": "Contacts were synced to the CRM.",
+      "errorTitle": "Sync Failed",
+      "errorDefault": "Failed to sync contacts to the CRM.",
+      "notLinked": "This session is not yet linked to a CRM session record — start or reconnect it once, then try again."
     }
   },
   "webhooks": {

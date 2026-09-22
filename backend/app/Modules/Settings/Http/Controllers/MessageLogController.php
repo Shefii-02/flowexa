@@ -35,6 +35,7 @@ class MessageLogController extends Controller
             ->when($filter->direction, fn($q) => $q->where('direction', $filter->direction))
             ->when($filter->type,      fn($q) => $q->where('type',      $filter->type))
             ->when($filter->status,    fn($q) => $q->where('status',    $filter->status))
+            ->when($filter->channel,   fn($q) => $q->where('channel',   $filter->channel))
             ->when($filter->phone,     fn($q) => $q->where('phone', 'like', "%{$filter->phone}%"))
             ->when($filter->search, fn($q) => $q->where(fn($w) => $w
                 ->where('phone', 'like', "%{$filter->search}%")

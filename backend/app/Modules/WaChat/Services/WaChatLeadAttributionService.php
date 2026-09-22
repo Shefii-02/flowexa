@@ -20,9 +20,10 @@ use Illuminate\Support\Carbon;
 class WaChatLeadAttributionService
 {
     // ── open-wa: origin = which WA session received it, campaign = message_sender_jobs ──
-    public function handleInboundMessage(int $companyId, string $sessionRef, string $phone, ?Carbon $receivedAt = null): void
+    /** @return bool true if this reply resulted in a new lead being created. */
+    public function handleInboundMessage(int $companyId, string $sessionRef, string $phone, ?Carbon $receivedAt = null): bool
     {
-        $this->attribute(
+        return $this->attribute(
             companyId:      $companyId,
             phone:          $phone,
             receivedAt:     $receivedAt ?? now(),
@@ -35,9 +36,10 @@ class WaChatLeadAttributionService
 
     // ── WA Cloud: origin = which of the company's phone numbers received it, campaign
     // = the existing Modules/Campaign `campaigns` table (leads.campaign_id already exists) ──
-    public function handleInboundMetaCloudMessage(int $companyId, string $phoneNumberId, string $phone, ?Carbon $receivedAt = null): void
+    /** @return bool true if this reply resulted in a new lead being created. */
+    public function handleInboundMetaCloudMessage(int $companyId, string $phoneNumberId, string $phone, ?Carbon $receivedAt = null): bool
     {
-        $this->attribute(
+        return $this->attribute(
             companyId:      $companyId,
             phone:          $phone,
             receivedAt:     $receivedAt ?? now(),
@@ -56,9 +58,9 @@ class WaChatLeadAttributionService
         string $campaignField,
         \Closure $resolveOrigin,
         \Closure $resolveCampaign,
-    ): void {
+    ): bool {
         if ($phone === '') {
-            return;
+            return false;
         }
 
         $contact = Contact::firstOrCreate(
@@ -76,7 +78,7 @@ class WaChatLeadAttributionService
             ->exists();
 
         if ($hasOpenLead) {
-            return;
+            return false;
         }
 
         [$originType, $originId, $originLabel] = $resolveOrigin();
@@ -95,6 +97,8 @@ class WaChatLeadAttributionService
                 ? "Auto-created from a reply to campaign #{$campaignId}."
                 : 'Auto-created on first WhatsApp message.',
         ]);
+
+        return true;
     }
 
     /** @return array{0:?string,1:?int,2:?string} [originType, originId, originLabel] */

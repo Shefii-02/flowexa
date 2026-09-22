@@ -5,6 +5,7 @@ namespace App\Modules\WaChat\Http\Controllers;
 use App\Http\Controllers\Controller;
 use App\Models\Company;
 use App\Models\Contact;
+use App\Models\MessageLog;
 use App\Modules\WaChat\Models\WahaSession;
 use App\Modules\WaChat\Services\AutomationEngine;
 use App\Modules\WaChat\Services\Agent\AgentInbound;
@@ -561,9 +562,10 @@ class WahaSessionController extends Controller
                 // lead creation below only fires when one is), skipping group chats.
                 if ($from && !str_ends_with((string) $from, '@g.us')) {
                     $phone = preg_replace('/@.*/', '', (string) $from);
+                    $leadCreated = false;
 
                     try {
-                        app(WaChatLeadAttributionService::class)->handleInboundMessage(
+                        $leadCreated = app(WaChatLeadAttributionService::class)->handleInboundMessage(
                             $session->company_id,
                             $name,
                             $phone,
@@ -586,6 +588,34 @@ class WahaSessionController extends Controller
                         }
                     } catch (\Throwable $e) {
                         Log::error('Webhook CRM contact save error: ' . $e->getMessage());
+                    }
+
+                    // Unified audit log — mirrors WA Cloud's MessageLog write (WebhookService::
+                    // handleInbound) so the shared Message Logs page and any future per-channel
+                    // usage stats see WA Chat too. Attribution above already guarantees a Contact
+                    // row exists for this phone (Contact::firstOrCreate runs regardless of the
+                    // CRM toggle), so it's safe to just look it up here.
+                    if ($phone !== '') {
+                        try {
+                            $contact = Contact::where('company_id', $session->company_id)
+                                ->where('phone', $phone)->first();
+
+                            MessageLog::create([
+                                'company_id'    => $session->company_id,
+                                'contact_id'    => $contact?->id,
+                                'wa_message_id' => $payload['id'] ?? null,
+                                'direction'     => 'inbound',
+                                'channel'       => 'wa_chat',
+                                'type'          => $type,
+                                'phone'         => $phone,
+                                'content'       => is_string($body) ? $body : json_encode($body),
+                                'status'        => 'received',
+                                'lead_created'  => $leadCreated,
+                                'cost'          => 0,
+                            ]);
+                        } catch (\Throwable $e) {
+                            Log::error('Webhook MessageLog write error: ' . $e->getMessage());
+                        }
                     }
                 }
 

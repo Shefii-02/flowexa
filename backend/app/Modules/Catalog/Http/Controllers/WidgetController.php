@@ -17,6 +17,9 @@ class WidgetController extends Controller
         return response()->json([
             'widgets'   => $widgets->map(fn ($w) => $this->present($w)),
             'templates' => IndustryTemplates::all(),
+            // So the editor's "Company default" option can show what it actually resolves to,
+            // instead of leaving the operator guessing (see store()'s industry_template fallback).
+            'company_industry_template' => auth()->user()->company->industry_template,
         ]);
     }
 

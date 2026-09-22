@@ -16,14 +16,19 @@ class PlanLimitMiddleware
 {
     // Map resource names → [table, company_fk, plan_limit_column]
     public const LIMITS = [
-        'users'           => ['users',           'company_id', 'max_users'],
-        'templates'       => ['wa_templates',     'company_id', 'max_templates'],
-        'phone_numbers'   => ['wa_phone_numbers', 'company_id', 'max_phone_numbers'],
-        'wa_sessions'     => ['waha_sessions',    'company_id', 'max_wa_sessions'],
-        'campaigns'       => ['campaigns',        'company_id', 'max_campaigns'],
-        'contacts'        => ['contacts',         'company_id', 'max_contacts'],
-        'labels'          => ['contact_labels',   'company_id', 'max_labels'],
-        'flow_nodes'      => ['flow_nodes',       'company_id', 'max_flow_nodes'],
+        'users'              => ['users',              'company_id', 'max_users'],
+        'templates'          => ['wa_templates',        'company_id', 'max_templates'],
+        'phone_numbers'      => ['wa_phone_numbers',    'company_id', 'max_phone_numbers'],
+        'wa_sessions'        => ['waha_sessions',       'company_id', 'max_wa_sessions'],
+        'campaigns'          => ['campaigns',           'company_id', 'max_campaigns'],
+        'contacts'           => ['contacts',            'company_id', 'max_contacts'],
+        'labels'             => ['contact_labels',      'company_id', 'max_labels'],
+        'flow_nodes'         => ['flow_nodes',           'company_id', 'max_flow_nodes'],
+        'roles'              => ['roles',               'company_id', 'max_roles'],
+        'lead_categories'    => ['lead_categories',      'company_id', 'max_lead_categories'],
+        'instagram_accounts' => ['instagram_accounts',   'company_id', 'max_instagram_accounts'],
+        'meta_ads_accounts'  => ['meta_ad_accounts',     'company_id', 'max_meta_ads_accounts'],
+        'website_widgets'    => ['chat_widgets',         'company_id', 'max_website_widgets'],
     ];
 
     public function handle(Request $request, Closure $next, string $resource): mixed

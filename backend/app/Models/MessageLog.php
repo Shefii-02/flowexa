@@ -13,12 +13,13 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 class MessageLog extends Model
 {
     protected $fillable = [
-        'company_id', 'contact_id', 'wa_message_id', 'direction',
-        'type', 'phone', 'content', 'status', 'cost', 'delivered_at', 'read_at',
+        'company_id', 'contact_id', 'wa_message_id', 'direction', 'channel',
+        'type', 'phone', 'content', 'status', 'lead_created', 'cost', 'delivered_at', 'read_at',
     ];
 
     protected $casts = [
         'content'      => 'array',
+        'lead_created' => 'boolean',
         'delivered_at' => 'datetime',
         'read_at'      => 'datetime',
     ];

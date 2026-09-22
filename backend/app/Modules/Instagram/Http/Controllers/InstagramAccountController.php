@@ -66,6 +66,25 @@ class InstagramAccountController extends Controller
             return response()->json(['message' => 'That IG user id / token did not resolve to an account.'], 422);
         }
 
+        // Plan-limit check done inline (not via plan.limit route middleware) because this is an
+        // updateOrCreate keyed on ig_user_id — a blunt count-vs-max check on the route would wrongly
+        // block reconnecting/refreshing the token on an account this company already has.
+        $companyId = auth()->user()->company_id;
+        $isNewAccount = !InstagramAccount::where('company_id', $companyId)->where('ig_user_id', $d['ig_user_id'])->exists();
+        if ($isNewAccount) {
+            $limit = auth()->user()->company?->plan?->max_instagram_accounts;
+            if ($limit !== null) {
+                $count = InstagramAccount::where('company_id', $companyId)->count();
+                if ($count >= $limit) {
+                    return response()->json([
+                        'message'    => "Your plan allows {$limit} Instagram account(s). Upgrade your plan to connect more.",
+                        'error_code' => 'plan_limit_reached',
+                        'resource'   => 'instagram_accounts',
+                    ], 403);
+                }
+            }
+        }
+
         $account = InstagramAccount::updateOrCreate(
             ['ig_user_id' => $d['ig_user_id']],
             [

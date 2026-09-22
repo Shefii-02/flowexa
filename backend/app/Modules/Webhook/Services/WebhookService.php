@@ -74,16 +74,35 @@ class WebhookService
         // 2. Find or create contact
         $contact = $this->resolveContact($company, $dto);
 
+        // 3a. Lead auto-creation + campaign attribution — runs for every reply regardless
+        // of whether an AI playbook is configured (ConversationalAgentService's own lead
+        // creation below only fires when one is). Best-effort, same as the automation
+        // engines below: a failure here must never break inbound message processing.
+        // Run before the MessageLog write below so that write can record whether this
+        // exact message was the one that created a new lead.
+        $leadCreated = false;
+        try {
+            $leadCreated = app(WaChatLeadAttributionService::class)->handleInboundMetaCloudMessage(
+                $company->id,
+                (string) ($company->wa_phone_id ?: 'meta_cloud'),
+                $dto->phone,
+            );
+        } catch (\Throwable $e) {
+            Log::warning('WA Cloud lead attribution failed: ' . $e->getMessage());
+        }
+
         // 3. Log inbound message with full content (existing per-message audit log)
         MessageLog::create([
             'company_id'    => $company->id,
             'contact_id'    => $contact->id,
             'wa_message_id' => $dto->messageId,
             'direction'     => 'inbound',
+            'channel'       => 'wa_cloud',
             'type'          => $dto->type,
             'phone'         => $dto->phone,
             'content'       => $this->extractContent($dto),
             'status'        => 'received',
+            'lead_created'  => $leadCreated,
             'cost'          => 0,
         ]);
 
@@ -92,20 +111,6 @@ class WebhookService
         // this only gates recording the message's arrival time on the contact.
         if ($company->crmAutoSaveEnabled('wa_cloud')) {
             $contact->update(['last_message_at' => now()]);
-        }
-
-        // 3a. Lead auto-creation + campaign attribution — runs for every reply regardless
-        // of whether an AI playbook is configured (ConversationalAgentService's own lead
-        // creation below only fires when one is). Best-effort, same as the automation
-        // engines below: a failure here must never break inbound message processing.
-        try {
-            app(WaChatLeadAttributionService::class)->handleInboundMetaCloudMessage(
-                $company->id,
-                (string) ($company->wa_phone_id ?: 'meta_cloud'),
-                $dto->phone,
-            );
-        } catch (\Throwable $e) {
-            Log::warning('WA Cloud lead attribution failed: ' . $e->getMessage());
         }
 
         // 3b. Mirror into the realtime conversation inbox (wa_conversations/wa_messages) —
@@ -1664,6 +1669,7 @@ class WebhookService
                     'company_id'    => $company->id,
                     'wa_message_id' => $waId,
                     'direction'     => 'outbound',
+                    'channel'       => 'wa_cloud',
                     'type'          => $payload['type'],
                     'phone'         => $payload['to'],
                     'content'       => $this->extractOutboundContent($payload),
@@ -1687,6 +1693,7 @@ class WebhookService
                 MessageLog::create([
                     'company_id' => $company->id,
                     'direction'  => 'outbound',
+                    'channel'    => 'wa_cloud',
                     'type'       => $payload['type'],
                     'phone'      => $payload['to'],
                     'content'    => $this->extractOutboundContent($payload) . " [FAILED: {$error}]",

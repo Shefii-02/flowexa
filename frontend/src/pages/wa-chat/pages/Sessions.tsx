@@ -14,8 +14,14 @@ import {
   Filter,
   Skull,
   Unlink,
+  Users,
 } from 'lucide-react';
 import { sessionApi, type Session, type SessionConfig, type AccountRestriction } from '../api/api';
+// The main Laravel backend's client — NOT waChatApi. Syncing session contacts into CRM
+// contacts/labels reads/writes tables that only exist on that backend (see
+// WahaContactController::syncAllContacts), so this one call must bypass the WA Chat
+// module's own isolated client. Established pattern: ContactInfoPanel.tsx does the same.
+import api from '@/api/client';
 import { queryKeys } from '../hooks/queries';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import {
@@ -73,6 +79,58 @@ export function Sessions() {
   // fetched per session when the detail modal opens rather than N times to render the list.
   const [sessionConfig, setSessionConfig] = useState<SessionConfig | null>(null);
   const [savingConfig, setSavingConfig] = useState(false);
+
+  // ── Sync contacts to CRM ────────────────────────────────────────────────────
+  const [syncSessionId, setSyncSessionId] = useState<string | null>(null);
+  const [crmLabels, setCrmLabels] = useState<{ id: number; name: string }[]>([]);
+  const [syncLabelMode, setSyncLabelMode] = useState<'none' | 'existing' | 'new'>('none');
+  const [syncLabelId, setSyncLabelId] = useState('');
+  const [syncNewLabelName, setSyncNewLabelName] = useState('');
+  const [syncing, setSyncing] = useState(false);
+
+  const openSyncModal = (id: string) => {
+    setSyncSessionId(id);
+    setSyncLabelMode('none');
+    setSyncLabelId('');
+    setSyncNewLabelName('');
+    api.get('/labels').then(r => setCrmLabels(r.data?.data ?? r.data ?? [])).catch(() => setCrmLabels([]));
+  };
+
+  const handleSyncContacts = async () => {
+    if (!syncSessionId) return;
+    const session = sessions.find(s => s.id === syncSessionId);
+    if (!session) return;
+
+    setSyncing(true);
+    try {
+      // The gateway session id used everywhere else on this page (session.id) is a WA Chat
+      // engine identifier — the CRM-sync endpoint lives on the main Laravel backend and is
+      // keyed by ITS OWN numeric waha_sessions.id, matched here by session_name (see
+      // useSessionCreateForm.ts, which creates that row under the same name on session
+      // creation).
+      const list = await api.get('/waha/sessions');
+      const rows: Array<{ id: number; session_name: string }> = list.data?.data ?? list.data ?? [];
+      const match = rows.find(r => r.session_name === session.name);
+      if (!match) {
+        toast.error(t('sessions.syncContacts.errorTitle'), t('sessions.syncContacts.notLinked'));
+        return;
+      }
+
+      const payload: Record<string, string | number> = {};
+      if (syncLabelMode === 'existing' && syncLabelId) payload.label_id = Number(syncLabelId);
+      if (syncLabelMode === 'new' && syncNewLabelName.trim()) payload.label_name = syncNewLabelName.trim();
+
+      const res = await api.post(`/waha/sessions/${match.id}/contacts/sync`, payload);
+      toast.success(t('sessions.syncContacts.successTitle'), res.data?.message ?? t('sessions.syncContacts.successDefault'));
+      setSyncSessionId(null);
+    } catch (err) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message
+        || t('sessions.syncContacts.errorDefault');
+      toast.error(t('sessions.syncContacts.errorTitle'), msg);
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   const fetchSessions = useCallback(async (): Promise<Session[]> => {
     try {
@@ -815,6 +873,77 @@ export function Sessions() {
         </Modal>
       )}
 
+      {syncSessionId && (
+        <Modal
+          open
+          onClose={() => setSyncSessionId(null)}
+          title={t('sessions.syncContacts.title')}
+          closeLabel={t('common.close')}
+          footer={
+            <>
+              <button className="btn-secondary" onClick={() => setSyncSessionId(null)} disabled={syncing}>
+                {t('common.cancel')}
+              </button>
+              <button
+                className="btn-primary"
+                onClick={handleSyncContacts}
+                disabled={
+                  syncing ||
+                  (syncLabelMode === 'existing' && !syncLabelId) ||
+                  (syncLabelMode === 'new' && !syncNewLabelName.trim())
+                }
+              >
+                {syncing ? <Loader2 className="animate-spin" size={16} /> : t('sessions.syncContacts.confirm')}
+              </button>
+            </>
+          }
+        >
+          <p>
+            <Trans
+              i18nKey="sessions.syncContacts.message"
+              values={{ name: sessions.find(s => s.id === syncSessionId)?.name }}
+              components={{ strong: <strong /> }}
+            />
+          </p>
+
+          <div className="sync-label-choice" style={{ marginTop: '1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 400 }}>
+              <input type="radio" name="sync-label-mode" checked={syncLabelMode === 'none'} onChange={() => setSyncLabelMode('none')} />
+              {t('sessions.syncContacts.noLabel')}
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 400 }}>
+              <input type="radio" name="sync-label-mode" checked={syncLabelMode === 'existing'} onChange={() => setSyncLabelMode('existing')} />
+              {t('sessions.syncContacts.existingLabel')}
+            </label>
+            {syncLabelMode === 'existing' && (
+              <div style={{ marginLeft: '1.5rem' }}>
+                <CustomSelect
+                  value={syncLabelId}
+                  onChange={setSyncLabelId}
+                  ariaLabel={t('sessions.syncContacts.existingLabel')}
+                  options={crmLabels.map(l => ({ value: String(l.id), label: l.name }))}
+                />
+                {crmLabels.length === 0 && <p className="input-hint">{t('sessions.syncContacts.noLabelsYet')}</p>}
+              </div>
+            )}
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 400 }}>
+              <input type="radio" name="sync-label-mode" checked={syncLabelMode === 'new'} onChange={() => setSyncLabelMode('new')} />
+              {t('sessions.syncContacts.newLabel')}
+            </label>
+            {syncLabelMode === 'new' && (
+              <input
+                type="text"
+                style={{ marginLeft: '1.5rem' }}
+                placeholder={t('sessions.syncContacts.newLabelPlaceholder')}
+                value={syncNewLabelName}
+                onChange={e => setSyncNewLabelName(e.target.value)}
+                maxLength={60}
+              />
+            )}
+          </div>
+        </Modal>
+      )}
+
       <div className="sessions-grid">
         {filteredSessions.length === 0 ? (
           <div className="empty-state">
@@ -883,6 +1012,12 @@ export function Sessions() {
                   <Eye size={16} />
                   {t('sessions.actions.view')}
                 </button>
+                {canWrite && (
+                  <button className="btn-action" onClick={() => openSyncModal(session.id)}>
+                    <Users size={16} />
+                    {t('sessions.actions.syncContacts')}
+                  </button>
+                )}
                 {canWrite && isSessionStarted(session) ? (
                   <button className="btn-action" onClick={() => handleStop(session.id)}>
                     <Square size={16} />
