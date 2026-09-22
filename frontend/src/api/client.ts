@@ -26,6 +26,14 @@ let isRefreshing = false
 let refreshFailed = false
 let queue: Array<{ resolve: (v: unknown) => void; reject: (e: unknown) => void }> = []
 
+// Called when another tab hands this tab a fresh token (see the `storage`
+// listener in store/index.ts) — clears this tab's "refresh is dead" flag so
+// it doesn't keep treating the session as unrecoverable after a token it
+// never saw itself arrives.
+export const resetRefreshState = () => {
+  refreshFailed = false
+}
+
 const flushQueue = (error: AxiosError | null, token: string | null = null) => {
   queue.forEach((p) => (error ? p.reject(error) : p.resolve(token)))
   queue = []

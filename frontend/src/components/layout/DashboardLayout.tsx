@@ -1,18 +1,20 @@
-import { Outlet, useLocation } from 'react-router-dom'
+import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { Toaster } from 'react-hot-toast'
 import { useEffect } from 'react'
 import { useAppDispatch, useAppSelector } from '@/store'
-import { toggleSidebar, clearForbidden } from '@/store/slices'
+import { toggleSidebar, clearForbidden, clearSessionExpired, logoutThunk } from '@/store/slices'
 import { Sidebar } from './Sidebar'
 import { SessionStatusIndicator } from './SessionStatusIndicator'
 import LeadNotificationPopup from '@/components/leads/LeadNotificationPopup'
 import AiHandoffOfferPopup from '@/components/leads/AiHandoffOfferPopup'
 import { connectStaffSocket, disconnectStaffSocket } from '@/socket/staffSocket'
-import { ErrorBoundary, AccessDeniedScreen, SessionExpiredScreen } from '@/components/error'
+import { ErrorBoundary, AccessDeniedScreen } from '@/components/error'
+import { Spinner } from '@/components/ui'
 
 export const DashboardLayout = () => {
   const dispatch    = useAppDispatch()
   const location    = useLocation()
+  const navigate    = useNavigate()
   const sidebarOpen = useAppSelector((s) => s.ui.sidebarOpen)
   const user        = useAppSelector((s) => s.auth.user)
   const forbidden   = useAppSelector((s) => s.appError.forbidden)
@@ -30,6 +32,17 @@ export const DashboardLayout = () => {
     if (forbidden) dispatch(clearForbidden())
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.pathname])
+
+  // A 401 the interceptor couldn't recover (refresh failed / not refreshable)
+  // sends the user straight to /login instead of stranding them on a page
+  // that needs a manual "log out" click first.
+  useEffect(() => {
+    if (!sessionExpired) return
+    dispatch(logoutThunk())
+    dispatch(clearSessionExpired())
+    navigate('/login', { replace: true, state: { message: sessionExpired.message } })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionExpired])
 
   return (
     <div className="flex h-screen overflow-hidden bg-gray-50">
@@ -59,7 +72,15 @@ export const DashboardLayout = () => {
         {/* Page content */}
         <main className="flex-1 overflow-y-auto p-6">
           <ErrorBoundary resetKey={location.pathname}>
-            {sessionExpired ? <SessionExpiredScreen /> : forbidden ? <AccessDeniedScreen /> : <Outlet />}
+            {sessionExpired ? (
+              <div className="min-h-[60vh] flex items-center justify-center">
+                <Spinner size="lg" />
+              </div>
+            ) : forbidden ? (
+              <AccessDeniedScreen />
+            ) : (
+              <Outlet />
+            )}
           </ErrorBoundary>
         </main>
       </div>

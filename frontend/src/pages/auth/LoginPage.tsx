@@ -1,6 +1,6 @@
 // src/pages/auth/LoginPage.tsx
 import { useState, FormEvent } from 'react'
-import { useNavigate, Link } from 'react-router-dom'
+import { useNavigate, useLocation, Link } from 'react-router-dom'
 import { useAppDispatch, useAppSelector } from '@/store'
 import { loginThunk, clearAuthError } from '@/store/slices'
 import { Button, Input } from '@/components/ui'
@@ -8,7 +8,10 @@ import { Button, Input } from '@/components/ui'
 export default function LoginPage() {
   const dispatch = useAppDispatch()
   const navigate = useNavigate()
+  const location = useLocation()
   const { loading, error } = useAppSelector((s) => s.auth)
+  // Set when redirected here after an unrecoverable 401 (see DashboardLayout).
+  const sessionMessage = (location.state as { message?: string } | null)?.message
 
   const [email,    setEmail]    = useState('')
   const [password, setPassword] = useState('')
@@ -38,9 +41,9 @@ export default function LoginPage() {
         {/* Card */}
         <div className="card p-6">
           <form onSubmit={handleSubmit} className="space-y-4">
-            {error && (
+            {(error || sessionMessage) && (
               <div className="bg-red-50 border border-red-200 text-red-700 text-sm px-4 py-3 rounded-lg">
-                {error}
+                {error || sessionMessage}
               </div>
             )}
 

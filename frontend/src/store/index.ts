@@ -4,8 +4,9 @@ import { useDispatch, useSelector, TypedUseSelectorHook } from 'react-redux'
 import {
   authSlice, uiSlice, staffSlice, contactSlice, labelSlice,
   flowSlice, walletSlice, campaignSlice, leadSlice, leadAssignmentSlice,
-  appErrorSlice,
+  appErrorSlice, setToken, logout, clearSessionExpired,
 } from './slices'
+import { resetRefreshState } from '@/api/client'
 
 export const store = configureStore({
   reducer: {
@@ -21,6 +22,27 @@ export const store = configureStore({
     leadAssignment: leadAssignmentSlice.reducer,
     appError:       appErrorSlice.reducer,
   },
+})
+
+// ── Cross-tab auth sync ─────────────────────────────────────────────────────
+// `wa_token` in localStorage is shared across tabs, but each tab's Redux store
+// and the axios interceptor's isRefreshing/refreshFailed flags are per-tab. If
+// tab A refreshes an expiring JWT, the old token gets blacklisted server-side
+// (JWT_BLACKLIST_GRACE_PERIOD=0) — tab B, still holding that old token, would
+// otherwise get a non-refreshable 401 (token_invalid, not token_expired) on its
+// next request and land on a false "session expired" state. Listening for the
+// storage event lets every other tab pick up the fresh token (or a logout)
+// the moment one tab writes it, instead of discovering it via a failed request.
+window.addEventListener('storage', (e) => {
+  if (e.key !== 'wa_token') return
+  const current = store.getState().auth.token
+  if (e.newValue && e.newValue !== current) {
+    store.dispatch(setToken(e.newValue))
+    store.dispatch(clearSessionExpired())
+    resetRefreshState()
+  } else if (!e.newValue && current) {
+    store.dispatch(logout())
+  }
 })
 
 
