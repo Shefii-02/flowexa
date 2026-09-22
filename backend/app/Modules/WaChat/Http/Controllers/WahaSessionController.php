@@ -208,8 +208,42 @@ class WahaSessionController extends Controller
         ]);
 
         app(WaChatTokenService::class)->syncSessions($company);
+        $this->ensureAiWebhookRegistered($session);
 
         return response()->json(['message' => 'Session created.', 'data' => $session], 201);
+    }
+
+    /**
+     * Subscribe the gateway to push this session's message/status events back to Laravel's own
+     * `v1/waha/webhook` endpoint. Without an active subscription the gateway never calls in, so
+     * webhook() above — and everything gated on it, including automation rules and the AI
+     * agent — silently never fires for this session. Idempotent: skips creating a duplicate
+     * when a subscription already points here (safe to call again e.g. on start()).
+     */
+    private function ensureAiWebhookRegistered(WahaSession $session): void
+    {
+        $target = url('/api/v1/waha/webhook');
+
+        try {
+            $existing = Http::withHeaders($this->adminHeaders())
+                ->get("{$this->wahaBase()}/api/sessions/{$session->session_name}/webhooks");
+
+            if ($existing->successful()) {
+                foreach ((array) $existing->json() as $hook) {
+                    if (($hook['url'] ?? null) === $target) {
+                        return;
+                    }
+                }
+            }
+
+            Http::withHeaders($this->adminHeaders())
+                ->post("{$this->wahaBase()}/api/sessions/{$session->session_name}/webhooks", [
+                    'url'    => $target,
+                    'events' => ['message.received', 'message.sent', 'session.status'],
+                ]);
+        } catch (\Throwable $e) {
+            Log::error('WA Chat webhook registration failed: ' . $e->getMessage());
+        }
     }
 
     public function show(int $id): JsonResponse
@@ -223,6 +257,9 @@ class WahaSessionController extends Controller
         $session = WahaSession::where('company_id', auth()->user()->company_id)->findOrFail($id);
         $session->update(['status' => 'starting']);
         Http::withHeaders($this->wahaHeaders())->post("{$this->wahaBase()}/api/sessions/{$session->session_name}/start");
+        // Backfills the webhook subscription for sessions created before it was registered at
+        // store() time — see ensureAiWebhookRegistered().
+        $this->ensureAiWebhookRegistered($session);
         return response()->json(['message' => 'Session starting.']);
     }
 
@@ -534,12 +571,15 @@ class WahaSessionController extends Controller
         return $this->wahaGroup('PUT', "/api/groups/{$gid}/settings", ['session' => $sid], $body);
     }
 
-    // WAHA sends events here — update session status in DB
+    // The gateway sends events here — update session status in DB.
+    // Its real envelope is `{event, sessionId, data}` (see backend-node
+    // WebhookDeliveryService); `session`/`payload` are kept as a fallback for the
+    // legacy shape so an older or hand-built caller still works.
     public function webhook(Request $request): JsonResponse
     {
         $event   = $request->input('event');
-        $name    = $request->input('session');
-        $payload = $request->input('payload', []);
+        $name    = $request->input('sessionId') ?: $request->input('session');
+        $payload = $request->input('data') ?: $request->input('payload', []);
 
         $session = WahaSession::where('session_name', $name)->first();
 
@@ -549,8 +589,10 @@ class WahaSessionController extends Controller
             $session->update(['status' => $status, 'phone' => $phone, 'last_seen_at' => now()]);
         }
 
-        // Run automation rules on inbound messages
-        if ($session && in_array($event, ['message', 'message.any', 'messages.upsert'])) {
+        // Run automation rules on inbound messages. `message.received`/`message.sent` are the
+        // gateway's real event names (message-projector.service.ts); `message`/`message.any`/
+        // `messages.upsert` are kept for the legacy WAHA-style contract.
+        if ($session && in_array($event, ['message.received', 'message', 'message.any', 'messages.upsert'])) {
             $fromMe = $payload['fromMe'] ?? false;
             if (!$fromMe) {
                 $from = $payload['from'] ?? ($payload['chatId'] ?? null);
