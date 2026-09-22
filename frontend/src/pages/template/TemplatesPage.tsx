@@ -96,7 +96,7 @@ export default function TemplatesPage() {
   const [surveyForms, setSurveyForms] = useState<{ id: number; name: string; is_active: boolean }[]>([])
   useEffect(() => {
     surveyFormApi.list({ per_page: 100 })
-      .then(r => setSurveyForms(r.data?.data ?? r.data?.survey_forms ?? r.data ?? []))
+      .then(r => setSurveyForms(r.data?.forms ?? r.data?.data ?? r.data?.survey_forms ?? []))
       .catch(() => setSurveyForms([]))
   }, [])
 

@@ -600,18 +600,24 @@ class WahaSessionController extends Controller
                     Log::error('Webhook AutomationEngine error: ' . $e->getMessage());
                 }
 
-                // Conversational AI agent — runs when the company has an active playbook.
+                // Conversational AI agent — only when Settings → Response Type has WA Chat
+                // set to "AI Agent" (and, if an office-hours schedule is attached, only
+                // inside it); the company also needs an active playbook, checked inside
+                // ConversationalAgentService itself.
                 if ($from) {
                     try {
-                        app(ConversationalAgentService::class)->handle(new AgentInbound(
-                            companyId:  $session->company_id,
-                            channel:    'open_wa',
-                            sessionRef: $name,
-                            phone:      preg_replace('/@.*/', '', (string) $from),
-                            text:       (string) $body,
-                            type:       (string) $type,
-                            fromGroup:  str_ends_with((string) $from, '@g.us'),
-                        ));
+                        $company = Company::find($session->company_id);
+                        if ($company && $company->responseModeAllows('wa_chat', 'ai_agent')) {
+                            app(ConversationalAgentService::class)->handle(new AgentInbound(
+                                companyId:  $session->company_id,
+                                channel:    'open_wa',
+                                sessionRef: $name,
+                                phone:      preg_replace('/@.*/', '', (string) $from),
+                                text:       (string) $body,
+                                type:       (string) $type,
+                                fromGroup:  str_ends_with((string) $from, '@g.us'),
+                            ));
+                        }
                     } catch (\Throwable $e) {
                         Log::error('Webhook ConversationalAgent error: ' . $e->getMessage());
                     }

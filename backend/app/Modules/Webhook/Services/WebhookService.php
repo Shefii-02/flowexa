@@ -162,9 +162,10 @@ class WebhookService
             return;
         }
 
-        // 5b. Conversational AI agent — when the company has an active playbook it
-        // takes over from the legacy flow-builder / menu routing below.
-        if (in_array($dto->type, ['text', 'interactive'], true)) {
+        // 5b. Conversational AI agent — only when Settings → Response Type has WA Cloud
+        // set to "AI Agent" (and, if an office-hours schedule is attached, only inside
+        // it). Takes over from the legacy flow-builder / menu routing below when it does.
+        if ($company->responseModeAllows('wa_cloud', 'ai_agent') && in_array($dto->type, ['text', 'interactive'], true)) {
             $agentText = $dto->text ?? $dto->replyTitle ?? $dto->caption ?? '';
             if (trim($agentText) !== '') {
                 $handled = app(\App\Modules\WaChat\Services\Agent\ConversationalAgentService::class)->handle(
@@ -195,6 +196,15 @@ class WebhookService
         // be "hi", "1", "yes", etc.) is captured as survey data instead of being
         // mistaken for a bot command.
         if ($dto->type === 'text' && $this->handleSurveyAnswerIfActive($company, $contact, $dto)) {
+            return;
+        }
+
+        // 7-13. Flow Builder ("Chat Bot") — only when Settings → Response Type has WA
+        // Cloud set to "Chat Bot" (and, if an office-hours schedule is attached, only
+        // inside it). Outside that, we stop here and send nothing further — a "manual"
+        // channel shouldn't get an automated reply, and the fallback text below is a
+        // chat-bot-menu prompt that only makes sense when the bot is actually active.
+        if (!$company->responseModeAllows('wa_cloud', 'chat_bot')) {
             return;
         }
 

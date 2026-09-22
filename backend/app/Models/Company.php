@@ -231,4 +231,29 @@ class Company extends Model
     {
         return (bool) ($this->settings["crm_auto_save_{$channel}"] ?? true);
     }
+
+    // ── Response type (Settings → Response Type) ───────────────────────────────
+    // Whether inbound messages on the given channel ('wa_chat' | 'wa_cloud') should be
+    // answered by the given generator ('ai_agent' | 'chat_bot' — 'chat_bot' is WA Cloud's
+    // Flow Builder). False both when a different mode is configured and when the mode
+    // matches but an optional "office hours" schedule attached to it says we're closed
+    // right now. Defaults to 'manual' (no automated response) when never configured.
+    public function responseModeAllows(string $channel, string $requiredMode): bool
+    {
+        $configuredMode = $this->settings["response_mode_{$channel}"] ?? 'manual';
+        if ($configuredMode !== $requiredMode) {
+            return false;
+        }
+
+        $schedule = $this->settings["response_schedule_{$channel}"] ?? [];
+
+        return \App\Services\AgentScheduleChecker::isActiveNow(
+            $schedule['mode']     ?? 'always',
+            $schedule['days']     ?? null,
+            $schedule['start']    ?? null,
+            $schedule['end']      ?? null,
+            $schedule['timezone'] ?? null,
+            $schedule['hours']    ?? null,
+        );
+    }
 }

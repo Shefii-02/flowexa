@@ -17,6 +17,7 @@ const TABS = [
   { id: 'devices',     label: '📱 Linked Devices' },
   { id: 'permissions', label: '🛡️ Permissions' },
   { id: 'crm-sync',    label: '🔄 CRM Sync' },
+  { id: 'response',    label: '🤖 Response Type' },
 ] as const
 
 type TabId = (typeof TABS)[number]['id']
@@ -563,6 +564,196 @@ function CrmSyncTab() {
   )
 }
 
+// ── Response Type tab ─────────────────────────────────────────────────────────
+
+type RespMode = 'manual' | 'ai_agent' | 'chat_bot'
+
+interface RespSchedule {
+  mode: 'always' | 'scheduled'
+  days: number[]
+  start: string
+  end: string
+  timezone: string
+}
+
+const DEFAULT_SCHEDULE: RespSchedule = { mode: 'always', days: [1, 2, 3, 4, 5], start: '09:00', end: '18:00', timezone: 'Asia/Kolkata' }
+
+const WEEKDAYS = [
+  { v: 0, l: 'Sun' }, { v: 1, l: 'Mon' }, { v: 2, l: 'Tue' }, { v: 3, l: 'Wed' },
+  { v: 4, l: 'Thu' }, { v: 5, l: 'Fri' }, { v: 6, l: 'Sat' },
+]
+
+function ScheduleEditor({ schedule, onChange }: { schedule: RespSchedule; onChange: (s: RespSchedule) => void }) {
+  const officeHoursOn = schedule.mode === 'scheduled'
+  const toggleDay = (d: number) => {
+    const days = schedule.days.includes(d) ? schedule.days.filter(x => x !== d) : [...schedule.days, d].sort()
+    onChange({ ...schedule, days })
+  }
+
+  return (
+    <div className="mt-3 border-t border-gray-100 pt-3 space-y-3">
+      <div className="flex items-center justify-between gap-4">
+        <div>
+          <p className="text-sm font-medium text-gray-900">Office hours</p>
+          <p className="text-xs text-gray-400">Only respond automatically during the hours below — silent outside them.</p>
+        </div>
+        <Toggle checked={officeHoursOn} onChange={v => onChange({ ...schedule, mode: v ? 'scheduled' : 'always' })} />
+      </div>
+
+      {officeHoursOn && (
+        <div className="bg-gray-50 rounded-lg p-3 space-y-3">
+          <div className="flex flex-wrap gap-1.5">
+            {WEEKDAYS.map(d => (
+              <button
+                key={d.v}
+                type="button"
+                onClick={() => toggleDay(d.v)}
+                className={[
+                  'text-xs px-2.5 py-1 rounded-full border transition-colors',
+                  schedule.days.includes(d.v)
+                    ? 'bg-indigo-600 border-indigo-600 text-white'
+                    : 'bg-white border-gray-300 text-gray-500 hover:border-gray-400',
+                ].join(' ')}
+              >
+                {d.l}
+              </button>
+            ))}
+          </div>
+          <div className="grid grid-cols-3 gap-2">
+            <label className="text-xs text-gray-500">Start
+              <input type="time" value={schedule.start} onChange={e => onChange({ ...schedule, start: e.target.value })}
+                className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm mt-0.5" />
+            </label>
+            <label className="text-xs text-gray-500">End
+              <input type="time" value={schedule.end} onChange={e => onChange({ ...schedule, end: e.target.value })}
+                className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm mt-0.5" />
+            </label>
+            <label className="text-xs text-gray-500">Timezone
+              <input type="text" value={schedule.timezone} placeholder="Asia/Kolkata"
+                onChange={e => onChange({ ...schedule, timezone: e.target.value })}
+                className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm mt-0.5" />
+            </label>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ChannelResponseCard({
+  title, subtitle, modes, mode, schedule, onModeChange, onScheduleChange, onSave, saving,
+}: {
+  title: string
+  subtitle: string
+  modes: { id: RespMode; label: string; description: string }[]
+  mode: RespMode
+  schedule: RespSchedule
+  onModeChange: (m: RespMode) => void
+  onScheduleChange: (s: RespSchedule) => void
+  onSave: () => void
+  saving: boolean
+}) {
+  return (
+    <div className="card">
+      <div className="card-header"><h3 className="card-title">{title}</h3></div>
+      <div className="card-body space-y-3">
+        <p className="text-xs text-gray-400">{subtitle}</p>
+        <div className="space-y-2">
+          {modes.map(m => (
+            <label key={m.id} className={[
+              'flex items-start gap-3 rounded-lg border p-3 cursor-pointer transition-colors',
+              mode === m.id ? 'border-indigo-400 bg-indigo-50' : 'border-gray-200 hover:border-gray-300',
+            ].join(' ')}>
+              <input type="radio" className="mt-0.5" checked={mode === m.id} onChange={() => onModeChange(m.id)} />
+              <div>
+                <p className="text-sm font-medium text-gray-900">{m.label}</p>
+                <p className="text-xs text-gray-400">{m.description}</p>
+              </div>
+            </label>
+          ))}
+        </div>
+
+        {mode !== 'manual' && <ScheduleEditor schedule={schedule} onChange={onScheduleChange} />}
+
+        <div className="flex justify-end">
+          <Button onClick={onSave} loading={saving}>Save</Button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function ResponseTypeTab() {
+  const [loading, setLoading] = useState(true)
+  const [waChatMode, setWaChatMode] = useState<RespMode>('manual')
+  const [waChatSchedule, setWaChatSchedule] = useState<RespSchedule>(DEFAULT_SCHEDULE)
+  const [waCloudMode, setWaCloudMode] = useState<RespMode>('manual')
+  const [waCloudSchedule, setWaCloudSchedule] = useState<RespSchedule>(DEFAULT_SCHEDULE)
+  const [savingChannel, setSavingChannel] = useState<'wa_chat' | 'wa_cloud' | null>(null)
+
+  useEffect(() => {
+    settingsApi.index().then(r => {
+      const s = r.data.company?.settings || {}
+      setWaChatMode(s.response_mode_wa_chat ?? 'manual')
+      setWaChatSchedule({ ...DEFAULT_SCHEDULE, ...(s.response_schedule_wa_chat || {}) })
+      setWaCloudMode(s.response_mode_wa_cloud ?? 'manual')
+      setWaCloudSchedule({ ...DEFAULT_SCHEDULE, ...(s.response_schedule_wa_cloud || {}) })
+    }).finally(() => setLoading(false))
+  }, [])
+
+  const saveChannel = async (channel: 'wa_chat' | 'wa_cloud', mode: RespMode, schedule: RespSchedule) => {
+    setSavingChannel(channel)
+    try {
+      await settingsApi.update({ settings: { [`response_mode_${channel}`]: mode, [`response_schedule_${channel}`]: schedule } })
+      toast.success('Saved.')
+    } catch (e) { toast.error(getError(e)) }
+    finally { setSavingChannel(null) }
+  }
+
+  if (loading) return <div className="text-sm text-gray-400 py-8 text-center">Loading…</div>
+
+  return (
+    <div className="space-y-6">
+      <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-700">
+        Choose how each channel replies to incoming messages. "Manual" sends no automated reply at all —
+        a person on your team handles it. Office hours (optional, under AI Agent / Chat Bot) restrict the
+        automated reply to a schedule; outside it, nothing automated is sent either.
+      </div>
+
+      <ChannelResponseCard
+        title="💬 WA Chat"
+        subtitle="Your open WhatsApp sessions."
+        modes={[
+          { id: 'manual',   label: 'Manually',       description: 'No chat bot, no AI agent — a person replies.' },
+          { id: 'ai_agent', label: 'AI Agent Based',  description: 'The AI Agent playbook configured for this channel replies.' },
+        ]}
+        mode={waChatMode}
+        schedule={waChatSchedule}
+        onModeChange={setWaChatMode}
+        onScheduleChange={setWaChatSchedule}
+        onSave={() => saveChannel('wa_chat', waChatMode, waChatSchedule)}
+        saving={savingChannel === 'wa_chat'}
+      />
+
+      <ChannelResponseCard
+        title="☁️ WA Cloud"
+        subtitle="Meta WhatsApp Cloud API."
+        modes={[
+          { id: 'manual',   label: 'Manually',       description: 'No chat bot, no AI agent — a person replies.' },
+          { id: 'ai_agent', label: 'AI Agent Based',  description: 'The AI Agent playbook configured for this channel replies.' },
+          { id: 'chat_bot', label: 'Chat Bot',        description: 'Flow Builder (flow-node based) menu bot replies.' },
+        ]}
+        mode={waCloudMode}
+        schedule={waCloudSchedule}
+        onModeChange={setWaCloudMode}
+        onScheduleChange={setWaCloudSchedule}
+        onSave={() => saveChannel('wa_cloud', waCloudMode, waCloudSchedule)}
+        saving={savingChannel === 'wa_cloud'}
+      />
+    </div>
+  )
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function SettingsPage() {
@@ -584,6 +775,7 @@ export default function SettingsPage() {
         {tab === 'devices'      && <DevicesTab />}
         {tab === 'permissions'  && <PermissionsTab />}
         {tab === 'crm-sync'     && <CrmSyncTab />}
+        {tab === 'response'     && <ResponseTypeTab />}
       </div>
     </div>
   )
