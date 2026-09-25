@@ -194,6 +194,17 @@ class WahaSessionController extends Controller
             ], 502);
         }
 
+        // An empty id here would collide with any other company's same failure on
+        // waha_sessions' unique `session_name` column, surfacing as an opaque DB
+        // error instead of this actionable one — mirrors the guard in
+        // WaChatTokenService::provision() for the same gateway-response class.
+        $gatewaySessionId = (string) $res->json('id');
+        if ($gatewaySessionId === '') {
+            return response()->json([
+                'message' => 'Gateway created the session but returned no id.',
+            ], 502);
+        }
+
         // waha_sessions.session_name holds the gateway session **id** (UUID) —
         // that is what allowedSessions matches and what the /{id} routes take.
         // `config`/`proxyUrl`/`proxyType` were only ever meant for the gateway call above —
@@ -203,7 +214,7 @@ class WahaSessionController extends Controller
             'engine'             => $data['engine'] ?? null,
             'webhook_url'        => $data['webhook_url'] ?? null,
             'company_id'         => $companyId,
-            'session_name'       => (string) $res->json('id'),
+            'session_name'       => $gatewaySessionId,
             'gateway_created_at' => now(),
         ]);
 
