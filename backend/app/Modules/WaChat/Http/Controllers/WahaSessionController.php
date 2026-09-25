@@ -211,7 +211,9 @@ class WahaSessionController extends Controller
         // WahaSession has no matching columns, so they're deliberately left out here.
         $session = WahaSession::create([
             'display_name'       => $data['display_name'] ?? null,
-            'engine'             => $data['engine'] ?? null,
+            // engine is NOT NULL DEFAULT 'WEBJS' in the schema; an explicit null here
+            // would override that default at insert time rather than falling back to it.
+            'engine'             => $data['engine'] ?? 'WEBJS',
             'webhook_url'        => $data['webhook_url'] ?? null,
             'company_id'         => $companyId,
             'session_name'       => $gatewaySessionId,
