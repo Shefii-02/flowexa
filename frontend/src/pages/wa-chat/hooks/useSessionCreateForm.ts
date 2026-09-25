@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { sessionApi, type Session } from '../api/api';
 import { useToast } from './useToast';
+import api from '@/api/client';
+import { getError } from '@/utils';
 
 export interface UseSessionCreateFormArgs {
   onCreated: (session: Session) => void;
@@ -41,30 +43,28 @@ export function useSessionCreateForm({ onCreated, onFailed }: UseSessionCreateFo
     if (!newSessionName.trim()) return;
     try {
       setCreating(true);
-      const newSession = await sessionApi.create(newSessionName);
 
-      // Persist display_name / phone to our Laravel backend (fire-and-forget)
-      if (newDisplayName.trim() || newPhone.trim()) {
+      // Session creation goes through Laravel, not the gateway directly: this company's
+      // own gateway key is session-scoped (allowedSessions), and the gateway's POST /sessions
+      // rejects any scoped key outright since a not-yet-created session has no id to scope
+      // against. Laravel's controller holds the gateway's unscoped ADMIN key for exactly this,
+      // and re-syncs this company's key allowlist to include the new session afterward.
+      const { data: created } = await api.post('/waha/sessions', {
+        display_name: newDisplayName.trim() || newSessionName.trim(),
+      });
+      const waSession = created.data;
+
+      if (newPhone.trim()) {
         try {
-          // VITE_API_URL already includes the /api/v1 prefix (see src/api/client.ts).
-          const laravelBase = import.meta.env.VITE_API_URL || '/api/v1';
-          const token = localStorage.getItem('wa_token') || '';
-          await fetch(`${laravelBase}/waha/sessions`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${token}`,
-            },
-            body: JSON.stringify({
-              session_name: newSession.name,
-              display_name: newDisplayName.trim() || null,
-              phone: newPhone.trim() || null,
-            }),
-          });
+          await api.patch(`/waha/sessions/${waSession.id}`, { phone: newPhone.trim() });
         } catch {
           // Non-critical — don't block the main success flow
         }
       }
+
+      // Fetch the canonical gateway-shaped session now that this company's scoped key
+      // has been re-synced (above) to include it.
+      const newSession = await sessionApi.get(waSession.session_name);
 
       setNewSessionName('');
       setNewDisplayName('');
@@ -73,7 +73,7 @@ export function useSessionCreateForm({ onCreated, onFailed }: UseSessionCreateFo
       toast.success(t('sessions.create.successTitle'), t('sessions.create.successDesc', { name: newSession.name }));
       onCreated(newSession);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : t('sessions.create.errorDefault');
+      const msg = getError(err) || t('sessions.create.errorDefault');
       toast.error(t('sessions.create.errorTitle'), msg);
       onFailed(msg);
     } finally {
