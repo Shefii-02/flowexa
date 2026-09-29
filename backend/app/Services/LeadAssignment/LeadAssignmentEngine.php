@@ -68,7 +68,7 @@ class LeadAssignmentEngine
                 'contact_id'           => $contact->id,
                 'lead_id'              => $lead?->id,
                 'campaign_id'          => $campaignId,
-                'source_type'          => $sourceType,
+                'source_type'          => LeadAssignment::mapLeadSource($sourceType),
                 'source_ref'           => $sourceRef,
                 'status'               => 'pending',
                 'assignment_type'      => $resolvedType,

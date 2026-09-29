@@ -41,4 +41,28 @@ class LeadAssignment extends Model
     public function isAssigned(): bool   { return in_array($this->status, ['assigned', 'accepted']); }
     public function isAiHandling(): bool { return $this->status === 'ai_handling'; }
     public function isCompleted(): bool  { return $this->status === 'completed'; }
+
+    /**
+     * `source_type` is a strict MySQL ENUM (see the widen-source-type migration), but `Lead::source`
+     * is drawn from the much wider `config('lead_sources')` vocabulary (see that config file) —
+     * callers that pass a lead's raw `source` straight through as `sourceType` (e.g.
+     * ProcessUnassignedLeads) throw a truncation error at the DB layer for any value outside the
+     * enum, such as 'flow', instead of creating the assignment. Mirrors WahaSession::mapGatewayStatus
+     * for the same reason: every write to this column must go through here first; already-valid
+     * enum values pass through unchanged.
+     */
+    public static function mapLeadSource(?string $source): string
+    {
+        return match ((string) $source) {
+            'wa_chat' => 'wa_chat',
+            'website', 'website_widget' => 'website_widget',
+            'instagram', 'instagram_dm' => 'instagram',
+            'whatsapp', 'whatsapp_ai' => 'whatsapp',
+            'whatsapp_cloud' => 'meta_api',
+            'flow', 'survey_form' => 'flow_builder',
+            'campaign', 'meta_ads', 'google_ads' => 'campaign',
+            'manual' => 'manual',
+            default => 'organic', // referral, walk_in, import, api, organic, unknown, …
+        };
+    }
 }
