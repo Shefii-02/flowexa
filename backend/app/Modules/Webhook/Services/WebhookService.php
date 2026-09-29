@@ -167,10 +167,25 @@ class WebhookService
             return;
         }
 
-        // 5b. Conversational AI agent — only when Settings → Response Type has WA Cloud
-        // set to "AI Agent" (and, if an office-hours schedule is attached, only inside
-        // it). Takes over from the legacy flow-builder / menu routing below when it does.
-        if ($company->responseModeAllows('wa_cloud', 'ai_agent') && in_array($dto->type, ['text', 'interactive'], true)) {
+        // 5b. Conversational AI agent — normally gated by the company-wide Settings →
+        // Response Type toggle ("AI Agent"), but a number with its OWN AI Schedule
+        // override (Automation → AI Agent → AI Schedule, same per-number control WA Chat
+        // uses) takes precedence over that company-wide default for THIS number only —
+        // 'manual'/'always'/'scheduled' all try the agent (ConversationalAgentService
+        // resolves the fine-grained on/off-hours behavior itself, including the
+        // manual-mode staff handoff); 'chatbot' explicitly skips it in favor of the
+        // legacy flow-builder routing below.
+        $numberMode = optional(
+            \App\Modules\WaChat\Models\AgentPlaybook::where('company_id', $company->id)
+                ->where('session_id', $company->wa_phone_id)
+                ->first()
+        )->ai_schedule_mode;
+
+        $tryAiAgent = $numberMode !== null
+            ? in_array($numberMode, ['manual', 'always', 'scheduled'], true)
+            : $company->responseModeAllows('wa_cloud', 'ai_agent');
+
+        if ($tryAiAgent && in_array($dto->type, ['text', 'interactive'], true)) {
             $agentText = $dto->text ?? $dto->replyTitle ?? $dto->caption ?? '';
             if (trim($agentText) !== '') {
                 $handled = app(\App\Modules\WaChat\Services\Agent\ConversationalAgentService::class)->handle(
@@ -204,12 +219,17 @@ class WebhookService
             return;
         }
 
-        // 7-13. Flow Builder ("Chat Bot") — only when Settings → Response Type has WA
-        // Cloud set to "Chat Bot" (and, if an office-hours schedule is attached, only
-        // inside it). Outside that, we stop here and send nothing further — a "manual"
-        // channel shouldn't get an automated reply, and the fallback text below is a
-        // chat-bot-menu prompt that only makes sense when the bot is actually active.
-        if (!$company->responseModeAllows('wa_cloud', 'chat_bot')) {
+        // 7-13. Flow Builder ("Chat Bot") — same per-number override as 5b above: a number
+        // with its own AI Schedule mode set to 'chatbot' reaches here (5b already skipped
+        // the AI agent for it); with no override, falls back to the company-wide Settings →
+        // Response Type "Chat Bot" toggle. Outside either, stop here and send nothing
+        // further — a "manual" channel shouldn't get an automated reply, and the fallback
+        // text below is a chat-bot-menu prompt that only makes sense when the bot is active.
+        $tryChatbot = $numberMode !== null
+            ? $numberMode === 'chatbot'
+            : $company->responseModeAllows('wa_cloud', 'chat_bot');
+
+        if (!$tryChatbot) {
             return;
         }
 

@@ -9,7 +9,7 @@ import { toast } from 'react-hot-toast'
 import api from '@/api/client'
 
 export type DayHours = { start: string; end: string }
-export type ScheduleMode = 'manual' | 'always' | 'scheduled'
+export type ScheduleMode = 'manual' | 'always' | 'scheduled' | 'chatbot'
 export type Schedule = {
   mode: ScheduleMode
   hours: Record<string, DayHours> | null
@@ -59,11 +59,13 @@ function rowsToHours(rows: WeekRows): Record<string, DayHours> {
   return out
 }
 
-export function ScheduleEditor({ mode, rows, timezone, onChange }: {
+export function ScheduleEditor({ mode, rows, timezone, onChange, showChatbot }: {
   mode: ScheduleMode
   rows: WeekRows
   timezone: string | null
   onChange: (v: { mode: ScheduleMode; rows: WeekRows; timezone: string | null }) => void
+  /** WA Cloud only — offers "Chatbot" (hand off to the Flow Builder) as a 4th mode. */
+  showChatbot?: boolean
 }) {
   const setDay = (i: number, patch: Partial<DayRow>) => {
     const next = rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r))
@@ -92,7 +94,22 @@ export function ScheduleEditor({ mode, rows, timezone, onChange }: {
           }`}>
           🕒 Scheduled Hours
         </button>
+        {showChatbot && (
+          <button type="button" onClick={() => onChange({ mode: 'chatbot', rows, timezone })}
+            className={`flex-1 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+              mode === 'chatbot' ? 'bg-purple-50 border-purple-300 text-purple-700' : 'border-gray-200 text-gray-500 hover:border-gray-300'
+            }`}>
+            🤖 Chatbot
+          </button>
+        )}
       </div>
+
+      {mode === 'chatbot' && (
+        <p className="text-[11px] text-gray-400 bg-gray-50 border border-gray-200 rounded-lg p-3">
+          The conversational AI agent is off for this number — the Flow Builder ("Chat Bot")
+          handles incoming messages instead.
+        </p>
+      )}
 
       {mode === 'manual' && (
         <p className="text-[11px] text-gray-400 bg-gray-50 border border-gray-200 rounded-lg p-3">
@@ -143,7 +160,7 @@ export function ScheduleEditor({ mode, rows, timezone, onChange }: {
   )
 }
 
-function ScheduleAccountRow({ label, schedule, saving, onSave }: { label: string; schedule: Schedule; saving: boolean; onSave: (s: { mode: ScheduleMode; hours: Record<string, DayHours>; timezone: string | null }) => void }) {
+function ScheduleAccountRow({ label, schedule, saving, onSave, showChatbot }: { label: string; schedule: Schedule; saving: boolean; onSave: (s: { mode: ScheduleMode; hours: Record<string, DayHours>; timezone: string | null }) => void; showChatbot?: boolean }) {
   const [mode, setMode] = useState<ScheduleMode>(schedule.mode)
   const [rows, setRows] = useState<WeekRows>(() => scheduleToRows(schedule))
   const [timezone, setTimezone] = useState(schedule.timezone)
@@ -168,7 +185,7 @@ function ScheduleAccountRow({ label, schedule, saving, onSave }: { label: string
           </button>
         )}
       </div>
-      <ScheduleEditor mode={mode} rows={rows} timezone={timezone}
+      <ScheduleEditor mode={mode} rows={rows} timezone={timezone} showChatbot={showChatbot}
         onChange={(v) => { setMode(v.mode); setRows(v.rows); setTimezone(v.timezone) }} />
     </div>
   )
@@ -241,7 +258,8 @@ export function AiScheduleSection({ channel, only, emptyText }: { channel: Chann
     <div className="space-y-3">
       {rows.map(row => (
         <ScheduleAccountRow key={row.session_id} label={row.label} schedule={row.schedule}
-          saving={savingKey === row.session_id} onSave={(s) => saveWa(row.session_id, s)} />
+          saving={savingKey === row.session_id} onSave={(s) => saveWa(row.session_id, s)}
+          showChatbot={channel === 'wa_cloud'} />
       ))}
     </div>
   )

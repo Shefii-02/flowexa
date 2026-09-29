@@ -25,7 +25,11 @@ use Illuminate\Support\Facades\Auth;
 class AiScheduleController extends Controller
 {
     private const SCHEDULE_RULES = [
-        'ai_schedule_mode'     => 'required|string|in:manual,always,scheduled',
+        // 'chatbot' only makes sense for WA Cloud (routes to the legacy Flow Builder instead of
+        // the conversational AI agent — see ConversationalAgentService::handle()); the frontend
+        // only offers the button for that channel, but validation stays shared across wa/instagram
+        // the same way manual/always/scheduled already are.
+        'ai_schedule_mode'     => 'required|string|in:manual,always,scheduled,chatbot',
         // Legacy shape — kept for old clients/rows; superseded by ai_schedule_hours whenever present.
         'ai_schedule_days'     => 'nullable|array',
         'ai_schedule_days.*'   => 'integer|min:0|max:6',

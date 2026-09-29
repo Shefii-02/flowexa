@@ -45,6 +45,14 @@ class ConversationalAgentService
             return false;
         }
 
+        // WA Cloud only: this number is handed off to the legacy Flow Builder instead of the
+        // conversational AI agent. Return false with NO side effects (no fallback message, no
+        // CrmTask) — unlike 'manual', this isn't an unhandled message, the caller's flow-builder
+        // routing (WebhookService::handleInbound) picks it up right after this call returns.
+        if (($playbook->ai_schedule_mode ?? null) === 'chatbot') {
+            return false;
+        }
+
         // The AI agent's own on/off schedule — separate from staff working hours, since a
         // company might want the AI running 24/7 on one WA session but only during set hours
         // on another (or on Instagram). Configured per playbook (which is itself scoped per

@@ -371,10 +371,8 @@ export const Sidebar = () => {
               <SubLink to="/wa-chat/message-sender" icon="📨" label="Campaign" />
               {/* } */}
               {/* <SubLink to="/wa-chat/plugins" icon="🔌" label="Plugin" /> */}
-              {/* {canViewWebhooks &&  */}
-              <SubLink to="/wa-chat/webhooks" icon="🔗" label="Webhooks" />
-              {/* }
-                {canViewTpls &&  */}
+              {/* {canViewWebhooks && <SubLink to="/wa-chat/webhooks" icon="🔗" label="Webhooks" />} */}
+              {/* {canViewTpls &&  */}
               <SubLink to="/wa-chat/templates" icon="📋" label="Templates" />
               {/* } */}
               {/* {canViewApiKeys &&  */}
