@@ -166,7 +166,8 @@ class WahaSessionController extends Controller
         // optional, and passed straight through rather than persisted, since the gateway is
         // the source of truth for a session's live engine settings, not this row.
         $data = $request->validate([
-            'display_name'  => 'nullable|string|max:150',
+            'display_name'   => 'nullable|string|max:150',
+            'requested_name' => 'nullable|string|max:100',
             'engine'        => 'nullable|string|max:30',
             'webhook_url'   => 'nullable|url|max:500',
             'config'                          => 'nullable|array',
@@ -211,6 +212,7 @@ class WahaSessionController extends Controller
         // WahaSession has no matching columns, so they're deliberately left out here.
         $session = WahaSession::create([
             'display_name'       => $data['display_name'] ?? null,
+            'requested_name'     => $data['requested_name'] ?? null,
             // engine is NOT NULL DEFAULT 'WEBJS' in the schema; an explicit null here
             // would override that default at insert time rather than falling back to it.
             'engine'             => $data['engine'] ?? 'WEBJS',

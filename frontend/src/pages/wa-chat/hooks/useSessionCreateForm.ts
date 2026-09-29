@@ -51,6 +51,10 @@ export function useSessionCreateForm({ onCreated, onFailed }: UseSessionCreateFo
       // and re-syncs this company's key allowlist to include the new session afterward.
       const { data: created } = await api.post('/waha/sessions', {
         display_name: newDisplayName.trim() || newSessionName.trim(),
+        // Recorded as its own column even when display_name above already took the same value —
+        // see requested_name on WahaSession: a record of what the user typed, distinct from the
+        // gateway-generated session_name and from display_name (which the user may overwrite later).
+        requested_name: newSessionName.trim(),
       });
       const waSession = created.data;
 

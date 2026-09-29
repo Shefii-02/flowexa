@@ -12,7 +12,7 @@ class WahaSession extends Model
     protected $table = 'waha_sessions';
 
     protected $fillable = [
-        'company_id', 'session_name', 'display_name', 'phone',
+        'company_id', 'session_name', 'display_name', 'requested_name', 'phone',
         'status', 'webhook_url', 'engine', 'last_seen_at',
         'gateway_created_at', 'session_token',
     ];
