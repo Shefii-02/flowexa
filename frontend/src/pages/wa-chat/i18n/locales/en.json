@@ -315,7 +315,8 @@
       "unlink": "Unlink",
       "delete": "Delete",
       "killStuck": "Kill Stuck",
-      "syncContacts": "Sync Contacts"
+      "syncContacts": "Sync Contacts",
+      "aiSchedule": "AI Schedule"
     },
     "toasts": {
       "readyTitle": "Session Ready",
@@ -394,6 +395,11 @@
       "errorTitle": "Sync Failed",
       "errorDefault": "Failed to sync contacts to the CRM.",
       "notLinked": "This session is not yet linked to a CRM session record — start or reconnect it once, then try again."
+    },
+    "aiSchedule": {
+      "title": "AI Schedule — {{name}}",
+      "description": "Choose whether the AI agent replies around the clock or only during set hours for this session. Outside scheduled hours a task goes to a staff member instead.",
+      "emptyText": "This session isn't available for AI scheduling yet."
     }
   },
   "webhooks": {

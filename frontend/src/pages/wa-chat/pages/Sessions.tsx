@@ -15,8 +15,10 @@ import {
   Skull,
   Unlink,
   Users,
+  Clock,
 } from 'lucide-react';
 import { sessionApi, type Session, type SessionConfig, type AccountRestriction } from '../api/api';
+import { AiScheduleSection } from '@/components/ai/AiScheduleSection';
 // The main Laravel backend's client — NOT waChatApi. Syncing session contacts into CRM
 // contacts/labels reads/writes tables that only exist on that backend (see
 // WahaContactController::syncAllContacts), so this one call must bypass the WA Chat
@@ -82,6 +84,7 @@ export function Sessions() {
 
   // ── Sync contacts to CRM ────────────────────────────────────────────────────
   const [syncSessionId, setSyncSessionId] = useState<string | null>(null);
+  const [scheduleSessionId, setScheduleSessionId] = useState<string | null>(null);
   const [crmLabels, setCrmLabels] = useState<{ id: number; name: string }[]>([]);
   const [syncLabelMode, setSyncLabelMode] = useState<'none' | 'existing' | 'new'>('none');
   const [syncLabelId, setSyncLabelId] = useState('');
@@ -959,6 +962,27 @@ export function Sessions() {
         </Modal>
       )}
 
+      {scheduleSessionId && (
+        <Modal
+          open
+          onClose={() => setScheduleSessionId(null)}
+          title={t('sessions.aiSchedule.title', { name: sessions.find(s => s.id === scheduleSessionId)?.name })}
+          closeLabel={t('common.close')}
+          footer={
+            <button className="btn-secondary" onClick={() => setScheduleSessionId(null)}>
+              {t('common.close')}
+            </button>
+          }
+        >
+          <p className="text-muted" style={{ marginBottom: '1rem' }}>{t('sessions.aiSchedule.description')}</p>
+          <AiScheduleSection
+            channel="wa_chat"
+            only={sessions.find(s => s.id === scheduleSessionId)?.name ?? null}
+            emptyText={t('sessions.aiSchedule.emptyText')}
+          />
+        </Modal>
+      )}
+
       <div className="sessions-grid">
         {filteredSessions.length === 0 ? (
           <div className="empty-state">
@@ -1031,6 +1055,12 @@ export function Sessions() {
                   <button className="btn-action" onClick={() => openSyncModal(session.id)}>
                     <Users size={16} />
                     {t('sessions.actions.syncContacts')}
+                  </button>
+                )}
+                {canWrite && (
+                  <button className="btn-action" onClick={() => setScheduleSessionId(session.id)}>
+                    <Clock size={16} />
+                    {t('sessions.actions.aiSchedule')}
                   </button>
                 )}
                 {canWrite && isSessionStarted(session) ? (

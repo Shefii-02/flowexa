@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { api } from '@/api/client'
+import { AiScheduleSection } from '@/components/ai/AiScheduleSection'
 
 const RULE_TYPES = [
   { value: 'welcome_message',    label: 'Welcome Message' },
@@ -176,6 +177,15 @@ export default function AutomationsPage() {
         >
           + New Rule
         </button>
+      </div>
+
+      <div className="bg-white border border-gray-200 rounded-xl p-5 mb-6">
+        <h2 className="font-semibold text-gray-900 mb-1">AI Schedule</h2>
+        <p className="text-sm text-gray-500 mb-4">
+          Choose whether the AI agent replies around the clock or only during set hours, per WhatsApp
+          session. Outside scheduled hours a task goes to a staff member instead.
+        </p>
+        <AiScheduleSection channel="wa_chat" emptyText="No WhatsApp Chat sessions connected yet." />
       </div>
 
       {loading ? (
