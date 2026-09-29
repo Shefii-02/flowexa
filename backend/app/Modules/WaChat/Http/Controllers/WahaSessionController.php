@@ -598,6 +598,15 @@ class WahaSessionController extends Controller
 
         $session = WahaSession::where('session_name', $name)->first();
 
+        // This is the ONE webhook URL every company's WA Chat sessions push through (the gateway
+        // is multi-tenant, differentiated only by session_name → company_id) — log the company
+        // identification on every hit so a live message can be traced to its tenant.
+        if ($session) {
+            Log::info("WA Chat webhook: event={$event} session={$name} company_id={$session->company_id}");
+        } else {
+            Log::warning("WA Chat webhook: event={$event} session={$name} — no matching company (unknown session_name)");
+        }
+
         if ($session && $event === 'session.status') {
             $status = WahaSession::mapGatewayStatus($payload['status'] ?? null);
             $phone  = $payload['phone'] ?? $session->phone;

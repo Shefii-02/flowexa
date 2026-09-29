@@ -116,6 +116,12 @@ class WebhookController extends Controller
 
                 $log->update(['company_id' => $company->id]);
 
+                // This is the ONE webhook URL every company's WA Cloud numbers push through
+                // (Meta's callback is multi-tenant, differentiated only by phone_number_id →
+                // company_id) — log the company identification on every hit so a live message
+                // can be traced to its tenant.
+                Log::info("WA Cloud webhook: field={$field} phone_number_id={$phoneNumberId} company_id={$company->id}");
+
                 // ── Inbound messages ──────────────────────────────────────────
                 foreach ($value['messages'] ?? [] as $message) {
                     $contact     = $value['contacts'][0] ?? [];

@@ -37,6 +37,16 @@ class InstagramWebhookController extends Controller
             $account = $igUserId
                 ? InstagramAccount::where('ig_user_id', $igUserId)->where('is_active', true)->first()
                 : null;
+
+            // This is the ONE webhook URL every company's Instagram accounts push through (Meta's
+            // callback is multi-tenant, differentiated only by ig_user_id → company_id) — log the
+            // company identification on every hit so a live event can be traced to its tenant.
+            if ($account) {
+                Log::info("Instagram webhook: ig_user_id={$igUserId} company_id={$account->company_id}");
+            } else {
+                Log::warning("Instagram webhook: ig_user_id={$igUserId} — no matching (active) company");
+            }
+
             if (!$account) {
                 continue;
             }
