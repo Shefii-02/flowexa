@@ -18,6 +18,9 @@ readonly class CreateCampaignDTO
         public ?string $csvFilePath        = null,
         public int     $throttlePerMinute  = 60,
         public ?string $scheduledAt        = null,
+        // Lead attribution window — see CreateCampaignRequest.
+        public ?string $startsAt           = null,
+        public ?string $endsAt             = null,
     ) {}
 
     public static function fromRequest(array $data, ?string $csvPath = null): self
@@ -34,6 +37,8 @@ readonly class CreateCampaignDTO
             csvFilePath:        $csvPath,
             throttlePerMinute:  (int) ($data['throttle_per_minute'] ?? 60),
             scheduledAt:        $data['scheduled_at']         ?? null,
+            startsAt:           $data['starts_at']            ?? null,
+            endsAt:             $data['ends_at']               ?? null,
         );
     }
 }

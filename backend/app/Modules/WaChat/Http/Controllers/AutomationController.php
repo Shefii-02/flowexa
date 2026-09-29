@@ -26,7 +26,10 @@ class AutomationController extends Controller
     public function store(Request $request): JsonResponse
     {
         $data = $request->validate([
-            'session_id'       => 'required|string',
+            // Nullable: no session picked means the rule applies to every one of the company's
+            // WA Chat sessions (mirrors WA Cloud's wa_phone_number_id === null == "all numbers" —
+            // see WaCloudAutomationEngine::numberMatches), not "no session at all".
+            'session_id'       => 'nullable|string',
             'rule_type'        => 'required|in:welcome_message,out_of_office,lead_qualifier,follow_up_reminder,follow_up_agent,keyword_trigger,inactivity_trigger',
             'name'             => 'required|string|max:120',
             'conditions'       => 'nullable|array',
@@ -64,7 +67,7 @@ class AutomationController extends Controller
             ->firstOrFail();
 
         $data = $request->validate([
-            'session_id'       => 'sometimes|string',
+            'session_id'       => 'sometimes|nullable|string',
             'rule_type'        => 'sometimes|in:welcome_message,out_of_office,lead_qualifier,follow_up_reminder,follow_up_agent,keyword_trigger,inactivity_trigger',
             'name'             => 'sometimes|string|max:120',
             'conditions'       => 'nullable|array',

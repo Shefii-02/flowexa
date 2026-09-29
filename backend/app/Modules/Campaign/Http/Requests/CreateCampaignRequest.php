@@ -24,6 +24,11 @@ class CreateCampaignRequest extends FormRequest
             'file'                => ['required_if:target_type,csv', 'file', 'mimes:csv,txt', 'max:20480'],
             'throttle_per_minute' => ['nullable', 'integer', 'min:10', 'max:1000'],
             'scheduled_at'        => ['nullable', 'date', 'after:now'],
+            // Lead attribution window: a reply is credited to this campaign when it arrives
+            // between starts_at and ends_at (WaChatLeadAttributionService::matchWaCloudCampaign).
+            // Independent of started_at/completed_at, which track when the send actually ran.
+            'starts_at'           => ['nullable', 'date'],
+            'ends_at'             => ['nullable', 'date', 'after_or_equal:starts_at'],
         ];
     }
 

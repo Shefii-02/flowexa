@@ -12,12 +12,24 @@ import { useAppSelector } from '@/store'
 
 type AgentSession = {
   id: number
+  // For a WA Chat session this is the open-wa session id; for a WA Cloud one it's the Meta
+  // phone_number_id the message arrived on (see AgentInbound::$sessionRef, both channels share
+  // this one column). ai_config.channel is what actually tells the two apart — see channelOf().
   waha_session_id: string
   contact_phone: string
   status: 'active' | 'closed' | 'transferred'
   current_intent?: string
   last_message_at?: string
   conversation_history?: { role: string; content: string }[]
+  // 'open_wa' | 'meta_cloud' — stamped by ConversationalAgentService::resumeOrOpenSession()
+  // going forward; absent on sessions created before this field existed (treated as WA Chat,
+  // since WA Cloud's AI agent path is newer).
+  ai_config?: { channel?: 'open_wa' | 'meta_cloud' } | null
+}
+
+/** 'open_wa' → WA Chat, 'meta_cloud' → WA Cloud, missing (legacy row) → WA Chat. */
+function channelOf(s: Pick<AgentSession, 'ai_config'>): 'wa_chat' | 'wa_cloud' {
+  return s.ai_config?.channel === 'meta_cloud' ? 'wa_cloud' : 'wa_chat'
 }
 
 type Stats = {
@@ -267,35 +279,27 @@ function LiveChatDrawer({ open, onClose, waSessions, companyName }: {
   const [input, setInput]               = useState('')
   const [history, setHistory]           = useState<ChatMessage[]>([])
   const [thinking, setThinking]         = useState(false)
-  // With/without RAG + which stored key to test against (empty = company default)
+  // With/without RAG + which stored key to test against — always one specific key, picked
+  // directly from every AI tool the company has configured (no "company default" fallback:
+  // a live test should always say exactly which key it ran with).
   const [useRag, setUseRag]             = useState(true)
   const [storedKeys, setStoredKeys]         = useState<StoredKey[]>([])
-  const [forceProvider, setForceProvider]   = useState('')
   const [forceKeyId, setForceKeyId]         = useState('')
 
   useEffect(() => {
-    api.get('/settings/api-keys').then(r => setStoredKeys(r.data ?? [])).catch(() => {})
+    api.get('/settings/api-keys').then(r => {
+      const keys: StoredKey[] = r.data ?? []
+      setStoredKeys(keys)
+      // Default to the company's active key so the picker never opens empty.
+      setForceKeyId(prev => prev || String(keys.find(k => k.is_active)?.id ?? keys[0]?.id ?? ''))
+    }).catch(() => {})
   }, [])
 
-  // Providers that actually have at least one stored key — a company can hold several
-  // keys for the same provider (e.g. two google_ai keys for two projects), so the picker
-  // is two steps: provider, then which specific key of that provider's to run with.
-  const providersWithKeys = useMemo(
-    () => Array.from(new Set(storedKeys.map(k => k.provider))),
-    [storedKeys]
+  const selectedKey = useMemo(
+    () => storedKeys.find(k => String(k.id) === forceKeyId),
+    [storedKeys, forceKeyId]
   )
-  const keysForProvider = useMemo(
-    () => storedKeys.filter(k => k.provider === forceProvider),
-    [storedKeys, forceProvider]
-  )
-
-  // Picking a provider defaults to its active key, but the key dropdown stays open to
-  // test a different (non-active) one for that same provider.
-  const chooseProvider = (p: string) => {
-    setForceProvider(p)
-    const keys = storedKeys.filter(k => k.provider === p)
-    setForceKeyId(String(keys.find(k => k.is_active)?.id ?? keys[0]?.id ?? ''))
-  }
+  const forceProvider = selectedKey?.provider ?? ''
 
   useEffect(() => {
     if (channel !== 'wa_cloud' || phoneNumbers.length > 0) return
@@ -552,41 +556,24 @@ function LiveChatDrawer({ open, onClose, waSessions, companyName }: {
               </button>
             </div>
             <div className="flex-1">
-              <label className="text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-1 block">AI provider to test</label>
-              <select
-                value={forceProvider}
-                onChange={e => chooseProvider(e.target.value)}
-                className="w-full px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400"
-              >
-                <option value="">Company default</option>
-                {providersWithKeys.map(p => (
-                  <option key={p} value={p}>{p}</option>
-                ))}
-              </select>
-              {/* Model isn't picked here — whichever key is chosen runs with the model
-                  already configured for its provider under AI Model Configuration above. */}
-            </div>
-          </div>
-
-          {/* Which specific key of that provider — a company can hold more than one
-              (e.g. two google_ai keys for two projects); only one is "active", but any
-              of them can be tested here. */}
-          {forceProvider && (
-            <div>
-              <label className="text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-1 block">API key</label>
+              <label className="text-[11px] font-medium text-gray-500 uppercase tracking-wide mb-1 block">AI tool</label>
               <select
                 value={forceKeyId}
                 onChange={e => setForceKeyId(e.target.value)}
-                className="w-full px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                disabled={storedKeys.length === 0}
+                className="w-full px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400 disabled:bg-gray-50 disabled:text-gray-400"
               >
-                {keysForProvider.map(k => (
+                {storedKeys.length === 0 && <option value="">No API keys configured</option>}
+                {storedKeys.map(k => (
                   <option key={k.id} value={k.id}>
-                    {k.key_label} ({k.api_key_hint}){k.is_active ? ' · active' : ''}{!k.is_verified ? ' · unverified' : ''}
+                    {k.provider} — {k.key_label} ({k.api_key_hint}){k.is_active ? ' · active' : ''}{!k.is_verified ? ' · unverified' : ''}
                   </option>
                 ))}
               </select>
+              {/* Model isn't picked here — the chosen key runs with the model already
+                  configured for its provider under AI Model Configuration above. */}
             </div>
-          )}
+          </div>
 
           <div className="flex gap-3">
             {/* Phone */}
@@ -927,24 +914,28 @@ export default function AiAgentPage() {
   const [stats, setStats]           = useState<Stats | null>(null)
   const [loading, setLoading]       = useState(true)
   const [selected, setSelected]     = useState<AgentSession | null>(null)
-  const [statusFilter, setFilter]   = useState('')
-  const [wahaFilter, setWahaFilter] = useState('')
-  const [chatOpen, setChatOpen]     = useState(false)
-  const [waSessions, setWaSessions] = useState<WaSession[]>([])
+  const [statusFilter, setFilter]     = useState('')
+  const [channelFilter, setChannelFilter] = useState<'' | 'wa_chat' | 'wa_cloud'>('')
+  const [wahaFilter, setWahaFilter]   = useState('')
+  const [chatOpen, setChatOpen]       = useState(false)
+  const [waSessions, setWaSessions]   = useState<WaSession[]>([])
+  const [phoneNumbers, setPhoneNumbers] = useState<WaCloudNumber[]>([])
   const companyName = useAppSelector(s => s.auth.user?.company?.name ?? '')
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const [sessRes, statsRes, waRes] = await Promise.all([
+      const [sessRes, statsRes, waRes, phoneRes] = await Promise.all([
         api.get('/wa-agent/sessions', { params: { status: statusFilter || undefined } }),
         api.get('/wa-agent/stats'),
         api.get('/waha/sessions'),
+        api.get('/phone-numbers'),
       ])
       setSessions(sessRes.data?.data ?? sessRes.data ?? [])
       setStats(statsRes.data)
       const raw = waRes.data?.data ?? waRes.data ?? []
       setWaSessions(Array.isArray(raw) ? raw : [])
+      setPhoneNumbers(Array.isArray(phoneRes.data?.phone_numbers) ? phoneRes.data.phone_numbers : [])
     } finally { setLoading(false) }
   }, [statusFilter])
 
@@ -957,7 +948,21 @@ export default function AiAgentPage() {
     await api.post(`/wa-agent/sessions/${id}/transfer`); load()
   }
 
-  const filtered = sessions.filter(s => !wahaFilter || s.waha_session_id === wahaFilter)
+  const filtered = sessions
+    .filter(s => !channelFilter || channelOf(s) === channelFilter)
+    .filter(s => !wahaFilter || s.waha_session_id === wahaFilter)
+
+  // Display name for a session's origin — a WA Chat session id resolves against waSessions,
+  // a WA Cloud one against phoneNumbers (both are looked up by the same waha_session_id column,
+  // see AgentSession's comment above).
+  const originLabel = (s: AgentSession) => {
+    if (channelOf(s) === 'wa_cloud') {
+      const n = phoneNumbers.find(p => p.phone_number_id === s.waha_session_id)
+      return n ? (n.label || n.display_number || n.phone_number_id) : s.waha_session_id
+    }
+    const w = waSessions.find(w => w.session_id === s.waha_session_id)
+    return w ? (w.session_name || w.session_id) : s.waha_session_id
+  }
 
   return (
     <div className="p-6 max-w-6xl mx-auto">
@@ -1001,14 +1006,43 @@ export default function AiAgentPage() {
             </button>
           ))}
         </div>
-        {waSessions.length > 0 && (
+
+        {/* Channel — both engines feed this same session list (ai_config.channel tells them
+            apart); picking one also narrows the session/number dropdown below to just that
+            channel's options. */}
+        <div className="flex gap-1.5">
+          {([['', 'All channels'], ['wa_chat', '📱 WA Chat'], ['wa_cloud', '☁️ WA Cloud']] as const).map(([v, label]) => (
+            <button key={v} onClick={() => { setChannelFilter(v); setWahaFilter('') }}
+              className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+                channelFilter === v ? 'bg-indigo-600 text-white border-indigo-600' : 'border-gray-300 text-gray-600 hover:border-indigo-400'
+              }`}>
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {(waSessions.length > 0 || phoneNumbers.length > 0) && channelFilter !== 'wa_cloud' && (
           <div className="relative ml-auto">
             <select value={wahaFilter} onChange={e => setWahaFilter(e.target.value)}
               className="appearance-none pl-3 pr-8 py-1.5 text-xs border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400 text-gray-700">
-              <option value="">All WA sessions</option>
+              <option value="">All WA Chat sessions</option>
               {waSessions.map(s => (
                 <option key={s.session_id} value={s.session_id}>
                   {s.session_name || s.session_id}
+                </option>
+              ))}
+            </select>
+            <ChevronDown size={12} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+          </div>
+        )}
+        {phoneNumbers.length > 0 && channelFilter === 'wa_cloud' && (
+          <div className="relative ml-auto">
+            <select value={wahaFilter} onChange={e => setWahaFilter(e.target.value)}
+              className="appearance-none pl-3 pr-8 py-1.5 text-xs border border-gray-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400 text-gray-700">
+              <option value="">All WA Cloud numbers</option>
+              {phoneNumbers.map(n => (
+                <option key={n.id} value={n.phone_number_id}>
+                  {n.label || n.display_number || n.phone_number_id}
                 </option>
               ))}
             </select>
@@ -1026,7 +1060,7 @@ export default function AiAgentPage() {
             <div className="text-center py-16 text-gray-400">
               <div className="text-4xl mb-3">🤖</div>
               <p className="text-sm">No AI agent sessions yet.</p>
-              <p className="text-xs mt-1">Enable the AI agent rule in Automations to handle incoming messages.</p>
+              <p className="text-xs mt-1">Enable the AI agent rule in WA Chat or WA Cloud Automations to handle incoming messages.</p>
             </div>
           ) : filtered.map(s => (
             <div key={s.id} onClick={() => setSelected(prev => prev?.id === s.id ? null : s)}
@@ -1035,6 +1069,11 @@ export default function AiAgentPage() {
               }`}>
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="font-medium text-sm text-gray-900">{s.contact_phone}</span>
+                <span className={`px-2 py-0.5 rounded-full text-xs font-medium border ${
+                  channelOf(s) === 'wa_cloud' ? 'bg-indigo-50 text-indigo-700 border-indigo-100' : 'bg-teal-50 text-teal-700 border-teal-100'
+                }`}>
+                  {channelOf(s) === 'wa_cloud' ? '☁️ WA Cloud' : '📱 WA Chat'}
+                </span>
                 <span className={`px-2 py-0.5 rounded-full text-xs capitalize border ${STATUS_COLORS[s.status] ?? 'bg-gray-100 text-gray-600 border-gray-200'}`}>
                   {s.status}
                 </span>
@@ -1045,7 +1084,7 @@ export default function AiAgentPage() {
               </div>
               <div className="flex items-center gap-2 mt-1.5">
                 <span className="text-xs text-gray-400">
-                  Session: <code className="bg-gray-100 px-1 rounded text-gray-600">{s.waha_session_id}</code>
+                  {channelOf(s) === 'wa_cloud' ? 'Number' : 'Session'}: <code className="bg-gray-100 px-1 rounded text-gray-600">{originLabel(s)}</code>
                 </span>
                 <span className="text-xs text-gray-300">·</span>
                 <span className="text-xs text-gray-400">
@@ -1061,7 +1100,9 @@ export default function AiAgentPage() {
             <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
               <div>
                 <h3 className="font-semibold text-sm text-gray-900">{selected.contact_phone}</h3>
-                <p className="text-xs text-gray-400 mt-0.5">{selected.waha_session_id}</p>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  {channelOf(selected) === 'wa_cloud' ? '☁️' : '📱'} {originLabel(selected)}
+                </p>
               </div>
               <button onClick={() => setSelected(null)} className="text-gray-400 hover:text-gray-600"><X size={16} /></button>
             </div>

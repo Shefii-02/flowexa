@@ -12,14 +12,16 @@ interface Overview {
   wallet:    { balance: number; total_used: number }
 }
 
+// Matches PhoneNumberController::index()'s actual shape ({ phone_numbers: [...] } with
+// label/display_number, not data/phones with display_name/phone_number/quality_rating —
+// those never existed on this endpoint, which was why this list always rendered empty).
 interface PhoneNumber {
   id: number
-  display_name: string
-  phone_number: string
+  label: string
+  display_number: string | null
   phone_number_id: string
   is_active: boolean
   is_default: boolean
-  quality_rating?: string
 }
 
 interface OtpService {
@@ -40,13 +42,6 @@ interface AutomationRule { id: number; is_active: boolean }
 interface ScheduleRow { schedule: { mode: 'always' | 'scheduled' } }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-
-const qualityBadge = (q?: string) => {
-  if (q === 'GREEN')  return 'bg-green-100 text-green-700'
-  if (q === 'YELLOW') return 'bg-yellow-100 text-yellow-700'
-  if (q === 'RED')    return 'bg-red-100 text-red-700'
-  return 'bg-gray-100 text-gray-500'
-}
 
 const actionBadge = (action: string) => {
   switch (action) {
@@ -130,7 +125,7 @@ export default function WaCloudDashboardPage() {
       if (overviewRes.status === 'fulfilled') setOverview(overviewRes.value.data)
       if (phonesRes.status  === 'fulfilled') {
         const d = phonesRes.value.data
-        const arr = d.data ?? d.phones ?? d
+        const arr = d?.phone_numbers ?? d?.data ?? d
         setPhones(Array.isArray(arr) ? arr : [])
       }
       if (otpRes.status === 'fulfilled') {
@@ -216,7 +211,7 @@ export default function WaCloudDashboardPage() {
                     <div className={`w-2 h-2 rounded-full flex-shrink-0 ${pn.is_active ? 'bg-green-500' : 'bg-gray-300'}`} />
                     <div className="min-w-0">
                       <p className="text-sm font-medium text-gray-900 truncate">
-                        {pn.display_name || pn.phone_number}
+                        {pn.label || pn.display_number}
                       </p>
                       <p className="text-xs text-gray-400 font-mono truncate">{pn.phone_number_id}</p>
                     </div>
@@ -224,11 +219,6 @@ export default function WaCloudDashboardPage() {
                   <div className="flex items-center gap-1.5 flex-shrink-0 ml-3">
                     {pn.is_default && (
                       <span className="text-[10px] bg-indigo-100 text-indigo-600 px-2 py-0.5 rounded-full font-medium">Default</span>
-                    )}
-                    {pn.quality_rating && (
-                      <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${qualityBadge(pn.quality_rating)}`}>
-                        {pn.quality_rating}
-                      </span>
                     )}
                     <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${pn.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
                       {pn.is_active ? 'Active' : 'Inactive'}
@@ -263,7 +253,7 @@ export default function WaCloudDashboardPage() {
                 <div className="pt-3 border-t border-gray-50">
                   <p className="text-xs text-gray-400 mb-1">Default number</p>
                   <p className="text-xs font-medium text-gray-700">
-                    {defaultPhone.display_name || defaultPhone.phone_number}
+                    {defaultPhone.label || defaultPhone.display_number}
                   </p>
                 </div>
               )}

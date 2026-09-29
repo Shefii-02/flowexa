@@ -47,6 +47,15 @@ class CampaignService
         $byStatus = $this->campaignRepository->countByStatus($id);
         $total    = $campaign->total_contacts ?: 1;
 
+        // Replies attributed to this campaign's starts_at/ends_at lead-attribution window
+        // (WaChatLeadAttributionService::matchWaCloudCampaign) — each is a first-time reply that
+        // auto-created a lead, so this count is "how many leads came in during that period", and
+        // the stage breakdown is where those leads currently stand.
+        $leadsByStage = $campaign->leads()
+            ->selectRaw('stage, count(*) as total')
+            ->groupBy('stage')
+            ->pluck('total', 'stage');
+
         return [
             'total_contacts' => $campaign->total_contacts,
             'sent'           => $campaign->sent,
@@ -59,6 +68,10 @@ class CampaignService
             'read_rate'      => round(($campaign->read / $total) * 100, 1),
             'fail_rate'      => round(($campaign->failed / $total) * 100, 1),
             'by_status'      => $byStatus,
+            'starts_at'      => $campaign->starts_at?->toIso8601String(),
+            'ends_at'        => $campaign->ends_at?->toIso8601String(),
+            'leads_received' => $leadsByStage->sum(),
+            'leads_by_stage' => $leadsByStage,
         ];
     }
 

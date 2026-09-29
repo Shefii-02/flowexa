@@ -14,7 +14,9 @@ const RULE_TYPES = [
 
 const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
 
-type PhoneNumber = { id: number; display_name?: string; phone_number: string }
+// Matches PhoneNumberController::index()'s actual shape ({ phone_numbers: [...] } with
+// label/display_number) — reading data/phones/label-less fields here always came up empty.
+type PhoneNumber = { id: number; label?: string; display_number?: string | null }
 
 type Rule = {
   id: number
@@ -67,7 +69,7 @@ export default function WaCloudAutomations() {
       ])
       setRules(Array.isArray(rulesRes.data) ? rulesRes.data : [])
       const p = phoneRes.data
-      setPhones(Array.isArray(p?.data) ? p.data : Array.isArray(p?.phones) ? p.phones : Array.isArray(p) ? p : [])
+      setPhones(Array.isArray(p?.phone_numbers) ? p.phone_numbers : Array.isArray(p?.data) ? p.data : Array.isArray(p) ? p : [])
     } finally {
       setLoading(false)
     }
@@ -78,7 +80,7 @@ export default function WaCloudAutomations() {
   const phoneLabel = (id: number | null) => {
     if (!id) return 'All numbers'
     const p = phones.find(x => x.id === id)
-    return p ? (p.display_name || p.phone_number) : `#${id}`
+    return p ? (p.label || p.display_number || `#${id}`) : `#${id}`
   }
 
   const openCreate = () => { setEditId(null); setForm(emptyForm()); setErr(''); setModal(true) }
@@ -229,7 +231,7 @@ export default function WaCloudAutomations() {
                   <label className="block text-xs font-medium text-gray-700 mb-1">Phone Number</label>
                   <select value={f.wa_phone_number_id} onChange={e => set('wa_phone_number_id', e.target.value)} className={inp}>
                     <option value="">All numbers</option>
-                    {phones.map(p => <option key={p.id} value={p.id}>{p.display_name || p.phone_number}</option>)}
+                    {phones.map(p => <option key={p.id} value={p.id}>{p.label || p.display_number || `#${p.id}`}</option>)}
                   </select>
                 </div>
                 <div>

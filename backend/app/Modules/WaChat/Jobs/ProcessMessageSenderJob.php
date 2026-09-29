@@ -6,6 +6,7 @@ use App\Models\Company;
 use App\Modules\WaChat\Models\MessageSenderJob;
 use App\Modules\WaChat\Models\WahaMessageLog;
 use App\Modules\WaChat\Services\OpenWaMessageService;
+use App\Modules\WaChat\Services\WaChatTokenService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -67,6 +68,19 @@ class ProcessMessageSenderJob implements ShouldQueue
         $company    = $job->company;
         $apiKey     = $company?->wa_chat_token ?? '';
         $wa         = new OpenWaMessageService();
+
+        // Self-heal: the gateway key's allowedSessions list is a separate, best-effort PUT
+        // (WaChatTokenService::syncSessions) that runs whenever a session is created/deleted —
+        // if that push was ever missed (a transient gateway timeout, a session created before the
+        // company had a key yet, ...) the job's own session can silently fall out of the key's
+        // allowlist and every send fails with "API key not authorized for this session" even
+        // though the key itself is valid. Re-push right before sending so a campaign never fails
+        // for a gap this cheap to close. $resyncedForAuth (below) covers the same drift happening
+        // again mid-run, e.g. a session recreated while a long campaign is still sending.
+        if ($company) {
+            app(WaChatTokenService::class)->syncSessions($company);
+        }
+        $resyncedForAuth = false;
         $payload    = $job->message_payload ?? [];
         $recipients = $this->dedupeRecipients($payload['recipients'] ?? []);
         $delayMs    = max((int)($job->delay_ms ?? 1000), 500);
@@ -116,7 +130,7 @@ class ProcessMessageSenderJob implements ShouldQueue
             ];
 
             try {
-                $res = match ($msgType) {
+                $send = fn () => match ($msgType) {
                     'media' => $this->sendMediaBlocks($wa, $job->session_id, $apiKey, $chatId, $payload['blocks'] ?? [], $recipient, $job->unique_signature ?? false, $company),
                     'poll' => $wa->sendPoll($job->session_id, $apiKey, $chatId, $payload['question'] ?? '', $payload['options'] ?? []),
                     'location' => $wa->sendLocation($job->session_id, $apiKey, $chatId, (float)($payload['lat'] ?? 0), (float)($payload['lng'] ?? 0), $payload['name'] ?? null, $payload['address'] ?? null),
@@ -124,6 +138,18 @@ class ProcessMessageSenderJob implements ShouldQueue
                     'audio' => $wa->sendMedia($job->session_id, $apiKey, $chatId, 'audio', ['url' => $payload['url'] ?? '']),
                     default => $this->sendText($wa, $job->session_id, $apiKey, $chatId, $payload['text'] ?? '', $recipient, $job->unique_signature ?? false, $company),
                 };
+                $res = $send();
+
+                // A 401 here almost always means the allowlist drifted (see the syncSessions() call
+                // above), not that the key itself is wrong — re-sync once and retry this one
+                // recipient before giving up, instead of failing the rest of the campaign over a
+                // gap that's cheap to close.
+                if (!$res->successful() && $res->status() === 401 && !$resyncedForAuth && $company) {
+                    $resyncedForAuth = true;
+                    Log::warning("ProcessMessageSenderJob #{$job->id}: 401 from gateway for session {$job->session_id} — re-syncing allowlist and retrying");
+                    app(WaChatTokenService::class)->syncSessions($company);
+                    $res = $send();
+                }
 
                 if ($res->successful()) {
                     Log::info("ProcessMessageSenderJob #{$job->id}: sent to {$chatId}", ['status' => $res->status()]);

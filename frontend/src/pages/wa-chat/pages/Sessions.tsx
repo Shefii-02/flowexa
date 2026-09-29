@@ -81,6 +81,11 @@ export function Sessions() {
   // fetched per session when the detail modal opens rather than N times to render the list.
   const [sessionConfig, setSessionConfig] = useState<SessionConfig | null>(null);
   const [savingConfig, setSavingConfig] = useState(false);
+  // The gateway's own session record has no concept of a friendly name — `session.name` is the
+  // raw `co{companyId}-{random}` id. The name the user actually set lives only in Laravel's
+  // waha_sessions.display_name, looked up here by session_name (same join `handleSyncContacts`
+  // already does) so the details modal shows it instead of the raw id.
+  const [selectedSessionDisplayName, setSelectedSessionDisplayName] = useState<string | null>(null);
 
   // ── Sync contacts to CRM ────────────────────────────────────────────────────
   const [syncSessionId, setSyncSessionId] = useState<string | null>(null);
@@ -96,7 +101,14 @@ export function Sessions() {
     setSyncLabelMode('none');
     setSyncLabelId('');
     setSyncNewLabelName('');
-    api.get('/labels').then(r => setCrmLabels(r.data?.data ?? r.data ?? [])).catch(() => setCrmLabels([]));
+    // LabelController::index() returns `{ labels: [...] }` — not the `{ data: [...] }` shape most
+    // of this app's other list endpoints use. Reading `.data` here previously set crmLabels to that
+    // whole response object on success, and `crmLabels.map(...)` below would throw
+    // "crmLabels.map is not a function" the moment "Tag with an existing label" was selected.
+    api
+      .get('/labels')
+      .then(r => setCrmLabels(Array.isArray(r.data?.labels) ? r.data.labels : []))
+      .catch(() => setCrmLabels([]));
   };
 
   const handleSyncContacts = async () => {
@@ -371,6 +383,27 @@ export function Sessions() {
       cancelled = true;
     };
   }, [selectedSessionId]);
+
+  const selectedSessionName = selectedSession?.name ?? null;
+  useEffect(() => {
+    setSelectedSessionDisplayName(null);
+    if (!selectedSessionName) return;
+    let cancelled = false;
+    api
+      .get('/waha/sessions')
+      .then(res => {
+        if (cancelled) return;
+        const rows: Array<{ session_name: string; display_name: string | null }> = res.data?.data ?? [];
+        const match = rows.find(row => row.session_name === selectedSessionName);
+        if (match?.display_name) setSelectedSessionDisplayName(match.display_name);
+      })
+      .catch(() => {
+        // Leave it absent — the raw session name is still a valid (if unfriendly) fallback below.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedSessionName]);
 
   const handleAutoRejectToggle = async (next: boolean) => {
     if (!selectedSessionId || !sessionConfig) return;
@@ -752,7 +785,7 @@ export function Sessions() {
           <div className="detail-grid">
             <div className="detail-item">
               <span className="detail-label">{t('sessions.details.name')}</span>
-              <span className="detail-value">{selectedSession.name}</span>
+              <span className="detail-value">{selectedSessionDisplayName || selectedSession.name}</span>
             </div>
             <div className="detail-item">
               <span className="detail-label">{t('sessions.details.status')}</span>
@@ -924,17 +957,17 @@ export function Sessions() {
             />
           </p>
 
-          <div className="sync-label-choice" style={{ marginTop: '1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 400 }}>
+          <div className="sync-label-choice">
+            <label>
               <input type="radio" name="sync-label-mode" checked={syncLabelMode === 'none'} onChange={() => setSyncLabelMode('none')} />
               {t('sessions.syncContacts.noLabel')}
             </label>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 400 }}>
+            <label>
               <input type="radio" name="sync-label-mode" checked={syncLabelMode === 'existing'} onChange={() => setSyncLabelMode('existing')} />
               {t('sessions.syncContacts.existingLabel')}
             </label>
             {syncLabelMode === 'existing' && (
-              <div style={{ marginLeft: '1.5rem' }}>
+              <div className="sync-label-detail">
                 <CustomSelect
                   value={syncLabelId}
                   onChange={setSyncLabelId}
@@ -944,14 +977,14 @@ export function Sessions() {
                 {crmLabels.length === 0 && <p className="input-hint">{t('sessions.syncContacts.noLabelsYet')}</p>}
               </div>
             )}
-            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 400 }}>
+            <label>
               <input type="radio" name="sync-label-mode" checked={syncLabelMode === 'new'} onChange={() => setSyncLabelMode('new')} />
               {t('sessions.syncContacts.newLabel')}
             </label>
             {syncLabelMode === 'new' && (
               <input
                 type="text"
-                style={{ marginLeft: '1.5rem' }}
+                className="sync-label-detail"
                 placeholder={t('sessions.syncContacts.newLabelPlaceholder')}
                 value={syncNewLabelName}
                 onChange={e => setSyncNewLabelName(e.target.value)}

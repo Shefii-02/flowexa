@@ -121,26 +121,27 @@ class WaChatLeadAttributionService
         return ['phone_number', $number->id, $number->label ?: $number->display_number];
     }
 
-    // Attributes the reply to the most recently-sent campaign that (a) actually messaged
-    // this phone number and (b) still has its lead_created_from/lead_created_to window
-    // — the same From/To range picked in message-sender's "Also add leads by date"
-    // option — covering the day the reply came in.
+    // Attributes the reply to the most recently-sent campaign that (a) actually messaged this
+    // phone number and (b) is still within its own run duration — from the moment it started
+    // sending (started_at) up to when it finished/was stopped (completed_at), or still open if
+    // it's still running. This is what "leads received" on a campaign's run means: replies that
+    // land while that campaign is actually running, not a manually-picked date range.
     private function matchOpenWaCampaign(int $companyId, string $phone, Carbon $receivedAt): ?int
     {
         $normalizedPhone = preg_replace('/\D/', '', $phone);
         if (!$normalizedPhone) {
             return null;
         }
-        $today = $receivedAt->toDateString();
 
         $log = WahaMessageLog::where('company_id', $companyId)
             ->where('status', 'sent')
             ->whereNotNull('job_id')
             ->whereHas('job', fn($q) => $q
-                ->whereNotNull('lead_created_from')
-                ->whereNotNull('lead_created_to')
-                ->whereDate('lead_created_from', '<=', $today)
-                ->whereDate('lead_created_to', '>=', $today))
+                ->whereNotNull('started_at')
+                ->where('started_at', '<=', $receivedAt)
+                ->where(fn($q2) => $q2
+                    ->whereNull('completed_at')
+                    ->orWhere('completed_at', '>=', $receivedAt)))
             ->orderByDesc('sent_at')
             ->get()
             ->first(fn($l) => preg_replace('/\D/', '', $l->recipient_phone) === $normalizedPhone);

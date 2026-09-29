@@ -14,7 +14,7 @@ const RULE_TYPES = [
 
 type Rule = {
   id: number
-  session_id: string
+  session_id: string | null
   rule_type: string
   name: string
   is_active: boolean
@@ -83,7 +83,7 @@ export default function AutomationsPage() {
   const openEdit = (r: Rule) => {
     setEditId(r.id)
     setForm({
-      session_id:       r.session_id,
+      session_id:       r.session_id ?? '',
       rule_type:        r.rule_type,
       name:             r.name,
       is_active:        r.is_active,
@@ -102,14 +102,16 @@ export default function AutomationsPage() {
 
   const handleSave = async () => {
     setErr('')
-    if (!form.session_id || !form.name || !form.message) {
-      setErr('Session, name, and message are required.')
+    if (!form.name || !form.message) {
+      setErr('Name and message are required.')
       return
     }
     setSaving(true)
     try {
       const payload: Record<string, unknown> = {
-        session_id:    form.session_id,
+        // Empty selection = "All sessions" — the backend treats a null session_id as applying
+        // to every WA Chat session of the company (AutomationController::store()).
+        session_id:    form.session_id || null,
         rule_type:     form.rule_type,
         name:          form.name,
         is_active:     form.is_active,
@@ -215,7 +217,7 @@ export default function AutomationsPage() {
                   )}
                 </div>
                 <p className="text-xs text-gray-500">
-                  Session: <span className="font-medium">{r.session_id}</span>
+                  Session: <span className="font-medium">{r.session_id || 'All sessions'}</span>
                   {r.keywords?.length ? ` • Keywords: ${r.keywords.join(', ')}` : ''}
                 </p>
               </div>
@@ -261,13 +263,13 @@ export default function AutomationsPage() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Session *</label>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Session</label>
                   <select
                     value={f.session_id}
                     onChange={(e) => set('session_id', e.target.value)}
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   >
-                    <option value="">Select session</option>
+                    <option value="">All sessions</option>
                     {sessions.map((s) => (
                       <option key={s.session_id} value={s.session_id}>
                         {s.session_name || s.session_id}

@@ -46,6 +46,10 @@ class Campaign extends Model
     public function template(): BelongsTo   { return $this->belongsTo(WaTemplate::class, 'template_id'); }
     public function waPhoneNumber(): BelongsTo { return $this->belongsTo(WaPhoneNumber::class, 'wa_phone_number_id'); }
     public function contacts(): HasMany     { return $this->hasMany(CampaignContact::class); }
+    // Leads auto-created from replies attributed to this campaign's starts_at/ends_at window
+    // (WaChatLeadAttributionService::matchWaCloudCampaign) — "how many leads this campaign's
+    // period actually received", distinct from `contacts` (who the campaign sent to).
+    public function leads(): HasMany        { return $this->hasMany(Lead::class, 'campaign_id'); }
 
     // ── Scopes ────────────────────────────────────────────────────────────────
     public function scopeRunning($q)   { return $q->where('status', 'running'); }

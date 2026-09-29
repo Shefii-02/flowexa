@@ -24,6 +24,7 @@ class MessageSenderController extends Controller
         // for this list, so a hard cap here was silently hiding history rather than paging it.
         $jobs = MessageSenderJob::where('company_id', auth()->user()->company_id)
             ->with(['creator:id,name', 'messageLogs', 'wahaSession:session_name,display_name,phone'])
+            ->withCount('leads')
             ->orderByRaw("CASE WHEN status IN ('pending','scheduled') THEN 0 ELSE 1 END")
             ->orderByRaw('scheduled_at IS NULL DESC')
             ->orderBy('scheduled_at', 'asc')
@@ -80,6 +81,7 @@ class MessageSenderController extends Controller
     {
         $job = MessageSenderJob::where('company_id', auth()->user()->company_id)
             ->with(['messageLogs', 'creator:id,name', 'wahaSession:session_name,display_name,phone'])
+            ->withCount('leads')
             ->findOrFail($id);
         return response()->json(['data' => $this->withLiveLog($job)]);
     }

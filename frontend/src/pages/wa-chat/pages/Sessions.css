@@ -546,6 +546,28 @@
   border-radius: 6px;
 }
 
+/* Sync Contacts to CRM modal */
+.sessions-page .sync-label-choice {
+  margin-top: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.sessions-page .sync-label-choice label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 400;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.sessions-page .sync-label-detail {
+  margin-left: 1.5rem;
+}
+
 /* Close Button - Always Visible */
 .sessions-page .btn-close {
   display: flex;

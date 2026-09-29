@@ -4,6 +4,7 @@ import { api } from '@/api/client';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { PageHeader } from '../components/PageHeader';
 import { Modal } from '../components/Modal';
+import { Drawer } from '@/components/ui';
 import MediaPickerModal from '@/components/MediaPickerModal';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -326,20 +327,20 @@ export default function WaChatTemplatesPage() {
         </div>
       )}
 
-      {/* Create / Edit modal */}
-      {showForm && (
-        <Modal open onClose={() => setShowForm(false)}
-          title={editing ? 'Edit Template' : 'New Template'} closeLabel="Cancel"
-          footer={
-            <>
-              <button className="btn-secondary" onClick={() => setShowForm(false)}>Cancel</button>
-              <button className="btn-primary" onClick={handleSave} disabled={isSaving}>
-                {isSaving ? <Loader2 size={16} className="animate-spin" /> : null}
-                {editing ? 'Save Changes' : 'Create Template'}
-              </button>
-            </>
-          }
-        >
+      {/* Create / Edit — a side drawer rather than a centered modal, so the form has room to
+          scroll (media blocks, header preview) while the template list stays visible behind it. */}
+      <Drawer open={showForm} onClose={() => setShowForm(false)}
+        title={editing ? 'Edit Template' : 'New Template'} size="lg"
+        footer={
+          <>
+            <button className="btn-secondary" onClick={() => setShowForm(false)}>Cancel</button>
+            <button className="btn-primary" onClick={handleSave} disabled={isSaving}>
+              {isSaving ? <Loader2 size={16} className="animate-spin" /> : null}
+              {editing ? 'Save Changes' : 'Create Template'}
+            </button>
+          </>
+        }
+      >
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             {error && <div style={{ color: '#ef4444', fontSize: 13 }}>{error}</div>}
 
@@ -421,8 +422,7 @@ export default function WaChatTemplatesPage() {
               </select>
             </label>
           </div>
-        </Modal>
-      )}
+      </Drawer>
 
       {/* Header media picker */}
       <MediaPickerModal

@@ -64,6 +64,8 @@ class CampaignRepository implements CampaignRepositoryInterface
             'throttle_per_minute' => $dto->throttlePerMinute,
             'status'              => $dto->scheduledAt ? 'scheduled' : 'draft',
             'scheduled_at'        => $dto->scheduledAt,
+            'starts_at'           => $dto->startsAt,
+            'ends_at'             => $dto->endsAt,
         ]);
     }
 
@@ -76,6 +78,8 @@ class CampaignRepository implements CampaignRepositoryInterface
             'template_variables' => $dto->templateVariables,
             'throttle_per_minute'=> $dto->throttlePerMinute,
             'scheduled_at'       => $dto->scheduledAt,
+            'starts_at'          => $dto->startsAt,
+            'ends_at'            => $dto->endsAt,
         ], fn($v) => !is_null($v));
 
         // Keep status in sync with the schedule while the campaign is still

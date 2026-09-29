@@ -51,8 +51,11 @@ class AutomationEngine
         }
         // ─────────────────────────────────────────────────────────────────────
 
+        // session_id is nullable — a rule with no session picked applies to every session of the
+        // company (see AutomationController::store()), so it must match here too, not just an
+        // exact session_id equal to this webhook's. Mirrors WaCloudAutomationEngine::numberMatches.
         $rules = AutomationRule::where('company_id', $companyId)
-            ->where('session_id', $sessionId)
+            ->where(fn ($q) => $q->whereNull('session_id')->orWhere('session_id', $sessionId))
             ->where('is_active', true)
             ->orderBy('priority', 'desc')
             ->get();
@@ -227,10 +230,15 @@ class AutomationEngine
             foreach ($actions as $action) {
                 if (($action['type'] ?? '') !== 'send_message' || empty($action['message'])) continue;
 
-                // Find contacts who had a log in the rule's session but last log > inactiveHours ago
+                // Find contacts who had a log in the rule's session but last log > inactiveHours ago.
+                // A rule scoped to one session only looks at that session's activity; an "all
+                // sessions" rule (session_id null) covers every session of the company instead —
+                // in which case the actual session a contact was last active on (MAX(session_id))
+                // is what the reply below sends through, since the rule itself doesn't name one.
                 $cutoff = now()->subHours($inactiveHours);
 
-                $phones = AutomationLog::where('session_id', $rule->session_id)
+                $contacts = AutomationLog::where('company_id', $rule->company_id)
+                    ->when($rule->session_id, fn ($q) => $q->where('session_id', $rule->session_id))
                     ->where('rule_id', '!=', $rule->id)
                     ->where('updated_at', '<', $cutoff)
                     ->whereNotIn('contact_phone', function ($q) use ($rule) {
@@ -239,18 +247,19 @@ class AutomationEngine
                           ->where('rule_id', $rule->id)
                           ->where('created_at', '>=', now()->subHours(($rule->inactivity_hours ?? 24) + 1));
                     })
-                    ->distinct()
-                    ->pluck('contact_phone');
+                    ->selectRaw('contact_phone, MAX(session_id) as last_session_id')
+                    ->groupBy('contact_phone')
+                    ->get();
 
-                foreach ($phones as $phone) {
+                foreach ($contacts as $contact) {
                     dispatch(new SendAutomationMessage(
                         companyId: $rule->company_id,
-                        sessionId: $rule->session_id,
-                        chatId:    $phone . '@c.us',
+                        sessionId: $rule->session_id ?? $contact->last_session_id,
+                        chatId:    $contact->contact_phone . '@c.us',
                         message:   $action['message'],
                         ruleId:    $rule->id,
                         ruleType:  $rule->rule_type,
-                        phone:     $phone,
+                        phone:     $contact->contact_phone,
                     ));
                 }
             }

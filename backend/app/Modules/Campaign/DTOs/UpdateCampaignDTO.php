@@ -12,6 +12,8 @@ readonly class UpdateCampaignDTO
         public ?array  $templateVariables  = null,
         public ?int    $throttlePerMinute  = null,
         public ?string $scheduledAt        = null,
+        public ?string $startsAt           = null,
+        public ?string $endsAt             = null,
     ) {}
 
     public static function fromRequest(array $data): self
@@ -22,6 +24,8 @@ readonly class UpdateCampaignDTO
             templateVariables: $data['template_variables'] ?? null,
             throttlePerMinute: isset($data['throttle_per_minute']) ? (int) $data['throttle_per_minute'] : null,
             scheduledAt:       $data['scheduled_at']       ?? null,
+            startsAt:          $data['starts_at']          ?? null,
+            endsAt:            $data['ends_at']            ?? null,
         );
     }
 }

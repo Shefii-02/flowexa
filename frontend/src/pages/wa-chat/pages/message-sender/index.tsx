@@ -4,7 +4,7 @@ import data from '@emoji-mart/data'
 import {
   Send, Pause, Square, Play, Download, Upload, X, Plus,
   Users, MessageSquare, Copy,
-  FileText, Tag, Hash, Loader2, Search, Calendar, XCircle,
+  FileText, Tag, Hash, Loader2, Search, Calendar, XCircle, CheckCircle,
   Bold, Italic, Strikethrough,
 } from 'lucide-react'
 import { useSessionsQuery, useSessionGroupsQuery, useSessionChatsQuery } from '../../hooks/queries'
@@ -82,6 +82,10 @@ interface ServerJob {
   scheduled_at?: string | null
   started_at: string
   completed_at: string
+  // Leads auto-created from replies received while this campaign was running (started_at through
+  // completed_at) — see WaChatLeadAttributionService::matchOpenWaCampaign. Absent on rows fetched
+  // before this was added, so callers treat it as `?? 0`.
+  leads_count?: number
   status: string
   log: { recipient_name: string; phone: string; status: string; sent_at?: string; error?: string }[]
   // Shape matches toMessagePayload()'s output — 'text' is the only one with a `.text` used
@@ -323,13 +327,6 @@ export function MessageSender() {
   const [chatSearch, setChatSearch] = useState('')
   const [selectedChats, setSelectedChats] = useState<Set<string>>(new Set())
 
-  // Lead tab — recipients are every lead created within a from/to date range.
-  const [leadCreatedFrom, setLeadCreatedFrom] = useState('')
-  const [leadCreatedTo, setLeadCreatedTo] = useState('')
-  const [leadRecipients, setLeadRecipients] = useState<{ id: number; name: string | null; phone: string }[]>([])
-  const [leadRecipientsLoading, setLeadRecipientsLoading] = useState(false)
-  const [excludedLeadRecipientIds, setExcludedLeadRecipientIds] = useState<Set<number>>(new Set())
-
   // --- Composer state ---
   const [composerTab, setComposerTab] = useState<ComposerTab>('text')
   const [textBody, setTextBody] = useState('')
@@ -374,7 +371,10 @@ export function MessageSender() {
   const [session, setSession] = useState('')
   const [delaySeconds, setDelaySeconds] = useState(3)
   const [scheduledAt, setScheduledAt] = useState('')
-  const [uniqueSignature, setUniqueSignature] = useState(true)
+  // Always on for every campaign — invisible per-recipient Unicode signatures reduce WhatsApp's
+  // bulk-detection risk, and there's no legitimate reason to send a campaign without them, so this
+  // is no longer a user-facing toggle (see SECTION D below).
+  const uniqueSignature = true
 
   // ITEM 4 — Schedule state. serverId is set only when confirmSchedule's POST to /message-sender
   // succeeded — cancelScheduled needs it to actually stop that server-tracked job; without it,
@@ -524,30 +524,6 @@ export function MessageSender() {
     return () => { cancelled = true }
   }, [selectedLabels])
 
-  // Resolve the from/to date range into the leads created in it (name + real phone from the
-  // linked contact), same "everyone starts included, uncheck to exclude" pattern as labels.
-  useEffect(() => {
-    if (!leadCreatedFrom && !leadCreatedTo) {
-      setLeadRecipients([])
-      setExcludedLeadRecipientIds(new Set())
-      return
-    }
-    const params = new URLSearchParams()
-    if (leadCreatedFrom) params.set('created_from', leadCreatedFrom)
-    if (leadCreatedTo) params.set('created_to', leadCreatedTo)
-    setLeadRecipientsLoading(true)
-    let cancelled = false
-    api.get(`/leads/recipients?${params.toString()}`)
-      .then(r => {
-        if (cancelled) return
-        setLeadRecipients(r.data?.data ?? [])
-        setExcludedLeadRecipientIds(new Set())
-      })
-      .catch(() => { if (!cancelled) setLeadRecipients([]) })
-      .finally(() => { if (!cancelled) setLeadRecipientsLoading(false) })
-    return () => { cancelled = true }
-  }, [leadCreatedFrom, leadCreatedTo])
-
   // Resolve the selected group(s) into their member list, deduped by WA id across groups (the same
   // person may be in more than one selected group). Same picker pattern as labels: everyone starts
   // included, and excludedGroupParticipantIds tracks who got unchecked.
@@ -605,7 +581,7 @@ export function MessageSender() {
     try {
       const saved = localStorage.getItem('ms_scheduled_job')
       if (!saved) return
-      const { scheduledAt: sa, recipients, textBody: tb, extraPayload: ep, session: sess, delaySeconds: ds, uniqueSignature: us, campaignName: cn } = JSON.parse(saved)
+      const { scheduledAt: sa, recipients, textBody: tb, extraPayload: ep, session: sess, delaySeconds: ds, campaignName: cn } = JSON.parse(saved)
       const target = new Date(sa).getTime()
       if (target > Date.now()) {
         // Restore and re-arm timer
@@ -614,11 +590,12 @@ export function MessageSender() {
         setTextBody(tb ?? '')
         setSession(sess ?? '')
         setDelaySeconds(ds ?? 3)
-        setUniqueSignature(us ?? true)
         setCampaignName(cn ?? '')
         const remaining = target - Date.now()
         setCountdown(remaining)
-        armScheduleTimer(sa, recipients ?? [], tb ?? '', sess ?? '', ds ?? 3, us ?? true, cn, company, ep)
+        // Always on, regardless of what an older saved job recorded — see the SECTION D toggle
+        // that used to let this be turned off.
+        armScheduleTimer(sa, recipients ?? [], tb ?? '', sess ?? '', ds ?? 3, true, cn, company, ep)
       } else {
         localStorage.removeItem('ms_scheduled_job')
       }
@@ -790,20 +767,6 @@ export function MessageSender() {
     const toAdd = labelContacts
       .filter(c => !excludedLabelContactIds.has(c.id))
       .map(c => ({ id: `label-contact-${c.id}`, name: c.name ?? c.phone, phone: c.phone, type: 'label' as const, category: 'Label' }))
-      .filter(r => {
-        const key = recipientDedupeKey(r)
-        if (seen.has(key)) return false
-        seen.add(key)
-        return true
-      })
-    setSelectedRecipients(prev => [...prev, ...toAdd])
-  }
-
-  const addLeadRecipients = () => {
-    const seen = new Set(selectedRecipients.map(recipientDedupeKey))
-    const toAdd = leadRecipients
-      .filter(l => !excludedLeadRecipientIds.has(l.id) && l.phone)
-      .map(l => ({ id: `lead-${l.id}`, name: l.name ?? l.phone, phone: l.phone, type: 'lead' as const, category: 'Lead' }))
       .filter(r => {
         const key = recipientDedupeKey(r)
         if (seen.has(key)) return false
@@ -1162,8 +1125,6 @@ export function MessageSender() {
         delay_ms: delaySeconds * 1000,
         unique_signature: uniqueSignature,
         scheduled_at: scheduledAtValue || undefined,
-        lead_created_from: leadCreatedFrom || undefined,
-        lead_created_to: leadCreatedTo || undefined,
         log: selectedRecipients.map(r => ({ recipient_name: r.name, phone: r.phone, status: 'pending' })),
         message_payload: toMessagePayload(templateText, extraPayload, selectedRecipients),
       })
@@ -2130,41 +2091,6 @@ export function MessageSender() {
                 <div className="flex justify-between text-xs text-gray-400 mt-0.5"><span>1s</span><span>60s</span></div>
               </div>
 
-              {/* Optional, applies to every recipient type above: also pull in leads created
-                  within a from/to date range, on top of whatever's already queued. */}
-              <div className="space-y-3">
-                <label className="text-xs font-medium text-gray-600 mb-1 block">
-                  Also add leads by date (optional)
-                </label>
-                <div className="flex items-center gap-2">
-                  <div className="flex-1">
-                    <label className="block text-xs font-medium text-gray-500 mb-1">From</label>
-                    <input type="date" value={leadCreatedFrom} onChange={e => setLeadCreatedFrom(e.target.value)}
-                      max={leadCreatedTo || undefined}
-                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" />
-                  </div>
-                  <div className="flex-1">
-                    <label className="block text-xs font-medium text-gray-500 mb-1">To</label>
-                    <input type="date" value={leadCreatedTo} onChange={e => setLeadCreatedTo(e.target.value)}
-                      min={leadCreatedFrom || undefined}
-                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" />
-                  </div>
-                </div>
-
-                {(leadCreatedFrom || leadCreatedTo) && (
-                  <p className="text-xs text-gray-500">
-                    {leadRecipientsLoading
-                      ? 'Loading matching leads…'
-                      : `${leadRecipients.length} lead${leadRecipients.length !== 1 ? 's' : ''} created in that range.`}
-                  </p>
-                )}
-
-                <button onClick={addLeadRecipients} disabled={leadRecipientsLoading || leadRecipients.length - excludedLeadRecipientIds.size === 0}
-                  className="px-4 py-2 bg-brand-500 text-white rounded-lg text-sm disabled:opacity-50 hover:bg-brand-600">
-                  Add {leadRecipients.length - excludedLeadRecipientIds.size} lead{leadRecipients.length - excludedLeadRecipientIds.size !== 1 ? 's' : ''} to queue
-                </button>
-              </div>
-
               {/* ITEM 4 — Schedule picker */}
               <div>
                 <label className="text-xs font-medium text-gray-600 mb-1 flex items-center gap-1">
@@ -2184,14 +2110,14 @@ export function MessageSender() {
               </div>
             </div>
 
-            {/* SECTION D — Unique Signature */}
+            {/* SECTION D — Unique Signature. Always on — no toggle, see the uniqueSignature
+                constant above. */}
             <div className="bg-white rounded-xl border border-gray-200 p-4">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-sm font-semibold text-gray-700">Anti-spam Signature</span>
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input type="checkbox" checked={uniqueSignature} onChange={e => setUniqueSignature(e.target.checked)} className="sr-only peer" />
-                  <div className="w-9 h-5 bg-gray-200 peer-checked:bg-brand-500 rounded-full transition-colors after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-full"></div>
-                </label>
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-green-50 text-green-700 rounded-full text-xs font-medium">
+                  <CheckCircle size={12} /> Always on
+                </span>
               </div>
               <p className="text-xs text-gray-500 leading-relaxed">
                 Appends invisible unique Unicode characters per recipient, reducing WhatsApp bulk-detection risk.
@@ -2473,6 +2399,13 @@ export function MessageSender() {
                                       {'❌'} {h.failed}
                                     </span>
                                   )}
+                                  {!!h.leads_count && (
+                                    <span
+                                      className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-brand-50 text-brand-700 rounded text-xs font-medium"
+                                      title="Leads received while this campaign was running">
+                                      {'👤'} {h.leads_count}
+                                    </span>
+                                  )}
                                 </div>
                               </td>
                               {/* Scheduled At — the requested future time for a scheduled campaign;
@@ -2715,14 +2648,15 @@ export function MessageSender() {
             </div>
 
             {/* Summary stats */}
-            <div className="grid grid-cols-4 gap-3 px-5 py-3 border-b border-gray-100">
+            <div className="grid grid-cols-5 gap-3 px-5 py-3 border-b border-gray-100">
               {[
                 { label: 'Total', value: drawerJob.total, cls: 'text-gray-700' },
                 { label: 'Sent', value: drawerJob.sent, cls: 'text-green-600' },
                 { label: 'Failed', value: drawerJob.failed, cls: 'text-red-500' },
                 { label: 'Pending', value: Math.max(0, drawerJob.total - drawerJob.sent - drawerJob.failed), cls: 'text-yellow-600' },
+                { label: 'Leads', value: drawerJob.leads_count ?? 0, cls: 'text-brand-600', title: 'Replies received while this campaign was running' },
               ].map(s => (
-                <div key={s.label} className="text-center bg-gray-50 rounded-lg py-2">
+                <div key={s.label} className="text-center bg-gray-50 rounded-lg py-2" title={s.title}>
                   <div className={`text-base font-bold ${s.cls}`}>{s.value}</div>
                   <div className="text-xs text-gray-400">{s.label}</div>
                 </div>

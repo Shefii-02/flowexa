@@ -401,6 +401,10 @@ export default function CampaignsPage() {
   const [form, setForm] = useState({
     name: '', target_type: 'all' as 'all' | 'labels' | 'csv',
     throttle_per_minute: '60', description: '',
+    // Lead attribution window (optional) — a reply arriving in this range gets credited to this
+    // campaign (WaChatLeadAttributionService::matchWaCloudCampaign), shown in the Stats modal
+    // below as "Leads received". Independent of when the campaign itself actually sent.
+    starts_at: '', ends_at: '',
   })
   const [selectedTemplate, setSelectedTemplate] = useState<any>(null)
   const [selectedPhoneNumber, setSelectedPhoneNumber] = useState<any>(null)
@@ -416,7 +420,7 @@ export default function CampaignsPage() {
   useEffect(() => { dispatch(fetchLabelsThunk()) }, [dispatch])
 
   const resetForm = () => {
-    setForm({ name: '', target_type: 'all', throttle_per_minute: '60', description: '' })
+    setForm({ name: '', target_type: 'all', throttle_per_minute: '60', description: '', starts_at: '', ends_at: '' })
     setSelectedTemplate(null); setSelectedPhoneNumber(null); setSelectedLabels([]); setCsvFile(null); setEditCampaign(null)
   }
 
@@ -424,7 +428,9 @@ export default function CampaignsPage() {
     setEditCampaign(c)
     setForm({
       name: c.name, target_type: c.target_type as any,
-      throttle_per_minute: String(c.throttle_per_minute || 60), description: (c as any).description || ''
+      throttle_per_minute: String(c.throttle_per_minute || 60), description: (c as any).description || '',
+      starts_at: (c as any).starts_at ? (c as any).starts_at.slice(0, 10) : '',
+      ends_at:   (c as any).ends_at   ? (c as any).ends_at.slice(0, 10)   : '',
     })
     setSelectedTemplate(c.template ? { id: c.template.id, name: c.template.name, body: c.template.body, components: (c.template as any).components } : null)
     // Backend should include the related phone number on the campaign resource
@@ -450,6 +456,8 @@ export default function CampaignsPage() {
       fd.append('target_type', form.target_type)
       fd.append('throttle_per_minute', form.throttle_per_minute)
       if (form.description) fd.append('description', form.description)
+      if (form.starts_at) fd.append('starts_at', form.starts_at)
+      if (form.ends_at) fd.append('ends_at', form.ends_at)
       if (form.target_type === 'labels') selectedLabels.forEach(id => fd.append('target_labels[]', String(id)))
       if (form.target_type === 'csv' && csvFile) fd.append('file', csvFile)
       if (editCampaign) { await campaignApi.update(editCampaign.id, fd); toast.success('Campaign updated.') }
@@ -638,6 +646,22 @@ export default function CampaignsPage() {
               value={form.description} onChange={e => set('description', e.target.value)} />
           </div>
 
+          <div>
+            <label className="label">Lead duration (optional)</label>
+            <p className="text-xs text-gray-400 mb-2">
+              A reply that arrives in this date range is credited to this campaign in its Stats — leave
+              blank to not track incoming replies against it.
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              <Input type="date" label="From" value={form.starts_at}
+                max={form.ends_at || undefined}
+                onChange={e => set('starts_at', e.target.value)} />
+              <Input type="date" label="To" value={form.ends_at}
+                min={form.starts_at || undefined}
+                onChange={e => set('ends_at', e.target.value)} />
+            </div>
+          </div>
+
           {selectedTemplate && (
             <div className="bg-brand-50 border border-brand-200 rounded-xl p-4 text-xs">
               <p className="font-semibold text-brand-700 mb-2">Summary</p>
@@ -686,6 +710,24 @@ export default function CampaignsPage() {
                 ))}
               </div>
             </div>
+
+            {(stats.starts_at || stats.ends_at) && (
+              <div className="bg-gray-50 rounded-xl p-4">
+                <p className="text-xs font-semibold text-gray-500 mb-2">
+                  Leads received {stats.starts_at && stats.ends_at
+                    ? `(${fmt.date(stats.starts_at)} – ${fmt.date(stats.ends_at)})`
+                    : ''}
+                </p>
+                <div className="flex items-center gap-4">
+                  <span className="text-2xl font-bold text-gray-900">{stats.leads_received ?? 0}</span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {Object.entries(stats.leads_by_stage ?? {}).map(([stage, count]) => (
+                      <span key={stage} className="badge badge-blue text-xs capitalize">{stage}: {count as number}</span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </Modal>

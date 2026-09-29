@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use App\Models\Company;
+use App\Models\Lead;
 use App\Models\User;
 
 class MessageSenderJob extends Model
@@ -36,6 +37,13 @@ class MessageSenderJob extends Model
     public function company(): BelongsTo { return $this->belongsTo(Company::class); }
     public function creator(): BelongsTo { return $this->belongsTo(User::class, 'created_by'); }
     public function messageLogs(): HasMany { return $this->hasMany(WahaMessageLog::class, 'job_id'); }
+
+    /**
+     * Leads auto-created from replies that came in while this campaign was running
+     * (WaChatLeadAttributionService::matchOpenWaCampaign matches on started_at/completed_at) —
+     * i.e. "how many leads this campaign run actually received".
+     */
+    public function leads(): HasMany { return $this->hasMany(Lead::class, 'wa_open_campaign_id'); }
 
     /**
      * The WhatsApp session this job was sent through. `session_id` stores the
