@@ -280,6 +280,21 @@ export function Sessions() {
     const session = sessions.find(s => s.id === id);
     try {
       await sessionApi.delete(id);
+      // The engine-side delete above only removes the WA Chat session — it knows nothing about the
+      // mirrored waha_sessions row created alongside it at session-create time (see
+      // useSessionCreateForm.ts, and the same session_name match used by handleSyncContacts above).
+      // Clean that row up too, best-effort: the session is already gone either way, so a failure here
+      // must not surface as a failed delete.
+      if (session) {
+        try {
+          const list = await api.get('/waha/sessions');
+          const rows: Array<{ id: number; session_name: string }> = list.data?.data ?? list.data ?? [];
+          const match = rows.find(r => r.session_name === session.name);
+          if (match) await api.delete(`/waha/sessions/${match.id}`);
+        } catch (cleanupErr) {
+          console.error('Failed to clean up waha_sessions row:', cleanupErr);
+        }
+      }
       // Functional removal (no stale `sessions` capture), then invalidate the prefix.
       setSessions(current => current.filter(s => s.id !== id));
       await invalidateSessionQueries(queryClient, queryKeys.sessions);
