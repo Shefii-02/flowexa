@@ -118,14 +118,16 @@ export function Sessions() {
 
     setSyncing(true);
     try {
-      // The gateway session id used everywhere else on this page (session.id) is a WA Chat
-      // engine identifier — the CRM-sync endpoint lives on the main Laravel backend and is
-      // keyed by ITS OWN numeric waha_sessions.id, matched here by session_name (see
-      // useSessionCreateForm.ts, which creates that row under the same name on session
-      // creation).
+      // The CRM-sync endpoint lives on the main Laravel backend and is keyed by ITS OWN numeric
+      // waha_sessions.id, matched here by session_name. waha_sessions.session_name stores the
+      // GATEWAY's `id` (a UUID — see WahaSessionController::store()'s $gatewaySessionId), not the
+      // gateway's own `name` field (a separate human-chosen slug, e.g. "co123-xyzabc12ab" — the
+      // requested_name passed at creation, entirely different from the id). Matching against
+      // session.name here always missed, since a session's name is never equal to its id — every
+      // sync attempt failed with "not yet linked" regardless of how the session was created.
       const list = await api.get('/waha/sessions');
       const rows: Array<{ id: number; session_name: string }> = list.data?.data ?? list.data ?? [];
-      const match = rows.find(r => r.session_name === session.name);
+      const match = rows.find(r => r.session_name === session.id);
       if (!match) {
         toast.error(t('sessions.syncContacts.errorTitle'), t('sessions.syncContacts.notLinked'));
         return;
@@ -297,14 +299,16 @@ export function Sessions() {
       await sessionApi.delete(id);
       // The engine-side delete above only removes the WA Chat session — it knows nothing about the
       // mirrored waha_sessions row created alongside it at session-create time (see
-      // useSessionCreateForm.ts, and the same session_name match used by handleSyncContacts above).
+      // useSessionCreateForm.ts, and the same session_name match used by handleSyncContacts above —
+      // matched by session.id, the gateway UUID waha_sessions.session_name actually stores, not
+      // session.name, a separate human-chosen slug that never equals it).
       // Clean that row up too, best-effort: the session is already gone either way, so a failure here
       // must not surface as a failed delete.
       if (session) {
         try {
           const list = await api.get('/waha/sessions');
           const rows: Array<{ id: number; session_name: string }> = list.data?.data ?? list.data ?? [];
-          const match = rows.find(r => r.session_name === session.name);
+          const match = rows.find(r => r.session_name === session.id);
           if (match) await api.delete(`/waha/sessions/${match.id}`);
         } catch (cleanupErr) {
           console.error('Failed to clean up waha_sessions row:', cleanupErr);
@@ -384,17 +388,21 @@ export function Sessions() {
     };
   }, [selectedSessionId]);
 
-  const selectedSessionName = selectedSession?.name ?? null;
+  // waha_sessions.session_name stores the gateway's `id` (a UUID), not its `name` (a separate
+  // human-chosen slug that never equals the id — see handleSyncContacts above) — matching against
+  // selectedSession.name here always missed, so this never actually resolved anything and silently
+  // fell through to the same raw id it was meant to replace.
+  const selectedSessionGatewayId = selectedSession?.id ?? null;
   useEffect(() => {
     setSelectedSessionDisplayName(null);
-    if (!selectedSessionName) return;
+    if (!selectedSessionGatewayId) return;
     let cancelled = false;
     api
       .get('/waha/sessions')
       .then(res => {
         if (cancelled) return;
         const rows: Array<{ session_name: string; display_name: string | null }> = res.data?.data ?? [];
-        const match = rows.find(row => row.session_name === selectedSessionName);
+        const match = rows.find(row => row.session_name === selectedSessionGatewayId);
         if (match?.display_name) setSelectedSessionDisplayName(match.display_name);
       })
       .catch(() => {
@@ -403,7 +411,7 @@ export function Sessions() {
     return () => {
       cancelled = true;
     };
-  }, [selectedSessionName]);
+  }, [selectedSessionGatewayId]);
 
   const handleAutoRejectToggle = async (next: boolean) => {
     if (!selectedSessionId || !sessionConfig) return;

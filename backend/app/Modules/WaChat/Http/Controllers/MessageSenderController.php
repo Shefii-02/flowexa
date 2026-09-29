@@ -8,6 +8,7 @@ use App\Modules\WaChat\Jobs\ProcessMessageSenderJob;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\Rule;
 
 class MessageSenderController extends Controller
 {
@@ -36,9 +37,19 @@ class MessageSenderController extends Controller
 
     public function store(Request $request): JsonResponse
     {
+        // Rejects a session_id that doesn't belong to one of this company's current sessions —
+        // e.g. "Duplicate" on a past campaign whose original session was since deleted and
+        // recreated (a new gateway id, even under the same display name). Without this, the job
+        // is created and dispatched anyway, and every single send in it fails at gateway level
+        // with "API key not authorized for this session" — a confusing, all-recipients-failed
+        // campaign instead of a clear error at creation time.
         $data = $request->validate([
             'campaign_name'   => 'nullable|string|max:200',
-            'session_id'      => 'required|string|max:100',
+            'session_id'      => [
+                'required', 'string', 'max:100',
+                Rule::exists('waha_sessions', 'session_name')
+                    ->where('company_id', auth()->user()->company_id),
+            ],
             'type'            => 'required|in:personal,group,csv,label,chat,from-chat,lead,campaign',
             'total'           => 'required|integer|min:1',
             'delay_ms'        => 'integer|min:0',
@@ -48,6 +59,8 @@ class MessageSenderController extends Controller
             'message_payload' => 'nullable|array',
             'lead_created_from' => 'nullable|date',
             'lead_created_to'   => 'nullable|date|after_or_equal:lead_created_from',
+        ], [
+            'session_id.exists' => 'That session no longer exists — pick a currently active one.',
         ]);
 
         $job = MessageSenderJob::create(array_merge($data, [

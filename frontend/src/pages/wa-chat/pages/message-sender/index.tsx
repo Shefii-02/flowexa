@@ -1143,7 +1143,18 @@ export function MessageSender() {
         if (newId) pollServerJob(newId)
       }
       return true
-    } catch {
+    } catch (err) {
+      // A 4xx here means the request itself is invalid (e.g. MessageSenderController now
+      // rejects a session_id that's been deleted since — a stale "Duplicate" copy was exactly
+      // how this used to slip through). Falling back to the client-side path below would retry
+      // with the same bad session_id and fail identically, just less visibly (no job history row,
+      // no clear reason) — surface it instead of pretending this was a network/server outage.
+      const status = (err as { response?: { status?: number; data?: { message?: string } } })?.response?.status
+      if (status && status >= 400 && status < 500) {
+        const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message
+        window.alert(msg || 'Could not create this campaign — check the selected session and try again.')
+        return true // handled — do not fall back to the client-side send path
+      }
       return false
     }
   }
@@ -1249,7 +1260,14 @@ export function MessageSender() {
     setCampaignName(h.campaign_name ? `${h.campaign_name} (Copy)` : '')
     setComposerTab('text')
     setTextBody(h.message_payload?.text ?? '')
-    if (h.session_id) setSession(h.session_id)
+    // Only carry the old session over if it's still one of the company's currently-active
+    // sessions — the session that ran the original campaign may since have been deleted and
+    // recreated (a new gateway id, even with the same display name), in which case its old id
+    // is no longer in anyone's allowedSessions and every send in the copy would fail with
+    // "API key not authorized for this session". Leaving it blank instead makes the dropdown
+    // visibly show nothing selected (and Send stays disabled) until a real session is picked,
+    // rather than silently sending against a dead reference.
+    setSession(h.session_id && activeSessions.some(s => s.id === h.session_id) ? h.session_id : '')
     setScheduledAt('')
     setDrawerJob(null)
     setPageTab('sender')
