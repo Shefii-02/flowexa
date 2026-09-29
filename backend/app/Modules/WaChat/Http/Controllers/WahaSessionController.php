@@ -345,9 +345,18 @@ class WahaSessionController extends Controller
         $session = WahaSession::where('company_id', $user->company_id)->findOrFail($id);
 
         // Delete on the gateway with the ADMIN key, then drop the id from this
-        // company's key allowlist.
-        Http::withHeaders($this->adminHeaders())
-            ->delete("{$this->wahaBase()}/api/sessions/{$session->session_name}");
+        // company's key allowlist. Best-effort: a gateway timeout/error must not
+        // leave this row stuck in waha_sessions forever, still absorbing status
+        // updates from stray session.status webhooks/health polls — the local
+        // row goes regardless of whether the gateway call succeeds.
+        try {
+            Http::withHeaders($this->adminHeaders())
+                ->timeout(10)
+                ->delete("{$this->wahaBase()}/api/sessions/{$session->session_name}");
+        } catch (\Throwable $e) {
+            Log::error("WA Chat gateway delete failed for session {$session->session_name}: " . $e->getMessage());
+        }
+
         $session->delete();
 
         app(WaChatTokenService::class)->syncSessions($user->company);
