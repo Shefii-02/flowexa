@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { leadAssignmentApi } from '@/api'
 import { getError } from '@/utils'
 import toast from 'react-hot-toast'
+import { StaffAvailabilityPanel } from '@/components/leads/StaffAvailabilityPanel'
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 const TIMEZONES = ['Asia/Kolkata', 'UTC', 'America/New_York', 'Europe/London', 'Asia/Dubai', 'Asia/Singapore']
@@ -63,6 +64,8 @@ export default function AssignmentRulesPage() {
         <h1 className="text-xl font-bold text-gray-900">Assignment Rules</h1>
         <p className="text-sm text-gray-500 mt-1">How incoming leads are routed to staff</p>
       </div>
+
+      <StaffAvailabilityPanel />
 
       {/* Routing strategy */}
       <section className={card}>

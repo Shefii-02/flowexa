@@ -5,7 +5,7 @@ import {
   Search, Send, Info, UserPlus, LogOut, MessageSquare,
   Image as ImageIcon, Video, FileText, Mic, MapPin, Check, CheckCheck, Clock, AlertTriangle,
 } from 'lucide-react'
-import { useAppSelector } from '@/store'
+import { useAppSelector, usePermission } from '@/store'
 import { conversationApi } from '@/api'
 import { getError } from '@/utils'
 import toast from 'react-hot-toast'
@@ -14,9 +14,6 @@ import { avatarColor, initials } from './avatar'
 import './inbox.css'
 
 declare const window: any
-
-// Roles allowed to view AND reply to any conversation regardless of assignment.
-const OVERRIDE_ROLES = ['admin', 'team_leader']
 
 const dayKey = (iso: string) => new Date(iso).toDateString()
 const dayLabel = (iso: string) => {
@@ -81,7 +78,11 @@ function Ticks({ status }: { status: string }) {
 
 export default function InboxPage() {
   const currentUser = useAppSelector(s => (s as any).auth?.user)
-  const canReplyToAny = OVERRIDE_ROLES.includes(currentUser?.role)
+  // Matches ConversationController::send()/index()/messages() exactly — was previously
+  // comparing currentUser.role (an object, {name, permissions}) against a list of role-name
+  // strings, so it never matched anything and no one ever got the override in this UI even
+  // when the backend would have allowed it.
+  const canReplyToAny = usePermission('inbox.view_all')
 
   const [conversations, setConversations] = useState<any[]>([])
   const [activeId, setActiveId]           = useState<number | null>(null)
@@ -285,6 +286,8 @@ export default function InboxPage() {
             <div className="wa-center-pad">No conversations{search ? ' match your search' : ' yet'}.</div>
           ) : visibleConversations.map(c => {
             const nm = c.contact_name || c.contact?.name || c.phone
+            const number = c.wa_phone_number ?? c.waPhoneNumber
+            const numberLabel = number?.label || number?.display_number
             const last = c.last_message ?? c.lastMessage
             const preview = last?.content?.body
               || (last?.type && last.type !== 'text' ? `[${last.type}]` : '')
@@ -308,6 +311,7 @@ export default function InboxPage() {
                           👤 {c.assigned_to === currentUser?.id ? 'You' : (c.assigned_agent?.name || c.assignedAgent?.name || 'Assigned')}
                         </span>
                       : <span className="wa-tag wa-tag--unassigned">Unassigned</span>}
+                    {numberLabel && <span className="wa-tag" title="WA Cloud number this arrived on">☁️ {numberLabel}</span>}
                     {c.status && c.status !== 'open' && <span className="wa-tag">{c.status}</span>}
                   </div>
                 </div>
@@ -337,6 +341,11 @@ export default function InboxPage() {
               <div className="wa-thread__name">{active.contact_name || active.contact?.name || active.phone}</div>
               <div className="wa-thread__sub">
                 {active.phone}
+                {(() => {
+                  const number = active.wa_phone_number ?? active.waPhoneNumber
+                  const numberLabel = number?.label || number?.display_number
+                  return numberLabel ? ` · ☁️ ${numberLabel}` : ''
+                })()}
                 {active.assigned_to
                   ? ` · ${active.assigned_to === currentUser?.id ? 'assigned to you' : `assigned to ${active.assigned_agent?.name || active.assignedAgent?.name || 'another agent'}`}`
                   : ' · unassigned'}

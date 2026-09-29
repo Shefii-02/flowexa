@@ -166,6 +166,7 @@ class LeadAssignmentController extends Controller
 
         $this->activity->syncAssignee($assignment, $user->id);
         $this->activity->log($assignment, 'lead_assignment_accepted', ['staff_id' => $user->id, 'staff_name' => $user->name], $user->id);
+        $this->engine->syncConversationOwner($assignment, $user->id);
 
         return response()->json(['data' => $assignment->fresh()]);
     }

@@ -17,17 +17,28 @@ class ConversationController extends Controller
     // GET /conversations — inbox list, most recently active first
     public function index(Request $request): JsonResponse
     {
-        $companyId = auth()->user()->company_id;
-        $allowedNumbers = auth()->user()->allowedAccountIds('phone_number');
+        $user      = auth()->user();
+        $companyId = $user->company_id;
+        $allowedNumbers = $user->allowedAccountIds('phone_number');
+
+        // Conversation access follows Lead assignment (LeadAssignmentEngine::syncConversationOwner
+        // keeps assigned_to in step with it) — a regular agent only sees conversations assigned to
+        // them or not yet assigned to anyone, never a coworker's. inbox.view_all (owner/admin/team
+        // lead by default) lifts this to every conversation, same permission send() already uses.
+        $canViewAll = $user->hasPermission('inbox.view_all');
 
         $conversations = WaConversation::where('company_id', $companyId)
             ->when($allowedNumbers !== null, fn ($q) => $q->whereIn('wa_phone_number_id', $allowedNumbers))
+            ->when(!$canViewAll, fn ($q) => $q->where(fn ($q2) => $q2->where('assigned_to', $user->id)->orWhereNull('assigned_to')))
             ->when($request->status, fn ($q, $s) => $q->where('status', $s))
             ->when($request->boolean('mine'), fn ($q) => $q->where('assigned_to', auth()->id()))
             ->when($request->boolean('unassigned'), fn ($q) => $q->whereNull('assigned_to'))
             ->with([
                 'assignedAgent:id,name',
                 'contact:id,name',
+                // Which of the company's WA Cloud numbers this conversation is on — a company
+                // running several numbers had no way to tell them apart in the inbox list.
+                'waPhoneNumber:id,label,display_number',
                 'lastMessage',
             ])
             ->orderByDesc('last_message_at')
@@ -42,9 +53,18 @@ class ConversationController extends Controller
     // GET /conversations/{id}/messages — full thread, oldest first
     public function messages(int $id): JsonResponse
     {
+        $user = auth()->user();
+
+        // Same access rule as index(): reachable by id directly, so this must enforce it too,
+        // not just the list filter.
         $conversation = WaConversation::where('id', $id)
-            ->where('company_id', auth()->user()->company_id)
-            ->with(['assignedAgent:id,name', 'contact:id,name,phone,email,lead_stage,lead_score,conversation_summary'])
+            ->where('company_id', $user->company_id)
+            ->when(!$user->hasPermission('inbox.view_all'), fn ($q) => $q->where(fn ($q2) => $q2->where('assigned_to', $user->id)->orWhereNull('assigned_to')))
+            ->with([
+                'assignedAgent:id,name',
+                'contact:id,name,phone,email,lead_stage,lead_score,conversation_summary',
+                'waPhoneNumber:id,label,display_number',
+            ])
             ->firstOrFail();
 
         // Cap the payload — a long-running thread can hold thousands of rows and both

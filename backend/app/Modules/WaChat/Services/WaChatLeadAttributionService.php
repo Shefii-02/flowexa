@@ -3,12 +3,15 @@
 namespace App\Modules\WaChat\Services;
 
 use App\Models\CampaignContact;
+use App\Models\Company;
 use App\Models\Contact;
 use App\Models\Lead;
 use App\Models\WaPhoneNumber;
 use App\Modules\WaChat\Models\WahaMessageLog;
 use App\Modules\WaChat\Models\WahaSession;
+use App\Services\LeadAssignment\LeadAssignmentEngine;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Log;
 
 // Runs on every inbound WhatsApp message — open-wa (WahaSessionController::webhook)
 // and WA Cloud (WebhookService::handleInbound) alike — independent of whether the
@@ -19,6 +22,8 @@ use Illuminate\Support\Carbon;
 // creating), so it's harmless if it also runs there for the same message.
 class WaChatLeadAttributionService
 {
+    public function __construct(private readonly LeadAssignmentEngine $assignmentEngine) {}
+
     // ── open-wa: origin = which WA session received it, campaign = message_sender_jobs ──
     /** @return bool true if this reply resulted in a new lead being created. */
     public function handleInboundMessage(int $companyId, string $sessionRef, string $phone, ?Carbon $receivedAt = null): bool
@@ -84,7 +89,7 @@ class WaChatLeadAttributionService
         [$originType, $originId, $originLabel] = $resolveOrigin();
         $campaignId = $resolveCampaign($receivedAt);
 
-        Lead::create([
+        $lead = Lead::create([
             'company_id'   => $companyId,
             'contact_id'   => $contact->id,
             'stage'        => 'new',
@@ -97,6 +102,26 @@ class WaChatLeadAttributionService
                 ? "Auto-created from a reply to campaign #{$campaignId}."
                 : 'Auto-created on first WhatsApp message.',
         ]);
+
+        // Route it to staff right away — availability-based (StaffScorer/roundRobinPick only
+        // ever pick a staff member whose StaffAvailability.is_available is true and who isn't
+        // offline/busy), same engine every other lead source uses. Without this, a lead created
+        // here would just sit unassigned until the leads:process-unassigned catch-up cron next
+        // runs (every 5 minutes) — too slow for a customer waiting on a live reply. Best-effort:
+        // a routing failure must never break inbound message processing, since the lead itself
+        // is already saved and the 5-minute cron is still there as a safety net.
+        try {
+            $company = Company::find($companyId);
+            if ($company) {
+                // wa_open_campaign_id (wa_chat) points at message_sender_jobs, a different table
+                // from the campaigns entity LeadAssignment.campaign_id/duplicate detection expect
+                // — only WA Cloud's campaignField ('campaign_id') is the same entity.
+                $assignCampaignId = $campaignField === 'campaign_id' ? $campaignId : null;
+                $this->assignmentEngine->assign($company, $contact, $source, $assignCampaignId, null, 'auto', $lead);
+            }
+        } catch (\Throwable $e) {
+            Log::warning('WaChatLeadAttributionService: lead routing failed: ' . $e->getMessage());
+        }
 
         return true;
     }

@@ -14,6 +14,7 @@ use App\Models\LeadAssignment;
 use App\Models\LeadAssignmentRule;
 use App\Models\StaffAvailability;
 use App\Models\User;
+use App\Models\WaConversation;
 use Illuminate\Support\Carbon;
 use App\Modules\WaChat\Models\AiAgentSession;
 use Illuminate\Support\Facades\DB;
@@ -158,10 +159,33 @@ class LeadAssignmentEngine
             $this->activity->log($assignment, 'lead_assigned', ['staff_id' => $staff->id, 'staff_name' => $staff->name]);
         }
 
+        $this->syncConversationOwner($assignment, $staff->id);
+
         dispatch(new NotifyStaffNewLead($assignment->id, $staff->id));
 
         dispatch(new CheckLeadSla($assignment->id))
             ->delay(now()->addMinutes($assignment->response_sla_minutes));
+    }
+
+    /**
+     * Keeps the WA Cloud shared inbox in step with who actually owns this lead —
+     * ConversationController scopes both the inbox list and replying to
+     * WaConversation.assigned_to, so every path that hands a lead to a staff member
+     * (auto-assign, manual transfer, accepting a notification) moves the matching
+     * conversation(s) for this contact to the same person, rather than leaving inbox
+     * access as a separately-claimed thing that can drift from who the lead is actually
+     * assigned to. WA Chat has no equivalent Laravel-side conversation table (its chat UI
+     * talks to the gateway directly) — see the assignment indicator added there instead.
+     */
+    public function syncConversationOwner(LeadAssignment $assignment, int $staffId): void
+    {
+        if (!$assignment->contact_id) {
+            return;
+        }
+
+        WaConversation::where('company_id', $assignment->company_id)
+            ->where('contact_id', $assignment->contact_id)
+            ->update(['assigned_to' => $staffId]);
     }
 
     public function startAiAgent(LeadAssignment $assignment, Company $company, Contact $contact): void

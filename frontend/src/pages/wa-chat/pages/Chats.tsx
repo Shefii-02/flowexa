@@ -330,6 +330,25 @@ export function Chats() {
     void loadSessions();
   }, [t, showErrorToast]);
 
+  // The gateway's own session record has no concept of a friendly name — session.name is the raw
+  // `co{companyId}-{random}` id (see Session type in api.ts). The name the user actually set lives
+  // only in Laravel's waha_sessions.display_name, fetched separately here so the active chat's
+  // header can show which session it's on instead of leaving that entirely implicit in the sidebar
+  // dropdown. Keyed by session_name (== gateway id) → display_name.
+  const [sessionDisplayNames, setSessionDisplayNames] = useState<Record<string, string>>({});
+  useEffect(() => {
+    api.get('/waha/sessions')
+      .then(res => {
+        const rows: Array<{ session_name: string; display_name: string | null }> = res.data?.data ?? [];
+        const map: Record<string, string> = {};
+        for (const row of rows) {
+          if (row.display_name) map[row.session_name] = row.display_name;
+        }
+        setSessionDisplayNames(map);
+      })
+      .catch(() => {});
+  }, []);
+
   // 2. Chat list for the active session — React Query cached, NOT a raw fetch per dropdown flip.
   //
   // `sessionApi.getChats` is a heavy engine call (whatsapp-web.js serializes every chat across the
@@ -1060,6 +1079,7 @@ export function Chats() {
             {activeChat ? (
               <ChatRoom
                 sessionId={selectedSessionId}
+                sessionLabel={sessionDisplayNames[selectedSessionId] || selectedSessionId}
                 activeChat={activeChat}
                 onBack={() => setActiveChat(null)}
                 activePp={activePp.data ?? undefined}

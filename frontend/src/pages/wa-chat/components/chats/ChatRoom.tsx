@@ -12,6 +12,9 @@ import GroupInfoPanel from './GroupInfoPanel';
 
 interface ChatRoomProps {
   sessionId: string;
+  /** Friendly display name for sessionId (falls back to the raw id) — shown in the header so
+   *  it's clear which WA session this conversation is on, not just implicit in the sidebar. */
+  sessionLabel: string;
   activeChat: Chat;
   onBack: () => void;
 
@@ -58,6 +61,7 @@ interface ChatRoomProps {
 // lives in the Chats page; this owns only the "one open conversation" view.
 function ChatRoom({
   sessionId,
+  sessionLabel,
   activeChat,
   onBack,
   activePp,
@@ -128,6 +132,9 @@ function ChatRoom({
             </span>
             <span className="room-contact-jid" title={activeChat.id}>
               {activeChat.id}
+            </span>
+            <span className="room-contact-session" title="WA Chat session this conversation is on">
+              📱 {sessionLabel}
             </span>
           </div>
         </header>

@@ -36,6 +36,11 @@ const priorityColor = (p: number) => {
   return 'bg-gray-100 text-gray-600'
 }
 
+// Same statuses StaffScorer/roundRobinPick actually route to (online > away > busy; offline is
+// excluded from auto-assign entirely) — shown here so a manual transfer can see who's actually
+// present too, not just pick a name blind.
+const presenceLabel: Record<string, string> = { online: '🟢 Online', away: '🟡 Away', busy: '🔵 Busy', offline: '🔴 Offline' }
+
 export default function AssignmentPage() {
   const dispatch = useAppDispatch()
   const { assignments, total, stats, loading } = useAppSelector(s => s.leadAssignment)
@@ -186,9 +191,13 @@ export default function AssignmentPage() {
               className="input w-full mb-4"
             >
               <option value="">Select staff…</option>
-              {staffList.map((s: any) => (
-                <option key={s.id} value={s.id}>{s.name}</option>
-              ))}
+              {[...staffList]
+                .sort((a, b) => (a.availability?.is_available ? 0 : 1) - (b.availability?.is_available ? 0 : 1))
+                .map((s: any) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name} — {presenceLabel[s.availability?.status ?? 'offline'] ?? '⚪ Unknown'}
+                  </option>
+                ))}
             </select>
             <div className="flex gap-2 justify-end">
               <button onClick={() => setTransferId(null)} className="btn btn-ghost">Cancel</button>
