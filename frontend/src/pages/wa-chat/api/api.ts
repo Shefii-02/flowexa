@@ -4,6 +4,9 @@
 // The WA Chat base URL comes from the dedicated ./client module so this module can never
 // resolve to Project A's flownode-api origin. See ./client.ts for the env var contract.
 import { WA_CHAT_API_BASE_URL, WA_CHAT_API_KEY_STORAGE } from './client';
+// Audit reads go through Laravel (see auditApi below) rather than the gateway directly —
+// the gateway's /audit endpoint requires an admin key, which a company's own scoped key isn't.
+import api from '@/api/client';
 
 // Re-exported under the original name so the ported call sites keep working unchanged.
 export const API_BASE_URL = WA_CHAT_API_BASE_URL;
@@ -1055,14 +1058,22 @@ export const apiKeyApi = {
 // =============================================================================
 
 export const auditApi = {
-  list: (params?: { action?: string; severity?: string; limit?: number; offset?: number }) => {
-    const query = new URLSearchParams();
-    if (params?.action) query.set('action', params.action);
-    if (params?.severity) query.set('severity', params.severity);
-    if (params?.limit) query.set('limit', String(params.limit));
-    if (params?.offset) query.set('offset', String(params.offset));
-    const queryStr = query.toString();
-    return request<{ data: AuditLog[]; total: number }>(`/audit${queryStr ? `?${queryStr}` : ''}`);
+  // Proxied through Laravel's `GET /waha/audit` (WahaSessionController::auditLog), which calls
+  // the gateway with its ADMIN key server-side — the gateway's own /audit endpoint 403s any
+  // company-scoped key with "Insufficient permissions. Required: admin", so this can't call it
+  // directly the way the rest of this file's `request()` helper does.
+  // Laravel wraps WaChatTokenService::gatewayAudit()'s own `{data, total}` under one more `data`
+  // key, so the shape here is `{ data: { data: AuditLog[]; total: number } }`.
+  list: async (params?: { action?: string; severity?: string; limit?: number; offset?: number }) => {
+    const res = await api.get<{ data: { data: AuditLog[]; total: number } }>('/waha/audit', {
+      params: {
+        action: params?.action,
+        severity: params?.severity,
+        limit: params?.limit,
+        offset: params?.offset,
+      },
+    });
+    return res.data.data;
   },
 };
 
