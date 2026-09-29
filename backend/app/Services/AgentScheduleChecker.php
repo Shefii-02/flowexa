@@ -13,7 +13,7 @@ use Illuminate\Support\Carbon;
 class AgentScheduleChecker
 {
     /**
-     * @param string      $mode     'always' or 'scheduled'
+     * @param string      $mode     'manual', 'always', or 'scheduled'
      * @param array|null  $days     legacy fallback — weekdays a single shared range applies to,
      *                              0=Sunday..6=Saturday. Only used when $hours has no entry at all.
      * @param string|null $start    legacy fallback — "HH:MM:SS" or "HH:MM", shared across $days
@@ -34,6 +34,13 @@ class AgentScheduleChecker
         ?string $timezone,
         ?array  $hours = null,
     ): bool {
+        // 'manual' — the AI never answers on its own; every inbound message is routed straight
+        // to a staff member the same way an out-of-schedule message would be (see
+        // ConversationalAgentService::handleOutsideSchedule), so nothing is silently dropped.
+        if ($mode === 'manual') {
+            return false;
+        }
+
         if ($mode !== 'scheduled') {
             return true; // 'always' (or any unrecognized mode) — never restricted
         }

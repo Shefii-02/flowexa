@@ -24,8 +24,6 @@ class CheckWaSessionHealth extends Command
 
     protected $description = "Poll every company's WhatsApp sessions for live status and fire webhooks on a connected\u{2192}disconnected transition";
 
-    private const CONNECTED_STATES = ['ready', 'connected', 'working', 'authenticated'];
-
     public function handle(): int
     {
         $base = rtrim((string) config('services.open_wa.base_url'), '/');
@@ -62,9 +60,10 @@ class CheckWaSessionHealth extends Command
                 $live = $rows->get($session->session_name);
                 // A session missing from the gateway's own list (deleted there, or the row's
                 // session_name never matched) is treated the same as disconnected, not skipped.
-                $liveStatus = $live ? strtolower((string) ($live['status'] ?? 'unknown')) : 'disconnected';
-                $wasConnected = in_array(strtolower((string) $session->status), self::CONNECTED_STATES, true);
-                $isConnected = in_array($liveStatus, self::CONNECTED_STATES, true);
+                $rawLiveStatus = $live ? (string) ($live['status'] ?? 'unknown') : 'disconnected';
+                $mappedStatus  = WahaSession::mapGatewayStatus($rawLiveStatus);
+                $wasConnected  = $session->status === 'connected';
+                $isConnected   = $mappedStatus === 'connected';
 
                 if ($wasConnected && !$isConnected) {
                     $transitioned++;
@@ -72,7 +71,7 @@ class CheckWaSessionHealth extends Command
                 }
 
                 $session->update([
-                    'status' => $liveStatus,
+                    'status' => $mappedStatus,
                     'last_seen_at' => $isConnected ? now() : $session->last_seen_at,
                 ]);
             }

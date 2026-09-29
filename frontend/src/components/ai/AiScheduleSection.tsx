@@ -9,8 +9,9 @@ import { toast } from 'react-hot-toast'
 import api from '@/api/client'
 
 export type DayHours = { start: string; end: string }
+export type ScheduleMode = 'manual' | 'always' | 'scheduled'
 export type Schedule = {
-  mode: 'always' | 'scheduled'
+  mode: ScheduleMode
   hours: Record<string, DayHours> | null
   timezone: string | null
   // Legacy shape some rows may still carry (one shared range across a set of days) — read-only
@@ -59,10 +60,10 @@ function rowsToHours(rows: WeekRows): Record<string, DayHours> {
 }
 
 export function ScheduleEditor({ mode, rows, timezone, onChange }: {
-  mode: 'always' | 'scheduled'
+  mode: ScheduleMode
   rows: WeekRows
   timezone: string | null
-  onChange: (v: { mode: 'always' | 'scheduled'; rows: WeekRows; timezone: string | null }) => void
+  onChange: (v: { mode: ScheduleMode; rows: WeekRows; timezone: string | null }) => void
 }) {
   const setDay = (i: number, patch: Partial<DayRow>) => {
     const next = rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r))
@@ -72,6 +73,12 @@ export function ScheduleEditor({ mode, rows, timezone, onChange }: {
   return (
     <div className="space-y-3">
       <div className="flex gap-2">
+        <button type="button" onClick={() => onChange({ mode: 'manual', rows, timezone })}
+          className={`flex-1 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+            mode === 'manual' ? 'bg-amber-50 border-amber-300 text-amber-700' : 'border-gray-200 text-gray-500 hover:border-gray-300'
+          }`}>
+          🧑 Manual Response
+        </button>
         <button type="button" onClick={() => onChange({ mode: 'always', rows, timezone })}
           className={`flex-1 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
             mode === 'always' ? 'bg-green-50 border-green-300 text-green-700' : 'border-gray-200 text-gray-500 hover:border-gray-300'
@@ -86,6 +93,14 @@ export function ScheduleEditor({ mode, rows, timezone, onChange }: {
           🕒 Scheduled Hours
         </button>
       </div>
+
+      {mode === 'manual' && (
+        <p className="text-[11px] text-gray-400 bg-gray-50 border border-gray-200 rounded-lg p-3">
+          The AI never replies on its own for this session — every incoming message goes straight
+          to a staff member (same handoff as outside scheduled hours: a quick reply to the
+          customer plus a task assigned to your team).
+        </p>
+      )}
 
       {mode === 'scheduled' && (
         <div className="space-y-2 bg-gray-50 border border-gray-200 rounded-lg p-3">
@@ -128,8 +143,8 @@ export function ScheduleEditor({ mode, rows, timezone, onChange }: {
   )
 }
 
-function ScheduleAccountRow({ label, schedule, saving, onSave }: { label: string; schedule: Schedule; saving: boolean; onSave: (s: { mode: 'always' | 'scheduled'; hours: Record<string, DayHours>; timezone: string | null }) => void }) {
-  const [mode, setMode] = useState<'always' | 'scheduled'>(schedule.mode)
+function ScheduleAccountRow({ label, schedule, saving, onSave }: { label: string; schedule: Schedule; saving: boolean; onSave: (s: { mode: ScheduleMode; hours: Record<string, DayHours>; timezone: string | null }) => void }) {
+  const [mode, setMode] = useState<ScheduleMode>(schedule.mode)
   const [rows, setRows] = useState<WeekRows>(() => scheduleToRows(schedule))
   const [timezone, setTimezone] = useState(schedule.timezone)
 

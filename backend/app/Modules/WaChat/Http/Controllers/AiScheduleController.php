@@ -25,7 +25,7 @@ use Illuminate\Support\Facades\Auth;
 class AiScheduleController extends Controller
 {
     private const SCHEDULE_RULES = [
-        'ai_schedule_mode'     => 'required|string|in:always,scheduled',
+        'ai_schedule_mode'     => 'required|string|in:manual,always,scheduled',
         // Legacy shape — kept for old clients/rows; superseded by ai_schedule_hours whenever present.
         'ai_schedule_days'     => 'nullable|array',
         'ai_schedule_days.*'   => 'integer|min:0|max:6',

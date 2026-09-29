@@ -599,7 +599,7 @@ class WahaSessionController extends Controller
         $session = WahaSession::where('session_name', $name)->first();
 
         if ($session && $event === 'session.status') {
-            $status = $payload['status'] ?? 'disconnected';
+            $status = WahaSession::mapGatewayStatus($payload['status'] ?? null);
             $phone  = $payload['phone'] ?? $session->phone;
             $session->update(['status' => $status, 'phone' => $phone, 'last_seen_at' => now()]);
         }
