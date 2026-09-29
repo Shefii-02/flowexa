@@ -31,6 +31,7 @@ class ConversationalAgentService
         private readonly PlannerAgent        $subQueryPlanner,
         private readonly LeadAssignmentEngine $assignmentEngine,
         private readonly FollowupTaskScheduler $followupScheduler,
+        private readonly VoiceService          $voiceService,
     ) {}
 
     /** @return bool  true if the agent handled the message (caller should stop). */
@@ -248,7 +249,24 @@ class ConversationalAgentService
         $gateway, AgentInbound $in, AiAgentSession $session,
         string $reply, string $role, ?string $userMessage = null
     ): void {
-        $gateway->sendText($in->companyId, $in->sessionRef, $in->phone, $reply);
+        // How the AI replies (text vs. voice) is controlled entirely by whether the inbound
+        // message that triggered this turn was itself a voice note — understanding a voice note
+        // always works (see WahaSessionController::resolveVoiceTranscript() and
+        // WebhookService::resolveVoiceTranscript()) regardless of this. Synthesis failure (no
+        // OpenAI key, a transient API error) falls back to a plain text reply rather than
+        // leaving the customer without an answer.
+        $sentAsVoice = false;
+        if ($in->type === 'voice') {
+            $company = Company::find($in->companyId);
+            $audio   = $company ? $this->voiceService->synthesize($reply, $company) : null;
+            if ($audio !== null) {
+                $url = $this->voiceService->storePublicly($audio, $in->companyId);
+                $sentAsVoice = $gateway->sendAudio($in->companyId, $in->sessionRef, $in->phone, $url);
+            }
+        }
+        if (!$sentAsVoice) {
+            $gateway->sendText($in->companyId, $in->sessionRef, $in->phone, $reply);
+        }
 
         $history = $session->conversation_history ?? [];
         if ($userMessage !== null) {

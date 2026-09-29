@@ -40,4 +40,25 @@ class OpenWaGateway implements AgentChannelGateway
             return false;
         }
     }
+
+    public function sendAudio(int $companyId, string $sessionRef, string $phone, string $audioUrl): bool
+    {
+        $company = Company::find($companyId);
+        $apiKey  = $company?->wa_chat_token;
+
+        if (!$company || !$apiKey) {
+            Log::warning("OpenWaGateway: company {$companyId} has no wa_chat_token — cannot reply");
+            return false;
+        }
+
+        $chatId = str_contains($phone, '@') ? $phone : $phone . '@c.us';
+
+        try {
+            $res = $this->wa->sendMedia($sessionRef, $apiKey, $chatId, 'audio', ['url' => $audioUrl]);
+            return $res->successful();
+        } catch (\Throwable $e) {
+            Log::error("OpenWaGateway sendAudio failed for {$chatId}: " . $e->getMessage());
+            return false;
+        }
+    }
 }

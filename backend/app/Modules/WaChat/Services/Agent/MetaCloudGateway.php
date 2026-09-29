@@ -37,4 +37,21 @@ class MetaCloudGateway implements AgentChannelGateway
             return false;
         }
     }
+
+    public function sendAudio(int $companyId, string $sessionRef, string $phone, string $audioUrl): bool
+    {
+        $company = Company::find($companyId);
+        if (!$company) {
+            Log::warning("MetaCloudGateway: company {$companyId} not found");
+            return false;
+        }
+
+        try {
+            $this->webhook->sendAgentAudio($company, $phone, $audioUrl);
+            return true;
+        } catch (\Throwable $e) {
+            Log::error("MetaCloudGateway sendAudio failed for {$phone}: " . $e->getMessage());
+            return false;
+        }
+    }
 }

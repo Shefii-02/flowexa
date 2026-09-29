@@ -6,18 +6,19 @@ use App\Http\Controllers\Controller;
 use App\Models\Company;
 use App\Modules\WaChat\Models\AiAgentSession;
 use App\Modules\WaChat\Models\AutomationLog;
+use App\Modules\WaChat\Services\Agent\VoiceService;
 use App\Modules\WaChat\Services\Rag\RagOrchestrator;
 use App\Services\CompanyApiKeyResolver;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Log;
 
 class AiAgentController extends Controller
 {
-    public function __construct(private readonly RagOrchestrator $rag) {}
+    public function __construct(
+        private readonly RagOrchestrator $rag,
+        private readonly VoiceService $voice,
+    ) {}
 
     // ── Ask (text query → RAG response) ───────────────────────────────────────
 
@@ -78,7 +79,8 @@ class AiAgentController extends Controller
             ? $forcedConfig['api_key']
             : null;
 
-        $transcript = $this->transcribeWithWhisper($request->file('audio'), $company, $whisperKey);
+        $audio = $request->file('audio');
+        $transcript = $this->voice->transcribe($audio->get(), $audio->getClientOriginalName() ?: 'voice.webm', $company, $whisperKey);
 
         if ($transcript === null) {
             return response()->json([
@@ -97,39 +99,6 @@ class AiAgentController extends Controller
         );
 
         return response()->json(array_merge($result, ['transcript' => $transcript]));
-    }
-
-    private function transcribeWithWhisper(UploadedFile $audio, Company $company, ?string $overrideKey = null): ?string
-    {
-        $apiKey = $overrideKey ?: CompanyApiKeyResolver::openai($company);
-        if (empty($apiKey)) {
-            return null;
-        }
-
-        try {
-            $response = Http::withToken($apiKey)
-                ->timeout(60)
-                ->attach('file', $audio->get(), $audio->getClientOriginalName() ?: 'voice.webm')
-                ->post('https://api.openai.com/v1/audio/transcriptions', [
-                    'model'           => 'whisper-1',
-                    'response_format' => 'json',
-                ]);
-
-            if ($response->successful()) {
-                // Record usage on the company's OpenAI key — only meaningful when we
-                // actually used it, not a one-off key typed into the test tool.
-                if (!$overrideKey && $company->openai_key_id && $company->openaiKey) {
-                    CompanyApiKeyResolver::recordUsage($company->openaiKey, 0.0);
-                }
-                return $response->json('text');
-            }
-
-            Log::warning('Whisper API error: ' . $response->body());
-        } catch (\Exception $e) {
-            Log::error('Whisper transcription exception: ' . $e->getMessage());
-        }
-
-        return null;
     }
 
     /** Static catalogue of selectable models per provider. */

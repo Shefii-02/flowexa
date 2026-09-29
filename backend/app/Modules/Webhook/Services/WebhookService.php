@@ -19,6 +19,7 @@ use App\Modules\Lead\Repositories\Interfaces\LeadRepositoryInterface;
 use App\Modules\Webhook\DTOs\InboundMessageDTO;
 use App\Modules\Webhook\DTOs\StatusUpdateDTO;
 use App\Modules\WaChat\Services\WaChatLeadAttributionService;
+use App\Modules\WaChat\Services\Agent\VoiceService;
 use App\Modules\WaChat\Services\Rag\EvidenceCollector;
 use App\Modules\WaChat\Services\Rag\LanguageDetector;
 use App\Modules\WaChat\Services\Rag\PlannerAgent;
@@ -56,6 +57,7 @@ class WebhookService
         private readonly ResponseGenerator       $ragGenerator,
         private readonly QueryRewriter           $ragQueryRewriter,
         private readonly LanguageDetector        $ragLanguageDetector,
+        private readonly VoiceService             $voiceService,
     ) {}
 
     // ─── Handle inbound message ───────────────────────────────────────────────
@@ -118,6 +120,17 @@ class WebhookService
         // powers the shared inbox UI (counsellors seeing/replying to the same thread).
         $this->logInboundToInbox($company, $contact, $dto);
 
+        // A real voice note (Meta flags it audio.voice === true, distinct from a shared audio
+        // file) gets Whisper-transcribed once here so understanding it works everywhere a typed
+        // message's text would be used below — keyword automations and the AI agent alike —
+        // same "understanding always works" behavior as the open-wa side (see
+        // WahaSessionController::resolveVoiceTranscript()).
+        $voiceTranscript = null;
+        if ($dto->type === 'audio' && ($dto->rawPayload['audio']['voice'] ?? false) && trim((string) $dto->text) === '') {
+            $voiceTranscript = $this->resolveVoiceTranscript($company, $dto);
+        }
+        $inboundText = (string) ($dto->text ?? $dto->replyTitle ?? $dto->caption ?? $voiceTranscript ?? '');
+
         // 3c. WA Cloud automation rules (welcome / keyword / out-of-office). Best-effort —
         // an automation failure must never break inbound processing. Time-based rules
         // (follow-ups, inactivity) run from the wa-cloud:run-automations schedule instead.
@@ -125,7 +138,7 @@ class WebhookService
             app(\App\Modules\WaCloud\Services\WaCloudAutomationEngine::class)->runInbound(
                 $company,
                 $dto->phone,
-                (string) ($dto->text ?? $dto->replyTitle ?? $dto->caption ?? ''),
+                $inboundText,
                 $company->wa_phone_id,
             );
         } catch (\Throwable $e) {
@@ -185,8 +198,13 @@ class WebhookService
             ? in_array($numberMode, ['manual', 'always', 'scheduled'], true)
             : $company->responseModeAllows('wa_cloud', 'ai_agent');
 
-        if ($tryAiAgent && in_array($dto->type, ['text', 'interactive'], true)) {
-            $agentText = $dto->text ?? $dto->replyTitle ?? $dto->caption ?? '';
+        // $voiceTranscript (resolved above, once) means this was a real voice note — reuse it
+        // rather than re-downloading from Meta. $agentType is normalized to 'voice' in that case
+        // so ConversationalAgentService::run() knows to reply in kind (see sendAndRecord()).
+        $agentType = $voiceTranscript !== null ? 'voice' : $dto->type;
+        $agentText = $inboundText;
+
+        if ($tryAiAgent && in_array($agentType, ['text', 'interactive', 'voice'], true)) {
             if (trim($agentText) !== '') {
                 $handled = app(\App\Modules\WaChat\Services\Agent\ConversationalAgentService::class)->handle(
                     new \App\Modules\WaChat\Services\Agent\AgentInbound(
@@ -195,7 +213,7 @@ class WebhookService
                         sessionRef: (string) ($company->wa_phone_id ?: 'meta_cloud'),
                         phone:      $dto->phone,
                         text:       $agentText,
-                        type:       $dto->type,
+                        type:       $agentType,
                     )
                 );
                 if ($handled) {
@@ -1433,6 +1451,17 @@ class WebhookService
         $this->sendText($company, $phone, $text);
     }
 
+    /**
+     * Public entry point for the AI agent to send a voice-note reply over the Meta Cloud API —
+     * used when the inbound message that triggered this turn was itself a voice note (see
+     * ConversationalAgentService::run() / VoiceService::synthesize()). $audioUrl must be a
+     * publicly fetchable URL; sendAudio() re-fetches it to upload to Meta.
+     */
+    public function sendAgentAudio(Company $company, string $phone, string $audioUrl): void
+    {
+        $this->sendAudio($company, $phone, $audioUrl, 'audio/mpeg');
+    }
+
     // ─── WhatsApp API helpers ─────────────────────────────────────────────────
     private function sendText(Company $company, string $phone, string $text): void
     {
@@ -1610,6 +1639,46 @@ class WebhookService
                 'address'   => $node->location_address ?? '',
             ],
         ]);
+    }
+
+    /**
+     * Downloads a customer's inbound voice note from Meta (two-step: resolve the media id to a
+     * fetch URL, then fetch it with the same access token — Meta media URLs aren't public) and
+     * transcribes it with Whisper. Returns '' if anything along the way isn't available (no
+     * media id, no token, download/transcription failure) — the caller treats that exactly like
+     * any other message with no usable text.
+     */
+    private function resolveVoiceTranscript(Company $company, InboundMessageDTO $dto): string
+    {
+        $mediaId = $dto->rawPayload['audio']['id'] ?? null;
+        if (!$mediaId || !$company->decrypt_wa_access_token) {
+            return '';
+        }
+
+        try {
+            $token = $company->decrypt_wa_access_token;
+            try { $token = decrypt($token); } catch (\Exception) { /* already plain */ }
+
+            $meta = Http::withToken($token)->timeout(15)->get("https://graph.facebook.com/v21.0/{$mediaId}");
+            $mediaUrl = $meta->successful() ? $meta->json('url') : null;
+            if (!$mediaUrl) {
+                return '';
+            }
+
+            $file = Http::withToken($token)->timeout(30)->get($mediaUrl);
+            if (!$file->successful()) {
+                return '';
+            }
+
+            $mimeType = $dto->rawPayload['audio']['mime_type'] ?? 'audio/ogg';
+            $ext = str_contains($mimeType, 'ogg') ? 'ogg' : (str_contains($mimeType, 'mp4') ? 'm4a' : 'bin');
+
+            $transcript = $this->voiceService->transcribe($file->body(), "voice.{$ext}", $company);
+            return $transcript !== null ? trim($transcript) : '';
+        } catch (\Throwable $e) {
+            Log::warning('WA Cloud voice transcription failed: ' . $e->getMessage());
+            return '';
+        }
     }
 
     private function uploadMediaToMeta(Company $company, string $url, string $mimeType): ?string

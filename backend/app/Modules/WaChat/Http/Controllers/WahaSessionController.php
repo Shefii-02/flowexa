@@ -599,6 +599,55 @@ class WahaSessionController extends Controller
         return $this->wahaGroup('PUT', "/api/groups/{$gid}/settings", ['session' => $sid], $body);
     }
 
+    /**
+     * Transcribes an inbound voice note. The gateway inlines the media as base64 on the webhook
+     * payload itself (message-projector.service.ts) when it's under the size cap; if it was
+     * shed for being over that cap, this falls back to the same per-message media download the
+     * WA Chat inbox UI already uses. Returns the empty string (unchanged) if transcription isn't
+     * possible — no OpenAI key configured, or the media genuinely couldn't be fetched.
+     */
+    private function resolveVoiceTranscript(WahaSession $session, array $payload): string
+    {
+        $company = $session->company;
+        if (!$company) {
+            return '';
+        }
+
+        $media = $payload['media'] ?? null;
+        $bytes = null;
+
+        if (is_array($media) && !empty($media['data']) && empty($media['omitted'])) {
+            $bytes = base64_decode((string) $media['data'], true) ?: null;
+        }
+
+        if ($bytes === null) {
+            $chatId    = $payload['chatId'] ?? $payload['from'] ?? null;
+            $messageId = $payload['id'] ?? null;
+            if ($chatId && $messageId) {
+                try {
+                    $res = Http::withHeaders(['X-API-Key' => (string) $company->wa_chat_token])
+                        ->timeout(20)
+                        ->get("{$this->wahaBase()}/api/sessions/{$session->session_name}/messages/"
+                            . rawurlencode((string) $chatId) . "/{$messageId}/media");
+                    if ($res->successful()) {
+                        $bytes = $res->body();
+                    }
+                } catch (\Throwable $e) {
+                    Log::warning('WA Chat voice media download failed: ' . $e->getMessage());
+                }
+            }
+        }
+
+        if (!$bytes) {
+            return '';
+        }
+
+        $ext = str_contains((string) ($media['mimetype'] ?? ''), 'ogg') ? 'ogg' : 'webm';
+        $transcript = app(\App\Modules\WaChat\Services\Agent\VoiceService::class)->transcribe($bytes, "voice.{$ext}", $company);
+
+        return $transcript !== null ? trim($transcript) : '';
+    }
+
     // The gateway sends events here — update session status in DB.
     // Its real envelope is `{event, sessionId, data}` (see backend-node
     // WebhookDeliveryService); `session`/`payload` are kept as a fallback for the
@@ -635,6 +684,15 @@ class WahaSessionController extends Controller
                 $from = $payload['from'] ?? ($payload['chatId'] ?? null);
                 $body = $payload['body'] ?? ($payload['text'] ?? '');
                 $type = $payload['type'] ?? 'text';
+
+                // Understanding a voice note works the same as a typed message: transcribe it up
+                // front so lead attribution, keyword automations, and the AI agent below all see
+                // real text instead of an empty body (which AgentInbound::hasText() would treat as
+                // nothing to reply to). Only *how* the AI replies — text vs. voice — is controlled
+                // separately, by whether $type is still 'voice' when ConversationalAgentService runs.
+                if ($session && $type === 'voice' && trim($body) === '') {
+                    $body = $this->resolveVoiceTranscript($session, $payload);
+                }
 
                 // Lead auto-creation + campaign attribution — runs for every reply regardless
                 // of whether an AI playbook is configured (ConversationalAgentService's own
