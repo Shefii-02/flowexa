@@ -271,6 +271,84 @@ class WaChatTokenService
         return (int) ($res->json('deleted') ?? 0);
     }
 
+    /** The gateway's own id for the currently configured admin key, or null if it can't be matched. */
+    public function currentAdminKeyId(): ?string
+    {
+        return $this->adminKeyId();
+    }
+
+    /**
+     * Mint a fresh ADMIN-role key on the gateway, persist it in place of the current
+     * WA_CHAT_ADMIN_KEY (env or key file, matching the existing resolution order), and
+     * revoke the previous admin key unless $revokeOld is false.
+     *
+     * Order matters: the new key is created and persisted BEFORE the old one is touched,
+     * so a failure partway through never leaves the app without a working admin key.
+     *
+     * @return array{new_key:string, new_key_id:string, old_key_id:?string, persisted:string}
+     */
+    public function rotateAdminKey(bool $revokeOld = true): array
+    {
+        $oldKey   = $this->adminKey(); // throws if unset
+        $oldKeyId = $this->adminKeyId();
+
+        $res = Http::withHeaders(['X-API-Key' => $oldKey])
+            ->timeout(15)->connectTimeout(5)
+            ->post("{$this->base}/auth/api-keys", [
+                'name' => 'flowexa-admin-' . now()->format('Y-m-d_His'),
+                'role' => 'admin',
+            ]);
+
+        if (! $res->successful()) {
+            throw new RuntimeException(
+                "Gateway refused to create a new admin key (HTTP {$res->status()}): " . $res->body()
+            );
+        }
+
+        $newKey   = (string) ($res->json('apiKey') ?? '');
+        $newKeyId = (string) ($res->json('id') ?? '');
+        if ($newKey === '' || $newKeyId === '') {
+            throw new RuntimeException('Gateway created a key but returned no raw value / id.');
+        }
+
+        $persisted = $this->persistAdminKey($newKey);
+
+        if ($revokeOld && $oldKeyId !== null && $oldKeyId !== $newKeyId) {
+            $this->revokeById($oldKeyId);
+        }
+
+        return [
+            'new_key'    => $newKey,
+            'new_key_id' => $newKeyId,
+            'old_key_id' => $oldKeyId,
+            'persisted'  => $persisted,
+        ];
+    }
+
+    /** Writes the new raw admin key wherever WA_CHAT_ADMIN_KEY currently resolves from. */
+    private function persistAdminKey(string $key): string
+    {
+        $file = (string) env('WA_CHAT_ADMIN_KEY_FILE');
+        if ($file !== '' && is_writable(dirname($file))) {
+            file_put_contents($file, $key . "\n");
+            @chmod($file, 0600);
+            return "file:{$file}";
+        }
+
+        $envPath  = base_path('.env');
+        $contents = file_get_contents($envPath);
+        $pattern  = '/^WA_CHAT_ADMIN_KEY=.*$/m';
+        $line     = 'WA_CHAT_ADMIN_KEY=' . $key;
+
+        $contents = preg_match($pattern, $contents)
+            ? preg_replace($pattern, $line, $contents)
+            : rtrim($contents) . "\n" . $line . "\n";
+
+        file_put_contents($envPath, $contents);
+
+        return '.env';
+    }
+
     public function revokeById(string $keyId): void
     {
         try {
