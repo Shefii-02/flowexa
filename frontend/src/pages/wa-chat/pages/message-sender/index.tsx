@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import Picker from '@emoji-mart/react'
 import data from '@emoji-mart/data'
 import {
@@ -288,7 +289,14 @@ export function MessageSender() {
   // Already loaded on login (no extra request) — backs {{company_details}}/{{company_number}}.
   const company = useUser()?.company
 
-  const [pageTab, setPageTab] = useState<PageTab>('sender')
+  // Create (/wa-chat/message-sender) and History (/wa-chat/message-sender/history) are two
+  // separate sidebar entries/routes rather than purely in-page state, so the tab must be derived
+  // from the URL — and switching it (via the in-page tab buttons below) navigates so the sidebar
+  // highlight and browser back/forward stay in sync with what's actually shown.
+  const location = useLocation()
+  const navigate = useNavigate()
+  const pageTab: PageTab = location.pathname.endsWith('/history') ? 'history' : 'sender'
+  const setPageTab = (tab: PageTab) => navigate(tab === 'history' ? '/wa-chat/message-sender/history' : '/wa-chat/message-sender')
 
   // --- Recipient state ---
   const [recipientTab, setRecipientTab] = useState<RecipientTab>('personal')
@@ -691,13 +699,26 @@ export function MessageSender() {
   }
 
   const cancelScheduled = async () => {
+    // If confirmSchedule created a real server-tracked job, it MUST actually be stopped there —
+    // otherwise it fires anyway via the cron once its scheduled_at arrives, regardless of this
+    // widget's local state. Previously a failed stop call (e.g. the JWT expired while the
+    // countdown was sitting for hours) was silently swallowed and the code below still cleared
+    // the countdown/localStorage as if cancellation succeeded — the user saw "canceled" while the
+    // campaign was still scheduled and went out anyway. Only reset local state once the server
+    // actually confirms the job is stopped (or there's no server job to stop in the first place).
+    if (scheduledJob?.serverId) {
+      try {
+        await api.post(`/message-sender/${scheduledJob.serverId}/stop`)
+      } catch (err: any) {
+        window.alert(
+          err?.response?.data?.message ??
+          'Could not cancel this scheduled campaign — it may still be sent. Please try again, or stop it from History.'
+        )
+        return
+      }
+    }
     if (countdownRef.current) clearInterval(countdownRef.current)
     countdownRef.current = null
-    // If confirmSchedule created a real server-tracked job, stop it there too — otherwise it
-    // fires anyway via the cron once its scheduled_at arrives, regardless of this local reset.
-    if (scheduledJob?.serverId) {
-      try { await api.post(`/message-sender/${scheduledJob.serverId}/stop`) } catch { /* best-effort */ }
-    }
     setScheduledJob(null)
     setCountdown(0)
     setJob(prev => ({ ...prev, status: 'idle' }))
@@ -1176,13 +1197,23 @@ export function MessageSender() {
       }
       return true
     } catch (err) {
+      const status = (err as { response?: { status?: number; data?: { message?: string } } })?.response?.status
+      // A 401 here was already handled globally: api/client.ts's response interceptor either
+      // silently refreshed the token and retried this same request (in which case it wouldn't
+      // have reached this catch at all), or — if the session is genuinely dead — it already
+      // dispatched setSessionExpired, which redirects the whole app to /login. Alerting here too
+      // would just pop a confusing "could not create this campaign" dialog on top of that
+      // redirect, so this case returns early rather than falling into the generic 4xx handling
+      // below (which is for actual validation/business errors, e.g. a deleted session).
+      if (status === 401) {
+        return true // handled by the global redirect — no local alert, no client-side fallback
+      }
       // A 4xx here means the request itself is invalid (e.g. MessageSenderController now
       // rejects a session_id that's been deleted since — a stale "Duplicate" copy was exactly
       // how this used to slip through). Falling back to the client-side path below would retry
       // with the same bad session_id and fail identically, just less visibly (no job history row,
       // no clear reason) — surface it instead of pretending this was a network/server outage.
-      const status = (err as { response?: { status?: number; data?: { message?: string } } })?.response?.status
-      if (status && status >= 400 && status < 500) {
+      if (status && status < 500) {
         const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message
         window.alert(msg || 'Could not create this campaign — check the selected session and try again.')
         return true // handled — do not fall back to the client-side send path
@@ -1337,7 +1368,15 @@ export function MessageSender() {
     try {
       await api.post(`/message-sender/${id}/stop`)
       refreshServerHistory()
-    } catch { /* silent */ }
+    } catch (err: any) {
+      // Unlike launch/pause/resume, failing silently here is actively misleading: this is the
+      // only way to unschedule a campaign, and the row keeps showing "scheduled" afterwards, so
+      // without this the user has no sign their Stop click didn't actually take effect and the
+      // cron will still dispatch it at its scheduled_at.
+      if (err?.response?.status !== 401) { // 401 already surfaces via the global session-expired redirect
+        window.alert(err?.response?.data?.message ?? 'Could not stop this campaign — please try again.')
+      }
+    }
     finally { setHistoryActionLoading(null) }
   }
 

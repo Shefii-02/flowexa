@@ -211,6 +211,7 @@ export default function App() {
                 <Route path="sessions" element={<WaChatSessions />} />
                 <Route path="chats" element={<WaChatChats />} />
                 <Route path="message-sender" element={<MessageSender />} />
+                <Route path="message-sender/history" element={<MessageSender />} />
                 <Route path="plugins" element={<WaChatPlugins />} />
                 <Route path="webhooks" element={<WaChatWebhooks />} />
                 <Route path="templates" element={<WaChatTemplatesPage />} />
