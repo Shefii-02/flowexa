@@ -112,11 +112,24 @@ class MessageSenderController extends Controller
                 'phone'          => $l->recipient_phone,
                 'status'         => $l->status,
                 'sent_at'        => $l->sent_at?->toIso8601String(),
-                'error'          => $l->error_message,
+                'error'          => $this->userFacingError($l->error_message),
             ])->all());
         }
         $job->makeHidden(['messageLogs', 'wahaSession']);
         return $job;
+    }
+
+    // Temporarily hides the raw gateway 401 body ({"message":"API key not authorized for this
+    // session",...}) from the recipient log — it's an internal key/session-scoping issue (see
+    // ProcessMessageSenderJob's stale-session guard), not something the user can act on, and the
+    // raw JSON reads as broken rather than as a transient delivery hiccup. error_message in the DB
+    // (and the Laravel log) still keeps the raw text for diagnosis; only this display copy changes.
+    private function userFacingError(?string $raw): ?string
+    {
+        if ($raw && str_contains($raw, 'not authorized for this session')) {
+            return 'Temporary delivery issue — please retry this recipient.';
+        }
+        return $raw;
     }
 
     public function pause(int $id): JsonResponse
