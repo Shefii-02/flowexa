@@ -4,7 +4,7 @@ import data from '@emoji-mart/data'
 import {
   Send, Pause, Square, Play, Download, Upload, X, Plus,
   Users, MessageSquare, Copy,
-  FileText, Tag, Hash, Loader2, Search, Calendar, XCircle, CheckCircle,
+  FileText, Tag, Hash, Loader2, Search, Calendar, XCircle,
   Bold, Italic, Strikethrough,
 } from 'lucide-react'
 import { useSessionsQuery, useSessionGroupsQuery, useSessionChatsQuery } from '../../hooks/queries'
@@ -2128,19 +2128,9 @@ export function MessageSender() {
               </div>
             </div>
 
-            {/* SECTION D — Unique Signature. Always on — no toggle, see the uniqueSignature
-                constant above. */}
-            <div className="bg-white rounded-xl border border-gray-200 p-4">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-sm font-semibold text-gray-700">Anti-spam Signature</span>
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-green-50 text-green-700 rounded-full text-xs font-medium">
-                  <CheckCircle size={12} /> Always on
-                </span>
-              </div>
-              <p className="text-xs text-gray-500 leading-relaxed">
-                Appends invisible unique Unicode characters per recipient, reducing WhatsApp bulk-detection risk.
-              </p>
-            </div>
+            {/* SECTION D was the "Anti-spam Signature" card — removed from the UI per product
+                decision (not something users need to see/toggle). The behavior is unaffected:
+                uniqueSignature stays hardcoded true above and is still applied to every campaign. */}
 
             {/* SECTION E — Send Controls */}
             <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
