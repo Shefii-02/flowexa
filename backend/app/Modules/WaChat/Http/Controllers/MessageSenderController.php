@@ -3,8 +3,11 @@
 namespace App\Modules\WaChat\Http\Controllers;
 
 use App\Http\Controllers\Controller;
+use App\Models\Company;
 use App\Modules\WaChat\Models\MessageSenderJob;
 use App\Modules\WaChat\Jobs\ProcessMessageSenderJob;
+use App\Modules\WaChat\Services\OpenWaMessageService;
+use Illuminate\Http\Client\Response;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -88,6 +91,135 @@ class MessageSenderController extends Controller
         }
 
         return response()->json(['message' => 'Job created.', 'data' => $job], 201);
+    }
+
+    // Sends the composer's current message to a single test number, instead of creating a
+    // campaign — used by the "Test Run" control in the sender UI. Checks the session's live
+    // status with the gateway right before sending (getSession), since the frontend's session
+    // list is cached for up to 30s and a test send is exactly the moment a stale "ready" would
+    // be misleading. Mirrors ProcessMessageSenderJob's per-recipient dispatch (dispatchSend/
+    // sendMediaBlocks/personalizeMessage below), but for exactly one recipient and with no DB
+    // job/log rows — a test send isn't a campaign and shouldn't appear in campaign history.
+    public function testSend(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'session_id' => [
+                'required', 'string', 'max:100',
+                Rule::exists('waha_sessions', 'session_name')
+                    ->where('company_id', auth()->user()->company_id),
+            ],
+            'phone'   => ['required', 'string', 'regex:/^[0-9]{7,15}$/'],
+            'type'    => 'required|in:text,media,poll,location,contact,audio',
+            'payload' => 'nullable|array',
+        ], [
+            'session_id.exists' => 'That session no longer exists — pick a currently active one.',
+            'phone.regex'       => 'Enter a valid test phone number.',
+        ]);
+
+        $company = auth()->user()->company;
+        $apiKey  = $company?->wa_chat_token ?? '';
+        $wa      = new OpenWaMessageService();
+
+        $statusRes  = $wa->getSession($data['session_id'], $apiKey);
+        $liveStatus = $statusRes->successful() ? ($statusRes->json('status') ?? 'unknown') : 'unreachable';
+        if ($liveStatus !== 'ready') {
+            return response()->json([
+                'message' => "Session isn't connected right now (status: {$liveStatus}).",
+            ], 409);
+        }
+
+        $chatId    = "{$data['phone']}@c.us";
+        $recipient = ['name' => 'Test', 'phone' => $data['phone']];
+
+        try {
+            $res = $this->dispatchTestSend($wa, $data['session_id'], $apiKey, $chatId, $data['type'], $data['payload'] ?? [], $recipient, $company);
+        } catch (\Exception $e) {
+            Log::warning("MessageSenderController::testSend: {$e->getMessage()}");
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        if (!$res->successful()) {
+            Log::warning('MessageSenderController::testSend: gateway rejected send', [
+                'status' => $res->status(), 'body' => $res->body(),
+            ]);
+            return response()->json(['message' => $res->json('message') ?: 'Test send failed.'], 422);
+        }
+
+        return response()->json(['message' => 'Test message sent.']);
+    }
+
+    private function dispatchTestSend(
+        OpenWaMessageService $wa,
+        string $sessionId,
+        string $apiKey,
+        string $chatId,
+        string $type,
+        array $payload,
+        array $recipient,
+        ?Company $company,
+    ): Response {
+        return match ($type) {
+            'media'    => $this->sendTestMediaBlocks($wa, $sessionId, $apiKey, $chatId, $payload['blocks'] ?? [], $recipient, $company),
+            'poll'     => $wa->sendPoll($sessionId, $apiKey, $chatId, $payload['question'] ?? '', $payload['options'] ?? []),
+            'location' => $wa->sendLocation($sessionId, $apiKey, $chatId, (float)($payload['lat'] ?? 0), (float)($payload['lng'] ?? 0), $payload['name'] ?? null, $payload['address'] ?? null),
+            'contact'  => $wa->sendContact($sessionId, $apiKey, $chatId, $payload['contactName'] ?? '', $payload['contactNumber'] ?? ''),
+            'audio'    => $wa->sendMedia($sessionId, $apiKey, $chatId, 'audio', ['url' => $payload['url'] ?? '']),
+            default    => $wa->sendText($sessionId, $apiKey, $chatId, $this->personalizeTestMessage($payload['text'] ?? '', $recipient, $company)),
+        };
+    }
+
+    // Sends every block in order, same rule as ProcessMessageSenderJob::sendMediaBlocks: success
+    // is judged by the LAST block, since that's what the recipient actually ends up seeing.
+    private function sendTestMediaBlocks(
+        OpenWaMessageService $wa,
+        string $sessionId,
+        string $apiKey,
+        string $chatId,
+        array $blocks,
+        array $recipient,
+        ?Company $company,
+    ): Response {
+        $last = null;
+        foreach ($blocks as $i => $block) {
+            $type = $block['type'] ?? 'text';
+            if ($type === 'text') {
+                $last = $wa->sendText($sessionId, $apiKey, $chatId, $this->personalizeTestMessage($block['text'] ?? '', $recipient, $company));
+            } else {
+                $url = $block['mediaUrl'] ?? $block['url'] ?? '';
+                if (!$url) continue;
+                $mediaPayload = ['url' => $url];
+                if (!empty($block['caption'])) $mediaPayload['caption'] = $this->personalizeTestMessage($block['caption'], $recipient, $company);
+                if (!empty($block['filename'])) $mediaPayload['filename'] = $block['filename'];
+                $last = $wa->sendMedia($sessionId, $apiKey, $chatId, $type, $mediaPayload);
+            }
+            if ($i < count($blocks) - 1) usleep(600_000);
+        }
+        if (!$last) {
+            throw new \RuntimeException('No media block had a sendable url or text.');
+        }
+        return $last;
+    }
+
+    // Same six placeholders as ProcessMessageSenderJob::personalizeMessage — kept as a separate
+    // copy (not shared) since a test send always uses a fixed 'Test' recipient, not a real one.
+    private function personalizeTestMessage(string $text, array $recipient, ?Company $company = null): string
+    {
+        $companyDetails = $company?->name
+            ? ($company->website ? "{$company->name} ({$company->website})" : $company->name)
+            : '';
+
+        return str_replace(
+            ['{{name}}', '{{phone}}', '{{date}}', '{{time}}', '{{company_details}}', '{{company_number}}'],
+            [
+                $recipient['name'] ?: 'Friend',
+                $recipient['phone'] ?? '',
+                now()->format('d M Y'),
+                now()->format('h:i A'),
+                $companyDetails,
+                $company?->phone ?? '',
+            ],
+            $text
+        );
     }
 
     public function show(int $id): JsonResponse
