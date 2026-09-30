@@ -157,25 +157,22 @@ class ProcessMessageSenderJob implements ShouldQueue
             ];
 
             try {
-                $send = fn () => match ($msgType) {
-                    'media' => $this->sendMediaBlocks($wa, $job->session_id, $apiKey, $chatId, $payload['blocks'] ?? [], $recipient, $job->unique_signature ?? false, $company),
-                    'poll' => $wa->sendPoll($job->session_id, $apiKey, $chatId, $payload['question'] ?? '', $payload['options'] ?? []),
-                    'location' => $wa->sendLocation($job->session_id, $apiKey, $chatId, (float)($payload['lat'] ?? 0), (float)($payload['lng'] ?? 0), $payload['name'] ?? null, $payload['address'] ?? null),
-                    'contact' => $wa->sendContact($job->session_id, $apiKey, $chatId, $payload['contactName'] ?? '', $payload['contactNumber'] ?? ''),
-                    'audio' => $wa->sendMedia($job->session_id, $apiKey, $chatId, 'audio', ['url' => $payload['url'] ?? '']),
-                    default => $this->sendText($wa, $job->session_id, $apiKey, $chatId, $payload['text'] ?? '', $recipient, $job->unique_signature ?? false, $company),
-                };
-                $res = $send();
+                $res = $this->dispatchSend($wa, $job, $apiKey, $chatId, $msgType, $payload, $recipient, $company);
 
-                // A 401 here almost always means the allowlist drifted (see the syncSessions() call
-                // above), not that the key itself is wrong — re-sync once and retry this one
-                // recipient before giving up, instead of failing the rest of the campaign over a
-                // gap that's cheap to close.
+                // A 401 here can mean either the allowlist drifted (fixed by syncSessions) or —
+                // since this job reads $company->wa_chat_token once, up front, before a loop that
+                // can run for hours — the key itself was regenerated mid-campaign (e.g. a reconnect
+                // or superadmin renew), which revokes the old key outright. Re-read the company's
+                // current token as well as re-syncing the allowlist before the one retry, otherwise
+                // a mid-run key rotation permanently fails every remaining recipient with the same
+                // dead key.
                 if (!$res->successful() && $res->status() === 401 && !$resyncedForAuth && $company) {
                     $resyncedForAuth = true;
-                    Log::warning("ProcessMessageSenderJob #{$job->id}: 401 from gateway for session {$job->session_id} — re-syncing allowlist and retrying");
+                    Log::warning("ProcessMessageSenderJob #{$job->id}: 401 from gateway for session {$job->session_id} — refreshing token, re-syncing allowlist and retrying");
+                    $company = $company->fresh() ?? $company;
+                    $apiKey  = $company->wa_chat_token ?: $apiKey;
                     app(WaChatTokenService::class)->syncSessions($company);
-                    $res = $send();
+                    $res = $this->dispatchSend($wa, $job, $apiKey, $chatId, $msgType, $payload, $recipient, $company);
                 }
 
                 if ($res->successful()) {
@@ -240,6 +237,24 @@ class ProcessMessageSenderJob implements ShouldQueue
             $out[] = $recipient;
         }
         return $out;
+    }
+
+    // Builds the right gateway call for the recipient's message type. Extracted out of handle()'s
+    // loop (rather than a closure captured over $apiKey) so the 401 retry path there can call it
+    // again with a freshly re-read $apiKey — a closure would keep using the stale one it was
+    // defined with.
+    private function dispatchSend(
+        OpenWaMessageService $wa, MessageSenderJob $job, string $apiKey, string $chatId,
+        string $msgType, array $payload, array $recipient, ?Company $company,
+    ): Response {
+        return match ($msgType) {
+            'media' => $this->sendMediaBlocks($wa, $job->session_id, $apiKey, $chatId, $payload['blocks'] ?? [], $recipient, $job->unique_signature ?? false, $company),
+            'poll' => $wa->sendPoll($job->session_id, $apiKey, $chatId, $payload['question'] ?? '', $payload['options'] ?? []),
+            'location' => $wa->sendLocation($job->session_id, $apiKey, $chatId, (float)($payload['lat'] ?? 0), (float)($payload['lng'] ?? 0), $payload['name'] ?? null, $payload['address'] ?? null),
+            'contact' => $wa->sendContact($job->session_id, $apiKey, $chatId, $payload['contactName'] ?? '', $payload['contactNumber'] ?? ''),
+            'audio' => $wa->sendMedia($job->session_id, $apiKey, $chatId, 'audio', ['url' => $payload['url'] ?? '']),
+            default => $this->sendText($wa, $job->session_id, $apiKey, $chatId, $payload['text'] ?? '', $recipient, $job->unique_signature ?? false, $company),
+        };
     }
 
     private function sendText(
