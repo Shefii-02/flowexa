@@ -5,6 +5,7 @@ namespace App\Modules\WaChat\Jobs;
 use App\Models\Company;
 use App\Modules\WaChat\Models\MessageSenderJob;
 use App\Modules\WaChat\Models\WahaMessageLog;
+use App\Modules\WaChat\Models\WahaSession;
 use App\Modules\WaChat\Services\OpenWaMessageService;
 use App\Modules\WaChat\Services\WaChatTokenService;
 use Illuminate\Bus\Queueable;
@@ -68,6 +69,36 @@ class ProcessMessageSenderJob implements ShouldQueue
         $company    = $job->company;
         $apiKey     = $company?->wa_chat_token ?? '';
         $wa         = new OpenWaMessageService();
+        $payload    = $job->message_payload ?? [];
+        $recipients = $this->dedupeRecipients($payload['recipients'] ?? []);
+        $logMessageType = $this->resolveLogMessageType($payload['type'] ?? 'text', $payload['blocks'] ?? []);
+
+        // A scheduled campaign can sit queued for hours/days. If its session was deleted and
+        // recreated in the meantime (a new gateway session id, even under the same display name
+        // — see the creation-time check in MessageSenderController::store()), job.session_id is
+        // now stale and no amount of allowlist re-sync below will ever make it valid again — the
+        // sync below only re-pushes sessions the company CURRENTLY owns, so it can never add back
+        // one that's gone. Catch that once, up front, instead of failing every recipient
+        // one-by-one with the same unhelpful 401.
+        if ($company && !WahaSession::where('company_id', $company->id)->where('session_name', $job->session_id)->exists()) {
+            Log::warning("ProcessMessageSenderJob #{$job->id}: session {$job->session_id} no longer belongs to company {$job->company_id} — it was deleted/recreated since this campaign was created or scheduled");
+            foreach ($recipients as $recipient) {
+                WahaMessageLog::create([
+                    'company_id'      => $job->company_id,
+                    'job_id'          => $job->id,
+                    'campaign_name'   => $job->campaign_name,
+                    'session_id'      => $job->session_id,
+                    'recipient_name'  => $recipient['name'] ?? '',
+                    'recipient_phone' => $recipient['phone'] ?? '',
+                    'recipient_type'  => $job->type,
+                    'message_type'    => $logMessageType,
+                    'status'          => 'failed',
+                    'error_message'   => 'Session no longer exists — it was deleted or recreated after this campaign was created/scheduled.',
+                ]);
+            }
+            $job->update(['status' => 'done', 'failed' => count($recipients), 'completed_at' => now()]);
+            return;
+        }
 
         // Self-heal: the gateway key's allowedSessions list is a separate, best-effort PUT
         // (WaChatTokenService::syncSessions) that runs whenever a session is created/deleted —
@@ -81,12 +112,8 @@ class ProcessMessageSenderJob implements ShouldQueue
             app(WaChatTokenService::class)->syncSessions($company);
         }
         $resyncedForAuth = false;
-        $payload    = $job->message_payload ?? [];
-        $recipients = $this->dedupeRecipients($payload['recipients'] ?? []);
         $delayMs    = max((int)($job->delay_ms ?? 1000), 500);
         $msgType    = $payload['type'] ?? 'text';
-
-        $logMessageType = $this->resolveLogMessageType($msgType, $payload['blocks'] ?? []);
 
         Log::info("ProcessMessageSenderJob #{$job->id}: starting", [
             'company_id'      => $job->company_id,

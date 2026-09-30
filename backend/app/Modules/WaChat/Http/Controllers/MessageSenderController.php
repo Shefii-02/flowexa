@@ -72,14 +72,14 @@ class MessageSenderController extends Controller
             'started_at' => isset($data['scheduled_at']) ? null : now(),
         ]));
 
-        Log::info("MessageSenderController: campaign #{$job->id} created", [
-            'company_id'    => $job->company_id,
-            'campaign_name' => $job->campaign_name,
-            'type'          => $job->type,
-            'total'         => $job->total,
-            'scheduled_at'  => $job->scheduled_at,
-            'status'        => $job->status,
-        ]);
+        // Log::info("MessageSenderController: campaign #{$job->id} created", [
+        //     'company_id'    => $job->company_id,
+        //     'campaign_name' => $job->campaign_name,
+        //     'type'          => $job->type,
+        //     'total'         => $job->total,
+        //     'scheduled_at'  => $job->scheduled_at,
+        //     'status'        => $job->status,
+        // ]);
 
         // Dispatch immediately if not scheduled
         if (!isset($data['scheduled_at'])) {
