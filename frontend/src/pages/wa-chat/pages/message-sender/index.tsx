@@ -379,8 +379,16 @@ export function MessageSender() {
   const [session, setSession] = useState('')
   const [delaySeconds, setDelaySeconds] = useState(3)
 
-  // --- Test run: sends the composed message to one number, after confirming the selected
-  // session is actually connected right now (not just the up-to-30s-stale cached list). ---
+  // --- Test send: a standalone drawer, independent of the main composer below — its own type
+  // (text/image/video/audio), content and number, sent after confirming the selected session is
+  // actually connected right now (not just the up-to-30s-stale cached list). ---
+  const [testDrawerOpen, setTestDrawerOpen] = useState(false)
+  const [testType, setTestType] = useState<'text' | 'image' | 'video' | 'audio'>('text')
+  const [testText, setTestText] = useState('')
+  const [testMediaUrl, setTestMediaUrl] = useState('')
+  const [testCaption, setTestCaption] = useState('')
+  const [testMediaUploading, setTestMediaUploading] = useState(false)
+  const [testMediaPickerOpen, setTestMediaPickerOpen] = useState(false)
   const [testPhone, setTestPhone] = useState('')
   const [testRunStatus, setTestRunStatus] = useState<'idle' | 'sending' | 'sent' | 'failed'>('idle')
   const [testRunMessage, setTestRunMessage] = useState<string | null>(null)
@@ -827,6 +835,19 @@ export function MessageSender() {
     } catch { /* silent */ }
   }
 
+  // Same upload call as handleMediaUpload above, but for the standalone Test Send drawer, which
+  // has its own single mediaUrl instead of a composer block to update.
+  const handleTestMediaUpload = async (file: File) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    setTestMediaUploading(true)
+    try {
+      const res = await api.post('/media-library/upload', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+      setTestMediaUrl(res.data?.url ?? res.data?.data?.url ?? '')
+    } catch { /* silent */ }
+    finally { setTestMediaUploading(false) }
+  }
+
   // ── CSV upload ─────────────────────────────────────────────────────────────
 
   const handleCSVUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1102,23 +1123,40 @@ export function MessageSender() {
     return null
   }, [composerTab, textBody, selectedTemplate, pollQuestion, pollOptions, locLat, locLng, locName, locAddress, selectedContact2, audioUrl, audioUploading, mediaBlocks])
 
-  // Sends the composed message to a single test number via the backend's own send function
-  // (POST /message-sender/test-send) instead of the browser calling the gateway directly — same
+  // Sends a one-off message to a single test number via the backend's own send function (POST
+  // /message-sender/test-send) instead of the browser calling the gateway directly — same
   // server-side path the real campaign send now uses (see submitCampaign below). The backend
   // checks the session's live status with the gateway right before sending, so a session that
   // looked "ready" when this page loaded but has since disconnected is caught at send time, not
   // silently swallowed.
+  //
+  // Deliberately independent of the main composer's buildOutgoingMessage/mediaBlocks/textBody —
+  // this is its own drawer with its own type/content/number, not a preview of whatever the
+  // campaign composer currently holds.
   const handleTestRun = useCallback(async () => {
     setTestRunMessage(null)
     if (!session) { setTestRunStatus('failed'); setTestRunMessage('Pick a session first.'); return }
     const digits = testPhone.replace(/[^0-9]/g, '')
     if (!PHONE_RE.test(digits)) { setTestRunStatus('failed'); setTestRunMessage('Enter a valid test phone number.'); return }
-    const built = buildOutgoingMessage()
-    if (!built) { setTestRunStatus('failed'); setTestRunMessage('Compose a message first.'); return }
+
+    let type: string
+    let payload: Record<string, unknown>
+    if (testType === 'text') {
+      if (!testText.trim()) { setTestRunStatus('failed'); setTestRunMessage('Enter a message to send.'); return }
+      type = 'text'
+      payload = { text: testText }
+    } else if (testType === 'audio') {
+      if (!testMediaUrl) { setTestRunStatus('failed'); setTestRunMessage('Upload or pick an audio file first.'); return }
+      type = 'audio'
+      payload = { url: testMediaUrl }
+    } else {
+      if (!testMediaUrl) { setTestRunStatus('failed'); setTestRunMessage(`Upload or pick ${testType === 'image' ? 'an image' : 'a video'} first.`); return }
+      type = 'media'
+      payload = { blocks: [{ id: 'test', type: testType, mediaUrl: testMediaUrl, ...(testCaption.trim() ? { caption: testCaption } : {}) }] }
+    }
 
     setTestRunStatus('sending')
     try {
-      const { type, recipients, ...payload } = toMessagePayload(built.templateText, built.extraPayload, []) as Record<string, unknown>
       await api.post('/message-sender/test-send', { session_id: session, phone: digits, type, payload })
       setTestRunStatus('sent')
       setTestRunMessage(`Sent to ${digits} via "${sessionLabel(session)}" at ${new Date().toLocaleTimeString('en-IN')}.`)
@@ -1126,7 +1164,7 @@ export function MessageSender() {
       setTestRunStatus('failed')
       setTestRunMessage(err?.response?.data?.message ?? 'Test send failed.')
     }
-  }, [session, testPhone, buildOutgoingMessage, sessionLabel])
+  }, [session, testPhone, testType, testText, testMediaUrl, testCaption, sessionLabel])
 
   // Polls the server-tracked job's real status/progress every couple seconds — an immediate send
   // now runs entirely server-side (ProcessMessageSenderJob via the queue), so the browser has no
@@ -1476,18 +1514,17 @@ export function MessageSender() {
         </div>
       )}
 
-      {/* Page tabs */}
-      <div className="flex items-center justify-between">
-        <div className="flex gap-2">
-          {(['sender', 'history'] as PageTab[]).map(t => (
-            <button key={t} onClick={() => setPageTab(t)}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${pageTab === t ? 'bg-brand-500 text-white' : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-50'}`}>
-              {t === 'sender' ? '📨 Campaign' : '🕐 History'}
-            </button>
-          ))}
+      {/* Create and History now live as separate sidebar entries (Sidebar.tsx) rather than
+          in-page tabs — this header just carries what's specific to the Create page. */}
+      {pageTab === 'sender' && (
+        <div className="flex items-center justify-between">
+          <span className="text-xs text-gray-400">{selectedRecipients.length} recipient{selectedRecipients.length !== 1 ? 's' : ''} selected</span>
+          <button onClick={() => setTestDrawerOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-700 text-white rounded-lg text-xs font-medium hover:bg-gray-800">
+            <FlaskConical size={14} /> Send Test
+          </button>
         </div>
-        <span className="text-xs text-gray-400">{selectedRecipients.length} recipient{selectedRecipients.length !== 1 ? 's' : ''} selected</span>
-      </div>
+      )}
 
       {/* ─── SENDER TAB ─────────────────────────────────────────────── */}
       {pageTab === 'sender' && (
@@ -2165,44 +2202,11 @@ export function MessageSender() {
               <h2 className="text-sm font-semibold text-gray-700">Sending Options</h2>
               <div>
                 <label className="text-xs font-medium text-gray-600 mb-1 block">WhatsApp Session</label>
-                <select value={session} onChange={e => { setSession(e.target.value); setTestRunStatus('idle'); setTestRunMessage(null) }}
+                <select value={session} onChange={e => setSession(e.target.value)}
                   className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-300">
                   {activeSessions.length === 0 && <option value="">No active sessions</option>}
                   {activeSessions.map(s => <option key={s.id} value={s.id}>{s.name} ({(s as any).phone ?? 'no phone'})</option>)}
                 </select>
-              </div>
-
-              {/* Test Run — sends the composed message to one number, checking the session's
-                  live connection status right before sending (not the up-to-30s cached list). */}
-              <div className="border-t border-gray-100 pt-3">
-                <label className="text-xs font-medium text-gray-600 mb-1 flex items-center gap-1">
-                  <FlaskConical size={12} /> Test Run
-                </label>
-                <div className="flex gap-2">
-                  <input
-                    type="tel"
-                    value={testPhone}
-                    onChange={e => { setTestPhone(e.target.value); setTestRunStatus('idle'); setTestRunMessage(null) }}
-                    placeholder="Test number, e.g. 919876543210"
-                    className="flex-1 px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-300"
-                  />
-                  <button
-                    onClick={handleTestRun}
-                    disabled={!session || !testPhone.trim() || testRunStatus === 'sending'}
-                    className="flex items-center gap-1.5 px-3 py-2 bg-gray-700 text-white rounded-lg text-sm font-medium disabled:opacity-50 hover:bg-gray-800 transition-colors whitespace-nowrap"
-                  >
-                    {testRunStatus === 'sending'
-                      ? <Loader2 size={14} className="animate-spin" />
-                      : <FlaskConical size={14} />}
-                    {testRunStatus === 'sending' ? 'Sending…' : 'Send Test'}
-                  </button>
-                </div>
-                {testRunMessage && (
-                  <p className={`text-xs mt-1.5 flex items-start gap-1 ${testRunStatus === 'sent' ? 'text-green-600' : 'text-red-500'}`}>
-                    {testRunStatus === 'sent' ? <CheckCircle2 size={13} className="mt-0.5 shrink-0" /> : <AlertCircle size={13} className="mt-0.5 shrink-0" />}
-                    <span>{testRunMessage}</span>
-                  </p>
-                )}
               </div>
               <div>
                 <label className="text-xs font-medium text-gray-600 mb-1 flex justify-between">
@@ -2870,6 +2874,125 @@ export function MessageSender() {
           </div>
         </div>
       )}
+
+      {/* Send Test drawer — standalone: own session, type (text/image/video/audio), content and
+          number, independent of whatever the campaign composer on the left currently holds. */}
+      {testDrawerOpen && (
+        <div className="fixed inset-0 z-50 flex">
+          <div className="flex-1 bg-black/40" onClick={() => setTestDrawerOpen(false)} />
+          <div className="w-full max-w-sm bg-white shadow-xl flex flex-col h-full overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 bg-gray-50">
+              <h2 className="text-sm font-semibold text-gray-900 flex items-center gap-1.5">
+                <FlaskConical size={16} /> Send Test
+              </h2>
+              <button onClick={() => setTestDrawerOpen(false)} className="text-gray-400 hover:text-gray-700">
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-5 space-y-4">
+              <div>
+                <label className="text-xs font-medium text-gray-600 mb-1 block">WhatsApp Session</label>
+                <select value={session} onChange={e => { setSession(e.target.value); setTestRunStatus('idle'); setTestRunMessage(null) }}
+                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-300">
+                  {activeSessions.length === 0 && <option value="">No active sessions</option>}
+                  {activeSessions.map(s => <option key={s.id} value={s.id}>{s.name} ({(s as any).phone ?? 'no phone'})</option>)}
+                </select>
+              </div>
+
+              <div>
+                <label className="text-xs font-medium text-gray-600 mb-1 block">Message Type</label>
+                <div className="grid grid-cols-4 gap-2">
+                  {(['text', 'image', 'video', 'audio'] as const).map(t => (
+                    <button key={t} onClick={() => { setTestType(t); setTestRunStatus('idle'); setTestRunMessage(null) }}
+                      className={`px-2 py-2 rounded-lg text-xs font-medium border capitalize ${testType === t ? 'bg-brand-500 text-white border-brand-500' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>
+                      {t}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {testType === 'text' ? (
+                <div>
+                  <label className="text-xs font-medium text-gray-600 mb-1 block">Message</label>
+                  <textarea value={testText}
+                    onChange={e => { setTestText(e.target.value); setTestRunStatus('idle'); setTestRunMessage(null) }}
+                    rows={5} placeholder="Type a test message…"
+                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-300 resize-none" />
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <label className="text-xs font-medium text-gray-600 block capitalize">{testType} file</label>
+                  {testMediaUrl ? (
+                    <div className="border border-gray-200 rounded-lg p-2 space-y-2">
+                      {testType === 'image' && <img src={testMediaUrl} className="max-h-40 rounded-lg mx-auto" />}
+                      {testType === 'video' && <video src={testMediaUrl} controls className="max-h-40 rounded-lg mx-auto w-full" />}
+                      {testType === 'audio' && <audio src={testMediaUrl} controls className="w-full" />}
+                      <button onClick={() => { setTestMediaUrl(''); setTestRunStatus('idle'); setTestRunMessage(null) }}
+                        className="text-xs text-red-500 hover:underline flex items-center gap-1">
+                        <X size={12} /> Remove
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex gap-2">
+                      <label className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 border border-dashed border-gray-300 rounded-lg text-xs text-gray-500 hover:bg-gray-50 cursor-pointer">
+                        {testMediaUploading ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
+                        {testMediaUploading ? 'Uploading…' : 'Upload'}
+                        <input type="file" accept={testType === 'image' ? 'image/*' : testType === 'video' ? 'video/*' : 'audio/*'}
+                          className="hidden"
+                          onChange={e => { const f = e.target.files?.[0]; if (f) handleTestMediaUpload(f); e.target.value = '' }} />
+                      </label>
+                      <button onClick={() => setTestMediaPickerOpen(true)}
+                        className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 border border-gray-200 rounded-lg text-xs text-gray-600 hover:bg-gray-50">
+                        <FileText size={14} /> Browse Library
+                      </button>
+                    </div>
+                  )}
+                  {testType !== 'audio' && testMediaUrl && (
+                    <input type="text" value={testCaption} onChange={e => setTestCaption(e.target.value)}
+                      placeholder="Caption (optional)"
+                      className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-300" />
+                  )}
+                </div>
+              )}
+
+              <div>
+                <label className="text-xs font-medium text-gray-600 mb-1 block">Test Number</label>
+                <input type="tel" value={testPhone}
+                  onChange={e => { setTestPhone(e.target.value); setTestRunStatus('idle'); setTestRunMessage(null) }}
+                  placeholder="e.g. 919876543210"
+                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-300" />
+              </div>
+
+              {testRunMessage && (
+                <p className={`text-xs flex items-start gap-1 ${testRunStatus === 'sent' ? 'text-green-600' : 'text-red-500'}`}>
+                  {testRunStatus === 'sent' ? <CheckCircle2 size={13} className="mt-0.5 shrink-0" /> : <AlertCircle size={13} className="mt-0.5 shrink-0" />}
+                  <span>{testRunMessage}</span>
+                </p>
+              )}
+            </div>
+
+            <div className="px-5 py-4 border-t border-gray-200">
+              <button
+                onClick={handleTestRun}
+                disabled={!session || !testPhone.trim() || testRunStatus === 'sending' || testMediaUploading}
+                className="w-full flex items-center justify-center gap-1.5 px-3 py-2.5 bg-brand-500 text-white rounded-lg text-sm font-medium disabled:opacity-50 hover:bg-brand-600 transition-colors"
+              >
+                {testRunStatus === 'sending' ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+                {testRunStatus === 'sending' ? 'Sending…' : 'Send Test'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Media library picker for the Send Test drawer's image/video/audio type */}
+      <MediaPickerModal
+        open={testMediaPickerOpen}
+        onClose={() => setTestMediaPickerOpen(false)}
+        onSelect={(url) => { setTestMediaUrl(url); setTestMediaPickerOpen(false) }}
+        title="Pick from Media Library"
+      />
 
       {/* Media library picker — opens when user clicks "Browse Library" on any block */}
       <MediaPickerModal
