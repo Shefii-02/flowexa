@@ -8,7 +8,7 @@ import {
   Bold, Italic, Strikethrough, CheckCircle2, AlertCircle, FlaskConical,
 } from 'lucide-react'
 import { useSessionsQuery, useSessionGroupsQuery, useSessionChatsQuery } from '../../hooks/queries'
-import { messageApi, contactApi, sessionApi, getGroupInfoCached } from '../../api/api'
+import { messageApi, contactApi, getGroupInfoCached } from '../../api/api'
 import { useSessionContacts } from '../../hooks/useSessionContacts'
 import { buildContactIndex, lookupChatContact } from '../../utils/chatFilters'
 import { formatPhoneForDisplay } from '../../utils/formatPhone'
@@ -374,7 +374,7 @@ export function MessageSender() {
   // --- Test run: sends the composed message to one number, after confirming the selected
   // session is actually connected right now (not just the up-to-30s-stale cached list). ---
   const [testPhone, setTestPhone] = useState('')
-  const [testRunStatus, setTestRunStatus] = useState<'idle' | 'checking' | 'sending' | 'sent' | 'failed'>('idle')
+  const [testRunStatus, setTestRunStatus] = useState<'idle' | 'sending' | 'sent' | 'failed'>('idle')
   const [testRunMessage, setTestRunMessage] = useState<string | null>(null)
   const [scheduledAt, setScheduledAt] = useState('')
   // Always on for every campaign — invisible per-recipient Unicode signatures reduce WhatsApp's
@@ -1081,10 +1081,12 @@ export function MessageSender() {
     return null
   }, [composerTab, textBody, selectedTemplate, pollQuestion, pollOptions, locLat, locLng, locName, locAddress, selectedContact2, audioUrl, audioUploading, mediaBlocks])
 
-  // Sends the composed message to a single test number. Re-fetches the session's live status
-  // right before sending instead of trusting `activeSessions` (from a query cached for up to
-  // 30s) — a session that was "ready" when the page loaded may have disconnected since, and a
-  // test send is exactly the moment a user wants to know that's true *right now*, not stale.
+  // Sends the composed message to a single test number via the backend's own send function
+  // (POST /message-sender/test-send) instead of the browser calling the gateway directly — same
+  // server-side path the real campaign send now uses (see submitCampaign below). The backend
+  // checks the session's live status with the gateway right before sending, so a session that
+  // looked "ready" when this page loaded but has since disconnected is caught at send time, not
+  // silently swallowed.
   const handleTestRun = useCallback(async () => {
     setTestRunMessage(null)
     if (!session) { setTestRunStatus('failed'); setTestRunMessage('Pick a session first.'); return }
@@ -1093,64 +1095,17 @@ export function MessageSender() {
     const built = buildOutgoingMessage()
     if (!built) { setTestRunStatus('failed'); setTestRunMessage('Compose a message first.'); return }
 
-    setTestRunStatus('checking')
-    let live
-    try {
-      live = await sessionApi.get(session)
-    } catch {
-      setTestRunStatus('failed')
-      setTestRunMessage('Could not check session status — try again.')
-      return
-    }
-    if (live.status !== 'ready') {
-      setTestRunStatus('failed')
-      setTestRunMessage(`"${sessionLabel(session)}" isn't connected right now (status: ${live.status}). Reconnect it before sending.`)
-      return
-    }
-
     setTestRunStatus('sending')
     try {
-      let chatId: string
-      try {
-        const res = await contactApi.checkNumber(session, digits)
-        chatId = (res as any).whatsappId ?? `${digits}@c.us`
-      } catch { chatId = `${digits}@c.us` }
-
-      const { templateText, extraPayload } = built
-      const ctx = { name: 'Test', phone: digits }
-
-      if (extraPayload?.kind === 'poll') {
-        await messageApi.sendPoll(session, { chatId, name: extraPayload.question, options: extraPayload.options })
-      } else if (extraPayload?.kind === 'location') {
-        await messageApi.sendLocation(session, { chatId, latitude: extraPayload.lat, longitude: extraPayload.lng, description: extraPayload.name, address: extraPayload.address })
-      } else if (extraPayload?.kind === 'contact') {
-        await messageApi.sendContact(session, { chatId, contactName: extraPayload.contactName, contactNumber: extraPayload.contactNumber })
-      } else if (extraPayload?.kind === 'audio') {
-        await messageApi.sendMedia(session, chatId, 'audio', { url: extraPayload.url })
-      } else if (extraPayload?.kind === 'media') {
-        for (let bi = 0; bi < extraPayload.blocks.length; bi++) {
-          const block = extraPayload.blocks[bi]
-          if (block.type === 'text') {
-            await messageApi.sendText(session, chatId, personalizeMessage(block.text ?? '', ctx, company))
-          } else {
-            await messageApi.sendMedia(session, chatId, block.type as 'image' | 'video' | 'audio' | 'document', {
-              url: block.mediaUrl,
-              ...(block.caption ? { caption: block.caption } : {}),
-              ...(block.filename ? { filename: block.filename } : {}),
-            })
-          }
-          if (bi < extraPayload.blocks.length - 1) await new Promise(r => setTimeout(r, 600))
-        }
-      } else {
-        await messageApi.sendText(session, chatId, personalizeMessage(templateText, ctx, company))
-      }
+      const { type, recipients, ...payload } = toMessagePayload(built.templateText, built.extraPayload, []) as Record<string, unknown>
+      await api.post('/message-sender/test-send', { session_id: session, phone: digits, type, payload })
       setTestRunStatus('sent')
       setTestRunMessage(`Sent to ${digits} via "${sessionLabel(session)}" at ${new Date().toLocaleTimeString('en-IN')}.`)
-    } catch (e: any) {
+    } catch (err: any) {
       setTestRunStatus('failed')
-      setTestRunMessage(e?.message ?? 'Test send failed.')
+      setTestRunMessage(err?.response?.data?.message ?? 'Test send failed.')
     }
-  }, [session, testPhone, buildOutgoingMessage, company, sessionLabel])
+  }, [session, testPhone, buildOutgoingMessage, sessionLabel])
 
   // Polls the server-tracked job's real status/progress every couple seconds — an immediate send
   // now runs entirely server-side (ProcessMessageSenderJob via the queue), so the browser has no
@@ -2194,13 +2149,13 @@ export function MessageSender() {
                   />
                   <button
                     onClick={handleTestRun}
-                    disabled={!session || !testPhone.trim() || testRunStatus === 'checking' || testRunStatus === 'sending'}
+                    disabled={!session || !testPhone.trim() || testRunStatus === 'sending'}
                     className="flex items-center gap-1.5 px-3 py-2 bg-gray-700 text-white rounded-lg text-sm font-medium disabled:opacity-50 hover:bg-gray-800 transition-colors whitespace-nowrap"
                   >
-                    {(testRunStatus === 'checking' || testRunStatus === 'sending')
+                    {testRunStatus === 'sending'
                       ? <Loader2 size={14} className="animate-spin" />
                       : <FlaskConical size={14} />}
-                    {testRunStatus === 'checking' ? 'Checking…' : testRunStatus === 'sending' ? 'Sending…' : 'Send Test'}
+                    {testRunStatus === 'sending' ? 'Sending…' : 'Send Test'}
                   </button>
                 </div>
                 {testRunMessage && (
