@@ -132,17 +132,31 @@ class MessageSenderController extends Controller
         $recipient = ['name' => 'Test', 'phone' => $data['phone']];
 
         try {
+            // \Throwable, not \Exception — a PHP Error (e.g. a TypeError from a malformed payload)
+            // previously fell through both this catch and Laravel's own JSON error handling all the
+            // way to a bare "Internal server error" 500 with no indication of what actually broke.
+            // Every real failure now reaches the user as a diagnosable 422 with the actual message.
             $res = $this->dispatchTestSend($wa, $data['session_id'], $apiKey, $chatId, $data['type'], $data['payload'] ?? [], $recipient, $company);
-        } catch (\Exception $e) {
-            Log::warning("MessageSenderController::testSend: {$e->getMessage()}");
-            return response()->json(['message' => $e->getMessage()], 422);
+        } catch (\Throwable $e) {
+            Log::error("MessageSenderController::testSend: uncaught {$e->getMessage()}", [
+                'exception' => get_class($e),
+                'file'      => $e->getFile(),
+                'line'      => $e->getLine(),
+            ]);
+            return response()->json(['message' => $e->getMessage() ?: 'Test send failed — see server logs.'], 422);
         }
 
         if (!$res->successful()) {
             Log::warning('MessageSenderController::testSend: gateway rejected send', [
                 'status' => $res->status(), 'body' => $res->body(),
             ]);
-            return response()->json(['message' => $res->json('message') ?: 'Test send failed.'], 422);
+            // The gateway doesn't always return a JSON {message: ...} body (e.g. it can 5xx with
+            // plain text/HTML if it crashed trying to fetch the media url itself) — falling back to
+            // a flat "Test send failed." then hid the one clue (its HTTP status) that the frontend
+            // could otherwise show the user.
+            return response()->json([
+                'message' => $res->json('message') ?: "Test send failed (gateway returned HTTP {$res->status()}).",
+            ], 422);
         }
 
         return response()->json(['message' => 'Test message sent.']);
