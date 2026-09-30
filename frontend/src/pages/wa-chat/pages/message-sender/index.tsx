@@ -5,10 +5,10 @@ import {
   Send, Pause, Square, Play, Download, Upload, X, Plus,
   Users, MessageSquare, Copy,
   FileText, Tag, Hash, Loader2, Search, Calendar, XCircle,
-  Bold, Italic, Strikethrough,
+  Bold, Italic, Strikethrough, CheckCircle2, AlertCircle, FlaskConical,
 } from 'lucide-react'
 import { useSessionsQuery, useSessionGroupsQuery, useSessionChatsQuery } from '../../hooks/queries'
-import { messageApi, contactApi, getGroupInfoCached } from '../../api/api'
+import { messageApi, contactApi, sessionApi, getGroupInfoCached } from '../../api/api'
 import { useSessionContacts } from '../../hooks/useSessionContacts'
 import { buildContactIndex, lookupChatContact } from '../../utils/chatFilters'
 import { formatPhoneForDisplay } from '../../utils/formatPhone'
@@ -370,6 +370,12 @@ export function MessageSender() {
   // --- Sending options ---
   const [session, setSession] = useState('')
   const [delaySeconds, setDelaySeconds] = useState(3)
+
+  // --- Test run: sends the composed message to one number, after confirming the selected
+  // session is actually connected right now (not just the up-to-30s-stale cached list). ---
+  const [testPhone, setTestPhone] = useState('')
+  const [testRunStatus, setTestRunStatus] = useState<'idle' | 'checking' | 'sending' | 'sent' | 'failed'>('idle')
+  const [testRunMessage, setTestRunMessage] = useState<string | null>(null)
   const [scheduledAt, setScheduledAt] = useState('')
   // Always on for every campaign — invisible per-recipient Unicode signatures reduce WhatsApp's
   // bulk-detection risk, and there's no legitimate reason to send a campaign without them, so this
@@ -1074,6 +1080,77 @@ export function MessageSender() {
     }
     return null
   }, [composerTab, textBody, selectedTemplate, pollQuestion, pollOptions, locLat, locLng, locName, locAddress, selectedContact2, audioUrl, audioUploading, mediaBlocks])
+
+  // Sends the composed message to a single test number. Re-fetches the session's live status
+  // right before sending instead of trusting `activeSessions` (from a query cached for up to
+  // 30s) — a session that was "ready" when the page loaded may have disconnected since, and a
+  // test send is exactly the moment a user wants to know that's true *right now*, not stale.
+  const handleTestRun = useCallback(async () => {
+    setTestRunMessage(null)
+    if (!session) { setTestRunStatus('failed'); setTestRunMessage('Pick a session first.'); return }
+    const digits = testPhone.replace(/[^0-9]/g, '')
+    if (!PHONE_RE.test(digits)) { setTestRunStatus('failed'); setTestRunMessage('Enter a valid test phone number.'); return }
+    const built = buildOutgoingMessage()
+    if (!built) { setTestRunStatus('failed'); setTestRunMessage('Compose a message first.'); return }
+
+    setTestRunStatus('checking')
+    let live
+    try {
+      live = await sessionApi.get(session)
+    } catch {
+      setTestRunStatus('failed')
+      setTestRunMessage('Could not check session status — try again.')
+      return
+    }
+    if (live.status !== 'ready') {
+      setTestRunStatus('failed')
+      setTestRunMessage(`"${sessionLabel(session)}" isn't connected right now (status: ${live.status}). Reconnect it before sending.`)
+      return
+    }
+
+    setTestRunStatus('sending')
+    try {
+      let chatId: string
+      try {
+        const res = await contactApi.checkNumber(session, digits)
+        chatId = (res as any).whatsappId ?? `${digits}@c.us`
+      } catch { chatId = `${digits}@c.us` }
+
+      const { templateText, extraPayload } = built
+      const ctx = { name: 'Test', phone: digits }
+
+      if (extraPayload?.kind === 'poll') {
+        await messageApi.sendPoll(session, { chatId, name: extraPayload.question, options: extraPayload.options })
+      } else if (extraPayload?.kind === 'location') {
+        await messageApi.sendLocation(session, { chatId, latitude: extraPayload.lat, longitude: extraPayload.lng, description: extraPayload.name, address: extraPayload.address })
+      } else if (extraPayload?.kind === 'contact') {
+        await messageApi.sendContact(session, { chatId, contactName: extraPayload.contactName, contactNumber: extraPayload.contactNumber })
+      } else if (extraPayload?.kind === 'audio') {
+        await messageApi.sendMedia(session, chatId, 'audio', { url: extraPayload.url })
+      } else if (extraPayload?.kind === 'media') {
+        for (let bi = 0; bi < extraPayload.blocks.length; bi++) {
+          const block = extraPayload.blocks[bi]
+          if (block.type === 'text') {
+            await messageApi.sendText(session, chatId, personalizeMessage(block.text ?? '', ctx, company))
+          } else {
+            await messageApi.sendMedia(session, chatId, block.type as 'image' | 'video' | 'audio' | 'document', {
+              url: block.mediaUrl,
+              ...(block.caption ? { caption: block.caption } : {}),
+              ...(block.filename ? { filename: block.filename } : {}),
+            })
+          }
+          if (bi < extraPayload.blocks.length - 1) await new Promise(r => setTimeout(r, 600))
+        }
+      } else {
+        await messageApi.sendText(session, chatId, personalizeMessage(templateText, ctx, company))
+      }
+      setTestRunStatus('sent')
+      setTestRunMessage(`Sent to ${digits} via "${sessionLabel(session)}" at ${new Date().toLocaleTimeString('en-IN')}.`)
+    } catch (e: any) {
+      setTestRunStatus('failed')
+      setTestRunMessage(e?.message ?? 'Test send failed.')
+    }
+  }, [session, testPhone, buildOutgoingMessage, company, sessionLabel])
 
   // Polls the server-tracked job's real status/progress every couple seconds — an immediate send
   // now runs entirely server-side (ProcessMessageSenderJob via the queue), so the browser has no
@@ -2094,11 +2171,44 @@ export function MessageSender() {
               <h2 className="text-sm font-semibold text-gray-700">Sending Options</h2>
               <div>
                 <label className="text-xs font-medium text-gray-600 mb-1 block">WhatsApp Session</label>
-                <select value={session} onChange={e => setSession(e.target.value)}
+                <select value={session} onChange={e => { setSession(e.target.value); setTestRunStatus('idle'); setTestRunMessage(null) }}
                   className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-300">
                   {activeSessions.length === 0 && <option value="">No active sessions</option>}
                   {activeSessions.map(s => <option key={s.id} value={s.id}>{s.name} ({(s as any).phone ?? 'no phone'})</option>)}
                 </select>
+              </div>
+
+              {/* Test Run — sends the composed message to one number, checking the session's
+                  live connection status right before sending (not the up-to-30s cached list). */}
+              <div className="border-t border-gray-100 pt-3">
+                <label className="text-xs font-medium text-gray-600 mb-1 flex items-center gap-1">
+                  <FlaskConical size={12} /> Test Run
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="tel"
+                    value={testPhone}
+                    onChange={e => { setTestPhone(e.target.value); setTestRunStatus('idle'); setTestRunMessage(null) }}
+                    placeholder="Test number, e.g. 919876543210"
+                    className="flex-1 px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-300"
+                  />
+                  <button
+                    onClick={handleTestRun}
+                    disabled={!session || !testPhone.trim() || testRunStatus === 'checking' || testRunStatus === 'sending'}
+                    className="flex items-center gap-1.5 px-3 py-2 bg-gray-700 text-white rounded-lg text-sm font-medium disabled:opacity-50 hover:bg-gray-800 transition-colors whitespace-nowrap"
+                  >
+                    {(testRunStatus === 'checking' || testRunStatus === 'sending')
+                      ? <Loader2 size={14} className="animate-spin" />
+                      : <FlaskConical size={14} />}
+                    {testRunStatus === 'checking' ? 'Checking…' : testRunStatus === 'sending' ? 'Sending…' : 'Send Test'}
+                  </button>
+                </div>
+                {testRunMessage && (
+                  <p className={`text-xs mt-1.5 flex items-start gap-1 ${testRunStatus === 'sent' ? 'text-green-600' : 'text-red-500'}`}>
+                    {testRunStatus === 'sent' ? <CheckCircle2 size={13} className="mt-0.5 shrink-0" /> : <AlertCircle size={13} className="mt-0.5 shrink-0" />}
+                    <span>{testRunMessage}</span>
+                  </p>
+                )}
               </div>
               <div>
                 <label className="text-xs font-medium text-gray-600 mb-1 flex justify-between">
