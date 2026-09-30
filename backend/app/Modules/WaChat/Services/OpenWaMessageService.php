@@ -23,8 +23,11 @@ class OpenWaMessageService
 
     private function post(string $sessionId, string $apiKey, string $path, array $body, int $timeout = 30): Response
     {
+        Log::alert("Auth Do");
         $url = "{$this->baseUrl}/sessions/{$sessionId}/messages/{$path}";
 
+        Log::alert("URL: {$url}");
+        Log::error("Api Key: " . json_encode($apiKey));
         // Every send event, one line each, so a live campaign's request/response pair is visible in
         // laravel.log without attaching a debugger — 'base64'/'data' bodies are redacted since a
         // media payload can be megabytes of noise (and a media data: URI is not useful in a log line).
@@ -63,8 +66,12 @@ class OpenWaMessageService
     // rather than sent as null/empty — matches how open-wa's own example requests only include the
     // fields that are actually in use.
     public function sendText(
-        string $sessionId, string $apiKey, string $chatId, string $text,
-        ?array $mentions = null, ?string $quotedMessageId = null,
+        string $sessionId,
+        string $apiKey,
+        string $chatId,
+        string $text,
+        ?array $mentions = null,
+        ?string $quotedMessageId = null,
     ): Response {
         return $this->post($sessionId, $apiKey, 'send-text', array_filter([
             'chatId'          => $chatId,
@@ -82,8 +89,13 @@ class OpenWaMessageService
     }
 
     public function sendLocation(
-        string $sessionId, string $apiKey, string $chatId,
-        float $latitude, float $longitude, ?string $description = null, ?string $address = null,
+        string $sessionId,
+        string $apiKey,
+        string $chatId,
+        float $latitude,
+        float $longitude,
+        ?string $description = null,
+        ?string $address = null,
     ): Response {
         return $this->post($sessionId, $apiKey, 'send-location', array_filter([
             'chatId'      => $chatId,
@@ -112,8 +124,12 @@ class OpenWaMessageService
     }
 
     public function sendPoll(
-        string $sessionId, string $apiKey, string $chatId,
-        string $name, array $options, bool $allowMultipleAnswers = false,
+        string $sessionId,
+        string $apiKey,
+        string $chatId,
+        string $name,
+        array $options,
+        bool $allowMultipleAnswers = false,
     ): Response {
         return $this->post($sessionId, $apiKey, 'send-poll', compact('chatId', 'name', 'options', 'allowMultipleAnswers'));
     }

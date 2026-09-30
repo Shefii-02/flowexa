@@ -244,8 +244,14 @@ class ProcessMessageSenderJob implements ShouldQueue
     // again with a freshly re-read $apiKey — a closure would keep using the stale one it was
     // defined with.
     private function dispatchSend(
-        OpenWaMessageService $wa, MessageSenderJob $job, string $apiKey, string $chatId,
-        string $msgType, array $payload, array $recipient, ?Company $company,
+        OpenWaMessageService $wa,
+        MessageSenderJob $job,
+        string $apiKey,
+        string $chatId,
+        string $msgType,
+        array $payload,
+        array $recipient,
+        ?Company $company,
     ): Response {
         return match ($msgType) {
             'media' => $this->sendMediaBlocks($wa, $job->session_id, $apiKey, $chatId, $payload['blocks'] ?? [], $recipient, $job->unique_signature ?? false, $company),
@@ -258,8 +264,14 @@ class ProcessMessageSenderJob implements ShouldQueue
     }
 
     private function sendText(
-        OpenWaMessageService $wa, string $sessionId, string $apiKey, string $chatId,
-        string $text, array $recipient, bool $uniqueSig, ?Company $company,
+        OpenWaMessageService $wa,
+        string $sessionId,
+        string $apiKey,
+        string $chatId,
+        string $text,
+        array $recipient,
+        bool $uniqueSig,
+        ?Company $company,
     ): Response {
         $message = $this->personalizeMessage($text, $recipient, $company);
         if ($uniqueSig) $message .= $this->buildSignature($recipient['phone'] ?? '');
@@ -270,8 +282,14 @@ class ProcessMessageSenderJob implements ShouldQueue
     // block is what a recipient actually sees at the end of the sequence, so that is the
     // meaningful pass/fail signal for this recipient's row in the log.
     private function sendMediaBlocks(
-        OpenWaMessageService $wa, string $sessionId, string $apiKey, string $chatId,
-        array $blocks, array $recipient, bool $uniqueSig, ?Company $company,
+        OpenWaMessageService $wa,
+        string $sessionId,
+        string $apiKey,
+        string $chatId,
+        array $blocks,
+        array $recipient,
+        bool $uniqueSig,
+        ?Company $company,
     ): Response {
         $last = null;
 
