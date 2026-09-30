@@ -111,7 +111,7 @@ return [
     */
     'defaults' => [
         'supervisor-campaigns' => [
-            'connection'    => 'redis',
+            'connection'    => 'redis-campaigns',
             'queue'         => ['campaigns'],
             'balance'       => 'simple',
             'autoScalingStrategy' => 'time',
@@ -120,7 +120,7 @@ return [
             'multiplexing'  => ['enabled' => false, 'boost' => 1.0],
             'tries'         => 3,
             'nice'          => 0,
-            'timeout'       => 300,
+            'timeout'       => 3600,
         ],
 
         'supervisor-webhooks' => [
@@ -155,13 +155,13 @@ return [
         // ── Production ────────────────────────────────────────────────────────
         'production' => [
             'supervisor-campaigns' => [
-                'connection'   => 'redis',
+                'connection'   => 'redis-campaigns',
                 'queue'        => ['campaigns'],
                 'balance'      => 'simple',
                 'minProcesses' => 2,
                 'maxProcesses' => 10,
                 'tries'        => 3,
-                'timeout'      => 300,
+                'timeout'      => 3600,
             ],
             'supervisor-webhooks' => [
                 'connection'   => 'redis',

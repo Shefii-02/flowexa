@@ -73,6 +73,25 @@ return [
             'after_commit' => false,
         ],
 
+        // Same Redis connection as 'redis' above, but for the `campaigns` Horizon queue only.
+        // ProcessMessageSenderJob legitimately runs for up to an hour (its own $timeout = 3600,
+        // one HTTP send per recipient with a configurable delay between them). The 90s retry_after
+        // on the shared 'redis' connection is tuned for the fast default/webhooks queues — applied
+        // to campaigns it means Redis treats a job still being actively worked as abandoned every
+        // ~90s and redelivers it to another worker, which then collides with the job's own
+        // WithoutOverlapping('message-sender-queue') lock, gets released, and burns through its
+        // retry budget for the entire duration of every campaign. retry_after here must stay above
+        // the job's own timeout (plus the WithoutOverlapping lock's expireAfter cushion) so a
+        // campaign that is genuinely still running is never mistaken for an abandoned one.
+        'redis-campaigns' => [
+            'driver' => 'redis',
+            'connection' => env('REDIS_QUEUE_CONNECTION', 'default'),
+            'queue' => env('REDIS_CAMPAIGNS_QUEUE', 'campaigns'),
+            'retry_after' => (int) env('REDIS_CAMPAIGNS_QUEUE_RETRY_AFTER', 3700),
+            'block_for' => null,
+            'after_commit' => false,
+        ],
+
         'deferred' => [
             'driver' => 'deferred',
         ],
