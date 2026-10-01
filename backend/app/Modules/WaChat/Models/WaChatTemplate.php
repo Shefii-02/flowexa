@@ -9,7 +9,7 @@ use App\Models\User;
 
 class WaChatTemplate extends Model
 {
-    protected $table = 'wa_chat_templates';
+    protected $table = 'openwa_templates';
 
     protected $fillable = [
         'company_id', 'name', 'category', 'language',

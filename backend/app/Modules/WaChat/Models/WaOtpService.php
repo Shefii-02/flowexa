@@ -9,7 +9,7 @@ use App\Models\Company;
 
 class WaOtpService extends Model
 {
-    protected $table = 'wa_otp_services';
+    protected $table = 'openwa_otp_services';
 
     protected $fillable = [
         'company_id', 'api_token', 'api_token_created_at', 'is_active',

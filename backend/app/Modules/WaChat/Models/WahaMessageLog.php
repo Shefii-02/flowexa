@@ -8,7 +8,7 @@ use App\Models\Company;
 
 class WahaMessageLog extends Model
 {
-    protected $table = 'waha_message_logs';
+    protected $table = 'openwa_message_logs';
 
     protected $fillable = [
         'company_id', 'job_id', 'campaign_name', 'session_id',

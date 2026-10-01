@@ -9,7 +9,7 @@ use App\Models\Company;
 
 class WahaSession extends Model
 {
-    protected $table = 'waha_sessions';
+    protected $table = 'openwa_sessions';
 
     protected $fillable = [
         'company_id', 'session_name', 'display_name', 'requested_name', 'phone',

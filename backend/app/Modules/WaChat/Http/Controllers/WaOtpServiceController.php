@@ -288,7 +288,7 @@ class WaOtpServiceController extends Controller
         $rules = [
             'name' => [
                 $req, 'string', 'max:100',
-                Rule::unique('wa_api_configs', 'name')
+                Rule::unique('openwa_api_configs', 'name')
                     ->where(fn ($q) => $q->where('company_id', $companyId)->where('kind', $kind))
                     ->ignore($existing?->id),
             ],

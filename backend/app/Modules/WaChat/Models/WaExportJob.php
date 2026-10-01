@@ -9,7 +9,7 @@ use App\Models\User;
 
 class WaExportJob extends Model
 {
-    protected $table = 'wa_export_jobs';
+    protected $table = 'openwa_export_jobs';
 
     protected $fillable = [
         'company_id', 'created_by', 'export_type', 'session_id',

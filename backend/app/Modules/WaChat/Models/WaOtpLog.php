@@ -8,7 +8,7 @@ use App\Models\Company;
 
 class WaOtpLog extends Model
 {
-    protected $table = 'wa_otp_logs';
+    protected $table = 'openwa_otp_logs';
 
     protected $fillable = [
         'company_id', 'service_id', 'config_id', 'session_id', 'phone', 'action',

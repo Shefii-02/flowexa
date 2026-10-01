@@ -19,7 +19,7 @@ class PlanLimitMiddleware
         'users'              => ['users',              'company_id', 'max_users'],
         'templates'          => ['wa_templates',        'company_id', 'max_templates'],
         'phone_numbers'      => ['wa_phone_numbers',    'company_id', 'max_phone_numbers'],
-        'wa_sessions'        => ['waha_sessions',       'company_id', 'max_wa_sessions'],
+        'wa_sessions'        => ['openwa_sessions',     'company_id', 'max_wa_sessions'],
         'campaigns'          => ['campaigns',           'company_id', 'max_campaigns'],
         'contacts'           => ['contacts',            'company_id', 'max_contacts'],
         'labels'             => ['contact_labels',      'company_id', 'max_labels'],

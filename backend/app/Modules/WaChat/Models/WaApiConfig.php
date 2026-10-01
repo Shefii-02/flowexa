@@ -18,7 +18,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  */
 class WaApiConfig extends Model
 {
-    protected $table = 'wa_api_configs';
+    protected $table = 'openwa_api_configs';
 
     public const KINDS = ['auth', 'utility', 'invoice'];
 

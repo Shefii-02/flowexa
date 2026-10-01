@@ -11,7 +11,7 @@ use App\Models\User;
 
 class MessageSenderJob extends Model
 {
-    protected $table = 'message_sender_jobs';
+    protected $table = 'openwa_message_sender_jobs';
 
     protected $fillable = [
         'company_id', 'created_by', 'campaign_name', 'session_id',

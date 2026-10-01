@@ -50,7 +50,7 @@ class MessageSenderController extends Controller
             'campaign_name'   => 'nullable|string|max:200',
             'session_id'      => [
                 'required', 'string', 'max:100',
-                Rule::exists('waha_sessions', 'session_name')
+                Rule::exists('openwa_sessions', 'session_name')
                     ->where('company_id', auth()->user()->company_id),
             ],
             'type'            => 'required|in:personal,group,csv,label,chat,from-chat,lead,campaign',
@@ -105,7 +105,7 @@ class MessageSenderController extends Controller
         $data = $request->validate([
             'session_id' => [
                 'required', 'string', 'max:100',
-                Rule::exists('waha_sessions', 'session_name')
+                Rule::exists('openwa_sessions', 'session_name')
                     ->where('company_id', auth()->user()->company_id),
             ],
             'phone'   => ['required', 'string', 'regex:/^[0-9]{7,15}$/'],

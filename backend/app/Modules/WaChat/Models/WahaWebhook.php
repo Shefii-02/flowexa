@@ -8,7 +8,7 @@ use App\Models\Company;
 
 class WahaWebhook extends Model
 {
-    protected $table = 'waha_webhooks';
+    protected $table = 'openwa_webhooks';
 
     protected $fillable = [
         'company_id', 'session_id', 'name', 'url', 'events',

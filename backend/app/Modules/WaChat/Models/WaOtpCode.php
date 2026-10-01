@@ -8,7 +8,7 @@ use App\Models\Company;
 
 class WaOtpCode extends Model
 {
-    protected $table = 'wa_otp_codes';
+    protected $table = 'openwa_otp_codes';
 
     protected $fillable = [
         'company_id', 'service_id', 'config_id', 'phone', 'otp_code', 'reference_id',
