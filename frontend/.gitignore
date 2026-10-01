@@ -76,3 +76,4 @@ backend/.env
 
 /backend-node
 backend-nodenode_modules/
+frontend/.env
