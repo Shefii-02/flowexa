@@ -58,7 +58,11 @@ class WaChatSendTest extends Command
 
         if (! $this->option('no-sync')) {
             $this->comment('Syncing allowlist before send (skip with --no-sync)...');
-            $svc->syncSessions($company);
+            if ($svc->syncSessions($company)) {
+                $this->info('  synced.');
+            } else {
+                $this->error('  sync failed — the gateway rejected the push or was unreachable (see laravel.log). A 401 below is expected if so.');
+            }
         }
 
         $wa  = new OpenWaMessageService();

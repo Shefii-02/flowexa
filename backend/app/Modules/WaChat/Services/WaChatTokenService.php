@@ -5,6 +5,7 @@ namespace App\Modules\WaChat\Services;
 use App\Models\Company;
 use App\Modules\WaChat\Models\WahaSession;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use RuntimeException;
 
 /**
@@ -152,23 +153,50 @@ class WaChatTokenService
     /**
      * Re-push this company's session allowlist to its gateway key. Call after
      * every session create / delete. No-op if the company was never provisioned.
+     *
+     * @return bool true once the gateway has confirmed the new allowlist; false if it was never
+     *              provisioned, the PUT was rejected, or the gateway couldn't be reached. Every
+     *              caller (session create/delete, ProcessMessageSenderJob's self-heal, the
+     *              `wa-chat:token --sync` CLI) previously treated this as fire-and-forget with no
+     *              way to tell a real sync from a silently swallowed failure — a company whose
+     *              admin key had gone bad (revoked/rotated/misconfigured) would see EVERY sync
+     *              silently no-op forever, with every recipient failing "not authorized for this
+     *              session" and nothing in the log to say why, or any company-specific pattern to
+     *              it (every company shares the same admin key, so one bad key breaks all of them
+     *              identically — this is why switching companies didn't change the symptom).
      */
-    public function syncSessions(Company $company): void
+    public function syncSessions(Company $company): bool
     {
         $keyId = (string) ($company->wa_chat_key_id ?? '');
         if ($keyId === '') {
-            return;
+            return false;
         }
 
         try {
-            Http::withHeaders(['X-API-Key' => $this->adminKey()])
+            $res = Http::withHeaders(['X-API-Key' => $this->adminKey()])
                 ->timeout(12)
                 ->put("{$this->base}/auth/api-keys/{$keyId}", [
                     'allowedSessions' => $this->sessionScope($company),
                 ]);
-        } catch (\Throwable) {
-            // Best-effort: the DB row (waha_sessions) is authoritative; a missed
-            // sync is repaired by `wa-chat:token {company} --sync` or the next change.
+
+            if (! $res->successful()) {
+                Log::warning(
+                    "WaChatTokenService::syncSessions: gateway rejected allowlist push for company {$company->id} (key {$keyId})",
+                    ['status' => $res->status(), 'body' => $res->body()],
+                );
+                return false;
+            }
+
+            return true;
+        } catch (\Throwable $e) {
+            // Best-effort: the DB row (waha_sessions) is authoritative; a missed sync is repaired
+            // by `wa-chat:token {company} --sync` or the next change. But it must be LOGGED, not
+            // silently swallowed — this used to be a bare empty catch, which is exactly why a
+            // broken admin key (the actual cause here) went undiagnosed across multiple companies.
+            Log::warning(
+                "WaChatTokenService::syncSessions: failed to reach gateway for company {$company->id} (key {$keyId}): {$e->getMessage()}",
+            );
+            return false;
         }
     }
 

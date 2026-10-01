@@ -57,11 +57,14 @@ class WaChatToken extends Command
             }
 
             if ($sync) {
-                try {
-                    $svc->syncSessions($company);
+                // syncSessions() swallows its own HTTP/network failures (logging them) and returns
+                // false rather than throwing, so this always reported "✅ synced" even when the
+                // gateway rejected the push or was unreachable — check the return value instead of
+                // relying on a catch that could never actually trigger.
+                if ($svc->syncSessions($company)) {
                     $this->info("  ✅ {$label} — allowlist synced (" . count($svc->sessionScope($company)) . ' session/s)');
-                } catch (\Throwable $e) {
-                    $this->error("  ❌ {$label} — {$e->getMessage()}");
+                } else {
+                    $this->error("  ❌ {$label} — gateway rejected the sync or was unreachable (see laravel.log)");
                     $bad++;
                 }
                 continue;
