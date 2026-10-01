@@ -8,8 +8,6 @@ use Illuminate\Console\Command;
 
 class WaChatToken extends Command
 {
-
-
     protected $signature = 'wa-chat:token
         {company? : Company id or slug (omit with --all)}
         {--all : Operate on every company}
