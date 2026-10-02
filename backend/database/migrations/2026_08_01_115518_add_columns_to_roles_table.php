@@ -13,7 +13,7 @@ return new class extends Migration
             $table->dropUnique(['name']);
             $table->dropColumn(['name']);
 
-            $table->string('name', 50)->unique();
+            $table->string('name', 50);
             // Add company_id
             $table->foreignId('company_id')
                 ->after('id')->nullable()
