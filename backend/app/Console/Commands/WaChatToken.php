@@ -14,6 +14,7 @@ class WaChatToken extends Command
         {company? : Company id or slug (omit with --all)}
         {--all : Operate on every company}
         {--check : Verify the stored token against the gateway (default)}
+
         {--provision : Mint a fresh scoped gateway key and store it}
         {--sync : Re-push the company\'s session allowlist to its gateway key}';
 
