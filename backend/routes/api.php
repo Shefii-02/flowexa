@@ -341,8 +341,6 @@ Route::prefix('v1')->group(function () {
                 ->middleware('permission:staff.manage')
                 ->name('destroy');
 
-            Route::get('/{staff}/performance',   [StaffController::class, 'performance'])->name('performance');
-
             // Account access — which specific WA Chat sessions / WA Cloud numbers /
             // Instagram accounts a staff member can see (StaffAccountAccess).
             Route::middleware('permission:staff.manage')->group(function () {
