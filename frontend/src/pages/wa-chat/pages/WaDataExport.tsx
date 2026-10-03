@@ -70,7 +70,7 @@ export default function WaDataExportPage() {
   const readySessions = sessions.filter(s => s.status === 'ready');
 
   const [sessionId,           setSessionId]           = useState('');
-  const [exportType,          setExportType]          = useState<'chats' | 'contacts' | 'groups' | 'group_participants' | 'labels' | 'broadcast_groups'>('chats');
+  const [exportType,          setExportType]          = useState<'chats' | 'contacts' | 'groups' | 'group_participants' | 'labels' | 'broadcast_groups' | 'lists'>('chats');
   const [includeParticipants, setIncludeParticipants] = useState(false);
   const [showGroupPreview,    setShowGroupPreview]    = useState(false);
   const [selectedGroupIds,    setSelectedGroupIds]    = useState<Set<string>>(new Set());
@@ -103,7 +103,7 @@ export default function WaDataExportPage() {
     if (readySessions.length > 0 && !sessionId) setSessionId(readySessions[0].id);
   }, [readySessions.length]);
 
-  const needGroups = exportType === 'group_participants' || exportType === 'broadcast_groups' ||
+  const needGroups = exportType === 'group_participants' || exportType === 'broadcast_groups' || exportType === 'lists' ||
                      (exportType === 'groups' && showGroupPreview);
   const { data: groupsRaw = [], isLoading: groupsLoading } = useSessionGroupsQuery(
     sessionId, needGroups && !!sessionId,
@@ -214,6 +214,7 @@ export default function WaDataExportPage() {
   const isGroupParticipants = exportType === 'group_participants';
   const isLabels = exportType === 'labels';
   const isBroadcastGroups = exportType === 'broadcast_groups';
+  const isLists = exportType === 'lists';
 
   const toggleLabel = (id: string) =>
     setSelectedLabelIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
@@ -291,6 +292,7 @@ export default function WaDataExportPage() {
               <option value="group_participants">Group Participants (select groups)</option>
               <option value="labels">📋 Labels — export contacts by label</option>
               <option value="broadcast_groups">📢 Broadcast Groups — select groups to export</option>
+              <option value="lists">📝 Lists — select groups to export</option>
             </select>
           </label>
 
@@ -505,6 +507,50 @@ export default function WaDataExportPage() {
             </div>
           )}
 
+          {/* ── Lists (same as group_participants/broadcast_groups but differently labelled) */}
+          {isLists && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div style={{ fontSize: 13, fontWeight: 500, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span>Select Lists</span>
+                {groups.length > 0 && (
+                  <span style={{ display: 'flex', gap: 10 }}>
+                    <button onClick={selectAll} style={{ fontSize: 12, color: '#6366f1', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 500 }}>Select all</button>
+                    <button onClick={clearAll} style={{ fontSize: 12, color: '#6b7280', background: 'none', border: 'none', cursor: 'pointer' }}>Clear</button>
+                  </span>
+                )}
+              </div>
+              {!sessionId ? (
+                <div style={{ fontSize: 13, color: '#9ca3af' }}>Select a session first.</div>
+              ) : groupsLoading ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#6b7280' }}>
+                  <Loader2 size={14} className="animate-spin" /> Loading lists…
+                </div>
+              ) : groups.length === 0 ? (
+                <div style={{ fontSize: 13, color: '#ef4444' }}>No lists found for this session.</div>
+              ) : (
+                <div style={{ border: '1px solid #e5e7eb', borderRadius: 8, overflow: 'hidden', maxHeight: 260, overflowY: 'auto' }}>
+                  {groups.map((g, i) => {
+                    const checked = selectedGroupIds.has(g.id);
+                    return (
+                      <label key={g.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderBottom: i < groups.length - 1 ? '1px solid #f3f4f6' : 'none', cursor: 'pointer', background: checked ? '#eef2ff' : '#fff', transition: 'background 0.1s' }}>
+                        <input type="checkbox" checked={checked} onChange={() => toggleGroup(g.id)} style={{ accentColor: '#6366f1', width: 15, height: 15, flexShrink: 0 }} />
+                        <Users size={13} color={checked ? '#4338ca' : '#9ca3af'} />
+                        <span style={{ flex: 1, fontSize: 13, fontWeight: checked ? 500 : 400, color: checked ? '#3730a3' : '#374151' }}>{g.name}</span>
+                        {g.participantsCount != null && <span style={{ fontSize: 11, color: '#9ca3af', flexShrink: 0 }}>{g.participantsCount} members</span>}
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+              {selectedGroupIds.size > 0 && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#4338ca', fontWeight: 500 }}>
+                  <CheckCircle size={14} color="#6366f1" />
+                  {selectedGroupIds.size} list{selectedGroupIds.size !== 1 ? 's' : ''} selected
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Action button */}
           {isLabels ? (
             <button onClick={doLabelsExport}
@@ -519,6 +565,13 @@ export default function WaDataExportPage() {
               style={{ alignSelf: 'flex-start', display: 'flex', gap: 8, alignItems: 'center', padding: '9px 18px', background: selectedGroupIds.size > 0 ? '#16a34a' : '#e5e7eb', color: selectedGroupIds.size > 0 ? '#fff' : '#9ca3af', border: 'none', borderRadius: 8, fontWeight: 600, fontSize: 14, cursor: selectedGroupIds.size > 0 ? 'pointer' : 'not-allowed', opacity: downloadingCsv ? 0.6 : 1 }}>
               {downloadingCsv ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
               {downloadingCsv ? 'Fetching…' : selectedGroupIds.size > 0 ? `Export ${selectedGroupIds.size} Broadcast Group${selectedGroupIds.size !== 1 ? 's' : ''}` : 'Select groups first'}
+            </button>
+          ) : isLists ? (
+            <button onClick={doParticipantsExport}
+              disabled={downloadingCsv || !sessionId || selectedGroupIds.size === 0}
+              style={{ alignSelf: 'flex-start', display: 'flex', gap: 8, alignItems: 'center', padding: '9px 18px', background: selectedGroupIds.size > 0 ? '#16a34a' : '#e5e7eb', color: selectedGroupIds.size > 0 ? '#fff' : '#9ca3af', border: 'none', borderRadius: 8, fontWeight: 600, fontSize: 14, cursor: selectedGroupIds.size > 0 ? 'pointer' : 'not-allowed', opacity: downloadingCsv ? 0.6 : 1 }}>
+              {downloadingCsv ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
+              {downloadingCsv ? 'Fetching…' : selectedGroupIds.size > 0 ? `Export ${selectedGroupIds.size} List${selectedGroupIds.size !== 1 ? 's' : ''}` : 'Select lists first'}
             </button>
           ) : isGroupParticipants ? (
             <button onClick={doParticipantsExport}

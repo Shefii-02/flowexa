@@ -781,6 +781,14 @@ export const sessionApi = {
       body: JSON.stringify({ phoneNumber }),
     }),
   getStats: () => request<SessionStats>('/sessions/stats/overview'),
+  // WhatsApp's own chat labels (Business accounts, whatsapp-web.js only) — session-scoped, unlike
+  // the CRM's company-wide lead labels in Laravel's /labels endpoint.
+  getLabels: (sessionId: string) =>
+    request<{ id: string; name: string; hexColor: string }[]>(`/sessions/${sessionId}/labels`),
+  getLabelChats: (sessionId: string, labelId: string) =>
+    request<{ id: string; name: string; isGroup: boolean; kind: string; unreadCount: number; timestamp: number; lastMessage?: string }[]>(
+      `/sessions/${sessionId}/labels/${encodeURIComponent(labelId)}/chats`,
+    ),
   getGroups: (id: string) =>
     request<{ id: string; name: string; participantsCount?: number; linkedParentJID?: string | null }[]>(`/sessions/${id}/groups`),
   getGroupInfo: (sessionId: string, groupId: string) =>

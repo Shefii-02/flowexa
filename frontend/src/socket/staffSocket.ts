@@ -12,10 +12,14 @@ let socket: Socket | null = null
 export function connectStaffSocket(staffId: number, companyId: number): void {
   if (socket?.connected) return
 
+  const token = store.getState().auth.token
+  if (!token) return
+
   socket = io(`${NODE_URL}/staff`, {
     transports: ['websocket'],
     reconnectionAttempts: 5,
     reconnectionDelay: 2000,
+    auth: { token },
   })
 
   socket.on('connect', () => {

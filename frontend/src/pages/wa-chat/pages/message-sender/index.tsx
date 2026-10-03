@@ -9,7 +9,7 @@ import {
   Bold, Italic, Strikethrough, CheckCircle2, AlertCircle, FlaskConical,
 } from 'lucide-react'
 import { useSessionsQuery, useSessionGroupsQuery, useSessionChatsQuery } from '../../hooks/queries'
-import { messageApi, contactApi, getGroupInfoCached } from '../../api/api'
+import { messageApi, contactApi, getGroupInfoCached, sessionApi } from '../../api/api'
 import { useSessionContacts } from '../../hooks/useSessionContacts'
 import { buildContactIndex, lookupChatContact } from '../../utils/chatFilters'
 import { formatPhoneForDisplay } from '../../utils/formatPhone'
@@ -19,7 +19,7 @@ import MediaPickerModal from '@/components/MediaPickerModal'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
-type RecipientTab = 'personal' | 'group' | 'csv' | 'label' | 'chat' | 'lead'
+type RecipientTab = 'personal' | 'group' | 'group-chat' | 'csv' | 'label' | 'wa-label' | 'chat' | 'lead'
 type ComposerTab = 'text' | 'media' | 'template' | 'poll' | 'location' | 'contact' | 'audio'
 type PageTab = 'sender' | 'history'
 type SendStatus = 'pending' | 'sending' | 'sent' | 'failed' | 'paused' | 'scheduled'
@@ -317,6 +317,10 @@ export function MessageSender() {
   const [groupParticipantsLoading, setGroupParticipantsLoading] = useState(false)
   const [excludedGroupParticipantIds, setExcludedGroupParticipantIds] = useState<Set<string>>(new Set())
 
+  // Group-chat tab — sends ONE message to each selected group's own chat, as opposed to the Group
+  // tab above, which expands a group into its individual members and DMs each one separately.
+  const [selectedGroupChats, setSelectedGroupChats] = useState<Set<string>>(new Set())
+
   // CSV tab
   const [csvRecipients, setCsvRecipients] = useState<Recipient[]>([])
   const [csvInvalid, setCsvInvalid] = useState<string[]>([])
@@ -330,6 +334,17 @@ export function MessageSender() {
   const [labelContacts, setLabelContacts] = useState<{ id: number; name: string | null; phone: string }[]>([])
   const [labelContactsLoading, setLabelContactsLoading] = useState(false)
   const [excludedLabelContactIds, setExcludedLabelContactIds] = useState<Set<number>>(new Set())
+
+  // WA Label tab — WhatsApp's OWN chat labels (Business accounts), fetched from the active
+  // session itself, as opposed to the Label tab above which pulls the CRM's company-wide lead
+  // labels from Laravel. Same picker pattern: resolve selected label(s) into chats, every one
+  // starts included, uncheck to exclude.
+  const [waLabels, setWaLabels] = useState<{ id: string; name: string; hexColor: string }[]>([])
+  const [waLabelsLoading, setWaLabelsLoading] = useState(false)
+  const [selectedWaLabels, setSelectedWaLabels] = useState<Set<string>>(new Set())
+  const [waLabelChats, setWaLabelChats] = useState<{ id: string; name: string }[]>([])
+  const [waLabelChatsLoading, setWaLabelChatsLoading] = useState(false)
+  const [excludedWaLabelChatIds, setExcludedWaLabelChatIds] = useState<Set<string>>(new Set())
 
   // Chat tab
   const [chatSearch, setChatSearch] = useState('')
@@ -453,7 +468,7 @@ export function MessageSender() {
   )
   const { data: groups = [], isLoading: groupsLoading } = useSessionGroupsQuery(
     session,
-    recipientTab === 'group' && !!session
+    (recipientTab === 'group' || recipientTab === 'group-chat') && !!session
   )
   const { data: chats = [], isLoading: chatsLoading } = useSessionChatsQuery(
     session,
@@ -545,6 +560,44 @@ export function MessageSender() {
       .finally(() => { if (!cancelled) setLabelContactsLoading(false) })
     return () => { cancelled = true }
   }, [selectedLabels])
+
+  // WhatsApp's own chat labels, for the active session (Business accounts only — the gateway
+  // answers 501 for a non-Business number, treated the same as "no labels").
+  useEffect(() => {
+    if (recipientTab !== 'wa-label' || !session) { setWaLabels([]); return }
+    setWaLabelsLoading(true)
+    let cancelled = false
+    sessionApi.getLabels(session)
+      .then(ls => { if (!cancelled) setWaLabels(ls) })
+      .catch(() => { if (!cancelled) setWaLabels([]) })
+      .finally(() => { if (!cancelled) setWaLabelsLoading(false) })
+    return () => { cancelled = true }
+  }, [recipientTab, session])
+
+  // Resolve the selected WA label(s) into the chats carrying them, deduped by chat id across
+  // labels (the same chat may carry more than one selected label).
+  useEffect(() => {
+    if (selectedWaLabels.size === 0 || !session) {
+      setWaLabelChats([])
+      setExcludedWaLabelChatIds(new Set())
+      return
+    }
+    setWaLabelChatsLoading(true)
+    let cancelled = false
+    Promise.allSettled([...selectedWaLabels].map(id => sessionApi.getLabelChats(session, id)))
+      .then(results => {
+        if (cancelled) return
+        const byId = new Map<string, { id: string; name: string }>()
+        for (const res of results) {
+          if (res.status !== 'fulfilled') continue
+          for (const c of res.value) if (!byId.has(c.id)) byId.set(c.id, { id: c.id, name: c.name })
+        }
+        setWaLabelChats([...byId.values()])
+        setExcludedWaLabelChatIds(new Set())
+      })
+      .finally(() => { if (!cancelled) setWaLabelChatsLoading(false) })
+    return () => { cancelled = true }
+  }, [selectedWaLabels, session])
 
   // Resolve the selected group(s) into their member list, deduped by WA id across groups (the same
   // person may be in more than one selected group). Same picker pattern as labels: everyone starts
@@ -776,6 +829,22 @@ export function MessageSender() {
     setSelectedRecipients(prev => [...prev, ...toAdd])
   }
 
+  const addGroupChats = () => {
+    // Unlike addGroupParticipants, this adds the GROUP's own chat id as the recipient — one
+    // message lands in the group for everyone to see, instead of a separate DM per member.
+    const seen = new Set(selectedRecipients.map(recipientDedupeKey))
+    const toAdd = groups
+      .filter(g => selectedGroupChats.has(g.id))
+      .map(g => ({ id: `group-chat-${g.id}`, name: g.name, phone: g.id, type: 'group-chat' as const, category: 'Group chat' }))
+      .filter(r => {
+        const key = recipientDedupeKey(r)
+        if (seen.has(key)) return false
+        seen.add(key)
+        return true
+      })
+    setSelectedRecipients(prev => [...prev, ...toAdd])
+  }
+
   const addChats = () => {
     // The recipient's phone MUST stay the chat's own WhatsApp id, @c.us/@lid suffix and all — it's
     // the one value guaranteed to reach them, since it's the id of a chat that already exists on
@@ -802,6 +871,20 @@ export function MessageSender() {
     const toAdd = labelContacts
       .filter(c => !excludedLabelContactIds.has(c.id))
       .map(c => ({ id: `label-contact-${c.id}`, name: c.name ?? c.phone, phone: c.phone, type: 'label' as const, category: 'Label' }))
+      .filter(r => {
+        const key = recipientDedupeKey(r)
+        if (seen.has(key)) return false
+        seen.add(key)
+        return true
+      })
+    setSelectedRecipients(prev => [...prev, ...toAdd])
+  }
+
+  const addWaLabelChats = () => {
+    const seen = new Set(selectedRecipients.map(recipientDedupeKey))
+    const toAdd = waLabelChats
+      .filter(c => !excludedWaLabelChatIds.has(c.id))
+      .map(c => ({ id: `wa-label-chat-${c.id}`, name: c.name, phone: c.id, type: 'wa-label' as const, category: 'WA Label' }))
       .filter(r => {
         const key = recipientDedupeKey(r)
         if (seen.has(key)) return false
@@ -1067,17 +1150,27 @@ export function MessageSender() {
       return { templateText: textBody, extraPayload: undefined }
     }
     if (composerTab === 'template' && selectedTemplate) {
-      let templateText = selectedTemplate.body
+      // Header text and footer are part of the same message card as the body (see the
+      // preview above: bold header, body, small/grey footer) — WhatsApp has no native
+      // header/footer fields for a plain text send, so they're folded into one string
+      // using WhatsApp's own bold/italic markdown, in the same order the preview shows.
+      const composedParts: string[] = []
+      if (selectedTemplate.header_type === 'text' && selectedTemplate.header_content) {
+        composedParts.push(`*${selectedTemplate.header_content}*`)
+      }
+      composedParts.push(selectedTemplate.body)
+      if (selectedTemplate.footer) composedParts.push(`_${selectedTemplate.footer}_`)
+      let templateText = composedParts.join('\n\n')
       // If template has media blocks, treat it as a media send
       const tplBlocks: MessageBlock[] = []
       // 1. Header media (image/video/document)
       const ht = selectedTemplate.header_type
       if (ht && ht !== 'none' && ht !== 'text' && selectedTemplate.header_content) {
-        tplBlocks.push({ id: 'h', type: ht as MessageBlock['type'], mediaUrl: selectedTemplate.header_content, caption: selectedTemplate.body })
+        tplBlocks.push({ id: 'h', type: ht as MessageBlock['type'], mediaUrl: selectedTemplate.header_content, caption: templateText })
       }
       // 2. Body as text if there are extra media blocks
       if ((selectedTemplate.media_blocks ?? []).length > 0) {
-        if (!tplBlocks.length) tplBlocks.push({ id: 'b', type: 'text', text: selectedTemplate.body })
+        if (!tplBlocks.length) tplBlocks.push({ id: 'b', type: 'text', text: templateText })
         tplBlocks.push(...(selectedTemplate.media_blocks ?? []))
       }
       if (tplBlocks.length > 0) {
@@ -1438,11 +1531,13 @@ export function MessageSender() {
   // ── Tab labels ────────────────────────────────────────────────────────────
 
   const recipientTabs: { id: RecipientTab; label: string; icon: React.ReactNode }[] = [
-    { id: 'personal', label: 'Personal', icon: <Users size={14} /> },
-    { id: 'group',    label: 'Group',    icon: <Hash size={14} /> },
-    { id: 'csv',      label: 'Bulk CSV', icon: <FileText size={14} style={{margin: '0 auto 12px ' }} /> },
-    { id: 'label',    label: 'Label',    icon: <Tag size={14} /> },
-    { id: 'chat',     label: 'From Chat',icon: <MessageSquare size={14} /> },
+    { id: 'personal',   label: 'Personal',      icon: <Users size={14} /> },
+    { id: 'group',      label: 'Group Members', icon: <Hash size={14} /> },
+    { id: 'group-chat', label: 'Groups',        icon: <Hash size={14} /> },
+    { id: 'csv',        label: 'Bulk CSV',      icon: <FileText size={14} style={{margin: '0 auto 12px ' }} /> },
+    { id: 'label',    label: 'CRM Label', icon: <Tag size={14} /> },
+    { id: 'wa-label', label: 'WA Label',  icon: <Tag size={14} /> },
+    { id: 'chat',     label: 'From Chat', icon: <MessageSquare size={14} /> },
   ]
 
   // ── Export log ─────────────────────────────────────────────────────────────
@@ -1666,6 +1761,49 @@ export function MessageSender() {
                 </div>
               )}
 
+              {/* Group chat — the message goes to the group itself (one copy, visible to the
+                  whole group), not fanned out to each member's DM like the Group Members tab. */}
+              {recipientTab === 'group-chat' && (
+                <div className="space-y-3">
+                  <input type="text" value={groupSearch} onChange={e => setGroupSearch(e.target.value)}
+                    placeholder="Search groups…"
+                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-300" />
+                  {groupsLoading ? <div className="flex justify-center py-4"><Loader2 size={20} className="animate-spin text-gray-400" /></div> : (
+                    <div className="border border-gray-100 rounded-lg max-h-44 overflow-y-auto divide-y divide-gray-50">
+                      {groups.filter(g => g.name.toLowerCase().includes(groupSearch.toLowerCase())).map(g => (
+                        <label key={g.id} className="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 cursor-pointer">
+                          <input type="checkbox" checked={selectedGroupChats.has(g.id)}
+                            onChange={e => { const s = new Set(selectedGroupChats); e.target.checked ? s.add(g.id) : s.delete(g.id); setSelectedGroupChats(s) }}
+                            className="rounded" />
+                          <span className="text-sm text-gray-800">{g.name}</span>
+                        </label>
+                      ))}
+                      {groups.length === 0 && <p className="text-xs text-gray-400 px-3 py-3">No groups found for this session.</p>}
+                    </div>
+                  )}
+
+                  {/* Selected groups, shown as removable chips */}
+                  {selectedGroupChats.size > 0 && (
+                    <div className="flex flex-wrap gap-1.5">
+                      {[...selectedGroupChats].map(id => (
+                        <span key={id} className="inline-flex items-center gap-1 pl-2 pr-1 py-1 bg-brand-50 text-brand-700 rounded-full text-xs font-medium">
+                          {groups.find(g => g.id === id)?.name ?? id}
+                          <button onClick={() => { const s = new Set(selectedGroupChats); s.delete(id); setSelectedGroupChats(s) }}
+                            className="hover:bg-brand-100 rounded-full p-0.5">
+                            <X size={10} />
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
+                  <button onClick={addGroupChats} disabled={selectedGroupChats.size === 0}
+                    className="px-4 py-2 bg-brand-500 text-white rounded-lg text-sm disabled:opacity-50 hover:bg-brand-600">
+                    Add {selectedGroupChats.size} group{selectedGroupChats.size !== 1 ? 's' : ''} to recipients
+                  </button>
+                </div>
+              )}
+
               {/* CSV */}
               {recipientTab === 'csv' && (
                 <div className="space-y-3">
@@ -1761,6 +1899,79 @@ export function MessageSender() {
                 </div>
               )}
 
+              {/* WA Label — WhatsApp's own chat labels for the active session (Business accounts
+                  only), as opposed to the CRM Label tab's company-wide lead labels. */}
+              {recipientTab === 'wa-label' && (
+                <div className="space-y-3">
+                  {waLabelsLoading ? <div className="flex justify-center py-4"><Loader2 size={20} className="animate-spin text-gray-400" /></div> : (
+                    <div className="border border-gray-100 rounded-lg max-h-44 overflow-y-auto divide-y divide-gray-50">
+                      {waLabels.map(l => (
+                        <label key={l.id} className="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 cursor-pointer">
+                          <input type="checkbox" checked={selectedWaLabels.has(l.id)}
+                            onChange={e => { const s = new Set(selectedWaLabels); e.target.checked ? s.add(l.id) : s.delete(l.id); setSelectedWaLabels(s) }}
+                            className="rounded" />
+                          <span className="inline-block w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: l.hexColor }} />
+                          <span className="text-sm text-gray-800">{l.name}</span>
+                        </label>
+                      ))}
+                      {waLabels.length === 0 && (
+                        <p className="text-xs text-gray-400 px-3 py-3">
+                          No WhatsApp labels found — labels are only available on a WhatsApp Business account.
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Selected labels, shown as removable chips */}
+                  {selectedWaLabels.size > 0 && (
+                    <div className="flex flex-wrap gap-1.5">
+                      {[...selectedWaLabels].map(id => (
+                        <span key={id} className="inline-flex items-center gap-1 pl-2 pr-1 py-1 bg-brand-50 text-brand-700 rounded-full text-xs font-medium">
+                          {waLabels.find(l => l.id === id)?.name ?? id}
+                          <button onClick={() => { const s = new Set(selectedWaLabels); s.delete(id); setSelectedWaLabels(s) }}
+                            className="hover:bg-brand-100 rounded-full p-0.5">
+                            <X size={10} />
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Chats carrying the selected label(s) — every one starts checked; uncheck to
+                      exclude a chat from this send without removing the label. */}
+                  {selectedWaLabels.size > 0 && (
+                    <div>
+                      <p className="text-xs font-medium text-gray-500 mb-1">
+                        {waLabelChatsLoading ? 'Loading labelled chats…' : `Chats (${waLabelChats.length - excludedWaLabelChatIds.size} of ${waLabelChats.length} selected)`}
+                      </p>
+                      {waLabelChatsLoading ? (
+                        <div className="flex justify-center py-4"><Loader2 size={18} className="animate-spin text-gray-400" /></div>
+                      ) : (
+                        <div className="border border-gray-100 rounded-lg max-h-52 overflow-y-auto divide-y divide-gray-50">
+                          {waLabelChats.map(c => (
+                            <label key={c.id} className="flex items-center gap-2 px-3 py-2 hover:bg-gray-50 cursor-pointer">
+                              <input type="checkbox" checked={!excludedWaLabelChatIds.has(c.id)}
+                                onChange={e => {
+                                  const s = new Set(excludedWaLabelChatIds)
+                                  e.target.checked ? s.delete(c.id) : s.add(c.id)
+                                  setExcludedWaLabelChatIds(s)
+                                }}
+                                className="rounded" />
+                              <span className="text-sm font-medium text-gray-800 flex-1">{c.name}</span>
+                            </label>
+                          ))}
+                          {waLabelChats.length === 0 && <p className="text-xs text-gray-400 px-3 py-3">No chats carry the selected label(s).</p>}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  <button onClick={addWaLabelChats} disabled={waLabelChats.length - excludedWaLabelChatIds.size === 0}
+                    className="px-4 py-2 bg-brand-500 text-white rounded-lg text-sm disabled:opacity-50 hover:bg-brand-600">
+                    Add {waLabelChats.length - excludedWaLabelChatIds.size} chat{waLabelChats.length - excludedWaLabelChatIds.size !== 1 ? 's' : ''} to recipients
+                  </button>
+                </div>
+              )}
 
               {/* From Chat */}
               {recipientTab === 'chat' && (
