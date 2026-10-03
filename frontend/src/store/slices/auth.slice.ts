@@ -125,7 +125,12 @@ export const authSlice = createSlice({
                 // must not silently force a logout.
                 const status = (a.payload as { status?: number } | undefined)?.status
                 if (status === 401) {
-                    s.user = null; s.isAuthenticated = false; localStorage.removeItem('wa_token')
+                    // token must be nulled too, not just localStorage — ProtectedRoute's
+                    // `!isAuthenticated && !token` redirect only fires once both are falsy,
+                    // and on a page reload it's the only mounted component that can redirect
+                    // (DashboardLayout is unmounted while this request is in flight).
+                    s.user = null; s.isAuthenticated = false; s.token = null
+                    localStorage.removeItem('wa_token')
                     clearWaChatSession()
                 }
             })
