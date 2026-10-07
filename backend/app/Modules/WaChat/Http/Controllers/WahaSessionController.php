@@ -756,21 +756,13 @@ class WahaSessionController extends Controller
                     }
                 }
 
-                try {
-                    app(AutomationEngine::class)->handleIncomingMessage([
-                        'session' => $name,
-                        'from'    => $from,
-                        'body'    => $body,
-                        'type'    => $type,
-                    ]);
-                } catch (\Exception $e) {
-                    Log::error('Webhook AutomationEngine error: ' . $e->getMessage());
-                }
-
                 // Conversational AI agent — only when Settings → Response Type has WA Chat
                 // set to "AI Agent" (and, if an office-hours schedule is attached, only
                 // inside it); the company also needs an active playbook, checked inside
-                // ConversationalAgentService itself.
+                // ConversationalAgentService itself. Runs BEFORE the automation engine below
+                // so that, if this message opens a brand-new AiAgentSession, the welcome_message
+                // rule's session-based evalWelcome() (AutomationEngine) sees that fresh session
+                // instead of the one from several turns ago.
                 if ($from) {
                     try {
                         $company = Company::find($session->company_id);
@@ -788,6 +780,53 @@ class WahaSessionController extends Controller
                     } catch (\Throwable $e) {
                         Log::error('Webhook ConversationalAgent error: ' . $e->getMessage());
                     }
+                }
+
+                try {
+                    app(AutomationEngine::class)->handleIncomingMessage([
+                        'session' => $name,
+                        'from'    => $from,
+                        'body'    => $body,
+                        'type'    => $type,
+                    ]);
+                } catch (\Exception $e) {
+                    Log::error('Webhook AutomationEngine error: ' . $e->getMessage());
+                }
+            }
+        }
+
+        // Outbound audit log — mirrors the inbound write above so the same message_logs table
+        // (and any future per-channel usage stats) sees both directions of a WA Chat conversation,
+        // regardless of whether the send was triggered by the AI agent, a chatbot/flow, or a human
+        // agent in the chat UI. `message.sent` is the only gateway event fired for a real send;
+        // `fromMe` is deliberately not checked here since this event is outbound by definition.
+        if ($session && $event === 'message.sent') {
+            $to   = $payload['to'] ?? ($payload['chatId'] ?? null);
+            $body = $payload['body'] ?? ($payload['text'] ?? '');
+            $type = $payload['type'] ?? 'text';
+
+            if ($to && !str_ends_with((string) $to, '@g.us')) {
+                $phone = preg_replace('/@.*/', '', (string) $to);
+
+                try {
+                    $contact = Contact::where('company_id', $session->company_id)
+                        ->where('phone', $phone)->first();
+
+                    MessageLog::create([
+                        'company_id'    => $session->company_id,
+                        'contact_id'    => $contact?->id,
+                        'wa_message_id' => $payload['id'] ?? null,
+                        'direction'     => 'outbound',
+                        'channel'       => 'wa_chat',
+                        'type'          => $type,
+                        'phone'         => $phone,
+                        'content'       => is_string($body) ? $body : json_encode($body),
+                        'status'        => 'sent',
+                        'lead_created'  => false,
+                        'cost'          => 0,
+                    ]);
+                } catch (\Throwable $e) {
+                    Log::error('Webhook MessageLog write error (outbound): ' . $e->getMessage());
                 }
             }
         }

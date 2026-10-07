@@ -39,6 +39,7 @@ class SendAutomationMessage implements ShouldQueue
                     'session' => $this->sessionId,
                     'chatId'  => $this->chatId,
                     'text'    => $this->message,
+                    'origin'  => 'chatbot',
                 ]);
 
             AutomationLog::create([

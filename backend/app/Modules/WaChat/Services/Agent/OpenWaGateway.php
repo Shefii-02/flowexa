@@ -33,7 +33,7 @@ class OpenWaGateway implements AgentChannelGateway
         $chatId = str_contains($phone, '@') ? $phone : $phone . '@c.us';
 
         try {
-            $res = $this->wa->sendText($sessionRef, $apiKey, $chatId, $text);
+            $res = $this->wa->sendText($sessionRef, $apiKey, $chatId, $text, null, null, 'ai');
             return $res->successful();
         } catch (\Throwable $e) {
             Log::error("OpenWaGateway sendText failed for {$chatId}: " . $e->getMessage());

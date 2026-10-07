@@ -372,7 +372,8 @@ export const Sidebar = () => {
               <SubLink to="/wa-chat/message-sender/history" icon="🕐" label="Campaign History" />
               {/* } */}
               {/* <SubLink to="/wa-chat/plugins" icon="🔌" label="Plugin" /> */}
-              {/* {canViewWebhooks && <SubLink to="/wa-chat/webhooks" icon="🔗" label="Webhooks" />} */}
+              <SubLink to="/wa-chat/webhooks" icon="🔗" label="Webhooks" />
+              <SubLink to="/wa-chat/webhook-logs" icon="🧾" label="Webhook Logs" />
               {/* {canViewTpls &&  */}
               <SubLink to="/wa-chat/templates" icon="📋" label="Templates" />
               {/* } */}

@@ -72,12 +72,14 @@ class OpenWaMessageService
         string $text,
         ?array $mentions = null,
         ?string $quotedMessageId = null,
+        ?string $origin = null,
     ): Response {
         return $this->post($sessionId, $apiKey, 'send-text', array_filter([
             'chatId'          => $chatId,
             'text'            => $text,
             'mentions'        => $mentions,
             'quotedMessageId' => $quotedMessageId,
+            'origin'          => $origin,
         ], fn($v) => $v !== null));
     }
 

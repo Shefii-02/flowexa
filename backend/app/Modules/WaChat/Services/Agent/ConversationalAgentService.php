@@ -11,7 +11,9 @@ use App\Models\Lead;
 use App\Modules\WaChat\Models\AgentPlaybook;
 use App\Modules\WaChat\Models\AiAgentSession;
 use App\Modules\WaChat\Models\AutomationLog;
+use App\Modules\WaChat\Models\AutomationRule;
 use App\Modules\WaChat\Services\Rag\EvidenceCollector;
+use App\Modules\WaChat\Services\Rag\LlmClient;
 use App\Modules\WaChat\Services\Rag\PlannerAgent;
 use App\Services\AgentScheduleChecker;
 use App\Services\LeadAssignment\LeadAssignmentEngine;
@@ -32,6 +34,7 @@ class ConversationalAgentService
         private readonly LeadAssignmentEngine $assignmentEngine,
         private readonly FollowupTaskScheduler $followupScheduler,
         private readonly VoiceService          $voiceService,
+        private readonly LlmClient             $llm,
     ) {}
 
     /** @return bool  true if the agent handled the message (caller should stop). */
@@ -161,8 +164,14 @@ class ConversationalAgentService
         );
 
         if (!$plan) {
-            $fallback = $playbook->fallback_transfer_message
-                ?: "Thanks for your message — a team member will get back to you shortly.";
+            // No AI provider key configured (or the call otherwise failed) — there's no LLM to
+            // answer from the knowledge base with, so fall back to the company's Welcome Message
+            // automation rule (Automation Rules page) instead of a generic "a team member will
+            // get back to you" line, if one is configured. Session timing is unaffected — the
+            // greeting above already handles that; this only covers the per-turn reply itself.
+            $fallback = ($this->llm->isConfigured($session->company) ? null : $this->welcomeRuleMessage($in))
+                ?: ($playbook->fallback_transfer_message
+                    ?: "Thanks for your message — a team member will get back to you shortly.");
             $this->sendAndRecord($gateway, $in, $session, $fallback, 'assistant', $in->text);
             $this->log($in, $playbook, 'llm_unavailable', []);
             return true;
@@ -202,6 +211,25 @@ class ConversationalAgentService
         }
 
         return true;
+    }
+
+    /** The active "Welcome Message" Automation Rule's text for this session, if one exists. */
+    private function welcomeRuleMessage(AgentInbound $in): ?string
+    {
+        $rule = AutomationRule::where('company_id', $in->companyId)
+            ->where('rule_type', 'welcome_message')
+            ->where('is_active', true)
+            ->where(fn ($q) => $q->whereNull('session_id')->orWhere('session_id', $in->sessionRef))
+            ->orderByRaw('session_id IS NULL')
+            ->first();
+
+        foreach ($rule?->actions ?? [] as $action) {
+            if (($action['type'] ?? '') === 'send_message' && !empty($action['message'])) {
+                return $action['message'];
+            }
+        }
+
+        return null;
     }
 
     // ── Session ─────────────────────────────────────────────────────────────

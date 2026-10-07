@@ -26,6 +26,8 @@ export const queryKeys = {
   sessionGroupInfo: (sessionId: string, groupId: string) => ['sessions', sessionId, 'groups', groupId] as const,
   sessionChats: (sessionId: string) => ['sessions', sessionId, 'chats'] as const,
   webhooks: ['webhooks'] as const,
+  webhookDeliveries: (sessionId: string) => ['sessions', sessionId, 'webhooks', 'deliveries'] as const,
+  recentMessages: (sessionId: string) => ['sessions', sessionId, 'messages', 'recent'] as const,
   templates: (sessionId: string) => ['sessions', sessionId, 'templates'] as const,
   apiKeys: ['apiKeys'] as const,
   logs: (params: { severity?: string; page: number; limit: number }) => ['logs', params] as const,
@@ -147,6 +149,24 @@ export function useTemplatesQuery(sessionId: string, enabled = true) {
     queryFn: () => templateApi.list(sessionId),
     enabled: enabled && !!sessionId,
     staleTime: 30_000,
+  });
+}
+
+export function useWebhookDeliveriesQuery(sessionId: string, enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.webhookDeliveries(sessionId),
+    queryFn: () => webhookApi.deliveries(sessionId),
+    enabled: enabled && !!sessionId,
+    staleTime: 15_000,
+  });
+}
+
+export function useRecentMessagesQuery(sessionId: string, enabled = true) {
+  return useQuery({
+    queryKey: queryKeys.recentMessages(sessionId),
+    queryFn: () => sessionApi.getRecentMessages(sessionId),
+    enabled: enabled && !!sessionId,
+    staleTime: 15_000,
   });
 }
 

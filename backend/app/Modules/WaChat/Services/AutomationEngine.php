@@ -5,6 +5,7 @@ namespace App\Modules\WaChat\Services;
 use App\Jobs\AnalyzeConversation;
 use App\Models\Contact;
 use App\Models\MetaAiConfig;
+use App\Modules\WaChat\Models\AiAgentSession;
 use App\Modules\WaChat\Models\AutomationRule;
 use App\Modules\WaChat\Models\AutomationLog;
 use App\Modules\WaChat\Models\FollowUpQueue;
@@ -105,10 +106,20 @@ class AutomationEngine
 
     private function evalWelcome(AutomationRule $rule, string $phone, int $companyId): bool
     {
-        // Fire only once per contact (no previous automation log for welcome)
+        // Anchored to the contact's current AI agent session (AiAgentSession), not the
+        // contact's lifetime: once that session ends (closed/transferred) and the contact
+        // messages again — opening a new AiAgentSession — the welcome is due again, since
+        // it's effectively a fresh conversation. A company not running the AI agent at all
+        // has no AiAgentSession rows, so this falls back to the original once-ever behavior.
+        $latestSession = AiAgentSession::where('company_id', $companyId)
+            ->where('contact_phone', $phone)
+            ->latest()
+            ->first();
+
         return !AutomationLog::where('rule_id', $rule->id)
             ->where('contact_phone', $phone)
             ->where('status', 'success')
+            ->when($latestSession, fn ($q) => $q->where('created_at', '>=', $latestSession->created_at))
             ->exists();
     }
 

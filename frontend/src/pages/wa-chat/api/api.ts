@@ -133,6 +133,23 @@ export interface Webhook {
   updatedAt: string;
 }
 
+/** One logged webhook delivery attempt (success or failure), from GET .../webhooks/deliveries. */
+export interface WebhookDelivery {
+  id: string;
+  webhookId: string;
+  sessionId: string;
+  event: string;
+  url: string;
+  requestPayload?: string | null;
+  responseStatus?: number | null;
+  responseBody?: string | null;
+  success: boolean;
+  attempt: number;
+  durationMs: number;
+  error?: string | null;
+  createdAt: string;
+}
+
 export interface MessageTemplate {
   id: string;
   sessionId: string;
@@ -260,6 +277,8 @@ export interface ChatMessage {
   body: string;
   type: MessageType;
   direction: 'incoming' | 'outgoing';
+  /** Who/what sent an OUTGOING message. Null/absent on every incoming row and on outgoing rows predating this field. */
+  origin?: 'ai' | 'manual' | 'chatbot' | null;
   status: 'pending' | 'sent' | 'delivered' | 'read' | 'failed';
   timestamp?: number;
   createdAt: string;
@@ -827,6 +846,10 @@ export const sessionApi = {
     request<{ messages: ChatMessage[]; total: number }>(
       `/sessions/${id}/messages?chatId=${encodeURIComponent(chatId)}&limit=${limit}`,
     ),
+  // Session-wide recent messages (every chat), for the Webhook Logs "Messages" view — chatId is
+  // optional server-side (MessageController.getMessages), unlike getChatMessages above.
+  getRecentMessages: (id: string, limit = 100) =>
+    request<{ messages: ChatMessage[]; total: number }>(`/sessions/${id}/messages?limit=${limit}`),
   // Live history straight from WhatsApp (bypasses the DB) — backfills a thread the gateway never
   // captured, e.g. a freshly paired session whose persisted store is still empty.
   // includeMedia downloads the media payload (base64) for history messages so stickers/images/
@@ -975,6 +998,8 @@ export const webhookApi = {
     request<{ success: boolean; statusCode?: number; error?: string }>(`/sessions/${sessionId}/webhooks/${id}/test`, {
       method: 'POST',
     }),
+  deliveries: (sessionId: string, limit = 100) =>
+    request<WebhookDelivery[]>(`/sessions/${sessionId}/webhooks/deliveries?limit=${limit}`),
 };
 
 // =============================================================================
@@ -1093,7 +1118,7 @@ export const messageApi = {
   sendText: (sessionId: string, chatId: string, text: string) =>
     request<MessageResponse>(`/sessions/${sessionId}/messages/send-text`, {
       method: 'POST',
-      body: JSON.stringify({ chatId, text }),
+      body: JSON.stringify({ chatId, text, origin: 'manual' }),
     }),
   sendMedia: (
     sessionId: string,

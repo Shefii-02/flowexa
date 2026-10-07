@@ -110,6 +110,7 @@ import WaChatShell, { RequireWaAdmin } from '@/pages/wa-chat/WaChatShell'
 import { Sessions as WaChatSessions } from '@/pages/wa-chat/pages/Sessions'
 import { Chats as WaChatChats } from '@/pages/wa-chat/pages/Chats'
 import { Webhooks as WaChatWebhooks } from '@/pages/wa-chat/pages/Webhooks'
+import { WebhookLogs as WaChatWebhookLogs } from '@/pages/wa-chat/pages/WebhookLogs'
 import { Logs as WaChatLogs } from '@/pages/wa-chat/pages/Logs'
 import { ApiKeys as WaChatApiKeys } from '@/pages/wa-chat/pages/ApiKeys'
 import WaChatDashboard from '@/pages/wa-chat/pages/Dashboard'
@@ -214,6 +215,7 @@ export default function App() {
                 <Route path="message-sender/history" element={<MessageSender />} />
                 <Route path="plugins" element={<WaChatPlugins />} />
                 <Route path="webhooks" element={<WaChatWebhooks />} />
+                <Route path="webhook-logs" element={<WaChatWebhookLogs />} />
                 <Route path="templates" element={<WaChatTemplatesPage />} />
                 <Route path="logs" element={<WaChatLogs />} />
                 <Route path="otp-service" element={<WaOtpServicePage />} />
