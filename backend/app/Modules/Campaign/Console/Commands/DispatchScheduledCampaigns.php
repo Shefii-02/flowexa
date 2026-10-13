@@ -21,7 +21,7 @@ class DispatchScheduledCampaigns extends Command
     public function handle(CampaignService $campaigns): int
     {
         $due = Campaign::query()
-            ->whereIn('status', ['scheduled', 'draft'])
+            ->whereIn('status', ['scheduled', 'draft','running'])
             ->whereNotNull('scheduled_at')
             ->where('scheduled_at', '<=', now())
             ->orderBy('scheduled_at')
@@ -43,7 +43,7 @@ class DispatchScheduledCampaigns extends Command
                 $this->error("Campaign #{$campaign->id} failed: {$e->getMessage()}");
 
                 Campaign::where('id', $campaign->id)
-                    ->whereIn('status', ['scheduled', 'draft'])
+                    ->whereIn('status', ['scheduled', 'draft', 'running'])
                     ->update(['status' => 'failed']);
             }
         }
