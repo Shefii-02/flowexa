@@ -636,6 +636,9 @@ class TemplateController extends Controller
         } else {
             $subcode = $response->json('error.error_subcode');
             $reason  = $response->json('error.error_user_msg') ?? $response->json('error.message') ?? 'Meta API error';
+            if ($subcode === 2388339) {
+                $reason = \App\Support\Meta\MetaGraph::wabaIdProblem($company);
+            }
 
             // subcode 2388024: Meta already has a template with this name+language, almost
             // always because an earlier "create" attempt actually succeeded on Meta's side

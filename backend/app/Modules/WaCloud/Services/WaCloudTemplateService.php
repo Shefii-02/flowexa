@@ -93,6 +93,10 @@ class WaCloudTemplateService
             ?? $response->json('error.message')
             ?? 'Meta API error';
 
+        if ($subcode === 2388339 && isset($company)) {
+            $reason = \App\Support\Meta\MetaGraph::wabaIdProblem($company);
+        }
+
         // 2388024: a template with this name+language already exists on Meta —
         // almost always an earlier create that landed on Meta's side before our
         // row caught up. Link the real one instead of retrying forever.

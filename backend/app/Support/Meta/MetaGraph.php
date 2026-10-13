@@ -11,6 +11,8 @@ use App\Models\Company;
  */
 class MetaGraph
 {
+    private const VERSION_FALLBACK = 'v25.0';
+
     /** Version used for message_templates create/update/list/delete. */
     public const TEMPLATE_VERSION = 'v25.0';
 
@@ -78,5 +80,43 @@ class MetaGraph
         }
 
         return $message;
+    }
+
+    /**
+     * Meta error_subcode 2388339 ("WhatsApp accounts cannot be used with this API") on
+     * `/{id}/message_templates` means the saved "WhatsApp Business Account ID" is not a WABA ID —
+     * usually it is the phone number ID, the Meta App ID or the Business Manager ID.
+     * Asks Meta which WABA IDs this access token can actually manage and returns an actionable message.
+     */
+    public static function wabaIdProblem(Company $company): string
+    {
+        $saved = (string) $company->wa_business_id;
+        $msg   = "The WhatsApp Business Account ID saved for this company ({$saved}) is not a WABA ID";
+
+        if ($saved !== '' && $saved === (string) $company->wa_phone_id) {
+            $msg .= ' — it is the phone number ID';
+        } elseif ($saved !== '' && $saved === (string) $company->meta_app_id) {
+            $msg .= ' — it is the Meta App ID';
+        }
+        $msg .= '.';
+
+        try {
+            $token = self::accessToken($company);
+            $res   = \Illuminate\Support\Facades\Http::withToken((string) $token)->timeout(10)
+                ->get('https://graph.facebook.com/' . self::VERSION_FALLBACK . '/debug_token', ['input_token' => $token]);
+            $ids = collect($res->json('data.granular_scopes', []))
+                ->whereIn('scope', ['whatsapp_business_management', 'whatsapp_business_messaging'])
+                ->pluck('target_ids')->flatten()->unique()->values();
+            // The phone number ID can also appear here when the token is scoped to it — drop it.
+            $ids = $ids->reject(fn ($id) => (string) $id === (string) $company->wa_phone_id)->values();
+
+            if ($ids->isNotEmpty()) {
+                $msg .= ' WABA IDs this access token can manage: ' . $ids->implode(', ') . '.';
+            }
+        } catch (\Throwable) {
+            // best effort — the base message below is still useful
+        }
+
+        return $msg . ' Update it in Settings → WhatsApp credentials (Meta Business Suite → WhatsApp Manager → Account tools shows the WhatsApp Business Account ID).';
     }
 }
