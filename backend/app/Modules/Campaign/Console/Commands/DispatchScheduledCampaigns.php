@@ -21,7 +21,10 @@ class DispatchScheduledCampaigns extends Command
     public function handle(CampaignService $campaigns): int
     {
         $due = Campaign::query()
-            ->whereIn('status', ['scheduled', 'draft','running'])
+            // Never 'running': a campaign already launched by hand keeps its past scheduled_at, and
+            // re-launching it throws "Cannot launch a running campaign" — which the catch below
+            // used to turn into status=failed, killing a healthy campaign mid-send.
+            ->whereIn('status', ['scheduled', 'draft'])
             ->whereNotNull('scheduled_at')
             ->where('scheduled_at', '<=', now())
             ->orderBy('scheduled_at')
@@ -44,7 +47,7 @@ Log::info('DispatchScheduledCampaigns: Found ' . $due->count() . ' campaigns due
                 $this->error("Campaign #{$campaign->id} failed: {$e->getMessage()}");
 
                 Campaign::where('id', $campaign->id)
-                    ->whereIn('status', ['scheduled', 'draft', 'running'])
+                    ->whereIn('status', ['scheduled', 'draft'])
                     ->update(['status' => 'failed']);
             }
         }
