@@ -2,6 +2,9 @@ import { useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Loader2, FileText, Plus, Trash2, X, BarChart3, RefreshCw, Send, UploadCloud } from 'lucide-react'
 import { waCloudOtp, type WaCloudConfigKind } from '@/api/waCloudApiService'
+import { toast } from 'react-hot-toast'
+import { useMediaGate } from '@/hooks/useMediaGate'
+import { MEDIA_RULES } from '@/utils/mediaRules'
 import { AuthDeliverySetup, type AuthApp } from '@/components/templates/AuthDeliverySetup'
 
 // ── CRUD manager for WA Cloud Api Service configs (`wa_cloud_api_configs`) ──────
@@ -133,6 +136,7 @@ export function WaCloudApiConfigManager({ kind, disabled }: { kind: WaCloudConfi
   const [tplLang, setTplLang] = useState('en')
   const [tplSearch, setTplSearch] = useState('')
   const [uploadingFor, setUploadingFor] = useState<number | null>(null)
+  const { gate, cropModal } = useMediaGate()
 
   const invalidate = () => qc.invalidateQueries({ queryKey })
 
@@ -398,6 +402,7 @@ export function WaCloudApiConfigManager({ kind, disabled }: { kind: WaCloudConfi
 
   return (
     <div style={{ maxWidth: 820 }}>
+      {cropModal}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 16 }}>
         <div>
           <div style={{ fontWeight: 600, marginBottom: 2 }}>{cfg.title}</div>
@@ -456,11 +461,14 @@ export function WaCloudApiConfigManager({ kind, disabled }: { kind: WaCloudConfi
                         <label style={{ fontSize: 12, color: '#2563eb', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
                           {uploadingFor === c.id ? <Loader2 size={12} className="animate-spin" /> : <UploadCloud size={12} />}
                           {c.header_sample_url ? 'Replace' : 'Upload'} document
-                          <input type="file" accept="application/pdf" style={{ display: 'none' }}
+                          <input type="file" accept={MEDIA_RULES.header_document.accept} style={{ display: 'none' }}
                             onChange={async e => {
-                              const file = e.target.files?.[0]; if (!file) return
+                              const picked = e.target.files?.[0]; e.target.value = ''
+                              if (!picked) return
+                              const file = await gate(picked, 'header_document'); if (!file) return
                               setUploadingFor(c.id)
                               try { await waCloudOtp.uploadHeaderMedia(c.id, file); invalidate() }
+                              catch (err) { toast.error((err as { response?: { data?: { message?: string } } })?.response?.data?.message ?? 'Upload failed.') }
                               finally { setUploadingFor(null) }
                             }} />
                         </label>

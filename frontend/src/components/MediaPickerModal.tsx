@@ -17,6 +17,7 @@ import {
 } from 'lucide-react'
 import api from '@/api/client'
 import toast from 'react-hot-toast'
+import { useMediaGate } from '@/hooks/useMediaGate'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -107,6 +108,7 @@ export default function MediaPickerModal({
   const [selected,       setSelected]       = useState<MediaFile | null>(null)
   const [search,         setSearch]         = useState('')
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const { gate, cropModal } = useMediaGate()
 
   const loadFolders = useCallback(async () => {
     try {
@@ -152,9 +154,11 @@ export default function MediaPickerModal({
   })
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
+    const picked = e.target.files?.[0]
+    if (!picked) return
     e.target.value = ''
+    const file = await gate(picked, accept === 'image' ? 'chat_image' : accept === 'video' ? 'chat_video' : accept === 'audio' ? 'chat_audio' : 'library')
+    if (!file) return
     setUploading(true)
     try {
       const fd = new FormData()
@@ -193,6 +197,7 @@ export default function MediaPickerModal({
       style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
       onClick={e => { if (e.target === e.currentTarget) onClose() }}
     >
+      {cropModal}
       <div style={{ background: '#fff', borderRadius: 16, width: '100%', maxWidth: 860, height: '80vh', display: 'flex', flexDirection: 'column', boxShadow: '0 25px 80px rgba(0,0,0,0.2)', overflow: 'hidden' }}>
 
         {/* Header */}

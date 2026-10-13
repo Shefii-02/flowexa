@@ -25,9 +25,18 @@ class WebhookController extends Controller
     // Supports BOTH global verify token AND per-company verify token
     public function verify(Request $request): Response|JsonResponse
     {
+
+    Log::info('Webhook verification request', [
+        'hub_mode' => $request->query('hub_mode'),
+        'hub_verify_token' => $request->query('hub_verify_token'),
+        'hub_challenge' => $request->query('hub_challenge'),
+    ]);
+
+    Log::info('Webhook verification request headers', $request->headers->all());
         $mode      = $request->query('hub_mode');
         $token     = $request->query('hub_verify_token');
         $challenge = $request->query('hub_challenge');
+
 
         if ($mode !== 'subscribe') {
             return response()->json(['message' => 'Forbidden'], 403);
@@ -38,10 +47,17 @@ class WebhookController extends Controller
             return response($challenge, 200)->header('Content-Type', 'text/plain');
         }
 
+        Log::info("Webhook verification attempt with unknown token: {$token}");
+
         // Check per-company token (multi-tenant: each company has own token)
         $company = Company::where('webhook_verify_token', $token)
             ->whereIn('status', ['active', 'trial'])
             ->first();
+
+        Log::info("Webhook verification attempt for company: " . ($company ? "{$company->id} — {$company->name}" : 'not found'));
+
+
+
 
         if ($company) {
             Log::info("Webhook verified for company: {$company->id} — {$company->name}");

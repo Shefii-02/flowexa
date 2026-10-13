@@ -6,6 +6,9 @@ import { PageHeader } from '../components/PageHeader';
 import { Modal } from '../components/Modal';
 import { Drawer } from '@/components/ui';
 import MediaPickerModal from '@/components/MediaPickerModal';
+import toast from 'react-hot-toast';
+import { useMediaGate } from '@/hooks/useMediaGate';
+import { MEDIA_RULES, ruleForBlockType } from '@/utils/mediaRules';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -98,13 +101,16 @@ function BlocksEditor({
 }: { blocks: MediaBlock[]; onChange: (b: MediaBlock[]) => void }) {
   const [pickerIdx, setPickerIdx] = useState<number | null>(null);
   const [uploading, setUploading] = useState<number | null>(null);
+  const { gate, cropModal } = useMediaGate();
 
   const addBlock = () => onChange([...blocks, { id: newBlockId(), type: 'text', text: '' }]);
   const removeBlock = (id: string) => onChange(blocks.filter(b => b.id !== id));
   const updateBlock = (id: string, patch: Partial<MediaBlock>) =>
     onChange(blocks.map(b => b.id === id ? { ...b, ...patch } : b));
 
-  const handleUpload = async (idx: number, file: File) => {
+  const handleUpload = async (idx: number, picked: File) => {
+    const file = await gate(picked, ruleForBlockType(blocks[idx].type));
+    if (!file) return;
     setUploading(idx);
     try {
       const fd = new FormData();
@@ -112,12 +118,13 @@ function BlocksEditor({
       const res = await api.post('/media-library/upload', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
       const url = res.data?.url ?? res.data?.data?.url ?? '';
       if (url) updateBlock(blocks[idx].id, { mediaUrl: url });
-    } catch { /* silent */ }
+    } catch (e) { toast.error((e as { response?: { data?: { message?: string } } })?.response?.data?.message ?? 'Upload failed.'); }
     finally { setUploading(null); }
   };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      {cropModal}
       {blocks.map((block, idx) => (
         <div key={block.id} style={{ border: '1px solid #e5e7eb', borderRadius: 8, padding: 12 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
@@ -156,7 +163,7 @@ function BlocksEditor({
                   {uploading === idx ? <Loader2 size={11} className="animate-spin" /> : <Upload size={11} />}
                   Upload
                   <input type="file" style={{ display: 'none' }}
-                    accept={block.type === 'image' ? 'image/*' : block.type === 'video' ? 'video/*' : block.type === 'audio' ? 'audio/*' : '*/*'}
+                    accept={MEDIA_RULES[ruleForBlockType(block.type)].accept}
                     onChange={e => { const f = e.target.files?.[0]; if (f) handleUpload(idx, f); e.target.value = '' }} />
                 </label>
                 <button onClick={() => setPickerIdx(idx)}

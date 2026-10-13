@@ -5,6 +5,8 @@ import { templateApi, surveyFormApi } from '@/api'
 import { Button, Input, Modal, ConfirmModal, Badge, EmptyState, Pagination } from '@/components/ui'
 import { fmt, getError } from '@/utils'
 import toast from 'react-hot-toast'
+import { useMediaGate } from '@/hooks/useMediaGate'
+import { MEDIA_RULES, MediaRuleKey } from '@/utils/mediaRules'
 
 const CATEGORIES = ['MARKETING', 'UTILITY', 'AUTHENTICATION']
 const LANGUAGES  = [
@@ -102,6 +104,8 @@ export default function TemplatesPage() {
 
   // sample media for IMAGE/VIDEO/DOCUMENT headers — required by Meta for template review
   const [headerSampleFile, setHeaderSampleFile] = useState<File | null>(null)
+  const { gate, cropModal } = useMediaGate()
+  const headerRuleKey = (f: string): MediaRuleKey | null => f === 'IMAGE' ? 'header_image' : f === 'VIDEO' ? 'header_video' : f === 'DOCUMENT' ? 'header_document' : null
   const [headerSampleUrl,  setHeaderSampleUrl]  = useState('')   // existing media URL when editing an approved template
   const [uploadingSample,  setUploadingSample]  = useState(false)
 
@@ -400,6 +404,7 @@ export default function TemplatesPage() {
 
   return (
     <div className="space-y-5">
+      {cropModal}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="page-title">WA Templates</h1>
@@ -625,8 +630,15 @@ export default function TemplatesPage() {
                 <div className="border-2 border-dashed border-gray-200 rounded-xl p-5 text-center hover:border-brand-300 transition-colors">
                   <input
                     type="file"
-                    accept={HEADER_ACCEPT[form.header_format]}
-                    onChange={e => setHeaderSampleFile(e.target.files?.[0] || null)}
+                    accept={headerRuleKey(form.header_format) ? MEDIA_RULES[headerRuleKey(form.header_format)!].accept : HEADER_ACCEPT[form.header_format]}
+                    onChange={async e => {
+                      const picked = e.target.files?.[0]
+                      e.target.value = '' // allow re-picking the same file after a rejection
+                      const key = headerRuleKey(form.header_format)
+                      if (!picked || !key) return
+                      const ok = await gate(picked, key)
+                      if (ok) setHeaderSampleFile(ok)
+                    }}
                     className="hidden"
                     id="header-sample-input"
                   />
@@ -638,9 +650,8 @@ export default function TemplatesPage() {
                       {headerSampleFile ? headerSampleFile.name : headerSampleUrl ? 'Sample uploaded — click to replace' : `Click to upload sample ${form.header_format.toLowerCase()}`}
                     </p>
                     <p className="text-xs text-gray-400 mt-1">
-                      {form.header_format === 'IMAGE' && 'JPG or PNG'}
-                      {form.header_format === 'VIDEO' && 'MP4, keep under a few MB for review speed'}
-                      {form.header_format === 'DOCUMENT' && 'PDF only'}
+                      {headerRuleKey(form.header_format) && MEDIA_RULES[headerRuleKey(form.header_format)!].hint}
+                      {form.header_format === 'IMAGE' && ' · you can crop after choosing'}
                     </p>
                   </label>
                 </div>

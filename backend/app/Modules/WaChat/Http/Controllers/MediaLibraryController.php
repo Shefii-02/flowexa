@@ -103,6 +103,9 @@ class MediaLibraryController extends Controller
         $companyId = $user->company_id;
 
         $file      = $request->file('file');
+        if ($err = \App\Support\Meta\MediaRules::validate($file, 'library')) {
+            return response()->json(['message' => $err], 422);
+        }
         $sizeBytes = $file->getSize();
         $sizeMb    = $sizeBytes / 1048576;
 

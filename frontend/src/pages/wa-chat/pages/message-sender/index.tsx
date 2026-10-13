@@ -15,7 +15,10 @@ import { buildContactIndex, lookupChatContact } from '../../utils/chatFilters'
 import { formatPhoneForDisplay } from '../../utils/formatPhone'
 import { useUser } from '@/hooks/useAuth'
 import api from '@/api/client'
+import toast from 'react-hot-toast'
 import MediaPickerModal from '@/components/MediaPickerModal'
+import { useMediaGate } from '@/hooks/useMediaGate'
+import { MEDIA_RULES, ruleForBlockType } from '@/utils/mediaRules'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -905,7 +908,11 @@ export function MessageSender() {
 
   // ── Media upload ───────────────────────────────────────────────────────────
 
-  const handleMediaUpload = async (blockId: string, file: File) => {
+  const { gate, cropModal } = useMediaGate()
+
+  const handleMediaUpload = async (blockId: string, picked: File, blockType: string) => {
+    const file = await gate(picked, ruleForBlockType(blockType))
+    if (!file) return
     const fd = new FormData()
     fd.append('file', file)
     try {
@@ -915,19 +922,21 @@ export function MessageSender() {
       const res = await api.post('/media-library/upload', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
       const url = res.data?.url ?? res.data?.data?.url ?? ''
       updateBlock(blockId, { mediaUrl: url })
-    } catch { /* silent */ }
+    } catch (e) { toast.error((e as { response?: { data?: { message?: string } } })?.response?.data?.message ?? 'Upload failed.') }
   }
 
   // Same upload call as handleMediaUpload above, but for the standalone Test Send drawer, which
   // has its own single mediaUrl instead of a composer block to update.
-  const handleTestMediaUpload = async (file: File) => {
+  const handleTestMediaUpload = async (picked: File) => {
+    const file = await gate(picked, ruleForBlockType(testType))
+    if (!file) return
     const fd = new FormData()
     fd.append('file', file)
     setTestMediaUploading(true)
     try {
       const res = await api.post('/media-library/upload', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
       setTestMediaUrl(res.data?.url ?? res.data?.data?.url ?? '')
-    } catch { /* silent */ }
+    } catch (e) { toast.error((e as { response?: { data?: { message?: string } } })?.response?.data?.message ?? 'Upload failed.') }
     finally { setTestMediaUploading(false) }
   }
 
@@ -1585,6 +1594,7 @@ export function MessageSender() {
 
   return (
     <div className="p-4 space-y-4 max-w-6xl mx-auto">
+      {cropModal}
 
       {/* ITEM 4 — Schedule confirmation modal */}
       {pendingSchedule && (
@@ -2144,8 +2154,8 @@ export function MessageSender() {
                             <label className="flex items-center gap-1 px-2 py-1 bg-gray-100 rounded text-xs cursor-pointer hover:bg-gray-200">
                               <Upload size={12} /> Upload
                               <input type="file" className="hidden"
-                                accept={block.type === 'image' ? 'image/*' : block.type === 'video' ? 'video/*' : block.type === 'audio' ? 'audio/*' : '*/*'}
-                                onChange={e => { const f = e.target.files?.[0]; if (f) handleMediaUpload(block.id, f) }} />
+                                accept={MEDIA_RULES[ruleForBlockType(block.type)].accept}
+                                onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) handleMediaUpload(block.id, f, block.type) }} />
                             </label>
                             <button
                               onClick={() => setPickerBlockId(block.id)}
@@ -3149,7 +3159,7 @@ export function MessageSender() {
                       <label className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 border border-dashed border-gray-300 rounded-lg text-xs text-gray-500 hover:bg-gray-50 cursor-pointer">
                         {testMediaUploading ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
                         {testMediaUploading ? 'Uploading…' : 'Upload'}
-                        <input type="file" accept={testType === 'image' ? 'image/*' : testType === 'video' ? 'video/*' : 'audio/*'}
+                        <input type="file" accept={MEDIA_RULES[ruleForBlockType(testType)].accept}
                           className="hidden"
                           onChange={e => { const f = e.target.files?.[0]; if (f) handleTestMediaUpload(f); e.target.value = '' }} />
                       </label>

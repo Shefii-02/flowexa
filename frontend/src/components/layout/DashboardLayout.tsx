@@ -7,6 +7,7 @@ import { Sidebar } from './Sidebar'
 import { SessionStatusIndicator } from './SessionStatusIndicator'
 import LeadNotificationPopup from '@/components/leads/LeadNotificationPopup'
 import AiHandoffOfferPopup from '@/components/leads/AiHandoffOfferPopup'
+import PortalAssistant from '@/components/assistant/PortalAssistant'
 import { connectStaffSocket, disconnectStaffSocket } from '@/socket/staffSocket'
 import { ErrorBoundary, AccessDeniedScreen } from '@/components/error'
 import { Spinner } from '@/components/ui'
@@ -88,6 +89,9 @@ export const DashboardLayout = () => {
       {/* Real-time lead notification popups */}
       <LeadNotificationPopup />
       <AiHandoffOfferPopup />
+
+      {/* In-app "Ask in portal" helper (text / voice, any language) */}
+      <PortalAssistant />
     </div>
   )
 }

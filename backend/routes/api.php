@@ -92,6 +92,7 @@ use App\Modules\WaChat\Http\Controllers\AiScheduleController;
 use App\Modules\WaChat\Http\Controllers\AgentPlaybookTemplateController;
 use App\Http\Controllers\CompanyApiKeyController;
 use App\Http\Controllers\MetaAiController;
+use App\Http\Controllers\PortalAssistantController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
@@ -1534,6 +1535,12 @@ Route::prefix('v1')->middleware(['jwt.auth'])->group(function () {
             Route::post('/sessions/{id}/close',    [AiAgentController::class, 'closeSession']);
             Route::post('/sessions/{id}/transfer', [AiAgentController::class, 'transferSession']);
         });
+    });
+
+    // Portal assistant ("Ask in portal") — any authenticated company user
+    Route::prefix('portal-assistant')->middleware('throttle:30,1')->group(function () {
+        Route::get('/status', [PortalAssistantController::class, 'status']);
+        Route::post('/ask',   [PortalAssistantController::class, 'ask']);
     });
 
     // Meta AI / Conversation Intelligence

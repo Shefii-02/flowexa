@@ -8,6 +8,7 @@ import api from '@/api/client'
 import { useAppSelector, usePermission } from '@/store'
 import { fmt } from '@/utils'
 import toast from 'react-hot-toast'
+import { useMediaGate } from '@/hooks/useMediaGate'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -306,6 +307,7 @@ function FolderPickerModal({ title, folders, onClose, onConfirm }: FolderPickerM
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function WaMediaLibrary() {
+  const { gate, cropModal } = useMediaGate()
   const user       = useAppSelector(s => s.auth.user)
   // Role names are stored capitalised ("Admin", "Manager") and superadmin is
   // platform-level — compare case-insensitively so folder management actually
@@ -427,9 +429,11 @@ export default function WaMediaLibrary() {
   }
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
+    const picked = e.target.files?.[0]
+    if (!picked) return
     e.target.value = ''
+    const file = await gate(picked, 'library')
+    if (!file) return
 
     const fileMb    = file.size / 1048576
     const remaining = storage.limit_mb - storage.used_mb
@@ -545,6 +549,7 @@ export default function WaMediaLibrary() {
   return (
     // -mx-6 -my-6 breaks out of DashboardLayout's p-6 so we get full-bleed two-panel layout
     <div style={{ margin: '-24px', display: 'flex', height: 'calc(100vh - 52px)', overflow: 'hidden' }}>
+      {cropModal}
 
       {/* ── Left sidebar: Folder tree ────────────────────────────── */}
       <div style={{ width: 240, flexShrink: 0, borderRight: '1px solid #e5e7eb', display: 'flex', flexDirection: 'column', background: '#fafafa' }}>

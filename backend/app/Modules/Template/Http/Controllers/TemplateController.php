@@ -142,6 +142,13 @@ class TemplateController extends Controller
             return response()->json(['message' => 'This template\'s header format does not accept media.'], 422);
         }
 
+        $request->validate(['file' => ['required', 'file']]);
+        if ($rule = \App\Support\Meta\MediaRules::forHeaderFormat($template->header_format)) {
+            if ($err = \App\Support\Meta\MediaRules::validate($request->file('file'), $rule)) {
+                return response()->json(['message' => $err], 422);
+            }
+        }
+
         $meta = $this->uploadMediaToMeta($request, $company, 'template-headers');
         if (isset($meta['error'])) {
             $this->markMediaUploadResult($template, $meta['error']);

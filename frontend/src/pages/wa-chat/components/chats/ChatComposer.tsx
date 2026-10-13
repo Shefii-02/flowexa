@@ -10,6 +10,8 @@ import { messagesQueryKey, useChatMessagesActions } from '../../hooks/useChatMes
 import { useRole } from '../../hooks/useRole';
 import { useToast } from '../../hooks/useToast';
 import type { ScrollDirection } from '../../utils/scrollDecision';
+import { useMediaGate } from '@/hooks/useMediaGate';
+import type { MediaRuleKey } from '@/utils/mediaRules';
 
 // Map an attachment MIME type to the neutral MessageType for the optimistic outgoing bubble, so the
 // placeholder matches what the backend will persist (e.g. a PDF is `document`, not `application`).
@@ -79,6 +81,7 @@ function ChatComposer({
   // removing the attachment) before `onload` fires must win over the late-arriving bytes —
   // otherwise the slower read overwrites the newer pick. Same pattern as composeImageReadSeq.
   const attachmentReadSeq = useRef(0);
+  const { gate, cropModal } = useMediaGate();
 
   // Leaving this conversation — switching to another chat, or unmounting when the room closes —
   // invalidates an in-flight read, so its late `onload` drops the bytes instead of staging them
@@ -115,8 +118,8 @@ function ChatComposer({
   ];
 
   // 5. Handle file selection & base64 conversion
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    let file = e.target.files?.[0];
     e.target.value = ''; // allow re-picking the same file after a rejection or removal
     if (!file) return;
 
@@ -125,6 +128,16 @@ function ChatComposer({
     if (file.size > MEDIA_UPLOAD_MAX_BYTES) {
       showErrorToast(t('chats.errors.fileTooLarge'));
       return;
+    }
+
+    // Type/size rules + optional crop for images (same rules the server re-checks).
+    const ruleKey: MediaRuleKey | null = file.type.startsWith('image/') ? 'chat_image'
+      : file.type.startsWith('video/') ? 'chat_video'
+      : file.type.startsWith('audio/') ? 'chat_audio' : null;
+    if (ruleKey) {
+      const checked = await gate(file, ruleKey);
+      if (!checked) return;
+      file = checked;
     }
 
     if (file.type.startsWith('image/')) {
@@ -266,6 +279,7 @@ function ChatComposer({
 
   return (
     <>
+      {cropModal}
       {/* Attachment preview banner */}
       {attachment && (
         <div className="attachment-preview-banner">

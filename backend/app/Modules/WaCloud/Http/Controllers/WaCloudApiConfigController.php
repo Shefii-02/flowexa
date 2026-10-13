@@ -138,6 +138,9 @@ class WaCloudApiConfigController extends Controller
         }
 
         $request->validate(['file' => ['required', 'file', 'max:16384']]);
+        if ($err = \App\Support\Meta\MediaRules::validate($request->file('file'), 'header_document')) {
+            return response()->json(['message' => $err], 422);
+        }
 
         $meta = MetaMediaUploader::upload($request->file('file'), auth()->user()->company, 'wa-cloud-invoice-samples');
 
