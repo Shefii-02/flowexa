@@ -74,9 +74,10 @@ function extractVariables(text: string): number[] {
   return Array.from(found).sort((a, b) => a - b)
 }
 
-// Basic E.164-ish check — Meta wants a number with country code, digits only (leading +)
+// Meta (#192) needs a full international number: leading "+", country code, 7-15 digits.
+// Spaces/dashes/brackets are tolerated here and stripped by the server before sending.
 function isValidPhoneNumber(v: string): boolean {
-  return /^\+?[1-9]\d{6,14}$/.test(v.trim())
+  return /^\+[1-9]\d{6,14}$/.test(v.trim().replace(/[\s\-()]/g, ''))
 }
 
 export default function TemplatesPage() {
@@ -202,7 +203,7 @@ export default function TemplatesPage() {
 
       if (btn.type === 'PHONE_NUMBER') {
         if (!btn.phone_number?.trim()) return `Button ${i + 1}: phone number is required for a phone button`
-        if (!isValidPhoneNumber(btn.phone_number)) return `Button ${i + 1}: enter a valid phone number with country code (e.g. +919846366783)`
+        if (!isValidPhoneNumber(btn.phone_number)) return `Button ${i + 1}: enter the number with + and country code (e.g. +919846366783)`
       }
 
       if (btn.type === 'SURVEY_FORM' && !btn.survey_form_id) {

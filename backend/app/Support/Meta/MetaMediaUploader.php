@@ -65,7 +65,7 @@ class MetaMediaUploader
                 'http_code'  => $session->status(),
                 'body'       => $session->json(),
             ]);
-            return ['error' => $session->json('error.message') ?? 'Failed to start upload session.'];
+            return ['error' => MetaGraph::uploadSessionError($session->json('error.message'), $company)];
         }
 
         $uploadSessionId = $session->json('id'); // format: "upload:XYZ"

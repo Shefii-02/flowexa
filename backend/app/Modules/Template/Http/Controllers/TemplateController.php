@@ -409,7 +409,7 @@ class TemplateController extends Controller
                 'http_code'  => $session->status(),
                 'body'       => $session->json(),
             ]);
-            return ['error' => $session->json('error.message') ?? 'Failed to start upload session.'];
+            return ['error' => \App\Support\Meta\MetaGraph::uploadSessionError($session->json('error.message'), $company)];
         }
 
         $uploadSessionId = $session->json('id'); // format: "upload:XYZ"
@@ -496,7 +496,9 @@ class TemplateController extends Controller
             'buttons.*.type'  => ['required_with:buttons', 'in:QUICK_REPLY,URL,PHONE_NUMBER,SURVEY_FORM'],
             'buttons.*.text'  => ['required_with:buttons', 'string', 'max:25'],
             'buttons.*.url'   => ['nullable', 'required_if:buttons.*.type,URL', 'url'],
-            'buttons.*.phone_number'   => ['nullable', 'required_if:buttons.*.type,PHONE_NUMBER', 'string', 'max:20'],
+            // Meta (#192) rejects numbers without a country code — require "+" then 7-15 digits
+            // (spaces, dashes and brackets are tolerated and stripped before sending).
+            'buttons.*.phone_number'   => ['nullable', 'required_if:buttons.*.type,PHONE_NUMBER', 'string', 'max:25', 'regex:/^\+[\d\s\-()]{7,24}$/'],
             'buttons.*.survey_form_id' => ['nullable', 'required_if:buttons.*.type,SURVEY_FORM', 'integer'],
 
             // ── AUTHENTICATION-only fields ──────────────────────────────
@@ -767,7 +769,7 @@ class TemplateController extends Controller
                     'type'         => $type,
                     'text'         => $isPhone ? ($b['label'] ?? $b['text'] ?? 'Call') : $b['text'],
                     'url'          => $type === 'URL' ? ($b['url'] ?? null) : null,
-                    'phone_number' => $isPhone ? $phoneNumber : null,
+                    'phone_number' => $isPhone && $phoneNumber ? '+' . preg_replace('/\D+/', '', $phoneNumber) : null,
                 ], fn($v) => !is_null($v));
             })->toArray(); // media / survey_form_id fields intentionally dropped here
 

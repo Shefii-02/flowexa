@@ -60,4 +60,23 @@ class MetaGraph
             return null;
         }
     }
+
+    /**
+     * Turn Meta's raw upload-session error into something the user can act on.
+     * "WhatsApp accounts cannot be used with this API" means the `/{id}/uploads` call was made
+     * with a WhatsApp Business Account / phone number ID instead of the Meta *App* ID.
+     */
+    public static function uploadSessionError(?string $message, Company $company): string
+    {
+        $message = $message ?: 'Failed to start upload session.';
+        $appId   = (string) $company->meta_app_id;
+
+        if (str_contains($message, 'cannot be used with this API') || ($appId !== '' && $appId === (string) $company->wa_business_id)) {
+            return 'The Meta App ID saved for this company looks like a WhatsApp Business Account or phone number ID. '
+                . 'Use the App ID from developers.facebook.com → your app → Settings → Basic (not the WABA ID), '
+                . 'then try again.';
+        }
+
+        return $message;
+    }
 }
