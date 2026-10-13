@@ -27,7 +27,7 @@ class DispatchScheduledCampaigns extends Command
             ->orderBy('scheduled_at')
             ->limit(50)
             ->get(['id', 'name', 'company_id']);
-
+Log::info('DispatchScheduledCampaigns: Found ' . $due->count() . ' campaigns due for launch.');
         if ($due->isEmpty()) {
             return self::SUCCESS;
         }
@@ -40,6 +40,7 @@ class DispatchScheduledCampaigns extends Command
                 $this->info("Launched #{$campaign->id} — {$result->totalContacts} contacts");
             } catch (\Throwable $e) {
                 Log::error("Scheduled campaign {$campaign->id} auto-launch failed: {$e->getMessage()}");
+                Log::info('DispatchScheduledCampaigns: Campaign failed.');
                 $this->error("Campaign #{$campaign->id} failed: {$e->getMessage()}");
 
                 Campaign::where('id', $campaign->id)
