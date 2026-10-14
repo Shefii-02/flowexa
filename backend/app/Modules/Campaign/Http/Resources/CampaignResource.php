@@ -21,6 +21,7 @@ class CampaignResource extends JsonResource
             'status'              => $this->status,
             'scheduled_at'        => $this->scheduled_at?->toIso8601String(),
             'started_at'          => $this->started_at?->toIso8601String(),
+            'launched_at'         => $this->launched_at?->toIso8601String(),
             'completed_at'        => $this->completed_at?->toIso8601String(),
             // Lead attribution window — see CreateCampaignRequest / WaChatLeadAttributionService.
             'starts_at'           => $this->starts_at?->toIso8601String(),

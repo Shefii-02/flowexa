@@ -12,6 +12,7 @@ import { flowBuilderApi } from '@/api'
 import { Modal, Button } from '@/components/ui'
 import { getError } from '@/utils'
 import toast from 'react-hot-toast'
+import { AI_PROMPT, downloadSampleFlow } from './flowImportSample'
 
 // ─── API methods to add to flowBuilderApi ──────────────────────────────────
 // export const flowBuilderApi = {
@@ -256,6 +257,21 @@ export function FlowImportExportModal({
                     ? 'This builder will become active immediately after import'
                     : 'You can activate manually from the builders list'}
                 </p>
+              </div>
+            </div>
+
+            {/* Sample file + AI prompt */}
+            <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-3 text-xs text-indigo-700 space-y-2">
+              <p className="font-semibold">Need help building the file?</p>
+              <p>Download a sample to see the format, or copy the AI prompt, paste it into ChatGPT / Claude with your business details, save the reply as a <span className="font-mono">.json</span> file and import it here.</p>
+              <div className="flex gap-2">
+                <Button variant="secondary" onClick={downloadSampleFlow}>⬇️ Sample JSON</Button>
+                <Button
+                  variant="secondary"
+                  onClick={() => navigator.clipboard.writeText(AI_PROMPT).then(() => toast.success('AI prompt copied'), () => toast.error('Copy failed'))}
+                >
+                  🤖 Copy AI prompt
+                </Button>
               </div>
             </div>
 

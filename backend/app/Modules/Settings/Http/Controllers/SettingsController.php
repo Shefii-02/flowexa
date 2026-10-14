@@ -24,6 +24,7 @@ use App\Modules\Settings\Services\SuperAdminService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
+use App\Support\Meta\MetaGraph;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -174,6 +175,7 @@ class SettingsController extends Controller
                 'messaging_limit_tier' => $data['messaging_limit_tier'] ?? null,
                 'is_official_business_account' => $data['is_official_business_account'] ?? false,
                 'verified_at' => now()->toDateTimeString(),
+                'waba' => $this->checkWaba($company),
             ]);
         } catch (\Throwable $e) {
 
@@ -247,6 +249,48 @@ class SettingsController extends Controller
     //         ]);
     //     }
     // }
+    /**
+     * Ask the Graph API about the saved WABA ID: does it exist, is it reachable with this token,
+     * and does it own the saved Phone Number ID. Returns plain-language issues for the settings page.
+     */
+    private function checkWaba(Company $company): array
+    {
+        $issues = [];
+        $wabaId = (string) $company->wa_business_id;
+
+        if ($wabaId === '') {
+            return ['ok' => false, 'issues' => ['WABA ID is not saved. Templates and phone-number checks need it.'], 'phone_numbers' => null];
+        }
+        if ($wabaId === (string) $company->wa_phone_id) {
+            $issues[] = 'The WABA ID is the same as the Phone Number ID. Use the WhatsApp Business Account ID from WhatsApp Manager.';
+        }
+
+        $count = null;
+        try {
+            $res = Http::withToken($company->decrypt_wa_access_token)->acceptJson()->timeout(15)
+                ->get("https://graph.facebook.com/v25.0/{$wabaId}/phone_numbers", ['fields' => 'id,display_phone_number', 'limit' => 100]);
+
+            if ($res->failed()) {
+                $issues[] = $res->json('error.message') ?: 'Meta rejected the WABA ID.';
+                if (in_array($res->json('error.code'), [100, 33], true)) {
+                    $issues[] = MetaGraph::wabaIdProblem($company);
+                } elseif ($res->json('error.code') === 200) {
+                    $issues[] = 'This access token has no permission on this WABA (needs whatsapp_business_management).';
+                }
+            } else {
+                $ids   = collect($res->json('data', []))->pluck('id')->map(fn ($i) => (string) $i);
+                $count = $ids->count();
+                if (!$ids->contains((string) $company->wa_phone_id)) {
+                    $issues[] = 'Phone Number ID ' . $company->wa_phone_id . ' does not belong to this WABA.';
+                }
+            }
+        } catch (\Throwable $e) {
+            $issues[] = 'Could not reach Meta to check the WABA ID: ' . $e->getMessage();
+        }
+
+        return ['ok' => empty($issues), 'issues' => $issues, 'phone_numbers' => $count];
+    }
+
     // ── Send test message ─────────────────────────────────────────────────
     // POST /api/v1/settings/test-send
     public function testSend(Request $request): JsonResponse
@@ -262,7 +306,7 @@ class SettingsController extends Controller
             return response()->json(['message' => 'WhatsApp credentials not set.'], 422);
         }
 
-        $message = $d['message'] ?? 'Hello! This is a test message from WA SaaS Platform. ✅ Your connection is working.';
+        $message = $d['message'] ?? 'Hello! This is a test message from ' . config('app.name') . '. ✅ Your connection is working.';
 
         try {
             $response = Http::withToken($company->decrypt_wa_access_token)

@@ -11,9 +11,16 @@ class WaCredentialsRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'wa_phone_id'     => ['required','string'],
+            'wa_phone_id'     => ['required','string','regex:/^\d{5,20}$/'],
             'wa_access_token' => ['required','string'],
-            'wa_business_id'  => ['nullable','string'],
+            'wa_business_id'  => ['nullable','string','regex:/^\d{5,20}$/'],
+        ];
+    }
+    public function messages(): array
+    {
+        return [
+            'wa_phone_id.regex'    => 'Phone Number ID must be numeric (5–20 digits), not the display phone number.',
+            'wa_business_id.regex' => 'WABA ID must be numeric (5–20 digits).',
         ];
     }
     protected function failedValidation(Validator $v): void

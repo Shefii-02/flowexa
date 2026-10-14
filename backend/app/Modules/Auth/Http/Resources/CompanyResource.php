@@ -47,6 +47,8 @@ class CompanyResource extends JsonResource
                 ? rescue(fn () => decrypt($this->wa_access_token), null, false)
                 : null,
             'wa_business_id' => $this->wa_business_id,
+            'wa_credentials_saved_at' => $this->wa_credentials_saved_at?->toIso8601String(),
+            'wa_last_verified_at'     => $this->last_verified_at?->toIso8601String(),
             'webhook_verify_token' => $this->wa_webhook_token,
             'wa_config' => $this->wa_config,
             'plan' => $this->whenLoaded('plan', fn() => [

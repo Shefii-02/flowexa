@@ -9,6 +9,11 @@ const TABS = [
   { id: 'webhooks',    label: '🔗 Webhooks' },
 ] as const
 
+const APP_NAME = import.meta.env.VITE_APP_NAME || 'Flowexa Platform'
+// Webhook must point at the API host (VITE_API_URL), not the frontend origin.
+const API_BASE = (import.meta.env.VITE_API_URL || `${window.location.origin}/api/v1`).replace(/\/$/, '')
+const fmtTime = (v?: string | null) => (v ? new Date(v).toLocaleString() : '—')
+
 type TabId = (typeof TABS)[number]['id']
 
 function TabBar({ active, onChange }: { active: TabId; onChange: (t: TabId) => void }) {
@@ -41,7 +46,7 @@ function CredentialsTab() {
   const [verifying, setVerifying] = useState(false)
   const [verifyResult, setVerifyResult] = useState<any>(null)
   const [testPhone, setTestPhone] = useState('')
-  const [testMsg, setTestMsg] = useState('Hello! This is a test message from Flowexa Platform. ✅')
+  const [testMsg, setTestMsg] = useState(`Hello! This is a test message from ${APP_NAME}. ✅`)
   const [sendingTest, setSendingTest] = useState(false)
 
   const setWa = (k: string, v: string) => setWaForm(f => ({ ...f, [k]: v }))
@@ -59,6 +64,7 @@ function CredentialsTab() {
     setVerifyResult(null)
     try {
       await settingsApi.updateWa({ wa_phone_id: waForm.wa_phone_id, wa_access_token: waForm.wa_access_token, wa_business_id: waForm.wa_business_id })
+      setCompany((c: any) => ({ ...c, wa_credentials_saved_at: new Date().toISOString() }))
       toast.success('WhatsApp credentials saved.')
     }
     catch (e) { toast.error(getError(e)) }
@@ -71,7 +77,7 @@ function CredentialsTab() {
     try {
       const { data } = await settingsApi.verifyWa()
       setVerifyResult(data)
-      setCompany((c: any) => ({ ...c, wa_connected: data.connected }))
+      setCompany((c: any) => ({ ...c, wa_connected: data.connected, wa_last_verified_at: data.connected ? (data.verified_at || new Date().toISOString()) : c?.wa_last_verified_at }))
       if (data.connected) toast.success('WhatsApp connection verified ✅')
       else toast.error('Connection failed — check token and Phone Number ID')
     } catch (e) {
@@ -117,6 +123,10 @@ function CredentialsTab() {
             placeholder="EAAO..." value={waForm.wa_access_token} onChange={e => setWa('wa_access_token', e.target.value)} />
           <Input label="Business Account ID (WABA ID)" autoComplete="off" placeholder="102290129182734"
             value={waForm.wa_business_id} onChange={e => setWa('wa_business_id', e.target.value)} />
+          <div className="text-xs text-gray-500 flex flex-wrap gap-x-6 gap-y-1">
+            <span>Credentials saved: <strong>{fmtTime(company?.wa_credentials_saved_at)}</strong></span>
+            <span>Last verified: <strong>{fmtTime(company?.wa_last_verified_at)}</strong></span>
+          </div>
           <div className="flex gap-3 justify-end">
             <Button variant="secondary" onClick={handleWaSave} loading={savingWa}>Save credentials</Button>
             <Button onClick={handleVerify} loading={verifying}>
@@ -139,6 +149,19 @@ function CredentialsTab() {
                   </span>
                   <span className="text-green-500">Account status</span><span className="font-semibold">{verifyResult.account_status || '—'}</span>
                   <span className="text-green-500">Messaging tier</span><span className="font-semibold">{verifyResult.messaging_limit_tier?.replace('TIER_', 'Tier ') || '—'}</span>
+                </div>
+              )}
+              {verifyResult.connected && verifyResult.waba && (
+                <div className={`rounded-lg border p-3 text-xs mt-2 ${verifyResult.waba.ok ? 'bg-green-100 border-green-300 text-green-700' : 'bg-amber-50 border-amber-300 text-amber-800'}`}>
+                  <p className="font-semibold">
+                    {verifyResult.waba.ok ? '✅ WABA ID is valid' : '⚠️ WABA ID issue'}
+                    {verifyResult.waba.phone_numbers != null && ` · ${verifyResult.waba.phone_numbers} phone number(s) on this WABA`}
+                  </p>
+                  {verifyResult.waba.issues?.length > 0 && (
+                    <ul className="list-disc list-inside mt-1 space-y-0.5">
+                      {verifyResult.waba.issues.map((m: string, i: number) => <li key={i}>{m}</li>)}
+                    </ul>
+                  )}
                 </div>
               )}
               {!verifyResult.connected && (
@@ -259,7 +282,7 @@ function WebhooksTab() {
           <div>
             <p className="text-xs text-gray-500 mb-1">Callback URL — paste in Meta Developer Console → Webhooks:</p>
             <code className="text-xs bg-gray-100 px-3 py-2 rounded font-mono text-gray-700 block break-all select-all">
-              {window.location.origin.replace('5173', '8000')}/api/v1/webhook/whatsapp
+              {API_BASE}/webhook/whatsapp
             </code>
           </div>
           <div>

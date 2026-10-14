@@ -51,6 +51,7 @@ class SettingsService
             'wa_access_token' =>
             encrypt($dto->waAccessToken),
             'wa_business_id'  => $dto->waBusinessId,
+            'wa_credentials_saved_at' => now(),
         ]);
         return $company->fresh();
     }

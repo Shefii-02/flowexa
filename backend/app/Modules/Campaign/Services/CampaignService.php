@@ -160,7 +160,10 @@ class CampaignService
                 'delivered'      => 0,
                 'read'           => 0,
                 'failed'         => 0,
-                'started_at'     => now(),
+                // started_at follows the planned send time when one was set; launched_at
+                // always records the moment the launch actually fired (click or scheduler).
+                'started_at'     => $campaign->scheduled_at ?? now(),
+                'launched_at'    => now(),
             ]);
 
 

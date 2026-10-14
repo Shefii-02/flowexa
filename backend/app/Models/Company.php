@@ -36,6 +36,7 @@ class Company extends Model
         'wa_phone_id',
         'wa_access_token',
         'wa_business_id',
+        'wa_credentials_saved_at',
         'wa_chat_token',
         'wa_chat_token_expires_at',
         'wa_chat_key_id',
@@ -63,6 +64,7 @@ class Company extends Model
         // Was uncast: wa_chat_token_expires_at came back as a plain string, so any
         // ->isPast()/->isFuture() call on it would fatal rather than compare a date.
         'wa_chat_token_expires_at' => 'datetime',
+        'wa_credentials_saved_at'  => 'datetime',
     ];
 
     // ── Relationships ─────────────────────────────────────────────────────────
