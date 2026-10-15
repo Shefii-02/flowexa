@@ -79,7 +79,11 @@ class ProcessCampaignBatch implements ShouldQueue
                         ->timeout(10)
                         ->post("https://graph.facebook.com/v21.0/{$phoneId}/messages", $payload);
                 } catch (\Throwable $e) {
-                    $errType  = $e instanceof \Illuminate\Http\Client\ConnectionException ? 'network' : 'error';
+                    // Retry only when the request provably never left; a read timeout is ambiguous
+                    // (Meta may have accepted it) and a retry could message the contact twice.
+                    $errType  = $e instanceof \Illuminate\Http\Client\ConnectionException
+                        ? (preg_match('/cURL error (6|7|35)\b/', $e->getMessage()) ? 'network' : 'timeout')
+                        : 'error';
                     $rawError = $e->getMessage();
                     Log::error("Campaign {$this->campaignId} attempt {$attempts} exception for {$phone}: {$rawError}");
                     if ($errType === 'network' && $attempts < self::MAX_ATTEMPTS) { sleep($attempts * 3); continue; }
@@ -186,6 +190,7 @@ class ProcessCampaignBatch implements ShouldQueue
             'billing'         => "WhatsApp billing/payment issue on the Meta account ({$tries})",
             'auth'            => "Access token invalid or expired — reconnect WhatsApp ({$tries})",
             'network'         => "Meta/network problem, still failing after {$tries} — resend later",
+            'timeout'         => "No reply from Meta in time ({$tries}) — the message may still have been delivered. Check before resending",
             default           => "Send failed after {$tries}",
         };
     }

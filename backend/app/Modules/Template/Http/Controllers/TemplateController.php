@@ -16,13 +16,15 @@ use App\Support\Meta\MetaMediaUploader;
 
 class TemplateController extends Controller
 {
-    // Product rule: only a local draft or a template Meta rejected can be edited here.
-    // (Meta does allow limited edits to approved templates — about once per 24h and a capped
-    // number per month — but we deliberately lock them and push users to Duplicate instead, so
-    // an in-flight approved template is never put back into review by accident. Pending ones
-    // are locked on Meta's side: editing fails with error_subcode 2388003.)
-    private const EDITABLE_STATUSES = ['draft', 'rejected', 'error'];
-    private const LOCKED_STATUSES   = ['approved', 'pending', 'pending_deletion', 'disabled'];
+    // Mirrors Meta's own edit rules. Meta lets a template be edited while it is APPROVED, REJECTED or
+    // PAUSED (an approved one only about once per 24h and 10 times per 30 days — Meta enforces that and
+    // we surface its message). PENDING (under review), DISABLED and pending-deletion templates cannot be
+    // edited at all. Name and language never change once a template exists on Meta.
+    private const LOCKED_STATUSES      = ['pending', 'pending_deletion', 'disabled'];
+    // First-time / retry submission (create or re-send) — approved templates are edited, not submitted.
+    private const SUBMITTABLE_STATUSES = ['draft', 'rejected', 'error'];
+    // Live on Meta: a failed edit must never flip these into "error" locally.
+    private const LIVE_STATUSES        = ['approved', 'paused'];
 
     public function __construct(private TemplateService $templates) {}
 
@@ -77,7 +79,9 @@ class TemplateController extends Controller
 
         if (in_array($template->status, self::LOCKED_STATUSES, true)) {
             return response()->json([
-                'message' => 'Approved or pending templates cannot be edited on Meta. Duplicate this template to create a new version instead.',
+                'message' => $template->status === 'pending'
+                    ? 'This template is under review at Meta and cannot be edited until the review finishes. Refresh its status, or Duplicate it to start a new version.'
+                    : "A {$template->status} template cannot be edited on Meta. Duplicate it to create a new version instead.",
             ], 422);
         }
 
@@ -90,6 +94,26 @@ class TemplateController extends Controller
         }
 
         $wasSubmitted = $template->status !== 'draft';
+        $wasLive      = in_array($template->status, self::LIVE_STATUSES, true);
+        $before       = $template->getAttributes(); // raw row, so a refused edit can be rolled back exactly
+
+        // An edit of a template that already went to Meta is pushed straight away, so a media header
+        // needs its upload handle NOW. Without it buildComponents() drops the HEADER entirely and Meta
+        // receives (and queues for review) a text-only template. Refuse instead of submitting that.
+        $headerFormat = $d['header_format'] ?? $template->header_format;
+        if ($wasSubmitted && $headerFormat !== 'TEXT' && strtoupper((string) ($d['category'] ?? $template->category)) !== 'AUTHENTICATION'
+            && !$template->header_handle) {
+            if ($this->canReuploadHeader($template)) {
+                if ($err = $this->reuploadHeaderSample($template, auth()->user()->company)) {
+                    return response()->json(['message' => $err], 422);
+                }
+                $template = $template->fresh();
+            } else {
+                return response()->json([
+                    'message' => "Upload a sample {$headerFormat} first — this template has no header media, and submitting without it would drop the header.",
+                ], 422);
+            }
+        }
 
         $template = $this->templates->update($id, auth()->user()->company_id, [
             ...$d,
@@ -101,6 +125,23 @@ class TemplateController extends Controller
         if ($wasSubmitted) {
             $company = auth()->user()->company;
             $this->submitToMeta($template, $company, $this->mergedPayloadForSubmit($template), isUpdate: true);
+
+            if ($wasLive) {
+                $after = $template->fresh();
+                if ($after->status === 'error') {
+                    // Meta refused the edit (rate limit, policy, ...). The template is still live there, so put
+                    // our copy back exactly as it was and report Meta's reason — don't leave it in "error".
+                    $reason = $after->rejection_reason ?: 'Meta refused this edit.';
+                    WaTemplate::where('id', $id)->update(\Illuminate\Support\Arr::except($before, ['id', 'created_at', 'updated_at']));
+                    return response()->json(['message' => $reason], 422);
+                }
+                // Meta decides the status after an edit (it may stay approved or go back to review) — read it back.
+                try {
+                    $this->templates->syncSingleFromMeta($id, auth()->user()->company_id);
+                } catch (\Throwable $e) {
+                    Log::warning('[template-update] post-edit status refresh failed', ['template_id' => $id, 'error' => $e->getMessage()]);
+                }
+            }
         }
 
         return response()->json(['template' => $template->fresh()]);
@@ -112,7 +153,7 @@ class TemplateController extends Controller
         $template = $this->findTemplate($id);
         $company  = auth()->user()->company;
 
-        if (!in_array($template->status, self::EDITABLE_STATUSES, true)) {
+        if (!in_array($template->status, self::SUBMITTABLE_STATUSES, true)) {
             return response()->json([
                 'message' => "Only draft or rejected templates can be submitted. This template is already \"{$template->status}\" on Meta.",
             ], 422);
@@ -121,7 +162,7 @@ class TemplateController extends Controller
         if ($template->header_format !== 'TEXT' && !$template->header_handle) {
             // A duplicated template keeps its sample file locally but not Meta's upload handle
             // (handles are short-lived) — upload that file again now rather than reuse a stale one.
-            if (!$template->header_sample_path || !Storage::disk('public')->exists($template->header_sample_path)) {
+            if (!$this->canReuploadHeader($template)) {
                 return response()->json(['message' => "Upload a sample {$template->header_format} before submitting."], 422);
             }
             if ($err = $this->reuploadHeaderSample($template, $company)) {
@@ -175,10 +216,10 @@ class TemplateController extends Controller
             return response()->json(['message' => 'This template\'s header format does not accept media.'], 422);
         }
 
-        // The sample is only used for Meta review; an approved/pending template can't change it, and a
-        // failed upload must never flip a live template into "error".
+        // Meta lets an approved/rejected/paused template's header be changed; a pending (or disabled) one
+        // cannot be. A failed upload must never flip a live template into "error" (see markMediaUploadResult).
         if (in_array($template->status, self::LOCKED_STATUSES, true)) {
-            return response()->json(['message' => 'Approved or pending templates cannot be changed. Duplicate it instead.'], 422);
+            return response()->json(['message' => 'This template is under review (or disabled) at Meta, so its header cannot be changed right now. Wait for the review to finish, or Duplicate it.'], 422);
         }
 
         $request->validate(['file' => ['required', 'file', 'max:16384']]); // 16MB safety cap
@@ -305,6 +346,9 @@ class TemplateController extends Controller
     private function markMediaUploadResult(WaTemplate $template, ?string $error): void
     {
         if ($error) {
+            if (in_array($template->status, self::LIVE_STATUSES, true)) {
+                return; // the live template is untouched on Meta; the caller already returns this error
+            }
             $template->update([
                 'status'           => 'error',
                 'rejection_reason' => $error,
@@ -379,20 +423,52 @@ class TemplateController extends Controller
         return response()->json(['template' => $duplicate->fresh()], 201);
     }
 
-    // Re-uploads a template's locally stored header sample to Meta and saves the fresh handle.
-    // Used when a duplicate is submitted (upload handles are short-lived, so they are not copied).
-    // Returns an error message, or null on success.
+    // True when a media header can be (re)uploaded to Meta from what we hold: a local sample file,
+    // or — for templates synced from Meta — the sample URL Meta itself returned.
+    private function canReuploadHeader(WaTemplate $template): bool
+    {
+        return ($template->header_sample_path && Storage::disk('public')->exists($template->header_sample_path))
+            || preg_match('#^https?://#i', (string) $template->header_sample_url) === 1;
+    }
+
+    // Re-uploads a template's header sample to Meta and saves the fresh handle. Used when a duplicate is
+    // submitted (upload handles are short-lived, so they are not copied) and when a template synced from
+    // Meta is edited (Meta never hands back an upload handle). Returns an error message, or null on success.
     private function reuploadHeaderSample(WaTemplate $template, $company): ?string
     {
-        $abs  = Storage::disk('public')->path($template->header_sample_path);
-        $file = new \Illuminate\Http\UploadedFile($abs, basename($abs), Storage::disk('public')->mimeType($template->header_sample_path) ?: null, null, true);
+        $tmp = null;
+        if ($template->header_sample_path && Storage::disk('public')->exists($template->header_sample_path)) {
+            $abs  = Storage::disk('public')->path($template->header_sample_path);
+            $mime = Storage::disk('public')->mimeType($template->header_sample_path) ?: null;
+            $name = basename($abs);
+        } else {
+            try {
+                $res = Http::timeout(30)->get((string) $template->header_sample_url);
+            } catch (\Throwable $e) {
+                return 'Could not fetch the existing header sample — upload a new one.';
+            }
+            if (!$res->successful() || $res->body() === '') {
+                return 'The existing header sample is no longer available (Meta links expire) — upload a new one.';
+            }
+            $tmp  = tempnam(sys_get_temp_dir(), 'tplhdr_');
+            file_put_contents($tmp, $res->body());
+            $abs  = $tmp;
+            $mime = trim(explode(';', (string) $res->header('Content-Type'))[0]) ?: null;
+            $name = basename((string) parse_url($template->header_sample_url, PHP_URL_PATH)) ?: 'header';
+        }
 
-        $meta = MetaMediaUploader::upload($file, $company, 'template-headers');
+        try {
+            $meta = MetaMediaUploader::upload(new \Illuminate\Http\UploadedFile($abs, $name, $mime, null, true), $company, 'template-headers');
+        } finally {
+            if ($tmp) @unlink($tmp);
+        }
         if (isset($meta['error'])) {
             return $meta['error'];
         }
 
-        Storage::disk('public')->delete($template->header_sample_path); // replaced by the freshly stored copy
+        if ($template->header_sample_path) {
+            Storage::disk('public')->delete($template->header_sample_path); // replaced by the freshly stored copy
+        }
         $this->templates->attachHeaderMedia($template->id, $template->company_id, $meta['handle'], $meta['path'], $meta['url']);
         return null;
     }

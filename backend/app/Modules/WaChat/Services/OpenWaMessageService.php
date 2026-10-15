@@ -84,7 +84,7 @@ class OpenWaMessageService
     // mimetype, filename, caption, quotedMessageId — same shape as SendMediaPayload on the frontend.
     public function sendMedia(string $sessionId, string $apiKey, string $chatId, string $mediaType, array $payload): Response
     {
-        return $this->post($sessionId, $apiKey, "send-{$mediaType}", array_merge(['chatId' => $chatId], $payload), 60);
+        return $this->post($sessionId, $apiKey, "send-{$mediaType}", array_merge(['chatId' => $chatId], $payload), 90);
     }
 
     /**

@@ -58,9 +58,11 @@ const statusIcon: Record<string,string> = {
   approved: '✅', pending: '⏳', rejected: '❌', error: '⚠️', draft: '📝',
 }
 
-// Statuses Meta itself will refuse to let us edit/resubmit — kept in sync with the
+// Meta lets approved / rejected / paused templates be edited (approved ones about once per 24h, 10x per 30 days,
+// enforced by Meta). Pending / disabled / pending-deletion cannot be edited. Kept in sync with the backend.
+// (Older note: statuses Meta itself will refuse to let us edit/resubmit) — kept in sync with the
 // backend's LOCKED_STATUSES so the UI can disable Edit before the user even tries.
-const LOCKED_STATUSES = ['approved', 'pending', 'pending_deletion', 'disabled']
+const LOCKED_STATUSES = ['pending', 'pending_deletion', 'disabled']
 
 const DEFAULT_FORM = {
   name: '', category: 'MARKETING', language: 'en',
@@ -398,6 +400,19 @@ export default function TemplatesPage() {
         })),
       }
 
+      // A template that already went to Meta (rejected / error) is re-pushed by update() itself, so
+      // its NEW header sample must be uploaded BEFORE that call — otherwise Meta receives the edit
+      // without the image (and the upload is then refused, the template being pending by then).
+      const isResubmit = !!editTpl && editTpl.status !== 'draft'
+      const needsSampleUpload = !isAuth && form.header_format !== 'TEXT' && !!headerSampleFile
+      const uploadSample = async (id: number) => {
+        setUploadingSample(true)
+        try { await templateApi.uploadHeaderMedia(id, headerSampleFile as File) }
+        finally { setUploadingSample(false) }
+      }
+
+      if (isResubmit && needsSampleUpload) await uploadSample(editTpl.id)
+
       // Step 1 — create (as draft) or update the text/structure fields, get a template id
       let templateId: number
       if (editTpl) {
@@ -408,19 +423,13 @@ export default function TemplatesPage() {
         templateId = data.template.id
       }
 
-      // Step 2 — upload a new header sample, only if one was chosen this session.
+      // Step 2 — brand-new / draft templates: upload the sample now (the id exists only after step 1).
       // Editing without touching the file field leaves the existing header_handle as-is.
       // (N/A for AUTHENTICATION — it never has a header.)
-      if (!isAuth && form.header_format !== 'TEXT' && headerSampleFile) {
-        setUploadingSample(true)
-        await templateApi.uploadHeaderMedia(templateId, headerSampleFile)
-        setUploadingSample(false)
-      }
+      if (!isResubmit && needsSampleUpload) await uploadSample(templateId)
 
-      // Step 3 — push to Meta. The backend no-ops quietly if WA credentials aren't
-      // connected yet, and for edits this is exactly what "resubmit" is supposed to do.
-      // Only for a brand-new or still-draft template. Editing one that was already submitted (rejected /
-      // error) has just been re-pushed to Meta by update(); calling submit() again would be refused
+      // Step 3 — push to Meta. Only for a brand-new or still-draft template: editing one that was
+      // already submitted has just been re-pushed by update(), and a second submit() would be refused
       // because it is now "pending".
       if (!editTpl || editTpl.status === 'draft') {
         await templateApi.submit(templateId)
@@ -493,6 +502,8 @@ export default function TemplatesPage() {
     ? 'Uploading sample...'
     : editTpl?.status === 'rejected'
       ? 'Update & resubmit to Meta'
+      : editTpl && ['approved', 'paused'].includes(editTpl.status)
+        ? 'Save & send for review'
       : editTpl
         ? 'Save changes'
         : 'Create & submit to Meta'
@@ -518,7 +529,7 @@ export default function TemplatesPage() {
       <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-xs text-blue-700 space-y-1">
         <p><strong>How it works:</strong> Create template here → auto-submitted to Meta for approval → webhook updates status automatically.</p>
         <p>⏳ <strong>Pending</strong> = Meta is reviewing (usually 30 min–few hours) &nbsp;·&nbsp; ✅ <strong>Approved</strong> = ready to use in campaigns &nbsp;·&nbsp; ❌ <strong>Rejected</strong> = see reason and fix</p>
-        <p>🔒 Approved/pending templates can't be edited — Meta locks them once submitted. Use <strong>Duplicate</strong> to create a new version instead.</p>
+        <p>✏️ <strong>Approved</strong>, <strong>rejected</strong> and <strong>paused</strong> templates can be edited (header, body, footer, buttons) — an approved one only about once per 24 hours, and saving sends it back to Meta for review. 🔒 <strong>Pending</strong> templates are locked until Meta finishes review; name and language can never change. Use <strong>Duplicate</strong> to start a new version.</p>
       </div>
 
       <div className="card">
@@ -591,7 +602,7 @@ export default function TemplatesPage() {
                       <div className="flex gap-2">
                         <a href={`/wa-cloud/templates/${t.id}`} className="text-xs text-gray-500 hover:underline">View</a>
                         {locked ? (
-                          <span className="text-xs text-gray-300" title="Approved/pending templates can't be edited on Meta">🔒 Locked</span>
+                          <span className="text-xs text-gray-300" title="Meta is reviewing this template (or it is disabled) — it can't be edited right now. Refresh its status, or Duplicate it.">🔒 In review</span>
                         ) : (
                           <button onClick={() => openEdit(t)} className="text-xs text-blue-600 hover:underline">Edit</button>
                         )}
@@ -629,9 +640,16 @@ export default function TemplatesPage() {
           </>
         }
       >
+        {!isLocked && editTpl && ['approved', 'paused'].includes(editTpl.status) && (
+          <div className="mb-4 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-xs text-blue-700">
+            ✏️ This template is <strong>{editTpl.status}</strong> at Meta. You can change the header, body, footer and buttons, but Meta allows this only about
+            <strong> once per 24 hours</strong> (max 10 times per 30 days) and the change goes back through review. Name and language can't change.
+            If Meta refuses the edit, your current version stays live.
+          </div>
+        )}
         {isLocked && (
           <div className="mb-4 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-xs text-amber-700">
-            🔒 This template is <strong>{editTpl.status}</strong> on Meta and can no longer be edited. Close this and use <strong>Duplicate</strong> from the table to create a new version.
+            🔒 This template is <strong>{editTpl.status}</strong> on Meta and cannot be edited at Meta right now. Wait for the review to finish (use <strong>Refresh status</strong> on the template page), or close this and use <strong>Duplicate</strong> to create a new version.
           </div>
         )}
         <div className="grid grid-cols-5 gap-5">
@@ -651,7 +669,9 @@ export default function TemplatesPage() {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="label">Category *</label>
-                <select className="select" value={form.category} onChange={e => set('category', e.target.value)}>
+                <select className="select" value={form.category} onChange={e => set('category', e.target.value)}
+                  disabled={!!editTpl?.wa_template_id && ['approved', 'paused'].includes(editTpl?.status)}
+                  title={editTpl?.wa_template_id && ['approved', 'paused'].includes(editTpl?.status) ? "Meta doesn't let you change the category of a live template" : undefined}>
                   {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
                 <p className="text-xs text-gray-400 mt-1">
@@ -662,7 +682,9 @@ export default function TemplatesPage() {
               </div>
               <div>
                 <label className="label">Language *</label>
-                <select className="select" value={form.language} onChange={e => set('language', e.target.value)}>
+                <select className="select" value={form.language} onChange={e => set('language', e.target.value)}
+                  disabled={!!editTpl?.wa_template_id}
+                  title={editTpl?.wa_template_id ? "A template's language can't be changed once it exists on Meta" : undefined}>
                   {LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.label}</option>)}
                 </select>
               </div>

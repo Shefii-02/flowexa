@@ -209,7 +209,12 @@ class ProcessMessageSenderJob implements ShouldQueue
                 } catch (\Throwable $e) {
                     $res      = null;
                     $rawError = $e->getMessage();
-                    $errType  = $e instanceof \Illuminate\Http\Client\ConnectionException ? 'network' : 'error';
+                    // Retry ONLY when the request provably never left (DNS / refused / TLS connect). A read
+                    // timeout ("cURL error 28 ... 0 bytes received") is ambiguous — the gateway may have
+                    // delivered the message and just not answered in time — and re-sending would duplicate it.
+                    $errType  = $e instanceof \Illuminate\Http\Client\ConnectionException
+                        ? (preg_match('/cURL error (6|7|35)\b/', $rawError) ? 'network' : 'timeout')
+                        : 'error';
                     Log::warning("ProcessMessageSenderJob #{$job->id}: attempt {$attempts} threw for {$chatId}: {$rawError}");
                     if ($errType === 'network' && $attempts < self::MAX_ATTEMPTS) { sleep($attempts * 3); continue; }
                     break;
@@ -307,6 +312,7 @@ class ProcessMessageSenderJob implements ShouldQueue
             'not_on_whatsapp' => "Number is not on WhatsApp — check the number (country code + digits), edit it and resend ({$tries})",
             'bad_number'      => "Gateway rejected this number — check the country code and digits, edit it and resend ({$tries})",
             'network'         => "Gateway/network problem, still failing after {$tries} — resend later",
+            'timeout'         => "The gateway did not reply in time ({$tries}) — the message may still have been delivered. Check the chat before resending",
             'auth'            => "Session authorisation problem after {$tries} — reconnect the session and resend",
             default           => "Send failed after {$tries}",
         };
