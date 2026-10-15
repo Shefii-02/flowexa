@@ -6,7 +6,7 @@ import {
   Send, Pause, Square, Play, Download, Upload, X, Plus,
   Users, MessageSquare, Copy,
   FileText, Tag, Hash, Loader2, Search, Calendar, XCircle,
-  Bold, Italic, Strikethrough, CheckCircle2, AlertCircle, FlaskConical,
+  Bold, Italic, Strikethrough, CheckCircle2, AlertCircle, FlaskConical, RotateCcw,
 } from 'lucide-react'
 import { useSessionsQuery, useSessionGroupsQuery, useSessionChatsQuery } from '../../hooks/queries'
 import { messageApi, contactApi, getGroupInfoCached, sessionApi } from '../../api/api'
@@ -91,7 +91,7 @@ interface ServerJob {
   // before this was added, so callers treat it as `?? 0`.
   leads_count?: number
   status: string
-  log: { recipient_name: string; phone: string; status: string; sent_at?: string; error?: string }[]
+  log: { id?: number; attempts?: number; error_type?: string | null; recipient_name: string; phone: string; status: string; sent_at?: string; error?: string }[]
   // Shape matches toMessagePayload()'s output — 'text' is the only one with a `.text` used
   // directly by duplicateFromHistory below; the others (media/poll/location/contact/audio) aren't
   // reconstructed into the composer on duplicate, only the audience carries over for those.
@@ -129,8 +129,13 @@ type ExtraPayload =
 // isn't invalid in any way the backend can detect: the job just runs zero iterations and silently
 // "completes" with 0 sent / 0 failed despite a nonzero `total` (exactly what happened before this
 // was added — every recipient array was empty at send time).
+// A plain number goes to the gateway as digits only — a leading "+" (or spaces/dashes) makes it
+// reject the chat id with a 400. "@c.us"/"@lid" ids are opaque and left untouched.
+const cleanPhone = (phone: string): string => (phone.includes('@') ? phone.trim() : phone.replace(/\D/g, ''))
+const isPlausiblePhone = (phone: string): boolean => phone.includes('@') || /^\d{8,15}$/.test(phone)
+
 function toMessagePayload(templateText: string, extraPayload: ExtraPayload, recipients: Recipient[]): Record<string, unknown> {
-  const recipientList = recipients.map(r => ({ name: r.name, phone: r.phone }))
+  const recipientList = recipients.map(r => ({ name: r.name, phone: cleanPhone(r.phone) }))
   if (!extraPayload) return { type: 'text', text: templateText, recipients: recipientList }
   switch (extraPayload.kind) {
     case 'media':    return { type: 'media', blocks: extraPayload.blocks, recipients: recipientList }
@@ -1309,17 +1314,26 @@ export function MessageSender() {
     if (!built) return false
     const { templateText, extraPayload } = built
 
+    // Clean numbers at creation time ("+91 98…" -> "9198…") and drop any that still can't be a
+    // phone number, so they never become guaranteed failures in the campaign.
+    const cleaned = selectedRecipients.map(r => ({ ...r, phone: cleanPhone(r.phone) }))
+    const sendable = cleaned.filter(r => isPlausiblePhone(r.phone))
+    if (sendable.length < cleaned.length) {
+      toast(`${cleaned.length - sendable.length} invalid number(s) were skipped (must be 8–15 digits).`, { icon: '⚠️' })
+    }
+    if (sendable.length === 0) { toast.error('No valid phone numbers to send to.'); return false }
+
     try {
       const res = await api.post('/message-sender', {
         campaign_name: campaignName || undefined,
         session_id: session,
         type: selectedRecipients[0]?.type ?? 'personal',
-        total: selectedRecipients.length,
+        total: sendable.length,
         delay_ms: delaySeconds * 1000,
         unique_signature: uniqueSignature,
         scheduled_at: scheduledAtValue || undefined,
-        log: selectedRecipients.map(r => ({ recipient_name: r.name, phone: r.phone, status: 'pending' })),
-        message_payload: toMessagePayload(templateText, extraPayload, selectedRecipients),
+        log: sendable.map(r => ({ recipient_name: r.name, phone: r.phone, status: 'pending' })),
+        message_payload: toMessagePayload(templateText, extraPayload, sendable),
       })
       const newId: number | undefined = res.data?.data?.id
 
@@ -1475,6 +1489,26 @@ export function MessageSender() {
     setDrawerJob(null)
     setPageTab('sender')
   }
+
+  // Re-sends only the numbers that failed, as a new campaign. The server cleans each number
+  // first (a "+" or stray spaces/dashes were the usual cause) and skips ones that aren't valid.
+  const handleResendFailed = async (h: ServerJob, items?: { log_id: number; phone?: string }[]) => {
+    if (!items && !confirm(`Resend to the ${h.failed} failed number(s) of this campaign?\n\nNumbers are cleaned first (e.g. "+91…" becomes "91…"). Anyone already delivered to is not messaged again.`)) return
+    setHistoryActionLoading(h.id)
+    try {
+      const { data } = await api.post(`/message-sender/${h.id}/resend-failed`, items ? { items } : {})
+      setEditingLogId(null)
+      toast.success(data?.message ?? 'Resending failed numbers.')
+      setDrawerJob(null)
+      refreshServerHistory()
+    } catch (e) {
+      toast.error((e as { response?: { data?: { message?: string } } })?.response?.data?.message ?? 'Could not resend.')
+    } finally { setHistoryActionLoading(null) }
+  }
+  // Inline "edit number" on a failed row in the delivery drawer
+  const [editingLogId, setEditingLogId] = useState<number | null>(null)
+  const [editPhone, setEditPhone] = useState('')
+  const canResendFailed = (h: ServerJob) => h.id > 0 && (h.failed ?? 0) > 0 && ['done', 'stopped', 'paused'].includes(h.status)
 
   const handleHistoryLaunch = async (id: number) => {
     setHistoryActionLoading(id)
@@ -2792,6 +2826,15 @@ export function MessageSender() {
                                     className="flex items-center gap-1 px-2 py-1 text-xs bg-gray-100 text-gray-600 rounded hover:bg-gray-200">
                                     <Download size={11} /> CSV
                                   </button>
+                                  {canResendFailed(h) && (
+                                    <button
+                                      disabled={isActioning}
+                                      onClick={() => handleResendFailed(h)}
+                                      title="Resend only the failed numbers (numbers are cleaned first)"
+                                      className="flex items-center gap-1 px-2 py-1 text-xs bg-amber-100 text-amber-700 rounded hover:bg-amber-200 disabled:opacity-50">
+                                      <RotateCcw size={11} /> Resend failed ({h.failed})
+                                    </button>
+                                  )}
                                   {canLaunch && (
                                     <button
                                       disabled={isActioning}
@@ -3016,6 +3059,15 @@ export function MessageSender() {
                 className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-gray-100 text-gray-600 rounded-lg hover:bg-gray-200">
                 <Download size={12} /> CSV
               </button>
+              {canResendFailed(drawerJob) && (
+                <button
+                  disabled={historyActionLoading === drawerJob.id}
+                  onClick={() => handleResendFailed(drawerJob)}
+                  title="Resend only the failed numbers (numbers are cleaned first)"
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-amber-100 text-amber-700 rounded-lg hover:bg-amber-200 disabled:opacity-50">
+                  <RotateCcw size={12} /> Resend failed ({drawerJob.failed})
+                </button>
+              )}
               {/* drawerJob.id > 0 excludes the synthetic negative ids built for local-history rows,
                   which have no real backend job to act on. */}
               {/* A 'scheduled' job fires on its own via the cron — Launch only applies to
@@ -3068,6 +3120,7 @@ export function MessageSender() {
                       <th className="px-2 py-2 font-medium">Name</th>
                       <th className="px-2 py-2 font-medium">Phone</th>
                       <th className="px-2 py-2 font-medium">Status</th>
+                      <th className="px-2 py-2 font-medium" title="How many send attempts were made">Tries</th>
                       <th className="px-2 py-2 font-medium">Sent At</th>
                     </tr>
                   </thead>
@@ -3076,12 +3129,43 @@ export function MessageSender() {
                       <tr key={i} className="hover:bg-gray-50">
                         <td className="px-5 py-2.5 text-gray-400">{i + 1}</td>
                         <td className="px-2 py-2.5 text-gray-800 font-medium">{e.recipient_name || '—'}</td>
-                        <td className="px-2 py-2.5 text-gray-500 font-mono">{e.phone}</td>
+                        <td className="px-2 py-2.5 text-gray-500 font-mono">
+                          {editingLogId !== null && editingLogId === e.id ? (
+                            <div className="flex items-center gap-1">
+                              <input
+                                autoFocus
+                                value={editPhone}
+                                onChange={ev => setEditPhone(ev.target.value)}
+                                placeholder="919846366783"
+                                className="w-32 border border-gray-300 rounded px-1.5 py-1 text-xs font-mono"
+                              />
+                              <button
+                                disabled={historyActionLoading === drawerJob.id}
+                                onClick={() => {
+                                  const cleaned = cleanPhone(editPhone)
+                                  if (!isPlausiblePhone(cleaned)) { toast.error('Enter the full number with country code (8–15 digits).'); return }
+                                  handleResendFailed(drawerJob, [{ log_id: e.id as number, phone: cleaned }])
+                                }}
+                                className="px-1.5 py-1 text-xs bg-green-500 text-white rounded hover:bg-green-600 disabled:opacity-50">Resend</button>
+                              <button onClick={() => setEditingLogId(null)} className="text-gray-400 hover:text-gray-700"><X size={12} /></button>
+                            </div>
+                          ) : (
+                            <span>{e.phone}</span>
+                          )}
+                        </td>
                         <td className="px-2 py-2.5">
                           <div className="space-y-0.5">
                             <StatusBadge status={e.status} />
                             {e.error && <div className="text-red-500 text-xs leading-tight mt-0.5 max-w-[140px] truncate" title={e.error}>{e.error}</div>}
+                            {e.status === 'failed' && e.id && drawerJob.id > 0 && canResendFailed(drawerJob) && editingLogId !== e.id && (
+                              <button
+                                onClick={() => { setEditingLogId(e.id as number); setEditPhone(cleanPhone(e.phone)) }}
+                                className="text-xs text-blue-600 hover:underline">✎ Edit number &amp; resend</button>
+                            )}
                           </div>
+                        </td>
+                        <td className="px-2 py-2.5 text-gray-500" title={e.status === 'failed' ? 'Tried this many times, then gave up' : undefined}>
+                          {e.attempts ?? '—'}
                         </td>
                         <td className="px-2 py-2.5 text-gray-400 whitespace-nowrap">
                           {e.sent_at ? new Date(e.sent_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '—'}

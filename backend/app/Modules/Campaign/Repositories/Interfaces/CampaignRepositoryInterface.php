@@ -35,13 +35,13 @@ interface CampaignRepositoryInterface
 
     public function getPendingContacts(int $campaignId, int $limit): Collection;
 
-    public function markContactSent(int $id, string $waMessageId): void;
+    public function markContactSent(int $id, string $waMessageId, int $attempts = 1): void;
 
     public function markContactDelivered(string $waMessageId): void;
 
     public function markContactRead(string $waMessageId): void;
 
-    public function markContactFailed(int $id, string $reason): void;
+    public function markContactFailed(int $id, string $reason, int $attempts = 1, ?string $errorType = null): void;
 
     public function countByStatus(int $campaignId): array;
 

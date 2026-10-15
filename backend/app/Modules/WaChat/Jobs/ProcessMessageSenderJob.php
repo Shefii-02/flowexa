@@ -25,6 +25,8 @@ class ProcessMessageSenderJob implements ShouldQueue
     // it and the job would be marked failed without ever actually running. handle() itself never
     // lets a send failure escape as an exception (each recipient's try/catch swallows it), so
     // this headroom exists purely to absorb lock-wait releases, not real retries.
+    private const MAX_ATTEMPTS = 3; // sends per recipient (first try + auto-fix/backoff retries)
+
     public int $tries   = 100;
     public int $timeout = 3600;
 
@@ -71,6 +73,17 @@ class ProcessMessageSenderJob implements ShouldQueue
         $wa         = new OpenWaMessageService();
         $payload    = $job->message_payload ?? [];
         $recipients = $this->dedupeRecipients($payload['recipients'] ?? []);
+        // A resumed job, or one re-run after a worker crash, starts from the top of the list —
+        // skip anyone this job already delivered to so they never get the message twice.
+        $alreadySent = WahaMessageLog::where('job_id', $job->id)->where('status', 'sent')
+            ->pluck('recipient_phone')
+            ->map(fn ($p) => str_contains((string) $p, '@') ? strtolower($p) : preg_replace('/\D/', '', (string) $p))
+            ->flip();
+        $recipients = array_values(array_filter($recipients, function ($r) use ($alreadySent) {
+            $phone = (string) ($r['phone'] ?? '');
+            $key   = str_contains($phone, '@') ? strtolower($phone) : preg_replace('/\D/', '', $phone);
+            return !isset($alreadySent[$key]);
+        }));
         $logMessageType = $this->resolveLogMessageType($payload['type'] ?? 'text', $payload['blocks'] ?? []);
 
         // A scheduled campaign can sit queued for hours/days. If its session was deleted and
@@ -133,7 +146,8 @@ class ProcessMessageSenderJob implements ShouldQueue
 
             $phone   = $recipient['phone'] ?? '';
             $name    = $recipient['name']  ?? '';
-            $chatId  = str_contains($phone, '@') ? $phone : $phone . '@c.us';
+            // The gateway rejects ids like "+9180…@c.us" (400) — a plain number must be digits only.
+            $chatId  = str_contains($phone, '@') ? $phone : preg_replace('/\D+/', '', $phone) . '@c.us';
 
             Log::info("ProcessMessageSenderJob #{$job->id}: sending to recipient " . ($index + 1) . '/' . count($recipients), [
                 'name'    => $name,
@@ -156,49 +170,81 @@ class ProcessMessageSenderJob implements ShouldQueue
                 'status'          => 'pending',
             ];
 
-            try {
-                $res = $this->dispatchSend($wa, $job, $apiKey, $chatId, $msgType, $payload, $recipient, $company);
+            // ── Send with automatic diagnosis + recovery ───────────────────────────────
+            // Each failure is classified and, where a fix exists, applied and retried (up to
+            // MAX_ATTEMPTS tries in total):
+            //   transient (timeout / 429 / 5xx)  -> wait, retry
+            //   401 (key / allowlist drift)      -> refresh token + re-sync sessions, retry
+            //   bad number format                -> re-clean the number (digits only, drop leading 0s), retry
+            //   not on WhatsApp / still invalid  -> permanent: stop now, tell the user why
+            // The final outcome records how many tries it took and the diagnosed reason.
+            $attempts = 0;
+            $res      = null;
+            $errType  = null;
+            $rawError = null;
+            $renumbered = false;
 
-                // A 401 here can mean either the allowlist drifted (fixed by syncSessions) or —
-                // since this job reads $company->wa_chat_token once, up front, before a loop that
-                // can run for hours — the key itself was regenerated mid-campaign (e.g. a reconnect
-                // or superadmin renew), which revokes the old key outright. Re-read the company's
-                // current token as well as re-syncing the allowlist before the one retry, otherwise
-                // a mid-run key rotation permanently fails every remaining recipient with the same
-                // dead key.
-                if (!$res->successful() && $res->status() === 401 && !$resyncedForAuth && $company) {
+            while ($attempts < self::MAX_ATTEMPTS) {
+                $attempts++;
+                try {
+                    $res = $this->dispatchSend($wa, $job, $apiKey, $chatId, $msgType, $payload, $recipient, $company);
+                } catch (\Throwable $e) {
+                    $res      = null;
+                    $rawError = $e->getMessage();
+                    $errType  = $e instanceof \Illuminate\Http\Client\ConnectionException ? 'network' : 'error';
+                    Log::warning("ProcessMessageSenderJob #{$job->id}: attempt {$attempts} threw for {$chatId}: {$rawError}");
+                    if ($errType === 'network' && $attempts < self::MAX_ATTEMPTS) { sleep($attempts * 3); continue; }
+                    break;
+                }
+
+                if ($res->successful()) { $errType = null; $rawError = null; break; }
+
+                $status   = $res->status();
+                $rawError = $res->body();
+                $errType  = $this->classifyFailure($status, $rawError);
+                Log::warning("ProcessMessageSenderJob #{$job->id}: attempt {$attempts} failed for {$chatId} ({$errType})", ['status' => $status, 'body' => $rawError]);
+
+                if ($status === 401 && !$resyncedForAuth && $company) {
+                    // The allowlist drifted, or the key was regenerated mid-campaign — refresh both.
                     $resyncedForAuth = true;
-                    Log::warning("ProcessMessageSenderJob #{$job->id}: 401 from gateway for session {$job->session_id} — refreshing token, re-syncing allowlist and retrying");
                     $company = $company->fresh() ?? $company;
                     $apiKey  = $company->wa_chat_token ?: $apiKey;
                     app(WaChatTokenService::class)->syncSessions($company);
-                    $res = $this->dispatchSend($wa, $job, $apiKey, $chatId, $msgType, $payload, $recipient, $company);
+                    continue;
                 }
 
-                if ($res->successful()) {
-                    Log::info("ProcessMessageSenderJob #{$job->id}: sent to {$chatId}", ['status' => $res->status()]);
-                    WahaMessageLog::create(array_merge($logBase, [
-                        'status'          => 'sent',
-                        'waha_message_id' => $res->json('messageId') ?? null,
-                        'sent_at'         => now(),
-                    ]));
-                    $job->increment('sent');
-                } else {
-                    Log::warning("ProcessMessageSenderJob #{$job->id}: failed to {$chatId}", [
-                        'status' => $res->status(),
-                        'body'   => $res->body(),
-                    ]);
-                    WahaMessageLog::create(array_merge($logBase, [
-                        'status'        => 'failed',
-                        'error_message' => $res->body(),
-                    ]));
-                    $job->increment('failed');
+                if ($errType === 'network' && $attempts < self::MAX_ATTEMPTS) { sleep($attempts * 3); continue; }
+
+                if ($errType === 'bad_number' && !$renumbered && !str_contains($phone, '@')) {
+                    // Auto-fix: international "00…" prefix / trunk-zero left in the number.
+                    $fixed = ltrim(preg_replace('/\D+/', '', $phone), '0');
+                    if ($fixed !== '' && $fixed . '@c.us' !== $chatId) {
+                        $renumbered = true;
+                        $chatId     = $fixed . '@c.us';
+                        continue;
+                    }
                 }
-            } catch (\Exception $e) {
-                Log::error("ProcessMessageSenderJob #{$job->id}: exception sending to {$chatId}: " . $e->getMessage());
+
+                break; // permanent (not on WhatsApp, still a bad number, or out of tries)
+            }
+
+            if ($res && $res->successful()) {
+                Log::info("ProcessMessageSenderJob #{$job->id}: sent to {$chatId} (attempt {$attempts})", ['status' => $res->status()]);
+                WahaMessageLog::create(array_merge($logBase, [
+                    'status'          => 'sent',
+                    'attempts'        => $attempts,
+                    'waha_message_id' => $res->json('messageId') ?? null,
+                    'sent_at'         => now(),
+                ]));
+                $job->increment('sent');
+            } else {
+                $reason = $this->friendlyFailure($errType, $attempts);
+                Log::warning("ProcessMessageSenderJob #{$job->id}: gave up on {$chatId} after {$attempts} try(s): {$errType}");
                 WahaMessageLog::create(array_merge($logBase, [
                     'status'        => 'failed',
-                    'error_message' => $e->getMessage(),
+                    'attempts'      => $attempts,
+                    'error_type'    => $errType ?? 'error',
+                    'error_message' => $reason . ($rawError ? ' — ' . mb_substr($rawError, 0, 300) : ''),
                 ]));
                 $job->increment('failed');
             }
@@ -218,6 +264,41 @@ class ProcessMessageSenderJob implements ShouldQueue
             'sent'         => $job->sent,
             'failed'       => $job->failed,
         ]);
+    }
+
+    // Decides what kind of failure a gateway response is, so the loop knows whether a retry or an
+    // automatic fix can possibly help.
+    private function classifyFailure(int $status, string $body): string
+    {
+        $b = strtolower($body);
+        if (preg_match('/not (a )?(registered|whatsapp)|no whatsapp|not exist|isn.t on whatsapp|invalid (wid|jid)/', $b)) {
+            return 'not_on_whatsapp';
+        }
+        if ($status === 401 || $status === 403) return 'auth';
+        if (in_array($status, [408, 425, 429], true) || $status >= 500) return 'network';
+        if (in_array($status, [400, 404, 422], true)) return 'bad_number';
+        return 'error';
+    }
+
+    private function friendlyFailure(?string $type, int $attempts): string
+    {
+        $tries = $attempts . ' ' . ($attempts === 1 ? 'try' : 'tries');
+        return match ($type) {
+            'not_on_whatsapp' => "Number is not on WhatsApp ({$tries})",
+            'bad_number'      => "Gateway rejected this number — check the country code and digits, edit it and resend ({$tries})",
+            'network'         => "Gateway/network problem, still failing after {$tries} — resend later",
+            'auth'            => "Session authorisation problem after {$tries} — reconnect the session and resend",
+            default           => "Send failed after {$tries}",
+        };
+    }
+
+    // If the worker dies or the job throws outside the per-recipient try/catch, the row would stay
+    // "running" forever while recipients sit pending. Flip it to "paused" so the UI stops lying
+    // and the user can Resume (which now skips everyone already sent).
+    public function failed(\Throwable $e): void
+    {
+        Log::error("ProcessMessageSenderJob #{$this->jobId}: job failed — {$e->getMessage()}");
+        MessageSenderJob::where('id', $this->jobId)->where('status', 'running')->update(['status' => 'paused']);
     }
 
     // Backend safety net: the frontend already dedupes by normalized phone before submitting, but a

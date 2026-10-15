@@ -5,6 +5,8 @@ namespace App\Modules\WaChat\Http\Controllers;
 use App\Http\Controllers\Controller;
 use App\Models\Company;
 use App\Modules\WaChat\Models\MessageSenderJob;
+use App\Modules\WaChat\Models\WahaMessageLog;
+use App\Modules\WaChat\Models\WahaSession;
 use App\Modules\WaChat\Jobs\ProcessMessageSenderJob;
 use App\Modules\WaChat\Services\OpenWaMessageService;
 use Illuminate\Http\Client\Response;
@@ -65,6 +67,21 @@ class MessageSenderController extends Controller
         ], [
             'session_id.exists' => 'That session no longer exists — pick a currently active one.',
         ]);
+
+        // Store plain digit numbers ("+91 98…" -> "9198…"): the gateway rejects a "+" in the chat id
+        // with a 400. Whatever client created the campaign, the saved recipients are clean.
+        if (isset($data['message_payload']['recipients']) && is_array($data['message_payload']['recipients'])) {
+            $data['message_payload']['recipients'] = array_values(array_map(
+                fn ($r) => array_merge($r, ['phone' => self::cleanPhone((string) ($r['phone'] ?? ''))]),
+                $data['message_payload']['recipients']
+            ));
+        }
+        if (isset($data['log']) && is_array($data['log'])) {
+            $data['log'] = array_values(array_map(
+                fn ($r) => array_merge($r, ['phone' => self::cleanPhone((string) ($r['phone'] ?? ''))]),
+                $data['log']
+            ));
+        }
 
         $job = MessageSenderJob::create(array_merge($data, [
             'company_id' => auth()->user()->company_id,
@@ -285,6 +302,9 @@ class MessageSenderController extends Controller
     {
         if ($job->messageLogs->isNotEmpty()) {
             $job->setAttribute('log', $job->messageLogs->map(fn($l) => [
+                'id'             => $l->id,
+                'attempts'       => $l->attempts ?? 1,
+                'error_type'     => $l->error_type,
                 'recipient_name' => $l->recipient_name,
                 'phone'          => $l->recipient_phone,
                 'status'         => $l->status,
@@ -307,6 +327,98 @@ class MessageSenderController extends Controller
             return 'Temporary delivery issue — please retry this recipient.';
         }
         return $raw;
+    }
+
+    /** Digits only for a plain number ("+91 98463-66783" -> "919846366783"); "@c.us"/"@lid" ids pass through. */
+    public static function cleanPhone(string $phone): string
+    {
+        $phone = trim($phone);
+        return str_contains($phone, '@') ? $phone : preg_replace('/\D+/', '', $phone);
+    }
+
+    /**
+     * Re-send ONLY the recipients that failed in a finished campaign, as a new campaign (the
+     * original's history and counters stay untouched). Numbers are cleaned first — a leading "+",
+     * spaces or dashes are what made many of them fail in the first place — and anything that still
+     * isn't a plausible phone number (8-15 digits) is skipped and reported back.
+     */
+    public function resendFailed(int $id, Request $request): JsonResponse
+    {
+        // Optional: resend only specific failed rows, each with an optionally corrected number
+        // (the "edit phone number" action). Without it, every failed row is resent.
+        $items = collect($request->validate([
+            'items'           => ['nullable', 'array', 'max:500'],
+            'items.*.log_id'  => ['required_with:items', 'integer'],
+            'items.*.phone'   => ['nullable', 'string', 'max:40'],
+        ])['items'] ?? [])->keyBy('log_id');
+
+        $user = auth()->user();
+        $job  = MessageSenderJob::where('company_id', $user->company_id)->findOrFail($id);
+
+        if (in_array($job->status, ['running', 'pending', 'scheduled'], true)) {
+            return response()->json(['message' => 'This campaign has not finished yet — wait for it to complete (or stop it) before resending failures.'], 422);
+        }
+
+        if (!WahaSession::where('company_id', $user->company_id)->where('session_name', $job->session_id)->exists()) {
+            return response()->json(['message' => 'The WhatsApp session used by this campaign no longer exists — Duplicate it and pick a current session instead.'], 422);
+        }
+
+        $logs = WahaMessageLog::where('job_id', $job->id)->get();
+        $alreadySent = $logs->where('status', 'sent')->map(fn ($l) => self::cleanPhone((string) $l->recipient_phone))->flip();
+
+        $recipients = [];
+        $invalid    = [];
+        foreach ($logs->where('status', 'failed') as $l) {
+            if ($items->isNotEmpty() && !$items->has($l->id)) continue;
+            // An edited number replaces the stored one for this resend only.
+            $raw   = (string) (($items[$l->id]['phone'] ?? null) ?: $l->recipient_phone);
+            $clean = self::cleanPhone($raw);
+            $digits = preg_replace('/\D+/', '', $clean);
+
+            if (isset($recipients[$clean]) || isset($alreadySent[$clean])) continue; // dedupe / already delivered on a retry
+            if (!str_contains($clean, '@') && (strlen($digits) < 8 || strlen($digits) > 15)) {
+                $invalid[] = $raw;
+                continue;
+            }
+            $recipients[$clean] = ['name' => $l->recipient_name ?: $clean, 'phone' => $clean];
+        }
+
+        if (empty($recipients)) {
+            return response()->json([
+                'message' => $invalid
+                    ? 'No resendable numbers — the failed ones are not valid phone numbers: ' . implode(', ', array_slice($invalid, 0, 5))
+                    : 'There are no failed numbers to resend.',
+            ], 422);
+        }
+
+        $recipients = array_values($recipients);
+        $payload = array_merge($job->message_payload ?? [], ['recipients' => $recipients]);
+
+        $new = MessageSenderJob::create([
+            'company_id'       => $job->company_id,
+            'created_by'       => $user->id,
+            'campaign_name'    => ($job->campaign_name ?: 'Campaign #' . $job->id) . ' (resend failed)',
+            'session_id'       => $job->session_id,
+            'type'             => $job->type,
+            'status'           => 'pending',
+            'total'            => count($recipients),
+            'sent'             => 0,
+            'failed'           => 0,
+            'delay_ms'         => $job->delay_ms,
+            'unique_signature' => $job->unique_signature,
+            'message_payload'  => $payload,
+            'log'              => array_map(fn ($r) => ['recipient_name' => $r['name'], 'phone' => $r['phone'], 'status' => 'pending'], $recipients),
+            'started_at'       => now(),
+        ]);
+
+        Log::info("MessageSenderController: resending " . count($recipients) . " failed recipient(s) of campaign #{$job->id} as campaign #{$new->id}");
+        dispatch(new ProcessMessageSenderJob($new->id));
+
+        return response()->json([
+            'message' => 'Resending ' . count($recipients) . ' failed number(s)' . ($invalid ? '; skipped ' . count($invalid) . ' invalid.' : '.'),
+            'data'    => $new,
+            'skipped_invalid' => $invalid,
+        ], 201);
     }
 
     public function pause(int $id): JsonResponse

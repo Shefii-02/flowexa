@@ -13,7 +13,7 @@ class WahaMessageLog extends Model
     protected $fillable = [
         'company_id', 'job_id', 'campaign_name', 'session_id',
         'recipient_name', 'recipient_phone', 'recipient_type',
-        'message_type', 'status', 'error_message', 'waha_message_id', 'sent_at',
+        'message_type', 'status', 'attempts', 'error_message', 'error_type', 'waha_message_id', 'sent_at',
     ];
 
     protected $casts = ['sent_at' => 'datetime'];

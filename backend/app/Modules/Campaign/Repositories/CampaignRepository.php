@@ -160,10 +160,13 @@ class CampaignRepository implements CampaignRepositoryInterface
     }
 
     // ─── Mark sent ────────────────────────────────────────────────────────────
-    public function markContactSent(int $id, string $waMessageId): void
+    public function markContactSent(int $id, string $waMessageId, int $attempts = 1): void
     {
         CampaignContact::where('id', $id)->update([
             'status'        => 'sent',
+            'attempts'      => $attempts,
+            'failed_reason' => null,
+            'error_type'    => null,
             'wa_message_id' => $waMessageId,
             'sent_at'       => now(),
         ]);
@@ -188,10 +191,12 @@ class CampaignRepository implements CampaignRepositoryInterface
     }
 
     // ─── Mark failed ──────────────────────────────────────────────────────────
-    public function markContactFailed(int $id, string $reason): void
+    public function markContactFailed(int $id, string $reason, int $attempts = 1, ?string $errorType = null): void
     {
         CampaignContact::where('id', $id)->update([
             'status'        => 'failed',
+            'attempts'      => $attempts,
+            'error_type'    => $errorType,
             'failed_reason' => $reason,
         ]);
     }

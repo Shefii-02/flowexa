@@ -15,7 +15,7 @@ class CampaignContact extends Model
 {
     protected $fillable = [
         'campaign_id', 'contact_id', 'phone', 'status',
-        'wa_message_id', 'failed_reason', 'sent_at', 'delivered_at', 'read_at',
+        'attempts', 'wa_message_id', 'failed_reason', 'error_type', 'sent_at', 'delivered_at', 'read_at',
     ];
 
     protected $casts = [

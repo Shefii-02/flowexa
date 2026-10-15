@@ -17,6 +17,8 @@ class ProcessCampaignBatch implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
+    private const MAX_ATTEMPTS = 3; // sends per contact (first try + auto-fix/backoff retries)
+
     public int $tries   = 3;
     public int $timeout = 300;
 
@@ -58,31 +60,70 @@ class ProcessCampaignBatch implements ShouldQueue
                 break;
             }
 
-            try {
-                $payload  = $this->buildPayload($cc->phone, $campaign);
-                $response = Http::withToken($token)
-                    ->timeout(10)
-                    ->post("https://graph.facebook.com/v21.0/{$phoneId}/messages", $payload);
+            // ── Send with automatic diagnosis + recovery (up to MAX_ATTEMPTS tries) ─────────
+            //   network / rate limit / 5xx  -> wait, retry
+            //   bad number format           -> re-clean (digits only, drop leading zeros), retry once
+            //   not on WhatsApp, template or billing problem, auth -> permanent, stop and say why
+            $phone       = preg_replace('/\D+/', '', (string) $cc->phone);
+            $attempts    = 0;
+            $waMessageId = null;
+            $errType     = null;
+            $rawError    = null;
+            $renumbered  = false;
+
+            while ($attempts < self::MAX_ATTEMPTS) {
+                $attempts++;
+                try {
+                    $payload  = $this->buildPayload($phone, $campaign);
+                    $response = Http::withToken($token)
+                        ->timeout(10)
+                        ->post("https://graph.facebook.com/v21.0/{$phoneId}/messages", $payload);
+                } catch (\Throwable $e) {
+                    $errType  = $e instanceof \Illuminate\Http\Client\ConnectionException ? 'network' : 'error';
+                    $rawError = $e->getMessage();
+                    Log::error("Campaign {$this->campaignId} attempt {$attempts} exception for {$phone}: {$rawError}");
+                    if ($errType === 'network' && $attempts < self::MAX_ATTEMPTS) { sleep($attempts * 3); continue; }
+                    break;
+                }
 
                 if ($response->successful()) {
-                    $waMessageId = $response->json('messages.0.id');
-                    $campaignRepository->markContactSent($cc->id, $waMessageId ?? '');
-                    $sent++;
-                } else {
-                    $error   = $response->json('error.message') ?? 'Unknown error';
-                    // Meta's `error_data.details` names the exact parameter/component that was wrong
-                    // (e.g. "header: Format mismatch, expected IMAGE, received UNKNOWN").
-                    $details = $response->json('error.error_data.details');
-                    if ($details) {
-                        $error .= " — {$details}";
-                    }
-                    $campaignRepository->markContactFailed($cc->id, $error);
-                    Log::warning("Campaign {$this->campaignId} send failed for {$cc->phone}: {$error}");
-                    $failed++;
+                    $waMessageId = $response->json('messages.0.id') ?? '';
+                    $errType = $rawError = null;
+                    break;
                 }
-            } catch (\Exception $e) {
-                $campaignRepository->markContactFailed($cc->id, $e->getMessage());
-                Log::error("Campaign {$this->campaignId} exception for {$cc->phone}: {$e->getMessage()}");
+
+                $rawError = $response->json('error.message') ?? 'Unknown error';
+                // Meta's `error_data.details` names the exact parameter/component that was wrong
+                // (e.g. "header: Format mismatch, expected IMAGE, received UNKNOWN").
+                if ($details = $response->json('error.error_data.details')) {
+                    $rawError .= " — {$details}";
+                }
+                $errType = $this->classifyFailure($response->status(), (int) $response->json('error.code'), $rawError);
+                Log::warning("Campaign {$this->campaignId} attempt {$attempts} failed for {$phone} ({$errType}): {$rawError}");
+
+                if ($errType === 'network' && $attempts < self::MAX_ATTEMPTS) { sleep($attempts * 3); continue; }
+
+                if ($errType === 'bad_number' && !$renumbered) {
+                    $fixed = ltrim($phone, '0');
+                    if ($fixed !== '' && $fixed !== $phone) { $renumbered = true; $phone = $fixed; continue; }
+                }
+                break; // permanent, or out of tries
+            }
+
+            if ($waMessageId !== null) {
+                if ($phone !== $cc->phone) {
+                    \App\Models\CampaignContact::where('id', $cc->id)->update(['phone' => $phone]); // keep the auto-corrected number
+                }
+                $campaignRepository->markContactSent($cc->id, $waMessageId, $attempts);
+                $sent++;
+            } else {
+                $campaignRepository->markContactFailed(
+                    $cc->id,
+                    $this->friendlyFailure($errType, $attempts) . ' — ' . mb_substr((string) $rawError, 0, 400),
+                    $attempts,
+                    $errType ?? 'error',
+                );
+                Log::warning("Campaign {$this->campaignId} gave up on {$phone} after {$attempts} try(s): {$errType}");
                 $failed++;
             }
 
@@ -116,6 +157,37 @@ class ProcessCampaignBatch implements ShouldQueue
                     ->delay(now()->addSeconds(60)); // next batch after 1 min
             }
         }
+    }
+
+    /** What kind of failure is this Meta response? Decides whether a retry / auto-fix can help. */
+    private function classifyFailure(int $status, int $code, string $message): string
+    {
+        return match (true) {
+            $code === 131026                                             => 'not_on_whatsapp',   // message undeliverable
+            $code === 131030                                             => 'not_allowed',       // recipient not in allowed list
+            in_array($code, [131042, 131043], true)                      => 'billing',
+            $code === 190 || $status === 401                             => 'auth',
+            in_array($code, [132000, 132001, 132005, 132007, 132012, 132015, 132016], true) => 'template',
+            in_array($code, [1, 2, 4, 17, 80007, 130429, 131000, 131016, 131056], true)
+                || $status === 429 || $status >= 500                     => 'network',
+            $code === 100 && preg_match('/phone|recipient|\bto\b/i', $message) => 'bad_number',
+            default                                                      => 'error',
+        };
+    }
+
+    private function friendlyFailure(?string $type, int $attempts): string
+    {
+        $tries = $attempts . ' ' . ($attempts === 1 ? 'try' : 'tries');
+        return match ($type) {
+            'not_on_whatsapp' => "Number is not on WhatsApp ({$tries})",
+            'not_allowed'     => "Recipient not in the allowed list for this number ({$tries})",
+            'bad_number'      => "Meta rejected this number — check country code and digits, edit and resend ({$tries})",
+            'template'        => "Template / parameter problem — fix the template, then resend ({$tries})",
+            'billing'         => "WhatsApp billing/payment issue on the Meta account ({$tries})",
+            'auth'            => "Access token invalid or expired — reconnect WhatsApp ({$tries})",
+            'network'         => "Meta/network problem, still failing after {$tries} — resend later",
+            default           => "Send failed after {$tries}",
+        };
     }
 
     /**

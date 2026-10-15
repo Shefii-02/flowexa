@@ -122,6 +122,16 @@ class CampaignService
         // Resolve contact list
         $contacts = $this->campaignRepository->resolveContactPhones($companyId, $campaign);
 
+        // Clean numbers at launch ("+91 98…" -> "9198…") and drop any that can't be a phone number
+        // (8-15 digits), so they never become guaranteed failures.
+        $before   = $contacts->count();
+        $contacts = $contacts->each(fn ($c) => $c->phone = preg_replace('/\D+/', '', (string) $c->phone))
+            ->filter(fn ($c) => preg_match('/^\d{8,15}$/', $c->phone))
+            ->values();
+        if ($contacts->count() < $before) {
+            Log::warning("Campaign {$campaign->id}: skipped " . ($before - $contacts->count()) . ' contact(s) with invalid phone numbers at launch.');
+        }
+
         if ($contacts->isEmpty()) {
             throw CampaignException::noContacts();
         }
@@ -227,19 +237,53 @@ class CampaignService
     }
 
     // ─── Resend failed ────────────────────────────────────────────────────────
-    public function resendFailed(int $id, int $companyId): int
+    /**
+     * Re-queue failed contacts. $items (optional) = [['id' => campaign_contact id, 'phone' => corrected number?]]
+     * limits it to those rows and lets a number be corrected first. Every number is cleaned to digits
+     * and must be 8-15 digits; others are skipped and returned in 'skipped'.
+     *
+     * @return array{queued:int, skipped:list<string>}
+     */
+    public function resendFailed(int $id, int $companyId, array $items = []): array
     {
         $campaign = $this->show($id, $companyId);
-        $count    = $this->campaignRepository->resetFailedToPending($campaign->id);
+        $company  = $campaign->company;
+        $edits    = collect($items)->keyBy('id');
 
-        if (!$count) throw CampaignException::noFailedMessages();
+        $rows = \App\Models\CampaignContact::where('campaign_id', $campaign->id)
+            ->where('status', 'failed')
+            ->when($edits->isNotEmpty(), fn ($q) => $q->whereIn('id', $edits->keys()))
+            ->get();
 
-        $wallet = $this->walletService->getWallet($companyId);
-        if ($wallet->balance < $count) {
-            throw CampaignException::insufficientBalance($wallet->balance, $count);
+        $ids = [];
+        $skipped = [];
+        foreach ($rows as $row) {
+            $phone = preg_replace('/\D+/', '', (string) (($edits[$row->id]['phone'] ?? null) ?: $row->phone));
+            if (!preg_match('/^\d{8,15}$/', $phone)) { $skipped[] = (string) $row->phone; continue; }
+            $row->update([
+                'phone' => $phone, 'status' => 'pending', 'attempts' => 0,
+                'failed_reason' => null, 'error_type' => null, 'wa_message_id' => null,
+            ]);
+            $ids[] = $row->id;
+        }
+        $count = count($ids);
+
+        if (!$count) {
+            throw $skipped
+                ? new CampaignException('The failed numbers are not valid phone numbers: ' . implode(', ', array_slice($skipped, 0, 5)), 422, 'invalid_numbers')
+                : CampaignException::noFailedMessages();
         }
 
-        $this->walletService->debit($companyId, $count, "Resend failed — campaign #{$campaign->id}", (string) $campaign->id, 'campaign_resend');
+        // Only wallet-mode companies pay per message from the wallet; own-account ones are billed by Meta.
+        if ($company->wa_config == 'wallet') {
+            $wallet = $this->walletService->getWallet($companyId);
+            if ($wallet->balance < $count) {
+                // put them back so nothing is lost when the top-up is short
+                \App\Models\CampaignContact::whereIn('id', $ids)->update(['status' => 'failed', 'failed_reason' => 'Insufficient wallet balance to resend.', 'error_type' => 'billing']);
+                throw CampaignException::insufficientBalance($wallet->balance, $count);
+            }
+            $this->walletService->debit($companyId, $count, "Resend failed — campaign #{$campaign->id}", (string) $campaign->id, 'campaign_resend');
+        }
 
         $this->campaignRepository->updateStats($campaign->id, [
             'status'  => 'running',
@@ -249,7 +293,7 @@ class CampaignService
 
         ProcessCampaignBatch::dispatch($campaign->id, $companyId)->onQueue('campaigns');
 
-        return $count;
+        return ['queued' => $count, 'skipped' => $skipped];
     }
 
     // ─── Campaign contacts ────────────────────────────────────────────────────

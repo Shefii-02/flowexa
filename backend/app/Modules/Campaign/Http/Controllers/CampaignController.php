@@ -157,9 +157,22 @@ class CampaignController extends Controller
         return response()->json(['message' => 'Campaign resumed.', 'campaign' => new CampaignResource($c)]);
     }
 
-    public function resendFailed(int $campaign): JsonResponse
+    /** Resend all failed contacts, or only `items` (each optionally with a corrected phone number). */
+    public function resendFailed(int $campaign, Request $request): JsonResponse
     {
-        $count = $this->campaignService->resendFailed($campaign, auth()->user()->company_id);
-        return response()->json(['message' => "Queued {$count} failed messages for resend."]);
+        $d = $request->validate([
+            'items'         => ['nullable', 'array', 'max:500'],
+            'items.*.id'    => ['required_with:items', 'integer'],
+            'items.*.phone' => ['nullable', 'string', 'max:40'],
+        ]);
+
+        $r = $this->campaignService->resendFailed($campaign, auth()->user()->company_id, $d['items'] ?? []);
+
+        return response()->json([
+            'message' => "Queued {$r['queued']} failed message(s) for resend."
+                . ($r['skipped'] ? ' Skipped ' . count($r['skipped']) . ' invalid number(s).' : ''),
+            'queued'  => $r['queued'],
+            'skipped_invalid' => $r['skipped'],
+        ]);
     }
 }

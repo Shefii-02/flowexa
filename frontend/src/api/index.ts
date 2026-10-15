@@ -122,7 +122,8 @@ export const campaignApi = {
   launch: (id: number) => api.post(`/campaigns/${id}/launch`),
   pause: (id: number) => api.post(`/campaigns/${id}/pause`),
   resume: (id: number) => api.post(`/campaigns/${id}/resume`),
-  resendFailed: (id: number) => api.post(`/campaigns/${id}/resend-failed`),
+  resendFailed: (id: number, items?: { id: number; phone?: string }[]) =>
+    api.post(`/campaigns/${id}/resend-failed`, items ? { items } : {}),
   contacts: (id: number, p?: Record<string, unknown>) => api.get(`/campaigns/${id}/contacts`, { params: p }),
   testSend: (d: { template_id: number; wa_phone_number_id: number; phone: string; variables?: string[]; coupon_code?: string }) =>
     api.post('/campaigns/test-send', d),

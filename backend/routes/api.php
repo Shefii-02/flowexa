@@ -1356,6 +1356,7 @@ Route::prefix('v1')->middleware(['jwt.auth'])->group(function () {
         Route::post('/{id}/pause',   [MessageSenderController::class, 'pause']);
         Route::post('/{id}/resume',  [MessageSenderController::class, 'resume']);
         Route::post('/{id}/stop',    [MessageSenderController::class, 'stop']);
+        Route::post('/{id}/resend-failed', [MessageSenderController::class, 'resendFailed']);
         Route::delete('/{id}',       [MessageSenderController::class, 'destroy']);
     });
 
