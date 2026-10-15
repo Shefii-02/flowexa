@@ -51,6 +51,7 @@ class WahaSessionController extends Controller
     /** POST /waha/token/reconnect — mint a fresh gateway key for this company. */
     public function reconnectToken(WaChatTokenService $tokens): JsonResponse
     {
+        Log::info('WA Chat token reconnect requested for company_id=' . auth()->user()->company_id);
         $company = auth()->user()->company;
         abort_unless($company, 404, 'No company on this account.');
 
