@@ -17,6 +17,7 @@ class CampaignContactResource extends JsonResource
             'status'       => $this->status,
             'attempts'     => $this->attempts,
             'error_type'   => $this->error_type,
+            'resent'       => $this->resent_at !== null,
             'wa_message_id'=> $this->wa_message_id,
             'failed_reason'=> $this->failed_reason,
             'sent_at'      => $this->sent_at?->toIso8601String(),

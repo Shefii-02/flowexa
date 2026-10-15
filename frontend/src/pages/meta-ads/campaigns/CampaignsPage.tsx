@@ -631,8 +631,8 @@ export default function CampaignsPage() {
                           {c.status === 'draft' && <button onClick={() => handleAction(c.id, 'launch')} disabled={isActing} className="text-xs text-green-600 hover:underline">Launch</button>}
                           {c.status === 'running' && <button onClick={() => handleAction(c.id, 'pause')} disabled={isActing} className="text-xs text-yellow-600 hover:underline">Pause</button>}
                           {c.status === 'paused' && <button onClick={() => handleAction(c.id, 'resume')} disabled={isActing} className="text-xs text-brand-600 hover:underline">Resume</button>}
-                          {c.status === 'completed' && (c.stats?.failed || 0) > 0 && (
-                            <button onClick={() => handleAction(c.id, 'resend-failed')} disabled={isActing} className="text-xs text-purple-600 hover:underline">Resend {c.stats?.failed}</button>
+                          {c.status === 'completed' && ((c.stats as any)?.resendable_failed || 0) > 0 && (
+                            <button onClick={() => handleAction(c.id, 'resend-failed')} disabled={isActing} className="text-xs text-purple-600 hover:underline">Resend {(c.stats as any)?.resendable_failed}</button>
                           )}
                           {['draft', 'paused', 'completed'].includes(c.status) && (
                             <button onClick={() => setDelCamp(c)} className="text-xs text-red-500 hover:underline">Delete</button>
@@ -793,9 +793,9 @@ export default function CampaignsPage() {
               {['pending', 'sent', 'delivered', 'read', 'failed'].map(s => <option key={s} value={s}>{s}</option>)}
             </select>
             <div className="flex-1" />
-            {contactsCamp && (contactsCamp.stats?.failed || 0) > 0 && contactsCamp.status !== 'running' && (
+            {contactsCamp && ((contactsCamp.stats as any)?.resendable_failed || 0) > 0 && contactsCamp.status !== 'running' && (
               <Button variant="secondary" loading={resending} onClick={() => resendContacts()}>
-                🔁 Resend all failed ({contactsCamp.stats?.failed})
+                🔁 Resend all failed ({(contactsCamp.stats as any)?.resendable_failed})
               </Button>
             )}
           </div>
@@ -840,8 +840,9 @@ export default function CampaignsPage() {
                       </td>
                       <td className="py-2 pr-2 text-gray-500">{r.attempts || '—'}</td>
                       <td className="py-2 text-red-500 leading-tight">
+                        {r.status === 'failed' && r.resent && <div className="text-gray-400">Already resent once</div>}
                         {r.failed_reason && <div className="max-w-[240px] break-words" title={r.failed_reason}>{r.failed_reason}</div>}
-                        {r.status === 'failed' && contactsCamp?.status !== 'running' && editRowId !== r.id && (
+                        {r.status === 'failed' && !r.resent && contactsCamp?.status !== 'running' && editRowId !== r.id && (
                           <button onClick={() => { setEditRowId(r.id); setEditPhone((r.phone || '').replace(/\D/g, '')) }}
                             className="text-blue-600 hover:underline mt-0.5">✎ Edit number &amp; resend</button>
                         )}

@@ -271,7 +271,9 @@ class ProcessMessageSenderJob implements ShouldQueue
     private function classifyFailure(int $status, string $body): string
     {
         $b = strtolower($body);
-        if (preg_match('/not (a )?(registered|whatsapp)|no whatsapp|not exist|isn.t on whatsapp|invalid (wid|jid)/', $b)) {
+        // "must include an id property" is open-wa/WhatsApp Web failing to resolve a chat for a
+        // number that has no WhatsApp account — it is not a formatting problem.
+        if (preg_match('/not (a )?(registered|whatsapp)|no whatsapp|not exist|isn.t on whatsapp|invalid (wid|jid)|must include an id property/', $b)) {
             return 'not_on_whatsapp';
         }
         if ($status === 401 || $status === 403) return 'auth';
@@ -284,7 +286,7 @@ class ProcessMessageSenderJob implements ShouldQueue
     {
         $tries = $attempts . ' ' . ($attempts === 1 ? 'try' : 'tries');
         return match ($type) {
-            'not_on_whatsapp' => "Number is not on WhatsApp ({$tries})",
+            'not_on_whatsapp' => "Number is not on WhatsApp, or has no chat that can be opened — check the number, edit it and resend ({$tries})",
             'bad_number'      => "Gateway rejected this number — check the country code and digits, edit it and resend ({$tries})",
             'network'         => "Gateway/network problem, still failing after {$tries} — resend later",
             'auth'            => "Session authorisation problem after {$tries} — reconnect the session and resend",
@@ -339,7 +341,7 @@ class ProcessMessageSenderJob implements ShouldQueue
             'poll' => $wa->sendPoll($job->session_id, $apiKey, $chatId, $payload['question'] ?? '', $payload['options'] ?? []),
             'location' => $wa->sendLocation($job->session_id, $apiKey, $chatId, (float)($payload['lat'] ?? 0), (float)($payload['lng'] ?? 0), $payload['name'] ?? null, $payload['address'] ?? null),
             'contact' => $wa->sendContact($job->session_id, $apiKey, $chatId, $payload['contactName'] ?? '', $payload['contactNumber'] ?? ''),
-            'audio' => $wa->sendMedia($job->session_id, $apiKey, $chatId, 'audio', ['url' => $payload['url'] ?? '']),
+            'audio' => $wa->sendMediaFromUrl($job->session_id, $apiKey, $chatId, 'audio', (string) ($payload['url'] ?? '')),
             default => $this->sendText($wa, $job->session_id, $apiKey, $chatId, $payload['text'] ?? '', $recipient, $job->unique_signature ?? false, $company),
         };
     }
@@ -385,14 +387,14 @@ class ProcessMessageSenderJob implements ShouldQueue
                 $url = $block['mediaUrl'] ?? $block['url'] ?? '';
                 if (!$url) continue;
 
-                $mediaPayload = ['url' => $url];
+                $mediaPayload = [];
                 if (!empty($block['caption'])) {
                     $mediaPayload['caption'] = $this->personalizeMessage($block['caption'], $recipient, $company);
                 }
                 if (!empty($block['filename'])) {
                     $mediaPayload['filename'] = $block['filename'];
                 }
-                $last = $wa->sendMedia($sessionId, $apiKey, $chatId, $type, $mediaPayload);
+                $last = $wa->sendMediaFromUrl($sessionId, $apiKey, $chatId, $type, $url, $mediaPayload);
             }
 
             if ($i < count($blocks) - 1) {

@@ -225,7 +225,7 @@ class MessageSenderController extends Controller
             'poll'     => $wa->sendPoll($sessionId, $apiKey, $chatId, $payload['question'] ?? '', $payload['options'] ?? []),
             'location' => $wa->sendLocation($sessionId, $apiKey, $chatId, (float)($payload['lat'] ?? 0), (float)($payload['lng'] ?? 0), $payload['name'] ?? null, $payload['address'] ?? null),
             'contact'  => $wa->sendContact($sessionId, $apiKey, $chatId, $payload['contactName'] ?? '', $payload['contactNumber'] ?? ''),
-            'audio'    => $wa->sendMedia($sessionId, $apiKey, $chatId, 'audio', ['url' => $payload['url'] ?? '']),
+            'audio'    => $wa->sendMediaFromUrl($sessionId, $apiKey, $chatId, 'audio', (string) ($payload['url'] ?? '')),
             default    => $wa->sendText($sessionId, $apiKey, $chatId, $this->personalizeTestMessage($payload['text'] ?? '', $recipient, $company)),
         };
     }
@@ -249,10 +249,10 @@ class MessageSenderController extends Controller
             } else {
                 $url = $block['mediaUrl'] ?? $block['url'] ?? '';
                 if (!$url) continue;
-                $mediaPayload = ['url' => $url];
+                $mediaPayload = [];
                 if (!empty($block['caption'])) $mediaPayload['caption'] = $this->personalizeTestMessage($block['caption'], $recipient, $company);
                 if (!empty($block['filename'])) $mediaPayload['filename'] = $block['filename'];
-                $last = $wa->sendMedia($sessionId, $apiKey, $chatId, $type, $mediaPayload);
+                $last = $wa->sendMediaFromUrl($sessionId, $apiKey, $chatId, $type, $url, $mediaPayload);
             }
             if ($i < count($blocks) - 1) usleep(600_000);
         }
@@ -303,6 +303,7 @@ class MessageSenderController extends Controller
         if ($job->messageLogs->isNotEmpty()) {
             $job->setAttribute('log', $job->messageLogs->map(fn($l) => [
                 'id'             => $l->id,
+                'resent'         => $l->resent_at !== null,
                 'attempts'       => $l->attempts ?? 1,
                 'error_type'     => $l->error_type,
                 'recipient_name' => $l->recipient_name,
@@ -312,6 +313,8 @@ class MessageSenderController extends Controller
                 'error'          => $this->userFacingError($l->error_message),
             ])->all());
         }
+        // Failed recipients that have NOT been resent yet — drives whether "Resend failed" is shown.
+        $job->setAttribute('resendable_failed', $job->messageLogs->where('status', 'failed')->whereNull('resent_at')->count());
         $job->makeHidden(['messageLogs', 'wahaSession']);
         return $job;
     }
@@ -368,22 +371,29 @@ class MessageSenderController extends Controller
 
         $recipients = [];
         $invalid    = [];
-        foreach ($logs->where('status', 'failed') as $l) {
+        $resentLogIds = [];
+        $failedLogs = $logs->where('status', 'failed');
+        $pendingResend = $failedLogs->whereNull('resent_at');
+        foreach ($pendingResend as $l) {
             if ($items->isNotEmpty() && !$items->has($l->id)) continue;
             // An edited number replaces the stored one for this resend only.
             $raw   = (string) (($items[$l->id]['phone'] ?? null) ?: $l->recipient_phone);
             $clean = self::cleanPhone($raw);
             $digits = preg_replace('/\D+/', '', $clean);
 
-            if (isset($recipients[$clean]) || isset($alreadySent[$clean])) continue; // dedupe / already delivered on a retry
             if (!str_contains($clean, '@') && (strlen($digits) < 8 || strlen($digits) > 15)) {
-                $invalid[] = $raw;
+                $invalid[] = $raw; // stays resendable — fix it with "Edit number & resend"
                 continue;
             }
+            $resentLogIds[] = $l->id; // covered by this resend (even if deduped) -> never offered again
+            if (isset($recipients[$clean]) || isset($alreadySent[$clean])) continue; // dedupe / already delivered on a retry
             $recipients[$clean] = ['name' => $l->recipient_name ?: $clean, 'phone' => $clean];
         }
 
         if (empty($recipients)) {
+            if ($failedLogs->isNotEmpty() && $pendingResend->isEmpty()) {
+                return response()->json(['message' => 'The failed numbers of this campaign were already resent once.'], 422);
+            }
             return response()->json([
                 'message' => $invalid
                     ? 'No resendable numbers — the failed ones are not valid phone numbers: ' . implode(', ', array_slice($invalid, 0, 5))
@@ -410,6 +420,9 @@ class MessageSenderController extends Controller
             'log'              => array_map(fn ($r) => ['recipient_name' => $r['name'], 'phone' => $r['phone'], 'status' => 'pending'], $recipients),
             'started_at'       => now(),
         ]);
+
+        // One-time: mark exactly the rows that went into this resend so they are never offered again.
+        WahaMessageLog::whereIn('id', $resentLogIds)->update(['resent_at' => now()]);
 
         Log::info("MessageSenderController: resending " . count($recipients) . " failed recipient(s) of campaign #{$job->id} as campaign #{$new->id}");
         dispatch(new ProcessMessageSenderJob($new->id));

@@ -90,6 +90,72 @@ class OpenWaMessageService
         return $this->post($sessionId, $apiKey, "send-{$mediaType}", array_merge(['chatId' => $chatId], $payload), 60);
     }
 
+    /**
+     * Sends media by downloading the file HERE and handing the gateway its content (base64), instead
+     * of giving the gateway a URL to fetch. When the gateway can't fetch a URL (private/relative
+     * link, a web page instead of a file, a host that blocks it) WhatsApp Web fails with the cryptic
+     * "Data passed to getter must include an id property" — fetching here makes that case work and
+     * turns any real URL problem into a clear message.
+     *
+     * @param array $extra caption / filename / quotedMessageId (a 'url' key is ignored)
+     * @throws \RuntimeException with a user-readable reason when the file can't be used
+     */
+    public function sendMediaFromUrl(string $sessionId, string $apiKey, string $chatId, string $mediaType, string $url, array $extra = []): Response
+    {
+        $file = $this->fetchMedia($url, $mediaType);
+        unset($extra['url']);
+
+        return $this->sendMedia($sessionId, $apiKey, $chatId, $mediaType, array_merge($extra, [
+            'base64'   => $file['base64'],
+            'mimetype' => $file['mimetype'],
+            'filename' => $extra['filename'] ?? $file['filename'],
+        ]));
+    }
+
+    private function fetchMedia(string $url, string $mediaType): array
+    {
+        $url = trim($url);
+        if (str_starts_with($url, '/')) {
+            $url = rtrim((string) config('app.url'), '/') . $url; // relative storage link -> absolute
+        }
+        if (!preg_match('#^https?://#i', $url)) {
+            throw new \RuntimeException('Media link must be a full http(s) URL.');
+        }
+
+        try {
+            $res = Http::timeout(40)->withHeaders(['User-Agent' => 'Mozilla/5.0 (compatible; WaSender/1.0)'])->get($url);
+        } catch (\Throwable $e) {
+            throw new \RuntimeException('Could not download the media file — the link is not reachable from the server (' . $e->getMessage() . ').');
+        }
+        if (!$res->successful()) {
+            throw new \RuntimeException("Could not download the media file — the link returned HTTP {$res->status()}. It must be a public direct file link.");
+        }
+
+        $body = $res->body();
+        if ($body === '') {
+            throw new \RuntimeException('The media link returned an empty file.');
+        }
+        if (strlen($body) > 16 * 1024 * 1024) {
+            throw new \RuntimeException('The media file is larger than 16 MB, which WhatsApp does not accept.');
+        }
+
+        $mime = strtolower(trim(explode(';', (string) $res->header('Content-Type'))[0]));
+        if ($mime === '' || $mime === 'application/octet-stream') {
+            $mime = (new \finfo(FILEINFO_MIME_TYPE))->buffer($body) ?: 'application/octet-stream';
+        }
+        if (str_starts_with($mime, 'text/html')) {
+            throw new \RuntimeException('The media link points to a web page, not a file. Use a direct link to the image/video/PDF itself.');
+        }
+        $prefix = ['image' => 'image/', 'video' => 'video/', 'audio' => 'audio/'][$mediaType] ?? null;
+        if ($prefix && !str_starts_with($mime, $prefix)) {
+            throw new \RuntimeException("The link is a {$mime} file, but this block is set to {$mediaType}. Change the block type or the link.");
+        }
+
+        $name = basename((string) parse_url($url, PHP_URL_PATH)) ?: 'file';
+
+        return ['base64' => base64_encode($body), 'mimetype' => $mime, 'filename' => $name];
+    }
+
     public function sendLocation(
         string $sessionId,
         string $apiKey,

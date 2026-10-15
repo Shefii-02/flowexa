@@ -252,6 +252,7 @@ class CampaignService
 
         $rows = \App\Models\CampaignContact::where('campaign_id', $campaign->id)
             ->where('status', 'failed')
+            ->whereNull('resent_at') // one-time: a contact already resent once is never resent again
             ->when($edits->isNotEmpty(), fn ($q) => $q->whereIn('id', $edits->keys()))
             ->get();
 
@@ -261,7 +262,7 @@ class CampaignService
             $phone = preg_replace('/\D+/', '', (string) (($edits[$row->id]['phone'] ?? null) ?: $row->phone));
             if (!preg_match('/^\d{8,15}$/', $phone)) { $skipped[] = (string) $row->phone; continue; }
             $row->update([
-                'phone' => $phone, 'status' => 'pending', 'attempts' => 0,
+                'phone' => $phone, 'status' => 'pending', 'attempts' => 0, 'resent_at' => now(),
                 'failed_reason' => null, 'error_type' => null, 'wa_message_id' => null,
             ]);
             $ids[] = $row->id;
@@ -271,7 +272,9 @@ class CampaignService
         if (!$count) {
             throw $skipped
                 ? new CampaignException('The failed numbers are not valid phone numbers: ' . implode(', ', array_slice($skipped, 0, 5)), 422, 'invalid_numbers')
-                : CampaignException::noFailedMessages();
+                : (\App\Models\CampaignContact::where('campaign_id', $campaign->id)->where('status', 'failed')->exists()
+                    ? new CampaignException('These failed numbers were already resent once.', 422, 'already_resent')
+                    : CampaignException::noFailedMessages());
         }
 
         // Only wallet-mode companies pay per message from the wallet; own-account ones are billed by Meta.
@@ -279,7 +282,7 @@ class CampaignService
             $wallet = $this->walletService->getWallet($companyId);
             if ($wallet->balance < $count) {
                 // put them back so nothing is lost when the top-up is short
-                \App\Models\CampaignContact::whereIn('id', $ids)->update(['status' => 'failed', 'failed_reason' => 'Insufficient wallet balance to resend.', 'error_type' => 'billing']);
+                \App\Models\CampaignContact::whereIn('id', $ids)->update(['status' => 'failed', 'failed_reason' => 'Insufficient wallet balance to resend.', 'error_type' => 'billing', 'resent_at' => null]);
                 throw CampaignException::insufficientBalance($wallet->balance, $count);
             }
             $this->walletService->debit($companyId, $count, "Resend failed — campaign #{$campaign->id}", (string) $campaign->id, 'campaign_resend');

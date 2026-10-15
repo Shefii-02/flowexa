@@ -16,6 +16,7 @@ import { formatPhoneForDisplay } from '../../utils/formatPhone'
 import { useUser } from '@/hooks/useAuth'
 import api from '@/api/client'
 import toast from 'react-hot-toast'
+import FormattedTextarea from './FormattedTextarea'
 import MediaPickerModal from '@/components/MediaPickerModal'
 import { useMediaGate } from '@/hooks/useMediaGate'
 import { MEDIA_RULES, ruleForBlockType } from '@/utils/mediaRules'
@@ -91,7 +92,9 @@ interface ServerJob {
   // before this was added, so callers treat it as `?? 0`.
   leads_count?: number
   status: string
-  log: { id?: number; attempts?: number; error_type?: string | null; recipient_name: string; phone: string; status: string; sent_at?: string; error?: string }[]
+  /** Failed recipients not yet resent — "Resend failed" is one-time, so this drops to 0 afterwards. */
+  resendable_failed?: number
+  log: { id?: number; resent?: boolean; attempts?: number; error_type?: string | null; recipient_name: string; phone: string; status: string; sent_at?: string; error?: string }[]
   // Shape matches toMessagePayload()'s output — 'text' is the only one with a `.text` used
   // directly by duplicateFromHistory below; the others (media/poll/location/contact/audio) aren't
   // reconstructed into the composer on duplicate, only the audience carries over for those.
@@ -1493,7 +1496,7 @@ export function MessageSender() {
   // Re-sends only the numbers that failed, as a new campaign. The server cleans each number
   // first (a "+" or stray spaces/dashes were the usual cause) and skips ones that aren't valid.
   const handleResendFailed = async (h: ServerJob, items?: { log_id: number; phone?: string }[]) => {
-    if (!items && !confirm(`Resend to the ${h.failed} failed number(s) of this campaign?\n\nNumbers are cleaned first (e.g. "+91…" becomes "91…"). Anyone already delivered to is not messaged again.`)) return
+    if (!items && !confirm(`Resend to the ${h.resendable_failed ?? h.failed} failed number(s) of this campaign?\n\nNumbers are cleaned first (e.g. "+91…" becomes "91…"). Anyone already delivered to is not messaged again.`)) return
     setHistoryActionLoading(h.id)
     try {
       const { data } = await api.post(`/message-sender/${h.id}/resend-failed`, items ? { items } : {})
@@ -1508,7 +1511,7 @@ export function MessageSender() {
   // Inline "edit number" on a failed row in the delivery drawer
   const [editingLogId, setEditingLogId] = useState<number | null>(null)
   const [editPhone, setEditPhone] = useState('')
-  const canResendFailed = (h: ServerJob) => h.id > 0 && (h.failed ?? 0) > 0 && ['done', 'stopped', 'paused'].includes(h.status)
+  const canResendFailed = (h: ServerJob) => h.id > 0 && (h.resendable_failed ?? h.failed ?? 0) > 0 && ['done', 'stopped', 'paused'].includes(h.status)
 
   const handleHistoryLaunch = async (id: number) => {
     setHistoryActionLoading(id)
@@ -2176,9 +2179,8 @@ export function MessageSender() {
                         </div>
                       </div>
                       {block.type === 'text' ? (
-                        <textarea value={block.text ?? ''} onChange={e => updateBlock(block.id, { text: e.target.value })} rows={3}
-                          placeholder="Text message… {{name}} {{phone}}"
-                          className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-brand-300 resize-none" />
+                        <FormattedTextarea value={block.text ?? ''} onChange={v => updateBlock(block.id, { text: v })} rows={3}
+                          placeholder="Text message… *bold* _italic_ ~strike~ {{name}} {{phone}}" />
                       ) : (
                         <div className="space-y-2">
                           <input type="text" value={block.mediaUrl ?? ''} onChange={e => updateBlock(block.id, { mediaUrl: e.target.value })}
@@ -2198,9 +2200,8 @@ export function MessageSender() {
                             </button>
                           </div>
                           {block.type !== 'audio' && (
-                            <input type="text" value={block.caption ?? ''} onChange={e => updateBlock(block.id, { caption: e.target.value })}
-                              placeholder="Caption (optional)"
-                              className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-brand-300" />
+                            <FormattedTextarea value={block.caption ?? ''} onChange={v => updateBlock(block.id, { caption: v })} rows={3} maxLength={1024}
+                              placeholder="Message / caption (optional) — *bold* _italic_ ~strike~ {{name}}" />
                           )}
                           {block.mediaUrl && (
                             <div className="rounded overflow-hidden">
@@ -2832,7 +2833,7 @@ export function MessageSender() {
                                       onClick={() => handleResendFailed(h)}
                                       title="Resend only the failed numbers (numbers are cleaned first)"
                                       className="flex items-center gap-1 px-2 py-1 text-xs bg-amber-100 text-amber-700 rounded hover:bg-amber-200 disabled:opacity-50">
-                                      <RotateCcw size={11} /> Resend failed ({h.failed})
+                                      <RotateCcw size={11} /> Resend failed ({h.resendable_failed ?? h.failed})
                                     </button>
                                   )}
                                   {canLaunch && (
@@ -3065,7 +3066,7 @@ export function MessageSender() {
                   onClick={() => handleResendFailed(drawerJob)}
                   title="Resend only the failed numbers (numbers are cleaned first)"
                   className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-amber-100 text-amber-700 rounded-lg hover:bg-amber-200 disabled:opacity-50">
-                  <RotateCcw size={12} /> Resend failed ({drawerJob.failed})
+                  <RotateCcw size={12} /> Resend failed ({drawerJob.resendable_failed ?? drawerJob.failed})
                 </button>
               )}
               {/* drawerJob.id > 0 excludes the synthetic negative ids built for local-history rows,
@@ -3157,7 +3158,8 @@ export function MessageSender() {
                           <div className="space-y-0.5">
                             <StatusBadge status={e.status} />
                             {e.error && <div className="text-red-500 text-xs leading-tight mt-0.5 max-w-[140px] truncate" title={e.error}>{e.error}</div>}
-                            {e.status === 'failed' && e.id && drawerJob.id > 0 && canResendFailed(drawerJob) && editingLogId !== e.id && (
+                            {e.status === 'failed' && e.resent && <div className="text-gray-400 text-xs">Already resent once</div>}
+                            {e.status === 'failed' && e.id && !e.resent && drawerJob.id > 0 && ['done', 'stopped', 'paused'].includes(drawerJob.status) && editingLogId !== e.id && (
                               <button
                                 onClick={() => { setEditingLogId(e.id as number); setEditPhone(cleanPhone(e.phone)) }}
                                 className="text-xs text-blue-600 hover:underline">✎ Edit number &amp; resend</button>
@@ -3220,10 +3222,9 @@ export function MessageSender() {
               {testType === 'text' ? (
                 <div>
                   <label className="text-xs font-medium text-gray-600 mb-1 block">Message</label>
-                  <textarea value={testText}
-                    onChange={e => { setTestText(e.target.value); setTestRunStatus('idle'); setTestRunMessage(null) }}
-                    rows={5} placeholder="Type a test message…"
-                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-300 resize-none" />
+                  <FormattedTextarea value={testText}
+                    onChange={v => { setTestText(v); setTestRunStatus('idle'); setTestRunMessage(null) }}
+                    rows={5} placeholder="Type a test message… *bold* _italic_ ~strike~" />
                 </div>
               ) : (
                 <div className="space-y-2">
@@ -3254,9 +3255,11 @@ export function MessageSender() {
                     </div>
                   )}
                   {testType !== 'audio' && testMediaUrl && (
-                    <input type="text" value={testCaption} onChange={e => setTestCaption(e.target.value)}
-                      placeholder="Caption (optional)"
-                      className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-300" />
+                    <div>
+                      <label className="text-xs font-medium text-gray-600 mb-1 block">Message / caption</label>
+                      <FormattedTextarea value={testCaption} onChange={setTestCaption} rows={3} maxLength={1024}
+                        placeholder="Message sent with the media (optional) — *bold* _italic_ ~strike~" />
+                    </div>
                   )}
                 </div>
               )}
