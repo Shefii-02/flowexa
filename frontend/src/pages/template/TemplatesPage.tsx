@@ -413,7 +413,7 @@ export default function TemplatesPage() {
       const needsSampleUpload = !isAuth && form.header_format !== 'TEXT' && (!!headerSampleFile || !!headerLibraryUrl)
       const uploadSample = async (id: number) => {
         setUploadingSample(true)
-        try { await templateApi.uploadHeaderMedia(id, headerSampleFile ?? { media_url: headerLibraryUrl }) }
+        try { await templateApi.uploadHeaderMedia(id, headerSampleFile ?? { media_url: headerLibraryUrl }, form.header_format) }
         finally { setUploadingSample(false) }
       }
 

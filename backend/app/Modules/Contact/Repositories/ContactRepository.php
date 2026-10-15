@@ -3,6 +3,7 @@
 namespace App\Modules\Contact\Repositories;
 
 use App\Models\Contact;
+use App\Models\ContactLabel;
 use App\Modules\Contact\DTOs\ContactFilterDTO;
 use App\Modules\Contact\DTOs\CreateContactDTO;
 use App\Modules\Contact\DTOs\ImportContactDTO;
@@ -144,6 +145,9 @@ class ContactRepository implements ContactRepositoryInterface
         $contact->delete();
     }
 
+    /** Labels chosen in the import form (already limited to this company's own labels). */
+    private array $importLabelIds = [];
+
     // ─── CSV Import ───────────────────────────────────────────────────────────
     public function import(int $companyId, ImportContactDTO $dto): ImportResultDTO
     {
@@ -155,15 +159,41 @@ class ContactRepository implements ContactRepositoryInterface
             return $result;
         }
 
-        $handle  = fopen($path, 'r');
-        $raw     = fgetcsv($handle);
-        $headers = array_map(fn($h) => strtolower(trim($h)), $raw);
-
-        if (!in_array('phone', $headers)) {
-            fclose($path);
-            $result->addError('CSV must contain a "phone" column.');
+        $handle = fopen($path, 'r');
+        $raw    = fgetcsv($handle);
+        if ($raw === false || $raw === [null]) {
+            fclose($handle);
+            Storage::delete($dto->filePath);
+            $result->addError('The CSV file is empty.');
             return $result;
         }
+
+        // Excel/Sheets exports often start with a UTF-8 BOM, which glues itself to the first header
+        // ("\xEF\xBB\xBFphone") so a perfectly good "phone" column is not recognised. Also tolerate
+        // quotes/case and the usual alternative names for the number column.
+        $headers = array_map(function ($h) {
+            $h = strtolower(trim(str_replace("\xEF\xBB\xBF", '', (string) $h), " \t\n\r\0\x0B\"'"));
+            return in_array($h, ['phone_number', 'phone number', 'mobile', 'mobile_number', 'mobile number', 'whatsapp', 'whatsapp_number', 'whatsapp number', 'number', 'contact_number', 'contact number'], true)
+                ? 'phone' : $h;
+        }, $raw);
+
+        if (!in_array('phone', $headers, true)) {
+            fclose($handle);                     // was fclose($path): a string, which crashed the request with a 500
+            Storage::delete($dto->filePath);
+            $result->addError('CSV must contain a "phone" column (found: ' . implode(', ', array_filter($headers)) . ').');
+            return $result;
+        }
+
+        // Labels: (1) the ones picked in the import form, applied to EVERY contact in the file — new and
+        // already-existing alike, so a label can be used to build an audience from a CSV; limited to this
+        // company's own labels (the request only checks the id exists somewhere). (2) an optional
+        // "labels"/"label" column of existing label names (comma, semicolon or | separated).
+        $this->importLabelIds = ContactLabel::where('company_id', $companyId)
+            ->whereIn('id', $dto->labelIds)->pluck('id')->all();
+        $labelByName = ContactLabel::where('company_id', $companyId)->get()
+            ->keyBy(fn ($l) => strtolower(trim($l->name)));
+        $labelCol   = collect(['labels', 'label', 'tags', 'tag'])->first(fn ($c) => in_array($c, $headers, true));
+        $unknownLabels = [];
 
         $batch  = [];
         $phones = [];
@@ -187,8 +217,19 @@ class ContactRepository implements ContactRepositoryInterface
                 continue;
             }
 
+            $rowLabels = [];
+            if ($labelCol && !empty($data[$labelCol])) {
+                foreach (preg_split('/[,;|]/', (string) $data[$labelCol]) as $name) {
+                    $name = strtolower(trim($name));
+                    if ($name === '') continue;
+                    if ($labelByName->has($name)) $rowLabels[] = $labelByName[$name]->id;
+                    else $unknownLabels[$name] = true;
+                }
+            }
+
             $phones[] = $phone;
             $batch[]  = [
+                '_labels'       => $rowLabels,   // stripped in processBatch before the insert
                 'company_id'    => $companyId,
                 'phone'         => $phone,
                 'name'          => $data['name']  ?? null,
@@ -212,6 +253,12 @@ class ContactRepository implements ContactRepositoryInterface
 
         fclose($handle);
         Storage::delete($dto->filePath);
+
+        if ($unknownLabels) {
+            // informational only (not counted as failed rows): these names don't exist, so nothing was attached
+            array_unshift($result->errors, 'Labels not found and ignored: ' . implode(', ', array_keys($unknownLabels)) . '. Create them first, then re-import.');
+        }
+        $this->importLabelIds = [];
 
         return $result;
     }
@@ -253,7 +300,15 @@ class ContactRepository implements ContactRepositoryInterface
             ->toArray();
 
         foreach ($batch as $row) {
+            $labelIds = array_values(array_unique(array_merge($this->importLabelIds, $row['_labels'] ?? [])));
+            unset($row['_labels']);
+
             if (isset($existing[$row['phone']])) {
+                // Already in the system: never touch its data when skipping duplicates, but DO give it the
+                // import's labels — otherwise a label-based import silently misses everyone already known.
+                if ($labelIds) {
+                    Contact::where('company_id', $companyId)->find($existing[$row['phone']])?->labels()->syncWithoutDetaching($labelIds);
+                }
                 if ($dto->skipDupes) {
                     $result->incrementSkipped();
                 } else {
@@ -268,8 +323,8 @@ class ContactRepository implements ContactRepositoryInterface
 
             try {
                 $contact = Contact::create($row);
-                if ($dto->labelIds) {
-                    $contact->labels()->sync($dto->labelIds);
+                if ($labelIds) {
+                    $contact->labels()->sync($labelIds);
                 }
                 $result->incrementImported();
             } catch (\Exception $e) {

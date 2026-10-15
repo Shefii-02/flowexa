@@ -212,8 +212,12 @@ class TemplateController extends Controller
         $template = $this->findTemplate($id);
         $company  = auth()->user()->company;
 
-        if (!in_array($template->header_format, ['IMAGE', 'VIDEO', 'DOCUMENT'])) {
-            return response()->json(['message' => 'This template\'s header format does not accept media.'], 422);
+        // The form may be switching the header type in the same save (the sample is uploaded BEFORE the
+        // edit is stored, so the row can still hold the old type — e.g. TEXT after a sync from Meta of a
+        // template that had lost its header). The caller states the type it intends; fall back to the row's.
+        $headerFormat = strtoupper((string) $request->input('header_format', $template->header_format));
+        if (!in_array($headerFormat, ['IMAGE', 'VIDEO', 'DOCUMENT'], true)) {
+            return response()->json(['message' => 'Choose an Image, Video or Document header before uploading a sample.'], 422);
         }
 
         // Meta lets an approved/rejected/paused template's header be changed; a pending (or disabled) one
@@ -226,6 +230,7 @@ class TemplateController extends Controller
         $request->validate([
             'file'      => ['required_without:media_url', 'file', 'max:16384'], // 16MB safety cap
             'media_url' => ['required_without:file', 'string', 'max:2000'],
+            'header_format' => ['nullable', 'in:IMAGE,VIDEO,DOCUMENT,image,video,document'],
         ]);
 
         $file = $request->file('file');
@@ -244,7 +249,7 @@ class TemplateController extends Controller
             }
         }
 
-        if ($rule = \App\Support\Meta\MediaRules::forHeaderFormat($template->header_format)) {
+        if ($rule = \App\Support\Meta\MediaRules::forHeaderFormat($headerFormat)) {
             if ($err = \App\Support\Meta\MediaRules::validate($file, $rule)) {
                 return response()->json(['message' => $err], 422);
             }
@@ -261,6 +266,9 @@ class TemplateController extends Controller
             Storage::disk('public')->delete($template->header_sample_path);
         }
 
+        if ($headerFormat !== $template->header_format) {
+            $template->update(['header_format' => $headerFormat, 'header' => null]); // media headers carry no inline text
+        }
         $this->templates->attachHeaderMedia($id, $company->id, $meta['handle'], $meta['path'], $meta['url']);
 
         return response()->json([

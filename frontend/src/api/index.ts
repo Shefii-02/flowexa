@@ -396,12 +396,14 @@ export const templateApi = {
     api.post('/templates/sync-from-meta', d),
   // A File to upload, or { media_url } for a file already in the Media Library (the server reads it from
   // the company's own library, uploads it to Meta and stores the returned handle).
-  uploadHeaderMedia: (id: number, source: File | { media_url: string }) => {
+  uploadHeaderMedia: (id: number, source: File | { media_url: string }, headerFormat?: string) => {
+    // headerFormat = the type the form is switching to; the sample is uploaded before the edit is saved
     if (source instanceof File) {
       const fd = new FormData(); fd.append('file', source)
+      if (headerFormat) fd.append('header_format', headerFormat)
       return api.post(`/templates/${id}/upload-header-media`, fd, { headers: { 'Content-Type': 'multipart/form-data' } })
     }
-    return api.post(`/templates/${id}/upload-header-media`, source)
+    return api.post(`/templates/${id}/upload-header-media`, { ...source, ...(headerFormat ? { header_format: headerFormat } : {}) })
   },
   deleteHeaderMedia: (id: number) => api.delete(`/templates/${id}/delete-header-media`),
   uploadFooterMedia: (id: number, file: File) => {

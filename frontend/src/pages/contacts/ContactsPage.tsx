@@ -471,6 +471,8 @@ export default function ContactsPage() {
   const [blacklisting, setBlacklisting] = useState(false)
   const [csvFile,      setCsvFile]  = useState<File | null>(null)
   const [importLabels, setImportLabels] = useState<number[]>([])
+  const [importSkipDupes, setImportSkipDupes] = useState(true)
+  const [importResult, setImportResult] = useState<null | { message: string; summary: { total: number; imported: number; skipped: number; failed: number }; errors: string[] }>(null)
 
   const [form, setForm] = useState({ phone: '', name: '', email: '', opted_in: true })
   const [formLabels, setFormLabels] = useState<number[]>([])
@@ -580,12 +582,23 @@ export default function ContactsPage() {
     if (!csvFile) return
     setImporting(true)
     try {
-      const { data } = await contactApi.import(csvFile, importLabels, true)
+      const { data } = await contactApi.import(csvFile, importLabels, importSkipDupes)
       toast.success(data.message)
-      setShowImport(false); setCsvFile(null)
+      // Stay open and show what happened (counts + any rows/labels that were ignored) instead of closing blind
+      setImportResult({ message: data.message, summary: data.result?.summary ?? { total: 0, imported: 0, skipped: 0, failed: 0 }, errors: data.result?.errors ?? [] })
+      setCsvFile(null)
       loadContacts()
     } catch (e) { toast.error(getError(e)) }
     finally     { setImporting(false) }
+  }
+
+  const closeImport = () => {
+    setShowImport(false); setImportResult(null); setCsvFile(null); setImportLabels([]); setImportSkipDupes(true)
+  }
+
+  const downloadSampleCsv = () => {
+    const sample = 'phone,name,email,labels\n919846366783,Priya Nair,priya@example.com,LDC;Hot lead\n919846366784,Rahul Thomas,,LDC\n'
+    downloadBlob(new Blob([sample], { type: 'text/csv' }), 'contacts_sample.csv')
   }
 
   const handleExport = async () => {
@@ -813,32 +826,70 @@ export default function ContactsPage() {
         </div>
       </Modal>
 
-      {/* Import Modal */}
-      <Modal open={showImport} onClose={() => setShowImport(false)} title="Import contacts (CSV)" size="md"
+      {/* Import Modal — the choices made here (labels, duplicate handling) drive the import */}
+      <Modal open={showImport} onClose={closeImport} title="Import contacts (CSV)" size="md"
         footer={
-          <>
-            <Button variant="secondary" onClick={() => setShowImport(false)}>Cancel</Button>
-            <Button onClick={handleImport} loading={importing} disabled={!csvFile}>Import</Button>
-          </>
+          importResult ? (
+            <>
+              <Button variant="secondary" onClick={() => setImportResult(null)}>Import another file</Button>
+              <Button onClick={closeImport}>Done</Button>
+            </>
+          ) : (
+            <>
+              <Button variant="secondary" onClick={closeImport}>Cancel</Button>
+              <Button onClick={handleImport} loading={importing} disabled={!csvFile}>Import</Button>
+            </>
+          )
         }
       >
+        {importResult ? (
+          <div className="space-y-3">
+            <div className="grid grid-cols-4 gap-2 text-center">
+              {[
+                { l: 'Total', v: importResult.summary.total, c: 'text-gray-700' },
+                { l: 'Imported', v: importResult.summary.imported, c: 'text-green-600' },
+                { l: 'Skipped', v: importResult.summary.skipped, c: 'text-amber-600' },
+                { l: 'Failed', v: importResult.summary.failed, c: 'text-red-600' },
+              ].map(x => (
+                <div key={x.l} className="bg-gray-50 rounded-lg py-2">
+                  <div className={`text-lg font-bold ${x.c}`}>{x.v}</div>
+                  <div className="text-xs text-gray-400">{x.l}</div>
+                </div>
+              ))}
+            </div>
+            <p className="text-xs text-gray-500">
+              {importResult.summary.skipped > 0 && 'Skipped = already in your contacts (their data was left unchanged; the selected labels were still added). '}
+            </p>
+            {importResult.errors.length > 0 && (
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 max-h-48 overflow-y-auto">
+                <p className="text-xs font-semibold text-amber-700 mb-1">Notes &amp; rows that need attention</p>
+                <ul className="text-xs text-amber-700 space-y-0.5 list-disc pl-4">
+                  {importResult.errors.map((e, i) => <li key={i}>{e}</li>)}
+                </ul>
+              </div>
+            )}
+          </div>
+        ) : (
         <div className="space-y-4">
           <div className="bg-gray-50 border-2 border-dashed border-gray-200 rounded-xl p-6 text-center">
             <input type="file" accept=".csv,.txt" onChange={e => setCsvFile(e.target.files?.[0] || null)} className="hidden" id="csv-input" />
             <label htmlFor="csv-input" className="cursor-pointer">
               <p className="text-2xl mb-2">📂</p>
               <p className="text-sm font-medium text-gray-700">{csvFile ? csvFile.name : 'Click to select CSV file'}</p>
-              <p className="text-xs text-gray-400 mt-1">Required column: <strong>phone</strong>. Optional: name, email</p>
+              <p className="text-xs text-gray-400 mt-1">Required column: <strong>phone</strong>. Optional: name, email, labels</p>
             </label>
           </div>
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-700">
-            <strong>CSV format:</strong><br/>
-            <code>phone,name,email</code><br/>
-            <code>918086544821,Priya Nair,priya@gmail.com</code><br/>
-            <code>918086544822,Rahul Thomas,</code>
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-700 space-y-1">
+            <div className="flex items-center justify-between">
+              <strong>CSV format</strong>
+              <button type="button" onClick={downloadSampleCsv} className="text-brand-600 hover:underline">⬇ Download sample</button>
+            </div>
+            <code className="block">phone,name,email,labels</code>
+            <code className="block">919846366783,Priya Nair,priya@example.com,LDC;Hot lead</code>
+            <p>The optional <strong>labels</strong> column takes existing label names separated by <code>;</code> or <code>,</code> — added on top of the labels you tick below.</p>
           </div>
           <div>
-            <p className="label">Assign labels to all imported contacts</p>
+            <p className="label">Assign labels to all imported contacts{importLabels.length > 0 && ` (${importLabels.length} selected)`}</p>
             <div className="flex flex-wrap gap-2 mt-1">
               {labels.map(l => (
                 <label key={l.id} className="flex items-center gap-1.5 cursor-pointer">
@@ -852,8 +903,21 @@ export default function ContactsPage() {
                 </label>
               ))}
             </div>
+            <p className="text-xs text-gray-400 mt-1">Applied to every contact in the file, including ones you already have.</p>
           </div>
+          <label className="flex items-start gap-2 cursor-pointer select-none bg-gray-50 rounded-xl px-4 py-3">
+            <input type="checkbox" className="mt-0.5" checked={importSkipDupes} onChange={e => setImportSkipDupes(e.target.checked)} />
+            <span className="text-sm text-gray-700">
+              Skip contacts that already exist
+              <span className="block text-xs text-gray-400">
+                {importSkipDupes
+                  ? 'Existing contacts keep their current name and email.'
+                  : 'Existing contacts will have their name and email updated from the file.'}
+              </span>
+            </span>
+          </label>
         </div>
+        )}
       </Modal>
 
       {/* Blacklist confirm */}
