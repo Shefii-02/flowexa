@@ -518,17 +518,43 @@ class TemplateController extends Controller
                 if ($emojis !== false && $emojis > 10) {
                     $fail("The body can have at most 10 emojis ({$emojis} found).");
                 }
+                // The other two things Meta rejects with "message body can't have more than two consecutive
+                // newline characters, only have parameters, or have more than 10 emojis" — caught here so
+                // the template never makes the round trip just to be refused.
+                $text = preg_replace('/\r\n?/', "\n", (string) $value);
+                if (preg_match('/\n{3,}/', $text)) {
+                    $fail('The body cannot have more than two line breaks in a row.');
+                }
+                if (trim($text) !== '' && trim(preg_replace('/\{\{\s*\d+\s*\}\}/', '', $text)) === '') {
+                    $fail('The body cannot consist only of variables — add some text around them.');
+                } elseif (preg_match('/^\s*\{\{\s*\d+\s*\}\}/', $text)) {
+                    $fail('The body cannot start with a variable.');
+                } elseif (preg_match('/\{\{\s*\d+\s*\}\}\s*$/', $text)) {
+                    $fail('The body cannot end with a variable.');
+                }
             }],
             'body_examples'   => ['nullable', 'array'],
             'body_examples.*' => ['string', 'max:255'],
             // No header/footer/buttons at all on AUTHENTICATION — Meta rejects the template if present.
             'header_format'   => ['nullable', Rule::in($isAuth ? ['TEXT'] : ['TEXT', 'IMAGE', 'VIDEO', 'DOCUMENT'])],
-            'header'          => ['nullable', 'string', 'max:60'],
+            'header'          => ['nullable', 'string', 'max:60', function ($attr, $value, $fail) {
+                if ($value === null || $value === '') return;
+                if (preg_match('/[\r\n]/', $value)) {
+                    $fail('The header cannot contain line breaks.');
+                }
+                preg_match_all('/\{\{\s*(\d+)\s*\}\}/', $value, $m);
+                if (count($m[1]) > 1 || ($m[1] && (int) $m[1][0] !== 1)) {
+                    $fail('The header supports at most one variable, and it must be {{1}}.');
+                }
+            }],
             'header_example'  => ['nullable', 'string', 'max:255'],
             'footer'          => ['nullable', 'string', 'max:60', function ($attr, $value, $fail) {
                 // Meta rejects footers with emojis or line breaks (error_subcode 2388073).
                 if ($value !== null && (preg_match('/[\r\n]/', $value) || @preg_match('/\p{Extended_Pictographic}/u', $value) === 1)) {
                     $fail('The footer cannot contain emojis or line breaks.');
+                }
+                if ($value !== null && preg_match('/\{\{\s*\d+\s*\}\}/', $value)) {
+                    $fail('The footer cannot contain variables.');
                 }
             }],
             'buttons'         => ['nullable', 'array', 'max:3'],
@@ -586,6 +612,50 @@ class TemplateController extends Controller
 
             // Meta rejects quick-reply buttons interleaved with URL/phone/copy-code buttons: they must
             // form one contiguous group (all first or all last).
+            // Button rules Meta enforces on submit (caught here so nothing is sent just to be refused).
+            $counts = ['PHONE_NUMBER' => 0, 'URL' => 0, 'COPY_CODE' => 0];
+            $seen   = [];
+            foreach (array_values($d['buttons'] ?? []) as $i => $b) {
+                $n    = $i + 1;
+                $type = $b['type'];
+                if (isset($counts[$type])) $counts[$type]++;
+
+                if ($type !== 'COPY_CODE') {
+                    $label = trim((string) ($b['text'] ?? ''));
+                    if ($label === '') {
+                        throw ValidationException::withMessages(['buttons' => "Button {$n}: the button text is required."]);
+                    }
+                    if (preg_match('/[\r\n]|\{\{/', $label)) {
+                        throw ValidationException::withMessages(['buttons' => "Button {$n}: the text cannot contain line breaks or variables."]);
+                    }
+                    $key = mb_strtolower($label);
+                    if (isset($seen[$key])) {
+                        throw ValidationException::withMessages(['buttons' => "Button {$n}: \"{$label}\" is used by another button — every button needs its own text."]);
+                    }
+                    $seen[$key] = true;
+                }
+
+                if ($type === 'URL') {
+                    $url = trim((string) ($b['url'] ?? ''));
+                    if (!preg_match('#^https?://\S+$#i', $url) || strlen($url) > 2000) {
+                        throw ValidationException::withMessages(['buttons' => "Button {$n}: enter a full website link starting with https:// (no spaces, max 2000 characters)."]);
+                    }
+                    $host = strtolower((string) parse_url($url, PHP_URL_HOST));
+                    if (preg_match('/(^|\.)(wa\.me|whatsapp\.com)$/', $host)) {
+                        throw ValidationException::withMessages(['buttons' => "Button {$n}: a website button cannot link to WhatsApp (wa.me / whatsapp.com) — use a call or quick-reply button instead."]);
+                    }
+                }
+            }
+            if ($counts['PHONE_NUMBER'] > 1) {
+                throw ValidationException::withMessages(['buttons' => 'A template can have only one "Call phone number" button.']);
+            }
+            if ($counts['URL'] > 2) {
+                throw ValidationException::withMessages(['buttons' => 'A template can have at most two "Visit website" buttons.']);
+            }
+            if ($counts['COPY_CODE'] > 1) {
+                throw ValidationException::withMessages(['buttons' => 'A template can have only one "Copy offer code" button.']);
+            }
+
             $kinds = collect($d['buttons'] ?? [])->map(fn ($b) => in_array($b['type'], ['QUICK_REPLY', 'SURVEY_FORM'], true) ? 'Q' : 'A')->implode('');
             if (preg_match('/Q+A+Q+|A+Q+A+/', $kinds)) {
                 throw ValidationException::withMessages([

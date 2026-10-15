@@ -103,6 +103,39 @@ function isValidPhoneNumber(v: string): boolean {
 const MAX_BODY_EMOJIS = 10
 const countEmojis = (text: string): number => (text.match(/\p{Extended_Pictographic}/gu) || []).length
 const hasEmoji = (text: string): boolean => /\p{Extended_Pictographic}/u.test(text)
+
+// ── Meta content rules, checked here first (and again on the server) so a template is never sent to
+// Meta just to be refused. Each returns plain-language problems, empty when the text is fine.
+const VAR_RE = /\{\{\s*\d+\s*\}\}/g
+function bodyIssues(body: string): string[] {
+  const out: string[] = []
+  const text = body.replace(/\r\n?/g, '\n')
+  if (/\n{3,}/.test(text)) out.push("Body can't have more than two line breaks in a row.")
+  if (text.trim() && !text.replace(VAR_RE, '').trim()) out.push("Body can't consist only of variables — add some text around them.")
+  else if (/^\s*\{\{\s*\d+\s*\}\}/.test(text)) out.push("Body can't start with a variable.")
+  else if (/\{\{\s*\d+\s*\}\}\s*$/.test(text)) out.push("Body can't end with a variable.")
+  const emojis = countEmojis(text)
+  if (emojis > MAX_BODY_EMOJIS) out.push(`Body can have at most ${MAX_BODY_EMOJIS} emojis (you have ${emojis}).`)
+  if (text.length > 1024) out.push('Body is longer than 1024 characters.')
+  return out
+}
+function headerIssues(header: string): string[] {
+  const out: string[] = []
+  if (!header) return out
+  if (/[\r\n]/.test(header)) out.push("Header can't contain line breaks.")
+  if (header.length > 60) out.push('Header is longer than 60 characters.')
+  const vars = [...header.matchAll(/\{\{\s*(\d+)\s*\}\}/g)].map(m => Number(m[1]))
+  if (vars.length > 1 || (vars.length === 1 && vars[0] !== 1)) out.push('Header supports at most one variable, and it must be {{1}}.')
+  return out
+}
+function footerIssues(footer: string): string[] {
+  const out: string[] = []
+  if (!footer) return out
+  if (hasEmoji(footer) || /[\r\n]/.test(footer)) out.push("Footer can't contain emojis or line breaks.")
+  if (/\{\{\s*\d+\s*\}\}/.test(footer)) out.push("Footer can't contain variables.")
+  if (footer.length > 60) out.push('Footer is longer than 60 characters.')
+  return out
+}
 // Footer: Meta allows no emojis and no line breaks — strip them as the user types or pastes.
 const cleanFooter = (text: string): string =>
   text.replace(/\p{Extended_Pictographic}|[\uFE0F\u200D]/gu, '').replace(/[\r\n]+/g, ' ').slice(0, 60)
@@ -281,10 +314,17 @@ export default function TemplatesPage() {
       }
       if (!btn.text?.trim()) return `Button ${i + 1}: text/label is required`
       if (btn.text.trim().length > 25) return `Button ${i + 1}: text must be 25 characters or fewer`
+      if (/[\r\n]|\{\{/.test(btn.text)) return `Button ${i + 1}: the text can't contain line breaks or variables`
+      const sameText = form.buttons.findIndex(o => o.type !== 'COPY_CODE' && o.text.trim().toLowerCase() === btn.text.trim().toLowerCase())
+      if (sameText !== -1 && sameText !== i) return `Button ${i + 1}: "${btn.text.trim()}" is used by another button — every button needs its own text`
 
       if (btn.type === 'URL') {
-        if (!btn.url?.trim()) return `Button ${i + 1}: URL is required for a URL button`
-        try { new URL(btn.url) } catch { return `Button ${i + 1}: enter a valid URL (include https://)` }
+        const url = btn.url?.trim() || ''
+        if (!url) return `Button ${i + 1}: URL is required for a URL button`
+        if (!/^https?:\/\/\S+$/i.test(url) || url.length > 2000) return `Button ${i + 1}: enter a full link starting with https:// (no spaces, max 2000 characters)`
+        let host = ''
+        try { host = new URL(url).hostname.toLowerCase() } catch { return `Button ${i + 1}: enter a valid URL (include https://)` }
+        if (/(^|\.)(wa\.me|whatsapp\.com)$/.test(host)) return `Button ${i + 1}: a website button can't link to WhatsApp (wa.me / whatsapp.com) — use a call or quick-reply button`
       }
 
       if (btn.type === 'PHONE_NUMBER') {
@@ -297,6 +337,14 @@ export default function TemplatesPage() {
         return `Button ${i + 1}: pick a survey form for this button`
       }
     }
+    // limits Meta applies across the whole button list
+    const count = (t: string) => form.buttons.filter(b => b.type === t).length
+    if (count('PHONE_NUMBER') > 1) return 'Only one "Call phone number" button is allowed'
+    if (count('URL') > 2) return 'At most two "Visit website" buttons are allowed'
+    if (count('COPY_CODE') > 1) return 'Only one "Copy offer code" button is allowed'
+    // quick replies must be one contiguous group, not interleaved with website/call/copy-code buttons
+    const kinds = form.buttons.map(b => (b.type === 'QUICK_REPLY' || b.type === 'SURVEY_FORM') ? 'Q' : 'A').join('')
+    if (/Q+A+Q+|A+Q+A+/.test(kinds)) return 'Keep quick-reply buttons together — all before or all after the website / call / copy-code buttons'
     return null
   }
 
@@ -325,6 +373,11 @@ export default function TemplatesPage() {
       }
     } else {
       if (!form.body.trim())  { toast.error('Body text required'); return }
+      // Meta content rules — checked here first, then again on the server, before anything is sent to Meta
+      const contentIssue = bodyIssues(form.body)[0]
+        || (form.header_format === 'TEXT' ? headerIssues(form.header)[0] : undefined)
+        || footerIssues(form.footer)[0]
+      if (contentIssue) { toast.error(contentIssue); return }
       if (countEmojis(form.body) > MAX_BODY_EMOJIS) {
         toast.error(`Body can have at most ${MAX_BODY_EMOJIS} emojis (you have ${countEmojis(form.body)})`)
         return
@@ -742,6 +795,7 @@ export default function TemplatesPage() {
                   value={form.header}
                   onChange={e => set('header', e.target.value.slice(0, 60))}
                 />
+                {headerIssues(form.header).map(m => <p key={m} className="text-xs text-red-500">⚠️ {m}</p>)}
                 {extractVariables(form.header).length === 0 && (
                   <button type="button" onClick={addHeaderVariable} className="text-xs text-brand-600 hover:underline">+ Add variable</button>
                 )}
@@ -844,8 +898,9 @@ export default function TemplatesPage() {
                 rows={5}
                 placeholder={"Hi {{1}}! 🎉 Special offer from Univexa — 30% OFF on all SaaS plans. Use code JULY30 before July 31st."}
                 value={form.body}
-                onChange={e => set('body', e.target.value.slice(0, 1024))}
+                onChange={e => set('body', e.target.value.replace(/\r\n?/g, '\n').replace(/\n{3,}/g, '\n\n').slice(0, 1024))}
               />
+              {bodyIssues(form.body).map(m => <p key={m} className="text-xs text-red-500 mt-1">⚠️ {m}</p>)}
               <p className={`text-xs mt-1 ${countEmojis(form.body) > MAX_BODY_EMOJIS ? 'text-red-500' : 'text-gray-400'}`}>
                 Emojis: {countEmojis(form.body)} / {MAX_BODY_EMOJIS}
                 {countEmojis(form.body) > MAX_BODY_EMOJIS && ' — remove some to submit'}
@@ -904,6 +959,7 @@ export default function TemplatesPage() {
               value={form.footer}
               onChange={e => set('footer', cleanFooter(e.target.value))}
             />
+            {footerIssues(form.footer).map(m => <p key={m} className="text-xs text-red-500 -mt-2">⚠️ {m}</p>)}
 
             {/* Buttons — text/url/phone only, matching what Meta actually accepts */}
             <div>
@@ -913,6 +969,9 @@ export default function TemplatesPage() {
                   <button onClick={addButton} className="text-xs text-brand-600 hover:underline">+ Add button</button>
                 )}
               </div>
+              {form.buttons.length > 0 && validateButtons() && (
+                <p className="text-xs text-amber-600 mb-2">⚠️ {validateButtons()}</p>
+              )}
               <div className="space-y-2">
                 {form.buttons.map((btn, i) => (
                   <div key={i} className="border border-gray-200 rounded-xl p-3 space-y-2">
@@ -1189,10 +1248,10 @@ export default function TemplatesPage() {
             {/* Meta field rules */}
             <div className="mt-3 bg-blue-50 border border-blue-100 rounded-xl p-3 text-xs text-blue-700 space-y-1">
               <p className="font-semibold">Meta field rules</p>
-              <p>• <b>Body</b>: max 1024 chars, at most {MAX_BODY_EMOJIS} emojis ({countEmojis(form.body)} used)</p>
+              <p>• <b>Body</b>: max 1024 chars, at most {MAX_BODY_EMOJIS} emojis ({countEmojis(form.body)} used), no more than 2 line breaks in a row, not only variables, and no variable at the very start or end</p>
               <p>• <b>Footer</b>: max 60 chars, <b>no emojis, no line breaks</b> (removed automatically)</p>
               <p>• <b>Header</b> (text): max 60 chars, one {'{{1}}'} variable at most</p>
-              <p>• <b>Buttons</b>: label max 25 chars; no <code>wa.me</code> / WhatsApp links in URL buttons</p>
+              <p>• <b>Buttons</b>: label max 25 chars, unique, no line breaks/variables; website link must be https:// and not <code>wa.me</code> / WhatsApp; max 1 call, 2 website, 1 copy-code; quick replies grouped together</p>
               <p>• <b>Phone button</b>: country code (e.g. 91) + number, no “+” or spaces</p>
               <p>• <b>Variables</b>: {'{{1}}'}, {'{{2}}'}… in order, each with a sample value</p>
               <p>• <b>Image header</b>: JPG/PNG, max 5 MB, at least 200 px wide</p>
