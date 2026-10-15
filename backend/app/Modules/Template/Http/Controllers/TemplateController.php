@@ -123,6 +123,7 @@ class TemplateController extends Controller
             'header_handle'  => $template->header_handle,
             'footer'         => $template->footer,
             'buttons'        => $template->buttons,
+            'message_send_ttl_seconds' => $template->message_send_ttl_seconds,
             'auth_delivery_method'             => $template->auth_delivery_method,
             'auth_add_expiry'                  => $template->auth_add_expiry,
             'auth_code_expiration_minutes'      => $template->auth_code_expiration_minutes,
@@ -495,17 +496,27 @@ class TemplateController extends Controller
             'header_format'   => ['nullable', Rule::in($isAuth ? ['TEXT'] : ['TEXT', 'IMAGE', 'VIDEO', 'DOCUMENT'])],
             'header'          => ['nullable', 'string', 'max:60'],
             'header_example'  => ['nullable', 'string', 'max:255'],
-            'footer'          => ['nullable', 'string', 'max:60'],
+            'footer'          => ['nullable', 'string', 'max:60', function ($attr, $value, $fail) {
+                // Meta rejects footers with emojis or line breaks (error_subcode 2388073).
+                if ($value !== null && (preg_match('/[\r\n]/', $value) || @preg_match('/\p{Extended_Pictographic}/u', $value) === 1)) {
+                    $fail('The footer cannot contain emojis or line breaks.');
+                }
+            }],
             'buttons'         => ['nullable', 'array', 'max:3'],
             // SURVEY_FORM is our own button kind — Meta only ever sees it as a QUICK_REPLY
             // (see buildComponents). Tapping it starts the linked survey (handled in the webhook).
-            'buttons.*.type'  => ['required_with:buttons', 'in:QUICK_REPLY,URL,PHONE_NUMBER,SURVEY_FORM'],
-            'buttons.*.text'  => ['required_with:buttons', 'string', 'max:25'],
+            'buttons.*.type'  => ['required_with:buttons', 'in:QUICK_REPLY,URL,PHONE_NUMBER,SURVEY_FORM,COPY_CODE'],
+            // COPY_CODE has no label of its own — Meta renders it as "Copy offer code".
+            'buttons.*.text'  => ['nullable', 'required_unless:buttons.*.type,COPY_CODE', 'string', 'max:25'],
+            'buttons.*.example' => ['nullable', 'required_if:buttons.*.type,COPY_CODE', 'string', 'max:15', 'regex:/^[A-Za-z0-9]+$/'],
             'buttons.*.url'   => ['nullable', 'required_if:buttons.*.type,URL', 'url'],
             // Meta (#192) rejects numbers without a country code — require "+" then 7-15 digits
             // (spaces, dashes and brackets are tolerated and stripped before sending).
             'buttons.*.phone_number'   => ['nullable', 'required_if:buttons.*.type,PHONE_NUMBER', 'string', 'max:25', 'regex:/^\+[\d\s\-()]{7,24}$/'],
             'buttons.*.survey_form_id' => ['nullable', 'required_if:buttons.*.type,SURVEY_FORM', 'integer'],
+
+            // Marketing message validity period: 12h–7d. Null = Meta's standard 12 hours.
+            'message_send_ttl_seconds' => ['nullable', 'integer', Rule::in([43200, 86400, 172800, 259200, 345600, 604800])],
 
             // ── AUTHENTICATION-only fields ──────────────────────────────
             'auth_delivery_method'             => [$isAuth ? 'required' : 'nullable', 'in:copy_code,one_tap,zero_tap'],
@@ -537,12 +548,18 @@ class TemplateController extends Controller
             $d['header'] = null;
             $d['footer'] = null;
             $d['buttons'] = null;
+            $d['message_send_ttl_seconds'] = null;
             $d['body'] = $d['body'] ?? '';
             $d['auth_add_expiry'] = $d['auth_add_expiry'] ?? true;
             $d['auth_code_expiration_minutes'] = $d['auth_code_expiration_minutes'] ?? 20;
             $d['auth_add_security_recommendation'] = $d['auth_add_security_recommendation'] ?? true;
         } elseif ($d['header_format'] !== 'TEXT') {
             $d['header'] = null; // media headers don't carry inline text
+        }
+
+        // Custom validity only exists for MARKETING templates.
+        if (($d['category'] ?? null) !== 'MARKETING') {
+            $d['message_send_ttl_seconds'] = null;
         }
 
         return $d;
@@ -598,12 +615,13 @@ class TemplateController extends Controller
             } else {
                 $response = Http::withToken($company->decrypt_wa_access_token)
                     ->timeout(20)
-                    ->post($endpoint, [
+                    ->post($endpoint, array_filter([
                         'name'       => $d['name'],
                         'category'   => $d['category'],
                         'language'   => $d['language'],
                         'components' => $components,
-                    ]);
+                        'message_send_ttl_seconds' => $d['message_send_ttl_seconds'] ?? null,
+                    ], fn ($v) => !is_null($v)));
             }
         } catch (ConnectionException $e) {
             Log::error('[template-submit] step 3/4 FAILED: connection timeout calling Meta', [
@@ -768,6 +786,9 @@ class TemplateController extends Controller
                 if ($type === 'SURVEY_FORM') {
                     $type = 'QUICK_REPLY';
                 }
+                if ($type === 'COPY_CODE') {
+                    return ['type' => 'COPY_CODE', 'example' => (string) ($b['example'] ?? '')];
+                }
                 $isPhone = $type === 'PHONE_NUMBER';
 
                 // Frontend may send the number under a dedicated `phone_number` field, or
@@ -883,7 +904,7 @@ class TemplateController extends Controller
             $response = Http::withToken($company->decrypt_wa_access_token)
                 ->timeout(20)
                 ->get("https://graph.facebook.com/v25.0/{$company->wa_business_id}/message_templates", [
-                    'fields' => 'id,name,category,language,status,rejected_reason,components',
+                    'fields' => 'id,name,category,language,status,rejected_reason,components,message_send_ttl_seconds',
                     'limit'  => 100,
                 ]);
         } catch (ConnectionException $e) {
@@ -892,33 +913,39 @@ class TemplateController extends Controller
         }
 
         if ($response->failed()) {
+            // Some API versions reject message_send_ttl_seconds on read — retry without it.
+            try {
+                $response = Http::withToken($company->decrypt_wa_access_token)
+                    ->timeout(20)
+                    ->get("https://graph.facebook.com/v25.0/{$company->wa_business_id}/message_templates", [
+                        'fields' => 'id,name,category,language,status,rejected_reason,components',
+                        'limit'  => 100,
+                    ]);
+            } catch (ConnectionException $e) {
+                return response()->json(['message' => 'Timed out contacting Meta. Please try again.'], 422);
+            }
+        }
+
+        if ($response->failed()) {
             return response()->json(['message' => $response->json('error.message')], 422);
         }
 
         $updated = 0;
         foreach ($response->json('data', []) as $meta) {
-            $components = collect($meta['components'] ?? []);
-            $bodyComponent   = $components->firstWhere('type', 'BODY');
-            $headerComponent = $components->firstWhere('type', 'HEADER');
-
             // skip malformed entries defensively instead of crashing the whole sync
             if (empty($meta['name']) || empty($meta['id'])) {
                 continue;
             }
 
+            $existing = WaTemplate::where('company_id', $company->id)->where('name', $meta['name'])->first();
+            $attrs = $this->templates->attributesFromMeta($meta, $existing);
+            // Meta stores neither survey links nor auth flags in components we render locally;
+            // keep local-only button fields (survey_form_id) when the button list is unchanged in shape.
+            $attrs['buttons'] = $this->mergeLocalButtonFields($existing?->buttons, $attrs['buttons']);
+
             WaTemplate::updateOrCreate(
                 ['company_id' => $company->id, 'name' => $meta['name']],
-                [
-                    'wa_template_id'   => $meta['id'],
-                    'category'         => $meta['category'] ?? 'UTILITY',
-                    'language'         => $meta['language'] ?? 'en',
-                    'body'             => $bodyComponent['text'] ?? '',
-                    'body_examples'    => $bodyComponent['example']['body_text'][0] ?? null,
-                    'header_format'    => $headerComponent['format'] ?? 'TEXT',
-                    'header'           => ($headerComponent['format'] ?? 'TEXT') === 'TEXT' ? ($headerComponent['text'] ?? null) : null,
-                    'status'           => strtolower($meta['status'] ?? 'pending'),
-                    'rejection_reason' => $meta['rejected_reason'] ?? null,
-                ]
+                $attrs
             );
             $updated++;
         }
@@ -926,10 +953,32 @@ class TemplateController extends Controller
         return response()->json(['message' => "Synced {$updated} templates from Meta."]);
     }
 
+    /** Keep local-only button fields (survey_form_id) when Meta's synced button at the same position matches. */
+    private function mergeLocalButtonFields(?array $local, ?array $synced): ?array
+    {
+        if (!$synced || !$local) return $synced;
+        foreach ($synced as $i => $b) {
+            $old = $local[$i] ?? null;
+            if ($old && ($old['text'] ?? null) === ($b['text'] ?? null) && !empty($old['survey_form_id'])) {
+                $synced[$i]['type'] = 'SURVEY_FORM';
+                $synced[$i]['survey_form_id'] = $old['survey_form_id'];
+            }
+        }
+        return $synced;
+    }
+
     // ── Per-template single status refresh from Meta ───────────────────────
     public function syncSingle(int $id): JsonResponse
     {
-        $template = $this->templates->syncSingleFromMeta($id, auth()->user()->company_id);
+        try {
+            $template = $this->templates->syncSingleFromMeta($id, auth()->user()->company_id);
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            throw $e;
+        } catch (\Exception $e) {
+            // A Meta/credentials problem is not a server crash — tell the user what to fix.
+            Log::warning('[template-sync] failed', ['template_id' => $id, 'error' => $e->getMessage()]);
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
         return response()->json(['message' => 'Synced from Meta.', 'template' => $template]);
     }
 }

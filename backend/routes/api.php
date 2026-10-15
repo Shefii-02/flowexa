@@ -9,6 +9,7 @@ use App\Modules\Auth\Http\Controllers\AuthController;
 use App\Modules\Auth\Http\Controllers\CompanyController;
 use App\Modules\Auth\Http\Controllers\PushNotificationController;
 use App\Modules\Blacklist\Http\Controllers\BlacklistController;
+use App\Modules\ShortLink\Http\Controllers\ShortLinkController;
 use App\Modules\Campaign\Http\Controllers\CampaignContactController;
 use App\Modules\Campaign\Http\Controllers\CampaignController;
 use App\Modules\Contact\Http\Controllers\ContactController;
@@ -390,6 +391,7 @@ Route::prefix('v1')->group(function () {
                 ->middleware('permission:campaigns.manage')->name('destroy');
 
             Route::middleware('permission:campaigns.manage')->group(function () {
+                Route::post('/test-send',               [CampaignController::class, 'testSend'])->name('test-send');
                 Route::post('/{campaign}/launch',       [CampaignController::class, 'launch'])->name('launch');
                 Route::post('/{campaign}/pause',        [CampaignController::class, 'pause'])->name('pause');
                 Route::post('/{campaign}/resume',       [CampaignController::class, 'resume'])->name('resume');
@@ -660,6 +662,13 @@ Route::prefix('v1')->group(function () {
             Route::get('/check',   [BlacklistController::class, 'check'])->name('check');
         });
 
+
+        Route::prefix('short-links')->name('short-links.')->group(function () {
+            Route::get('/',        [ShortLinkController::class, 'index'])->name('index');
+            Route::post('/',       [ShortLinkController::class, 'store'])->name('store');
+            Route::put('/{id}',    [ShortLinkController::class, 'update'])->name('update');
+            Route::delete('/{id}', [ShortLinkController::class, 'destroy'])->name('destroy');
+        });
 
         // ── Labels ───────────────────────────────────────────────────────────────
         Route::prefix('labels')->name('labels.')->group(function () {

@@ -1,6 +1,6 @@
 // // src/pages/templates/TemplatesPage.tsx
 // src/pages/templates/TemplatesPage.tsx
-import { useEffect, useState, useCallback, useMemo } from 'react'
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { templateApi, surveyFormApi } from '@/api'
 import { Button, Input, Modal, ConfirmModal, Badge, EmptyState, Pagination } from '@/components/ui'
 import { fmt, getError } from '@/utils'
@@ -8,6 +8,7 @@ import toast from 'react-hot-toast'
 import SeedSamplesButton from '@/components/shared/SeedSamplesButton'
 import { useMediaGate } from '@/hooks/useMediaGate'
 import { MEDIA_RULES, MediaRuleKey } from '@/utils/mediaRules'
+import WaText from '@/components/shared/WaText'
 
 const CATEGORIES = ['MARKETING', 'UTILITY', 'AUTHENTICATION']
 const LANGUAGES  = [
@@ -17,10 +18,23 @@ const LANGUAGES  = [
   { code: 'ta',    label: 'Tamil' },
   { code: 'ar',    label: 'Arabic' },
 ]
-const CTA_TYPES  = ['NONE','QUICK_REPLY','URL','PHONE_NUMBER','SURVEY_FORM']
+const CTA_TYPES  = ['NONE','QUICK_REPLY','URL','PHONE_NUMBER','COPY_CODE','SURVEY_FORM']
 const CTA_LABEL: Record<string, string> = {
-  QUICK_REPLY: 'Quick reply', URL: 'URL', PHONE_NUMBER: 'Phone', SURVEY_FORM: 'Survey form',
+  QUICK_REPLY: 'Custom (quick reply)', URL: 'Visit website', PHONE_NUMBER: 'Call phone number',
+  COPY_CODE: 'Copy offer code', SURVEY_FORM: 'Survey form',
 }
+
+// Marketing message validity — how long Meta keeps trying to deliver before dropping (and not charging).
+const VALIDITY_OPTIONS = [
+  { seconds: 43200,  label: '12 hours (standard)' },
+  { seconds: 86400,  label: '24 hours' },
+  { seconds: 172800, label: '48 hours' },
+  { seconds: 259200, label: '72 hours' },
+  { seconds: 345600, label: '96 hours' },
+  { seconds: 604800, label: '168 hours (7 days)' },
+]
+
+const BODY_EMOJIS = ['😀','😊','😍','🙏','👍','🎉','🔥','✨','❤️','💯','🎁','🛍️','💰','🏷️','⏰','📅','📍','📞','✅','⭐','🚀','👋','😎','🤝']
 
 // header format options — TEXT is the classic header, others need a sample media upload for Meta review
 const HEADER_FORMATS = [
@@ -54,7 +68,8 @@ const DEFAULT_FORM = {
   header: '',       // text header content — only used when header_format === 'TEXT'
   header_example: '', // sample value for the single {{1}} variable allowed in a text header
   body: '', footer: '',
-  buttons: [] as { type: string; text: string; url?: string; phone_number?: string; phone_cc?: string; phone_local?: string; survey_form_id?: number }[],
+  buttons: [] as { type: string; text: string; url?: string; phone_number?: string; phone_cc?: string; phone_local?: string; survey_form_id?: number; example?: string }[],
+  message_send_ttl_seconds: null as number | null, // MARKETING only; null = Meta's standard 12 hours
   // AUTHENTICATION-only — code delivery setup. Meta generates body/footer copy itself;
   // these just configure how the OTP is delivered and what flags are set.
   auth_delivery_method: 'copy_code' as 'copy_code'|'one_tap'|'zero_tap',
@@ -85,8 +100,14 @@ function isValidPhoneNumber(v: string): boolean {
 const MAX_BODY_EMOJIS = 10
 const countEmojis = (text: string): number => (text.match(/\p{Extended_Pictographic}/gu) || []).length
 const hasEmoji = (text: string): boolean => /\p{Extended_Pictographic}/u.test(text)
+// Footer: Meta allows no emojis and no line breaks — strip them as the user types or pastes.
+const cleanFooter = (text: string): string =>
+  text.replace(/\p{Extended_Pictographic}|[\uFE0F\u200D]/gu, '').replace(/[\r\n]+/g, ' ').slice(0, 60)
 
 // Phone buttons are entered as two fields — country code + number — and stored as "+<cc><number>".
+// Realistic placeholders pre-filled when a variable is added (name, amount, date, order id…).
+const DUMMY_VALUES = ['Rahul Menon', '₹499', 'July 15', 'ORD12345', '10:30 AM', 'Kochi']
+
 const DEFAULT_COUNTRY_CODE = '91'
 const COUNTRY_CODES = ['91', '971', '966', '974', '968', '965', '973', '44', '1', '61', '65', '60', '49', '33']
 function splitPhone(full?: string): { phone_cc: string; phone_local: string } {
@@ -127,6 +148,10 @@ export default function TemplatesPage() {
   const [headerSampleUrl,  setHeaderSampleUrl]  = useState('')   // existing media URL when editing an approved template
   const [uploadingSample,  setUploadingSample]  = useState(false)
 
+  // body editor helpers — textarea ref lets the toolbar wrap the current selection / insert at the caret
+  const bodyRef = useRef<HTMLTextAreaElement>(null)
+  const [showEmoji, setShowEmoji] = useState(false)
+
   // body variable sample values — keyed by variable number, e.g. { 1: 'Rahul Menon', 2: 'July 15' }
   const [bodyExamples, setBodyExamples] = useState<Record<number, string>>({})
   const setBodyExample = (n: number, v: string) => setBodyExamples(e => ({ ...e, [n]: v }))
@@ -134,6 +159,35 @@ export default function TemplatesPage() {
   // which body variables are actually present right now, in order — drives the sample input list
   const bodyVars = useMemo(() => extractVariables(form.body), [form.body])
   const bodyVarsSequential = bodyVars.every((v, i) => v === i + 1)
+
+  // Replace the selection with `fn(selected)` and restore the caret/selection afterwards.
+  const editBody = (fn: (selected: string) => string, keepSelection = true) => {
+    const el = bodyRef.current
+    const start = el?.selectionStart ?? form.body.length
+    const end   = el?.selectionEnd ?? form.body.length
+    const inserted = fn(form.body.slice(start, end))
+    const next = (form.body.slice(0, start) + inserted + form.body.slice(end)).slice(0, 1024)
+    set('body', next)
+    requestAnimationFrame(() => {
+      if (!el) return
+      el.focus()
+      const caret = keepSelection ? start + inserted.length : start + inserted.length
+      el.setSelectionRange(caret, caret)
+    })
+  }
+  // Wrap with WhatsApp markup, e.g. *bold*. With nothing selected, drops in a placeholder word.
+  const wrapBody = (mark: string) => editBody(sel => `${mark}${sel || 'text'}${mark}`)
+  const addBodyVariable = () => {
+    const n = (bodyVars.length ? Math.max(...bodyVars) : 0) + 1
+    // pre-fill a realistic dummy value so the sample field isn't left blank for Meta review
+    setBodyExamples(e => ({ ...e, [n]: e[n] || DUMMY_VALUES[(n - 1) % DUMMY_VALUES.length] }))
+    editBody(() => `{{${n}}}`)
+  }
+  const addHeaderVariable = () => {
+    if (extractVariables(form.header).length > 0) return
+    set('header', `${form.header} {{1}}`.trim().slice(0, 60))
+    if (!form.header_example) set('header_example', DUMMY_VALUES[0])
+  }
 
   // A template is locked from further editing once Meta has approved or is reviewing it.
   // Duplicating (not editing) is the supported path forward for those.
@@ -176,6 +230,7 @@ export default function TemplatesPage() {
       header_example: t.header_example || '',
       body: t.body || '', footer: t.footer || '',
       buttons: (t.buttons || []).map((b: any) => b.type === 'PHONE_NUMBER' ? { ...b, ...splitPhone(b.phone_number) } : b),
+      message_send_ttl_seconds: t.message_send_ttl_seconds ?? null,
       auth_delivery_method: t.auth_delivery_method || 'copy_code',
       auth_add_expiry: t.auth_add_expiry ?? true,
       auth_add_security_recommendation: t.auth_add_security_recommendation ?? true,
@@ -211,6 +266,11 @@ export default function TemplatesPage() {
   // QUICK_REPLY — just a label. URL — label + valid url. PHONE_NUMBER — label + a real number.
   const validateButtons = (): string | null => {
     for (const [i, btn] of form.buttons.entries()) {
+      if (btn.type === 'COPY_CODE') {
+        if (!btn.example?.trim()) return `Button ${i + 1}: enter the offer code to copy`
+        if (!/^[A-Za-z0-9]{1,15}$/.test(btn.example.trim())) return `Button ${i + 1}: offer code must be letters/numbers only, max 15 characters`
+        continue
+      }
       if (!btn.text?.trim()) return `Button ${i + 1}: text/label is required`
       if (btn.text.trim().length > 25) return `Button ${i + 1}: text must be 25 characters or fewer`
 
@@ -327,9 +387,11 @@ export default function TemplatesPage() {
         body: form.body,
         body_examples: bodyVars.map(n => bodyExamples[n].trim()),
         footer: form.footer,
+        message_send_ttl_seconds: form.category === 'MARKETING' ? form.message_send_ttl_seconds : null,
         buttons: form.buttons.map(b => ({
           type: b.type,
-          text: b.text.trim(),
+          text: b.type === 'COPY_CODE' ? 'Copy offer code' : b.text.trim(),
+          example: b.type === 'COPY_CODE' ? b.example?.trim() : undefined,
           url: b.type === 'URL' ? b.url?.trim() : undefined,
           phone_number: b.type === 'PHONE_NUMBER' ? joinPhone(b.phone_cc, b.phone_local) : undefined,
           survey_form_id: b.type === 'SURVEY_FORM' ? b.survey_form_id : undefined,
@@ -394,7 +456,7 @@ export default function TemplatesPage() {
   const updateButtonType = (i: number, type: string) =>
     setForm(f => ({
       ...f,
-      buttons: f.buttons.map((b, idx) => idx === i ? { type, text: b.text, url: undefined, phone_number: undefined, phone_cc: type === 'PHONE_NUMBER' ? DEFAULT_COUNTRY_CODE : undefined, phone_local: undefined, survey_form_id: undefined } : b),
+      buttons: f.buttons.map((b, idx) => idx === i ? { type, text: b.text, url: undefined, phone_number: undefined, phone_cc: type === 'PHONE_NUMBER' ? DEFAULT_COUNTRY_CODE : undefined, phone_local: undefined, survey_form_id: undefined, example: undefined } : b),
     }))
 
   const addAuthApp = () => setForm(f => ({ ...f, auth_apps: [...f.auth_apps, { package_name: '', signature_hash: '' }] }))
@@ -522,7 +584,7 @@ export default function TemplatesPage() {
                     <td className="text-xs text-gray-400">{fmt.relative?.(t.updated_at) || t.updated_at?.slice(0,10)}</td>
                     <td>
                       <div className="flex gap-2">
-                        <a href={`/templates/${t.id}`} className="text-xs text-gray-500 hover:underline">View</a>
+                        <a href={`/wa-cloud/templates/${t.id}`} className="text-xs text-gray-500 hover:underline">View</a>
                         {locked ? (
                           <span className="text-xs text-gray-300" title="Approved/pending templates can't be edited on Meta">🔒 Locked</span>
                         ) : (
@@ -628,11 +690,14 @@ export default function TemplatesPage() {
             {form.header_format === 'TEXT' && (
               <div className="space-y-2">
                 <Input
-                  label="Header text (optional) — max 60 chars"
+                  label={`Header text (optional) — ${form.header.length}/60`}
                   placeholder="Special offer just for you, {{1}}!"
                   value={form.header}
                   onChange={e => set('header', e.target.value.slice(0, 60))}
                 />
+                {extractVariables(form.header).length === 0 && (
+                  <button type="button" onClick={addHeaderVariable} className="text-xs text-brand-600 hover:underline">+ Add variable</button>
+                )}
                 {extractVariables(form.header).length > 0 && (
                   <div className="flex items-center gap-2 bg-gray-50 rounded-lg p-2">
                     <code className="bg-gray-200 px-1.5 py-0.5 rounded text-xs flex-shrink-0">{'{{1}}'}</code>
@@ -694,11 +759,31 @@ export default function TemplatesPage() {
               <label className="label">
                 Body text *
                 <span className="text-xs font-normal text-gray-400 ml-2">
-                  Use {'{{1}}'}, {'{{2}}'} for variables · {form.body.length}/1024
+                  Use {'{{1}}'}, {'{{2}}'} for variables
+                </span>
+                <span className={`float-right text-xs font-normal ${form.body.length >= 1024 ? 'text-red-500' : 'text-gray-400'}`}>
+                  {form.body.length}/1024
                 </span>
               </label>
+              {/* Formatting toolbar — emoji, bold, italic, strikethrough, variable */}
+              <div className="relative flex items-center gap-1 border border-b-0 border-gray-200 rounded-t-lg bg-gray-50 px-2 py-1">
+                <button type="button" title="Emoji" onClick={() => setShowEmoji(v => !v)} className="px-2 py-0.5 rounded hover:bg-gray-200 text-sm">😊</button>
+                <button type="button" title="Bold" onClick={() => wrapBody('*')} className="px-2 py-0.5 rounded hover:bg-gray-200 text-sm font-bold">B</button>
+                <button type="button" title="Italic" onClick={() => wrapBody('_')} className="px-2 py-0.5 rounded hover:bg-gray-200 text-sm italic">I</button>
+                <button type="button" title="Strikethrough" onClick={() => wrapBody('~')} className="px-2 py-0.5 rounded hover:bg-gray-200 text-sm line-through">S</button>
+                <button type="button" title="Add variable" onClick={addBodyVariable} className="ml-auto px-2 py-0.5 rounded hover:bg-gray-200 text-xs text-brand-600 font-medium">+ Add variable</button>
+                {showEmoji && (
+                  <div className="absolute left-0 top-full mt-1 z-20 bg-white border border-gray-200 rounded-xl shadow-lg p-2 grid grid-cols-8 gap-1">
+                    {BODY_EMOJIS.map(em => (
+                      <button key={em} type="button" className="text-lg hover:bg-gray-100 rounded p-1"
+                        onClick={() => { editBody(() => em); setShowEmoji(false) }}>{em}</button>
+                    ))}
+                  </div>
+                )}
+              </div>
               <textarea
-                className="textarea font-mono text-sm"
+                ref={bodyRef}
+                className="textarea font-mono text-sm rounded-t-none"
                 rows={5}
                 placeholder={"Hi {{1}}! 🎉 Special offer from Univexa — 30% OFF on all SaaS plans. Use code JULY30 before July 31st."}
                 value={form.body}
@@ -740,11 +825,27 @@ export default function TemplatesPage() {
               </div>
             )}
 
+            {form.category === 'MARKETING' && (
+              <div>
+                <label className="label">Message validity period</label>
+                <select
+                  className="select"
+                  value={form.message_send_ttl_seconds ?? 43200}
+                  onChange={e => set('message_send_ttl_seconds', Number(e.target.value))}
+                >
+                  {VALIDITY_OPTIONS.map(o => <option key={o.seconds} value={o.seconds}>{o.label}</option>)}
+                </select>
+                <p className="text-xs text-gray-400 mt-1">
+                  If a marketing message isn't delivered within this time it expires — you aren't charged and the customer won't see it. Default is 12 hours.
+                </p>
+              </div>
+            )}
+
             <Input
-              label="Footer (optional) — max 60 chars"
+              label={`Footer (optional) — ${form.footer.length}/60`}
               placeholder="Reply STOP to unsubscribe"
               value={form.footer}
-              onChange={e => set('footer', e.target.value.slice(0, 60))}
+              onChange={e => set('footer', cleanFooter(e.target.value))}
             />
 
             {/* Buttons — text/url/phone only, matching what Meta actually accepts */}
@@ -768,10 +869,12 @@ export default function TemplatesPage() {
                       </select>
                       <Input
                         placeholder={btn.type === 'PHONE_NUMBER' ? 'Button label — e.g. Call Us' : btn.type === 'SURVEY_FORM' ? 'Button text — e.g. Take the survey' : 'Button text'}
-                        value={btn.text}
+                        value={btn.type === 'COPY_CODE' ? 'Copy offer code' : btn.text}
                         onChange={e => updateButton(i, 'text', e.target.value.slice(0, 25))}
                         className="flex-1"
+                        disabled={btn.type === 'COPY_CODE'}
                       />
+                      <span className="text-[11px] text-gray-400 flex-shrink-0 w-10 text-right">{btn.type === 'COPY_CODE' ? '' : `${btn.text.length}/25`}</span>
                       <button onClick={() => removeButton(i)} className="text-red-400 hover:text-red-600 text-lg flex-shrink-0">×</button>
                     </div>
 
@@ -796,6 +899,17 @@ export default function TemplatesPage() {
                         {surveyForms.length === 0 && (
                           <p className="text-[11px] text-amber-600">No survey forms yet — create one under WA Cloud → Survey Forms first.</p>
                         )}
+                      </>
+                    )}
+
+                    {btn.type === 'COPY_CODE' && (
+                      <>
+                        <Input
+                          placeholder="Offer code — e.g. SAVE30"
+                          value={btn.example || ''}
+                          onChange={e => updateButton(i, 'example', e.target.value.replace(/[^A-Za-z0-9]/g, '').slice(0, 15))}
+                        />
+                        <p className="text-[11px] text-gray-400">Letters/numbers only, max 15. Customers tap “Copy offer code” to copy it. Per-message codes can be supplied at send time.</p>
                       </>
                     )}
 
@@ -988,7 +1102,7 @@ export default function TemplatesPage() {
                       <p className="font-bold text-sm text-gray-900 mb-2">{previewHeader}</p>
                     )}
 
-                    <p className="text-sm text-gray-800 whitespace-pre-wrap leading-relaxed">{previewBody || 'Your message body will appear here...'}</p>
+                    <p className="text-sm text-gray-800 leading-relaxed"><WaText text={previewBody || 'Your message body will appear here...'} /></p>
                     {form.footer && (
                       <p className="text-xs text-gray-400 mt-2 pt-2 border-t border-gray-100">{form.footer}</p>
                     )}
@@ -1008,11 +1122,23 @@ export default function TemplatesPage() {
                 <div className="mt-1 space-y-1">
                   {form.buttons.map((btn, i) => (
                     <div key={i} className="bg-white rounded-xl p-2.5 text-center text-sm text-[#00a5f4] font-medium shadow-sm">
-                      {btn.type === 'URL' ? '🔗 ' : btn.type === 'PHONE_NUMBER' ? '📞 ' : ''}{btn.text || 'Button text'}
+                      {btn.type === 'URL' ? '🔗 ' : btn.type === 'PHONE_NUMBER' ? '📞 ' : btn.type === 'COPY_CODE' ? '📋 ' : ''}{btn.type === 'COPY_CODE' ? 'Copy offer code' : (btn.text || 'Button text')}
                     </div>
                   ))}
                 </div>
               )}
+            </div>
+
+            {/* Meta field rules */}
+            <div className="mt-3 bg-blue-50 border border-blue-100 rounded-xl p-3 text-xs text-blue-700 space-y-1">
+              <p className="font-semibold">Meta field rules</p>
+              <p>• <b>Body</b>: max 1024 chars, at most {MAX_BODY_EMOJIS} emojis ({countEmojis(form.body)} used)</p>
+              <p>• <b>Footer</b>: max 60 chars, <b>no emojis, no line breaks</b> (removed automatically)</p>
+              <p>• <b>Header</b> (text): max 60 chars, one {'{{1}}'} variable at most</p>
+              <p>• <b>Buttons</b>: label max 25 chars; no <code>wa.me</code> / WhatsApp links in URL buttons</p>
+              <p>• <b>Phone button</b>: country code (e.g. 91) + number, no “+” or spaces</p>
+              <p>• <b>Variables</b>: {'{{1}}'}, {'{{2}}'}… in order, each with a sample value</p>
+              <p>• <b>Image header</b>: JPG/PNG, max 5 MB, at least 200 px wide</p>
             </div>
 
             {/* Meta tips */}

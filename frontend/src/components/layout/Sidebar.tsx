@@ -518,7 +518,7 @@ export const Sidebar = () => {
             <NestedAccordion
               icon="🗂️"
               label="CRM"
-              basePaths={['/contacts', '/labels', '/blacklist', '/lead-categories', '/crm']}
+              basePaths={['/contacts', '/labels', '/blacklist', '/short-links', '/lead-categories', '/crm']}
               defaultOpen
             >
               {/* <NestedAccordion icon="🟢" label="Basic CRM" basePaths={['/contacts', '/labels', '/blacklist']}>
@@ -535,6 +535,7 @@ export const Sidebar = () => {
                 <SubLink to="/crm/calendar" icon="📅" label="Calendar" />
                 <SubLink to="/crm/segments" icon="🧩" label="Segments" />
                 <SubLink to="/blacklist" icon="🚫" label="Blacklist" />
+                <SubLink to="/short-links" icon="🔗" label="Short Links" />
               {/* </NestedAccordion> */}
             </NestedAccordion>
 

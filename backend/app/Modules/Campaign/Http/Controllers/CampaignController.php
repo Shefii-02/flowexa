@@ -15,7 +15,12 @@ use App\Modules\Campaign\Http\Resources\CampaignCollection;
 use App\Modules\Campaign\Http\Resources\CampaignContactResource;
 use App\Modules\Campaign\Http\Resources\CampaignResource;
 use App\Modules\Campaign\Services\CampaignService;
+use App\Models\WaPhoneNumber;
+use App\Models\WaTemplate;
+use App\Modules\Campaign\Support\TemplateMessagePayload;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 
 class CampaignController extends Controller
@@ -30,6 +35,63 @@ class CampaignController extends Controller
             auth()->user()->allowedAccountIds('phone_number')
         );
         return (new CampaignCollection($paginator))->response();
+    }
+
+    /**
+     * Send one real template message to a single number, using the chosen template and sending
+     * number, so a campaign can be verified before it is launched. Does not touch any campaign.
+     */
+    public function testSend(Request $request): JsonResponse
+    {
+        $user = auth()->user();
+        $d = $request->validate([
+            'template_id'        => ['required', 'integer'],
+            'wa_phone_number_id' => ['required', 'integer'],
+            'phone'              => ['required', 'string', 'regex:/^\+?[\d\s\-()]{8,20}$/'],
+            'variables'          => ['nullable', 'array'],
+            'variables.*'        => ['nullable', 'string', 'max:255'],
+            'coupon_code'        => ['nullable', 'string', 'max:15'],
+        ]);
+
+        $template = WaTemplate::where('id', $d['template_id'])->where('company_id', $user->company_id)->firstOrFail();
+        $number   = WaPhoneNumber::where('id', $d['wa_phone_number_id'])->where('company_id', $user->company_id)->firstOrFail();
+
+        if (strtolower($template->status) !== 'approved') {
+            return response()->json(['message' => "Template is \"{$template->status}\" — only approved templates can be sent."], 422);
+        }
+        if (!$number->is_active || !$number->access_token || !$number->phone_number_id) {
+            return response()->json(['message' => 'That sending number is inactive or has no credentials.'], 422);
+        }
+
+        $variables = array_values($d['variables'] ?? []);
+        preg_match_all('/\{\{\s*(\d+)\s*\}\}/', (string) $template->body, $m);
+        $needed = $m[1] ? max(array_map('intval', $m[1])) : 0;
+        if ($needed > count(array_filter($variables, fn ($v) => trim((string) $v) !== ''))) {
+            return response()->json(['message' => "This template needs {$needed} variable value(s) for the test."], 422);
+        }
+
+        $to = preg_replace('/\D+/', '', $d['phone']);
+
+        try {
+            $response = Http::withToken($number->decrypted_token)->timeout(15)
+                ->post("https://graph.facebook.com/v21.0/{$number->phone_number_id}/messages",
+                    TemplateMessagePayload::build($to, $template, $variables, $d['coupon_code'] ?? null));
+        } catch (\Illuminate\Http\Client\ConnectionException $e) {
+            return response()->json(['message' => 'Timed out contacting Meta. Try again.'], 422);
+        }
+
+        if (!$response->successful()) {
+            $error = $response->json('error.message') ?? 'Meta rejected the message.';
+            if ($details = $response->json('error.error_data.details')) {
+                $error .= " — {$details}";
+            }
+            return response()->json(['message' => $error], 422);
+        }
+
+        return response()->json([
+            'message'    => "Test message sent to +{$to}.",
+            'message_id' => $response->json('messages.0.id'),
+        ]);
     }
 
     public function show(int $campaign): JsonResponse

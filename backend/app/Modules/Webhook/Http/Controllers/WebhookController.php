@@ -107,6 +107,10 @@ class WebhookController extends Controller
                 $field = $change['field'] ?? '';
                 $value = $change['value'] ?? [];
 
+                // Print what is arriving before any routing, so even events that can't be
+                // matched to a company (see the warning below) show their type in the log.
+                Log::info('Webhook incoming: ' . $this->describeEvent($field, $value));
+
                 // ── Template status events (no phone_number_id — uses WABA ID) ──
                 if ($field === 'message_template_status_update') {
                     $this->handleTemplateStatus($value);
@@ -125,7 +129,7 @@ class WebhookController extends Controller
                 $company = $this->resolveCompany($phoneNumberId);
 
                 if (!$company) {
-                    Log::warning("Webhook: no active company for phone_number_id={$phoneNumberId}");
+                    Log::warning("Webhook: no active company for phone_number_id={$phoneNumberId} — dropped event: " . $this->describeEvent($field, $value));
                     $log->update(['error' => "No company found for phone_number_id: {$phoneNumberId}"]);
                     continue;
                 }
@@ -163,6 +167,37 @@ class WebhookController extends Controller
                 }
             }
         }
+    }
+
+    // One-line summary of a webhook change, e.g.
+    // "field=messages event=message:text from=9198… phone_number_id=1179…"
+    private function describeEvent(string $field, array $value): string
+    {
+        $event = null;
+        $from  = null;
+        if (!empty($value['messages'][0])) {
+            $event = 'message:' . ($value['messages'][0]['type'] ?? '?');
+            $from  = $value['messages'][0]['from'] ?? null;
+        } elseif (!empty($value['statuses'][0])) {
+            $event = 'status:' . ($value['statuses'][0]['status'] ?? '?');
+            $from  = $value['statuses'][0]['recipient_id'] ?? null;
+            if (!empty($value['statuses'][0]['errors'][0]['code'])) {
+                $event .= '(error ' . $value['statuses'][0]['errors'][0]['code'] . ')';
+            }
+        } elseif (!empty($value['calls'][0])) {
+            $event = 'call:' . ($value['calls'][0]['event'] ?? $value['calls'][0]['status'] ?? '?');
+            $from  = $value['calls'][0]['from'] ?? null;
+        } elseif (isset($value['event'])) {
+            $event = (string) $value['event']; // template status/quality, account updates…
+        }
+
+        return trim(implode(' ', array_filter([
+            "field={$field}",
+            $event ? "event={$event}" : null,
+            $from ? "contact={$from}" : null,
+            !empty($value['message_template_name']) ? "template={$value['message_template_name']}" : null,
+            !empty($value['metadata']['phone_number_id']) ? "phone_number_id={$value['metadata']['phone_number_id']}" : null,
+        ])));
     }
 
     // ─── WhatsApp Business Calling API — upsert one call row ──────────────────

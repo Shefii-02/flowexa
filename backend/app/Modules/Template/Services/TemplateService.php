@@ -60,6 +60,7 @@ class TemplateService
             'header_example'      => $data['header_example'] ?? null,
             'footer'              => $data['footer'] ?? null,
             'buttons'             => $data['buttons'] ?? null,
+            'message_send_ttl_seconds' => $data['message_send_ttl_seconds'] ?? null,
             'status'              => $data['status'] ?? 'draft',
             'rejection_reason'    => $data['rejection_reason'] ?? null,
             // AUTHENTICATION-only fields — harmless nulls/defaults for other categories
@@ -98,6 +99,9 @@ class TemplateService
         // `false` boolean along with genuine nulls) — set them directly when present.
         if (array_key_exists('body_examples', $data)) {
             $template->body_examples = $data['body_examples'];
+        }
+        if (array_key_exists('message_send_ttl_seconds', $data)) {
+            $template->message_send_ttl_seconds = $data['message_send_ttl_seconds'];
         }
         if (array_key_exists('buttons', $data)) {
             $template->buttons = $data['buttons'];
@@ -217,20 +221,101 @@ class TemplateService
         //     throw new \Exception('No phone number linked to this template.');
         // }
 
-        $response = Http::withToken(decrypt($company->decrypt_wa_access_token))
-            ->timeout(10)
-            ->get("https://graph.facebook.com/v25.0/{$template->wa_template_id}");
-
-        if ($response->successful()) {
-            $meta   = $response->json();
-            $status = strtolower($meta['status'] ?? 'pending');
-            $template->update([
-                'status'           => $status,
-                'rejection_reason' => $meta['rejected_reason'] ?? null,
-            ]);
+        // `decrypt_wa_access_token` is an accessor that ALREADY returns the decrypted token (or null).
+        // Running decrypt() on it again threw DecryptException -> HTTP 500 on every single-template sync.
+        $token = $company->decrypt_wa_access_token;
+        if (!$token) {
+            throw new \Exception('WhatsApp access token is missing or unreadable — save it again in WhatsApp settings.');
         }
 
+        $response = $this->fetchMetaTemplate($token, $template->wa_template_id);
+
+        if (!$response->successful()) {
+            throw new \Exception($response->json('error.message') ?? "Meta returned HTTP {$response->status()} while syncing the template.");
+        }
+
+        $template->update($this->attributesFromMeta($response->json(), $template));
+
         return $template->fresh();
+    }
+
+    /** GET one template node, asking for components + validity; retry without validity if Meta rejects the field. */
+    private function fetchMetaTemplate(string $token, string $metaId)
+    {
+        $fields = 'id,name,category,language,status,rejected_reason,components,message_send_ttl_seconds';
+        $response = Http::withToken($token)->timeout(10)
+            ->get("https://graph.facebook.com/v25.0/{$metaId}", ['fields' => $fields]);
+
+        if ($response->failed()) {
+            $response = Http::withToken($token)->timeout(10)
+                ->get("https://graph.facebook.com/v25.0/{$metaId}", [
+                    'fields' => 'id,name,category,language,status,rejected_reason,components',
+                ]);
+        }
+
+        return $response;
+    }
+
+    /**
+     * Map one Meta template node (with `components`) onto our local columns, so a synced
+     * template carries everything a locally-created one does: header media, footer, every
+     * button type (incl. COPY_CODE), variable samples and the validity period.
+     *
+     * Pass the existing row to keep a locally uploaded header sample (permanent) in
+     * preference to Meta's CDN URL, which is signed and expires.
+     */
+    public function attributesFromMeta(array $meta, ?WaTemplate $existing = null): array
+    {
+        $components = collect($meta['components'] ?? []);
+        $header = $components->firstWhere('type', 'HEADER');
+        $body   = $components->firstWhere('type', 'BODY');
+        $footer = $components->firstWhere('type', 'FOOTER');
+        $btns   = $components->firstWhere('type', 'BUTTONS');
+
+        $format = strtoupper($header['format'] ?? 'TEXT');
+        $attrs = [
+            'status'           => strtolower($meta['status'] ?? 'pending'),
+            'rejection_reason' => $meta['rejected_reason'] ?? null,
+            'body'             => $body['text'] ?? '',
+            'body_examples'    => $body['example']['body_text'][0] ?? null,
+            'header_format'    => $format,
+            'header'           => $format === 'TEXT' ? ($header['text'] ?? null) : null,
+            'header_example'   => $format === 'TEXT' ? ($header['example']['header_text'][0] ?? null) : null,
+            'footer'           => $footer['text'] ?? null,
+            'buttons'          => $btns ? $this->buttonsFromMeta($btns['buttons'] ?? []) : null,
+        ];
+
+        if (!empty($meta['category']))  $attrs['category'] = $meta['category'];
+        if (!empty($meta['language']))  $attrs['language'] = $meta['language'];
+        if (!empty($meta['id']))        $attrs['wa_template_id'] = $meta['id'];
+        if (array_key_exists('message_send_ttl_seconds', $meta)) {
+            $attrs['message_send_ttl_seconds'] = $meta['message_send_ttl_seconds'];
+        }
+
+        // Media header: Meta returns the sample as example.header_handle[0] (a CDN URL).
+        if ($format !== 'TEXT') {
+            $metaUrl = $header['example']['header_handle'][0] ?? null;
+            if ($metaUrl && !($existing && $existing->header_sample_path)) {
+                $attrs['header_sample_url'] = $metaUrl;
+            }
+        } else {
+            $attrs['header_sample_url'] = null;
+        }
+
+        return $attrs;
+    }
+
+    /** Meta button list -> our local button shape (type/text/url/phone_number/example). */
+    private function buttonsFromMeta(array $buttons): array
+    {
+        return collect($buttons)->map(function ($b) {
+            $type = strtoupper($b['type'] ?? 'QUICK_REPLY');
+            $out  = ['type' => $type, 'text' => $b['text'] ?? ''];
+            if (!empty($b['url']))          $out['url'] = $b['url'];
+            if (!empty($b['phone_number'])) $out['phone_number'] = $b['phone_number'];
+            if (!empty($b['example']))      $out['example'] = is_array($b['example']) ? ($b['example'][0] ?? null) : $b['example'];
+            return $out;
+        })->values()->all();
     }
 }
 
@@ -517,4 +602,4 @@ class TemplateService
 
 //         return $template->fresh();
 //     }
-// }
+//

@@ -38,3 +38,7 @@ Route::get('/whatsapp', function () {
     $message = urlencode('Hi! I am interested in WA SaaS Platform. Can you help me?');
     return redirect("https://wa.me/{$phone}?text={$message}");
 })->name('whatsapp');
+
+// ── Company short links: /s/{code} -> target URL ──────────────────────────
+Route::get('/s/{code}', \App\Modules\ShortLink\Http\Controllers\ShortLinkRedirectController::class)
+    ->where('code', '[A-Za-z0-9_-]+')->name('short-link.redirect');

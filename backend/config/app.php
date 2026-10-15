@@ -54,6 +54,9 @@ return [
 
     'url' => env('APP_URL', 'http://localhost'),
 
+    // Public host used when displaying short links (/s/{code}); falls back to APP_URL.
+    'short_link_base' => env('SHORT_LINK_BASE_URL'),
+
     // Where the SPA lives — used for OAuth redirect-backs (Google integration, etc.).
     'frontend_url' => env('FRONTEND_URL', env('APP_URL', 'http://localhost')),
 

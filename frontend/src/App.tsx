@@ -1,5 +1,5 @@
 // src/App.tsx
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, useParams } from 'react-router-dom'
 import { Provider } from 'react-redux'
 import { store } from '@/store'
 import { ProtectedRoute } from '@/components/shared/ProtectedRoute'
@@ -98,6 +98,7 @@ import PhoneNumbersPage from '@/pages/phone-numbers/PhoneNumbersPage'
 import TemplatesPage from '@/pages/template/TemplatesPage'
 import PlanPurchasePage from '@/pages/plan-purchase/PlanPurchasePage'
 import BlacklistPage from '@/pages/blacklist/BlacklistPage'
+import ShortLinksPage from '@/pages/short-links/ShortLinksPage'
 import LabelsPage from './pages/contacts/LabelsPage'
 import FlowBuildersPage from './pages/flow/FlowBuildersPage'
 import FlowNodesPage from '@/pages/flow/FlowNodesPage'
@@ -176,6 +177,12 @@ const SuperAdminRoute = ({ children }: { children: React.ReactNode }) => {
 const RoleBasedRedirect = () => {
   const isSuperAdmin = useIsSuperAdmin()
   return <Navigate to={isSuperAdmin ? '/superadmin' : '/dashboard'} replace />
+}
+
+// /templates/:id → /wa-cloud/templates/:id (the detail page moved under the WA Cloud section)
+function LegacyTemplateRedirect() {
+  const { id } = useParams()
+  return <Navigate to={`/wa-cloud/templates/${id}`} replace />
 }
 
 export default function App() {
@@ -283,9 +290,11 @@ export default function App() {
               {/* V2 routes */}
               <Route path="wa-cloud/phone-numbers" element={<PhoneNumbersPage />} />
               <Route path="templates" element={<TemplatesPage />} />
-              <Route path="templates/:id" element={<TemplateDetailPage />} />
+              {/* Template detail now lives under /wa-cloud — keep old /templates/:id links working */}
+              <Route path="templates/:id" element={<LegacyTemplateRedirect />} />
               <Route path="plan-purchase" element={<PlanPurchasePage />} />
               <Route path="blacklist" element={<BlacklistPage />} />
+              <Route path="short-links" element={<ShortLinksPage />} />
               <Route path="leads/categories" element={<LeadCategoriesPage />} />
 
               {/* Advanced CRM */}
@@ -312,6 +321,7 @@ export default function App() {
               {/* WA Cloud routes */}
               <Route path="wa-cloud/dashboard" element={<WaCloudDashboardPage />} />
               <Route path="wa-cloud/templates" element={<TemplatesPage />} />
+              <Route path="wa-cloud/templates/:id" element={<TemplateDetailPage />} />
               <Route path="wa-cloud/api-service" element={<WaCloudOtpPage />} />
               <Route path="wa-cloud/otp-service" element={<Navigate to="/wa-cloud/api-service" replace />} />
               <Route path="wa-cloud/otp-services" element={<Navigate to="/wa-cloud/api-service" replace />} />

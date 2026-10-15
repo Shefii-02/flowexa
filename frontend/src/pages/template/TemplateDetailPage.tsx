@@ -5,6 +5,7 @@ import { templateApi } from '@/api'
 import { Button, Badge, EmptyState } from '@/components/ui'
 import { getError } from '@/utils'
 import toast from 'react-hot-toast'
+import WaText from '@/components/shared/WaText'
 
 const statusColor: Record<string,string> = {
   approved: 'green', pending: 'amber', rejected: 'red',
@@ -13,6 +14,10 @@ const statusColor: Record<string,string> = {
 const statusIcon: Record<string,string> = {
   approved: '✅', pending: '⏳', rejected: '❌', error: '⚠️', draft: '📝',
 }
+
+const btnIcon = (t: string) => t === 'URL' ? '🔗 ' : t === 'PHONE_NUMBER' ? '📞 ' : t === 'COPY_CODE' ? '📋 ' : t === 'QUICK_REPLY' || t === 'SURVEY_FORM' ? '↩ ' : ''
+const btnLabel = (b: any) => b.type === 'COPY_CODE' ? 'Copy offer code' : b.text
+const validityLabel = (sec?: number | null) => sec ? `${Math.round(sec / 3600)} hours` : '12 hours (standard)'
 
 function Row({ label, value }: { label: string; value: React.ReactNode }) {
   if (value === null || value === undefined || value === '') return null
@@ -30,6 +35,7 @@ export default function TemplateDetailPage() {
   const [template, setTemplate] = useState<any>(null)
   const [loading,  setLoading]  = useState(true)
   const [syncing,  setSyncing]  = useState(false)
+  const [imgFailed, setImgFailed] = useState(false)
 
   const load = () => {
     if (!id) return
@@ -57,6 +63,8 @@ export default function TemplateDetailPage() {
 
   const isAuth = template.category === 'AUTHENTICATION'
   const headerType = (template.header_format || 'TEXT').toUpperCase()
+  // show the saved dummy values in place of {{n}} so the preview reads like the real message
+  const previewBody = (template.body || '').replace(/\{\{\s*(\d+)\s*\}\}/g, (m: string, n: string) => template.body_examples?.[Number(n) - 1] || m)
 
   return (
     <div className="space-y-5">
@@ -73,7 +81,7 @@ export default function TemplateDetailPage() {
         </div>
         <div className="flex gap-2">
           <Button variant="secondary" onClick={handleSyncSingle} loading={syncing}>🔄 Refresh status</Button>
-          <Button onClick={() => navigate(`/templates?edit=${template.id}`)}>Edit</Button>
+          <Button onClick={() => navigate(`/wa-cloud/templates?edit=${template.id}`)}>Edit</Button>
         </div>
       </div>
 
@@ -113,18 +121,21 @@ export default function TemplateDetailPage() {
                     : '—'
                 } />
               )}
-              <Row label="Body" value={<span className="whitespace-pre-wrap">{template.body}</span>} />
+              <Row label="Body" value={<WaText text={template.body || ''} />} />
               {Array.isArray(template.body_examples) && template.body_examples.length > 0 && (
                 <Row label="Body variable samples" value={template.body_examples.join(' · ')} />
               )}
               <Row label="Footer" value={template.footer} />
+              {template.category === 'MARKETING' && (
+                <Row label="Message validity" value={validityLabel(template.message_send_ttl_seconds)} />
+              )}
               {Array.isArray(template.buttons) && template.buttons.length > 0 && (
                 <Row label="Buttons" value={
                   <div className="space-y-1">
                     {template.buttons.map((b: any, i: number) => (
                       <div key={i} className="text-xs">
                         <Badge variant="blue">{b.type}</Badge>{' '}
-                        {b.text}{b.url ? ` → ${b.url}` : ''}{b.phone_number ? ` → ${b.phone_number}` : ''}
+                        {btnLabel(b)}{b.url ? ` → ${b.url}` : ''}{b.phone_number ? ` → ${b.phone_number}` : ''}{b.type === 'COPY_CODE' && b.example ? ` → ${b.example}` : ''}
                       </div>
                     ))}
                   </div>
@@ -175,13 +186,38 @@ export default function TemplateDetailPage() {
                 </>
               ) : (
                 <>
-                  {headerType === 'IMAGE' && template.header_sample_url && (
-                    <img src={template.header_sample_url} alt="" className="w-full h-36 object-cover rounded-lg -mt-3 -mx-3 mb-2" style={{ width: 'calc(100% + 1.5rem)' }} />
+                  {headerType === 'IMAGE' && (
+                    template.header_sample_url && !imgFailed ? (
+                      <img
+                        src={template.header_sample_url}
+                        alt=""
+                        onError={() => setImgFailed(true)}
+                        className="w-full h-36 object-cover rounded-lg -mt-3 -mx-3 mb-2"
+                        style={{ width: 'calc(100% + 1.5rem)' }}
+                      />
+                    ) : (
+                      <div className="h-36 rounded-lg -mt-3 -mx-3 mb-2 bg-gray-100 text-gray-400 text-xs flex items-center justify-center text-center px-3"
+                           style={{ width: 'calc(100% + 1.5rem)' }}>
+                        {template.header_sample_url
+                          ? 'Header image could not be loaded — check that the file URL is public.'
+                          : 'No header image saved — edit the template and upload one.'}
+                      </div>
+                    )
+                  )}
+                  {headerType === 'VIDEO' && (
+                    template.header_sample_url
+                      ? <video src={template.header_sample_url} controls className="rounded-lg -mt-3 -mx-3 mb-2 h-36 object-cover" style={{ width: 'calc(100% + 1.5rem)' }} />
+                      : <div className="h-36 rounded-lg -mt-3 -mx-3 mb-2 bg-gray-800 text-white text-3xl flex items-center justify-center" style={{ width: 'calc(100% + 1.5rem)' }}>▶️</div>
+                  )}
+                  {headerType === 'DOCUMENT' && (
+                    <div className="flex items-center gap-2 bg-gray-50 rounded-lg p-2.5 mb-2 border border-gray-100">
+                      <span className="text-xl">📄</span><span className="text-xs text-gray-500">document.pdf</span>
+                    </div>
                   )}
                   {headerType === 'TEXT' && template.header && (
-                    <p className="font-bold text-sm text-gray-900 mb-2">{template.header}</p>
+                    <p className="font-bold text-sm text-gray-900 mb-2">{template.header_example ? template.header.replace(/\{\{\s*1\s*\}\}/g, template.header_example) : template.header}</p>
                   )}
-                  <p className="text-sm text-gray-800 whitespace-pre-wrap leading-relaxed">{template.body}</p>
+                  <p className="text-sm text-gray-800 leading-relaxed"><WaText text={previewBody} /></p>
                   {template.footer && <p className="text-xs text-gray-400 mt-2 pt-2 border-t border-gray-100">{template.footer}</p>}
                 </>
               )}
@@ -191,7 +227,7 @@ export default function TemplateDetailPage() {
               <div className="mt-1 space-y-1">
                 {template.buttons.map((b: any, i: number) => (
                   <div key={i} className="bg-white rounded-xl p-2.5 text-center text-sm text-[#00a5f4] font-medium shadow-sm">
-                    {b.type === 'URL' ? '🔗 ' : b.type === 'PHONE_NUMBER' ? '📞 ' : ''}{b.text}
+                    {btnIcon(b.type)}{btnLabel(b)}
                   </div>
                 ))}
               </div>

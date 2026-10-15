@@ -30,6 +30,7 @@ class WaTemplate extends Model
         'header_example',
         'footer',
         'buttons',
+        'message_send_ttl_seconds',
         'status',
         'rejection_reason',
         // AUTHENTICATION-only fields — these were previously omitted, so a
@@ -50,6 +51,7 @@ class WaTemplate extends Model
         'auth_apps'                        => 'array',
         'auth_add_expiry'                  => 'boolean',
         'auth_code_expiration_minutes'     => 'integer',
+        'message_send_ttl_seconds'         => 'integer',
         'auth_add_security_recommendation' => 'boolean',
         'auth_zero_tap_terms_accepted'     => 'boolean',
     ];

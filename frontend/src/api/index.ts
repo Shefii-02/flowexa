@@ -124,6 +124,8 @@ export const campaignApi = {
   resume: (id: number) => api.post(`/campaigns/${id}/resume`),
   resendFailed: (id: number) => api.post(`/campaigns/${id}/resend-failed`),
   contacts: (id: number, p?: Record<string, unknown>) => api.get(`/campaigns/${id}/contacts`, { params: p }),
+  testSend: (d: { template_id: number; wa_phone_number_id: number; phone: string; variables?: string[]; coupon_code?: string }) =>
+    api.post('/campaigns/test-send', d),
 }
 
 // ── Role ─────────────────────────────────────────────────────────────────────
@@ -607,4 +609,12 @@ export const leadAssignmentApi = {
 // ── WA Chat analytics (company-scoped, aggregates gateway per-session stats) ──
 export const waChatAnalyticsApi = {
   get: () => api.get('/wa-chat/analytics'),
+}
+
+// ── Short links (custom /s/{code} redirects) ──────────────────────────────
+export const shortLinkApi = {
+  list: (p?: Record<string, unknown>) => api.get('/short-links', { params: p }),
+  create: (d: Record<string, unknown>) => api.post('/short-links', d),
+  update: (id: number, d: Record<string, unknown>) => api.put(`/short-links/${id}`, d),
+  remove: (id: number) => api.delete(`/short-links/${id}`),
 }

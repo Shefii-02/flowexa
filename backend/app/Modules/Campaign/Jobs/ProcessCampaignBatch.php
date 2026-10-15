@@ -3,6 +3,7 @@
 namespace App\Modules\Campaign\Jobs;
 
 use App\Models\Campaign;
+use App\Modules\Campaign\Support\TemplateMessagePayload;
 use App\Modules\Campaign\Repositories\Interfaces\CampaignRepositoryInterface;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -68,7 +69,13 @@ class ProcessCampaignBatch implements ShouldQueue
                     $campaignRepository->markContactSent($cc->id, $waMessageId ?? '');
                     $sent++;
                 } else {
-                    $error = $response->json('error.message') ?? 'Unknown error';
+                    $error   = $response->json('error.message') ?? 'Unknown error';
+                    // Meta's `error_data.details` names the exact parameter/component that was wrong
+                    // (e.g. "header: Format mismatch, expected IMAGE, received UNKNOWN").
+                    $details = $response->json('error.error_data.details');
+                    if ($details) {
+                        $error .= " — {$details}";
+                    }
                     $campaignRepository->markContactFailed($cc->id, $error);
                     Log::warning("Campaign {$this->campaignId} send failed for {$cc->phone}: {$error}");
                     $failed++;
@@ -137,51 +144,14 @@ class ProcessCampaignBatch implements ShouldQueue
     // ─── Build WhatsApp API payload ───────────────────────────────────────────
     private function buildPayload(string $phone, Campaign $campaign): array
     {
-        $template  = $campaign->template;
-        $variables = array_values($campaign->template_variables ?? []);
+        $template = $campaign->template;
 
-        $components = [];
-
-        // A template created with an IMAGE / VIDEO / DOCUMENT header must be sent with that header's
-        // media — Meta rejects it with (#132012) "Parameter format does not match" otherwise.
         $format = strtoupper((string) $template->header_format);
-        if (in_array($format, ['IMAGE', 'VIDEO', 'DOCUMENT'], true)) {
-            if ($template->header_sample_url) {
-                $type         = strtolower($format);
-                $components[] = [
-                    'type'       => 'header',
-                    'parameters' => [['type' => $type, $type => ['link' => $template->header_sample_url]]],
-                ];
-            } else {
-                Log::warning("Campaign {$this->campaignId}: template '{$template->name}' has a {$format} header but no media URL.");
-            }
+        if (in_array($format, ['IMAGE', 'VIDEO', 'DOCUMENT'], true) && !$template->header_sample_url) {
+            Log::warning("Campaign {$this->campaignId}: template '{$template->name}' has a {$format} header but no media URL.");
         }
 
-        // Send exactly as many body parameters as the template has {{n}} placeholders — sending
-        // variables to a template that has none (or too many) is the other #132012 cause.
-        preg_match_all('/\{\{\s*(\d+)\s*\}\}/', (string) $template->body, $m);
-        $placeholders = $m[1] ? max(array_map('intval', $m[1])) : 0;
-
-        if ($placeholders > 0 && !empty($variables)) {
-            $components[] = [
-                'type'       => 'body',
-                'parameters' => collect(array_slice($variables, 0, $placeholders))->map(fn($v) => [
-                    'type' => 'text',
-                    'text' => (string) $v,
-                ])->values()->all(),
-            ];
-        }
-
-        return [
-            'messaging_product' => 'whatsapp',
-            'to'                => $phone,
-            'type'              => 'template',
-            'template'          => [
-                'name'       => $template->name,
-                'language'   => ['code' => $template->language],
-                'components' => $components,
-            ],
-        ];
+        return TemplateMessagePayload::build($phone, $template, $campaign->template_variables ?? []);
     }
 
     public function failed(\Throwable $e): void
