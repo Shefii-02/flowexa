@@ -222,14 +222,35 @@ class TemplateController extends Controller
             return response()->json(['message' => 'This template is under review (or disabled) at Meta, so its header cannot be changed right now. Wait for the review to finish, or Duplicate it.'], 422);
         }
 
-        $request->validate(['file' => ['required', 'file', 'max:16384']]); // 16MB safety cap
+        // Either a freshly uploaded file, or the URL of a file already in this company's Media Library.
+        $request->validate([
+            'file'      => ['required_without:media_url', 'file', 'max:16384'], // 16MB safety cap
+            'media_url' => ['required_without:file', 'string', 'max:2000'],
+        ]);
+
+        $file = $request->file('file');
+        if (!$file) {
+            // Library files are looked up by (company, url) and read straight from our own disk — never
+            // fetched from an arbitrary URL, so a template can't be used to make the server request other hosts.
+            $item = \App\Modules\WaChat\Models\MediaLibrary::where('company_id', $company->id)
+                ->where('url', $request->input('media_url'))->first();
+            if (!$item || !Storage::disk($item->disk ?: 'public')->exists($item->path)) {
+                return response()->json(['message' => 'That file was not found in your Media Library.'], 422);
+            }
+            $disk = Storage::disk($item->disk ?: 'public');
+            $file = new \Illuminate\Http\UploadedFile($disk->path($item->path), $item->original_name ?: basename($item->path), $item->mime_type ?: $disk->mimeType($item->path), null, true);
+            if ($file->getSize() > 16384 * 1024) {
+                return response()->json(['message' => 'That file is larger than 16 MB.'], 422);
+            }
+        }
+
         if ($rule = \App\Support\Meta\MediaRules::forHeaderFormat($template->header_format)) {
-            if ($err = \App\Support\Meta\MediaRules::validate($request->file('file'), $rule)) {
+            if ($err = \App\Support\Meta\MediaRules::validate($file, $rule)) {
                 return response()->json(['message' => $err], 422);
             }
         }
 
-        $meta = MetaMediaUploader::upload($request->file('file'), $company, 'template-headers');
+        $meta = MetaMediaUploader::upload($file, $company, 'template-headers');
         if (isset($meta['error'])) {
             $this->markMediaUploadResult($template, $meta['error']);
             return response()->json(['message' => $meta['error']], 422);

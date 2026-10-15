@@ -8,6 +8,7 @@ import toast from 'react-hot-toast'
 import SeedSamplesButton from '@/components/shared/SeedSamplesButton'
 import { useMediaGate } from '@/hooks/useMediaGate'
 import { MEDIA_RULES, MediaRuleKey } from '@/utils/mediaRules'
+import MediaPickerModal from '@/components/MediaPickerModal'
 import WaText from '@/components/shared/WaText'
 
 const CATEGORIES = ['MARKETING', 'UTILITY', 'AUTHENTICATION']
@@ -149,6 +150,9 @@ export default function TemplatesPage() {
   const headerRuleKey = (f: string): MediaRuleKey | null => f === 'IMAGE' ? 'header_image' : f === 'VIDEO' ? 'header_video' : f === 'DOCUMENT' ? 'header_document' : null
   const [headerSampleUrl,  setHeaderSampleUrl]  = useState('')   // existing media URL when editing an approved template
   const [uploadingSample,  setUploadingSample]  = useState(false)
+  // Header sample picked from the Media Library instead of uploaded: the server reads it from the library by URL
+  const [headerLibraryUrl, setHeaderLibraryUrl] = useState('')
+  const [showLibraryPicker, setShowLibraryPicker] = useState(false)
 
   // body editor helpers — textarea ref lets the toolbar wrap the current selection / insert at the caret
   const bodyRef = useRef<HTMLTextAreaElement>(null)
@@ -217,6 +221,7 @@ export default function TemplatesPage() {
     setForm(DEFAULT_FORM)
     setHeaderSampleFile(null)
     setHeaderSampleUrl('')
+    setHeaderLibraryUrl('')
     setBodyExamples({})
   }
 
@@ -240,6 +245,7 @@ export default function TemplatesPage() {
       auth_zero_tap_terms_accepted: !!t.auth_zero_tap_terms_accepted,
     })
     setHeaderSampleFile(null)
+    setHeaderLibraryUrl('')
     setHeaderSampleUrl(t.header_format && t.header_format !== 'TEXT' ? (t.header_sample_url || '') : '')
     // Restore previously saved body variable samples, if the backend returns them
     const savedExamples: Record<number, string> = {}
@@ -404,10 +410,10 @@ export default function TemplatesPage() {
       // its NEW header sample must be uploaded BEFORE that call — otherwise Meta receives the edit
       // without the image (and the upload is then refused, the template being pending by then).
       const isResubmit = !!editTpl && editTpl.status !== 'draft'
-      const needsSampleUpload = !isAuth && form.header_format !== 'TEXT' && !!headerSampleFile
+      const needsSampleUpload = !isAuth && form.header_format !== 'TEXT' && (!!headerSampleFile || !!headerLibraryUrl)
       const uploadSample = async (id: number) => {
         setUploadingSample(true)
-        try { await templateApi.uploadHeaderMedia(id, headerSampleFile as File) }
+        try { await templateApi.uploadHeaderMedia(id, headerSampleFile ?? { media_url: headerLibraryUrl }) }
         finally { setUploadingSample(false) }
       }
 
@@ -484,6 +490,7 @@ export default function TemplatesPage() {
     set('header_example', '')
     setHeaderSampleFile(null)
     setHeaderSampleUrl('')
+    setHeaderLibraryUrl('')
   }
 
   // Live preview — use the person's own entered samples; fall back to a faint placeholder if empty
@@ -511,6 +518,19 @@ export default function TemplatesPage() {
   return (
     <div className="space-y-5">
       {cropModal}
+      {/* Header sample from the Media Library — filtered to the header's media type */}
+      <MediaPickerModal
+        open={showLibraryPicker}
+        onClose={() => setShowLibraryPicker(false)}
+        accept={form.header_format === 'IMAGE' ? 'image' : form.header_format === 'VIDEO' ? 'video' : 'document'}
+        title={`Pick a ${form.header_format.toLowerCase()} from the Media Library`}
+        onSelect={(url) => {
+          setHeaderLibraryUrl(url)
+          setHeaderSampleUrl(url)   // shows in the preview
+          setHeaderSampleFile(null)
+          setShowLibraryPicker(false)
+        }}
+      />
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="page-title">WA Templates</h1>
@@ -758,7 +778,7 @@ export default function TemplatesPage() {
                       const key = headerRuleKey(form.header_format)
                       if (!picked || !key) return
                       const ok = await gate(picked, key)
-                      if (ok) setHeaderSampleFile(ok)
+                      if (ok) { setHeaderSampleFile(ok); setHeaderLibraryUrl('') }
                     }}
                     className="hidden"
                     id="header-sample-input"
@@ -775,6 +795,16 @@ export default function TemplatesPage() {
                       {form.header_format === 'IMAGE' && ' · you can crop after choosing'}
                     </p>
                   </label>
+                </div>
+                <div className="flex items-center gap-2 mt-2">
+                  <span className="text-xs text-gray-400">or</span>
+                  <button type="button" onClick={() => setShowLibraryPicker(true)}
+                    className="flex items-center gap-1 px-2.5 py-1.5 bg-indigo-50 border border-indigo-200 text-indigo-700 rounded-lg text-xs hover:bg-indigo-100 font-medium">
+                    🗂️ Choose from Media Library
+                  </button>
+                  {headerLibraryUrl && !headerSampleFile && (
+                    <span className="text-xs text-green-600">✓ Library file selected — it will be sent to Meta on save</span>
+                  )}
                 </div>
                 <p className="text-xs text-gray-400 mt-1">
                   This sample is only used for Meta's review — the actual media is chosen when you launch a campaign with this template.
