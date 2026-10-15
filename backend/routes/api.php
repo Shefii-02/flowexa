@@ -1341,6 +1341,7 @@ Route::prefix('v1')->middleware(['jwt.auth'])->group(function () {
         Route::post('/',             [MessageSenderController::class, 'store']);
         Route::get('/stats',         [MessageSenderController::class, 'stats']);
         Route::post('/test-send',    [MessageSenderController::class, 'testSend']);
+        Route::post('/jobs',         [MessageSenderController::class, 'recordCompleted']);
         Route::get('/{id}',          [MessageSenderController::class, 'show']);
         Route::post('/{id}/launch',  [MessageSenderController::class, 'launch']);
         Route::post('/{id}/pause',   [MessageSenderController::class, 'pause']);

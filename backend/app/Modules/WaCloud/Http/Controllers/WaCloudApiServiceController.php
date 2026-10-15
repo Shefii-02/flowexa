@@ -77,7 +77,12 @@ class WaCloudApiServiceController extends Controller
 
     public function logs(Request $request): JsonResponse
     {
-        $service = WaCloudOtpService::where('company_id', $this->companyId())->firstOrFail();
+        $service = WaCloudOtpService::where('company_id', $this->companyId())->first();
+
+        // A company that hasn't set up the service yet simply has no logs — not a 404.
+        if (! $service) {
+            return response()->json(['data' => [], 'total' => 0, 'current_page' => 1, 'last_page' => 1, 'per_page' => 50]);
+        }
 
         $query = WaCloudOtpLog::where('service_id', $service->id)
             ->when($request->filled('action'), fn ($q) => $q->where('action', $request->string('action')))

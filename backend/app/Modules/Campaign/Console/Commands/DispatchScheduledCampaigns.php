@@ -30,7 +30,7 @@ class DispatchScheduledCampaigns extends Command
             ->orderBy('scheduled_at')
             ->limit(50)
             ->get(['id', 'name', 'company_id']);
-Log::info('DispatchScheduledCampaigns: Found ' . $due->count() . ' campaigns due for launch.');
+// Log::info('DispatchScheduledCampaigns: Found ' . $due->count() . ' campaigns due for launch.');
         if ($due->isEmpty()) {
             return self::SUCCESS;
         }

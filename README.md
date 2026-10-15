@@ -53,7 +53,7 @@ waapi/
 |---|---|
 | React frontend | `https://teamzo.io` |
 | Laravel backend | `https://api.teamzo.io` |
-| Node (OpenWA) gateway | `https://admin.chatwa.teamzo.io` |
+| Node (OpenWA) gateway | `https://chatwa.teamzo.io` |
 
 Every `localhost`/`127.0.0.1` URL below is for local development only — swap in the domains
 above for every production `.env` / config value.
@@ -233,7 +233,7 @@ stopwaitsecs=3600
 sudo supervisorctl reread && sudo supervisorctl update && sudo supervisorctl start waapi-horizon
 ```
 
-Dashboard is at `https://api.teamzo.io/horizon` (gate it behind VPN/basic-auth/
+Dashboard is at `cle` (gate it behind VPN/basic-auth/
 `HorizonServiceProvider::gate()` in production — it's wide open by default).
 
 > Run **either** 1.3 or 1.4, not both, for the same queues.

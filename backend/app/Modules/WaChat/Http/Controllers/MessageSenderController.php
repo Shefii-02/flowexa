@@ -93,6 +93,37 @@ class MessageSenderController extends Controller
         return response()->json(['message' => 'Job created.', 'data' => $job], 201);
     }
 
+    // Records a campaign the BROWSER already finished sending (the client-side fallback path in the
+    // sender page, which calls the gateway directly) so it shows up in campaign history like a
+    // server-run one. Nothing is dispatched — the sends have already happened — so unlike store()
+    // this never creates a pending/running row or queues ProcessMessageSenderJob.
+    public function recordCompleted(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'campaign_name' => 'nullable|string|max:200',
+            'session_id'    => [
+                'required', 'string', 'max:100',
+                Rule::exists('openwa_sessions', 'session_name')
+                    ->where('company_id', auth()->user()->company_id),
+            ],
+            'type'          => 'required|in:personal,group,csv,label,chat,from-chat,lead,campaign',
+            'status'        => 'required|in:done,stopped',
+            'total'         => 'required|integer|min:0',
+            'sent'          => 'required|integer|min:0',
+            'failed'        => 'required|integer|min:0',
+            'started_at'    => 'nullable|date',
+            'completed_at'  => 'nullable|date',
+            'log'           => 'nullable|array',
+        ]);
+
+        $job = MessageSenderJob::create(array_merge($data, [
+            'company_id' => auth()->user()->company_id,
+            'created_by' => auth()->id(),
+        ]));
+
+        return response()->json(['message' => 'Job recorded.', 'data' => $job], 201);
+    }
+
     // Sends the composer's current message to a single test number, instead of creating a
     // campaign — used by the "Test Run" control in the sender UI. Checks the session's live
     // status with the gateway right before sending (getSession), since the frontend's session
