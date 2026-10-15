@@ -176,7 +176,18 @@ class MessageSenderController extends Controller
             ], 409);
         }
 
-        $chatId    = "{$data['phone']}@c.us";
+        // Resolve the number's real WhatsApp id first: a number that isn't on WhatsApp is reported
+        // plainly, and the canonical id (@c.us or @lid) is used instead of a hand-built one.
+        $chatId = "{$data['phone']}@c.us";
+        $check  = $wa->checkNumber($data['session_id'], $apiKey, $data['phone']);
+        if ($check !== null) {
+            if (!$check['exists']) {
+                return response()->json([
+                    'message' => "{$data['phone']} is not registered on WhatsApp, so nothing can be delivered to it. Check the number (country code + digits) or use another test number.",
+                ], 422);
+            }
+            if (!empty($check['whatsappId'])) $chatId = $check['whatsappId'];
+        }
         $recipient = ['name' => 'Test', 'phone' => $data['phone']];
 
         try {
@@ -202,9 +213,14 @@ class MessageSenderController extends Controller
             // plain text/HTML if it crashed trying to fetch the media url itself) — falling back to
             // a flat "Test send failed." then hid the one clue (its HTTP status) that the frontend
             // could otherwise show the user.
-            return response()->json([
-                'message' => $res->json('message') ?: "Test send failed (gateway returned HTTP {$res->status()}).",
-            ], 422);
+            $msg = $res->json('message') ?: "Test send failed (gateway returned HTTP {$res->status()}).";
+            // WhatsApp Web internals (stack frames, "Evaluation failed") mean nothing to a user —
+            // keep the raw text in the log and show a readable message instead.
+            if (is_string($msg) && preg_match('/static\.whatsapp\.net|Evaluation failed|must include an id property/i', $msg)) {
+                Log::error('[wa-web] library error during test send', ['session' => $data['session_id'], 'type' => $data['type'], 'error' => $msg]);
+                $msg = 'WhatsApp Web hit an internal error while sending. Check the number is on WhatsApp and try again; if media keeps failing, the gateway needs its media-send patch applied.';
+            }
+            return response()->json(['message' => $msg], 422);
         }
 
         return response()->json(['message' => 'Test message sent.']);

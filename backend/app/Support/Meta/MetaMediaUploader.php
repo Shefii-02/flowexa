@@ -13,10 +13,7 @@ use Illuminate\Support\Facades\Storage;
  * Uploads a sample media file to Meta via the resumable upload protocol
  * (create session → PUT bytes → receive handle "h").
  *
- * Copied from the live region of
- * App\Modules\Template\Http\Controllers\TemplateController::uploadMediaToMeta()
- * (~line 340), lifted into a static helper so the WaCloud module can reuse it
- * without importing that controller. Keep the two in sync.
+ * The single implementation used by both the Template and WaCloud modules.
  *
  * @return array{handle: string, path: string, url: string}|array{error: string}
  */
@@ -46,6 +43,7 @@ class MetaMediaUploader
             $session = Http::withToken($token)
                 ->timeout(15)
                 ->post(MetaGraph::uploadsUrl($company->meta_app_id), [
+                    'file_name'   => $file->getClientOriginalName(),
                     'file_length' => $file->getSize(),
                     'file_type'   => $file->getMimeType(),
                 ]);

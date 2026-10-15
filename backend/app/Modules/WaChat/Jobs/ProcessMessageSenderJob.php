@@ -184,7 +184,25 @@ class ProcessMessageSenderJob implements ShouldQueue
             $rawError = null;
             $renumbered = false;
 
-            while ($attempts < self::MAX_ATTEMPTS) {
+            // Resolve the number's real WhatsApp id before sending. Not registered -> fail right away
+            // (no doomed send); otherwise use the engine's canonical id (@c.us or @lid) rather than a
+            // hand-built "<digits>@c.us", which WhatsApp Web can reject. If the check itself is
+            // unavailable, fall through and send with the plain id as before.
+            $notOnWhatsApp = false;
+            if (!str_contains($phone, '@')) {
+                $check = $wa->checkNumber($job->session_id, $apiKey, preg_replace('/\D+/', '', $phone));
+                if ($check !== null) {
+                    if (!$check['exists']) {
+                        $notOnWhatsApp = true;
+                        $errType  = 'not_on_whatsapp';
+                        $rawError = 'Number check: not registered on WhatsApp.';
+                    } elseif (!empty($check['whatsappId'])) {
+                        $chatId = $check['whatsappId'];
+                    }
+                }
+            }
+
+            while (!$notOnWhatsApp && $attempts < self::MAX_ATTEMPTS) {
                 $attempts++;
                 try {
                     $res = $this->dispatchSend($wa, $job, $apiKey, $chatId, $msgType, $payload, $recipient, $company);
@@ -284,9 +302,9 @@ class ProcessMessageSenderJob implements ShouldQueue
 
     private function friendlyFailure(?string $type, int $attempts): string
     {
-        $tries = $attempts . ' ' . ($attempts === 1 ? 'try' : 'tries');
+        $tries = $attempts === 0 ? 'checked before sending' : $attempts . ' ' . ($attempts === 1 ? 'try' : 'tries');
         return match ($type) {
-            'not_on_whatsapp' => "Number is not on WhatsApp, or has no chat that can be opened — check the number, edit it and resend ({$tries})",
+            'not_on_whatsapp' => "Number is not on WhatsApp — check the number (country code + digits), edit it and resend ({$tries})",
             'bad_number'      => "Gateway rejected this number — check the country code and digits, edit it and resend ({$tries})",
             'network'         => "Gateway/network problem, still failing after {$tries} — resend later",
             'auth'            => "Session authorisation problem after {$tries} — reconnect the session and resend",

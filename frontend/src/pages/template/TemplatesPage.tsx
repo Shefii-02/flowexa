@@ -419,7 +419,12 @@ export default function TemplatesPage() {
 
       // Step 3 — push to Meta. The backend no-ops quietly if WA credentials aren't
       // connected yet, and for edits this is exactly what "resubmit" is supposed to do.
-      await templateApi.submit(templateId)
+      // Only for a brand-new or still-draft template. Editing one that was already submitted (rejected /
+      // error) has just been re-pushed to Meta by update(); calling submit() again would be refused
+      // because it is now "pending".
+      if (!editTpl || editTpl.status === 'draft') {
+        await templateApi.submit(templateId)
+      }
 
       toast.success(editTpl ? 'Template updated and re-submitted to Meta.' : 'Template created and submitted to Meta for review.')
       setShowCreate(false); resetForm(); load()

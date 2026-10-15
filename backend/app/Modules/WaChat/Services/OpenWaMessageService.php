@@ -23,11 +23,8 @@ class OpenWaMessageService
 
     private function post(string $sessionId, string $apiKey, string $path, array $body, int $timeout = 30): Response
     {
-        Log::alert("Auth Do");
         $url = "{$this->baseUrl}/sessions/{$sessionId}/messages/{$path}";
 
-        Log::alert("URL: {$url}");
-        Log::error("Api Key: " . json_encode($apiKey));
         // Every send event, one line each, so a live campaign's request/response pair is visible in
         // laravel.log without attaching a debugger — 'base64'/'data' bodies are redacted since a
         // media payload can be megabytes of noise (and a media data: URI is not useful in a log line).
@@ -88,6 +85,37 @@ class OpenWaMessageService
     public function sendMedia(string $sessionId, string $apiKey, string $chatId, string $mediaType, array $payload): Response
     {
         return $this->post($sessionId, $apiKey, "send-{$mediaType}", array_merge(['chatId' => $chatId], $payload), 60);
+    }
+
+    /**
+     * Asks the gateway whether a number is on WhatsApp and what its canonical chat id is
+     * (`…@c.us` or `…@lid`). Sending to a hand-built "<digits>@c.us" can fail inside WhatsApp Web
+     * ("Data passed to getter must include an id property") when the account's real id differs or
+     * doesn't exist, so callers resolve the id first.
+     *
+     * @return array{exists:bool, whatsappId:?string}|null null = the check itself was unavailable
+     *         (caller should just fall back to the plain "<digits>@c.us" id).
+     */
+    public function checkNumber(string $sessionId, string $apiKey, string $number): ?array
+    {
+        try {
+            $res = Http::withHeaders(['X-API-Key' => $apiKey])->timeout(10)
+                ->get("{$this->baseUrl}/sessions/{$sessionId}/contacts/check/" . rawurlencode($number));
+        } catch (\Throwable $e) {
+            Log::warning("OpenWaMessageService: number check unavailable for {$number}: {$e->getMessage()}");
+            return null;
+        }
+        if (!$res->successful()) {
+            Log::warning("OpenWaMessageService: number check HTTP {$res->status()} for {$number}");
+            return null;
+        }
+
+        $json = $res->json();
+        $d    = is_array($json['data'] ?? null) ? $json['data'] : $json;
+        if (!is_array($d) || !array_key_exists('exists', $d)) return null;
+
+        Log::info("OpenWaMessageService: number check {$number}", ['exists' => (bool) $d['exists'], 'whatsappId' => $d['whatsappId'] ?? null]);
+        return ['exists' => (bool) $d['exists'], 'whatsappId' => $d['whatsappId'] ?? null];
     }
 
     /**
