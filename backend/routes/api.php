@@ -1278,6 +1278,7 @@ Route::prefix('v1')->middleware(['jwt.auth'])->group(function () {
     Route::prefix('waha/sessions')->middleware(['wa_chat.valid', 'permission:wa_chat.sessions.view'])->group(function () {
         Route::get('/',              [WahaSessionController::class, 'index']);
         Route::get('/health',        [WahaSessionController::class, 'health']);
+        Route::get('/limits',        [WahaSessionController::class, 'limits']);
         Route::get('/{id}',          [WahaSessionController::class, 'show']);
         Route::get('/{id}/qr',       [WahaSessionController::class, 'qr']);
 

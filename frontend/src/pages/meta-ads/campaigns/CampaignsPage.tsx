@@ -412,32 +412,36 @@ export default function CampaignsPage() {
   const [csvFile, setCsvFile] = useState<File | null>(null)
   const set = (k: string, v: any) => setForm(f => ({ ...f, [k]: v }))
 
-  // ── Test send: one real message with the chosen template + sending number ──
+  // ── Test send (page header): one real message — sender number, receiver number, template ──
+  const [testOpen, setTestOpen] = useState(false)
+  const [testTemplate, setTestTemplate] = useState<any>(null)
+  const [testNumber, setTestNumber] = useState<any>(null)
   const [testPhone, setTestPhone] = useState('')
   const [testVars, setTestVars] = useState<string[]>([])
   const [testCode, setTestCode] = useState('')
   const [testing, setTesting] = useState(false)
   const testVarCount = (() => {
-    const m = [...(selectedTemplate?.body || '').matchAll(/\{\{\s*(\d+)\s*\}\}/g)].map(x => Number(x[1]))
+    const m = [...(testTemplate?.body || '').matchAll(/\{\{\s*(\d+)\s*\}\}/g)].map(x => Number(x[1]))
     return m.length ? Math.max(...m) : 0
   })()
-  const testHasCode = (selectedTemplate?.buttons || []).some((b: any) => b.type === 'COPY_CODE')
+  const testHasCode = (testTemplate?.buttons || []).some((b: any) => b.type === 'COPY_CODE')
   // Pre-fill variable inputs with the template's saved sample values whenever the template changes.
   useEffect(() => {
-    setTestVars(Array.from({ length: testVarCount }, (_, i) => selectedTemplate?.body_examples?.[i] || ''))
-    setTestCode((selectedTemplate?.buttons || []).find((b: any) => b.type === 'COPY_CODE')?.example || '')
-  }, [selectedTemplate?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+    setTestVars(Array.from({ length: testVarCount }, (_, i) => testTemplate?.body_examples?.[i] || ''))
+    setTestCode((testTemplate?.buttons || []).find((b: any) => b.type === 'COPY_CODE')?.example || '')
+  }, [testTemplate?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleTestSend = async () => {
-    if (!selectedTemplate || !selectedPhoneNumber) { toast.error('Select a template and a sending number first'); return }
-    if (selectedPhoneNumber.status === 'DISCONNECTED') { toast.error('That number is disconnected — choose a connected one'); return }
-    if (testPhone.replace(/\D/g, '').length < 8) { toast.error('Enter the test phone number with country code'); return }
+    if (!testNumber) { toast.error('Select the sender number'); return }
+    if (testNumber.status === 'DISCONNECTED') { toast.error('That number is disconnected — choose a connected one'); return }
+    if (testPhone.replace(/\D/g, '').length < 8) { toast.error('Enter the receiver number with country code'); return }
+    if (!testTemplate) { toast.error('Select a template'); return }
     if (testVars.some(v => !v.trim())) { toast.error('Fill in every variable value for the test'); return }
     setTesting(true)
     try {
       const { data } = await campaignApi.testSend({
-        template_id: selectedTemplate.id,
-        wa_phone_number_id: selectedPhoneNumber.id,
+        template_id: testTemplate.id,
+        wa_phone_number_id: testNumber.id,
         phone: testPhone,
         variables: testVars,
         coupon_code: testHasCode ? testCode : undefined,
@@ -564,7 +568,10 @@ export default function CampaignsPage() {
     <div className="space-y-5">
       <div className="flex items-center justify-between">
         <div><h1 className="page-title">Campaigns</h1><p className="page-sub">{total} campaigns</p></div>
-        <Button onClick={() => { resetForm(); setShowCreate(true) }}>+ New campaign</Button>
+        <div className="flex gap-2">
+          <Button variant="secondary" onClick={() => setTestOpen(true)}>📨 Send test message</Button>
+          <Button onClick={() => { resetForm(); setShowCreate(true) }}>+ New campaign</Button>
+        </div>
       </div>
 
       <div className="card">
@@ -733,33 +740,6 @@ export default function CampaignsPage() {
             </div>
           </div>
 
-          {selectedTemplate && selectedPhoneNumber && (
-            <div className="border border-gray-200 rounded-xl p-4 space-y-3">
-              <div>
-                <p className="text-sm font-semibold text-gray-700">Send a test message</p>
-                <p className="text-xs text-gray-400">
-                  Sends one real message now from <b>{selectedPhoneNumber.display_phone_number}</b> using <b className="font-mono">{selectedTemplate.name}</b> — no campaign is created or launched.
-                  The recipient must have opted in / be allowed by your Meta test-number list.
-                </p>
-              </div>
-              <Input label="Test phone (with country code)" placeholder="919846366783" inputMode="numeric"
-                value={testPhone} onChange={e => setTestPhone(e.target.value.replace(/[^\d+]/g, ''))} />
-              {testVars.map((v, i) => (
-                <div key={i} className="flex items-center gap-2">
-                  <code className="bg-gray-200 px-1.5 py-0.5 rounded text-xs flex-shrink-0 w-12 text-center">{`{{${i + 1}}}`}</code>
-                  <input className={`flex-1 text-xs border rounded px-2 py-1.5 ${v.trim() ? 'border-gray-200' : 'border-amber-300'}`}
-                    placeholder={`Value for {{${i + 1}}}`} value={v}
-                    onChange={e => setTestVars(arr => arr.map((x, idx) => idx === i ? e.target.value : x))} />
-                </div>
-              ))}
-              {testHasCode && (
-                <Input label="Offer code (Copy offer code button)" value={testCode} maxLength={15}
-                  onChange={e => setTestCode(e.target.value.replace(/[^A-Za-z0-9]/g, ''))} />
-              )}
-              <Button variant="secondary" onClick={handleTestSend} loading={testing}>📨 Send test</Button>
-            </div>
-          )}
-
           {selectedTemplate && (
             <div className="bg-brand-50 border border-brand-200 rounded-xl p-4 text-xs">
               <p className="font-semibold text-brand-700 mb-2">Summary</p>
@@ -779,6 +759,43 @@ export default function CampaignsPage() {
                 <p className="text-brand-500 mt-2">💳 Credits deducted from wallet on launch.</p>
               )}
             </div>
+          )}
+        </div>
+      </Modal>
+
+      {/* Test message modal — sender number, receiver number, template, Send */}
+      <Modal open={testOpen} onClose={() => setTestOpen(false)} title="Send test message"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setTestOpen(false)}>Close</Button>
+            <Button onClick={handleTestSend} loading={testing}>📨 Send</Button>
+          </>
+        }>
+        <div className="space-y-4">
+          <p className="text-xs text-gray-400">
+            Sends one real message right now. No campaign is created. The receiver must be able to receive messages from the sender
+            (on a Meta test number, add them to the allowed list first).
+          </p>
+          <PhoneNumberSelector value={testNumber} onChange={setTestNumber} />
+          <Input label="Receiver number (with country code) *" placeholder="919846366783" inputMode="numeric"
+            value={testPhone} onChange={e => setTestPhone(e.target.value.replace(/[^\d+]/g, ''))} />
+          <TemplateSelector value={testTemplate} onChange={setTestTemplate} />
+          {testVars.length > 0 && (
+            <div className="bg-gray-50 border border-gray-200 rounded-xl p-3 space-y-2">
+              <p className="text-xs font-semibold text-gray-600">Variable values</p>
+              {testVars.map((v, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <code className="bg-gray-200 px-1.5 py-0.5 rounded text-xs flex-shrink-0 w-12 text-center">{`{{${i + 1}}}`}</code>
+                  <input className={`flex-1 text-xs border rounded px-2 py-1.5 ${v.trim() ? 'border-gray-200' : 'border-amber-300'}`}
+                    placeholder={`Value for {{${i + 1}}}`} value={v}
+                    onChange={e => setTestVars(arr => arr.map((x, idx) => idx === i ? e.target.value : x))} />
+                </div>
+              ))}
+            </div>
+          )}
+          {testHasCode && (
+            <Input label="Offer code (Copy offer code button)" value={testCode} maxLength={15}
+              onChange={e => setTestCode(e.target.value.replace(/[^A-Za-z0-9]/g, ''))} />
           )}
         </div>
       </Modal>

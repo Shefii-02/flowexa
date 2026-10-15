@@ -24,7 +24,7 @@ import { MEDIA_RULES, ruleForBlockType } from '@/utils/mediaRules'
 // ── Types ──────────────────────────────────────────────────────────────────────
 
 type RecipientTab = 'personal' | 'group' | 'group-chat' | 'csv' | 'label' | 'wa-label' | 'chat' | 'lead'
-type ComposerTab = 'text' | 'media' | 'template' | 'poll' | 'location' | 'contact' | 'audio'
+type ComposerTab = 'text' | 'media' | 'single' | 'template' | 'poll' | 'location' | 'contact' | 'audio'
 type PageTab = 'sender' | 'history'
 type SendStatus = 'pending' | 'sending' | 'sent' | 'failed' | 'paused' | 'scheduled'
 type JobStatus = 'idle' | 'running' | 'paused' | 'stopped' | 'done' | 'scheduled'
@@ -368,6 +368,14 @@ export function MessageSender() {
   const [waTemplates, setWaTemplates] = useState<WaTemplate[]>([])
   const [selectedTemplate, setSelectedTemplate] = useState<WaTemplate | null>(null)
   const [pickerBlockId, setPickerBlockId] = useState<string | null>(null)
+
+  // "Media + Text" tab: ONE media file (image / video / audio / document) shared with a message
+  // body — separate from the Multiple Media tab, which sends a sequence of blocks.
+  type SingleMediaType = 'image' | 'video' | 'audio' | 'document'
+  const [singleType, setSingleType] = useState<SingleMediaType>('image')
+  const [singleUrl, setSingleUrl] = useState('')
+  const [singleCaption, setSingleCaption] = useState('')
+  const [singleUploading, setSingleUploading] = useState(false)
 
   // ITEM 1 — Emoji picker
   const [showEmoji, setShowEmoji] = useState(false)
@@ -933,6 +941,19 @@ export function MessageSender() {
     } catch (e) { toast.error((e as { response?: { data?: { message?: string } } })?.response?.data?.message ?? 'Upload failed.') }
   }
 
+  const handleSingleUpload = async (picked: File) => {
+    const file = await gate(picked, ruleForBlockType(singleType))
+    if (!file) return
+    const fd = new FormData()
+    fd.append('file', file)
+    setSingleUploading(true)
+    try {
+      const res = await api.post('/media-library/upload', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+      setSingleUrl(res.data?.url ?? res.data?.data?.url ?? '')
+    } catch (e) { toast.error((e as { response?: { data?: { message?: string } } })?.response?.data?.message ?? 'Upload failed.') }
+    finally { setSingleUploading(false) }
+  }
+
   // Same upload call as handleMediaUpload above, but for the standalone Test Send drawer, which
   // has its own single mediaUrl instead of a composer block to update.
   const handleTestMediaUpload = async (picked: File) => {
@@ -1025,6 +1046,7 @@ export function MessageSender() {
     setLocLat(''); setLocLng(''); setLocName(''); setLocAddress('')
     setSelectedContact2(null)
     setAudioBlob(null); setAudioUrl(null)
+    setSingleUrl(''); setSingleCaption('')
     setScheduledAt('')
   }
 
@@ -1220,6 +1242,16 @@ export function MessageSender() {
       if (!audioUrl || audioUploading) return null
       return { templateText: '🎤 Audio message', extraPayload: { kind: 'audio', url: audioUrl } }
     }
+    if (composerTab === 'single') {
+      if (!singleUrl.trim() || singleUploading) return null
+      const body = singleCaption.trim()
+      // WhatsApp voice/audio messages carry no caption, so the body goes out as a text right after.
+      const blocks: MessageBlock[] = singleType === 'audio'
+        ? [{ id: 's1', type: 'audio', mediaUrl: singleUrl }, ...(body ? [{ id: 's2', type: 'text' as const, text: singleCaption }] : [])]
+        : [{ id: 's1', type: singleType, mediaUrl: singleUrl, ...(body ? { caption: singleCaption } : {}) }]
+      const icon = { image: '🖼️', video: '🎬', audio: '🎤', document: '📄' }[singleType]
+      return { templateText: `${icon} ${singleType}${body ? ' + text' : ''}`, extraPayload: { kind: 'media', blocks } }
+    }
     if (composerTab === 'media') {
       const validBlocks = mediaBlocks.filter(b =>
         (b.type === 'text' && b.text?.trim()) || (b.type !== 'text' && b.mediaUrl?.trim())
@@ -1231,7 +1263,7 @@ export function MessageSender() {
       }
     }
     return null
-  }, [composerTab, textBody, selectedTemplate, pollQuestion, pollOptions, locLat, locLng, locName, locAddress, selectedContact2, audioUrl, audioUploading, mediaBlocks])
+  }, [composerTab, textBody, selectedTemplate, pollQuestion, pollOptions, locLat, locLng, locName, locAddress, selectedContact2, audioUrl, audioUploading, mediaBlocks, singleType, singleUrl, singleCaption, singleUploading])
 
   // Sends a one-off message to a single test number via the backend's own send function (POST
   // /message-sender/test-send) instead of the browser calling the gateway directly — same
@@ -2075,7 +2107,8 @@ export function MessageSender() {
               <div className="flex flex-wrap gap-2 mb-4">
                 {([
                   { id: 'text', label: '✏️ Text' },
-                  { id: 'media', label: '📎 Multi Media' },
+                  { id: 'single', label: '🖼️ Media' },
+                  { id: 'media', label: '📎 Multiple Media' },
                   { id: 'template', label: '📋 Template' },
                   { id: 'poll', label: '📊 Poll' },
                   { id: 'location', label: '📍 Location' },
@@ -2158,6 +2191,64 @@ export function MessageSender() {
               )}
 
               {/* Media sub-tab */}
+              {composerTab === 'single' && (
+                <div className="space-y-3">
+                  <p className="text-xs text-gray-500">Share one file with a message. For several files or a sequence, use <b>Multiple Media</b>.</p>
+
+                  {/* Media type */}
+                  <div className="grid grid-cols-4 gap-2">
+                    {([
+                      { v: 'image', l: '🖼️ Image' }, { v: 'video', l: '🎬 Video' },
+                      { v: 'audio', l: '🎤 Audio' }, { v: 'document', l: '📄 Document' },
+                    ] as { v: SingleMediaType; l: string }[]).map(o => (
+                      <button key={o.v} type="button"
+                        onClick={() => { if (o.v !== singleType) { setSingleType(o.v); setSingleUrl('') } }}
+                        className={`px-2 py-2 rounded-lg text-xs font-medium border ${singleType === o.v ? 'bg-brand-500 text-white border-brand-500' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>
+                        {o.l}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* File */}
+                  <div className="space-y-2">
+                    <input type="text" value={singleUrl} onChange={e => setSingleUrl(e.target.value)}
+                      placeholder={`Paste ${singleType} link, or upload / pick below…`}
+                      className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-brand-300" />
+                    <div className="flex gap-2 items-center">
+                      <label className="flex items-center gap-1 px-2 py-1 bg-gray-100 rounded text-xs cursor-pointer hover:bg-gray-200">
+                        <Upload size={12} /> Upload
+                        <input type="file" className="hidden"
+                          accept={MEDIA_RULES[ruleForBlockType(singleType)].accept}
+                          onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) handleSingleUpload(f) }} />
+                      </label>
+                      <button type="button" onClick={() => setPickerBlockId('single')}
+                        className="flex items-center gap-1 px-2 py-1 bg-indigo-50 border border-indigo-200 text-indigo-700 rounded text-xs hover:bg-indigo-100 font-medium">
+                        🗂️ Browse Library
+                      </button>
+                      {singleUploading && <span className="flex items-center gap-1 text-xs text-blue-600"><Loader2 size={12} className="animate-spin" /> Uploading…</span>}
+                    </div>
+                    {singleUrl && (
+                      <div className="rounded overflow-hidden">
+                        {singleType === 'image' && <img src={singleUrl} alt="preview" className="max-h-32 rounded object-contain" />}
+                        {singleType === 'video' && <video src={singleUrl} controls className="max-h-40 rounded w-full" />}
+                        {singleType === 'audio' && <audio controls src={singleUrl} className="w-full h-8" />}
+                        {singleType === 'document' && <a href={singleUrl} target="_blank" rel="noreferrer" className="text-xs text-brand-600 underline break-all">{singleUrl}</a>}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Body / caption */}
+                  <div>
+                    <label className="text-xs font-medium text-gray-600 mb-1 block">
+                      Message body {singleType === 'audio' ? '(sent as a text right after the audio)' : '(shown as the caption)'}
+                    </label>
+                    <FormattedTextarea value={singleCaption} onChange={setSingleCaption} rows={4}
+                      maxLength={singleType === 'audio' ? 4096 : 1024}
+                      placeholder="Write the message… *bold* _italic_ ~strike~ {{name}} {{phone}}" />
+                  </div>
+                </div>
+              )}
+
               {composerTab === 'media' && (
                 <div className="space-y-3">
                   {mediaBlocks.map((block, idx) => (
@@ -2480,15 +2571,38 @@ export function MessageSender() {
                 </label>
                 <div className="flex gap-2">
                   <input type="datetime-local" value={scheduledAt} onChange={e => setScheduledAt(e.target.value)}
+                    min={new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)}
                     disabled={isScheduled || isRunning || isPaused}
                     className="flex-1 px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-300 disabled:opacity-50" />
                   {scheduledAt && !isScheduled && (
                     <button onClick={() => setScheduledAt('')} className="text-gray-400 hover:text-red-500"><XCircle size={16} /></button>
                   )}
                 </div>
-                {scheduledAt && !isScheduled && new Date(scheduledAt).getTime() > Date.now() && (
-                  <p className="text-xs text-purple-600 mt-1">Will send at {new Date(scheduledAt).toLocaleString('en-IN')}</p>
-                )}
+                {scheduledAt && !isScheduled && (() => {
+                  const start = new Date(scheduledAt).getTime()
+                  if (isNaN(start)) return null
+                  const inPast = start <= Date.now()
+                  const count = selectedRecipients.length
+                  // run time = (n-1) gaps of the chosen delay between messages
+                  const runMs = Math.max(count - 1, 0) * delaySeconds * 1000
+                  const fmt = (t: number) => new Date(t).toLocaleString('en-IN', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+                  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone
+                  return inPast ? (
+                    <div className="mt-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-700">
+                      ⚠️ {fmt(start)} has already passed — pick a future time, or clear it to send now.
+                    </div>
+                  ) : (
+                    <div className="mt-2 bg-purple-50 border border-purple-200 rounded-lg px-3 py-2 space-y-1">
+                      <div className="text-xs font-semibold text-purple-700">🗓️ Schedule preview</div>
+                      <div className="text-sm font-medium text-purple-900">{fmt(start)}</div>
+                      <div className="text-xs text-purple-600">Starts in {formatCountdown(Math.floor((start - Date.now()) / 1000))} · {tz}</div>
+                      <div className="text-xs text-purple-600 border-t border-purple-100 pt-1">
+                        {count} recipient{count !== 1 ? 's' : ''} · {delaySeconds}s between messages
+                        {count > 1 && <> · ends about {fmt(start + runMs)}</>}
+                      </div>
+                    </div>
+                  )
+                })()}
               </div>
             </div>
 
@@ -2552,6 +2666,7 @@ export function MessageSender() {
                       (composerTab === 'location' && (isNaN(parseFloat(locLat)) || isNaN(parseFloat(locLng)))) ||
                       (composerTab === 'contact' && !selectedContact2) ||
                       (composerTab === 'audio' && (!audioUrl || audioUploading)) ||
+                      (composerTab === 'single' && (!singleUrl.trim() || singleUploading)) ||
                       (composerTab === 'media' && !mediaBlocks.some(b => (b.type === 'text' && !!b.text?.trim()) || (b.type !== 'text' && !!b.mediaUrl?.trim())))
                     }
                     className="flex items-center gap-2 flex-1 justify-center px-4 py-2 bg-brand-500 text-white rounded-lg text-sm font-medium disabled:opacity-50 hover:bg-brand-600 transition-colors">
@@ -3307,7 +3422,8 @@ export function MessageSender() {
         open={!!pickerBlockId}
         onClose={() => setPickerBlockId(null)}
         onSelect={(url) => {
-          if (pickerBlockId) updateBlock(pickerBlockId, { mediaUrl: url })
+          if (pickerBlockId === 'single') setSingleUrl(url)
+          else if (pickerBlockId) updateBlock(pickerBlockId, { mediaUrl: url })
           setPickerBlockId(null)
         }}
         title="Pick from Media Library"

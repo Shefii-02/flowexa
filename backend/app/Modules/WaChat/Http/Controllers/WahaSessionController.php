@@ -106,6 +106,27 @@ class WahaSessionController extends Controller
      * (short timeout, no DB writes) so it can be polled from the dashboard
      * header. Degrades to an empty list if the gateway is unreachable.
      */
+    /**
+     * How many WhatsApp sessions this company may create on its plan, how many it has used, and
+     * how many are left (max/remaining = null means unlimited). Same count PlanLimitMiddleware
+     * enforces on create, so the number shown always matches what the server will allow.
+     */
+    public function limits(): JsonResponse
+    {
+        $user    = auth()->user();
+        $company = $user->company;
+        $plan    = $company?->plan;
+        $used    = \DB::table('openwa_sessions')->where('company_id', $company?->id)->count();
+        $max     = $user->isSuperAdmin() ? null : $plan?->max_wa_sessions;
+
+        return response()->json([
+            'used'      => $used,
+            'max'       => $max,
+            'remaining' => $max === null ? null : max($max - $used, 0),
+            'plan'      => $plan?->name,
+        ]);
+    }
+
     public function health(): JsonResponse
     {
         $company = auth()->user()->company;

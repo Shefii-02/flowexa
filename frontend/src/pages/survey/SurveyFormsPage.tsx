@@ -6,6 +6,7 @@ import { getError } from '@/utils'
 import toast from 'react-hot-toast'
 import SeedSamplesButton from '@/components/shared/SeedSamplesButton'
 import SurveyResponsesModal from './SurveyResponsesModal'
+import SurveyPreviewModal from './SurveyPreviewModal'
 
 const FIELD_TYPES = [
   { value: 'text',   label: 'Text',   icon: '💬', desc: 'Free-form answer' },
@@ -34,6 +35,7 @@ export default function SurveyFormsPage() {
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState(DEFAULT_FORM)
   const [showResponses, setShowResponses] = useState<any>(null)
+  const [previewForm, setPreviewForm] = useState<any>(null)
   const [duplicatingId, setDuplicatingId] = useState<number | null>(null)
   const set = (k: string, v: any) => setForm(f => ({ ...f, [k]: v }))
 
@@ -193,6 +195,7 @@ export default function SurveyFormsPage() {
                     <td><Badge variant={f.is_active ? 'green' : 'gray'}>{f.is_active ? 'Active' : 'Inactive'}</Badge></td>
                     <td>
                       <div className="flex gap-2 flex-wrap">
+                        <button onClick={() => setPreviewForm(f)} className="text-xs text-indigo-600 hover:underline">👁 Preview</button>
                         <button onClick={() => openEdit(f)} className="text-xs text-blue-600 hover:underline">Edit</button>
                         <button onClick={() => duplicate(f)} disabled={duplicatingId === f.id}
                           className="text-xs text-gray-600 hover:underline">
@@ -219,6 +222,7 @@ export default function SurveyFormsPage() {
         footer={
           <>
             <Button variant="secondary" onClick={() => setShowCreate(false)}>Cancel</Button>
+            <Button variant="secondary" onClick={() => setPreviewForm({ ...form, id: editForm?.id ?? 'draft', fields: form.fields })}>👁 Preview</Button>
             <Button onClick={handleSave} loading={saving}>{editForm ? 'Save changes' : 'Create form'}</Button>
           </>
         }
@@ -291,6 +295,8 @@ export default function SurveyFormsPage() {
           </label>
         </div>
       </Modal>
+
+      {previewForm && <SurveyPreviewModal form={previewForm} onClose={() => setPreviewForm(null)} />}
 
       {/* Responses viewer — summary, list, CSV export, add-to-label, convert-to-leads */}
       {showResponses && (

@@ -66,6 +66,7 @@ export function Sessions() {
   const { canWrite } = useRole();
   const queryClient = useQueryClient();
   const [sessions, setSessions] = useState<Session[]>([]);
+  const [limits, setLimits] = useState<{ used: number; max: number | null; remaining: number | null; plan?: string | null } | null>(null);
   const [loading, setLoading] = useState(true);
   // The full-page spinner belongs to the FIRST load only (see fetchSessions).
   const initialLoadDone = useRef(false);
@@ -157,6 +158,7 @@ export function Sessions() {
       if (!initialLoadDone.current) setLoading(true);
       const data = await sessionApi.list();
       setSessions(data);
+      api.get('/waha/sessions/limits').then(r => setLimits(r.data)).catch(() => setLimits(null)); // Laravel (plan data), not the Node gateway // best-effort; the banner just hides on failure
       // Keep the shared React Query cache (read by the Dashboard via useSessionsQuery /
       // useSessionStatsQuery) in sync after this page's mutations reload local state — otherwise the
       // Dashboard shows stale session counts/status. This runs on every reload (mount / WS-failed /
@@ -526,6 +528,18 @@ export function Sessions() {
           )
         }
       />
+
+      {limits && (
+        <div className={`rounded-xl px-5 py-3 text-sm border ${limits.remaining === 0 ? 'bg-amber-50 border-amber-200 text-amber-700' : 'bg-blue-50 border-blue-200 text-blue-700'}`}>
+          {limits.max === null ? (
+            <>💡 Each session is a separate WhatsApp number, linked by scanning a QR code. Your plan has <b>no limit</b> on sessions — you have <b>{limits.used}</b> so far.</>
+          ) : limits.remaining === 0 ? (
+            <>⚠️ You've used all <b>{limits.max}</b> session{limits.max !== 1 ? 's' : ''} your {limits.plan ? <b>{limits.plan}</b> : 'current'} plan allows. Delete an unused session or upgrade your plan to add another.</>
+          ) : (
+            <>💡 Each session is a separate WhatsApp number, linked by scanning a QR code. Your {limits.plan ? <b>{limits.plan}</b> : 'current'} plan allows up to <b>{limits.max}</b> session{limits.max !== 1 ? 's' : ''} — you've used <b>{limits.used}</b>, so <b>{limits.remaining}</b> more can be added.</>
+          )}
+        </div>
+      )}
 
       <div className="filters-bar">
         <div className="search-input">
