@@ -1253,8 +1253,8 @@ Route::prefix('v1')->middleware(['jwt.auth'])->group(function () {
     // Gateway API-key status / reconnect — must stay reachable even with an expired
     // token, since reconnecting IS how a company recovers from that exact state.
     Route::get('waha/token',            [WahaSessionController::class, 'tokenStatus']);
-    Route::post('waha/token/reconnect', [WahaSessionController::class, 'reconnectToken'])
-        ->middleware('permission:settings.manage');
+    Route::post('waha/token/reconnect', [WahaSessionController::class, 'reconnectToken']);
+        // ->middleware('permission:settings.manage');
 
     // This company's own slice of the gateway's audit trail (see WahaSessionController::auditLog
     // for why this can't just proxy /api/audit directly — the gateway key is OPERATOR-role).

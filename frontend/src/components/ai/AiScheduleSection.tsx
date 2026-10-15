@@ -258,8 +258,7 @@ export function AiScheduleSection({ channel, only, emptyText }: { channel: Chann
     <div className="space-y-3">
       {rows.map(row => (
         <ScheduleAccountRow key={row.session_id} label={row.label} schedule={row.schedule}
-          saving={savingKey === row.session_id} onSave={(s) => saveWa(row.session_id, s)}
-          showChatbot={channel === 'wa_cloud'} />
+          saving={savingKey === row.session_id} onSave={(s) => saveWa(row.session_id, s)} />
       ))}
     </div>
   )
