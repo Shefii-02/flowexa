@@ -421,6 +421,7 @@ Route::prefix('v1')->group(function () {
         });
 
         Route::prefix('survey-forms')->group(function () {
+            Route::post('/seed-samples',    [\App\Http\Controllers\SampleDataController::class, 'surveyForms']);
             Route::get('/',                 [SurveyFormController::class, 'index']);
             Route::post('/',                [SurveyFormController::class, 'store']);
             Route::get('/{id}',             [SurveyFormController::class, 'show']);
@@ -851,6 +852,7 @@ Route::prefix('v1')->group(function () {
 
                 Route::middleware('permission:templates.manage')->group(function () {
                     // Bulk sync must come before '/{id}' so it isn't swallowed by the id route
+                    Route::post('/seed-samples',    [\App\Http\Controllers\SampleDataController::class, 'templates'])->name('seed-samples');
                     Route::post('/sync-from-meta',  [TemplateController::class, 'syncFromMeta'])->name('sync-from-meta');
                     Route::post('{id}/duplicate', [TemplateController::class, 'duplicate'])->name('duplicate')->middleware('plan.limit:templates');
                     Route::post('/',                [TemplateController::class, 'store'])->name('store')->middleware('plan.limit:templates');
@@ -882,6 +884,7 @@ Route::prefix('v1')->group(function () {
         // flow_builder.view/manage keys existed but were never wired up here).
         Route::get('flow-builders',                 [FlowBuilderController::class, 'index'])->middleware('permission:flow_builder.view');
         Route::post('flow-builders',                 [FlowBuilderController::class, 'store'])->middleware('permission:flow_builder.manage');
+        Route::post('flow-builders/seed-samples', [\App\Http\Controllers\SampleDataController::class, 'flowBuilders'])->middleware('permission:flow_builder.manage');
         Route::post('flow-builders/import',      [FlowImportExportController::class, 'import'])->middleware('permission:flow_builder.manage');
         Route::get('flow-builders/{id}/export', [FlowImportExportController::class, 'export'])->middleware('permission:flow_builder.view');
         Route::get('flow-builders/{id}',            [FlowBuilderController::class, 'show'])->middleware('permission:flow_builder.view');

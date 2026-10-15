@@ -146,7 +146,7 @@ class WebhookController extends Controller
                     $profileName = $contact['profile']['name'] ?? null;
 
                     $dto = InboundMessageDTO::fromMeta($message, $phone, $waId, $profileName);
-                    $this->webhookService->handleInbound($company, $dto);
+                    $this->webhookService->handleInbound($company, $dto, (string) $phoneNumberId);
                 }
 
                 // ── Delivery / read status updates ────────────────────────────

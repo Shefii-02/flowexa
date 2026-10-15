@@ -4,6 +4,7 @@ import { surveyFormApi } from '@/api'
 import { Button, Input, Modal, ConfirmModal, Badge, EmptyState, Pagination } from '@/components/ui'
 import { getError } from '@/utils'
 import toast from 'react-hot-toast'
+import SeedSamplesButton from '@/components/shared/SeedSamplesButton'
 import SurveyResponsesModal from './SurveyResponsesModal'
 
 const FIELD_TYPES = [
@@ -151,7 +152,10 @@ export default function SurveyFormsPage() {
           <h1 className="page-title">Survey Forms</h1>
           <p className="page-sub">{total} forms · used by "Survey" flow nodes</p>
         </div>
-        <Button onClick={openCreate}>+ New survey form</Button>
+        <div className="flex gap-2 flex-wrap">
+          <SeedSamplesButton seed={surveyFormApi.seedSamples} onDone={load} />
+          <Button onClick={openCreate}>+ New survey form</Button>
+        </div>
       </div>
 
       <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 text-xs text-blue-700">

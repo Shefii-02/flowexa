@@ -157,6 +157,7 @@ export const roleApi = {
 
 // ── Flow Builder ─────────────────────────────────────────────────────────────
 export const flowBuilderApi = {
+  seedSamples: () => api.post('/flow-builders/seed-samples'),
   list: () => api.get('/flow-builders'),
   show: (id: number) => api.get(`/flow-builders/${id}`),
   create: (d: Record<string, unknown>) => api.post('/flow-builders', d),
@@ -378,6 +379,7 @@ export const phoneNumberApi = {
 
 // ── WA Templates ──────────────────────────────────────────────────────────
 export const templateApi = {
+  seedSamples: () => api.post('/templates/seed-samples'),
   list: (p?: Record<string, unknown>) => api.get('/templates', { params: p }),
   show: (id: number) => api.get(`/templates/${id}`),
   create: (d: Record<string, unknown>) => api.post('/templates', d),
@@ -434,6 +436,7 @@ export const conversationApi = {
 }
 
 export const surveyFormApi = {
+  seedSamples: () => api.post('/survey-forms/seed-samples'),
   // GET /survey-forms — list forms, optionally filtered by name search
   list: (params?: { search?: string; page?: number; per_page?: number }) =>
     api.get('/survey-forms', { params }),

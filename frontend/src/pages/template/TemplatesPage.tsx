@@ -5,6 +5,7 @@ import { templateApi, surveyFormApi } from '@/api'
 import { Button, Input, Modal, ConfirmModal, Badge, EmptyState, Pagination } from '@/components/ui'
 import { fmt, getError } from '@/utils'
 import toast from 'react-hot-toast'
+import SeedSamplesButton from '@/components/shared/SeedSamplesButton'
 import { useMediaGate } from '@/hooks/useMediaGate'
 import { MEDIA_RULES, MediaRuleKey } from '@/utils/mediaRules'
 
@@ -415,6 +416,7 @@ export default function TemplatesPage() {
           <Button variant="secondary" onClick={handleSyncFromMeta} loading={syncing}>
             🔄 Sync from Meta
           </Button>
+          <SeedSamplesButton seed={templateApi.seedSamples} onDone={load} />
           <Button onClick={openCreate}>+ New template</Button>
         </div>
       </div>

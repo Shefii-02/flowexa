@@ -256,7 +256,8 @@ export default function App() {
               <Route path="contacts" element={<ContactsPage />} />
               <Route path="labels" element={<LabelsPage />} />
               {/* <Route path="flow" element={<FlowPage />} /> */}
-              <Route path="/flow-builders" element={<FlowBuildersPage />} />
+              <Route path="/wa-cloud/flow-builders" element={<FlowBuildersPage />} />
+              <Route path="/flow-builders" element={<Navigate to="/wa-cloud/flow-builders" replace />} />
               <Route path="/flow" element={<FlowNodesPage />} />
 
               <Route path="leads" element={<LeadsPage />} />

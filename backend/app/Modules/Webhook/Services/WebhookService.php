@@ -61,7 +61,7 @@ class WebhookService
     ) {}
 
     // ─── Handle inbound message ───────────────────────────────────────────────
-    public function handleInbound(Company $company, InboundMessageDTO $dto): void
+    public function handleInbound(Company $company, InboundMessageDTO $dto, ?string $receivedOnPhoneNumberId = null): void
     {
         // 1. Blacklist check — silent ignore, no reply, no lead
         $isBlacklisted = MessageBlacklist::where('company_id', $company->id)
@@ -118,7 +118,7 @@ class WebhookService
         // 3b. Mirror into the realtime conversation inbox (wa_conversations/wa_messages) —
         // separate from MessageLog above, which is the flat audit trail. This is what
         // powers the shared inbox UI (counsellors seeing/replying to the same thread).
-        $this->logInboundToInbox($company, $contact, $dto);
+        $this->logInboundToInbox($company, $contact, $dto, $receivedOnPhoneNumberId);
 
         // A real voice note (Meta flags it audio.voice === true, distinct from a shared audio
         // file) gets Whisper-transcribed once here so understanding it works everywhere a typed
@@ -727,7 +727,7 @@ class WebhookService
     // wa_conversations/wa_messages so the shared realtime inbox stays in sync
     // with everything the bot (and agents) send/receive.
     // ═══════════════════════════════════════════════════════════════════════
-    private function logInboundToInbox(Company $company, Contact $contact, InboundMessageDTO $dto): void
+    private function logInboundToInbox(Company $company, Contact $contact, InboundMessageDTO $dto, ?string $receivedOnPhoneNumberId = null): void
     {
         try {
             $displayName = $contact->name ?: ($dto->profileName ?: null);
@@ -736,6 +736,12 @@ class WebhookService
                 ['company_id' => $company->id, 'phone' => $dto->phone],
                 ['contact_id' => $contact->id, 'contact_name' => $displayName, 'status' => 'open']
             );
+
+            // Tag the conversation with the company number it arrived on. Nothing set this
+            // before, so wa_phone_number_id stayed NULL — the inbox's per-number access filter
+            // (whereIn wa_phone_number_id) then hid every inbound thread from agents restricted
+            // to specific numbers, and the list couldn't show which number a chat was on.
+            $this->tagConversationNumber($conversation, $company, $receivedOnPhoneNumberId);
 
             $conversation->update(array_filter([
                 'status'          => 'open',
@@ -765,6 +771,22 @@ class WebhookService
         }
     }
 
+    /** Fill wa_conversations.wa_phone_number_id (only when empty) from a Meta phone_number_id. */
+    private function tagConversationNumber(WaConversation $conversation, Company $company, ?string $metaPhoneNumberId): void
+    {
+        if ($conversation->wa_phone_number_id || !$metaPhoneNumberId) {
+            return;
+        }
+
+        $numberId = \App\Models\WaPhoneNumber::where('company_id', $company->id)
+            ->where('phone_number_id', $metaPhoneNumberId)
+            ->value('id');
+
+        if ($numberId) {
+            $conversation->update(['wa_phone_number_id' => $numberId]);
+        }
+    }
+
     private function logOutboundToInbox(Company $company, array $payload, ?string $waId, string $status, ?string $failureReason = null): void
     {
         try {
@@ -773,6 +795,7 @@ class WebhookService
                 ['status' => 'open']
             );
             $conversation->update(['last_message_at' => now()]);
+            $this->tagConversationNumber($conversation, $company, $company->wa_phone_id);
 
             $message = WaMessage::create([
                 'conversation_id' => $conversation->id,

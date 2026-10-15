@@ -358,11 +358,36 @@ class SettingsController extends Controller
         $limit  = min(max($request->integer('limit', 100), 1), 500);
         $status = $request->string('status')->toString();
 
-        $rows = WebhookLog::where('company_id', auth()->user()->company_id)
+        $company = auth()->user()->company;
+
+        // Only webhooks for phone numbers actually added to THIS company (Phone Numbers page,
+        // plus the legacy single number on the company record). A log row carries company_id
+        // from whichever lookup matched at receive time, so a number that has since been
+        // removed or moved to another company must not keep surfacing here.
+        $phoneIds = \App\Models\WaPhoneNumber::where('company_id', $company->id)
+            ->pluck('phone_number_id')
+            ->push($company->wa_phone_id)
+            ->filter()
+            ->map(fn ($id) => (string) $id)
+            ->unique()
+            ->all();
+
+        if (empty($phoneIds)) {
+            return response()->json(['logs' => []]);
+        }
+
+        // Filtered in PHP (payload is JSON) — over-fetch so the limit still fills after filtering.
+        $rows = WebhookLog::where('company_id', $company->id)
             ->when($status !== '', fn ($q) => $q->where('status', $status))
             ->latest()
-            ->limit($limit)
-            ->get();
+            ->limit($limit * 5)
+            ->get()
+            ->filter(fn ($log) => in_array(
+                (string) ($log->payload['entry'][0]['changes'][0]['value']['metadata']['phone_number_id'] ?? ''),
+                $phoneIds, true,
+            ))
+            ->take($limit)
+            ->values();
 
         $logs = $rows->map(function ($log) {
             $change = $log->payload['entry'][0]['changes'][0] ?? [];

@@ -12,6 +12,7 @@ import { Button, Input, Modal, ConfirmModal, Badge, EmptyState } from '@/compone
 import { fmt, getError } from '@/utils'
 import { FlowImportExportModal } from './components/FlowImportExportModal.tsx'
 import toast from 'react-hot-toast'
+import SeedSamplesButton from '@/components/shared/SeedSamplesButton'
 
 const TRIGGER_TYPES = [
   { value: 'default', label: 'Default',  icon: '🌿', desc: 'Fallback when no other flow matches' },
@@ -154,6 +155,7 @@ export default function FlowBuildersPage() {
           >
             ⬆️ Import JSON
           </Button>
+          <SeedSamplesButton seed={flowBuilderApi.seedSamples} onDone={load} />
           <Button onClick={openCreate}>+ New builder</Button>
         </div>
       </div>

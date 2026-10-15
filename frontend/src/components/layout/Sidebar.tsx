@@ -257,7 +257,7 @@ export const Sidebar = () => {
 
   const detectOpen = (path: string): AccordionId => {
     if (path.startsWith('/wa-chat')) return 'wa-chat'
-    if (path.startsWith('/wa-cloud') || path.startsWith('/phone-numbers') || path.startsWith('/flow-builders') || path.startsWith('/flow')) return 'wa-cloud'
+    if (path.startsWith('/wa-cloud') || path.startsWith('/phone-numbers') || path.startsWith('/flow')) return 'wa-cloud'
     if (path.startsWith('/wa-agent')) return 'wa-agent'
     if (path.startsWith('/meta-ads')) return 'meta-ads'
     if (path.startsWith('/instagram')) return 'instagram'
@@ -406,7 +406,7 @@ export const Sidebar = () => {
             <Accordion
               icon="☁️"
               label="WA Cloud"
-              basePaths={['/wa-cloud', '/phone-numbers', '/flow-builders', '/flow']}
+              basePaths={['/wa-cloud', '/phone-numbers', '/flow']}
               isOpen={openAccordion === 'wa-cloud'}
               onToggle={() => toggle('wa-cloud')}
             >
@@ -422,7 +422,7 @@ export const Sidebar = () => {
               <SubLink to="/wa-cloud/api-service" icon="🔑" label="API Service" />
               {/* } */}
               <SubLink to="/wa-cloud/phone-numbers" icon="📱" label="Phone Numbers" />
-              <SubLink to="/flow-builders" icon="🌿" label="Flow Builder" />
+              <SubLink to="/wa-cloud/flow-builders" icon="🌿" label="Flow Builder" />
               <SubLink to="/wa-cloud/automations" icon="⚙️" label="Agent Automations" />
               <SubLink to="/wa-cloud/inbox" icon="📥" label="Inbox" />
               <SubLink to="/wa-cloud/settings" icon="⚙️" label="Settings" />
