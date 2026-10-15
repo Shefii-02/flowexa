@@ -54,7 +54,7 @@ const DEFAULT_FORM = {
   header: '',       // text header content — only used when header_format === 'TEXT'
   header_example: '', // sample value for the single {{1}} variable allowed in a text header
   body: '', footer: '',
-  buttons: [] as { type: string; text: string; url?: string; phone_number?: string; survey_form_id?: number }[],
+  buttons: [] as { type: string; text: string; url?: string; phone_number?: string; phone_cc?: string; phone_local?: string; survey_form_id?: number }[],
   // AUTHENTICATION-only — code delivery setup. Meta generates body/footer copy itself;
   // these just configure how the OTP is delivered and what flags are set.
   auth_delivery_method: 'copy_code' as 'copy_code'|'one_tap'|'zero_tap',
@@ -80,6 +80,22 @@ function extractVariables(text: string): number[] {
 function isValidPhoneNumber(v: string): boolean {
   return /^\+[1-9]\d{6,14}$/.test(v.trim().replace(/[\s\-()]/g, ''))
 }
+
+// Body copy with too many emojis tends to get flagged by Meta and reads as spam — cap it.
+const MAX_BODY_EMOJIS = 10
+const countEmojis = (text: string): number => (text.match(/\p{Extended_Pictographic}/gu) || []).length
+const hasEmoji = (text: string): boolean => /\p{Extended_Pictographic}/u.test(text)
+
+// Phone buttons are entered as two fields — country code + number — and stored as "+<cc><number>".
+const DEFAULT_COUNTRY_CODE = '91'
+const COUNTRY_CODES = ['91', '971', '966', '974', '968', '965', '973', '44', '1', '61', '65', '60', '49', '33']
+function splitPhone(full?: string): { phone_cc: string; phone_local: string } {
+  const digits = (full || '').replace(/\D/g, '')
+  if (!digits) return { phone_cc: DEFAULT_COUNTRY_CODE, phone_local: '' }
+  const cc = [...COUNTRY_CODES].sort((a, b) => b.length - a.length).find(c => digits.startsWith(c)) ?? digits.slice(0, 2)
+  return { phone_cc: cc, phone_local: digits.slice(cc.length) }
+}
+const joinPhone = (cc?: string, local?: string) => `+${(cc || '').replace(/\D/g, '')}${(local || '').replace(/\D/g, '')}`
 
 export default function TemplatesPage() {
   const [templates,  setTemplates]  = useState<any[]>([])
@@ -158,7 +174,8 @@ export default function TemplatesPage() {
       header_format: t.header_format?.toUpperCase() || 'TEXT',
       header: t.header_format === 'TEXT' ? (t.header || '') : '',
       header_example: t.header_example || '',
-      body: t.body || '', footer: t.footer || '', buttons: t.buttons || [],
+      body: t.body || '', footer: t.footer || '',
+      buttons: (t.buttons || []).map((b: any) => b.type === 'PHONE_NUMBER' ? { ...b, ...splitPhone(b.phone_number) } : b),
       auth_delivery_method: t.auth_delivery_method || 'copy_code',
       auth_add_expiry: t.auth_add_expiry ?? true,
       auth_add_security_recommendation: t.auth_add_security_recommendation ?? true,
@@ -203,8 +220,9 @@ export default function TemplatesPage() {
       }
 
       if (btn.type === 'PHONE_NUMBER') {
-        if (!btn.phone_number?.trim()) return `Button ${i + 1}: phone number is required for a phone button`
-        if (!isValidPhoneNumber(btn.phone_number)) return `Button ${i + 1}: enter the number with + and country code (e.g. +919846366783)`
+        if (!btn.phone_cc?.trim()) return `Button ${i + 1}: country code is required for a phone button`
+        if (!btn.phone_local?.trim()) return `Button ${i + 1}: phone number is required for a phone button`
+        if (!isValidPhoneNumber(joinPhone(btn.phone_cc, btn.phone_local))) return `Button ${i + 1}: enter a valid country code (e.g. 91) and number (e.g. 9846366783)`
       }
 
       if (btn.type === 'SURVEY_FORM' && !btn.survey_form_id) {
@@ -239,6 +257,14 @@ export default function TemplatesPage() {
       }
     } else {
       if (!form.body.trim())  { toast.error('Body text required'); return }
+      if (countEmojis(form.body) > MAX_BODY_EMOJIS) {
+        toast.error(`Body can have at most ${MAX_BODY_EMOJIS} emojis (you have ${countEmojis(form.body)})`)
+        return
+      }
+      if (hasEmoji(form.footer) || /\n/.test(form.footer)) {
+        toast.error("Footer can't contain emojis or line breaks")
+        return
+      }
 
       // Media header sample check
       if (form.header_format !== 'TEXT' && !headerSampleFile && !headerSampleUrl) {
@@ -305,7 +331,7 @@ export default function TemplatesPage() {
           type: b.type,
           text: b.text.trim(),
           url: b.type === 'URL' ? b.url?.trim() : undefined,
-          phone_number: b.type === 'PHONE_NUMBER' ? b.phone_number?.trim() : undefined,
+          phone_number: b.type === 'PHONE_NUMBER' ? joinPhone(b.phone_cc, b.phone_local) : undefined,
           survey_form_id: b.type === 'SURVEY_FORM' ? b.survey_form_id : undefined,
         })),
       }
@@ -368,7 +394,7 @@ export default function TemplatesPage() {
   const updateButtonType = (i: number, type: string) =>
     setForm(f => ({
       ...f,
-      buttons: f.buttons.map((b, idx) => idx === i ? { type, text: b.text, url: undefined, phone_number: undefined, survey_form_id: undefined } : b),
+      buttons: f.buttons.map((b, idx) => idx === i ? { type, text: b.text, url: undefined, phone_number: undefined, phone_cc: type === 'PHONE_NUMBER' ? DEFAULT_COUNTRY_CODE : undefined, phone_local: undefined, survey_form_id: undefined } : b),
     }))
 
   const addAuthApp = () => setForm(f => ({ ...f, auth_apps: [...f.auth_apps, { package_name: '', signature_hash: '' }] }))
@@ -678,6 +704,10 @@ export default function TemplatesPage() {
                 value={form.body}
                 onChange={e => set('body', e.target.value.slice(0, 1024))}
               />
+              <p className={`text-xs mt-1 ${countEmojis(form.body) > MAX_BODY_EMOJIS ? 'text-red-500' : 'text-gray-400'}`}>
+                Emojis: {countEmojis(form.body)} / {MAX_BODY_EMOJIS}
+                {countEmojis(form.body) > MAX_BODY_EMOJIS && ' — remove some to submit'}
+              </p>
               {bodyVars.length > 0 && !bodyVarsSequential && (
                 <p className="text-xs text-red-500 mt-1">
                   ⚠️ Variables must be sequential starting at {'{{1}}'} — no gaps or repeats (found: {bodyVars.map(n => `{{${n}}}`).join(', ')})
@@ -781,11 +811,27 @@ export default function TemplatesPage() {
                         `text` is the caption shown on the button, `phone_number` is the
                         actual number dialed when it's tapped. */}
                     {btn.type === 'PHONE_NUMBER' && (
-                      <Input
-                        placeholder="Phone number with country code — e.g. +919846366783"
-                        value={btn.phone_number || ''}
-                        onChange={e => updateButton(i, 'phone_number', e.target.value.replace(/[^\d+]/g, ''))}
-                      />
+                      <>
+                      <div className="flex gap-2">
+                        <div className="w-24 shrink-0">
+                          <Input
+                            placeholder="Code"
+                            inputMode="numeric"
+                            value={btn.phone_cc ?? DEFAULT_COUNTRY_CODE}
+                            onChange={e => updateButton(i, 'phone_cc', e.target.value.replace(/\D/g, '').slice(0, 4))}
+                          />
+                        </div>
+                        <div className="flex-1">
+                          <Input
+                            placeholder="Phone number — e.g. 9846366783"
+                            inputMode="numeric"
+                            value={btn.phone_local || ''}
+                            onChange={e => updateButton(i, 'phone_local', e.target.value.replace(/\D/g, '').slice(0, 14))}
+                          />
+                        </div>
+                      </div>
+                      <p className="text-xs text-gray-400">Country code without “+” (India = 91), then the number — saved as +{btn.phone_cc || DEFAULT_COUNTRY_CODE}{btn.phone_local || '…'}</p>
+                      </>
                     )}
                   </div>
                 ))}

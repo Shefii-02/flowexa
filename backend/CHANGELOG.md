@@ -16,6 +16,15 @@ Notable changes to the Laravel backend. Newest first.
   `MessageSenderController::recordCompleted()` (route in `routes/api.php`): it stores a finished `done`/`stopped`
   campaign in `openwa_message_sender_jobs` and dispatches nothing.
 
+- WA Cloud campaigns failed every recipient with Meta `(#132012) Parameter format does not match format in the
+  created template`. `ProcessCampaignBatch::buildPayload()` never sent the template's media header
+  (IMAGE/VIDEO/DOCUMENT) and sent campaign variables even to templates with no `{{n}}` placeholders. It now
+  adds the header media (`header_sample_url`) and sends only as many body parameters as the body has placeholders.
+
+- Template body is limited to 10 emojis (`TemplateController` validation; also enforced with a live counter in the
+  template form). The template form's phone button now takes the country code and number as two fields (saved as
+  `+<code><number>`, same API shape), and rejects emojis/line breaks in the footer before Meta does.
+
 ### Operations notes (no code change — see root `README.md` §1.4, §1.5 and §6)
 
 - Two installs sharing one Redis must each set `REDIS_PREFIX`, `REDIS_DB`, `REDIS_CACHE_DB`, `CACHE_PREFIX` and

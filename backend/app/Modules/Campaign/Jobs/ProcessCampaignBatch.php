@@ -138,15 +138,34 @@ class ProcessCampaignBatch implements ShouldQueue
     private function buildPayload(string $phone, Campaign $campaign): array
     {
         $template  = $campaign->template;
-        $variables = $campaign->template_variables ?? [];
+        $variables = array_values($campaign->template_variables ?? []);
 
         $components = [];
 
-        // Body parameters
-        if (!empty($variables)) {
+        // A template created with an IMAGE / VIDEO / DOCUMENT header must be sent with that header's
+        // media — Meta rejects it with (#132012) "Parameter format does not match" otherwise.
+        $format = strtoupper((string) $template->header_format);
+        if (in_array($format, ['IMAGE', 'VIDEO', 'DOCUMENT'], true)) {
+            if ($template->header_sample_url) {
+                $type         = strtolower($format);
+                $components[] = [
+                    'type'       => 'header',
+                    'parameters' => [['type' => $type, $type => ['link' => $template->header_sample_url]]],
+                ];
+            } else {
+                Log::warning("Campaign {$this->campaignId}: template '{$template->name}' has a {$format} header but no media URL.");
+            }
+        }
+
+        // Send exactly as many body parameters as the template has {{n}} placeholders — sending
+        // variables to a template that has none (or too many) is the other #132012 cause.
+        preg_match_all('/\{\{\s*(\d+)\s*\}\}/', (string) $template->body, $m);
+        $placeholders = $m[1] ? max(array_map('intval', $m[1])) : 0;
+
+        if ($placeholders > 0 && !empty($variables)) {
             $components[] = [
                 'type'       => 'body',
-                'parameters' => collect($variables)->map(fn($v) => [
+                'parameters' => collect(array_slice($variables, 0, $placeholders))->map(fn($v) => [
                     'type' => 'text',
                     'text' => (string) $v,
                 ])->values()->all(),

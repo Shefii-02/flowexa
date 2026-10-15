@@ -482,7 +482,13 @@ class TemplateController extends Controller
             'category'        => ['required', 'in:MARKETING,UTILITY,AUTHENTICATION'],
             'language'        => ['required', 'string', 'max:10'],
             // Meta auto-generates the body copy for AUTHENTICATION templates — no free text allowed.
-            'body'            => [$isAuth ? 'nullable' : 'required', 'string', 'max:1024'],
+            'body'            => [$isAuth ? 'nullable' : 'required', 'string', 'max:1024', function ($attr, $value, $fail) {
+                // Keep body copy readable and out of Meta's spam heuristics: at most 10 emojis.
+                $emojis = @preg_match_all('/\p{Extended_Pictographic}/u', (string) $value);
+                if ($emojis !== false && $emojis > 10) {
+                    $fail("The body can have at most 10 emojis ({$emojis} found).");
+                }
+            }],
             'body_examples'   => ['nullable', 'array'],
             'body_examples.*' => ['string', 'max:255'],
             // No header/footer/buttons at all on AUTHENTICATION — Meta rejects the template if present.
