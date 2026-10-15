@@ -15,8 +15,10 @@ use Illuminate\Support\Facades\Log;
  */
 class DispatchScheduledCampaigns extends Command
 {
-    protected $signature   = 'campaigns:dispatch-scheduled';
-    protected $description  = 'Launch campaigns whose scheduled_at time has passed';
+    protected $signature   = 'wa-cloud:dispatch-scheduled-campaigns';
+    // Old name kept so an existing server cron / supervisor entry keeps working.
+    protected $aliases     = ['campaigns:dispatch-scheduled'];
+    protected $description = 'WA Cloud (Meta API): launch campaigns whose scheduled_at time has passed';
 
     public function handle(CampaignService $campaigns): int
     {

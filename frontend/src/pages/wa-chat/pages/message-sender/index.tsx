@@ -1390,7 +1390,7 @@ export function MessageSender() {
   const confirmSchedule = async () => {
     setPendingSchedule(false)
 
-    // Server-tracked first — ProcessMessageSenderJob (run by wachat:process-scheduled-messages)
+    // Server-tracked first — ProcessMessageSenderJob (run by wa-chat:dispatch-scheduled-messages)
     // handles it when scheduled_at arrives. Covers every composer type via toMessagePayload, not
     // just text/template.
     const ok = await submitCampaign(scheduledAt)

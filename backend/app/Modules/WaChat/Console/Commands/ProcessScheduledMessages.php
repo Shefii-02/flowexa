@@ -8,8 +8,10 @@ use Illuminate\Console\Command;
 
 class ProcessScheduledMessages extends Command
 {
-    protected $signature   = 'wachat:process-scheduled-messages';
-    protected $description = 'Dispatch scheduled message sender jobs that are due.';
+    protected $signature   = 'wa-chat:dispatch-scheduled-messages';
+    // Old name kept so an existing server cron / supervisor entry keeps working.
+    protected $aliases     = ['wachat:process-scheduled-messages'];
+    protected $description = 'WA Chat (open-wa): send Message Sender campaigns whose scheduled time has arrived.';
 
     public function handle(): int
     {

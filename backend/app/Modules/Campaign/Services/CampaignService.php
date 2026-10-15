@@ -111,7 +111,7 @@ class CampaignService
         $campaign = $this->show($id, $companyId);
 
         // Resolve the company from the campaign itself, not the request user —
-        // this method also runs headless from the campaigns:dispatch-scheduled
+        // this method also runs headless from the wa-cloud:dispatch-scheduled-campaigns
         // command, where there is no authenticated user.
         $company = $campaign->company;
 

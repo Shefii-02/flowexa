@@ -83,7 +83,7 @@ class CampaignRepository implements CampaignRepositoryInterface
         ], fn($v) => !is_null($v));
 
         // Keep status in sync with the schedule while the campaign is still
-        // pre-launch, so campaigns:dispatch-scheduled can pick it up.
+        // pre-launch, so wa-cloud:dispatch-scheduled-campaigns can pick it up.
         if (in_array($campaign->status, ['draft', 'scheduled'], true) && array_key_exists('scheduled_at', $data)) {
             $data['status'] = $data['scheduled_at'] ? 'scheduled' : 'draft';
         }
