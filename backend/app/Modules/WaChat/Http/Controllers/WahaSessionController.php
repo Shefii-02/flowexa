@@ -51,13 +51,15 @@ class WahaSessionController extends Controller
     /** POST /waha/token/reconnect — mint a fresh gateway key for this company. */
     public function reconnectToken(WaChatTokenService $tokens): JsonResponse
     {
-        Log::info('WA Chat token reconnect requested for company_id=' . auth()->user()->company_id);
+
         $company = auth()->user()->company;
         abort_unless($company, 404, 'No company on this account.');
-
+        Log::info('WA Chat token reconnect requested for company_id=' . auth()->user()->company_id);
         try {
             $tokens->provision($company);
         } catch (\Throwable $e) {
+            Log::info('WA Chat token reconnect failed for company_id=' . auth()->user()->company_id . ': ' . $e->getMessage());
+
             return response()->json(['message' => $e->getMessage()], 502);
         }
 
@@ -93,7 +95,7 @@ class WahaSessionController extends Controller
         $allowed = auth()->user()->allowedAccountIds('wa_session');
 
         $sessions = WahaSession::where('company_id', auth()->user()->company_id)
-            ->when($allowed !== null, fn ($q) => $q->whereIn('id', $allowed))
+            ->when($allowed !== null, fn($q) => $q->whereIn('id', $allowed))
             ->orderBy('created_at', 'desc')->get();
         return response()->json(['data' => $sessions]);
     }
@@ -188,7 +190,7 @@ class WahaSessionController extends Controller
                 'config' => $data['config'] ?? null,
                 'proxyUrl' => $data['proxyUrl'] ?? null,
                 'proxyType' => $data['proxyType'] ?? null,
-            ], fn ($v) => !is_null($v)));
+            ], fn($v) => !is_null($v)));
 
         if (! $res->successful()) {
             return response()->json([
@@ -769,13 +771,13 @@ class WahaSessionController extends Controller
                         $company = Company::find($session->company_id);
                         if ($company && $company->responseModeAllows('wa_chat', 'ai_agent')) {
                             app(ConversationalAgentService::class)->handle(new AgentInbound(
-                                companyId:  $session->company_id,
-                                channel:    'open_wa',
+                                companyId: $session->company_id,
+                                channel: 'open_wa',
                                 sessionRef: $name,
-                                phone:      preg_replace('/@.*/', '', (string) $from),
-                                text:       (string) $body,
-                                type:       (string) $type,
-                                fromGroup:  str_ends_with((string) $from, '@g.us'),
+                                phone: preg_replace('/@.*/', '', (string) $from),
+                                text: (string) $body,
+                                type: (string) $type,
+                                fromGroup: str_ends_with((string) $from, '@g.us'),
                             ));
                         }
                     } catch (\Throwable $e) {
