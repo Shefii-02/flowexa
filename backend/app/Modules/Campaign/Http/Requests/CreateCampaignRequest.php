@@ -23,6 +23,7 @@ class CreateCampaignRequest extends FormRequest
             'target_labels.*'     => ['integer', 'exists:contact_labels,id'],
             'file'                => ['required_if:target_type,csv', 'file', 'mimes:csv,txt', 'max:20480'],
             'throttle_per_minute' => ['nullable', 'integer', 'min:10', 'max:1000'],
+            'daily_limit'         => ['nullable', 'integer', 'min:10', 'max:1000000'],
             'scheduled_at'        => ['nullable', 'date', 'after:now'],
             // Lead attribution window: a reply is credited to this campaign when it arrives
             // between starts_at and ends_at (WaChatLeadAttributionService::matchWaCloudCampaign).

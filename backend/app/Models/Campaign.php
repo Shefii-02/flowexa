@@ -25,7 +25,7 @@ class Campaign extends Model
         'wa_phone_number_id',
         'name', 'description',
         'template_variables', 'target_type', 'target_labels', 'csv_file',
-        'throttle_per_minute', 'max_contacts_override', 'status', 'total_contacts', 'sent',
+        'throttle_per_minute', 'daily_limit', 'max_contacts_override', 'status', 'total_contacts', 'sent',
         'delivered', 'read', 'failed', 'pending', 'wallet_debited',
         'scheduled_at', 'starts_at', 'ends_at', 'source_tracking_id', 'started_at', 'launched_at', 'completed_at',
     ];

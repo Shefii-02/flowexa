@@ -11,6 +11,7 @@ readonly class UpdateCampaignDTO
         public ?string $description        = null,
         public ?array  $templateVariables  = null,
         public ?int    $throttlePerMinute  = null,
+        public ?int    $dailyLimit         = null,
         public ?string $scheduledAt        = null,
         public ?string $startsAt           = null,
         public ?string $endsAt             = null,
@@ -23,6 +24,7 @@ readonly class UpdateCampaignDTO
             description:       $data['description']        ?? null,
             templateVariables: $data['template_variables'] ?? null,
             throttlePerMinute: isset($data['throttle_per_minute']) ? (int) $data['throttle_per_minute'] : null,
+            dailyLimit:        !empty($data['daily_limit']) ? (int) $data['daily_limit'] : null,
             scheduledAt:       !empty($data['scheduled_at'])
                                     ? \Illuminate\Support\Carbon::parse($data['scheduled_at'])->setTimezone(config('app.timezone'))->format('Y-m-d H:i:s') : null,
             startsAt:          $data['starts_at']          ?? null,

@@ -67,7 +67,20 @@ class ProcessCampaignBatch implements ShouldQueue
         $sent     = 0;
         $failed   = 0;
 
-        $contacts = $campaignRepository->getPendingContacts($this->campaignId, $batchSize);
+        // Daily limit: at most N messages in any rolling 24h; the rest waits for the next window.
+        $windowResetAt = null;
+        if ($campaign->daily_limit) {
+            $windowStart = now()->subDay();
+            $sentInWindow = \App\Models\CampaignContact::where('campaign_id', $this->campaignId)->where('sent_at', '>=', $windowStart)->count();
+            $room = $campaign->daily_limit - $sentInWindow;
+            if ($room <= 0) {
+                $oldest = \App\Models\CampaignContact::where('campaign_id', $this->campaignId)->where('sent_at', '>=', $windowStart)->min('sent_at');
+                $windowResetAt = \Illuminate\Support\Carbon::parse($oldest)->addDay()->addMinute();
+            }
+            $batchSize = max(0, min($batchSize, $room));
+        }
+
+        $contacts = $batchSize > 0 ? $campaignRepository->getPendingContacts($this->campaignId, $batchSize) : collect();
 
         foreach ($contacts as $cc) {
             // Re-check if campaign was paused mid-batch
@@ -202,7 +215,7 @@ class ProcessCampaignBatch implements ShouldQueue
             if ($campaign->status === 'running') {
                 self::dispatch($this->campaignId, $this->companyId)
                     ->onQueue('campaigns')
-                    ->delay(now()->addSeconds(60)); // next batch after 1 min
+                    ->delay($windowResetAt ?? now()->addSeconds(60)); // next batch after 1 min (or when the daily window reopens)
             }
         }
     }

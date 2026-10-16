@@ -20,6 +20,7 @@ class UpdateCampaignRequest extends FormRequest
             'description'         => ['nullable', 'string', 'max:500'],
             'template_variables'  => ['nullable', 'array'],
             'throttle_per_minute' => ['sometimes', 'integer', 'min:10', 'max:1000'],
+            'daily_limit'         => ['nullable', 'integer', 'min:10', 'max:1000000'],
             'scheduled_at'        => ['nullable', 'date', 'after:now'],
             'starts_at'           => ['nullable', 'date'],
             'ends_at'             => ['nullable', 'date', 'after_or_equal:starts_at'],

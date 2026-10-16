@@ -18,6 +18,7 @@ class CampaignResource extends JsonResource
             'target_type'         => $this->target_type,
             'target_labels'       => $this->target_labels,
             'throttle_per_minute' => $this->throttle_per_minute,
+            'daily_limit'         => $this->daily_limit,
             'status'              => $this->status,
             'scheduled_at'        => $this->scheduled_at?->toIso8601String(),
             'started_at'          => $this->started_at?->toIso8601String(),

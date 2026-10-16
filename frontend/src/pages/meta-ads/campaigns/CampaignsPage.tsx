@@ -407,6 +407,7 @@ export default function CampaignsPage() {
     // below as "Leads received". Independent of when the campaign itself actually sent.
     starts_at: '', ends_at: '',
     scheduled_at: '', // when to send (blank = launch manually)
+    daily_limit: '',  // max messages per 24h (blank = no limit)
   })
   const [selectedTemplate, setSelectedTemplate] = useState<any>(null)
   const [selectedPhoneNumber, setSelectedPhoneNumber] = useState<any>(null)
@@ -489,7 +490,7 @@ export default function CampaignsPage() {
   }
 
   const resetForm = () => {
-    setForm({ name: '', target_type: 'all', throttle_per_minute: '60', description: '', starts_at: '', ends_at: '', scheduled_at: '' })
+    setForm({ name: '', target_type: 'all', throttle_per_minute: '60', description: '', starts_at: '', ends_at: '', scheduled_at: '', daily_limit: '' })
     setSelectedTemplate(null); setSelectedPhoneNumber(null); setSelectedLabels([]); setCsvFile(null); setCsvMode('file'); setPasteText(''); setPasted({ valid: [], invalid: [], dupes: 0 }); setEditCampaign(null)
   }
 
@@ -501,6 +502,7 @@ export default function CampaignsPage() {
       starts_at: (c as any).starts_at ? (c as any).starts_at.slice(0, 10) : '',
       ends_at:   (c as any).ends_at   ? (c as any).ends_at.slice(0, 10)   : '',
       scheduled_at: (c as any).scheduled_at ? toLocalInput((c as any).scheduled_at) : '',
+      daily_limit: (c as any).daily_limit ? String((c as any).daily_limit) : '',
     })
     setSelectedTemplate(c.template ? { id: c.template.id, name: c.template.name, body: c.template.body, components: (c.template as any).components, buttons: (c.template as any).buttons, body_examples: (c.template as any).body_examples } : null)
     // Backend should include the related phone number on the campaign resource
@@ -528,6 +530,7 @@ export default function CampaignsPage() {
       if (form.description) fd.append('description', form.description)
       if (form.starts_at) fd.append('starts_at', form.starts_at)
       if (form.ends_at) fd.append('ends_at', form.ends_at)
+      if (form.daily_limit) fd.append('daily_limit', form.daily_limit)
       if (form.scheduled_at) {
         if (new Date(form.scheduled_at).getTime() <= Date.now()) { toast.error('Send time must be in the future'); setSaving(false); return }
         fd.append('scheduled_at', new Date(form.scheduled_at).toISOString())
@@ -769,6 +772,16 @@ export default function CampaignsPage() {
               <label className="label">Throttle (msgs/min)</label>
               <input type="number" min={10} max={1000} className="form-control border w-full p-2 rounded"
                 value={form.throttle_per_minute} onChange={e => set('throttle_per_minute', e.target.value)} />
+            </div>
+            <div>
+              <label className="label">Daily limit (optional)</label>
+              <input type="number" min={10} className="form-control border w-full p-2 rounded" placeholder="e.g. 500"
+                value={form.daily_limit} onChange={e => set('daily_limit', e.target.value.replace(/\D/g, ''))} />
+              <p className="text-xs text-gray-400 mt-1">
+                Max messages sent per 24 hours — a big list is spread over several days instead of all at once, which
+                helps avoid WhatsApp's per-user marketing limit (131049). Most recently active contacts go first.
+                {form.daily_limit && ' The campaign stays "running" between days.'}
+              </p>
             </div>
             <Textarea rows={4} label="Description (optional)" placeholder="Internal note"
               value={form.description} onChange={e => set('description', e.target.value)} />

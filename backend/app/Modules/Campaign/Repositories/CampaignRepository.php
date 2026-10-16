@@ -62,6 +62,7 @@ class CampaignRepository implements CampaignRepositoryInterface
             'target_labels'       => $dto->targetLabels,
             'csv_file'            => $dto->csvFilePath,
             'throttle_per_minute' => $dto->throttlePerMinute,
+            'daily_limit'         => $dto->dailyLimit,
             'status'              => $dto->scheduledAt ? 'scheduled' : 'draft',
             'scheduled_at'        => $dto->scheduledAt,
             'starts_at'           => $dto->startsAt,
@@ -77,6 +78,7 @@ class CampaignRepository implements CampaignRepositoryInterface
             'description'        => $dto->description,
             'template_variables' => $dto->templateVariables,
             'throttle_per_minute'=> $dto->throttlePerMinute,
+            'daily_limit'        => $dto->dailyLimit,
             'scheduled_at'       => $dto->scheduledAt,
             'starts_at'          => $dto->startsAt,
             'ends_at'            => $dto->endsAt,
@@ -155,8 +157,15 @@ class CampaignRepository implements CampaignRepositoryInterface
     // ─── Get pending batch for job ────────────────────────────────────────────
     public function getPendingContacts(int $campaignId, int $limit): Collection
     {
-        return CampaignContact::where('campaign_id', $campaignId)
-            ->where('status', 'pending')
+        // Most engaged first: contacts who messaged us most recently are least likely to hit Meta's
+        // marketing cap (131049), so they go out in the earliest batches; never-contacted ones last.
+        return CampaignContact::select('campaign_contacts.*')
+            ->leftJoin('contacts', 'contacts.id', '=', 'campaign_contacts.contact_id')
+            ->where('campaign_contacts.campaign_id', $campaignId)
+            ->where('campaign_contacts.status', 'pending')
+            ->orderByRaw('contacts.last_message_at IS NULL')
+            ->orderByDesc('contacts.last_message_at')
+            ->orderBy('campaign_contacts.id')
             ->limit($limit)
             ->get();
     }

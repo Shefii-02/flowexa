@@ -21,6 +21,7 @@ readonly class CreateCampaignDTO
         // Lead attribution window — see CreateCampaignRequest.
         public ?string $startsAt           = null,
         public ?string $endsAt             = null,
+        public ?int    $dailyLimit         = null,
     ) {}
 
     public static function fromRequest(array $data, ?string $csvPath = null): self
@@ -40,6 +41,7 @@ readonly class CreateCampaignDTO
                                     ? \Illuminate\Support\Carbon::parse($data['scheduled_at'])->setTimezone(config('app.timezone'))->format('Y-m-d H:i:s') : null,
             startsAt:           $data['starts_at']            ?? null,
             endsAt:             $data['ends_at']               ?? null,
+            dailyLimit:         !empty($data['daily_limit']) ? (int) $data['daily_limit'] : null,
         );
     }
 }
