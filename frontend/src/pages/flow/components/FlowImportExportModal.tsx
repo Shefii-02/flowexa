@@ -30,6 +30,46 @@ import { AI_PROMPT, downloadSampleFlow } from './flowImportSample'
 //   },
 // }
 
+// ─── Client-side check of a flow JSON — same rules the server enforces on import ───
+const NODE_TYPES = ['text', 'button', 'list', 'image', 'video', 'document', 'audio', 'location']
+function verifyFlowJson(text: string): { ok: boolean; errors: string[]; summary?: { name: string; trigger: string; nodes: number; roots: number } } {
+  let json: any
+  try { json = JSON.parse(text) }
+  catch (e: any) { return { ok: false, errors: ['Not valid JSON: ' + (e?.message || 'parse error')] } }
+  const errors: string[] = []
+  if (!json || typeof json !== 'object' || Array.isArray(json)) return { ok: false, errors: ['The JSON must be an object with "builder" and "nodes".'] }
+  if (!json.builder || typeof json.builder !== 'object') errors.push('Missing "builder" object.')
+  if (!Array.isArray(json.nodes) || json.nodes.length === 0) errors.push('"nodes" must be a non-empty array.')
+  if (errors.length) return { ok: false, errors }
+
+  const b = json.builder
+  if (!b.name || typeof b.name !== 'string') errors.push('builder.name is required.')
+  else if (b.name.length > 100) errors.push('builder.name is longer than 100 characters.')
+  if (!['default', 'keyword', 'season'].includes(b.trigger_type)) errors.push('builder.trigger_type must be default, keyword or season.')
+  if (b.trigger_type === 'keyword' && !(Array.isArray(b.trigger_keywords) && b.trigger_keywords.length)) errors.push('builder.trigger_keywords is needed when trigger_type is "keyword".')
+
+  const refs = new Set<string>(); const replyIds = new Set<string>(); let roots = 0
+  json.nodes.forEach((n: any, i: number) => {
+    const at = `Node ${i + 1}${n?.title ? ` (“${n.title}”)` : ''}`
+    if (!n || typeof n !== 'object') { errors.push(`${at}: must be an object.`); return }
+    if (!n._ref) errors.push(`${at}: "_ref" is required.`)
+    else if (refs.has(n._ref)) errors.push(`${at}: duplicate _ref “${n._ref}”.`)
+    else refs.add(n._ref)
+    if (!n.reply_id) errors.push(`${at}: "reply_id" is required.`)
+    else if (replyIds.has(n.reply_id)) errors.push(`${at}: duplicate reply_id “${n.reply_id}”.`)
+    else replyIds.add(n.reply_id)
+    if (!n.title) errors.push(`${at}: "title" is required.`)
+    if (!NODE_TYPES.includes(n.type)) errors.push(`${at}: type must be one of ${NODE_TYPES.join(', ')}.`)
+    if (!n.parent_ref) roots++
+  })
+  json.nodes.forEach((n: any, i: number) => {
+    if (n?.parent_ref && !refs.has(n.parent_ref)) errors.push(`Node ${i + 1} (“${n.title ?? ''}”): parent_ref “${n.parent_ref}” does not match any node's _ref.`)
+  })
+  if (roots === 0) errors.push('No root node: at least one node needs an empty parent_ref.')
+
+  return { ok: errors.length === 0, errors, summary: { name: b.name, trigger: b.trigger_type, nodes: json.nodes.length, roots } }
+}
+
 interface Props {
   mode:          'import' | 'export'
   builderId?:    number
@@ -47,6 +87,10 @@ export function FlowImportExportModal({
   const [result,     setResult]     = useState<any>(null)
   const [dragOver,   setDragOver]   = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
+  // Paste mode: the JSON is typed/pasted, verified on submit, then imported as if it were a file
+  const [src,        setSrc]        = useState<'file' | 'paste'>('file')
+  const [pasteText,  setPasteText]  = useState('')
+  const [check,      setCheck]      = useState<ReturnType<typeof verifyFlowJson> | null>(null)
 
   // ── Export ──────────────────────────────────────────────────────────────
   const handleExport = async () => {
@@ -78,11 +122,19 @@ export function FlowImportExportModal({
 
   // ── Import ──────────────────────────────────────────────────────────────
   const handleImport = async () => {
-    if (!file) { toast.error('Select a JSON file first'); return }
+    let upload: File | null = file
+    if (src === 'paste') {
+      // Verify first; only a clean result goes to the server
+      const v = verifyFlowJson(pasteText.trim())
+      setCheck(v)
+      if (!v.ok) { toast.error(`Fix ${v.errors.length} problem${v.errors.length !== 1 ? 's' : ''} in the JSON first`); return }
+      upload = new File([pasteText.trim()], 'pasted-flow.json', { type: 'application/json' })
+    }
+    if (!upload) { toast.error('Select a JSON file first'); return }
     setLoading(true)
     setResult(null)
     try {
-      const { data } = await flowBuilderApi.import(file, activate)
+      const { data } = await flowBuilderApi.import(upload, activate)
       setResult(data.result)
       toast.success(data.message)
       onImported()
@@ -149,7 +201,7 @@ export function FlowImportExportModal({
         ) : (
           <>
             <Button variant="secondary" onClick={onClose}>Cancel</Button>
-            <Button onClick={handleImport} loading={loading} disabled={!file}>
+            <Button onClick={handleImport} loading={loading} disabled={src === 'paste' ? !pasteText.trim() : !file}>
               ⬆️ Import
             </Button>
           </>
@@ -197,8 +249,41 @@ export function FlowImportExportModal({
         {/* File drop zone — hidden after result */}
         {!result && (
           <>
+            <div className="flex gap-1 text-xs">
+              {([['file', '📂 Upload file'], ['paste', '📋 Paste JSON']] as const).map(([m, l]) => (
+                <button key={m} type="button" onClick={() => { setSrc(m); setCheck(null) }}
+                  className={`px-3 py-1.5 rounded-lg border ${src === m ? 'border-brand-500 bg-brand-50 text-brand-700' : 'border-gray-200 text-gray-500'}`}>{l}</button>
+              ))}
+            </div>
+
+            {src === 'paste' && (
+              <div className="space-y-2">
+                <textarea rows={12} spellCheck={false}
+                  className="form-control border w-full p-2 rounded font-mono text-xs"
+                  placeholder={'{\n  "builder": { "name": "My flow", "trigger_type": "default" },\n  "nodes": [ ... ]\n}'}
+                  value={pasteText} onChange={e => { setPasteText(e.target.value); setCheck(null) }} />
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-gray-400">Paste the exported JSON (or one from the AI prompt). It is checked when you press Import.</span>
+                  <button type="button" className="text-brand-600 hover:underline"
+                    onClick={() => setCheck(verifyFlowJson(pasteText.trim()))} disabled={!pasteText.trim()}>Verify only</button>
+                </div>
+                {check && (
+                  <div className={`rounded-xl border p-3 text-xs space-y-1 ${check.ok ? 'bg-green-50 border-green-300 text-green-700' : 'bg-red-50 border-red-300 text-red-700'}`}>
+                    {check.ok ? (
+                      <p className="font-semibold">✅ Valid — “{check.summary?.name}” · {check.summary?.nodes} nodes · {check.summary?.roots} root · trigger: {check.summary?.trigger}</p>
+                    ) : (
+                      <>
+                        <p className="font-semibold">❌ {check.errors.length} problem{check.errors.length !== 1 ? 's' : ''} found</p>
+                        <ul className="list-disc pl-5 max-h-32 overflow-y-auto font-mono">{check.errors.map((e, i) => <li key={i}>{e}</li>)}</ul>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Drop zone */}
-            <div
+            {src === 'file' && <div
               className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all ${
                 dragOver ? 'border-brand-400 bg-brand-50' :
                 file      ? 'border-green-400 bg-green-50' :
@@ -238,7 +323,7 @@ export function FlowImportExportModal({
                   <p className="text-xs text-gray-300 font-mono">.json files only</p>
                 </div>
               )}
-            </div>
+            </div>}
 
             {/* Activate toggle */}
             <div className="flex items-center gap-3 bg-gray-50 border border-gray-200 rounded-xl px-4 py-3">
