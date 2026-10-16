@@ -60,11 +60,41 @@ export default function CampaignContactsPanel({
   const running = campaignStatus === 'running'
   const waiting = (r: any) => !!r.retry_after && new Date(r.retry_after).getTime() > Date.now()
   const retryable = (r: any) => r.status === 'failed' && !running && !waiting(r)
-  const retryableRows = useMemo(() => rows.filter(retryable), [rows, running]) // eslint-disable-line react-hooks/exhaustive-deps
-  const allSelected = retryableRows.length > 0 && retryableRows.every(r => selected.has(r.id))
+  const failedRows = useMemo(() => rows.filter(r => r.status === 'failed'), [rows])
+  const allSelected = failedRows.length > 0 && failedRows.every(r => selected.has(r.id))
+  const selectedRetryable = rows.filter(r => selected.has(r.id) && retryable(r))
 
   const toggle = (id: number) => setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
-  const toggleAll = () => setSelected(allSelected ? new Set() : new Set(retryableRows.map(r => r.id)))
+  const toggleAll = () => setSelected(allSelected ? new Set() : new Set(failedRows.map(r => r.id)))
+
+  const csvCell = (v: any) => `"${String(v ?? '').replace(/"/g, '""')}"`
+  const download = (list: any[]) => {
+    const head = ['Number', 'Name', 'Status', 'Tries', 'Reason', 'Retry available from']
+    const lines = list.map(r => [r.phone, r.contact?.name, r.status, r.attempts, r.failed_reason, r.retry_after ? new Date(r.retry_after).toLocaleString('en-IN') : ''].map(csvCell).join(','))
+    const blob = new Blob(['\ufeff' + [head.map(csvCell).join(','), ...lines].join('\n')], { type: 'text/csv;charset=utf-8' })
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob); a.download = `campaign-${campaignId}-failed-numbers.csv`; a.click()
+    URL.revokeObjectURL(a.href)
+  }
+  // selected rows if any, else every failed number in the campaign (fetched 100 at a time)
+  const exportFailed = async () => {
+    setBusy(true)
+    try {
+      let list: any[]
+      if (selected.size > 0) list = rows.filter(r => selected.has(r.id))
+      else {
+        list = []
+        for (let pg = 1; ; pg++) {
+          const { data } = await campaignApi.contacts(campaignId, { status: 'failed', page: pg, per_page: 100 })
+          list.push(...(data.data ?? []))
+          if (pg >= Math.ceil((data.total ?? 0) / 100)) break
+        }
+      }
+      if (!list.length) { toast.error('No failed numbers to export.'); return }
+      download(list); toast.success(`Exported ${list.length} number${list.length !== 1 ? 's' : ''}`)
+    } catch (e) { toast.error(getError(e)) }
+    finally { setBusy(false) }
+  }
 
   // items undefined -> every failed number; else just those rows (optionally with a corrected phone)
   const retry = async (items?: { id: number; phone?: string }[]) => {
@@ -87,9 +117,14 @@ export default function CampaignContactsPanel({
         <input className="input max-w-[200px]" placeholder="Search number or name…" value={search} onChange={e => setSearch(e.target.value)} />
         <span className="text-xs text-gray-400">{total} number{total !== 1 ? 's' : ''}</span>
         <div className="flex-1" />
-        {selected.size > 0 && (
-          <Button variant="secondary" loading={busy} onClick={() => retry([...selected].map(id => ({ id })))}>
-            🔁 Retry selected ({selected.size})
+        {(status === 'failed' || selected.size > 0) && (
+          <Button variant="secondary" loading={busy} onClick={exportFailed}>
+            ⬇ Export {selected.size > 0 ? `selected (${selected.size})` : 'all failed'}
+          </Button>
+        )}
+        {selectedRetryable.length > 0 && (
+          <Button variant="secondary" loading={busy} onClick={() => retry(selectedRetryable.map(r => ({ id: r.id })))}>
+            🔁 Retry selected ({selectedRetryable.length})
           </Button>
         )}
         {resendable > 0 && !running && (
@@ -107,7 +142,7 @@ export default function CampaignContactsPanel({
             <thead className="sticky top-0 bg-white border-b border-gray-100 z-10">
               <tr className="text-left text-gray-400">
                 <th className="py-2 px-2 w-6">
-                  <input type="checkbox" checked={allSelected} disabled={retryableRows.length === 0} onChange={toggleAll} title="Select all retryable on this page" />
+                  <input type="checkbox" checked={allSelected} disabled={failedRows.length === 0} onChange={toggleAll} title="Select all failed on this page" />
                 </th>
                 <th className="py-2 pr-2 font-medium">Number</th>
                 <th className="py-2 pr-2 font-medium">Name</th>
@@ -123,7 +158,7 @@ export default function CampaignContactsPanel({
               {rows.map(r => (
                 <tr key={r.id} className="align-top">
                   <td className="py-2 px-2">
-                    {retryable(r) && <input type="checkbox" checked={selected.has(r.id)} onChange={() => toggle(r.id)} />}
+                    {r.status === 'failed' && <input type="checkbox" checked={selected.has(r.id)} onChange={() => toggle(r.id)} />}
                   </td>
                   <td className="py-2 pr-2 font-mono text-gray-700">
                     {editId === r.id ? (
