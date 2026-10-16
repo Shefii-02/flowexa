@@ -22,13 +22,23 @@ export interface SessionExpiredError {
   at: string // ISO timestamp
 }
 
+/** The API couldn't be reached (offline / timeout / gateway down). NOT an auth problem — never logs out. */
+export interface ConnectionError {
+  kind: 'network' | 'server'
+  message: string
+  url?: string
+  status?: number
+  at: string // ISO timestamp
+}
+
 interface AppErrorState {
+  connection: ConnectionError | null
   forbidden: ForbiddenError | null
   /** Set once a 401 is confirmed unrecoverable (refresh failed / not refreshable). */
   sessionExpired: SessionExpiredError | null
 }
 
-const initialState: AppErrorState = { forbidden: null, sessionExpired: null }
+const initialState: AppErrorState = { connection: null, forbidden: null, sessionExpired: null }
 
 export const appErrorSlice = createSlice({
   name: 'appError',
@@ -40,6 +50,12 @@ export const appErrorSlice = createSlice({
     clearForbidden: (s) => {
       s.forbidden = null
     },
+    setConnectionError: (s, a: PayloadAction<ConnectionError>) => {
+      if (!s.connection) s.connection = a.payload // keep the first one; later failures are the same outage
+    },
+    clearConnectionError: (s) => {
+      s.connection = null
+    },
     setSessionExpired: (s, a: PayloadAction<SessionExpiredError>) => {
       s.sessionExpired = a.payload
     },
@@ -49,5 +65,5 @@ export const appErrorSlice = createSlice({
   },
 })
 
-export const { setForbidden, clearForbidden, setSessionExpired, clearSessionExpired } = appErrorSlice.actions
+export const { setForbidden, clearForbidden, setSessionExpired, clearSessionExpired, setConnectionError, clearConnectionError } = appErrorSlice.actions
 export default appErrorSlice.reducer

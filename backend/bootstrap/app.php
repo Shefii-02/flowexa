@@ -181,6 +181,21 @@ return Application::configure(basePath: dirname(__DIR__))
                 ], 422);
             }
 
+            // jwt-auth's own middleware (BaseMiddleware) throws UnauthorizedHttpException("Token has expired").
+            // Without this it fell through to the generic 500 below, with no error_code — so the web app
+            // never refreshed the token and every page loaded with empty data. Same contract as
+            // App\Modules\Auth\Http\Middleware\JwtMiddleware: 401 + error_code the client understands.
+            if ($e instanceof \Symfony\Component\HttpKernel\Exception\UnauthorizedHttpException
+                || $e instanceof \PHPOpenSourceSaver\JWTAuth\Exceptions\JWTException) {
+                $msg  = strtolower($e->getMessage());
+                $code = match (true) {
+                    str_contains($msg, 'expired')                            => 'token_expired',
+                    str_contains($msg, 'not provided') || str_contains($msg, 'could not be parsed') => 'token_missing',
+                    default                                                  => 'token_invalid',
+                };
+                return response()->json(['message' => $code === 'token_expired' ? 'Token expired.' : 'Unauthenticated.', 'error_code' => $code], 401);
+            }
+
             if ($e instanceof \Illuminate\Auth\AuthenticationException) {
                 return response()->json([
                     'message' => 'Unauthenticated.',

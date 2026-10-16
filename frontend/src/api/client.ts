@@ -1,7 +1,7 @@
 // src/api/client.ts
 import axios, { AxiosInstance, AxiosError } from 'axios'
 import { store } from '@/store'
-import { setToken, setForbidden, setSessionExpired } from '@/store/slices'
+import { setToken, setForbidden, setSessionExpired, setConnectionError } from '@/store/slices'
 
 const BASE_URL = import.meta.env.VITE_API_URL || '/api/v1'
 
@@ -11,9 +11,46 @@ export const api: AxiosInstance = axios.create({
   timeout: 30_000,
 })
 
-// ── Request: attach JWT ────────────────────────────────────────────────────────
-api.interceptors.request.use((config) => {
-  const token = store.getState().auth.token
+// ── Request: check the token first, then attach it ─────────────────────────────
+// Every call (page load, button tap, any action) passes through here. If the JWT is expired — or about
+// to expire in the next 30s — ONE shared refresh runs first and the request waits for it, then goes out
+// with the fresh token. If the refresh fails the request is cancelled and the user is sent to /login
+// (markSessionExpired -> DashboardLayout logs out + redirects). No request ever fires with a dead token.
+const NO_PRECHECK = /\/auth\/(login|register|refresh|forgot|reset|otp|verify)|\/public\//i
+const tokenExpiresInMs = (token: string): number | null => {
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')))
+    return typeof payload.exp === 'number' ? payload.exp * 1000 - Date.now() : null
+  } catch { return null }
+}
+let refreshPromise: Promise<string> | null = null
+const refreshOnce = (): Promise<string> => {
+  if (!refreshPromise) {
+    refreshPromise = api.post('/auth/refresh', undefined, { _skipPreCheck: true } as any)
+      .then(({ data }) => { store.dispatch(setToken(data.access_token)); return data.access_token as string })
+      .finally(() => { refreshPromise = null })
+  }
+  return refreshPromise
+}
+
+api.interceptors.request.use(async (config) => {
+  let token = store.getState().auth.token
+  if (token && !(config as any)._skipPreCheck && !NO_PRECHECK.test(config.url || '') && !refreshFailed) {
+    const left = tokenExpiresInMs(token)
+    if (left !== null && left < 30_000) {
+      try {
+        token = await refreshOnce()
+      } catch (e) {
+        if (isOutage(e)) {            // can't reach the server to refresh: NOT an expired session — keep the login
+          reportOutage(e)
+          throw e
+        }
+        const err = e as AxiosError<{ message?: string }>
+        markSessionExpired(err.response?.data?.message || 'Your session has expired. Please log in again.')
+        throw new axios.Cancel('Session expired')
+      }
+    }
+  }
   if (token) config.headers.Authorization = `Bearer ${token}`
   return config
 })
@@ -34,6 +71,26 @@ export const resetRefreshState = () => {
   refreshFailed = false
 }
 
+// Could the API simply not be reached / not answer properly? (offline, timeout, gateway down, 502-504)
+// That is an outage, never an auth failure: the user stays signed in and gets the Network / Server page.
+const isOutage = (e: unknown): boolean => {
+  const err = e as AxiosError
+  if (axios.isCancel(e)) return false
+  if (!err?.response) return true // no response at all: offline, DNS, refused, timed out
+  return [502, 503, 504].includes(err.response.status)
+}
+const reportOutage = (e: unknown) => {
+  const err = e as AxiosError
+  const offline = typeof navigator !== 'undefined' && navigator.onLine === false
+  store.dispatch(setConnectionError({
+    kind: offline ? 'network' : 'server',
+    message: err.code === 'ECONNABORTED' ? 'The server took too long to respond.' : offline ? '' : (err.message || ''),
+    url: (err.config?.baseURL ?? '') + (err.config?.url ?? ''),
+    status: err.response?.status,
+    at: new Date().toISOString(),
+  }))
+}
+
 const flushQueue = (error: AxiosError | null, token: string | null = null) => {
   queue.forEach((p) => (error ? p.reject(error) : p.resolve(token)))
   queue = []
@@ -52,7 +109,7 @@ const markSessionExpired = (message: string) => {
 api.interceptors.response.use(
   (res) => res,
   async (error: AxiosError<{ message: string; error_code?: string }>) => {
-    const original = error.config as typeof error.config & { _retry?: boolean }
+    const original = error.config as typeof error.config & { _retry?: boolean; _skipPreCheck?: boolean }
 
     if (error.response?.status === 401 && !original?._retry) {
       const errCode = error.response.data?.error_code
@@ -69,14 +126,14 @@ api.interceptors.response.use(
         isRefreshing = true
 
         try {
-          const { data } = await api.post('/auth/refresh')
-          store.dispatch(setToken(data.access_token))
-          flushQueue(null, data.access_token)
-          original!.headers!.Authorization = `Bearer ${data.access_token}`
+          const newToken = await refreshOnce()
+          flushQueue(null, newToken)
+          original!.headers!.Authorization = `Bearer ${newToken}`
           return api(original!)
         } catch (e) {
           const refreshErr = e as AxiosError<{ message?: string }>
           flushQueue(refreshErr, null)
+          if (isOutage(refreshErr)) { reportOutage(refreshErr); return Promise.reject(refreshErr) } // outage, not expiry
           markSessionExpired(
             refreshErr.response?.data?.message || 'Your session has expired. Please log in again.'
           )
@@ -92,6 +149,9 @@ api.interceptors.response.use(
         error.response.data?.message || 'Your session has expired. Please log in again.'
       )
     }
+
+    // ── Network failed / server down / timeout (no auth involved) → Network / Server page ──
+    if (isOutage(error) && !original?._skipPreCheck) reportOutage(error)
 
     // ── 403 → surface an Access Denied screen (not just a toast) ──────────────
     if (error.response?.status === 403) {

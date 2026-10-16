@@ -2,14 +2,14 @@ import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { Toaster } from 'react-hot-toast'
 import { useEffect } from 'react'
 import { useAppDispatch, useAppSelector } from '@/store'
-import { toggleSidebar, clearForbidden, clearSessionExpired, logoutThunk } from '@/store/slices'
+import { toggleSidebar, clearForbidden, clearSessionExpired, clearConnectionError, logoutThunk } from '@/store/slices'
 import { Sidebar } from './Sidebar'
 import { SessionStatusIndicator } from './SessionStatusIndicator'
 import LeadNotificationPopup from '@/components/leads/LeadNotificationPopup'
 import AiHandoffOfferPopup from '@/components/leads/AiHandoffOfferPopup'
 import PortalAssistant from '@/components/assistant/PortalAssistant'
 import { connectStaffSocket, disconnectStaffSocket } from '@/socket/staffSocket'
-import { ErrorBoundary, AccessDeniedScreen } from '@/components/error'
+import { ErrorBoundary, AccessDeniedScreen, ConnectionErrorScreen } from '@/components/error'
 import { Spinner } from '@/components/ui'
 
 export const DashboardLayout = () => {
@@ -20,6 +20,7 @@ export const DashboardLayout = () => {
   const user        = useAppSelector((s) => s.auth.user)
   const forbidden   = useAppSelector((s) => s.appError.forbidden)
   const sessionExpired = useAppSelector((s) => s.appError.sessionExpired)
+  const connection = useAppSelector((s) => s.appError.connection)
 
   useEffect(() => {
     if (user?.id && user.company?.id) {
@@ -31,6 +32,7 @@ export const DashboardLayout = () => {
   // A 403 shows the Access Denied screen; navigating anywhere clears it.
   useEffect(() => {
     if (forbidden) dispatch(clearForbidden())
+    dispatch(clearConnectionError())
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.pathname])
 
@@ -77,6 +79,8 @@ export const DashboardLayout = () => {
               <div className="min-h-[60vh] flex items-center justify-center">
                 <Spinner size="lg" />
               </div>
+            ) : connection ? (
+              <ConnectionErrorScreen />
             ) : forbidden ? (
               <AccessDeniedScreen />
             ) : (

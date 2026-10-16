@@ -472,6 +472,23 @@ export default function ContactsPage() {
   const [csvFile,      setCsvFile]  = useState<File | null>(null)
   const [importLabels, setImportLabels] = useState<number[]>([])
   const [importSkipDupes, setImportSkipDupes] = useState(true)
+  // Paste mode: numbers typed/pasted (space, comma, semicolon or new-line separated) are validated,
+  // de-duplicated and turned into a CSV that goes through the same import as an uploaded file.
+  const [importMode, setImportMode] = useState<'file' | 'paste'>('file')
+  const [importText, setImportText] = useState('')
+  const [pasted, setPasted] = useState<{ valid: string[]; invalid: string[]; dupes: number }>({ valid: [], invalid: [], dupes: 0 })
+  const onPasteNumbers = (text: string) => {
+    setImportText(text)
+    const seen = new Set<string>(); const valid: string[] = []; const invalid: string[] = []; let dupes = 0
+    for (const tok of text.split(/[\s,;]+/).filter(Boolean)) {
+      const d = tok.replace(/\D/g, '')
+      if (!/^\d{8,15}$/.test(d)) { invalid.push(tok); continue }
+      if (seen.has(d)) { dupes++; continue }
+      seen.add(d); valid.push(d)
+    }
+    setPasted({ valid, invalid, dupes })
+    setCsvFile(valid.length ? new File(['phone\n' + valid.join('\n') + '\n'], 'pasted-numbers.csv', { type: 'text/csv' }) : null)
+  }
   const [importResult, setImportResult] = useState<null | { message: string; summary: { total: number; imported: number; skipped: number; failed: number }; errors: string[] }>(null)
 
   const [form, setForm] = useState({ phone: '', name: '', email: '', opted_in: true })
@@ -593,7 +610,7 @@ export default function ContactsPage() {
   }
 
   const closeImport = () => {
-    setShowImport(false); setImportResult(null); setCsvFile(null); setImportLabels([]); setImportSkipDupes(true)
+    setShowImport(false); setImportResult(null); setCsvFile(null); setImportLabels([]); setImportSkipDupes(true); setImportMode('file'); setImportText(''); setPasted({ valid: [], invalid: [], dupes: 0 })
   }
 
   const downloadSampleCsv = () => {
@@ -619,7 +636,7 @@ export default function ContactsPage() {
         <div className="flex gap-2 flex-wrap">
           <LabelManager labels={labels} onRefresh={loadLabels} />
           <Button variant="secondary" onClick={handleExport}>↓ Export</Button>
-          <Button variant="secondary" onClick={() => setShowImport(true)}>↑ Import CSV</Button>
+          <Button variant="secondary" onClick={() => setShowImport(true)}>↑ Import</Button>
           <Button onClick={openCreate}>+ Add contact</Button>
         </div>
       </div>
@@ -827,7 +844,7 @@ export default function ContactsPage() {
       </Modal>
 
       {/* Import Modal — the choices made here (labels, duplicate handling) drive the import */}
-      <Modal open={showImport} onClose={closeImport} title="Import contacts (CSV)" size="md"
+      <Modal open={showImport} onClose={closeImport} title="Import contacts" size="md"
         footer={
           importResult ? (
             <>
@@ -837,7 +854,9 @@ export default function ContactsPage() {
           ) : (
             <>
               <Button variant="secondary" onClick={closeImport}>Cancel</Button>
-              <Button onClick={handleImport} loading={importing} disabled={!csvFile}>Import</Button>
+              <Button onClick={handleImport} loading={importing} disabled={!csvFile}>
+                {importMode === 'paste' && pasted.valid.length > 0 ? `Import ${pasted.valid.length} number${pasted.valid.length !== 1 ? 's' : ''}` : 'Import'}
+              </Button>
             </>
           )
         }
@@ -871,6 +890,40 @@ export default function ContactsPage() {
           </div>
         ) : (
         <div className="space-y-4">
+          <div className="flex gap-1 text-xs">
+            {([['file', '📂 Upload CSV'], ['paste', '📋 Paste numbers']] as const).map(([m, l]) => (
+              <button key={m} type="button"
+                onClick={() => { setImportMode(m); setCsvFile(null); setImportText(''); setPasted({ valid: [], invalid: [], dupes: 0 }) }}
+                className={`px-3 py-1.5 rounded-lg border ${importMode === m ? 'border-brand-500 bg-brand-50 text-brand-700' : 'border-gray-200 text-gray-500'}`}>{l}</button>
+            ))}
+          </div>
+          {importMode === 'paste' ? (
+            <div className="space-y-2">
+              <textarea rows={6} className="form-control border w-full p-2 rounded font-mono text-xs"
+                placeholder={'919846366783 919745012345, 918891234567\n+91 98765 43210'}
+                value={importText} onChange={e => onPasteNumbers(e.target.value)} />
+              <p className="text-xs text-gray-400">Separate numbers with a space, comma or new line. Include the country code. Duplicates are removed automatically.</p>
+              {importText.trim() && (
+                <div className="rounded-xl border border-gray-200 p-3 text-xs space-y-2">
+                  <p className="font-semibold">
+                    <span className="text-green-600">✅ {pasted.valid.length} valid number{pasted.valid.length !== 1 ? 's' : ''}</span>
+                    {pasted.dupes > 0 && <span className="text-gray-500"> · {pasted.dupes} duplicate{pasted.dupes !== 1 ? 's' : ''} removed</span>}
+                    {pasted.invalid.length > 0 && <span className="text-red-500"> · {pasted.invalid.length} invalid (will be skipped)</span>}
+                  </p>
+                  {pasted.valid.length > 0 && (
+                    <div className="max-h-28 overflow-auto flex flex-wrap gap-1">
+                      {pasted.valid.map(n => <span key={n} className="px-1.5 py-0.5 bg-green-50 text-green-700 rounded font-mono">{n}</span>)}
+                    </div>
+                  )}
+                  {pasted.invalid.length > 0 && (
+                    <div className="max-h-16 overflow-auto flex flex-wrap gap-1">
+                      {pasted.invalid.map((n, i) => <span key={i} className="px-1.5 py-0.5 bg-red-50 text-red-600 rounded font-mono">{n}</span>)}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          ) : (<>
           <div className="bg-gray-50 border-2 border-dashed border-gray-200 rounded-xl p-6 text-center">
             <input type="file" accept=".csv,.txt" onChange={e => setCsvFile(e.target.files?.[0] || null)} className="hidden" id="csv-input" />
             <label htmlFor="csv-input" className="cursor-pointer">
@@ -888,6 +941,7 @@ export default function ContactsPage() {
             <code className="block">919846366783,Priya Nair,priya@example.com,LDC;Hot lead</code>
             <p>The optional <strong>labels</strong> column takes existing label names separated by <code>;</code> or <code>,</code> — added on top of the labels you tick below.</p>
           </div>
+          </>)}
           <div>
             <p className="label">Assign labels to all imported contacts{importLabels.length > 0 && ` (${importLabels.length} selected)`}</p>
             <div className="flex flex-wrap gap-2 mt-1">

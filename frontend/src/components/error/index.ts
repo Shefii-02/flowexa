@@ -1,5 +1,6 @@
 export { ErrorBoundary } from './ErrorBoundary'
 export { ErrorScreen } from './ErrorScreen'
+export { ConnectionErrorScreen } from './ConnectionErrorScreen'
 export { AccessDeniedScreen } from './AccessDeniedScreen'
 export { RequirePermission } from './RequirePermission'
 export { ErrorReportActions } from './ErrorReportActions'
