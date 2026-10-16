@@ -682,6 +682,8 @@ Route::prefix('v1')->group(function () {
             Route::middleware('permission:labels.manage')->group(function () {
                 Route::post('/',           [LabelController::class, 'store'])->middleware('plan.limit:labels')->name('store');
                 Route::put('/{label}',     [LabelController::class, 'update'])->name('update');
+                Route::post('/{label}/contacts',        [LabelController::class, 'addContacts'])->name('contacts.add');
+                Route::post('/{label}/contacts/remove', [LabelController::class, 'removeContacts'])->name('contacts.remove');
                 Route::delete('/{label}',  [LabelController::class, 'destroy'])->name('destroy');
             });
         });

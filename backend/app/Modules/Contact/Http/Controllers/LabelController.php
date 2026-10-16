@@ -59,6 +59,34 @@ class LabelController extends Controller
         return response()->json(['label' => $label->fresh()]);
     }
 
+    /** Add contacts to a label (only this company's contacts; already-labelled ones are left alone). */
+    public function addContacts(Request $request, int $id): JsonResponse
+    {
+        $label = $this->ownedLabel($id);
+        $ids   = $this->ownedContactIds($request);
+        $label->contacts()->syncWithoutDetaching($ids);
+        return response()->json(['message' => count($ids) . ' contact(s) added to the label.', 'count' => $label->contacts()->count()]);
+    }
+
+    public function removeContacts(Request $request, int $id): JsonResponse
+    {
+        $label = $this->ownedLabel($id);
+        $ids   = $this->ownedContactIds($request);
+        $label->contacts()->detach($ids);
+        return response()->json(['message' => count($ids) . ' contact(s) removed from the label.', 'count' => $label->contacts()->count()]);
+    }
+
+    private function ownedLabel(int $id): ContactLabel
+    {
+        return ContactLabel::where('id', $id)->where('company_id', auth()->user()->company_id)->firstOrFail();
+    }
+
+    private function ownedContactIds(Request $request): array
+    {
+        $d = $request->validate(['contact_ids' => ['required', 'array', 'min:1'], 'contact_ids.*' => ['integer']]);
+        return \App\Models\Contact::where('company_id', auth()->user()->company_id)->whereIn('id', $d['contact_ids'])->pluck('id')->all();
+    }
+
     public function destroy(int $id): JsonResponse
     {
         $label = ContactLabel::where('id', $id)

@@ -80,7 +80,7 @@ export const labelApi = {
   update: (id: number, d: { name?: string; color?: string }) => api.put(`/labels/${id}`, d),
   delete: (id: number) => api.delete(`/labels/${id}`),
   addContacts: (id: number, contactIds: number[]) => api.post(`/labels/${id}/contacts`, { contact_ids: contactIds }),
-  removeContacts: (id: number, contactIds: number[]) => api.post(`/labels/${id}/contacts`, { contact_ids: contactIds }),
+  removeContacts: (id: number, contactIds: number[]) => api.post(`/labels/${id}/contacts/remove`, { contact_ids: contactIds }),
 
 }
 

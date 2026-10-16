@@ -4,7 +4,7 @@ import { useAppDispatch, useAppSelector } from '@/store'
 import { fetchLabelsThunk } from '@/store/slices'
 import { labelApi, contactApi } from '@/api'
 import { Button, Input, Modal, ConfirmModal, EmptyState } from '@/components/ui'
-import { fmt, getError, formatPhone } from '@/utils'
+import { fmt, getError, formatPhone, downloadBlob } from '@/utils'
 import toast from 'react-hot-toast'
 
 const PRESET_COLORS = [
@@ -12,6 +12,111 @@ const PRESET_COLORS = [
   '#ec4899','#14b8a6','#f97316','#1D9E75','#6366f1',
   '#0ea5e9','#84cc16','#a855f7','#f43f5e','#06b6d4',
 ]
+
+// ─── Import numbers into a label (CSV or pasted) ──────────────────────────────
+// Numbers are validated (8–15 digits) and de-duplicated, saved as contacts, and added to this label.
+function LabelImportModal({ label, onClose, onDone }: { label: any; onClose: () => void; onDone: () => void }) {
+  const [mode, setMode] = useState<'paste' | 'file'>('paste')
+  const [text, setText] = useState('')
+  const [file, setFile] = useState<File | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [result, setResult] = useState<null | { imported: number; skipped: number; failed: number; errors: string[] }>(null)
+
+  const parsed = (() => {
+    const seen = new Set<string>(); const valid: string[] = []; const invalid: string[] = []; let dupes = 0
+    for (const tok of text.split(/[\s,;]+/).filter(Boolean)) {
+      const d = tok.replace(/\D/g, '')
+      if (!/^\d{8,15}$/.test(d)) { invalid.push(tok); continue }
+      if (seen.has(d)) { dupes++; continue }
+      seen.add(d); valid.push(d)
+    }
+    return { valid, invalid, dupes }
+  })()
+
+  const upload = mode === 'paste'
+    ? (parsed.valid.length ? new File(['phone\n' + parsed.valid.join('\n') + '\n'], 'pasted-numbers.csv', { type: 'text/csv' }) : null)
+    : file
+
+  const run = async () => {
+    if (!upload) return
+    setBusy(true)
+    try {
+      // skip_duplicates=1: numbers already in your contacts keep their data; they still get this label.
+      const { data } = await contactApi.import(upload, [label.id], true)
+      const s = data.result?.summary ?? {}
+      setResult({ imported: s.imported ?? 0, skipped: s.skipped ?? 0, failed: s.failed ?? 0, errors: data.result?.errors ?? [] })
+      toast.success(data.message)
+      onDone()
+    } catch (e) { toast.error(getError(e)) }
+    finally { setBusy(false) }
+  }
+
+  return (
+    <Modal open onClose={onClose} title={`Import numbers → ${label.name}`} size="md"
+      footer={result
+        ? <Button onClick={onClose}>Done</Button>
+        : <>
+            <Button variant="secondary" onClick={onClose}>Cancel</Button>
+            <Button onClick={run} loading={busy} disabled={!upload}>
+              {mode === 'paste' && parsed.valid.length ? `Import ${parsed.valid.length} number${parsed.valid.length !== 1 ? 's' : ''}` : 'Import'}
+            </Button>
+          </>}>
+      {result ? (
+        <div className="space-y-2 text-sm">
+          <div className="grid grid-cols-3 gap-2 text-center">
+            {[['Imported', result.imported, 'text-green-600'], ['Already existed', result.skipped, 'text-amber-600'], ['Failed', result.failed, 'text-red-600']].map(([l, v, c]) => (
+              <div key={String(l)} className="bg-gray-50 rounded-lg py-2"><div className={`text-lg font-bold ${c}`}>{v}</div><div className="text-xs text-gray-400">{l}</div></div>
+            ))}
+          </div>
+          <p className="text-xs text-gray-500">All valid numbers are now saved in Contacts and carry the “{label.name}” label.</p>
+          {result.errors.length > 0 && (
+            <ul className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-3 max-h-40 overflow-y-auto list-disc pl-6">
+              {result.errors.map((e, i) => <li key={i}>{e}</li>)}
+            </ul>
+          )}
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <div className="flex gap-1 text-xs">
+            {([['paste', '📋 Paste numbers'], ['file', '📂 Upload CSV']] as const).map(([m, l]) => (
+              <button key={m} type="button" onClick={() => setMode(m)}
+                className={`px-3 py-1.5 rounded-lg border ${mode === m ? 'border-brand-500 bg-brand-50 text-brand-700' : 'border-gray-200 text-gray-500'}`}>{l}</button>
+            ))}
+          </div>
+          {mode === 'paste' ? (
+            <>
+              <textarea rows={6} className="form-control border w-full p-2 rounded font-mono text-xs"
+                placeholder={'919846366783 919745012345, 918891234567\n+91 98765 43210'} value={text} onChange={e => setText(e.target.value)} />
+              <p className="text-xs text-gray-400">Separate with a space, comma or new line. Include the country code.</p>
+              {text.trim() && (
+                <div className="rounded-xl border border-gray-200 p-3 text-xs space-y-2">
+                  <p className="font-semibold">
+                    <span className="text-green-600">✅ {parsed.valid.length} valid</span>
+                    {parsed.dupes > 0 && <span className="text-gray-500"> · {parsed.dupes} duplicate{parsed.dupes !== 1 ? 's' : ''} removed</span>}
+                    {parsed.invalid.length > 0 && <span className="text-red-500"> · {parsed.invalid.length} invalid (skipped)</span>}
+                  </p>
+                  <div className="max-h-24 overflow-auto flex flex-wrap gap-1">
+                    {parsed.valid.map(n => <span key={n} className="px-1.5 py-0.5 bg-green-50 text-green-700 rounded font-mono">{n}</span>)}
+                    {parsed.invalid.map((n, i) => <span key={'i' + i} className="px-1.5 py-0.5 bg-red-50 text-red-600 rounded font-mono">{n}</span>)}
+                  </div>
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="bg-gray-50 border-2 border-dashed border-gray-200 rounded-xl p-6 text-center">
+              <input type="file" accept=".csv,.txt" id="label-csv" className="hidden" onChange={e => setFile(e.target.files?.[0] || null)} />
+              <label htmlFor="label-csv" className="cursor-pointer">
+                <p className="text-2xl mb-1">📂</p>
+                <p className="text-sm font-medium text-gray-700">{file ? file.name : 'Click to select CSV file'}</p>
+                <p className="text-xs text-gray-400 mt-1">Column: <strong>phone</strong> · optional: name, email</p>
+              </label>
+            </div>
+          )}
+        </div>
+      )}
+    </Modal>
+  )
+}
 
 // ─── Right Offcanvas ──────────────────────────────────────────────────────────
 function ContactOffcanvas({ label, onClose, onSaved }: {
@@ -29,6 +134,18 @@ function ContactOffcanvas({ label, onClose, onSaved }: {
   const [checked,      setChecked]      = useState<Set<number>>(new Set())
   // original = contacts that were in label when panel opened
   const [original,     setOriginal]     = useState<Set<number>>(new Set())
+  const [showImport,   setShowImport]   = useState(false)
+  const [exporting,    setExporting]    = useState(false)
+
+  // Download this label's contacts (phone, name, email, labels) as CSV
+  const handleExport = async () => {
+    setExporting(true)
+    try {
+      const { data } = await contactApi.export({ label_id: label.id })
+      downloadBlob(new Blob([data], { type: 'text/csv' }), `label-${label.name.replace(/[^A-Za-z0-9_-]+/g, '-')}-contacts.csv`)
+    } catch (e) { toast.error(getError(e)) }
+    finally { setExporting(false) }
+  }
 
   // Load all contacts for this company with label membership flag
   const load = useCallback(() => {
@@ -107,6 +224,13 @@ function ContactOffcanvas({ label, onClose, onSaved }: {
             ×
           </button>
         </div>
+
+        {/* Import / Export for this label */}
+        <div className="px-4 py-2 flex gap-2 border-b border-gray-100">
+          <Button variant="secondary" onClick={() => setShowImport(true)}>⬆ Import numbers</Button>
+          <Button variant="secondary" onClick={handleExport} loading={exporting}>⬇ Export</Button>
+        </div>
+        {showImport && <LabelImportModal label={label} onClose={() => setShowImport(false)} onDone={() => { load(); onSaved() }} />}
 
         {/* Search */}
         <div className="px-4 py-3 border-b border-gray-100">
