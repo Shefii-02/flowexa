@@ -150,13 +150,24 @@ function ContactOffcanvas({ label, onClose, onSaved }: {
   // Load all contacts for this company with label membership flag
   const load = useCallback(() => {
     setLoading(true)
+    // The API caps per_page at 100, so the label's members are fetched page by page.
+    const loadLabelMembers = async (): Promise<any[]> => {
+      const out: any[] = []
+      for (let pg = 1; pg <= 200; pg++) {
+        const r = await contactApi.list({ label_id: label.id, page: pg, per_page: 100 })
+        const rows = r.data.data || r.data.contacts || []
+        out.push(...rows)
+        if (rows.length < 100 || out.length >= (r.data.total ?? Infinity)) break
+      }
+      return out
+    }
     Promise.all([
       contactApi.list({ page, search: search || undefined, per_page: 30 }),
-      contactApi.list({ label_id: label.id, per_page: 1000 }), // get all label contacts
+      loadLabelMembers(),
     ]).then(([all, labeled]) => {
       setAllContacts(all.data.data || all.data.contacts || [])
       setTotal(all.data.total || 0)
-      const inLabel = new Set<number>((labeled.data.data || labeled.data.contacts || []).map((c: any) => c.id))
+      const inLabel = new Set<number>(labeled.map((c: any) => c.id))
       setChecked(new Set(inLabel))
       setOriginal(new Set(inLabel))
     }).finally(() => setLoading(false))
