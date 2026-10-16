@@ -141,12 +141,14 @@ class CampaignRepository implements CampaignRepositoryInterface
     {
         return CampaignContact::with('contact:id,name,phone')
             ->where('campaign_id', $campaignId)
-            ->when($filter->status, fn($q) => $q->where('status', $filter->status))
-            ->when($filter->search, fn($q) =>
-                $q->where('phone', 'like', "%{$filter->search}%")
+            ->when($filter->status === 'done', fn($q) => $q->whereIn('status', ['sent', 'delivered', 'read']))
+            ->when($filter->status && $filter->status !== 'done', fn($q) => $q->where('status', $filter->status))
+            // grouped: a bare orWhere here escaped the campaign_id scope and matched other campaigns' contacts
+            ->when($filter->search, fn($q) => $q->where(fn($w) =>
+                $w->where('phone', 'like', "%{$filter->search}%")
                   ->orWhereHas('contact', fn($c) => $c->where('name', 'like', "%{$filter->search}%"))
-            )
-            ->latest()
+            ))
+            ->orderBy('id')
             ->paginate($filter->perPage, ['*'], 'page', $filter->page);
     }
 

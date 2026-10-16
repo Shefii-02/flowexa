@@ -1,4 +1,5 @@
 // src/pages/campaigns/CampaignsPage.tsx
+import CampaignContactsPanel from './CampaignContactsPanel'
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useAppDispatch, useAppSelector } from '@/store'
 import { fetchCampaignsThunk, fetchLabelsThunk } from '@/store/slices'
@@ -516,43 +517,17 @@ export default function CampaignsPage() {
     finally { setActing(null) }
   }
 
-  // ── Per-contact delivery view: tries, failure reason, edit number & resend ──────────────
-  const [contactsCamp, setContactsCamp] = useState<Campaign | null>(null)
-  const [contactRows, setContactRows] = useState<any[]>([])
-  const [contactsStatus, setContactsStatus] = useState('')
-  const [contactsLoading, setContactsLoading] = useState(false)
-  const [editRowId, setEditRowId] = useState<number | null>(null)
-  const [editPhone, setEditPhone] = useState('')
-  const [resending, setResending] = useState(false)
-
-  const loadContacts = useCallback((camp: Campaign, status: string) => {
-    setContactsLoading(true)
-    campaignApi.contacts(camp.id, { status: status || undefined, per_page: 100 })
-      .then(r => setContactRows(r.data.data ?? []))
-      .catch(e => toast.error(getError(e)))
-      .finally(() => setContactsLoading(false))
-  }, [])
-
-  const openContacts = (c: Campaign, status = '') => {
-    setContactsCamp(c); setContactsStatus(status); setEditRowId(null); loadContacts(c, status)
-  }
-
-  // items = undefined -> resend every failed contact; otherwise just those rows (optionally with a corrected number)
-  const resendContacts = async (items?: { id: number; phone?: string }[]) => {
-    if (!contactsCamp) return
-    setResending(true)
-    try {
-      const { data } = await campaignApi.resendFailed(contactsCamp.id, items)
-      toast.success(data.message)
-      setEditRowId(null); load(); loadContacts(contactsCamp, contactsStatus)
-    } catch (e) { toast.error(getError(e)) }
-    finally { setResending(false) }
-  }
-
-  const loadStats = async (c: Campaign) => {
-    setSelected(c); setStats(null); setShowStats(true)
+  // filter = which numbers the details table opens on ('failed' jumps straight to the failures)
+  const [detailFilter, setDetailFilter] = useState('')
+  const loadStats = async (c: Campaign, filter = '') => {
+    setSelected(c); setStats(null); setDetailFilter(filter); setShowStats(true)
     const { data } = await campaignApi.stats(c.id)
     setStats(data.stats)
+  }
+  const refreshStats = async () => {
+    if (!selected) return
+    try { const { data } = await campaignApi.stats(selected.id); setStats(data.stats) } catch { /* silent */ }
+    load()
   }
 
   const handleDelete = async () => {
@@ -630,9 +605,9 @@ export default function CampaignsPage() {
                       </td>
                       <td>
                         <div className="flex gap-1 flex-wrap">
-                          <button onClick={() => loadStats(c)} className="text-xs text-blue-600 hover:underline">Stats</button>
-                          {!['draft', 'scheduled'].includes(c.status) && (
-                            <button onClick={() => openContacts(c, (c.stats?.failed || 0) > 0 ? 'failed' : '')} className="text-xs text-indigo-600 hover:underline">Contacts</button>
+                          <button onClick={() => loadStats(c)} className="text-xs text-blue-600 hover:underline">Stats &amp; numbers</button>
+                          {!['draft', 'scheduled'].includes(c.status) && (c.stats?.failed || 0) > 0 && (
+                            <button onClick={() => loadStats(c, 'failed')} className="text-xs text-red-500 hover:underline">Failed ({c.stats?.failed})</button>
                           )}
                           {['draft', 'paused'].includes(c.status) && <button onClick={() => openEdit(c)} className="text-xs text-gray-600 hover:underline">Edit</button>}
                           {c.status === 'draft' && <button onClick={() => handleAction(c.id, 'launch')} disabled={isActing} className="text-xs text-green-600 hover:underline">Launch</button>}
@@ -800,85 +775,16 @@ export default function CampaignsPage() {
         </div>
       </Modal>
 
-      {/* Contacts Modal — per-contact status, tries, failure reason, edit number & resend */}
-      <Modal open={!!contactsCamp} onClose={() => setContactsCamp(null)} title={`Contacts — ${contactsCamp?.name ?? ''}`} size="lg">
-        <div className="space-y-3">
-          <div className="flex items-center gap-2 flex-wrap">
-            <select className="select max-w-[170px]" value={contactsStatus}
-              onChange={e => { setContactsStatus(e.target.value); if (contactsCamp) loadContacts(contactsCamp, e.target.value) }}>
-              <option value="">All statuses</option>
-              {['pending', 'sent', 'delivered', 'read', 'failed'].map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
-            <div className="flex-1" />
-            {contactsCamp && ((contactsCamp.stats as any)?.resendable_failed || 0) > 0 && contactsCamp.status !== 'running' && (
-              <Button variant="secondary" loading={resending} onClick={() => resendContacts()}>
-                🔁 Resend all failed ({(contactsCamp.stats as any)?.resendable_failed})
-              </Button>
-            )}
-          </div>
-          {contactsLoading ? (
-            <div className="p-6 text-center text-gray-400">Loading...</div>
-          ) : contactRows.length === 0 ? (
-            <div className="p-6 text-center text-gray-400 text-sm">No contacts for this filter.</div>
-          ) : (
-            <div className="max-h-[60vh] overflow-y-auto">
-              <table className="w-full text-xs">
-                <thead className="sticky top-0 bg-white border-b border-gray-100">
-                  <tr className="text-left text-gray-400">
-                    <th className="py-2 pr-2 font-medium">Phone</th>
-                    <th className="py-2 pr-2 font-medium">Name</th>
-                    <th className="py-2 pr-2 font-medium">Status</th>
-                    <th className="py-2 pr-2 font-medium" title="Send attempts made, then gave up">Tries</th>
-                    <th className="py-2 font-medium">Reason</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-50">
-                  {contactRows.map(r => (
-                    <tr key={r.id} className="align-top">
-                      <td className="py-2 pr-2 font-mono text-gray-600">
-                        {editRowId === r.id ? (
-                          <div className="flex items-center gap-1">
-                            <input autoFocus value={editPhone} onChange={e => setEditPhone(e.target.value)} placeholder="919846366783"
-                              className="w-32 border border-gray-300 rounded px-1.5 py-1 text-xs font-mono" />
-                            <button disabled={resending}
-                              onClick={() => {
-                                const cleaned = editPhone.replace(/\D/g, '')
-                                if (!/^\d{8,15}$/.test(cleaned)) { toast.error('Enter the full number with country code (8–15 digits).'); return }
-                                resendContacts([{ id: r.id, phone: cleaned }])
-                              }}
-                              className="px-1.5 py-1 bg-green-500 text-white rounded hover:bg-green-600 disabled:opacity-50">Resend</button>
-                            <button onClick={() => setEditRowId(null)} className="text-gray-400 hover:text-gray-700">✕</button>
-                          </div>
-                        ) : r.phone}
-                      </td>
-                      <td className="py-2 pr-2 text-gray-700">{r.contact?.name || '—'}</td>
-                      <td className="py-2 pr-2">
-                        <Badge variant={({ failed: 'red', sent: 'blue', delivered: 'green', read: 'green', pending: 'gray' } as any)[r.status] ?? 'gray'}>{r.status}</Badge>
-                      </td>
-                      <td className="py-2 pr-2 text-gray-500">{r.attempts || '—'}</td>
-                      <td className="py-2 text-red-500 leading-tight">
-                        {r.status === 'failed' && r.resent && <div className="text-gray-400">Already resent once</div>}
-                        {r.failed_reason && <div className="max-w-[240px] break-words" title={r.failed_reason}>{r.failed_reason}</div>}
-                        {r.status === 'failed' && !r.resent && contactsCamp?.status !== 'running' && editRowId !== r.id && (
-                          <button onClick={() => { setEditRowId(r.id); setEditPhone((r.phone || '').replace(/\D/g, '')) }}
-                            className="text-blue-600 hover:underline mt-0.5">✎ Edit number &amp; resend</button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      </Modal>
-
       {/* Stats Modal */}
-      <Modal open={showStats} onClose={() => setShowStats(false)} title={`Stats — ${selected?.name}`} size="lg">
+      <Modal open={showStats} onClose={() => setShowStats(false)} title={`Stats — ${selected?.name}`}>
         {!stats ? (
           <div className="flex justify-center py-8"><div className="animate-spin w-6 h-6 border-2 border-brand-500 border-t-transparent rounded-full" /></div>
         ) : (
           <div className="space-y-4">
+            <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-gray-500">
+              <span>📱 Sent from: <b className="text-gray-700">{stats.sender?.display_number || stats.sender?.label || 'default number'}</b></span>
+              {stats.template_name && <span>📋 Template: <b className="font-mono text-gray-700">{stats.template_name}</b></span>}
+            </div>
             <div className="grid grid-cols-3 gap-3">
               {[['Total', '👥', stats.total_contacts], ['Sent', '📤', stats.sent], ['Delivered', `✅ ${stats.delivery_rate}%`, stats.delivered],
               ['Read', `👁️ ${stats.read_rate}%`, stats.read], ['Failed', `❌ ${stats.fail_rate}%`, stats.failed], ['Pending', '⏳', stats.pending]]
@@ -897,6 +803,19 @@ export default function CampaignsPage() {
                   <span key={l} className="flex items-center gap-1"><span className={`w-2.5 h-2.5 rounded-full ${bg} inline-block`} />{l}</span>
                 ))}
               </div>
+            </div>
+
+            {/* Every number: status, tries, sent/delivered/read times, failure reasons, filters and retry */}
+            <div>
+              <p className="text-xs font-semibold text-gray-500 mb-2">Numbers</p>
+              <CampaignContactsPanel
+                key={`${selected?.id}-${detailFilter}`}
+                campaignId={selected!.id}
+                campaignStatus={selected!.status}
+                initialStatus={detailFilter}
+                resendable={stats.resendable_failed ?? 0}
+                onChanged={refreshStats}
+              />
             </div>
 
             {(stats.starts_at || stats.ends_at) && (
