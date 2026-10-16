@@ -63,6 +63,13 @@ class WebhookService
     // ─── Handle inbound message ───────────────────────────────────────────────
     public function handleInbound(Company $company, InboundMessageDTO $dto, ?string $receivedOnPhoneNumberId = null): void
     {
+        // 0. Meta re-delivers a webhook when we answer slowly — handle each message id only once,
+        // otherwise the bot replies (and creates leads / logs) again for every retry.
+        if ($dto->messageId && !\Illuminate\Support\Facades\Cache::add("wa-inbound:{$dto->messageId}", 1, now()->addDay())) {
+            Log::info("Duplicate inbound webhook {$dto->messageId} ignored for company {$company->id}");
+            return;
+        }
+
         // 1. Blacklist check — silent ignore, no reply, no lead
         $isBlacklisted = MessageBlacklist::where('company_id', $company->id)
             ->where('phone', $dto->phone)
@@ -1766,8 +1773,37 @@ class WebhookService
     }
 
     // ─── POST to Meta Graph API (single dispatch path) ─────────────────────────
+    // Bot-reply loop guard: at most this many bot messages in a row to one customer without them replying.
+    private const MAX_BOT_MESSAGES_IN_A_ROW = 4;
+
+    /** True when sending $payload now would repeat the last bot message or exceed the in-a-row cap. */
+    private function isRepeatBotSend(Company $company, array $payload): bool
+    {
+        try {
+            $conv = WaConversation::where('company_id', $company->id)->where('phone', $payload['to'])->first();
+            if (!$conv) { return false; }
+
+            $lastInboundId = (int) WaMessage::where('conversation_id', $conv->id)->where('direction', 'inbound')->max('id');
+            $recent = WaMessage::where('conversation_id', $conv->id)->where('direction', 'outbound')
+                ->where('sender_type', 'bot')->where('id', '>', $lastInboundId)
+                ->orderByDesc('id')->limit(self::MAX_BOT_MESSAGES_IN_A_ROW)->get();
+
+            if ($recent->count() >= self::MAX_BOT_MESSAGES_IN_A_ROW) { return true; }
+
+            $body = $this->extractOutboundContent($payload);
+            return $recent->contains(fn ($m) => ($m->type === $payload['type']) && (($m->content['body'] ?? null) == $body));
+        } catch (\Throwable $e) {
+            return false; // never block sending because the guard itself failed
+        }
+    }
+
     private function dispatch(Company $company, array $payload): void
     {
+        if ($this->isRepeatBotSend($company, $payload)) {
+            Log::warning("Bot send suppressed (repeat / too many in a row) to={$payload['to']} company={$company->id}");
+            return;
+        }
+
         if (!$company->wa_phone_id || !$company->decrypt_wa_access_token) {
             Log::error("Company {$company->id} has no WA credentials — cannot send message");
             return;

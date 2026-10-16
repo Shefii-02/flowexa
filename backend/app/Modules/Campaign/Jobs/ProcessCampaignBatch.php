@@ -29,6 +29,23 @@ class ProcessCampaignBatch implements ShouldQueue
 
     public function handle(CampaignRepositoryInterface $campaignRepository): void
     {
+        // Only ONE batch per campaign at a time. Launch, resend and the 60s self-redispatch can each
+        // queue a job; two running together read the same pending rows and message every contact twice
+        // (and each then re-dispatches itself, so the duplicates multiply).
+        $lock = \Illuminate\Support\Facades\Cache::lock("campaign-batch:{$this->campaignId}", $this->timeout + 30);
+        if (!$lock->get()) {
+            Log::info("Campaign {$this->campaignId}: another batch is running — job skipped.");
+            return;
+        }
+        try {
+            $this->process($campaignRepository);
+        } finally {
+            $lock->release();
+        }
+    }
+
+    private function process(CampaignRepositoryInterface $campaignRepository): void
+    {
         $campaign = Campaign::with(['template', 'waPhoneNumber'])->find($this->campaignId);
 
         if (!$campaign || $campaign->status !== 'running') {
@@ -58,6 +75,19 @@ class ProcessCampaignBatch implements ShouldQueue
             if ($campaign->status !== 'running') {
                 Log::info("Campaign {$this->campaignId} paused — stopping batch.");
                 break;
+            }
+
+            // Same number twice in one campaign (duplicate contact rows) -> message it only once.
+            // Also re-check this row is still pending: another path may have just sent it.
+            $fresh = \App\Models\CampaignContact::find($cc->id);
+            if (!$fresh || $fresh->status !== 'pending') { continue; }
+            $alreadySent = \App\Models\CampaignContact::where('campaign_id', $this->campaignId)
+                ->where('phone', $cc->phone)->where('id', '!=', $cc->id)
+                ->whereIn('status', ['sent', 'delivered', 'read'])->exists();
+            if ($alreadySent) {
+                $campaignRepository->markContactFailed($cc->id, 'Skipped: this number was already messaged in this campaign (duplicate).', 0, 'duplicate');
+                $failed++;
+                continue;
             }
 
             // ── Send with automatic diagnosis + recovery (up to MAX_ATTEMPTS tries) ─────────
@@ -120,6 +150,19 @@ class ProcessCampaignBatch implements ShouldQueue
                     \App\Models\CampaignContact::where('id', $cc->id)->update(['phone' => $phone]); // keep the auto-corrected number
                 }
                 $campaignRepository->markContactSent($cc->id, $waMessageId, $attempts);
+                // Show the campaign message in the shared inbox; delivered / read / failed webhooks then update it by wa_message_id.
+                try {
+                    $conv = \App\Models\WaConversation::firstOrCreate(['company_id' => $campaign->company_id, 'phone' => $phone], ['status' => 'open']);
+                    $conv->update(['last_message_at' => now()]);
+                    \App\Models\WaMessage::create([
+                        'conversation_id' => $conv->id, 'company_id' => $campaign->company_id,
+                        'direction' => 'outbound', 'sender_type' => 'system', 'wa_message_id' => $waMessageId ?: null,
+                        'type' => 'template', 'content' => ['body' => '[Template] ' . ($campaign->template?->name ?? '') . ' — campaign: ' . $campaign->name],
+                        'status' => 'sent', 'status_updated_at' => now(),
+                    ]);
+                } catch (\Throwable $e) {
+                    Log::warning("Campaign {$this->campaignId}: inbox log failed for {$phone}: {$e->getMessage()}");
+                }
                 $sent++;
             } else {
                 $campaignRepository->markContactFailed(
