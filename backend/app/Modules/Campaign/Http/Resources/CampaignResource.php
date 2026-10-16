@@ -36,13 +36,21 @@ class CampaignResource extends JsonResource
                 'failed'         => $this->failed,
                 // failed contacts not yet resent — "Resend failed" is one-time, so this hits 0 afterwards
                 'resendable_failed' => $this->failed > 0
-                    ? \App\Models\CampaignContact::where('campaign_id', $this->id)->where('status', 'failed')->whereNull('resent_at')->count()
+                    ? \App\Models\CampaignContact::where('campaign_id', $this->id)->where('status', 'failed')->where(fn ($q) => $q->whereNull('retry_after')->orWhere('retry_after', '<=', now()))->count()
                     : 0,
                 'pending'        => $this->pending,
                 'wallet_debited' => $this->wallet_debited,
                 'delivery_rate'  => round(($this->delivered / $total) * 100, 1),
                 'read_rate'      => round(($this->read / $total) * 100, 1),
             ],
+            // Who this campaign sends from, and (before launch, when total_contacts is still 0) how many people it will reach.
+            'wa_phone_number' => $this->whenLoaded('waPhoneNumber', fn () => $this->waPhoneNumber ? [
+                'id' => $this->waPhoneNumber->id, 'label' => $this->waPhoneNumber->label,
+                'display_phone_number' => $this->waPhoneNumber->display_number, 'status' => $this->waPhoneNumber->status,
+            ] : null),
+            'estimated_contacts' => in_array($this->status, ['draft', 'scheduled'], true) && !$this->total_contacts
+                ? app(\App\Modules\Campaign\Repositories\Interfaces\CampaignRepositoryInterface::class)->estimateContacts($this->company_id, $this->resource)
+                : null,
             'creator'  => $this->whenLoaded('creator', fn() => ['id' => $this->creator->id, 'name' => $this->creator->name]),
             'template' => $this->whenLoaded('template', fn() => ['id' => $this->template->id, 'name' => $this->template->name, 'category' => $this->template->category]),
         ];

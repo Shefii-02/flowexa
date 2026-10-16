@@ -24,7 +24,7 @@ class CampaignRepository implements CampaignRepositoryInterface
      */
     public function paginate(int $companyId, CampaignFilterDTO $filter, ?array $allowedNumberIds = null): LengthAwarePaginator
     {
-        return Campaign::with(['creator:id,name,email', 'template:id,name,category'])
+        return Campaign::with(['creator:id,name,email', 'template:id,name,category', 'waPhoneNumber:id,label,display_number,status'])
             ->where('company_id', $companyId)
             ->when($allowedNumberIds !== null, fn ($q) => $q->where(
                 fn ($qq) => $qq->whereNull('wa_phone_number_id')->orWhereIn('wa_phone_number_id', $allowedNumberIds)
@@ -38,7 +38,7 @@ class CampaignRepository implements CampaignRepositoryInterface
     /** @param array<int>|null $allowedNumberIds see paginate() */
     public function findById(int $id, int $companyId, ?array $allowedNumberIds = null): ?Campaign
     {
-        return Campaign::with(['creator:id,name,email', 'template'])
+        return Campaign::with(['creator:id,name,email', 'template', 'waPhoneNumber:id,label,display_number,status'])
             ->where('id', $id)
             ->where('company_id', $companyId)
             ->when($allowedNumberIds !== null, fn ($q) => $q->where(
@@ -257,6 +257,41 @@ class CampaignRepository implements CampaignRepositoryInterface
      * Unknown numbers are added as contacts (name taken from the CSV); numbers that opted out are skipped.
      * Header names are flexible (phone / number / mobile / whatsapp ...; name), or a header-less one-column list.
      */
+    /** How many people a not-yet-launched campaign will go to (read-only: creates nothing). */
+    public function estimateContacts(int $companyId, Campaign $campaign): int
+    {
+        $base = Contact::where('company_id', $companyId)->where('opted_in', true);
+        return match ($campaign->target_type) {
+            'all'    => $base->count(),
+            'labels' => $base->whereHas('labels', fn ($q) => $q->whereIn('contact_labels.id', $campaign->target_labels ?? []))->count(),
+            'csv'    => $this->countCsvNumbers($campaign),
+            default  => 0,
+        };
+    }
+
+    private function countCsvNumbers(Campaign $campaign): int
+    {
+        if (!$campaign->csv_file || !Storage::exists($campaign->csv_file)) return 0;
+        $h = fopen(Storage::path($campaign->csv_file), 'r');
+        $first = fgetcsv($h);
+        if (!$first) { fclose($h); return 0; }
+        $first[0] = ltrim((string) $first[0], "\xEF\xBB\xBF");
+        $col = null;
+        foreach ($first as $i => $x) {
+            if (in_array(strtolower(preg_replace('/[^a-z0-9]/i', '', (string) $x)), ['phone', 'number', 'mobile', 'mobilenumber', 'phonenumber', 'whatsapp', 'whatsappnumber', 'contact'], true)) { $col = $i; break; }
+        }
+        $rows = [];
+        if ($col === null) { $col = 0; $rows[] = $first; }
+        while (($l = fgetcsv($h)) !== false) $rows[] = $l;
+        fclose($h);
+        $set = [];
+        foreach ($rows as $l) {
+            $d = preg_replace('/\D+/', '', (string) ($l[$col] ?? ''));
+            if (preg_match('/^\d{8,15}$/', $d)) $set[$d] = true;
+        }
+        return count($set);
+    }
+
     private function resolveCsvPhones(Campaign $campaign, int $companyId, $base): Collection
     {
         if (!$campaign->csv_file || !Storage::exists($campaign->csv_file)) {

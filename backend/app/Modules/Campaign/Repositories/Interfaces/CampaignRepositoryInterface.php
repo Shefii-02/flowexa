@@ -13,6 +13,8 @@ use Illuminate\Support\Collection;
 
 interface CampaignRepositoryInterface
 {
+    public function estimateContacts(int $companyId, \App\Models\Campaign $campaign): int;
+
     public function paginate(int $companyId, CampaignFilterDTO $filter, ?array $allowedNumberIds = null): LengthAwarePaginator;
 
     public function findById(int $id, int $companyId, ?array $allowedNumberIds = null): ?Campaign;

@@ -620,7 +620,12 @@ export default function CampaignsPage() {
                         )}
                       </td>
                       <td className="text-xs text-gray-500">
-                        {(c as any).wa_phone_number?.display_phone_number || '—'}
+                        {(c as any).wa_phone_number
+                          ? <>
+                              <span className="text-gray-700 font-medium">{(c as any).wa_phone_number.display_phone_number || '—'}</span>
+                              {(c as any).wa_phone_number.label && <div className="text-[10px] text-gray-400">{(c as any).wa_phone_number.label}</div>}
+                            </>
+                          : <span title="No number was picked — uses the company's default WhatsApp number">Default number</span>}
                         {(c as any).wa_phone_number?.billing_mode === 'own_account' && (
                           <span className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded-full bg-purple-50 text-purple-600 font-medium">🔗 own</span>
                         )}
@@ -632,7 +637,16 @@ export default function CampaignsPage() {
                         )}
                       </td>
                       <td><Badge variant={statusVariant[c.status] || 'gray'}>{campaignStatusConfig[c.status]?.label || c.status}</Badge></td>
-                      <td className="font-medium">{fmt.number(c.stats?.total_contacts || 0)}</td>
+                      <td className="font-medium">
+                        {c.stats?.total_contacts
+                          ? fmt.number(c.stats.total_contacts)
+                          : (c as any).estimated_contacts != null ? <span title="Will be sent on launch">~{fmt.number((c as any).estimated_contacts)}</span> : 0}
+                        {c.status === 'running' && (c.stats?.total_contacts || 0) > 0 && (
+                          <div className="text-[10px] font-normal text-gray-400">
+                            {fmt.number((c.stats?.sent || 0) + (c.stats?.failed || 0))} / {fmt.number(c.stats.total_contacts)} done
+                          </div>
+                        )}
+                      </td>
                       <td>
                         <div className="text-xs space-y-0.5">
                           <div className="text-green-600">✅ {c.stats?.delivery_rate || 0}%</div>
