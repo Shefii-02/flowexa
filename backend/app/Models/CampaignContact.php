@@ -15,12 +15,13 @@ class CampaignContact extends Model
 {
     protected $fillable = [
         'campaign_id', 'contact_id', 'phone', 'status',
-        'attempts', 'wa_message_id', 'failed_reason', 'error_type', 'resent_at', 'sent_at', 'delivered_at', 'read_at',
+        'attempts', 'wa_message_id', 'failed_reason', 'error_type', 'resent_at', 'retry_after', 'sent_at', 'delivered_at', 'read_at',
     ];
 
     protected $casts = [
         'sent_at'      => 'datetime',
         'resent_at'    => 'datetime',
+        'retry_after'  => 'datetime',
         'delivered_at' => 'datetime',
         'read_at'      => 'datetime',
     ];

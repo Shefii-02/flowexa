@@ -74,7 +74,7 @@ class CampaignService
                 : null,
             'template_name'  => $campaign->template?->name,
             // failed contacts that can still be retried (any failed contact can be retried again)
-            'resendable_failed' => \App\Models\CampaignContact::where('campaign_id', $campaign->id)->where('status', 'failed')->count(),
+            'resendable_failed' => \App\Models\CampaignContact::where('campaign_id', $campaign->id)->where('status', 'failed')->where(fn ($q) => $q->whereNull('retry_after')->orWhere('retry_after', '<=', now()))->count(),
             'starts_at'      => $campaign->starts_at?->toIso8601String(),
             'ends_at'        => $campaign->ends_at?->toIso8601String(),
             'leads_received' => $leadsByStage->sum(),
@@ -264,11 +264,16 @@ class CampaignService
 
         $ids = [];
         $skipped = [];
+        $waiting = [];
         foreach ($rows as $row) {
             $phone = preg_replace('/\D+/', '', (string) (($edits[$row->id]['phone'] ?? null) ?: $row->phone));
+            // Marketing-capped: same number fails again until the wait is over. A corrected number is a new attempt.
+            if ($row->retry_after && $row->retry_after->isFuture() && $phone === preg_replace('/\D+/', '', (string) $row->phone)) {
+                $waiting[] = $row->retry_after; continue;
+            }
             if (!preg_match('/^\d{8,15}$/', $phone)) { $skipped[] = (string) $row->phone; continue; }
             $row->update([
-                'phone' => $phone, 'status' => 'pending', 'attempts' => 0, 'resent_at' => now(),
+                'phone' => $phone, 'status' => 'pending', 'attempts' => 0, 'resent_at' => now(), 'retry_after' => null,
                 'failed_reason' => null, 'error_type' => null, 'wa_message_id' => null,
             ]);
             $ids[] = $row->id;
@@ -276,6 +281,9 @@ class CampaignService
         $count = count($ids);
 
         if (!$count) {
+            if ($waiting) {
+                throw new CampaignException('WhatsApp is limiting marketing messages to these numbers. Retry is available from ' . collect($waiting)->min()->format('d M, h:i A') . '.', 422, 'retry_not_yet');
+            }
             throw $skipped
                 ? new CampaignException('The failed numbers are not valid phone numbers: ' . implode(', ', array_slice($skipped, 0, 5)), 422, 'invalid_numbers')
                 : CampaignException::noFailedMessages();

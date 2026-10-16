@@ -333,10 +333,14 @@ class WebhookService
                     'read_at'      => $dto->status === 'read'      ? now() : $cc->read_at,
                 ] + ($dto->status === 'failed' ? [
                     // Meta accepted the send, then reported the real delivery failure here
-                    'failed_reason' => 'Not delivered by WhatsApp'
-                        . ($dto->errorCode ? " (code {$dto->errorCode})" : '')
-                        . ' — ' . mb_substr($dto->errorMessage ?: 'no reason given by Meta', 0, 400),
-                    'error_type'    => 'delivery',
+                    'failed_reason' => $dto->errorCode === 131049
+                        ? 'Not delivered (code 131049): WhatsApp limits how many marketing messages this person can get. Not charged — retry after the wait time.'
+                        : 'Not delivered by WhatsApp'
+                            . ($dto->errorCode ? " (code {$dto->errorCode})" : '')
+                            . ' — ' . mb_substr($dto->errorMessage ?: 'no reason given by Meta', 0, 400),
+                    'error_type'    => $dto->errorCode === 131049 ? 'frequency_capped' : 'delivery',
+                    // a capped user fails the same way if retried straight away — hold retries for 24h
+                    'retry_after'   => $dto->errorCode === 131049 ? now()->addHours(24) : null,
                 ] : []));
 
                 \App\Models\Campaign::where('id', $cc->campaign_id)

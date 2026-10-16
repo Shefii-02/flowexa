@@ -25,6 +25,7 @@ return Application::configure(basePath: dirname(__DIR__))
         \App\Console\Commands\SetupExistingCompanies::class,
         \App\Modules\WaCloud\Console\Commands\RunWaCloudAutomations::class,
         \App\Modules\Campaign\Console\Commands\DispatchScheduledCampaigns::class,
+        \App\Modules\Campaign\Console\Commands\AutoRetryCappedContacts::class,
         \App\Console\Commands\PruneLogs::class,
     ])
     ->withSchedule(function (\Illuminate\Console\Scheduling\Schedule $schedule): void {
@@ -32,6 +33,8 @@ return Application::configure(basePath: dirname(__DIR__))
         $schedule->command('wa-chat:dispatch-scheduled-messages')->everyMinute();
         // WA Cloud (Meta API) campaigns that are due -> launch -> ProcessCampaignBatch on the 'campaigns' queue
         $schedule->command('wa-cloud:dispatch-scheduled-campaigns')->everyMinute()->withoutOverlapping();
+        // Marketing-capped (131049) numbers whose wait time has passed -> retried once automatically
+        $schedule->command('wa-cloud:auto-retry-capped')->everyTenMinutes()->withoutOverlapping();
         // Ticks every 5 min; each sync only actually fires once its own cadence
         // (as fast as every 10 minutes) is due — see GoogleSheetSync::isDue().
         $schedule->command('google:sync-sheets')->everyFiveMinutes()->withoutOverlapping();
