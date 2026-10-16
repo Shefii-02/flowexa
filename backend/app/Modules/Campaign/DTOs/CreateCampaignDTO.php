@@ -36,7 +36,8 @@ readonly class CreateCampaignDTO
             targetLabels:       $data['target_labels']        ?? null,
             csvFilePath:        $csvPath,
             throttlePerMinute:  (int) ($data['throttle_per_minute'] ?? 60),
-            scheduledAt:        $data['scheduled_at']         ?? null,
+            scheduledAt:        !empty($data['scheduled_at'])
+                                    ? \Illuminate\Support\Carbon::parse($data['scheduled_at'])->setTimezone(config('app.timezone'))->format('Y-m-d H:i:s') : null,
             startsAt:           $data['starts_at']            ?? null,
             endsAt:             $data['ends_at']               ?? null,
         );

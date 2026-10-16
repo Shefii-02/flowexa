@@ -14,12 +14,14 @@ class WaCredentialsRequest extends FormRequest
             'wa_phone_id'     => ['required','string','regex:/^\d{5,20}$/'],
             'wa_access_token' => ['required','string'],
             'wa_business_id'  => ['nullable','string','regex:/^\d{5,20}$/'],
+            'meta_app_id'     => ['nullable','string','regex:/^\d{5,20}$/'],
         ];
     }
     public function messages(): array
     {
         return [
             'wa_phone_id.regex'    => 'Phone Number ID must be numeric (5–20 digits), not the display phone number.',
+            'meta_app_id.regex'    => 'Meta App ID must be numeric (5–20 digits) — find it in Meta Developer Console → App settings → Basic.',
             'wa_business_id.regex' => 'WABA ID must be numeric (5–20 digits).',
         ];
     }

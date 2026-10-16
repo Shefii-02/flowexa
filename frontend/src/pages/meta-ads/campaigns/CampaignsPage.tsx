@@ -406,11 +406,28 @@ export default function CampaignsPage() {
     // campaign (WaChatLeadAttributionService::matchWaCloudCampaign), shown in the Stats modal
     // below as "Leads received". Independent of when the campaign itself actually sent.
     starts_at: '', ends_at: '',
+    scheduled_at: '', // when to send (blank = launch manually)
   })
   const [selectedTemplate, setSelectedTemplate] = useState<any>(null)
   const [selectedPhoneNumber, setSelectedPhoneNumber] = useState<any>(null)
   const [selectedLabels, setSelectedLabels] = useState<number[]>([])
   const [csvFile, setCsvFile] = useState<File | null>(null)
+  // Pasted / typed numbers (space, comma, semicolon or new-line separated) become the campaign's CSV list
+  const [csvMode, setCsvMode] = useState<'file' | 'paste'>('file')
+  const [pasteText, setPasteText] = useState('')
+  const [pasted, setPasted] = useState<{ valid: string[]; invalid: string[]; dupes: number }>({ valid: [], invalid: [], dupes: 0 })
+  const onPaste = (text: string) => {
+    setPasteText(text)
+    const seen = new Set<string>(); const valid: string[] = []; const invalid: string[] = []; let dupes = 0
+    for (const tok of text.split(/[\s,;]+/).filter(Boolean)) {
+      const d = tok.replace(/\D/g, '')
+      if (!/^\d{8,15}$/.test(d)) { invalid.push(tok); continue }
+      if (seen.has(d)) { dupes++; continue }
+      seen.add(d); valid.push(d)
+    }
+    setPasted({ valid, invalid, dupes })
+    setCsvFile(valid.length ? new File(['phone\n' + valid.join('\n') + '\n'], 'pasted-numbers.csv', { type: 'text/csv' }) : null)
+  }
   const set = (k: string, v: any) => setForm(f => ({ ...f, [k]: v }))
 
   // ── Test send (page header): one real message — sender number, receiver number, template ──
@@ -459,9 +476,21 @@ export default function CampaignsPage() {
   useEffect(() => { load() }, [load])
   useEffect(() => { dispatch(fetchLabelsThunk()) }, [dispatch])
 
+  // <input type="datetime-local"> wants local "YYYY-MM-DDTHH:mm"
+  const toLocalInput = (iso: string) => {
+    const d = new Date(iso); const p = (n: number) => String(n).padStart(2, '0')
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`
+  }
+  const downloadSampleCsv = () => {
+    const csv = 'phone,name\n919846366783,Asha\n919745012345,Rahul\n'
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
+    a.download = 'campaign-sample.csv'; a.click(); URL.revokeObjectURL(a.href)
+  }
+
   const resetForm = () => {
-    setForm({ name: '', target_type: 'all', throttle_per_minute: '60', description: '', starts_at: '', ends_at: '' })
-    setSelectedTemplate(null); setSelectedPhoneNumber(null); setSelectedLabels([]); setCsvFile(null); setEditCampaign(null)
+    setForm({ name: '', target_type: 'all', throttle_per_minute: '60', description: '', starts_at: '', ends_at: '', scheduled_at: '' })
+    setSelectedTemplate(null); setSelectedPhoneNumber(null); setSelectedLabels([]); setCsvFile(null); setCsvMode('file'); setPasteText(''); setPasted({ valid: [], invalid: [], dupes: 0 }); setEditCampaign(null)
   }
 
   const openEdit = (c: Campaign) => {
@@ -471,6 +500,7 @@ export default function CampaignsPage() {
       throttle_per_minute: String(c.throttle_per_minute || 60), description: (c as any).description || '',
       starts_at: (c as any).starts_at ? (c as any).starts_at.slice(0, 10) : '',
       ends_at:   (c as any).ends_at   ? (c as any).ends_at.slice(0, 10)   : '',
+      scheduled_at: (c as any).scheduled_at ? toLocalInput((c as any).scheduled_at) : '',
     })
     setSelectedTemplate(c.template ? { id: c.template.id, name: c.template.name, body: c.template.body, components: (c.template as any).components, buttons: (c.template as any).buttons, body_examples: (c.template as any).body_examples } : null)
     // Backend should include the related phone number on the campaign resource
@@ -486,7 +516,7 @@ export default function CampaignsPage() {
     if (!selectedPhoneNumber) { toast.error('Select a sending number'); return }
     if (selectedPhoneNumber.status === 'DISCONNECTED') { toast.error('That number is disconnected — choose a connected one'); return }
     if (form.target_type === 'labels' && selectedLabels.length === 0) { toast.error('Select at least one label'); return }
-    if (form.target_type === 'csv' && !csvFile && !editCampaign) { toast.error('Upload a CSV file'); return }
+    if (form.target_type === 'csv' && !csvFile && !editCampaign) { toast.error(csvMode === 'paste' ? 'Paste at least one valid number' : 'Upload a CSV file'); return }
     setSaving(true)
     try {
       const fd = new FormData()
@@ -498,6 +528,10 @@ export default function CampaignsPage() {
       if (form.description) fd.append('description', form.description)
       if (form.starts_at) fd.append('starts_at', form.starts_at)
       if (form.ends_at) fd.append('ends_at', form.ends_at)
+      if (form.scheduled_at) {
+        if (new Date(form.scheduled_at).getTime() <= Date.now()) { toast.error('Send time must be in the future'); setSaving(false); return }
+        fd.append('scheduled_at', new Date(form.scheduled_at).toISOString())
+      }
       if (form.target_type === 'labels') selectedLabels.forEach(id => fd.append('target_labels[]', String(id)))
       if (form.target_type === 'csv' && csvFile) fd.append('file', csvFile)
       if (editCampaign) { await campaignApi.update(editCampaign.id, fd); toast.success('Campaign updated.') }
@@ -637,7 +671,7 @@ export default function CampaignsPage() {
         footer={
           <>
             <Button variant="secondary" onClick={() => { setShowCreate(false); resetForm() }}>Cancel</Button>
-            <Button onClick={handleSave} loading={saving}>{editCampaign ? 'Save changes' : 'Create draft'}</Button>
+            <Button onClick={handleSave} loading={saving}>{editCampaign ? 'Save changes' : form.scheduled_at ? 'Create & schedule' : 'Create draft'}</Button>
           </>
         }
       >
@@ -677,15 +711,56 @@ export default function CampaignsPage() {
 
           {form.target_type === 'csv' && (
             <div>
-              <label className="label">{editCampaign ? 'Replace CSV (optional)' : 'Upload CSV *'}</label>
+              <div className="flex items-center justify-between">
+                <label className="label">{editCampaign ? 'Replace list (optional)' : 'Number list *'}</label>
+                <div className="flex gap-1 text-xs mb-1">
+                  {([['file', '📂 Upload CSV'], ['paste', '📋 Paste numbers']] as const).map(([m, l]) => (
+                    <button key={m} type="button"
+                      onClick={() => { setCsvMode(m); setCsvFile(null); setPasteText(''); setPasted({ valid: [], invalid: [], dupes: 0 }) }}
+                      className={`px-2 py-1 rounded-lg border ${csvMode === m ? 'border-brand-500 bg-brand-50 text-brand-700' : 'border-gray-200 text-gray-500'}`}>{l}</button>
+                  ))}
+                </div>
+              </div>
+              {csvMode === 'paste' ? (
+                <div className="space-y-2">
+                  <textarea rows={5} className="form-control border w-full p-2 rounded font-mono text-xs"
+                    placeholder={'919846366783 919745012345, 918891234567\n+91 98765 43210'}
+                    value={pasteText} onChange={e => onPaste(e.target.value)} />
+                  <p className="text-xs text-gray-400">Separate numbers with a space, comma or new line. Include the country code.</p>
+                  {pasteText.trim() && (
+                    <div className="rounded-xl border border-gray-200 p-3 text-xs space-y-2">
+                      <p className="font-semibold text-gray-700">
+                        <span className="text-green-600">✅ {pasted.valid.length} valid number{pasted.valid.length !== 1 ? 's' : ''}</span>
+                        {pasted.dupes > 0 && <span className="text-gray-500"> · {pasted.dupes} duplicate{pasted.dupes !== 1 ? 's' : ''} removed</span>}
+                        {pasted.invalid.length > 0 && <span className="text-red-500"> · {pasted.invalid.length} invalid (skipped)</span>}
+                      </p>
+                      {pasted.valid.length > 0 && (
+                        <div className="max-h-28 overflow-auto flex flex-wrap gap-1">
+                          {pasted.valid.map(n => <span key={n} className="px-1.5 py-0.5 bg-green-50 text-green-700 rounded font-mono">{n}</span>)}
+                        </div>
+                      )}
+                      {pasted.invalid.length > 0 && (
+                        <div className="max-h-16 overflow-auto flex flex-wrap gap-1">
+                          {pasted.invalid.map((n, i) => <span key={i} className="px-1.5 py-0.5 bg-red-50 text-red-600 rounded font-mono">{n}</span>)}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ) : (<>
               <div className="border-2 border-dashed border-gray-200 rounded-xl p-5 text-center hover:border-brand-300 cursor-pointer"
                 onClick={() => document.getElementById('camp-csv')?.click()}>
                 <input id="camp-csv" type="file" accept=".csv,.txt"
                   onChange={e => setCsvFile(e.target.files?.[0] || null)} className="hidden" />
                 <p className="text-2xl mb-1">📂</p>
                 <p className="text-sm font-medium text-gray-600">{csvFile ? csvFile.name : 'Click to upload CSV'}</p>
-                <p className="text-xs text-gray-400 mt-1">Required column: phone</p>
+                <p className="text-xs text-gray-400 mt-1">Column: phone (with country code) · optional: name</p>
               </div>
+              <div className="flex items-center justify-between mt-1.5">
+                <p className="text-xs text-gray-400">Numbers not in your contacts are added automatically. Opted-out contacts are skipped. A failed-numbers export can be re-uploaded here.</p>
+                <button type="button" onClick={downloadSampleCsv} className="text-xs text-blue-600 hover:underline whitespace-nowrap ml-3">⬇ Sample CSV</button>
+              </div>
+              </>)}
             </div>
           )}
 
@@ -697,6 +772,17 @@ export default function CampaignsPage() {
             </div>
             <Textarea rows={4} label="Description (optional)" placeholder="Internal note"
               value={form.description} onChange={e => set('description', e.target.value)} />
+          </div>
+
+          <div>
+            <label className="label">Send at (optional)</label>
+            <input type="datetime-local" className="form-control border w-full p-2 rounded"
+              value={form.scheduled_at} min={toLocalInput(new Date().toISOString())}
+              onChange={e => set('scheduled_at', e.target.value)} />
+            <p className="text-xs text-gray-400 mt-1">
+              {form.scheduled_at ? 'The campaign launches automatically at this time.' : 'Leave blank to launch it yourself from the campaign list.'}
+              {form.scheduled_at && <button type="button" className="ml-2 text-blue-600 hover:underline" onClick={() => set('scheduled_at', '')}>Clear</button>}
+            </p>
           </div>
 
           <div>
@@ -724,8 +810,9 @@ export default function CampaignsPage() {
                 <span className="text-brand-500">Target</span><span className="font-medium">
                   {form.target_type === 'all' ? 'All opted-in contacts'
                     : form.target_type === 'labels' ? `${selectedLabels.length} label(s) selected`
-                      : csvFile ? csvFile.name : 'CSV file'}
+                      : csvMode === 'paste' ? `${pasted.valid.length} pasted number(s)` : csvFile ? csvFile.name : 'CSV file'}
                 </span>
+                <span className="text-brand-500">Send</span><span className="font-medium">{form.scheduled_at ? new Date(form.scheduled_at).toLocaleString('en-IN') : 'Manual launch'}</span>
                 <span className="text-brand-500">Throttle</span><span className="font-medium">{form.throttle_per_minute} msgs/min</span>
               </div>
               {selectedPhoneNumber?.billing_mode === 'own_account' ? (

@@ -665,6 +665,7 @@ Route::prefix('v1')->group(function () {
 
         Route::prefix('short-links')->name('short-links.')->group(function () {
             Route::get('/',        [ShortLinkController::class, 'index'])->name('index');
+            Route::get('/check-code', [ShortLinkController::class, 'checkCode'])->name('check-code');
             Route::post('/',       [ShortLinkController::class, 'store'])->name('store');
             Route::put('/{id}',    [ShortLinkController::class, 'update'])->name('update');
             Route::delete('/{id}', [ShortLinkController::class, 'destroy'])->name('destroy');

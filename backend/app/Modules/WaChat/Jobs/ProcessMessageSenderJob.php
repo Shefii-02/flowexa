@@ -75,7 +75,10 @@ class ProcessMessageSenderJob implements ShouldQueue
         $recipients = $this->dedupeRecipients($payload['recipients'] ?? []);
         // A resumed job, or one re-run after a worker crash, starts from the top of the list —
         // skip anyone this job already delivered to so they never get the message twice.
-        $alreadySent = WahaMessageLog::where('job_id', $job->id)->where('status', 'sent')
+        // A send that TIMED OUT is ambiguous (the gateway may have delivered it), so it counts as handled too:
+        // resuming must never message it a second time — the user checks the chat / retries it by hand.
+        $alreadySent = WahaMessageLog::where('job_id', $job->id)
+            ->where(fn ($q) => $q->where('status', 'sent')->orWhere(fn ($t) => $t->where('status', 'failed')->where('error_type', 'timeout')))
             ->pluck('recipient_phone')
             ->map(fn ($p) => str_contains((string) $p, '@') ? strtolower($p) : preg_replace('/\D/', '', (string) $p))
             ->flip();
@@ -125,6 +128,7 @@ class ProcessMessageSenderJob implements ShouldQueue
             app(WaChatTokenService::class)->syncSessions($company);
         }
         $resyncedForAuth = false;
+        $consecutiveTimeouts = 0; // gateway-hung circuit breaker (see below)
         $delayMs    = max((int)($job->delay_ms ?? 1000), 500);
         $msgType    = $payload['type'] ?? 'text';
 
@@ -270,6 +274,17 @@ class ProcessMessageSenderJob implements ShouldQueue
                     'error_message' => $reason . ($rawError ? ' — ' . mb_substr($rawError, 0, 300) : ''),
                 ]));
                 $job->increment('failed');
+            }
+
+            // Gateway-hung circuit breaker: each timed-out send blocks this worker for the full HTTP timeout
+            // (30s). Several in a row means the gateway/session is stuck, not that those numbers are bad —
+            // pause instead of grinding through the whole list (hours) and failing everyone. Resume continues
+            // with the remaining recipients once the gateway is healthy.
+            $consecutiveTimeouts = ($errType === 'timeout' && !($res && $res->successful())) ? $consecutiveTimeouts + 1 : 0;
+            if ($consecutiveTimeouts >= 3) {
+                Log::warning("ProcessMessageSenderJob #{$job->id}: {$consecutiveTimeouts} gateway timeouts in a row — pausing the campaign");
+                $job->update(['status' => 'paused']);
+                break;
             }
 
             if ($index < count($recipients) - 1) {

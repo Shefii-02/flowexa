@@ -52,7 +52,7 @@ class SettingsService
             encrypt($dto->waAccessToken),
             'wa_business_id'  => $dto->waBusinessId,
             'wa_credentials_saved_at' => now(),
-        ]);
+        ] + ($dto->metaAppId !== null ? ['meta_app_id' => $dto->metaAppId ?: null] : [])); // only when the form sent it
         return $company->fresh();
     }
 

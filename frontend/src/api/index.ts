@@ -622,6 +622,7 @@ export const waChatAnalyticsApi = {
 // ── Short links (custom /s/{code} redirects) ──────────────────────────────
 export const shortLinkApi = {
   list: (p?: Record<string, unknown>) => api.get('/short-links', { params: p }),
+  checkCode: (code: string, ignoreId?: number) => api.get('/short-links/check-code', { params: { code, ignore_id: ignoreId } }),
   create: (d: Record<string, unknown>) => api.post('/short-links', d),
   update: (id: number, d: Record<string, unknown>) => api.put(`/short-links/${id}`, d),
   remove: (id: number) => api.delete(`/short-links/${id}`),

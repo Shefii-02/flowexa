@@ -30,6 +30,22 @@ export default function ShortLinksPage() {
 
   useEffect(() => { load() }, [load])
 
+  // Live check of the custom code while typing (debounced). null = nothing to show.
+  const [codeState, setCodeState] = useState<{ ok: boolean; msg: string } | null>(null)
+  useEffect(() => {
+    const code = form.code.trim()
+    if (!showForm || !code) { setCodeState(null); return }
+    if (code.length < 3) { setCodeState({ ok: false, msg: 'At least 3 characters.' }); return }
+    if (editing && code === editing.code) { setCodeState(null); return }
+    let stale = false
+    const t = setTimeout(() => {
+      shortLinkApi.checkCode(code, editing?.id)
+        .then(r => { if (!stale) setCodeState({ ok: !!r.data.available, msg: r.data.available ? '✅ Available' : r.data.message }) })
+        .catch(() => { if (!stale) setCodeState(null) })
+    }, 400)
+    return () => { stale = true; clearTimeout(t) }
+  }, [form.code, showForm, editing])
+
   const openCreate = () => { setEditing(null); setForm(EMPTY); setShowForm(true) }
   const openEdit = (l: any) => {
     setEditing(l)
@@ -41,6 +57,7 @@ export default function ShortLinksPage() {
   }
 
   const handleSave = async () => {
+    if (codeState && !codeState.ok) { toast.error(codeState.msg); return }
     if (!/^https?:\/\//i.test(form.target_url.trim())) { toast.error('Enter the full destination URL, starting with https://'); return }
     setSaving(true)
     try {
@@ -131,6 +148,7 @@ export default function ShortLinksPage() {
           <div>
             <Input label="Custom short code (optional — leave blank to auto-generate)" placeholder="july-sale"
               value={form.code} onChange={e => set('code', e.target.value.replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40))} />
+            {codeState && <p className={`text-xs mt-1 font-medium ${codeState.ok ? 'text-green-600' : 'text-red-500'}`}>{codeState.msg}</p>}
             <p className="text-xs text-gray-400 mt-1">
               Your link: <span className="font-mono">{(editing?.short_url || `${window.location.origin}/s/`).replace(/\/s\/.*$/, '')}/s/{form.code || '…'}</span> · letters, numbers, - and _ (min 3)
             </p>

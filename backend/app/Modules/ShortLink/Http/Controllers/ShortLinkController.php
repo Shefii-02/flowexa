@@ -25,6 +25,23 @@ class ShortLinkController extends Controller
         return response()->json($links);
     }
 
+    /** Live availability check for the "custom short code" box (codes are unique across all companies). */
+    public function checkCode(Request $request): JsonResponse
+    {
+        $code = trim((string) $request->query('code', ''));
+        if (!preg_match('/^[A-Za-z0-9_-]{3,40}$/', $code)) {
+            return response()->json(['available' => false, 'message' => 'Use 3–40 letters, numbers, - or _.']);
+        }
+        $taken = ShortLink::where('code', $code)
+            ->when($request->query('ignore_id'), fn ($q, $id) => $q->where('id', '!=', (int) $id))
+            ->exists();
+
+        return response()->json([
+            'available' => !$taken,
+            'message'   => $taken ? 'That short code is already taken — choose another.' : 'Available',
+        ]);
+    }
+
     public function store(Request $request): JsonResponse
     {
         $d = $this->validated($request);

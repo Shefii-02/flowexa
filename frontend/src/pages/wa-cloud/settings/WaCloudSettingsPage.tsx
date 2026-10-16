@@ -41,7 +41,7 @@ function TabBar({ active, onChange }: { active: TabId; onChange: (t: TabId) => v
 
 function CredentialsTab() {
   const [company, setCompany] = useState<any>(null)
-  const [waForm, setWaForm] = useState({ wa_phone_id: '', wa_access_token: '', wa_business_id: '' })
+  const [waForm, setWaForm] = useState({ wa_phone_id: '', wa_access_token: '', wa_business_id: '', meta_app_id: '' })
   const [savingWa, setSavingWa] = useState(false)
   const [verifying, setVerifying] = useState(false)
   const [verifyResult, setVerifyResult] = useState<any>(null)
@@ -55,7 +55,7 @@ function CredentialsTab() {
     settingsApi.index().then(r => {
       const c = r.data.company
       setCompany(c)
-      setWaForm({ wa_phone_id: c.wa_phone_id || '', wa_access_token: c.wa_access_token || '', wa_business_id: c.wa_business_id || '' })
+      setWaForm({ wa_phone_id: c.wa_phone_id || '', wa_access_token: c.wa_access_token || '', wa_business_id: c.wa_business_id || '', meta_app_id: c.meta_app_id || '' })
     })
   }, [])
 
@@ -63,7 +63,7 @@ function CredentialsTab() {
     setSavingWa(true)
     setVerifyResult(null)
     try {
-      await settingsApi.updateWa({ wa_phone_id: waForm.wa_phone_id, wa_access_token: waForm.wa_access_token, wa_business_id: waForm.wa_business_id })
+      await settingsApi.updateWa({ wa_phone_id: waForm.wa_phone_id, wa_access_token: waForm.wa_access_token, wa_business_id: waForm.wa_business_id, meta_app_id: waForm.meta_app_id })
       setCompany((c: any) => ({ ...c, wa_credentials_saved_at: new Date().toISOString() }))
       toast.success('WhatsApp credentials saved.')
     }
@@ -123,6 +123,9 @@ function CredentialsTab() {
             placeholder="EAAO..." value={waForm.wa_access_token} onChange={e => setWa('wa_access_token', e.target.value)} />
           <Input label="Business Account ID (WABA ID)" autoComplete="off" placeholder="102290129182734"
             value={waForm.wa_business_id} onChange={e => setWa('wa_business_id', e.target.value)} />
+          <Input label="Meta App ID" autoComplete="off" placeholder="1234567890123456"
+            value={waForm.meta_app_id} onChange={e => setWa('meta_app_id', e.target.value)} />
+          <p className="text-xs text-gray-400 -mt-2">Meta Developer Console → App settings → Basic. Needed to upload template header images/videos/documents.</p>
           <div className="text-xs text-gray-500 flex flex-wrap gap-x-6 gap-y-1">
             <span>Credentials saved: <strong>{fmtTime(company?.wa_credentials_saved_at)}</strong></span>
             <span>Last verified: <strong>{fmtTime(company?.wa_last_verified_at)}</strong></span>

@@ -243,23 +243,52 @@ class CampaignRepository implements CampaignRepositoryInterface
         };
     }
 
+    /**
+     * Custom list: every valid number in the CSV is messaged, whether or not it is already a contact.
+     * Unknown numbers are added as contacts (name taken from the CSV); numbers that opted out are skipped.
+     * Header names are flexible (phone / number / mobile / whatsapp ...; name), or a header-less one-column list.
+     */
     private function resolveCsvPhones(Campaign $campaign, int $companyId, $base): Collection
     {
         if (!$campaign->csv_file || !Storage::exists($campaign->csv_file)) {
             return collect();
         }
 
-        $handle  = fopen(Storage::path($campaign->csv_file), 'r');
-        $headers = array_map('trim', fgetcsv($handle));
-        $phones  = [];
+        $handle = fopen(Storage::path($campaign->csv_file), 'r');
+        $first  = fgetcsv($handle);
+        if (!$first) { fclose($handle); return collect(); }
+        $first[0] = ltrim((string) $first[0], "\xEF\xBB\xBF"); // UTF-8 BOM
 
-        while (($line = fgetcsv($handle)) !== false) {
-            $data  = array_combine($headers, array_pad($line, count($headers), null));
-            $phone = preg_replace('/\D/', '', trim($data['phone'] ?? ''));
-            if ($phone) $phones[] = $phone;
+        $norm    = fn ($h) => strtolower(preg_replace('/[^a-z0-9]/i', '', (string) $h));
+        $headers = array_map($norm, $first);
+        $phoneCol = null; $nameCol = null;
+        foreach ($headers as $i => $h) {
+            if ($phoneCol === null && in_array($h, ['phone', 'number', 'mobile', 'mobilenumber', 'phonenumber', 'whatsapp', 'whatsappnumber', 'contact'], true)) $phoneCol = $i;
+            if ($nameCol === null && in_array($h, ['name', 'fullname', 'customername'], true)) $nameCol = $i;
+        }
+        $rows = [];
+        if ($phoneCol === null) {           // no recognisable header -> first column is the number, first row is data
+            $phoneCol = 0;
+            $rows[] = $first;
+        }
+        while (($line = fgetcsv($handle)) !== false) { $rows[] = $line; }
+        fclose($handle);
+
+        $list = []; // phone => name
+        foreach ($rows as $line) {
+            $phone = preg_replace('/\D+/', '', (string) ($line[$phoneCol] ?? ''));
+            if (!preg_match('/^\d{8,15}$/', $phone) || isset($list[$phone])) continue;
+            $list[$phone] = $nameCol !== null ? trim((string) ($line[$nameCol] ?? '')) : '';
+        }
+        if (!$list) return collect();
+
+        $existing = Contact::where('company_id', $companyId)->whereIn('phone', array_keys($list))->get(['id', 'phone', 'opted_in'])->keyBy('phone');
+        foreach ($list as $phone => $name) {
+            if ($existing->has($phone)) continue;
+            $c = Contact::create(['company_id' => $companyId, 'phone' => $phone, 'name' => $name ?: null, 'opted_in' => true]);
+            $existing[$phone] = $c;
         }
 
-        fclose($handle);
-        return $base->whereIn('phone', array_unique($phones))->get(['id', 'phone']);
+        return $existing->filter(fn ($c) => $c->opted_in)->values();
     }
 }

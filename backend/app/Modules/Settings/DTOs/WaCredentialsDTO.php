@@ -8,6 +8,7 @@ readonly class WaCredentialsDTO
         public string  $waPhoneId,
         public string  $waAccessToken,
         public ?string $waBusinessId = null,
+        public ?string $metaAppId = null,
     ) {}
 
     public static function fromRequest(array $data): self
@@ -16,6 +17,7 @@ readonly class WaCredentialsDTO
             waPhoneId:     $data['wa_phone_id'],
             waAccessToken: $data['wa_access_token'],
             waBusinessId:  $data['wa_business_id'] ?? null,
+            metaAppId:     isset($data['meta_app_id']) ? trim((string) $data['meta_app_id']) : null,
         );
     }
 }
