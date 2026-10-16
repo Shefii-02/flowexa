@@ -73,8 +73,8 @@ class CampaignService
                 ? ['id' => $campaign->waPhoneNumber->id, 'label' => $campaign->waPhoneNumber->label, 'display_number' => $campaign->waPhoneNumber->display_number]
                 : null,
             'template_name'  => $campaign->template?->name,
-            // failed contacts that can still be retried (a retry is one-time per contact, unless the number is corrected)
-            'resendable_failed' => \App\Models\CampaignContact::where('campaign_id', $campaign->id)->where('status', 'failed')->whereNull('resent_at')->count(),
+            // failed contacts that can still be retried (any failed contact can be retried again)
+            'resendable_failed' => \App\Models\CampaignContact::where('campaign_id', $campaign->id)->where('status', 'failed')->count(),
             'starts_at'      => $campaign->starts_at?->toIso8601String(),
             'ends_at'        => $campaign->ends_at?->toIso8601String(),
             'leads_received' => $leadsByStage->sum(),
@@ -266,9 +266,6 @@ class CampaignService
         $skipped = [];
         foreach ($rows as $row) {
             $phone = preg_replace('/\D+/', '', (string) (($edits[$row->id]['phone'] ?? null) ?: $row->phone));
-            // One-time rule: a contact already retried once is not retried again — unless the number was
-            // CORRECTED, which is a genuinely new attempt.
-            if ($row->resent_at && $phone === preg_replace('/\D+/', '', (string) $row->phone)) { continue; }
             if (!preg_match('/^\d{8,15}$/', $phone)) { $skipped[] = (string) $row->phone; continue; }
             $row->update([
                 'phone' => $phone, 'status' => 'pending', 'attempts' => 0, 'resent_at' => now(),
@@ -281,9 +278,7 @@ class CampaignService
         if (!$count) {
             throw $skipped
                 ? new CampaignException('The failed numbers are not valid phone numbers: ' . implode(', ', array_slice($skipped, 0, 5)), 422, 'invalid_numbers')
-                : (\App\Models\CampaignContact::where('campaign_id', $campaign->id)->where('status', 'failed')->exists()
-                    ? new CampaignException('These failed numbers were already resent once.', 422, 'already_resent')
-                    : CampaignException::noFailedMessages());
+                : CampaignException::noFailedMessages();
         }
 
         // Only wallet-mode companies pay per message from the wallet; own-account ones are billed by Meta.

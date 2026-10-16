@@ -6,7 +6,6 @@ import toast from 'react-hot-toast'
 
 // Per-number delivery detail for one WA Cloud campaign: who it went to, status, how many tries, when it
 // was sent / delivered / read, why it failed — with filters and retry (one, selected, or all failed).
-// A retry is one-time per number unless the number is corrected first.
 const PER_PAGE = 50
 
 const FILTERS = [
@@ -59,7 +58,7 @@ export default function CampaignContactsPanel({
   useEffect(() => { setSelected(new Set()); setEditId(null) }, [status, query, page, campaignId])
 
   const running = campaignStatus === 'running'
-  const retryable = (r: any) => r.status === 'failed' && !r.resent && !running
+  const retryable = (r: any) => r.status === 'failed' && !running
   const retryableRows = useMemo(() => rows.filter(retryable), [rows, running]) // eslint-disable-line react-hooks/exhaustive-deps
   const allSelected = retryableRows.length > 0 && retryableRows.every(r => selected.has(r.id))
 
@@ -134,7 +133,6 @@ export default function CampaignContactsPanel({
                           onClick={() => {
                             const cleaned = editPhone.replace(/\D/g, '')
                             if (!/^\d{8,15}$/.test(cleaned)) { toast.error('Enter the full number with country code (8–15 digits).'); return }
-                            if (r.resent && cleaned === String(r.phone).replace(/\D/g, '')) { toast.error('This number was already retried — change it to retry again.'); return }
                             retry([{ id: r.id, phone: cleaned }])
                           }}
                           className="px-1.5 py-1 bg-green-500 text-white rounded hover:bg-green-600 disabled:opacity-50">Retry</button>
@@ -154,11 +152,7 @@ export default function CampaignContactsPanel({
                     )}
                     {r.status === 'failed' && editId !== r.id && !running && (
                       <div className="flex gap-3 mt-0.5">
-                        {retryable(r) ? (
-                          <button disabled={busy} onClick={() => retry([{ id: r.id }])} className="text-blue-600 hover:underline">🔁 Retry</button>
-                        ) : (
-                          <span className="text-gray-400">Already retried once</span>
-                        )}
+                        <button disabled={busy} onClick={() => retry([{ id: r.id }])} className="text-blue-600 hover:underline">🔁 Retry{r.resent ? ' again' : ''}</button>
                         <button onClick={() => { setEditId(r.id); setEditPhone(String(r.phone).replace(/\D/g, '')) }} className="text-blue-600 hover:underline">
                           ✎ Edit number &amp; retry
                         </button>

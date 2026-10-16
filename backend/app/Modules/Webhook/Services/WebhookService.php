@@ -331,7 +331,13 @@ class WebhookService
                     'status'       => $dto->status,
                     'delivered_at' => $dto->status === 'delivered' ? now() : $cc->delivered_at,
                     'read_at'      => $dto->status === 'read'      ? now() : $cc->read_at,
-                ]);
+                ] + ($dto->status === 'failed' ? [
+                    // Meta accepted the send, then reported the real delivery failure here
+                    'failed_reason' => 'Not delivered by WhatsApp'
+                        . ($dto->errorCode ? " (code {$dto->errorCode})" : '')
+                        . ' — ' . mb_substr($dto->errorMessage ?: 'no reason given by Meta', 0, 400),
+                    'error_type'    => 'delivery',
+                ] : []));
 
                 \App\Models\Campaign::where('id', $cc->campaign_id)
                     ->increment($dto->status === 'failed' ? 'failed' : $dto->status);

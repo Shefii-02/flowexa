@@ -97,6 +97,7 @@ class ProcessCampaignBatch implements ShouldQueue
                 }
 
                 $rawError = $response->json('error.message') ?? 'Unknown error';
+                if ($metaCode = $response->json('error.code')) { $rawError = "(code {$metaCode}) {$rawError}"; }
                 // Meta's `error_data.details` names the exact parameter/component that was wrong
                 // (e.g. "header: Format mismatch, expected IMAGE, received UNKNOWN").
                 if ($details = $response->json('error.error_data.details')) {
