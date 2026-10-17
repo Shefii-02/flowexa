@@ -46,8 +46,8 @@ export default function CampaignContactsPanel({
   // debounce the search box
   useEffect(() => { const t = setTimeout(() => { setQuery(search.trim()); setPage(1) }, 350); return () => clearTimeout(t) }, [search])
 
-  const load = useCallback(() => {
-    setLoading(true)
+  const load = useCallback((silent = false) => {
+    if (!silent) setLoading(true)
     campaignApi.contacts(campaignId, { status: status || undefined, search: query || undefined, page, per_page: PER_PAGE })
       .then(r => { setRows(r.data.data ?? []); setTotal(r.data.total ?? 0) })
       .catch(e => toast.error(getError(e)))
@@ -55,6 +55,16 @@ export default function CampaignContactsPanel({
   }, [campaignId, status, query, page])
 
   useEffect(() => { load() }, [load])
+
+  // A resend Meta just accepted (or queued) is "sending" until the delivery result lands — no retry then.
+  const inFlight = (r: any) => r.status === 'sent' && !!r.resent_at && Date.now() - new Date(r.resent_at).getTime() < 90_000
+  const [pollUntil, setPollUntil] = useState(0)
+  const hasInFlight = rows.some(inFlight)
+  useEffect(() => {
+    if (!hasInFlight && Date.now() > pollUntil) return
+    const t = setInterval(() => { load(true); onChanged(); if (Date.now() > pollUntil && !rows.some(inFlight)) clearInterval(t) }, 4000)
+    return () => clearInterval(t)
+  }, [hasInFlight, pollUntil, load])
   useEffect(() => { setSelected(new Set()); setEditId(null) }, [status, query, page, campaignId])
 
   const running = campaignStatus === 'running'
@@ -103,6 +113,7 @@ export default function CampaignContactsPanel({
       const { data } = await campaignApi.resendFailed(campaignId, items)
       data.sent > 0 || data.queued > 0 ? toast.success(data.message) : toast.error(data.message)
       setSelected(new Set()); setEditId(null)
+      if (data.queued > 0) setPollUntil(Date.now() + 120_000)
       onChanged(); load()
     } catch (e) { toast.error(getError(e)) }
     finally { setBusy(false) }
@@ -177,7 +188,7 @@ export default function CampaignContactsPanel({
                     ) : r.phone}
                   </td>
                   <td className="py-2 pr-2 text-gray-700">{r.contact?.name || '—'}</td>
-                  <td className="py-2 pr-2"><Badge variant={STATUS_VARIANT[r.status] ?? 'gray'}>{r.status}</Badge></td>
+                  <td className="py-2 pr-2"><Badge variant={inFlight(r) ? 'yellow' : (STATUS_VARIANT[r.status] ?? 'gray')}>{inFlight(r) ? 'sending…' : r.status}</Badge></td>
                   <td className="py-2 pr-2 text-gray-500">{r.attempts || '—'}</td>
                   <td className="py-2 pr-2 text-gray-500 whitespace-nowrap">{when(r.sent_at)}</td>
                   <td className="py-2 pr-2 text-gray-500 whitespace-nowrap">{when(r.delivered_at)}</td>
