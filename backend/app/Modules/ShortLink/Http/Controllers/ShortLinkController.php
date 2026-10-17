@@ -75,6 +75,32 @@ class ShortLinkController extends Controller
         return response()->json(['message' => 'Short link updated.', 'link' => $link->fresh()]);
     }
 
+    /** Day-based click analytics for one link: counted clicks per day (one per IP per day), device and referrer split. */
+    public function analytics(int $id, Request $request): JsonResponse
+    {
+        $link = $this->findOwned($id);
+        $days = max(1, min(365, (int) $request->query('days', 30)));
+        $from = now()->subDays($days - 1)->toDateString();
+
+        $base = \DB::table('short_link_clicks')->where('short_link_id', $link->id)->where('click_date', '>=', $from);
+
+        $byDay = (clone $base)->selectRaw('click_date, count(*) as clicks')->groupBy('click_date')->pluck('clicks', 'click_date');
+        $series = [];
+        for ($i = $days - 1; $i >= 0; $i--) {
+            $d = now()->subDays($i)->toDateString();
+            $series[] = ['date' => $d, 'clicks' => (int) ($byDay[$d] ?? 0)];
+        }
+
+        return response()->json([
+            'link'      => ['id' => $link->id, 'code' => $link->code, 'short_url' => $link->short_url, 'total_clicks' => $link->clicks],
+            'days'      => $days,
+            'period_clicks' => array_sum(array_column($series, 'clicks')),
+            'series'    => $series,
+            'devices'   => (clone $base)->selectRaw('device, count(*) as clicks')->groupBy('device')->orderByDesc('clicks')->get(),
+            'referrers' => (clone $base)->selectRaw("coalesce(referrer, 'Direct') as referrer, count(*) as clicks")->groupBy('referrer')->orderByDesc('clicks')->limit(10)->get(),
+        ]);
+    }
+
     public function destroy(int $id): JsonResponse
     {
         $this->findOwned($id)->delete();

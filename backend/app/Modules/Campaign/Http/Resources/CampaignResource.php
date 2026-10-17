@@ -36,7 +36,7 @@ class CampaignResource extends JsonResource
                 'failed'         => $this->failed,
                 // failed contacts not yet resent — "Resend failed" is one-time, so this hits 0 afterwards
                 'resendable_failed' => $this->failed > 0
-                    ? \App\Models\CampaignContact::where('campaign_id', $this->id)->where('status', 'failed')->where(fn ($q) => $q->whereNull('retry_after')->orWhere('retry_after', '<=', now()))->count()
+                    ? \App\Models\CampaignContact::where('campaign_id', $this->id)->where('status', 'failed')->count()
                     : 0,
                 'pending'        => $this->pending,
                 'wallet_debited' => $this->wallet_debited,

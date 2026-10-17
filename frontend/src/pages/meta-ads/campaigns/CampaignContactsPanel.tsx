@@ -59,7 +59,7 @@ export default function CampaignContactsPanel({
 
   const running = campaignStatus === 'running'
   const waiting = (r: any) => !!r.retry_after && new Date(r.retry_after).getTime() > Date.now()
-  const retryable = (r: any) => r.status === 'failed' && !running && !waiting(r)
+  const retryable = (r: any) => r.status === 'failed' && !running
   const failedRows = useMemo(() => rows.filter(r => r.status === 'failed'), [rows])
   const allSelected = failedRows.length > 0 && failedRows.every(r => selected.has(r.id))
   const selectedRetryable = rows.filter(r => selected.has(r.id) && retryable(r))
@@ -101,7 +101,7 @@ export default function CampaignContactsPanel({
     setBusy(true)
     try {
       const { data } = await campaignApi.resendFailed(campaignId, items)
-      toast.success(data.message)
+      data.sent > 0 ? toast.success(data.message) : toast.error(data.message)
       setSelected(new Set()); setEditId(null)
       onChanged(); load()
     } catch (e) { toast.error(getError(e)) }
@@ -189,12 +189,11 @@ export default function CampaignContactsPanel({
                     {r.status === 'failed' && waiting(r) && (
                       <div className="text-amber-600 mt-0.5">
                         ⏳ Retry available {when(r.retry_after)}
-                        {!r.resent && <span className="text-gray-400"> · will auto-retry once</span>}
                       </div>
                     )}
                     {r.status === 'failed' && editId !== r.id && !running && (
                       <div className="flex gap-3 mt-0.5">
-                        {!waiting(r) && <button disabled={busy} onClick={() => retry([{ id: r.id }])} className="text-blue-600 hover:underline">🔁 Retry{r.resent ? ' again' : ''}</button>}
+                        <button disabled={busy} onClick={() => retry([{ id: r.id }])} className="text-blue-600 hover:underline">🔁 Retry{r.resent ? ' again' : ''}</button>
                         <button onClick={() => { setEditId(r.id); setEditPhone(String(r.phone).replace(/\D/g, '')) }} className="text-blue-600 hover:underline">
                           ✎ Edit number &amp; retry
                         </button>

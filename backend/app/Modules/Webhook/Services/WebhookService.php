@@ -341,7 +341,7 @@ class WebhookService
                 ] + ($dto->status === 'failed' ? [
                     // Meta accepted the send, then reported the real delivery failure here
                     'failed_reason' => $dto->errorCode === 131049
-                        ? 'Not delivered (code 131049): WhatsApp limits how many marketing messages this person can get. Not charged — retry after the wait time.'
+                        ? 'WhatsApp is limiting marketing messages to this number. Retry is available from ' . now()->addHours(24)->format('d M, h:i A') . '.'
                         : 'Not delivered by WhatsApp'
                             . ($dto->errorCode ? " (code {$dto->errorCode})" : '')
                             . ' — ' . mb_substr($dto->errorMessage ?: 'no reason given by Meta', 0, 400),

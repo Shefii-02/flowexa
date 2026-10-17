@@ -202,10 +202,11 @@ class CampaignRepository implements CampaignRepositoryInterface
     }
 
     // ─── Mark failed ──────────────────────────────────────────────────────────
-    public function markContactFailed(int $id, string $reason, int $attempts = 1, ?string $errorType = null): void
+    public function markContactFailed(int $id, string $reason, int $attempts = 1, ?string $errorType = null, $retryAfter = null): void
     {
         CampaignContact::where('id', $id)->update([
             'status'        => 'failed',
+            'retry_after'   => $retryAfter,
             'attempts'      => $attempts,
             'error_type'    => $errorType,
             'failed_reason' => $reason,

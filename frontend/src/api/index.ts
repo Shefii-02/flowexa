@@ -625,5 +625,6 @@ export const shortLinkApi = {
   checkCode: (code: string, ignoreId?: number) => api.get('/short-links/check-code', { params: { code, ignore_id: ignoreId } }),
   create: (d: Record<string, unknown>) => api.post('/short-links', d),
   update: (id: number, d: Record<string, unknown>) => api.put(`/short-links/${id}`, d),
+  analytics: (id: number, days = 30) => api.get(`/short-links/${id}/analytics`, { params: { days } }),
   remove: (id: number) => api.delete(`/short-links/${id}`),
 }

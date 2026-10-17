@@ -178,11 +178,16 @@ class ProcessCampaignBatch implements ShouldQueue
                 }
                 $sent++;
             } else {
+                // A capped number fails the same way if retried straight away — hold retries for 24h
+                $retryAfter = $errType === 'frequency_capped' ? now()->addHours(24) : null;
                 $campaignRepository->markContactFailed(
                     $cc->id,
-                    $this->friendlyFailure($errType, $attempts) . ' — ' . mb_substr((string) $rawError, 0, 400),
+                    $retryAfter
+                        ? 'WhatsApp is limiting marketing messages to this number. Retry is available from ' . $retryAfter->format('d M, h:i A') . '.'
+                        : $this->friendlyFailure($errType, $attempts) . ' — ' . mb_substr((string) $rawError, 0, 400),
                     $attempts,
                     $errType ?? 'error',
+                    $retryAfter,
                 );
                 Log::warning("Campaign {$this->campaignId} gave up on {$phone} after {$attempts} try(s): {$errType}");
                 $failed++;
@@ -224,6 +229,7 @@ class ProcessCampaignBatch implements ShouldQueue
     private function classifyFailure(int $status, int $code, string $message): string
     {
         return match (true) {
+            $code === 131049                                             => 'frequency_capped', // per-user marketing cap
             $code === 131026                                             => 'not_on_whatsapp',   // message undeliverable
             $code === 131030                                             => 'not_allowed',       // recipient not in allowed list
             in_array($code, [131042, 131043], true)                      => 'billing',

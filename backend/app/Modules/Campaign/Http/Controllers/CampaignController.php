@@ -81,6 +81,9 @@ class CampaignController extends Controller
         }
 
         if (!$response->successful()) {
+            if ((int) $response->json('error.code') === 131049) {
+                return response()->json(['message' => 'WhatsApp is limiting marketing messages to this number. Retry is available from ' . now()->addHours(24)->format('d M, h:i A') . '.'], 422);
+            }
             $error = $response->json('error.message') ?? 'Meta rejected the message.';
             if ($details = $response->json('error.error_data.details')) {
                 $error .= " — {$details}";
@@ -161,17 +164,21 @@ class CampaignController extends Controller
     public function resendFailed(int $campaign, Request $request): JsonResponse
     {
         $d = $request->validate([
-            'items'         => ['nullable', 'array', 'max:500'],
+            'items'         => ['nullable', 'array', 'max:100'],
             'items.*.id'    => ['required_with:items', 'integer'],
             'items.*.phone' => ['nullable', 'string', 'max:40'],
         ]);
 
         $r = $this->campaignService->resendFailed($campaign, auth()->user()->company_id, $d['items'] ?? []);
 
+        $msg = "Sent {$r['sent']}, failed {$r['failed']}."
+            . ($r['skipped'] ? ' Skipped ' . count($r['skipped']) . ' invalid number(s).' : '')
+            . (!$r['sent'] && $r['last_error'] ? ' ' . $r['last_error'] : '');
+
         return response()->json([
-            'message' => "Queued {$r['queued']} failed message(s) for resend."
-                . ($r['skipped'] ? ' Skipped ' . count($r['skipped']) . ' invalid number(s).' : ''),
-            'queued'  => $r['queued'],
+            'message' => $msg,
+            'sent'    => $r['sent'],
+            'failed'  => $r['failed'],
             'skipped_invalid' => $r['skipped'],
         ]);
     }

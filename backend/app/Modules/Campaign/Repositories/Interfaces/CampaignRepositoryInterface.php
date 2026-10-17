@@ -43,7 +43,7 @@ interface CampaignRepositoryInterface
 
     public function markContactRead(string $waMessageId): void;
 
-    public function markContactFailed(int $id, string $reason, int $attempts = 1, ?string $errorType = null): void;
+    public function markContactFailed(int $id, string $reason, int $attempts = 1, ?string $errorType = null, $retryAfter = null): void;
 
     public function countByStatus(int $campaignId): array;
 

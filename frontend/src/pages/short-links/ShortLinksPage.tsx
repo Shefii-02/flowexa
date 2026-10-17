@@ -4,6 +4,7 @@ import { shortLinkApi } from '@/api'
 import { Button, Input, Modal, ConfirmModal, Badge, EmptyState, Pagination } from '@/components/ui'
 import { getError } from '@/utils'
 import toast from 'react-hot-toast'
+import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts'
 
 const EMPTY = { target_url: '', code: '', title: '', expires_at: '', is_active: true }
 
@@ -18,6 +19,14 @@ export default function ShortLinksPage() {
   const [editing,  setEditing]  = useState<any>(null)
   const [delLink,  setDelLink]  = useState<any>(null)
   const [form, setForm] = useState(EMPTY)
+  const [statLink, setStatLink] = useState<any>(null)
+  const [stats, setStats] = useState<any>(null)
+  const [days, setDays] = useState(30)
+  useEffect(() => {
+    if (!statLink) { setStats(null); return }
+    setStats(null)
+    shortLinkApi.analytics(statLink.id, days).then(r => setStats(r.data)).catch(e => toast.error(getError(e)))
+  }, [statLink, days])
   const set = (k: string, v: any) => setForm(f => ({ ...f, [k]: v }))
 
   const load = useCallback(() => {
@@ -125,6 +134,7 @@ export default function ShortLinksPage() {
                     </td>
                     <td className="text-right whitespace-nowrap">
                       <button onClick={() => copy(l.short_url)} className="text-xs text-brand-600 hover:underline mr-3">Copy</button>
+                      <button onClick={() => { setDays(30); setStatLink(l) }} className="text-xs text-gray-600 hover:underline mr-3">Analytics</button>
                       <button onClick={() => openEdit(l)} className="text-xs text-gray-600 hover:underline mr-3">Edit</button>
                       <button onClick={() => setDelLink(l)} className="text-xs text-red-500 hover:underline">Delete</button>
                     </td>
@@ -160,6 +170,51 @@ export default function ShortLinksPage() {
             <input type="checkbox" checked={form.is_active} onChange={e => set('is_active', e.target.checked)} />
             Active (uncheck to pause the redirect)
           </label>
+        </div>
+      </Modal>
+
+      <Modal open={!!statLink} onClose={() => setStatLink(null)} title={`Analytics · /s/${statLink?.code ?? ''}`}
+        footer={<Button variant="secondary" onClick={() => setStatLink(null)}>Close</Button>}>
+        <div className="space-y-4">
+          <div className="flex gap-2">
+            {[7, 30, 90].map(d => (
+              <button key={d} onClick={() => setDays(d)}
+                className={`px-3 py-1 rounded text-xs border ${days === d ? 'bg-brand-600 text-white border-brand-600' : 'border-gray-300 text-gray-600'}`}>{d} days</button>
+            ))}
+          </div>
+          {!stats ? <div className="p-6 text-center text-gray-400">Loading...</div> : <>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="border rounded p-3"><div className="text-xs text-gray-400">Clicks (last {days} days)</div><div className="text-2xl font-semibold">{stats.period_clicks}</div></div>
+              <div className="border rounded p-3"><div className="text-xs text-gray-400">All-time clicks</div><div className="text-2xl font-semibold">{stats.link.total_clicks}</div></div>
+            </div>
+            <p className="text-xs text-gray-400">Each visitor (IP) is counted once per day; repeat clicks the same day are not added.</p>
+            <div style={{ height: 220 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={stats.series}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="date" tickFormatter={(d: string) => d.slice(5)} fontSize={11} />
+                  <YAxis allowDecimals={false} fontSize={11} width={30} />
+                  <Tooltip />
+                  <Bar dataKey="clicks" fill="#16a34a" radius={[3, 3, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="grid grid-cols-2 gap-4 text-xs">
+              <div>
+                <div className="font-medium text-gray-700 mb-1">Devices</div>
+                {stats.devices.length ? stats.devices.map((d: any) => <div key={d.device} className="flex justify-between"><span className="capitalize">{d.device || 'unknown'}</span><span>{d.clicks}</span></div>) : <span className="text-gray-400">No clicks yet</span>}
+              </div>
+              <div>
+                <div className="font-medium text-gray-700 mb-1">Referrers</div>
+                {stats.referrers.length ? stats.referrers.map((r: any) => <div key={r.referrer} className="flex justify-between gap-2"><span className="truncate">{r.referrer}</span><span>{r.clicks}</span></div>) : <span className="text-gray-400">No clicks yet</span>}
+              </div>
+            </div>
+            <div className="max-h-40 overflow-y-auto border rounded">
+              <table className="table"><thead><tr><th>Date</th><th>Clicks</th></tr></thead>
+                <tbody>{[...stats.series].reverse().map((r: any) => <tr key={r.date}><td className="text-xs">{r.date}</td><td className="text-xs">{r.clicks}</td></tr>)}</tbody>
+              </table>
+            </div>
+          </>}
         </div>
       </Modal>
 
