@@ -164,21 +164,25 @@ class CampaignController extends Controller
     public function resendFailed(int $campaign, Request $request): JsonResponse
     {
         $d = $request->validate([
-            'items'         => ['nullable', 'array', 'max:100'],
+            'items'         => ['nullable', 'array', 'max:500'],
             'items.*.id'    => ['required_with:items', 'integer'],
             'items.*.phone' => ['nullable', 'string', 'max:40'],
         ]);
 
         $r = $this->campaignService->resendFailed($campaign, auth()->user()->company_id, $d['items'] ?? []);
 
-        $msg = "Sent {$r['sent']}, failed {$r['failed']}."
-            . ($r['skipped'] ? ' Skipped ' . count($r['skipped']) . ' invalid number(s).' : '')
-            . (!$r['sent'] && $r['last_error'] ? ' ' . $r['last_error'] : '');
+        $msg = $r['queued']
+            ? "Sending {$r['queued']} number(s) in the background — their status updates here within a minute or two."
+            : "Meta accepted {$r['sent']}, rejected {$r['failed']}."
+                . ($r['sent'] ? ' Delivery result follows in a few seconds — capped numbers can still turn back to failed.' : '')
+                . (!$r['sent'] && $r['last_error'] ? ' ' . $r['last_error'] : '');
+        $msg .= $r['skipped'] ? ' Skipped ' . count($r['skipped']) . ' invalid number(s).' : '';
 
         return response()->json([
             'message' => $msg,
             'sent'    => $r['sent'],
             'failed'  => $r['failed'],
+            'queued'  => $r['queued'],
             'skipped_invalid' => $r['skipped'],
         ]);
     }

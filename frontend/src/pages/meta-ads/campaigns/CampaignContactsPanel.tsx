@@ -101,7 +101,7 @@ export default function CampaignContactsPanel({
     setBusy(true)
     try {
       const { data } = await campaignApi.resendFailed(campaignId, items)
-      data.sent > 0 ? toast.success(data.message) : toast.error(data.message)
+      data.sent > 0 || data.queued > 0 ? toast.success(data.message) : toast.error(data.message)
       setSelected(new Set()); setEditId(null)
       onChanged(); load()
     } catch (e) { toast.error(getError(e)) }
