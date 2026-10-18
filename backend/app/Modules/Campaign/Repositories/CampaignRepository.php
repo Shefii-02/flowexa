@@ -170,6 +170,26 @@ class CampaignRepository implements CampaignRepositoryInterface
             ->get();
     }
 
+    /** Pending rows that have no queue job yet (scheduled_for is null), most-engaged first. */
+    public function getUnqueuedPendingContacts(int $campaignId, int $limit): Collection
+    {
+        return CampaignContact::select('campaign_contacts.*')
+            ->leftJoin('contacts', 'contacts.id', '=', 'campaign_contacts.contact_id')
+            ->where('campaign_contacts.campaign_id', $campaignId)
+            ->where('campaign_contacts.status', 'pending')
+            ->whereNull('campaign_contacts.scheduled_for')
+            ->orderByRaw('contacts.last_message_at IS NULL')
+            ->orderByDesc('contacts.last_message_at')
+            ->orderBy('campaign_contacts.id')
+            ->limit($limit)
+            ->get();
+    }
+
+    public function hasUnqueuedPendingContacts(int $campaignId): bool
+    {
+        return CampaignContact::where('campaign_id', $campaignId)->where('status', 'pending')->whereNull('scheduled_for')->exists();
+    }
+
     // ─── Mark sent ────────────────────────────────────────────────────────────
     public function markContactSent(int $id, string $waMessageId, int $attempts = 1): void
     {

@@ -27,4 +27,13 @@ class ResendCampaignContact implements ShouldQueue
     {
         $campaigns->resendContact($this->campaignId, $this->contactRowId, $this->phone);
     }
+
+    /** Job crashed: free the row so it can be retried again instead of looking queued forever. */
+    public function failed(\Throwable $e): void
+    {
+        \App\Models\CampaignContact::where('id', $this->contactRowId)->where('status', 'failed')->update([
+            'scheduled_for' => null,
+            'failed_reason' => 'Retry job failed — ' . mb_substr($e->getMessage(), 0, 300),
+        ]);
+    }
 }

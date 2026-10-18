@@ -1,3 +1,4 @@
+import MessagePreview, { PreviewBubble } from './MessagePreview'
 import { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import Picker from '@emoji-mart/react'
@@ -411,7 +412,8 @@ export function MessageSender() {
 
   // --- Sending options ---
   const [session, setSession] = useState('')
-  const [delaySeconds, setDelaySeconds] = useState(3)
+  // Fixed pace: 1 message per minute (no custom timing).
+  const delaySeconds = 60
 
   // --- Test send: a standalone drawer, independent of the main composer below — its own type
   // (text/image/video/audio), content and number, sent after confirming the selected session is
@@ -683,7 +685,6 @@ export function MessageSender() {
         setSelectedRecipients(dedupeRecipients(recipients ?? []))
         setTextBody(tb ?? '')
         setSession(sess ?? '')
-        setDelaySeconds(ds ?? 3)
         setCampaignName(cn ?? '')
         const remaining = target - Date.now()
         setCountdown(remaining)
@@ -1183,6 +1184,46 @@ export function MessageSender() {
   // previously only handleSend had it: confirmSchedule re-derived a much weaker approximation that
   // dropped poll/location/contact/audio/media content entirely when scheduling anything but a
   // plain text/template message.
+  // What the recipient will see — mirrors buildOutgoingMessage, personalised for the first recipient.
+  const previewBubbles = useMemo((): PreviewBubble[] => {
+    const first = selectedRecipients[0]
+    const p = (t: string) => first ? personalizeMessage(t, { name: first.name, phone: first.phone }, company) : t
+    if (composerTab === 'text') return textBody.trim() ? [{ kind: 'text', text: p(textBody) }] : []
+    if (composerTab === 'template' && selectedTemplate) {
+      const t = selectedTemplate
+      const parts: string[] = []
+      if (t.header_type === 'text' && t.header_content) parts.push(`*${t.header_content}*`)
+      parts.push(t.body)
+      if (t.footer) parts.push(`_${t.footer}_`)
+      const text = p(parts.join('\n\n'))
+      const out: PreviewBubble[] = []
+      if (t.header_type && t.header_type !== 'none' && t.header_type !== 'text' && t.header_content) {
+        out.push({ kind: 'media', mediaType: t.header_type as any, url: t.header_content, caption: text })
+      } else out.push({ kind: 'text', text })
+      for (const m of (t.media_blocks ?? [])) {
+        out.push(m.type === 'text' ? { kind: 'text', text: p(m.text ?? '') } : { kind: 'media', mediaType: m.type as any, url: m.mediaUrl, caption: m.caption })
+      }
+      return out
+    }
+    if (composerTab === 'poll') return pollQuestion.trim() || pollOptions.some(o => o.trim())
+      ? [{ kind: 'poll', question: pollQuestion, options: pollOptions.filter(o => o.trim()) }] : []
+    if (composerTab === 'location') return locName || locAddress || locLat ? [{ kind: 'location', name: locName, address: locAddress }] : []
+    if (composerTab === 'contact') return selectedContact2 ? [{ kind: 'contact', name: selectedContact2.name ?? selectedContact2.phone, phone: selectedContact2.phone }] : []
+    if (composerTab === 'audio') return audioUrl ? [{ kind: 'media', mediaType: 'audio' }] : []
+    if (composerTab === 'single') {
+      if (!singleUrl.trim()) return []
+      const cap = p(singleCaption.trim())
+      return singleType === 'audio'
+        ? [{ kind: 'media', mediaType: 'audio' }, ...(cap ? [{ kind: 'text' as const, text: cap }] : [])]
+        : [{ kind: 'media', mediaType: singleType, url: singleUrl, caption: cap }]
+    }
+    return mediaBlocks
+      .filter(b => (b.type === 'text' && b.text?.trim()) || (b.type !== 'text' && b.mediaUrl?.trim()))
+      .map((b): PreviewBubble => b.type === 'text'
+        ? { kind: 'text', text: p(b.text ?? '') }
+        : { kind: 'media', mediaType: b.type as any, url: b.mediaUrl, caption: b.caption ? p(b.caption) : undefined })
+  }, [composerTab, textBody, selectedTemplate, pollQuestion, pollOptions, locLat, locName, locAddress, selectedContact2, audioUrl, mediaBlocks, singleType, singleUrl, singleCaption, selectedRecipients, company])
+
   const buildOutgoingMessage = useCallback((): { templateText: string; extraPayload: ExtraPayload } | null => {
     if (composerTab === 'text') {
       if (!textBody.trim()) return null
@@ -2544,6 +2585,9 @@ export function MessageSender() {
           {/* Right: Options + Controls */}
           <div className="space-y-4">
 
+            {/* Live message preview */}
+            <MessagePreview bubbles={previewBubbles} recipientName={selectedRecipients[0]?.name} />
+
             {/* SECTION C — Sending Options */}
             <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-4">
               <h2 className="text-sm font-semibold text-gray-700">Sending Options</h2>
@@ -2555,13 +2599,9 @@ export function MessageSender() {
                   {activeSessions.map(s => <option key={s.id} value={s.id}>{s.name} ({(s as any).phone ?? 'no phone'})</option>)}
                 </select>
               </div>
-              <div>
-                <label className="text-xs font-medium text-gray-600 mb-1 flex justify-between">
-                  <span>Delay between messages</span>
-                  <span className="text-brand-600">{delaySeconds}s</span>
-                </label>
-                <input type="range" min={1} max={60} value={delaySeconds} onChange={e => setDelaySeconds(+e.target.value)} className="w-full accent-brand-500" />
-                <div className="flex justify-between text-xs text-gray-400 mt-0.5"><span>1s</span><span>60s</span></div>
+              <div className="flex items-center justify-between rounded-lg bg-gray-50 border border-gray-100 px-3 py-2 text-xs">
+                <span className="font-medium text-gray-600">Delay between messages</span>
+                <span className="text-brand-600 font-medium">60s · 1 message / min</span>
               </div>
 
               {/* ITEM 4 — Schedule picker */}

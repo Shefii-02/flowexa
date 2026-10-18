@@ -283,6 +283,11 @@ export default function MessageLogsPage({ lockChannel }: { lockChannel?: 'waha' 
                     <p className="text-sm text-gray-700 truncate">
                       {log.content || `[${log.type} message]`}
                     </p>
+                    {log.status === 'failed' && log.failure_reason && (
+                      <p className="text-xs text-red-600 truncate" title={log.failure_reason}>
+                        Failed: {log.failure_reason}
+                      </p>
+                    )}
                   </div>
 
                   {/* Status + time */}

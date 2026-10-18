@@ -15,7 +15,7 @@ class MessageLog extends Model
     protected $fillable = [
         'company_id', 'contact_id', 'wa_message_id', 'direction', 'channel',
         'type', 'phone', 'content', 'status', 'lead_created', 'cost', 'delivered_at', 'read_at',
-        'source', 'reference_id', 'reference_name', 'category', 'failure_reason', 'sent_at', 'retry_after',
+        'source', 'reference_id', 'reference_name', 'category', 'failure_reason', 'sent_at', 'retry_after', 'campaign_contact_id',
     ];
 
     protected $casts = [
@@ -48,9 +48,12 @@ class MessageLog extends Model
         ?string $referenceName = null,
         ?string $category = null,
         ?\DateTimeInterface $retryAfter = null,
+        ?int $campaignContactId = null,
     ): void {
         try {
-            static::create([
+            // A campaign contact keeps ONE log row for its whole life: a retry updates it in place.
+            $match = $campaignContactId ? ['campaign_contact_id' => $campaignContactId] : null;
+            $values = [
                 'company_id'     => $companyId,
                 'wa_message_id'  => $waMessageId ?: null,
                 'direction'      => 'outbound',
@@ -67,7 +70,10 @@ class MessageLog extends Model
                 'status'         => $error === null ? 'sent' : 'failed',
                 'failure_reason' => $error !== null ? mb_substr($error, 0, 500) : null,
                 'cost'           => $error === null ? 1 : 0,
-            ]);
+                'delivered_at'   => null,
+                'read_at'        => null,
+            ];
+            $match ? static::updateOrCreate($match, $values) : static::create($values);
         } catch (\Throwable $e) {
             \Illuminate\Support\Facades\Log::warning('MessageLog write failed: ' . $e->getMessage());
         }

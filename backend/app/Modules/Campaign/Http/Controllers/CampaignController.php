@@ -14,6 +14,7 @@ use App\Modules\Campaign\Http\Requests\UpdateCampaignRequest;
 use App\Modules\Campaign\Http\Resources\CampaignCollection;
 use App\Modules\Campaign\Http\Resources\CampaignContactResource;
 use App\Modules\Campaign\Http\Resources\CampaignResource;
+use App\Modules\Campaign\Services\CampaignMessageSender;
 use App\Modules\Campaign\Services\CampaignService;
 use App\Models\WaPhoneNumber;
 use App\Models\WaTemplate;
@@ -41,7 +42,7 @@ class CampaignController extends Controller
      * Send one real template message to a single number, using the chosen template and sending
      * number, so a campaign can be verified before it is launched. Does not touch any campaign.
      */
-    public function testSend(Request $request): JsonResponse
+    public function testSend(Request $request, CampaignMessageSender $sender): JsonResponse
     {
         $user = auth()->user();
         $d = $request->validate([
@@ -72,31 +73,21 @@ class CampaignController extends Controller
 
         $to = preg_replace('/\D+/', '', $d['phone']);
 
-        try {
-            $response = Http::withToken($number->decrypted_token)->timeout(15)
-                ->post("https://graph.facebook.com/v21.0/{$number->phone_number_id}/messages",
-                    TemplateMessagePayload::build($to, $template, $variables, $d['coupon_code'] ?? null));
-        } catch (\Illuminate\Http\Client\ConnectionException $e) {
-            return response()->json(['message' => 'Timed out contacting Meta. Try again.'], 422);
-        }
+        // Same sender (classification, wording, logging) as real campaign sends.
+        $r = $sender->send($number->decrypted_token, $number->phone_number_id, $to, $template, $variables, $d['coupon_code'] ?? null);
 
-        if (!$response->successful()) {
-            if ((int) $response->json('error.code') === 131049) {
-                return response()->json(['message' => 'WhatsApp is limiting marketing messages to this number. Retry is available from ' . now()->addHours(24)->format('d M, h:i A') . '.'], 422);
-            }
-            $error = $response->json('error.message') ?? 'Meta rejected the message.';
-            \App\Models\MessageLog::recordCloudOutbound($user->company_id, $to, 'template', ['body' => "[Template] {$template->name} — test send", 'template' => $template->name], 'test', null, $error, null, 'Test send', strtolower((string) $template->category));
-            if ($details = $response->json('error.error_data.details')) {
-                $error .= " — {$details}";
-            }
-            return response()->json(['message' => $error], 422);
-        }
+        $body = ['body' => "[Template] {$template->name} — test send", 'template' => $template->name];
+        \App\Models\MessageLog::recordCloudOutbound($user->company_id, $to, 'template', $body, 'test',
+            $r['wa_message_id'], $r['ok'] ? null : ($r['reason'] ?: 'Send failed'), null, 'Test send',
+            strtolower((string) $template->category), $r['retry_after']);
 
-        \App\Models\MessageLog::recordCloudOutbound($user->company_id, $to, 'template', ['body' => "[Template] {$template->name} — test send", 'template' => $template->name], 'test', $response->json('messages.0.id'), null, null, 'Test send', strtolower((string) $template->category));
+        if (!$r['ok']) {
+            return response()->json(['message' => $r['reason']], 422);
+        }
 
         return response()->json([
             'message'    => "Test message sent to +{$to}.",
-            'message_id' => $response->json('messages.0.id'),
+            'message_id' => $r['wa_message_id'],
         ]);
     }
 
@@ -174,11 +165,7 @@ class CampaignController extends Controller
 
         $r = $this->campaignService->resendFailed($campaign, auth()->user()->company_id, $d['items'] ?? []);
 
-        $msg = $r['queued']
-            ? "Sending {$r['queued']} number(s) in the background — their status updates here within a minute or two."
-            : "Meta accepted {$r['sent']}, rejected {$r['failed']}."
-                . ($r['sent'] ? ' Delivery result follows in a few seconds — capped numbers can still turn back to failed.' : '')
-                . (!$r['sent'] && $r['last_error'] ? ' ' . $r['last_error'] : '');
+        $msg = "Queued {$r['queued']} number(s) for retry, sent one by one at the campaign's send gap — their status updates here as each goes out.";
         $msg .= $r['skipped'] ? ' Skipped ' . count($r['skipped']) . ' invalid number(s).' : '';
 
         return response()->json([

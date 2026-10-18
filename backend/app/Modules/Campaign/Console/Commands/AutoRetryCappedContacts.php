@@ -32,7 +32,7 @@ class AutoRetryCappedContacts extends Command
             if (!$campaign || $campaign->status === 'running') { continue; } // picked up on a later run
             try {
                 $r = $campaigns->resendFailed($campaign->id, $campaign->company_id, $rows->map(fn ($c) => ['id' => $c->id])->all());
-                Log::info("Auto-retried capped numbers (sent {$r['sent']}, failed {$r['failed']}) for campaign {$campaign->id}.");
+                Log::info("Auto-retry queued {$r['queued']} capped number(s) for campaign {$campaign->id}.");
             } catch (\Throwable $e) {
                 Log::warning("Auto-retry of capped numbers failed for campaign {$campaign->id}: {$e->getMessage()}");
             }

@@ -24,6 +24,7 @@ class CampaignService
     public function __construct(
         private readonly CampaignRepositoryInterface $campaignRepository,
         private readonly WalletService               $walletService,
+        private readonly CampaignMessageSender       $sender,
     ) {}
 
     // ─── List ─────────────────────────────────────────────────────────────────
@@ -244,14 +245,12 @@ class CampaignService
     }
 
     // ─── Resend failed ────────────────────────────────────────────────────────
-    private const SYNC_RESEND_MAX = 5; // up to this many go out inside the request; more are queued so the request never times out
-
     /**
-     * Resend failed contacts. $items (optional) = [['id' => campaign_contact id, 'phone' => corrected number?]]
-     * limits it to those rows. Numbers are cleaned to digits (8-15). A marketing-capped number (131049) is
-     * NOT pre-blocked: it is sent, and if Meta caps it again the row just shows the next available time.
-     * A few numbers are sent right now, one by one; a larger selection is queued (one job per number,
-     * spaced out) so the request returns immediately instead of hitting the 30s timeout.
+     * Retry failed contacts. $items (optional) = [['id' => campaign_contact id, 'phone' => corrected number?]]
+     * limits it to those rows. Numbers are cleaned to digits (8-15). Nothing is sent inside the request:
+     * every number becomes its own queue job, delayed by the campaign's send gap (60 / throttle_per_minute
+     * seconds), and goes through the same sender as test-send and the campaign jobs. A marketing-capped
+     * number (131049) is not pre-blocked: if Meta caps it again the row just shows the next available time.
      *
      * @return array{sent:int, failed:int, queued:int, skipped:list<string>, last_error:?string}
      */
@@ -264,6 +263,8 @@ class CampaignService
 
         $rows = \App\Models\CampaignContact::where('campaign_id', $campaign->id)
             ->where('status', 'failed')
+            // not already waiting in the queue (a double click must not queue the same number twice)
+            ->where(fn ($q) => $q->whereNull('scheduled_for')->orWhere('scheduled_for', '<', now()->subMinutes(15)))
             ->when($edits->isNotEmpty(), fn ($q) => $q->whereIn('id', $edits->keys()))
             ->limit(500)
             ->get();
@@ -278,31 +279,21 @@ class CampaignService
             }
         }
 
-        $todo = []; $skipped = [];
+        $gap = 60 / max(1, (int) $campaign->throttle_per_minute);
+        $skipped = []; $queued = 0;
+
         foreach ($rows as $row) {
             $phone = preg_replace('/\D+/', '', (string) (($edits[$row->id]['phone'] ?? null) ?: $row->phone));
             if (!preg_match('/^\d{8,15}$/', $phone)) { $skipped[] = (string) $row->phone; continue; }
-            $todo[$row->id] = $phone;
+
+            $at = now()->addSeconds((int) floor($queued * $gap));
+            $row->update(['scheduled_for' => $at]);
+            \App\Modules\Campaign\Jobs\ResendCampaignContact::dispatch($campaign->id, $row->id, $phone)
+                ->onQueue('campaigns')->delay($at);
+            $queued++;
         }
 
-        $sent = 0; $failed = 0; $queued = 0; $lastError = null;
-
-        if (count($todo) <= self::SYNC_RESEND_MAX) {
-            foreach ($todo as $rowId => $phone) {
-                $r = $this->resendContact($campaign->id, $rowId, $phone);
-                $r['ok'] ? $sent++ : $failed++;
-                $lastError = $r['error'] ?? $lastError;
-            }
-        } else {
-            $i = 0;
-            foreach ($todo as $rowId => $phone) {
-                \App\Modules\Campaign\Jobs\ResendCampaignContact::dispatch($campaign->id, $rowId, $phone)
-                    ->onQueue('campaigns')->delay(now()->addSeconds($i++ * 2)); // gentle on Meta and the server
-                $queued++;
-            }
-        }
-
-        return ['sent' => $sent, 'failed' => $failed, 'queued' => $queued, 'skipped' => $skipped, 'last_error' => $lastError];
+        return ['sent' => 0, 'failed' => 0, 'queued' => $queued, 'skipped' => $skipped, 'last_error' => null];
     }
 
     /**
@@ -315,78 +306,29 @@ class CampaignService
         $campaign = Campaign::with(['template', 'waPhoneNumber', 'company'])->find($campaignId);
         $row = \App\Models\CampaignContact::where('campaign_id', $campaignId)->where('id', $contactRowId)->where('status', 'failed')->first();
         if (!$campaign || !$row) { return ['ok' => false, 'error' => null]; } // already handled elsewhere
-        $company = $campaign->company;
 
-        // credentials: the campaign's own number, else the company's legacy single-number setup
-        $number = $campaign->waPhoneNumber;
-        if ($number && $number->is_active && $number->access_token && $number->phone_number_id) {
-            [$token, $phoneId] = [$number->decrypted_token, $number->phone_number_id];
-        } elseif ($company->wa_phone_id && $company->wa_access_token) {
-            [$token, $phoneId] = [decrypt($company->wa_access_token), $company->wa_phone_id];
+        $creds = $this->sender->credentials($campaign);
+        if (!$creds) {
+            $r = ['ok' => false, 'wa_message_id' => null, 'error_type' => 'auth', 'raw' => null, 'retry_after' => null,
+                  'reason' => 'WhatsApp credentials are missing for this campaign.'];
         } else {
-            $err = 'WhatsApp credentials are missing for this campaign.';
-            $row->update(['failed_reason' => $err, 'error_type' => 'auth']);
-            return ['ok' => false, 'error' => $err];
+            $r = $this->sender->send($creds[0], $creds[1], $phone, $campaign->template, $campaign->template_variables ?? []);
         }
 
-        try {
-            $response = \Illuminate\Support\Facades\Http::withToken($token)->timeout(15)
-                ->post("https://graph.facebook.com/v21.0/{$phoneId}/messages",
-                    \App\Modules\Campaign\Support\TemplateMessagePayload::build($phone, $campaign->template, $campaign->template_variables ?? []));
-        } catch (\Throwable $e) {
-            $err = 'Could not reach Meta: ' . mb_substr($e->getMessage(), 0, 200);
-            $row->update(['phone' => $phone, 'attempts' => $row->attempts + 1, 'resent_at' => now(), 'error_type' => 'network', 'failed_reason' => $err]);
-            return ['ok' => false, 'error' => $err];
-        }
+        // Same campaign_contacts row, same message-log row: updated in place, never a new one.
+        $this->sender->record($campaign, $row, $phone, $r, $row->attempts + 1, true);
 
-        if ($response->successful()) {
-            $row->update([
-                'phone' => $phone, 'status' => 'sent', 'attempts' => $row->attempts + 1, 'resent_at' => now(), 'sent_at' => now(),
-                'wa_message_id' => $response->json('messages.0.id'), 'failed_reason' => null, 'error_type' => null, 'retry_after' => null,
-            ]);
-            if ($company->wa_config == 'wallet') {
-                $this->walletService->debit($company->id, 1, "Resend failed — campaign #{$campaign->id}", (string) $campaign->id, 'campaign_resend');
+        if ($r['ok']) {
+            if ($campaign->company->wa_config == 'wallet') {
+                $this->walletService->debit($campaign->company_id, 1, "Resend failed — campaign #{$campaign->id}", (string) $campaign->id, 'campaign_resend');
             }
-            \App\Models\MessageLog::recordCloudOutbound($campaign->company_id, $phone, 'template',
-                ['body' => '[Template] ' . ($campaign->template?->name ?? '') . ' — campaign resend: ' . $campaign->name, 'template' => $campaign->template?->name],
-                'campaign', $response->json('messages.0.id'), null, (string) $campaign->id, $campaign->name, strtolower((string) $campaign->template?->category));
             $this->campaignRepository->updateStats($campaign->id, [
                 'sent'   => DB::raw('sent + 1'),
                 'failed' => DB::raw('GREATEST(failed - 1, 0)'),
             ]);
-            // Show the resent message in the shared inbox; delivered / read / failed webhooks then update it by wa_message_id.
-            try {
-                $conv = \App\Models\WaConversation::firstOrCreate(['company_id' => $campaign->company_id, 'phone' => $phone], ['status' => 'open']);
-                $conv->update(['last_message_at' => now()]);
-                \App\Models\WaMessage::create([
-                    'conversation_id' => $conv->id, 'company_id' => $campaign->company_id,
-                    'direction' => 'outbound', 'sender_type' => 'system', 'wa_message_id' => $response->json('messages.0.id') ?: null,
-                    'type' => 'template', 'content' => ['body' => '[Template] ' . ($campaign->template?->name ?? '') . ' — campaign: ' . $campaign->name],
-                    'status' => 'sent', 'status_updated_at' => now(),
-                ]);
-            } catch (\Throwable $e) {
-                Log::warning("Campaign {$campaign->id}: inbox log failed for {$phone}: {$e->getMessage()}");
-            }
-            return ['ok' => true, 'error' => null];
         }
 
-        $code = (int) $response->json('error.code');
-        if ($code === 131049) {
-            $retryAfter = now()->addHours(24);
-            $reason = 'WhatsApp is limiting marketing messages to this number. Retry is available from ' . $retryAfter->format('d M, h:i A') . '.';
-            $type = 'frequency_capped';
-        } else {
-            $retryAfter = null;
-            $reason = ($response->json('error.message') ?? 'Meta rejected the message.') . ($code ? " (code {$code})" : '');
-            if ($details = $response->json('error.error_data.details')) { $reason .= " — {$details}"; }
-            $reason = mb_substr($reason, 0, 500);
-            $type = $code === 131026 ? 'not_on_whatsapp' : 'error';
-        }
-        $row->update([
-            'phone' => $phone, 'attempts' => $row->attempts + 1, 'resent_at' => now(),
-            'failed_reason' => $reason, 'error_type' => $type, 'retry_after' => $retryAfter,
-        ]);
-        return ['ok' => false, 'error' => $reason];
+        return ['ok' => $r['ok'], 'error' => $r['ok'] ? null : $r['reason']];
     }
 
     // ─── Campaign contacts ────────────────────────────────────────────────────

@@ -37,6 +37,10 @@ interface CampaignRepositoryInterface
 
     public function getPendingContacts(int $campaignId, int $limit): Collection;
 
+    public function getUnqueuedPendingContacts(int $campaignId, int $limit): Collection;
+
+    public function hasUnqueuedPendingContacts(int $campaignId): bool;
+
     public function markContactSent(int $id, string $waMessageId, int $attempts = 1): void;
 
     public function markContactDelivered(string $waMessageId): void;
