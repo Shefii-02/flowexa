@@ -6,6 +6,7 @@ use App\Models\Company;
 use App\Modules\WaCloud\Models\WaCloudApiConfig;
 use App\Support\Meta\MetaGraph;
 use Illuminate\Http\Client\ConnectionException;
+use App\Models\MessageLog;
 use Illuminate\Support\Facades\Http;
 
 /**
@@ -17,6 +18,14 @@ use Illuminate\Support\Facades\Http;
  */
 class WaCloudMessageService
 {
+    /** @param string $source message_logs.source — 'api' (live API), 'test' (dashboard test), 'automation' */
+    public function __construct(private readonly string $source = 'api') {}
+
+    public function withSource(string $source): static
+    {
+        return new static($source);
+    }
+
     /**
      * Send an auth-OTP template message. The generated code is injected into the
      * BODY and the OTP button.
@@ -37,7 +46,7 @@ class WaCloudMessageService
             ],
         ];
 
-        return $this->post($company, $this->templatePayload($config, $phone, $components));
+        return $this->post($company, $this->templatePayload($config, $phone, $components), 'authentication');
     }
 
     /**
@@ -56,7 +65,7 @@ class WaCloudMessageService
             $components[] = ['type' => 'body', 'parameters' => $bodyParams];
         }
 
-        return $this->post($company, $this->templatePayload($config, $phone, $components));
+        return $this->post($company, $this->templatePayload($config, $phone, $components), 'utility');
     }
 
     /**
@@ -87,7 +96,7 @@ class WaCloudMessageService
             $components[] = ['type' => 'body', 'parameters' => $bodyParams];
         }
 
-        return $this->post($company, $this->templatePayload($config, $phone, $components));
+        return $this->post($company, $this->templatePayload($config, $phone, $components), 'utility');
     }
 
     // ── internals ────────────────────────────────────────────────────────────
@@ -132,13 +141,23 @@ class WaCloudMessageService
     }
 
     /** @return array{0: bool, 1: ?string, 2: ?string, 3: int} */
-    private function post(Company $company, array $payload): array
+    private function post(Company $company, array $payload, string $category): array
     {
         $token = MetaGraph::accessToken($company);
         if (!$token || !$company->wa_phone_id) {
             return [false, null, 'WhatsApp Cloud API credentials not configured.', 0];
         }
 
+        // Log every attempt to message_logs so it shows on WA Cloud → Message Logs.
+        $result = $this->send($company, $token, $payload);
+        $this->audit($company, $payload, $result, $category);
+
+        return $result;
+    }
+
+    /** @return array{0: bool, 1: ?string, 2: ?string, 3: int} */
+    private function send(Company $company, string $token, array $payload): array
+    {
         $start = microtime(true);
         try {
             $res = Http::withToken($token)
@@ -155,5 +174,17 @@ class WaCloudMessageService
         }
 
         return [false, null, $res->json('error.message') ?? 'Meta send failed.', $ms];
+    }
+
+    /** @param array{0: bool, 1: ?string, 2: ?string, 3: int} $result */
+    private function audit(Company $company, array $payload, array $result, string $category): void
+    {
+        $name = $payload['template']['name'] ?? 'template';
+        $body = ['body' => "[Template] {$name}", 'template' => $name];
+        // OTP codes must not be stored in the log.
+        MessageLog::recordCloudOutbound(
+            $company->id, (string) $payload['to'], 'template', $body, $this->source, $result[1], $result[0] ? null : ($result[2] ?? 'Send failed'),
+            null, $name, $category,
+        );
     }
 }

@@ -75,8 +75,11 @@ class OtpService
                 ]);
 
             if (!$response->successful()) {
-                throw OtpException::sendFailed($response->json('error.message') ?? 'Unknown error');
+                $err = $response->json('error.message') ?? 'Unknown error';
+                \App\Models\MessageLog::recordCloudOutbound($company->id, $phone, 'template', '[Template] OTP', 'otp', null, $err, null, 'OTP', 'authentication');
+                throw OtpException::sendFailed($err);
             }
+            \App\Models\MessageLog::recordCloudOutbound($company->id, $phone, 'template', '[Template] OTP', 'otp', $response->json('messages.0.id'), null, null, 'OTP', 'authentication');
         } catch (OtpException $e) {
             throw $e;
         } catch (\Exception $e) {

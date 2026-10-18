@@ -289,6 +289,7 @@ export const settingsApi = {
 
 export const messageLogApi = {
   list: (p?: Record<string, unknown>) => api.get('/message-logs', { params: p }),
+  stats: (p?: Record<string, unknown>) => api.get('/message-logs/stats', { params: p }),
 }
 
 // ── Linked devices (phone-app QR / PIN login) ─────────────────────────────────

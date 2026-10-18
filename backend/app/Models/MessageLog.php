@@ -15,6 +15,7 @@ class MessageLog extends Model
     protected $fillable = [
         'company_id', 'contact_id', 'wa_message_id', 'direction', 'channel',
         'type', 'phone', 'content', 'status', 'lead_created', 'cost', 'delivered_at', 'read_at',
+        'source', 'reference_id', 'reference_name', 'category', 'failure_reason', 'sent_at', 'retry_after',
     ];
 
     protected $casts = [
@@ -22,10 +23,55 @@ class MessageLog extends Model
         'lead_created' => 'boolean',
         'delivered_at' => 'datetime',
         'read_at'      => 'datetime',
+        'sent_at'      => 'datetime',
+        'retry_after'  => 'datetime',
     ];
 
     public function company(): BelongsTo { return $this->belongsTo(Company::class); }
     public function contact(): BelongsTo { return $this->belongsTo(Contact::class); }
+
+    /**
+     * Record one outbound WA Cloud message (test send, campaign, API service, inbox reply…).
+     * Never throws — an audit-log failure must not break the actual send.
+     *
+     * @param array<string,mixed>|string $content plain text (or an array with a 'body' key)
+     */
+    public static function recordCloudOutbound(
+        int $companyId,
+        string $phone,
+        string $type,
+        array|string $content,
+        string $source,
+        ?string $waMessageId,
+        ?string $error = null,
+        ?string $referenceId = null,
+        ?string $referenceName = null,
+        ?string $category = null,
+        ?\DateTimeInterface $retryAfter = null,
+    ): void {
+        try {
+            static::create([
+                'company_id'     => $companyId,
+                'wa_message_id'  => $waMessageId ?: null,
+                'direction'      => 'outbound',
+                'channel'        => 'wa_cloud',
+                'source'         => $source,
+                'reference_id'   => $referenceId,
+                'reference_name' => $referenceName,
+                'category'       => $category ?? ($type === 'template' ? null : 'service'),
+                'sent_at'        => $error === null ? now() : null,
+                'retry_after'    => $retryAfter,
+                'type'           => $type,
+                'phone'          => $phone,
+                'content'        => is_array($content) ? (string) ($content['body'] ?? json_encode($content)) : $content,
+                'status'         => $error === null ? 'sent' : 'failed',
+                'failure_reason' => $error !== null ? mb_substr($error, 0, 500) : null,
+                'cost'           => $error === null ? 1 : 0,
+            ]);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('MessageLog write failed: ' . $e->getMessage());
+        }
+    }
 
     public function scopeInbound($q)  { return $q->where('direction', 'inbound'); }
     public function scopeOutbound($q) { return $q->where('direction', 'outbound'); }

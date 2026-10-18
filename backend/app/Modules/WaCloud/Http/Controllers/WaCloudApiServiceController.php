@@ -139,10 +139,10 @@ class WaCloudApiServiceController extends Controller
             'auth' => (function () use ($company, $config, $phone, &$otp) {
                 $len = $config->otp_length ?? 6;
                 $otp = str_pad((string) random_int(0, (int) str_repeat('9', $len)), $len, '0', STR_PAD_LEFT);
-                return $this->messages->sendAuth($company, $config, $phone, $otp);
+                return $this->messages->withSource('test')->sendAuth($company, $config, $phone, $otp);
             })(),
-            'utility' => $this->messages->sendUtility($company, $config, $phone, $vars),
-            'invoice' => $this->messages->sendInvoice($company, $config, $phone, $data['document_url'], $data['filename'] ?? null, $vars),
+            'utility' => $this->messages->withSource('test')->sendUtility($company, $config, $phone, $vars),
+            'invoice' => $this->messages->withSource('test')->sendInvoice($company, $config, $phone, $data['document_url'], $data['filename'] ?? null, $vars),
         };
 
         WaCloudOtpLog::create([

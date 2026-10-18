@@ -163,6 +163,9 @@ class ProcessCampaignBatch implements ShouldQueue
                     \App\Models\CampaignContact::where('id', $cc->id)->update(['phone' => $phone]); // keep the auto-corrected number
                 }
                 $campaignRepository->markContactSent($cc->id, $waMessageId, $attempts);
+                \App\Models\MessageLog::recordCloudOutbound($campaign->company_id, $phone, 'template',
+                    ['body' => '[Template] ' . ($campaign->template?->name ?? '') . ' — campaign: ' . $campaign->name, 'template' => $campaign->template?->name],
+                    'campaign', $waMessageId, null, (string) $campaign->id, $campaign->name, strtolower((string) $campaign->template?->category));
                 // Show the campaign message in the shared inbox; delivered / read / failed webhooks then update it by wa_message_id.
                 try {
                     $conv = \App\Models\WaConversation::firstOrCreate(['company_id' => $campaign->company_id, 'phone' => $phone], ['status' => 'open']);
@@ -190,6 +193,9 @@ class ProcessCampaignBatch implements ShouldQueue
                     $retryAfter,
                 );
                 Log::warning("Campaign {$this->campaignId} gave up on {$phone} after {$attempts} try(s): {$errType}");
+                \App\Models\MessageLog::recordCloudOutbound($campaign->company_id, $phone, 'template',
+                    ['body' => '[Template] ' . ($campaign->template?->name ?? '') . ' — campaign: ' . $campaign->name, 'template' => $campaign->template?->name],
+                    'campaign', null, mb_substr((string) $rawError, 0, 400) ?: 'Send failed', (string) $campaign->id, $campaign->name, strtolower((string) $campaign->template?->category), $retryAfter);
                 $failed++;
             }
 

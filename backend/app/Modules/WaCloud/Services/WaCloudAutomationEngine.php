@@ -27,7 +27,7 @@ use Illuminate\Support\Facades\Log;
  */
 class WaCloudAutomationEngine
 {
-    public function __construct(private readonly WaCloudMessageService $templateSender = new WaCloudMessageService())
+    public function __construct(private readonly WaCloudMessageService $templateSender = new WaCloudMessageService('automation'))
     {
     }
 
@@ -209,6 +209,7 @@ class WaCloudAutomationEngine
                 'wa_message_id' => $waId,
                 'direction'     => 'outbound',
                 'channel'       => 'wa_cloud',
+                'source'        => 'automation',
                 'type'          => 'text',
                 'phone'         => $phone,
                 'content'       => $text,

@@ -203,6 +203,7 @@ class ConversationController extends Controller
                Log::info($response);
             $reason = $response->json('error.error_user_msg') ?? $response->json('error.message') ?? 'Meta API error';
             $message->update(['status' => 'failed', 'failure_reason' => $reason]);
+            \App\Models\MessageLog::recordCloudOutbound($company->id, $conversation->phone, 'text', $d['body'], 'inbox', null, $reason);
             broadcast(new WaMessageReceived($message->fresh(['conversation', 'sentBy'])));
             return response()->json(['message' => $reason], 422);
         }
@@ -212,6 +213,8 @@ class ConversationController extends Controller
             'status'        => 'sent',
             'status_updated_at' => now(),
         ]);
+
+        \App\Models\MessageLog::recordCloudOutbound($company->id, $conversation->phone, 'text', $d['body'], 'inbox', $response->json('messages.0.id'));
 
         $conversation->update(['last_message_at' => now()]);
         broadcast(new WaMessageReceived($message->fresh(['conversation', 'sentBy'])));

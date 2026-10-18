@@ -19,6 +19,7 @@ readonly class MessageLogFilterDTO
         public ?string $from      = null,
         public ?string $to        = null,
         public ?string $channel   = null,
+        public ?string $source    = null,
         public int     $perPage   = 30,
         public int     $page      = 1,
     ) {}
@@ -35,6 +36,7 @@ readonly class MessageLogFilterDTO
             search:    $data['search']    ?? null,
             from:      $data['from']      ?? null,
             to:        $data['to']        ?? null,
+            source:    $data['source']    ?? null,
             channel:   $channel ? (self::CHANNEL_MAP[$channel] ?? $channel) : null,
             perPage:   (int) ($data['per_page'] ?? 30),
             page:      (int) ($data['page']     ?? 1),

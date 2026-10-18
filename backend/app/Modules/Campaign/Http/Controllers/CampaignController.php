@@ -85,11 +85,14 @@ class CampaignController extends Controller
                 return response()->json(['message' => 'WhatsApp is limiting marketing messages to this number. Retry is available from ' . now()->addHours(24)->format('d M, h:i A') . '.'], 422);
             }
             $error = $response->json('error.message') ?? 'Meta rejected the message.';
+            \App\Models\MessageLog::recordCloudOutbound($user->company_id, $to, 'template', ['body' => "[Template] {$template->name} — test send", 'template' => $template->name], 'test', null, $error, null, 'Test send', strtolower((string) $template->category));
             if ($details = $response->json('error.error_data.details')) {
                 $error .= " — {$details}";
             }
             return response()->json(['message' => $error], 422);
         }
+
+        \App\Models\MessageLog::recordCloudOutbound($user->company_id, $to, 'template', ['body' => "[Template] {$template->name} — test send", 'template' => $template->name], 'test', $response->json('messages.0.id'), null, null, 'Test send', strtolower((string) $template->category));
 
         return response()->json([
             'message'    => "Test message sent to +{$to}.",

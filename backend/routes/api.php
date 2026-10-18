@@ -279,6 +279,7 @@ Route::prefix('v1')->group(function () {
         });
 
         // ── Message Logs ─────────────────────────────────────────────────────────
+        Route::get('message-logs/stats', [MessageLogController::class, 'stats'])->name('message-logs.stats');
         Route::get('message-logs', [MessageLogController::class, 'index'])->name('message-logs.index');
         Route::get('message-logs/{log}', [MessageLogController::class, 'show'])->name('message-logs.show');
         // ── Roles ─────────────────────────────────────────────────────────────────
@@ -810,6 +811,7 @@ Route::prefix('v1')->group(function () {
 
 
         //     // ── Message Logs ─────────────────────────────────────────────────────────
+        Route::get('message-logs/stats', [MessageLogController::class, 'stats'])->name('message-logs.stats');
         Route::get('message-logs', [MessageLogController::class, 'index'])->name('message-logs.index');
         Route::get('message-logs/{log}', [MessageLogController::class, 'show'])->name('message-logs.show');
 

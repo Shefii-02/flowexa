@@ -347,6 +347,9 @@ class CampaignService
             if ($company->wa_config == 'wallet') {
                 $this->walletService->debit($company->id, 1, "Resend failed — campaign #{$campaign->id}", (string) $campaign->id, 'campaign_resend');
             }
+            \App\Models\MessageLog::recordCloudOutbound($campaign->company_id, $phone, 'template',
+                ['body' => '[Template] ' . ($campaign->template?->name ?? '') . ' — campaign resend: ' . $campaign->name, 'template' => $campaign->template?->name],
+                'campaign', $response->json('messages.0.id'), null, (string) $campaign->id, $campaign->name, strtolower((string) $campaign->template?->category));
             $this->campaignRepository->updateStats($campaign->id, [
                 'sent'   => DB::raw('sent + 1'),
                 'failed' => DB::raw('GREATEST(failed - 1, 0)'),

@@ -332,6 +332,8 @@ class SettingsController extends Controller
                     default => null,
                 };
 
+                \App\Models\MessageLog::recordCloudOutbound($company->id, $d['phone'], 'text', $message, 'test', null, $err);
+
                 return response()->json([
                     'message'    => $err . ($hint ? " → {$hint}" : ''),
                     'error_code' => $code,
@@ -340,6 +342,7 @@ class SettingsController extends Controller
             }
 
             $data = $response->json();
+            \App\Models\MessageLog::recordCloudOutbound($company->id, $d['phone'], 'text', $message, 'test', $data['messages'][0]['id'] ?? null);
 
             return response()->json([
                 'message'    => 'Test message sent successfully.',
