@@ -293,6 +293,8 @@ class CampaignService
             $queued++;
         }
 
+        Log::info("[campaign-retry] campaign {$campaign->id}: queued {$queued} retry job(s), gap " . round($gap, 2) . 's, skipped ' . count($skipped) . ' invalid');
+
         return ['sent' => 0, 'failed' => 0, 'queued' => $queued, 'skipped' => $skipped, 'last_error' => null];
     }
 

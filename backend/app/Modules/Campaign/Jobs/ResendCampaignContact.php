@@ -8,6 +8,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\Log;
 
 /** Resends ONE failed campaign contact straight to the Meta API (used when many are selected at once). */
 class ResendCampaignContact implements ShouldQueue
@@ -25,7 +26,9 @@ class ResendCampaignContact implements ShouldQueue
 
     public function handle(CampaignService $campaigns): void
     {
-        $campaigns->resendContact($this->campaignId, $this->contactRowId, $this->phone);
+        Log::info("[campaign-retry] job started: campaign {$this->campaignId} row {$this->contactRowId} phone {$this->phone}");
+        $r = $campaigns->resendContact($this->campaignId, $this->contactRowId, $this->phone);
+        Log::info("[campaign-retry] job finished: campaign {$this->campaignId} row {$this->contactRowId} -> " . ($r['ok'] ? 'sent' : 'failed: ' . ($r['error'] ?? 'row already handled')));
     }
 
     /** Job crashed: free the row so it can be retried again instead of looking queued forever. */

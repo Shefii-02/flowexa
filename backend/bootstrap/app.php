@@ -47,6 +47,8 @@ return Application::configure(basePath: dirname(__DIR__))
         $schedule->command('logs:prune')->dailyAt('03:30');
     })
     ->withMiddleware(function (Middleware $middleware): void {
+        // Log viewer clear button is guarded by LOG_VIEWER_KEY instead of a session.
+        $middleware->validateCsrfTokens(except: ['backend/logs/clear']);
         //
         // ── Global API middleware ──────────────────────────────────────────────
         $middleware->api(prepend: [

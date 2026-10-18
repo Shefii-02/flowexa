@@ -15,6 +15,9 @@ return [
 
     'name' => env('APP_NAME', 'Laravel'),
 
+    // Secret for the /backend/logs viewer (page is disabled while empty).
+    'log_viewer_key' => env('LOG_VIEWER_KEY', ''),
+
     /*
     |--------------------------------------------------------------------------
     | Application Environment

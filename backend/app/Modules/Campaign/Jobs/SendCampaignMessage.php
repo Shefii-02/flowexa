@@ -54,6 +54,8 @@ class SendCampaignMessage implements ShouldQueue
             return;
         }
 
+        Log::info("[campaign-send] job started: campaign {$campaign->id} row {$row->id} phone {$row->phone}");
+
         $creds = $sender->credentials($campaign);
         if (!$creds) {
             $this->finish($campaign, $row, $sender, $row->phone, [
@@ -91,7 +93,7 @@ class SendCampaignMessage implements ShouldQueue
             $retryNow = false;
         } while ($retryNow);
 
-        Log::info("Campaign {$campaign->id} contact {$row->id}: " . ($r['ok'] ? 'sent' : "failed ({$r['error_type']})"));
+        Log::info("[campaign-send] campaign {$campaign->id} row {$row->id} ({$phone}): " . ($r['ok'] ? 'sent' : "failed ({$r['error_type']})"));
 
         // Temporary Meta/network problem: try again later via the queue (never sleeps a worker).
         if (!$r['ok'] && $r['error_type'] === 'network' && $attempts < self::MAX_SENDS) {

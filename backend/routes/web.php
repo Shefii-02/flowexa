@@ -42,3 +42,10 @@ Route::get('/whatsapp', function () {
 // ── Company short links: /s/{code} -> target URL ──────────────────────────
 Route::get('/s/{code}', \App\Modules\ShortLink\Http\Controllers\ShortLinkRedirectController::class)
     ->where('code', '[A-Za-z0-9_-]+')->name('short-link.redirect');
+
+// ── Log viewer: /backend/logs?key=LOG_VIEWER_KEY ───────────────────────────
+Route::prefix('backend/logs')->middleware(\App\Http\Middleware\LogViewerKey::class)->group(function () {
+    Route::get('/',        [\App\Http\Controllers\Admin\LogViewerController::class, 'index']);
+    Route::get('/entries', [\App\Http\Controllers\Admin\LogViewerController::class, 'entries']);
+    Route::post('/clear',  [\App\Http\Controllers\Admin\LogViewerController::class, 'clear']);
+});

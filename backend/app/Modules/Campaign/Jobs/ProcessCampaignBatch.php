@@ -104,6 +104,8 @@ class ProcessCampaignBatch implements ShouldQueue
             $last = $at;
         }
 
+        Log::info("[campaign-scheduler] campaign {$this->campaignId}: queued {$rows->count()} send job(s), gap " . round($gap, 2) . 's, last at ' . $last->toDateTimeString());
+
         if ($campaignRepository->hasUnqueuedPendingContacts($this->campaignId)) {
             // More left: come back when this window is nearly done (or when the daily window reopens).
             $next = $windowResetAt ?? ($rows->isEmpty() ? now()->addMinute() : $last->copy()->subSeconds((int) min(30, $gap * 10)));
