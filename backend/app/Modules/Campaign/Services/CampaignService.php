@@ -47,6 +47,11 @@ class CampaignService
         $campaign = $this->show($id, $companyId);
         $byStatus = $this->campaignRepository->countByStatus($id);
         $total    = $campaign->total_contacts ?: 1;
+        // from the real contact rows, not the stored counter columns
+        $read      = (int) ($byStatus['read'] ?? 0);
+        $delivered = $read + (int) ($byStatus['delivered'] ?? 0);
+        $sent      = $delivered + (int) ($byStatus['sent'] ?? 0);
+        $failed    = (int) ($byStatus['failed'] ?? 0);
 
         // Replies attributed to this campaign's starts_at/ends_at lead-attribution window
         // (WaChatLeadAttributionService::matchWaCloudCampaign) — each is a first-time reply that
@@ -59,15 +64,15 @@ class CampaignService
 
         return [
             'total_contacts' => $campaign->total_contacts,
-            'sent'           => $campaign->sent,
-            'delivered'      => $campaign->delivered,
-            'read'           => $campaign->read,
-            'failed'         => $campaign->failed,
-            'pending'        => $campaign->pending,
+            'sent'           => $sent,
+            'delivered'      => $delivered,
+            'read'           => $read,
+            'failed'         => $failed,
+            'pending'        => (int) ($byStatus['pending'] ?? 0),
             'wallet_debited' => $campaign->wallet_debited,
-            'delivery_rate'  => round(($campaign->delivered / $total) * 100, 1),
-            'read_rate'      => round(($campaign->read / $total) * 100, 1),
-            'fail_rate'      => round(($campaign->failed / $total) * 100, 1),
+            'delivery_rate'  => round(($delivered / $total) * 100, 1),
+            'read_rate'      => round(($read / $total) * 100, 1),
+            'fail_rate'      => round(($failed / $total) * 100, 1),
             'by_status'      => $byStatus,
             // which WhatsApp number this campaign sends from
             'sender'         => $campaign->waPhoneNumber
@@ -75,7 +80,7 @@ class CampaignService
                 : null,
             'template_name'  => $campaign->template?->name,
             // failed contacts that can still be retried (any failed contact can be retried again)
-            'resendable_failed' => \App\Models\CampaignContact::where('campaign_id', $campaign->id)->where('status', 'failed')->count(),
+            'resendable_failed' => \App\Models\CampaignContact::resendable($campaign->id)->count(),
             'starts_at'      => $campaign->starts_at?->toIso8601String(),
             'ends_at'        => $campaign->ends_at?->toIso8601String(),
             'leads_received' => $leadsByStage->sum(),
@@ -261,10 +266,8 @@ class CampaignService
         $company  = $campaign->company;
         $edits    = collect($items)->keyBy('id');
 
-        $rows = \App\Models\CampaignContact::where('campaign_id', $campaign->id)
-            ->where('status', 'failed')
-            // not already waiting in the queue (a double click must not queue the same number twice)
-            ->where(fn ($q) => $q->whereNull('scheduled_for')->orWhere('scheduled_for', '<', now()->subMinutes(15)))
+        // not already waiting in the queue (a double click must not queue the same number twice)
+        $rows = \App\Models\CampaignContact::resendable($campaign->id)
             ->when($edits->isNotEmpty(), fn ($q) => $q->whereIn('id', $edits->keys()))
             ->limit(500)
             ->get();

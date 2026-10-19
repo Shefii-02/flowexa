@@ -30,6 +30,13 @@ class CampaignContact extends Model
     public function campaign(): BelongsTo { return $this->belongsTo(Campaign::class); }
     public function contact(): BelongsTo  { return $this->belongsTo(Contact::class); }
 
+    /** Failed rows that are not already waiting for a queued retry (a stuck one frees up after 15 min). */
+    public function scopeResendable($q, int $campaignId)
+    {
+        return $q->where('campaign_id', $campaignId)->where('status', 'failed')
+            ->where(fn ($w) => $w->whereNull('scheduled_for')->orWhere('scheduled_for', '<', now()->subMinutes(15)));
+    }
+
     public function scopePending($q)   { return $q->where('status', 'pending'); }
     public function scopeFailed($q)    { return $q->where('status', 'failed'); }
     public function scopeDelivered($q) { return $q->where('status', 'delivered'); }

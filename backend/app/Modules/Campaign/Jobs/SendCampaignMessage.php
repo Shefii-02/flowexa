@@ -116,9 +116,11 @@ class SendCampaignMessage implements ShouldQueue
             'pending' => DB::raw('GREATEST(pending - 1, 0)'),
         ]);
 
-        // Done when nothing is pending. Atomic: only the job that observes pending=0 completes it.
-        Campaign::where('id', $campaign->id)->where('status', 'running')->where('pending', '<=', 0)
-            ->update(['status' => 'completed', 'completed_at' => now()]);
+        // Done when no pending ROW is left (the stored counter can drift if rows are edited).
+        if (!CampaignContact::where('campaign_id', $campaign->id)->where('status', 'pending')->exists()) {
+            Campaign::where('id', $campaign->id)->where('status', 'running')
+                ->update(['status' => 'completed', 'pending' => 0, 'completed_at' => now()]);
+        }
     }
 
     /** Queue gave up (exception, timeout, tries exhausted): record the reason instead of leaving it pending forever. */
