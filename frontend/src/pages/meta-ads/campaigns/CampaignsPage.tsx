@@ -612,6 +612,9 @@ export default function CampaignsPage() {
                       <td>
                         <p className="font-medium text-gray-900">{c.name}</p>
                         <p className="text-xs text-gray-400">{c.created_at?.slice(0, 10)}</p>
+                        {c.status === 'scheduled' && (c as any).scheduled_at && (
+                          <p className="text-xs text-blue-600">🕒 {new Date((c as any).scheduled_at).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}</p>
+                        )}
                       </td>
                       <td>
                         <p className="text-xs text-gray-600 font-mono">{c.template?.name || '—'}</p>
@@ -660,14 +663,11 @@ export default function CampaignsPage() {
                           {!['draft', 'scheduled'].includes(c.status) && (c.stats?.failed || 0) > 0 && (
                             <button onClick={() => loadStats(c, 'failed')} className="text-xs text-red-500 hover:underline">Failed ({c.stats?.failed})</button>
                           )}
-                          {['draft', 'paused'].includes(c.status) && <button onClick={() => openEdit(c)} className="text-xs text-gray-600 hover:underline">Edit</button>}
+                          {['draft', 'scheduled'].includes(c.status) && <button onClick={() => openEdit(c)} className="text-xs text-gray-600 hover:underline">Edit</button>}
                           {c.status === 'draft' && <button onClick={() => handleAction(c.id, 'launch')} disabled={isActing} className="text-xs text-green-600 hover:underline">Launch</button>}
                           {c.status === 'running' && <button onClick={() => handleAction(c.id, 'pause')} disabled={isActing} className="text-xs text-yellow-600 hover:underline">Pause</button>}
                           {c.status === 'paused' && <button onClick={() => handleAction(c.id, 'resume')} disabled={isActing} className="text-xs text-brand-600 hover:underline">Resume</button>}
-                          {c.status === 'completed' && ((c.stats as any)?.resendable_failed || 0) > 0 && (
-                            <button onClick={() => handleAction(c.id, 'resend-failed')} disabled={isActing} className="text-xs text-purple-600 hover:underline">Resend {(c.stats as any)?.resendable_failed}</button>
-                          )}
-                          {['draft', 'paused', 'completed'].includes(c.status) && (
+                          {['draft', 'scheduled', 'paused', 'completed'].includes(c.status) && (
                             <button onClick={() => setDelCamp(c)} className="text-xs text-red-500 hover:underline">Delete</button>
                           )}
                         </div>

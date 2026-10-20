@@ -423,7 +423,7 @@ export const templateApi = {
 export const conversationApi = {
   // GET /conversations — inbox list, most recently active first.
   // filter: mine=1 (only conversations assigned to me), unassigned=1 (only unclaimed).
-  list: (params?: { status?: string; mine?: number | boolean; unassigned?: number | boolean; page?: number; per_page?: number }) =>
+  list: (params?: { status?: string; mine?: number | boolean; unassigned?: number | boolean; unread?: number | boolean; page?: number; per_page?: number }) =>
     api.get('/conversations', { params }),
 
   // GET /conversations/{id}/messages — full thread, oldest first. Marks the thread read.

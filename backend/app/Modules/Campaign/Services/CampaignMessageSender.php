@@ -55,8 +55,8 @@ class CampaignMessageSender
     /** @return array{ok:false, wa_message_id:null, error_type:string, raw:string, reason:string, retry_after:?\Carbon\Carbon} */
     private function failure(string $type, string $raw): array
     {
-        // A capped number fails the same way if retried straight away — hold retries for 24h.
-        $retryAfter = $type === 'frequency_capped' ? now()->addHours(24) : null;
+        // A capped number fails the same way if retried straight away — hold retries for 2h.
+        $retryAfter = $type === 'frequency_capped' ? now()->addHours(2) : null;
         $reason = $retryAfter
             ? 'WhatsApp is limiting marketing messages to this number. Retry is available from ' . $retryAfter->format('d M, h:i A') . '.'
             : $this->friendly($type) . ' — ' . mb_substr($raw, 0, 400);

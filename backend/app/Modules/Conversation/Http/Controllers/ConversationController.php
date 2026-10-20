@@ -33,6 +33,7 @@ class ConversationController extends Controller
             ->when($request->status, fn ($q, $s) => $q->where('status', $s))
             ->when($request->boolean('mine'), fn ($q) => $q->where('assigned_to', auth()->id()))
             ->when($request->boolean('unassigned'), fn ($q) => $q->whereNull('assigned_to'))
+            ->when($request->boolean('unread'), fn ($q) => $q->where('unread_count', '>', 0))
             ->with([
                 'assignedAgent:id,name',
                 'contact:id,name',

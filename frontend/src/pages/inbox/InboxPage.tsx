@@ -92,7 +92,7 @@ export default function InboxPage() {
   const [sending, setSending]             = useState(false)
   const [loadingList, setLoadingList]     = useState(true)
   const [loadingThread, setLoadingThread] = useState(false)
-  const [filter, setFilter]               = useState<'all' | 'mine' | 'unassigned'>('all')
+  const [filter, setFilter]               = useState<'unread' | 'all' | 'mine' | 'unassigned'>('all')
   const [search, setSearch]               = useState('')
   const [companyId, setCompanyId]         = useState<number | null>(null)
   const [drawerOpen, setDrawerOpen]       = useState(false)
@@ -110,6 +110,7 @@ export default function InboxPage() {
     conversationApi.list({
       mine: filter === 'mine' ? 1 : undefined,
       unassigned: filter === 'unassigned' ? 1 : undefined,
+      unread: filter === 'unread' ? 1 : undefined,
       per_page: 50,
     })
       .then(r => setConversations(r.data.conversations || []))
@@ -272,9 +273,9 @@ export default function InboxPage() {
             <input placeholder="Search name or number" value={search} onChange={e => setSearch(e.target.value)} />
           </div>
           <div className="wa-filters">
-            {(['all', 'mine', 'unassigned'] as const).map(f => (
+            {(['unread', 'all', 'mine', 'unassigned'] as const).map(f => (
               <button key={f} className={`wa-chip ${filter === f ? 'is-active' : ''}`} onClick={() => setFilter(f)}>
-                {f === 'all' ? 'All' : f === 'mine' ? 'Mine' : 'Unassigned'}
+                {f === 'unread' ? 'Unread' : f === 'all' ? 'All' : f === 'mine' ? 'Mine' : 'Unassigned'}
               </button>
             ))}
           </div>

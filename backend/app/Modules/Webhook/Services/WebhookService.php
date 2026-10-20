@@ -350,14 +350,16 @@ class WebhookService
                     'read_at'      => $dto->status === 'read'      ? now() : $cc->read_at,
                 ] + ($dto->status === 'failed' ? [
                     // Meta accepted the send, then reported the real delivery failure here
-                    'failed_reason' => $dto->errorCode === 131049
-                        ? 'WhatsApp is limiting marketing messages to this number. Retry is available from ' . now()->addHours(24)->format('d M, h:i A') . '.'
+                    'failed_reason' => in_array($dto->errorCode, [131049, 130472], true)
+                        ? 'WhatsApp is limiting marketing messages to this number. Retry is available from ' . now()->addHours(2)->format('d M, h:i A') . '.'
                         : 'Not delivered by WhatsApp'
                             . ($dto->errorCode ? " (code {$dto->errorCode})" : '')
                             . ' — ' . mb_substr($dto->errorMessage ?: 'no reason given by Meta', 0, 400),
-                    'error_type'    => $dto->errorCode === 131049 ? 'frequency_capped' : 'delivery',
-                    // a capped user fails the same way if retried straight away — hold retries for 24h
-                    'retry_after'   => $dto->errorCode === 131049 ? now()->addHours(24) : null,
+                    // 130472 = Meta holds this user out of marketing messages for an experiment; it is
+                    // temporary and free, so it is retried once after the same 2h wait as a capped number
+                    'error_type'    => in_array($dto->errorCode, [131049, 130472], true) ? 'frequency_capped' : 'delivery',
+                    // a capped user fails the same way if retried straight away — hold retries for 2h
+                    'retry_after'   => in_array($dto->errorCode, [131049, 130472], true) ? now()->addHours(2) : null,
                 ] : []));
 
                 \App\Models\Campaign::where('id', $cc->campaign_id)
