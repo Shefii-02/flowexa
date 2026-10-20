@@ -311,6 +311,15 @@ class WebhookService
             $updates = ['status' => $dto->status];
             if ($dto->status === 'delivered') $updates['delivered_at'] = now();
             if ($dto->status === 'read')      $updates['read_at']      = now();
+            if ($dto->status === 'failed') {
+                // Meta accepted the send, then reported the real delivery failure here
+                $updates['failure_reason'] = mb_substr(
+                    'Not delivered by WhatsApp'
+                        . ($dto->errorCode ? " (code {$dto->errorCode})" : '')
+                        . ' — ' . ($dto->errorMessage ?: 'no reason given by Meta'),
+                    0, 500
+                );
+            }
             $log->update($updates);
         }
 

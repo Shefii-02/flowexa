@@ -283,9 +283,9 @@ export default function MessageLogsPage({ lockChannel }: { lockChannel?: 'waha' 
                     <p className="text-sm text-gray-700 truncate">
                       {log.content || `[${log.type} message]`}
                     </p>
-                    {log.status === 'failed' && log.failure_reason && (
-                      <p className="text-xs text-red-600 truncate" title={log.failure_reason}>
-                        Failed: {log.failure_reason}
+                    {log.status === 'failed' && (
+                      <p className="text-xs text-red-600 truncate" title={log.failure_reason || undefined}>
+                        Failed: {log.failure_reason || 'No reason was reported by WhatsApp'}
                       </p>
                     )}
                   </div>
@@ -367,10 +367,10 @@ export default function MessageLogsPage({ lockChannel }: { lockChannel?: 'waha' 
                           <p className="font-medium text-amber-600">{fmtTs(log.retry_after)}</p>
                         </div>
                       )}
-                      {log.failure_reason && (
+                      {(log.failure_reason || log.status === 'failed') && (
                         <div className="col-span-2">
                           <p className="text-gray-400 mb-0.5">Failure reason</p>
-                          <p className="font-medium text-red-600">{log.failure_reason}</p>
+                          <p className="font-medium text-red-600">{log.failure_reason || 'No reason was reported by WhatsApp'}</p>
                         </div>
                       )}
                       <div>
