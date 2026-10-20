@@ -513,6 +513,17 @@ export const Sidebar = () => {
             <FlatLink to="/catalog" icon="📦" label="Catalog" />
  {/* Catalog is a top-level item now (📦 Catalog under CRM) */}
               <FlatLink to="/website-widget" icon="🌐" label="Website Widget" />
+            {/* ── ACCOUNTS ── */}
+            <SectionHeader label="Accounts" />
+            <NestedAccordion icon="🧮" label="Accounts" basePaths={['/accounts']}>
+              <SubLink to="/accounts" icon="📊" label="Dashboard" end />
+              <SubLink to="/accounts/vouchers" icon="🧾" label="Vouchers" />
+              <SubLink to="/accounts/ledgers" icon="📒" label="Ledgers" />
+              <SubLink to="/accounts/reports" icon="📑" label="Reports" />
+              <SubLink to="/accounts/gst" icon="🏛️" label="GST" />
+              <SubLink to="/accounts/settings" icon="⚙️" label="Settings" />
+            </NestedAccordion>
+
             {/* ── CRM ── */}
             <SectionHeader label="CRM" />
             <NestedAccordion

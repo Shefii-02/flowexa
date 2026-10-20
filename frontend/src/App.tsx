@@ -99,6 +99,7 @@ import TemplatesPage from '@/pages/template/TemplatesPage'
 import PlanPurchasePage from '@/pages/plan-purchase/PlanPurchasePage'
 import BlacklistPage from '@/pages/blacklist/BlacklistPage'
 import ShortLinksPage from '@/pages/short-links/ShortLinksPage'
+import AccountsPage from '@/pages/accounts/AccountsPage'
 import LabelsPage from './pages/contacts/LabelsPage'
 import FlowBuildersPage from './pages/flow/FlowBuildersPage'
 import FlowNodesPage from '@/pages/flow/FlowNodesPage'
@@ -295,6 +296,8 @@ export default function App() {
               <Route path="plan-purchase" element={<PlanPurchasePage />} />
               <Route path="blacklist" element={<BlacklistPage />} />
               <Route path="short-links" element={<ShortLinksPage />} />
+              <Route path="accounts" element={<AccountsPage />} />
+              <Route path="accounts/:tab" element={<AccountsPage />} />
               <Route path="leads/categories" element={<LeadCategoriesPage />} />
 
               {/* Advanced CRM */}

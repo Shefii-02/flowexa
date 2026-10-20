@@ -9,6 +9,7 @@ use App\Modules\Auth\Http\Controllers\AuthController;
 use App\Modules\Auth\Http\Controllers\CompanyController;
 use App\Modules\Auth\Http\Controllers\PushNotificationController;
 use App\Modules\Blacklist\Http\Controllers\BlacklistController;
+use App\Modules\Accounts\Http\Controllers\AccountsController;
 use App\Modules\ShortLink\Http\Controllers\ShortLinkController;
 use App\Modules\Campaign\Http\Controllers\CampaignContactController;
 use App\Modules\Campaign\Http\Controllers\CampaignController;
@@ -653,6 +654,25 @@ Route::prefix('v1')->group(function () {
         Route::prefix('staff')->name('staff.availability.')->group(function () {
             Route::get('/availability',        [LeadAssignmentController::class, 'staffAvailability'])->name('index');
             Route::post('/availability/toggle', [LeadAssignmentController::class, 'toggleAvailability'])->name('toggle');
+        });
+
+        // ── Accounts: double-entry books, vouchers, GST, reports ────────────────
+        Route::prefix('accounts')->middleware(['company.active'])->group(function () {
+            Route::get('settings',  [AccountsController::class, 'settings']);
+            Route::put('settings',  [AccountsController::class, 'saveSettings']);
+            Route::get('dashboard', [AccountsController::class, 'dashboard']);
+            Route::get('ledgers',          [AccountsController::class, 'ledgers']);
+            Route::post('ledgers',         [AccountsController::class, 'storeLedger']);
+            Route::put('ledgers/{id}',     [AccountsController::class, 'updateLedger']);
+            Route::delete('ledgers/{id}',  [AccountsController::class, 'destroyLedger']);
+            Route::get('vouchers/next-number', [AccountsController::class, 'nextNumber']);
+            Route::get('vouchers',         [AccountsController::class, 'vouchers']);
+            Route::post('vouchers',        [AccountsController::class, 'storeVoucher']);
+            Route::get('vouchers/{id}',    [AccountsController::class, 'showVoucher']);
+            Route::put('vouchers/{id}',    [AccountsController::class, 'updateVoucher']);
+            Route::delete('vouchers/{id}', [AccountsController::class, 'destroyVoucher']);
+            Route::get('reports/{name}',   [AccountsController::class, 'report']);
+            Route::get('gst',              [AccountsController::class, 'gst']);
         });
 
         Route::prefix('blacklist')->name('blacklist.')->group(function () {

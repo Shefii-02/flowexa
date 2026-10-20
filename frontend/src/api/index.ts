@@ -629,3 +629,27 @@ export const shortLinkApi = {
   analytics: (id: number, days = 30) => api.get(`/short-links/${id}/analytics`, { params: { days } }),
   remove: (id: number) => api.delete(`/short-links/${id}`),
 }
+
+// ── Accounts (ledgers, vouchers, GST, reports) ────────────────────────────────
+export const accountsApi = {
+  settings: () => api.get('/accounts/settings'),
+  saveSettings: (d: Record<string, unknown>) => api.put('/accounts/settings', d),
+  dashboard: (p?: Record<string, unknown>) => api.get('/accounts/dashboard', { params: p }),
+  ledgers: (p?: Record<string, unknown>) => api.get('/accounts/ledgers', { params: p }),
+  createLedger: (d: Record<string, unknown>) => api.post('/accounts/ledgers', d),
+  updateLedger: (id: number, d: Record<string, unknown>) => api.put(`/accounts/ledgers/${id}`, d),
+  deleteLedger: (id: number) => api.delete(`/accounts/ledgers/${id}`),
+  vouchers: (p?: Record<string, unknown>) => api.get('/accounts/vouchers', { params: p }),
+  voucher: (id: number) => api.get(`/accounts/vouchers/${id}`),
+  createVoucher: (d: Record<string, unknown>) => api.post('/accounts/vouchers', d),
+  updateVoucher: (id: number, d: Record<string, unknown>) => api.put(`/accounts/vouchers/${id}`, d),
+  deleteVoucher: (id: number) => api.delete(`/accounts/vouchers/${id}`),
+  report: (name: string, p?: Record<string, unknown>) => api.get(`/accounts/reports/${name}`, { params: p }),
+  gst: (p?: Record<string, unknown>) => api.get('/accounts/gst', { params: p }),
+  /** CSV export — fetched with the auth header, then saved as a file. */
+  download: async (url: string, params: Record<string, unknown>, filename: string) => {
+    const r = await api.get(url, { params: { ...params, format: 'csv' }, responseType: 'blob' })
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(r.data); a.download = filename; a.click(); URL.revokeObjectURL(a.href)
+  },
+}
