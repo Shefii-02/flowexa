@@ -4,8 +4,12 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="csrf-token" content="{{ csrf_token() }}">
+{{-- Link-preview crawlers (WhatsApp / Meta) get no title or description, so a campaign message that
+     contains our URL shows just the domain instead of the site's meta title. --}}
+@if (! preg_match('/WhatsApp|facebookexternalhit|facebookcatalog|Facebot/i', (string) request()->userAgent()))
 <title>@yield('title', 'WA SaaS — WhatsApp Business Platform')</title>
 <meta name="description" content="@yield('meta_description', 'Automate WhatsApp messaging, manage leads, run campaigns, and grow your business with WA SaaS Platform.')">
+@endif
 
 <!-- Fonts -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
