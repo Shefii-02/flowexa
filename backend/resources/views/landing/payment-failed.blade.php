@@ -1,6 +1,6 @@
 {{-- resources/views/landing/payment-failed.blade.php --}}
 @extends('layouts.landing')
-@section('title', 'Payment Failed — WA SaaS Platform')
+@section('title', 'Payment Failed — TeamzoPlatform')
 
 @section('content')
 <section style="padding:80px 0;min-height:calc(100vh - 68px);background:linear-gradient(135deg,#fff5f5,#fef2f2);display:flex;align-items:center">

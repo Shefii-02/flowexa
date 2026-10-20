@@ -7,8 +7,8 @@
 {{-- Link-preview crawlers (WhatsApp / Meta) get no title or description, so a campaign message that
      contains our URL shows just the domain instead of the site's meta title. --}}
 @if (! preg_match('/WhatsApp|facebookexternalhit|facebookcatalog|Facebot/i', (string) request()->userAgent()))
-<title>@yield('title', 'WA SaaS — WhatsApp Business Platform')</title>
-<meta name="description" content="@yield('meta_description', 'Automate WhatsApp messaging, manage leads, run campaigns, and grow your business with WA SaaS Platform.')">
+<title>@yield('title', 'Teamzo— WhatsApp Business Platform')</title>
+<meta name="description" content="@yield('meta_description', 'Automate WhatsApp messaging, manage leads, run campaigns, and grow your business with TeamzoPlatform.')">
 @endif
 
 <!-- Fonts -->
@@ -283,7 +283,7 @@ select.form-control{cursor:pointer}
       </div>
     </div>
     <div class="footer-bottom">
-      <p>© {{ date('Y') }} WA SaaS Platform. All rights reserved.</p>
+      <p>© {{ date('Y') }} TeamzoPlatform. All rights reserved.</p>
       <p>Built with ❤️ in Kerala, India</p>
     </div>
   </div>

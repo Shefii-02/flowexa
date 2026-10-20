@@ -113,7 +113,7 @@
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px">
         <div style="width:44px;height:44px;background:var(--brand);border-radius:12px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:20px">💬</div>
         <div>
-          <p style="font-size:13px;color:var(--muted)">WA SaaS Platform</p>
+          <p style="font-size:13px;color:var(--muted)">TeamzoPlatform</p>
           <div class="checkout-plan-name">{{ $plan->name }} Plan</div>
         </div>
       </div>
@@ -253,7 +253,7 @@ document.getElementById('pay-btn').addEventListener('click', async function() {
       amount:      data.amount,
       currency:    'INR',
       order_id:    data.order_id,
-      name:        'WA SaaS Platform',
+      name:        'TeamzoPlatform',
       description: data.plan_name + ' Plan — ' + data.duration,
       image:       '',
       prefill: {

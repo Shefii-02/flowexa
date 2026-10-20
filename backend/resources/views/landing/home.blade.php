@@ -1,7 +1,7 @@
 {{-- resources/views/landing/home.blade.php --}}
 @extends('layouts.landing')
 
-@section('title', 'WA SaaS — WhatsApp Business Platform for Growing Teams')
+@section('title', 'Teamzo— WhatsApp Business Platform for Growing Teams')
 @section('meta_description', 'Automate WhatsApp messaging, manage leads, run bulk campaigns, build chatbot flows and grow your business. 14-day free trial. No credit card required.')
 
 @section('content')
@@ -174,7 +174,7 @@
     <div class="grid-3">
       @php
       $testimonials = [
-        ['⭐⭐⭐⭐⭐','"WA SaaS transformed our lead management. We went from losing track of WhatsApp enquiries to a fully automated pipeline. Our counsellors now focus only on hot leads."','Rahul Menon','Founder, Univexa Technologies','👨‍💼'],
+        ['⭐⭐⭐⭐⭐','"Teamzotransformed our lead management. We went from losing track of WhatsApp enquiries to a fully automated pipeline. Our counsellors now focus only on hot leads."','Rahul Menon','Founder, Univexa Technologies','👨‍💼'],
         ['⭐⭐⭐⭐⭐','"The flow builder is incredible. We set it up once and now every WhatsApp inquiry is automatically categorized, a lead is created, and the right counsellor is notified instantly."','Priya Sharma','Operations Head, Brightway Academy','👩‍💼'],
         ['⭐⭐⭐⭐⭐','"The OTP API saved us weeks of development. We integrated WhatsApp OTP into our app in under 2 hours. The 24-hour dedup feature prevents spam complaints automatically."','Arun Kumar','CTO, NexGen Software','👨‍💻'],
       ]
@@ -234,7 +234,7 @@
       Ready to automate your WhatsApp business?
     </h2>
     <p style="font-size:18px;color:rgba(255,255,255,.8);margin-bottom:32px">
-      Join hundreds of companies using WA SaaS to convert WhatsApp enquiries into customers.
+      Join hundreds of companies using Teamzoto convert WhatsApp enquiries into customers.
     </p>
     <div class="flex items-center" style="justify-content:center;gap:16px;flex-wrap:wrap">
       <a href="{{ route('register') }}" class="btn btn-white btn-lg">

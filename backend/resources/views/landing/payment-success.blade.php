@@ -1,6 +1,6 @@
 {{-- resources/views/landing/payment-success.blade.php --}}
 @extends('layouts.landing')
-@section('title', 'Account Activated — WA SaaS Platform')
+@section('title', 'Account Activated — TeamzoPlatform')
 
 @section('content')
 <section style="padding:80px 0;min-height:calc(100vh - 68px);background:linear-gradient(135deg,#f0fdf9,#e6f7f1);display:flex;align-items:center">

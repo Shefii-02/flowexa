@@ -1,6 +1,6 @@
 {{-- resources/views/landing/contact.blade.php --}}
 @extends('layouts.landing')
-@section('title', 'Contact Us — WA SaaS Platform')
+@section('title', 'Contact Us — TeamzoPlatform')
 @section('meta_description', 'Get in touch with our team. We reply within 24 hours. Chat on WhatsApp for instant support.')
 
 @section('content')

@@ -1,7 +1,7 @@
 {{-- resources/views/landing/register.blade.php --}}
 @extends('layouts.landing')
-@section('title', 'Start Free Trial — WA SaaS Platform')
-@section('meta_description', 'Create your WA SaaS account. 14-day free trial. 1,000 free WhatsApp messages. No credit card required.')
+@section('title', 'Start Free Trial — TeamzoPlatform')
+@section('meta_description', 'Create your Teamzoaccount. 14-day free trial. 1,000 free WhatsApp messages. No credit card required.')
 
 @section('content')
 

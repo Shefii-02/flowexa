@@ -1,6 +1,6 @@
 {{-- resources/views/landing/pricing.blade.php --}}
 @extends('layouts.landing')
-@section('title', 'Pricing — WA SaaS Platform')
+@section('title', 'Pricing — TeamzoPlatform')
 @section('meta_description', 'Simple, transparent pricing. Start free with 1,000 messages. Upgrade as you grow. Monthly and yearly plans available.')
 
 @section('content')

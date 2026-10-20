@@ -35,7 +35,7 @@ Route::get('/payment/failed',        [PaymentController::class, 'failed'])->name
 // ── WhatsApp redirect ─────────────────────────────────────────────────────
 Route::get('/whatsapp', function () {
     $phone   = config('landing.whatsapp_number', '918086544828');
-    $message = urlencode('Hi! I am interested in WA SaaS Platform. Can you help me?');
+    $message = urlencode('Hi! I am interested in TeamzoPlatform. Can you help me?');
     return redirect("https://wa.me/{$phone}?text={$message}");
 })->name('whatsapp');
 

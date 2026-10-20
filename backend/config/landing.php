@@ -58,7 +58,7 @@ MAIL_USERNAME=your@gmail.com
 MAIL_PASSWORD=your_app_password
 MAIL_ENCRYPTION=tls
 MAIL_FROM_ADDRESS=noreply@waapi.com
-MAIL_FROM_NAME="WA SaaS Platform"
+MAIL_FROM_NAME="TeamzoPlatform"
 
 |=============================================================================
 | services.php additions — add razorpay block

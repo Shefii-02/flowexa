@@ -24,7 +24,7 @@ class SuperAdminSeeder extends Seeder
         // every run.
         $refreshable = [
             'plan_id' => $trialPlan->id,
-            'name'    => 'WA SaaS Platform',
+            'name'    => 'TeamzoPlatform',
             'email'   => 'platform@waapi.com',
             'status'  => 'active',
         ];

@@ -1,6 +1,6 @@
 {{-- resources/views/landing/features.blade.php --}}
 @extends('layouts.landing')
-@section('title', 'Features — WA SaaS Platform')
+@section('title', 'Features — TeamzoPlatform')
 @section('meta_description', 'Explore all features: flow builder, bulk campaigns, lead management, OTP API, analytics, Meta Ads integration and more.')
 
 @section('content')
