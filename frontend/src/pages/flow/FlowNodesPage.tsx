@@ -75,6 +75,8 @@ const DEFAULT_FORM = {
   header_media_name: '', header_media_filename: '', footer_text: '', list_button_label: '',
   // AI-agent (knowledge_base) node
   ai_agent_id: null as number | null, ai_kb_ids: [] as number[],
+  // text under this option's title when its parent is sent as a list
+  option_description: '',
 }
 
 // ─── Dup helpers ──────────────────────────────────────────────────────────────
@@ -331,7 +333,7 @@ export default function FlowNodesPage() {
 
   const handleTitleChange = (val: string) => { set('title', val); if (!form.reply_id_manual) set('reply_id', slugify(val)) }
   const openCreate = (parentId: number | null = null) => { setEditN(null); setForm({ ...DEFAULT_FORM, parent_id: parentId }); setOptions([]); setMultiMode(false); setShowForm(true) }
-  const openEdit = (n: FlowNode, all: FlowNode[] = nodes) => { setEditN(n); setOptions(optionsFromNode(n, all.filter(x => x.parent_id === n.id))); const rich = n.type === 'list' || n.type === 'button', hm = rich && ['image', 'video', 'document'].includes(n.media_type); setForm({ header_type: n.header_type || (hm ? n.media_type : ''), header_text: n.header_text || '', header_media_url: hm ? (n.media_url || '') : '', header_media_asset_id: null, header_media_name: '', header_media_filename: n.media_filename || '', footer_text: n.footer_text || '', list_button_label: n.list_button_label || '', ai_agent_id: n.ai_agent_id || null, ai_kb_ids: (n.ai_kb_ids || []).map(Number), title: n.title, message: n.message || '', type: n.type, reply_id: n.reply_id, reply_id_manual: true, redirect_to_reply_id: n.redirect_to_reply_id || '', lead_category: n.lead_category || '', parent_id: n.parent_id, sort_order: n.sort_order ?? 0, is_active: n.is_active, is_dead_end: !!n.is_dead_end, multi_messages: (n.multi_messages || []).map((m: any) => ({ _key: uid(), size: null, mime_type: '', ...m, original_url: m.url || '', upload: null })), is_dynamic: !!n.is_dynamic, dynamic_api_url: n.dynamic_api_url || '', dynamic_api_method: n.dynamic_api_method || 'GET', dynamic_api_headers: n.dynamic_api_headers || '', dynamic_label_field: n.dynamic_label_field || 'name', dynamic_value_field: n.dynamic_value_field || 'id', dynamic_description_field: n.dynamic_description_field || '', survey_form_id: n.survey_form_id || null, wa_template_id: n.wa_template_id || null }); setMultiMode(!!(n.multi_messages?.length)); setShowForm(true) }
+  const openEdit = (n: FlowNode, all: FlowNode[] = nodes) => { setEditN(n); setOptions(optionsFromNode(n, all.filter(x => x.parent_id === n.id))); const rich = n.type === 'list' || n.type === 'button', hm = rich && ['image', 'video', 'document'].includes(n.media_type); setForm({ header_type: n.header_type || (hm ? n.media_type : ''), header_text: n.header_text || '', header_media_url: hm ? (n.media_url || '') : '', header_media_asset_id: null, header_media_name: '', header_media_filename: n.media_filename || '', footer_text: n.footer_text || '', list_button_label: n.list_button_label || '', ai_agent_id: n.ai_agent_id || null, ai_kb_ids: (n.ai_kb_ids || []).map(Number), option_description: n.option_description || '', title: n.title, message: n.message || '', type: n.type, reply_id: n.reply_id, reply_id_manual: true, redirect_to_reply_id: n.redirect_to_reply_id || '', lead_category: n.lead_category || '', parent_id: n.parent_id, sort_order: n.sort_order ?? 0, is_active: n.is_active, is_dead_end: !!n.is_dead_end, multi_messages: (n.multi_messages || []).map((m: any) => ({ _key: uid(), size: null, mime_type: '', ...m, original_url: m.url || '', upload: null })), is_dynamic: !!n.is_dynamic, dynamic_api_url: n.dynamic_api_url || '', dynamic_api_method: n.dynamic_api_method || 'GET', dynamic_api_headers: n.dynamic_api_headers || '', dynamic_label_field: n.dynamic_label_field || 'name', dynamic_value_field: n.dynamic_value_field || 'id', dynamic_description_field: n.dynamic_description_field || '', survey_form_id: n.survey_form_id || null, wa_template_id: n.wa_template_id || null }); setMultiMode(!!(n.multi_messages?.length)); setShowForm(true) }
 
   const addBlock = (type = 'text') => set('multi_messages', [...form.multi_messages, emptyBlock(type)])
   const removeBlock = (key: string) => set('multi_messages', form.multi_messages.filter((b: any) => b._key !== key))
@@ -340,6 +342,7 @@ export default function FlowNodesPage() {
   const isSurvey = form.type === 'survey', isTpl = form.type === 'template'
 
   const buildPayload = (f = form, mm = form.multi_messages) => { const p: any = { title: f.title.slice(0, 24), message: f.message, type: f.type, reply_id: f.reply_id, redirect_to_reply_id: f.redirect_to_reply_id || null, lead_category: f.lead_category || null, parent_id: f.parent_id, sort_order: f.sort_order ?? 0, is_active: f.is_active, is_dead_end: f.is_dead_end, is_dynamic: f.is_dynamic, dynamic_api_url: f.is_dynamic ? f.dynamic_api_url : null, dynamic_api_method: f.is_dynamic ? f.dynamic_api_method : null, dynamic_api_headers: f.is_dynamic ? f.dynamic_api_headers : null, dynamic_label_field: f.is_dynamic ? f.dynamic_label_field : null, dynamic_value_field: f.is_dynamic ? f.dynamic_value_field : null, dynamic_description_field: f.is_dynamic ? f.dynamic_description_field : null, survey_form_id: isSurvey ? f.survey_form_id : null, wa_template_id: isTpl ? f.wa_template_id : null };
+    p.option_description = f.option_description?.trim() ? f.option_description.trim() : null
     if (f.type === 'knowledge_base') { p.ai_agent_id = f.ai_agent_id || null; p.ai_kb_ids = f.ai_kb_ids || [] }
     // interactive header / footer / buttons — only list and button nodes carry them
     const rich = (f.type === 'list' || f.type === 'button') && !f.is_dynamic
@@ -374,14 +377,14 @@ export default function FlowNodesPage() {
         if (o.id) {
           const prev = saved.find(c => c.id === o.id)
           const ai = o.kind === 'ai_agent'
-          const changed = o.title !== o.original_title || o.message !== o.original_message || (survey && o.survey_form_id !== o.original_survey_form_id) || (ai && aiKey(o) !== o.original_ai) || (prev && (prev.sort_order ?? 0) !== order)
-          if (changed) await flowNodeApi.update(builderId, o.id, { title: o.title.slice(0, 24), reply_id: o.reply_id, message: survey || ai ? (o.message || '') : o.message, sort_order: order, ...(survey ? { type: 'survey', survey_form_id: o.survey_form_id } : ai ? { type: 'knowledge_base', ai_agent_id: o.ai_agent_id, ai_kb_ids: o.ai_kb_ids } : {}) } as any)
+          const changed = o.title !== o.original_title || o.message !== o.original_message || o.description !== o.original_description || (survey && o.survey_form_id !== o.original_survey_form_id) || (ai && aiKey(o) !== o.original_ai) || (prev && (prev.sort_order ?? 0) !== order)
+          if (changed) await flowNodeApi.update(builderId, o.id, { title: o.title.slice(0, 24), reply_id: o.reply_id, message: survey || ai ? (o.message || '') : o.message, option_description: o.description.trim() || null, sort_order: order, ...(survey ? { type: 'survey', survey_form_id: o.survey_form_id } : ai ? { type: 'knowledge_base', ai_agent_id: o.ai_agent_id, ai_kb_ids: o.ai_kb_ids } : {}) } as any)
         } else {
           let rid = slugify(`${parent.reply_id}_${o.title}`).slice(0, 190) || `${parent.reply_id}_opt`
           if (taken.has(rid)) { let k = 2; while (taken.has(`${rid}_${k}`)) k++; rid = `${rid}_${k}` }
           taken.add(rid)
           const ai = o.kind === 'ai_agent'
-          await flowNodeApi.create(builderId, { title: o.title.slice(0, 24), message: survey ? '' : o.message, type: survey ? 'survey' : ai ? 'knowledge_base' : o.child_type, reply_id: rid, parent_id: parent.id, sort_order: order, is_active: true, ...(survey ? { survey_form_id: o.survey_form_id } : ai ? { ai_agent_id: o.ai_agent_id, ai_kb_ids: o.ai_kb_ids } : {}) } as any)
+          await flowNodeApi.create(builderId, { title: o.title.slice(0, 24), message: survey ? '' : o.message, option_description: o.description.trim() || null, type: survey ? 'survey' : ai ? 'knowledge_base' : o.child_type, reply_id: rid, parent_id: parent.id, sort_order: order, is_active: true, ...(survey ? { survey_form_id: o.survey_form_id } : ai ? { ai_agent_id: o.ai_agent_id, ai_kb_ids: o.ai_kb_ids } : {}) } as any)
         }
       } catch (e) { errors.push(`"${o.title}": ${getError(e)}`) }
       order++
@@ -767,6 +770,14 @@ export default function FlowNodesPage() {
 
           <div><label className="label">Message {multiMode || isSurvey || isTpl || form.type === 'knowledge_base' ? '(optional intro)' : '*'} <span className="text-xs text-gray-400">{form.message.length}/4096</span></label><textarea className="form-control" rows={multiMode || isSurvey || isTpl ? 2 : 4} maxLength={4096} placeholder={multiMode ? 'Intro before blocks…' : isSurvey ? 'Intro before survey…' : isTpl ? 'Intro before template…' : 'Message shown to customer…'} value={form.message} onChange={e => set('message', e.target.value)} /></div>
 
+          {form.parent_id && (
+            <div>
+              <label className="label">Description in the list <span className="text-xs text-gray-400">(optional · shown under this option's title when its parent is a list — {form.option_description.length}/72)</span></label>
+              <input className="form-control" maxLength={72} placeholder="e.g. Admission and fees" value={form.option_description} onChange={e => set('option_description', e.target.value)} />
+              <p className="text-[11px] text-gray-400 mt-1">The message above is what the bot sends after this option is tapped. On reply buttons only the title can show, so the description is listed in the text above the buttons.</p>
+            </div>
+          )}
+
           {(form.type === 'list' || form.type === 'button') && !form.is_dynamic && (
             <OptionsEditor nodeType={form.type} options={options} setOptions={setOptions} onOpenChild={openChildOption} confirmRemove={confirmRemoveOption} SurveyFormSelect={SurveyFormSelect} />
           )}
@@ -791,6 +802,9 @@ export default function FlowNodesPage() {
 
           {!isSurvey && !isTpl && (<>
             <div className="flex items-center gap-3 bg-brand-50 border border-brand-200 rounded-xl px-4 py-3"><input type="checkbox" className="w-4 h-4 rounded text-brand-500" checked={multiMode} onChange={e => setMultiMode(e.target.checked)} /><span className="text-sm font-medium text-brand-800">Send multiple messages one-by-one</span></div>
+            {multiMode && (form.type === 'list' || form.type === 'button') && !form.is_dynamic && (
+              <p className="text-[11px] text-brand-700 -mt-2">The list / buttons are sent together with the <b>last text block</b> (it becomes the message above them). Make the last block a text message — e.g. “Which course are you interested in?”.</p>
+            )}
             {multiMode && (<div className="space-y-3">
               <div className="flex items-center justify-between"><label className="label mb-0">Blocks ↓</label><div className="flex gap-1 flex-wrap">{MSG_TYPES.map(t => (<button key={t.value} type="button" onClick={() => addBlock(t.value)} className="text-xs border border-gray-200 rounded-full px-2.5 py-1 hover:border-brand-400 hover:bg-brand-50">{t.icon}+{t.label}</button>))}</div></div>
               {form.multi_messages.length === 0 && <div className="border-2 border-dashed border-gray-200 rounded-xl p-5 text-center text-sm text-gray-400">No blocks yet</div>}

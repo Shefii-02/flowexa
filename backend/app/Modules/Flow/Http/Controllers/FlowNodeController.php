@@ -66,6 +66,8 @@ class FlowNodeController extends Controller
             'location_name'    => ['nullable', 'string', 'max:150'],
             'location_address' => ['nullable', 'string', 'max:255'],
 
+            // Text under this option's title in its parent's list (the reply sent when tapped is `message`)
+            'option_description' => ['nullable', 'string', 'max:72'],
             // Interactive header / footer / list button label
             'header_type'       => ['nullable', Rule::in(['text', 'image', 'video', 'document'])],
             'header_text'       => ['nullable', 'string', 'max:60'],
@@ -258,6 +260,7 @@ class FlowNodeController extends Controller
             'parent_id'        => $d['parent_id']      ?? null,
             'title'            => $d['title'],
             'message'          => $d['message'],
+            'option_description' => isset($d['option_description']) && trim($d['option_description']) !== '' ? trim($d['option_description']) : null,
             'multi_messages'   => $d['multi_messages']  ?? null,
             'type'             => $d['type'],
             'reply_id'         => $d['reply_id'],
@@ -333,6 +336,7 @@ class FlowNodeController extends Controller
         if ($err = $this->assertRichConstraints($effective, $d['type'] ?? $node->type, $node)) return $err;
         if (array_key_exists('header_type', $d) && $d['header_type'] !== 'text') { $d['header_text'] = null; }
         if (array_key_exists('action_buttons', $d)) { $d['action_buttons'] = !empty($d['action_buttons']) ? array_values($d['action_buttons']) : null; }
+        if (array_key_exists('option_description', $d)) { $d['option_description'] = trim((string) $d['option_description']) !== '' ? trim($d['option_description']) : null; }
         if (array_key_exists('ai_kb_ids', $d)) { $d['ai_kb_ids'] = !empty($d['ai_kb_ids']) ? array_values(array_unique($d['ai_kb_ids'])) : null; }
         // AI settings only mean something on a knowledge_base node — clear them if the node is switched to another type
         if (isset($d['type']) && $d['type'] !== 'knowledge_base') { $d['ai_agent_id'] = null; $d['ai_kb_ids'] = null; }

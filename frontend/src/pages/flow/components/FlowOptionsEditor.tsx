@@ -23,6 +23,7 @@ export interface OptionDraft {
   kind: OptionKind
   title: string               // label (list row ≤24, button ≤20)
   message: string             // what the bot answers when this option is chosen (child node message)
+  description: string         // short text under the title in a list (max 72); for buttons it is listed above them
   child_type: ChildType       // what a NEW child node opens: a message, a list or buttons
   url: string
   phone: string
@@ -32,6 +33,7 @@ export interface OptionDraft {
   ai_kb_ids: number[]         // ... and the knowledge documents it may answer from (empty = all)
   original_title?: string
   original_message?: string
+  original_description?: string
   original_survey_form_id?: number | null
   original_ai?: string
 }
@@ -55,7 +57,7 @@ export const BUTTON_KINDS: { value: OptionKind; label: string; icon: string; hin
 
 const uid = () => Math.random().toString(36).slice(2)
 export const emptyOption = (kind: OptionKind): OptionDraft => ({
-  _key: uid(), kind, title: '', message: '', child_type: 'text', url: '', phone: '', code: '', survey_form_id: null, ai_agent_id: null, ai_kb_ids: [],
+  _key: uid(), kind, title: '', message: '', description: '', child_type: 'text', url: '', phone: '', code: '', survey_form_id: null, ai_agent_id: null, ai_kb_ids: [],
 })
 
 export const isChildKind = (k: OptionKind) => k === 'row' || k === 'reply' || k === 'survey_form' || k === 'ai_agent'
@@ -69,10 +71,10 @@ export function optionsFromNode(node: any | null, children: any[]): OptionDraft[
     .slice().sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
     .map(c => ({
       ...emptyOption(c.type === 'survey' ? 'survey_form' : c.type === 'knowledge_base' ? 'ai_agent' : node.type === 'list' ? 'row' : 'reply'),
-      id: c.id, reply_id: c.reply_id, title: c.title, message: c.message || '',
+      id: c.id, reply_id: c.reply_id, title: c.title, message: c.message || '', description: c.option_description || '',
       survey_form_id: c.survey_form_id || null,
       ai_agent_id: c.ai_agent_id || null, ai_kb_ids: (c.ai_kb_ids || []).map(Number),
-      original_title: c.title, original_message: c.message || '', original_survey_form_id: c.survey_form_id || null,
+      original_title: c.title, original_message: c.message || '', original_description: c.option_description || '', original_survey_form_id: c.survey_form_id || null,
       original_ai: aiKey({ ai_agent_id: c.ai_agent_id || null, ai_kb_ids: (c.ai_kb_ids || []).map(Number) }),
     }))
   for (const b of (node.action_buttons || []) as any[]) {
@@ -240,6 +242,14 @@ export function OptionsEditor({ nodeType, options, setOptions, onOpenChild, conf
                 <button type="button" onClick={() => remove(o._key)} className="text-red-400 hover:text-red-600 hover:bg-red-50 w-7 h-7 rounded-lg" title="Remove">×</button>
               </div>
 
+              {isChildKind(o.kind) && (
+                <div className="flex items-center gap-2">
+                  <input className="form-control text-sm flex-1" maxLength={72}
+                    placeholder={isList ? 'Description under the title (optional)' : 'Description, listed above the buttons (optional)'}
+                    value={o.description} onChange={e => patch(o._key, { description: e.target.value })} />
+                  <span className="text-[10px] text-gray-400 w-10 text-right">{o.description.length}/72</span>
+                </div>
+              )}
               {o.kind === 'url' && (
                 <input className="form-control text-sm font-mono" placeholder="https://example.com/offer" value={o.url} onChange={e => patch(o._key, { url: e.target.value })} />
               )}

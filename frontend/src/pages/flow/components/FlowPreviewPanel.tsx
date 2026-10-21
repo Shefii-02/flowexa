@@ -146,8 +146,9 @@ function WAListRow({ title, desc, idx }: { title: string; desc?: string; idx: nu
 // ── Interactive message (button or list) ──────────────────────────────────────
 const BTN_ICON: Record<string, string> = { reply: '↩', survey_form: '📝', ai_agent: '🤖', url: '🔗', phone: '📞', copy_code: '📋' }
 
-function InteractiveMessage({ message, type, headerType, headerText, headerUrl, headerFile, footer, listLabel, buttons }: {
+function InteractiveMessage({ message, type, headerType, headerText, headerUrl, headerFile, footer, listLabel, buttons, descriptions = [] }: {
   message: string; type: 'button' | 'list'
+  descriptions?: string[]
   headerType?: string; headerText?: string; headerUrl?: string; headerFile?: string
   footer?: string; listLabel?: string
   buttons: { kind: string; label: string }[]
@@ -174,6 +175,9 @@ function InteractiveMessage({ message, type, headerType, headerText, headerUrl, 
           {message
             ? <WAText text={message} />
             : <p className="text-sm text-gray-400 italic">Message text here…</p>}
+          {type === 'button' && descriptions.length > 0 && (
+            <div className="mt-2 space-y-0.5">{descriptions.map((d, i) => <p key={i} className="text-xs text-gray-700 break-words">▸ {d}</p>)}</div>
+          )}
           {footer && <p className="text-[11px] text-[#667781] mt-1 break-words">{footer}</p>}
           <p className="text-[10px] text-[#667781] text-right mt-1">12:30 ✓✓</p>
         </div>
@@ -285,7 +289,7 @@ export function FlowPreviewPanel({ form, multiMode, nodes, options = [] }: Props
               <div className="flex justify-end">
                 <div className="bg-[#dcf8c6] rounded-xl shadow-sm overflow-hidden max-w-[90%]">
                   <div className="px-3 py-1.5 text-xs text-gray-500">
-                    Then shows options ↓
+                    Options go out with the last text message ↓
                   </div>
                   {isButton && (
                     <div className="border-t border-[#b5d9a8]">
@@ -366,6 +370,7 @@ export function FlowPreviewPanel({ form, multiMode, nodes, options = [] }: Props
                 footer={form.footer_text}
                 listLabel={form.list_button_label}
                 buttons={options.map((o: any) => ({ kind: o.kind, label: o.title }))}
+                descriptions={options.filter((o: any) => o.description?.trim()).map((o: any) => `${o.title}: ${o.description.trim()}`)}
               />
             )}
 
@@ -392,7 +397,7 @@ export function FlowPreviewPanel({ form, multiMode, nodes, options = [] }: Props
               <span className="text-gray-300 text-xs">×</span>
             </div>
             {(options.length ? options : [{ title: 'Option 1', message: '' }, { title: 'Option 2', message: '' }, { title: 'Option 3', message: '' }]).map((o: any, i: number) => (
-              <WAListRow key={i} idx={i} title={o.title || `Option ${i + 1}`} desc={(o.message || '').slice(0, 72) || undefined} />
+              <WAListRow key={i} idx={i} title={o.title || `Option ${i + 1}`} desc={(o.description?.trim() || (o.message || '')).slice(0, 72) || undefined} />
             ))}
             <p className="px-4 py-1.5 text-[10px] text-gray-300 italic">{options.length}/10 options</p>
           </div>

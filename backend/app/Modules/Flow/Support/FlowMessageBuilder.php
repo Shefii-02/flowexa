@@ -23,11 +23,16 @@ class FlowMessageBuilder
 {
     public const BODY_MAX = 1024;
 
-    /** @return list<array<string,mixed>> payloads to dispatch in order */
-    public function build(FlowNode $node, Collection $children, string $to, callable $mediaRef): array
+    /**
+     * @param string|null $bodyOverride text to use as the message body instead of the node's own message — used when
+     *        a node sends several messages one after another: its last text message then carries the buttons / list.
+     * @return list<array<string,mixed>> payloads to dispatch in order
+     */
+    public function build(FlowNode $node, Collection $children, string $to, callable $mediaRef, ?string $bodyOverride = null): array
     {
         $actions = array_values($node->action_buttons ?? []);
-        $body    = trim((string) $node->message) !== '' ? (string) $node->message : 'Please choose an option:';
+        $own     = trim((string) $bodyOverride) !== '' ? (string) $bodyOverride : (string) $node->message;
+        $body    = trim($own) !== '' ? $own : 'Please choose an option:';
         $replies = $children->values();
 
         if ($node->type === 'list' || $replies->count() > 3) {
@@ -36,6 +41,9 @@ class FlowMessageBuilder
         }
 
         // BUTTON node
+        // A reply button can only show its title, so any option descriptions are listed in the text above the buttons.
+        $body = $this->withOptionLines($body, $replies);
+
         if (!$actions) {
             return $replies->isEmpty() ? [] : [$this->interactive($to, $this->replyButtons($node, $replies, $body, $mediaRef))];
         }
@@ -87,7 +95,7 @@ class FlowMessageBuilder
                     'title' => 'Options',
                     // WhatsApp rejects a list with more than 10 rows
                     'rows'  => $rows->take(10)->map(fn ($c) => [
-                        'id' => mb_substr($c->reply_id, 0, 200), 'title' => mb_substr($c->title, 0, 24), 'description' => mb_substr($c->message ?? '', 0, 72),
+                        'id' => mb_substr($c->reply_id, 0, 200), 'title' => mb_substr($c->title, 0, 24), 'description' => $this->rowDescription($c),
                     ])->values()->all(),
                 ]],
             ],
@@ -118,6 +126,21 @@ class FlowMessageBuilder
         $t = $node->header_type ?: $node->media_type;
         if (!in_array($t, ['image', 'video', 'document'], true) || !$node->media_url) { return null; }
         return ['type' => $t, 'ref' => $mediaRef($t, $node->media_url)];
+    }
+
+    /** The text under a list row's title: the option's own description, else the start of the reply it sends. */
+    private function rowDescription(FlowNode $c): string
+    {
+        $d = trim((string) $c->option_description);
+        return mb_substr($d !== '' ? $d : trim((string) $c->message), 0, 72);
+    }
+
+    /** "▸ *Title* — description" lines for the options that have a description (reply buttons cannot show one). */
+    private function withOptionLines(string $body, Collection $replies): string
+    {
+        $lines = $replies->filter(fn ($c) => trim((string) $c->option_description) !== '')
+            ->map(fn ($c) => '▸ *' . $c->title . '* — ' . trim($c->option_description))->values()->all();
+        return $lines ? $body . "\n\n" . implode("\n", $lines) : $body;
     }
 
     private function withActionLines(string $body, array $actions): string

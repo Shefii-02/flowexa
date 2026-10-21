@@ -17,6 +17,7 @@ class FlowNode extends Model
         'parent_id',
         'title',
         'message',
+        'option_description',
         'multi_messages',
         'type',
         'reply_id',

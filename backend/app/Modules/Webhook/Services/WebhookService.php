@@ -1252,8 +1252,37 @@ class WebhookService
 
         // ── Multi-message ─────────────────────────────────────────────────
         if ($node->hasMultipleMessages()) {
-            $this->sendMultipleMessages($company, $phone, $node->multi_messages);
-            if ($children->isNotEmpty()) {
+            $blocks     = array_values($node->multi_messages);
+            $hasOptions = in_array($node->type, ['list', 'button'], true) && ($children->isNotEmpty() || !empty($node->action_buttons));
+
+            // The options (up to 3 buttons, or a list) travel WITH the last text message instead of arriving as a
+            // separate "please select" message: that text becomes the body of the interactive message.
+            $carrier = null;
+            if ($hasOptions) {
+                $last = end($blocks);
+                $text = trim((string) ($last['content'] ?? $last['text'] ?? ''));
+                if (($last['type'] ?? 'text') === 'text' && $text !== '') {
+                    $carrier = $text;
+                    array_pop($blocks);
+                }
+            }
+
+            if ($blocks) {
+                $this->sendMultipleMessages($company, $phone, $blocks);
+            }
+
+            if ($hasOptions) {
+                if ($blocks) { usleep(500000); }
+                $messages = app(\App\Modules\Flow\Support\FlowMessageBuilder::class)->build(
+                    $node, $children, $phone,
+                    fn (string $type, string $url) => ($id = $this->uploadMediaToMeta($company, $url, $this->guessMimeType($type, $url))) ? ['id' => $id] : ['link' => $url],
+                    $carrier ?? '👇 Please select an option:'
+                );
+                foreach ($messages as $i => $payload) {
+                    if ($i > 0) { usleep(300000); }
+                    $this->dispatch($company, $payload);
+                }
+            } elseif ($children->isNotEmpty()) {
                 usleep(500000);
                 if ($node->type === 'button' && $children->count() <= 3) {
                     $this->sendButton($company, $phone, '👇 Please select an option:', $children);
