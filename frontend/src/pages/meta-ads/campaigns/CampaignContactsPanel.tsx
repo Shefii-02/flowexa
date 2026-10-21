@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { campaignApi } from '@/api'
 import { Badge, Button, Input, Modal, Pagination } from '@/components/ui'
 import { TemplateSelector, PhoneNumberSelector } from './CampaignsPage'
+import ChatPeek from './ChatPeek'
 import { getError } from '@/utils'
 import toast from 'react-hot-toast'
 
@@ -17,6 +18,7 @@ const FILTERS = [
   { v: 'sent', l: 'Sent (not yet delivered)' },
   { v: 'pending', l: '⏳ Pending' },
   { v: 'failed', l: '❌ Failed' },
+  { v: 'replied', l: '💬 Replied' },
 ]
 const STATUS_VARIANT: Record<string, any> = { failed: 'red', sent: 'blue', delivered: 'green', read: 'green', pending: 'gray' }
 
@@ -44,6 +46,7 @@ export default function CampaignContactsPanel({
   const [editId, setEditId] = useState<number | null>(null)
   const [editPhone, setEditPhone] = useState('')
   const [busy, setBusy] = useState(false)
+  const [chatRow, setChatRow] = useState<any>(null)   // number whose chat is open
   const [autoOn, setAutoOn] = useState(autoRetry)
   useEffect(() => setAutoOn(autoRetry), [autoRetry])
   const toggleAuto = async () => {
@@ -212,6 +215,7 @@ export default function CampaignContactsPanel({
                 <th className="py-2 pr-2 font-medium">Number</th>
                 <th className="py-2 pr-2 font-medium">Name</th>
                 <th className="py-2 pr-2 font-medium">Status</th>
+                <th className="py-2 pr-2 font-medium" title="Customer replies after the campaign message — tap to read the chat">Replies</th>
                 <th className="py-2 pr-2 font-medium" title="Send attempts made">Tries</th>
                 <th className="py-2 pr-2 font-medium">Sent</th>
                 <th className="py-2 pr-2 font-medium">Delivered</th>
@@ -241,7 +245,15 @@ export default function CampaignContactsPanel({
                       </div>
                     ) : r.phone}
                   </td>
-                  <td className="py-2 pr-2 text-gray-700">{r.contact?.name || '—'}</td>
+                  <td className="py-2 pr-2 text-gray-700">
+                    <button className="hover:underline text-left" title="Open the chat" onClick={() => setChatRow(r)}>{r.contact?.name || '—'}</button>
+                  </td>
+                  <td className="py-2 pr-2 whitespace-nowrap">
+                    <button onClick={() => setChatRow(r)} title={r.last_reply_at ? `Last reply ${when(r.last_reply_at)}` : 'Open the chat'}
+                      className={r.replies > 0 ? 'px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 font-semibold hover:bg-green-200' : 'text-gray-300 hover:text-gray-500'}>
+                      💬 {r.replies > 0 ? r.replies : '—'}
+                    </button>
+                  </td>
                   <td className="py-2 pr-2"><Badge variant={inFlight(r) ? 'yellow' : (STATUS_VARIANT[r.status] ?? 'gray')}>{inFlight(r) ? 'sending…' : r.status}</Badge></td>
                   <td className="py-2 pr-2 text-gray-500">{r.attempts || '—'}</td>
                   <td className="py-2 pr-2 text-gray-500 whitespace-nowrap">{when(r.sent_at)}</td>
@@ -271,6 +283,8 @@ export default function CampaignContactsPanel({
           </table>
         </div>
       )}
+
+      {chatRow && <ChatPeek contactId={chatRow.contact_id} phone={String(chatRow.phone)} name={chatRow.contact?.name} sentAt={chatRow.sent_at} onClose={() => setChatRow(null)} />}
 
       <Modal open={optOpen} onClose={() => setOptOpen(false)} title="Retry with options"
         footer={<>

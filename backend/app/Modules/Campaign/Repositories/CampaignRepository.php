@@ -140,12 +140,35 @@ class CampaignRepository implements CampaignRepositoryInterface
     }
 
     // ─── Paginate campaign contacts ───────────────────────────────────────────
+    /**
+     * Customer replies to a campaign: inbound messages that arrived in the contact's chat AFTER the campaign message
+     * was sent to them. A contact is matched by contact_id or by phone (with or without "+").
+     */
+    private function replyQuery(int $campaignId, int $companyId)
+    {
+        return \Illuminate\Support\Facades\DB::table('campaign_contacts as cc')
+            ->join('wa_conversations as c', fn ($j) => $j->where('c.company_id', $companyId)
+                ->where(fn ($w) => $w->whereColumn('c.contact_id', 'cc.contact_id')->orWhereRaw("c.phone = REPLACE(cc.phone, '+', '')")))
+            ->join('wa_messages as m', fn ($j) => $j->on('m.conversation_id', '=', 'c.id')->where('m.direction', 'inbound')->whereColumn('m.created_at', '>=', 'cc.sent_at'))
+            ->where('cc.campaign_id', $campaignId)->whereNotNull('cc.sent_at');
+    }
+
+    /** @return array{responded:int, responses:int} contacts who replied, and how many reply messages in total */
+    public function replyTotals(int $campaignId, int $companyId): array
+    {
+        $r = $this->replyQuery($campaignId, $companyId)->selectRaw('count(distinct cc.id) as responded, count(m.id) as responses')->first();
+        return ['responded' => (int) ($r->responded ?? 0), 'responses' => (int) ($r->responses ?? 0)];
+    }
+
     public function paginateContacts(int $campaignId, CampaignContactFilterDTO $filter): LengthAwarePaginator
     {
-        return CampaignContact::with('contact:id,name,phone')
+        $companyId = (int) \App\Models\Campaign::where('id', $campaignId)->value('company_id');
+        $page = CampaignContact::with('contact:id,name,phone')
             ->where('campaign_id', $campaignId)
             ->when($filter->status === 'done', fn($q) => $q->whereIn('status', ['sent', 'delivered', 'read']))
-            ->when($filter->status && $filter->status !== 'done', fn($q) => $q->where('status', $filter->status))
+            // contacts who answered the campaign message
+            ->when($filter->status === 'replied', fn($q) => $q->whereIn('campaign_contacts.id', $this->replyQuery($campaignId, $companyId)->select('cc.id')))
+            ->when($filter->status && !in_array($filter->status, ['done', 'replied'], true), fn($q) => $q->where('status', $filter->status))
             // grouped: a bare orWhere here escaped the campaign_id scope and matched other campaigns' contacts
             ->when($filter->search, fn($q) => $q->where(fn($w) =>
                 $w->where('phone', 'like', "%{$filter->search}%")
@@ -153,6 +176,18 @@ class CampaignRepository implements CampaignRepositoryInterface
             ))
             ->orderBy('id')
             ->paginate($filter->perPage, ['*'], 'page', $filter->page);
+
+        // reply count + time of the last reply, for the rows on this page only
+        $ids = $page->getCollection()->pluck('id');
+        if ($ids->isNotEmpty()) {
+            $rep = $this->replyQuery($campaignId, $companyId)->whereIn('cc.id', $ids)
+                ->selectRaw('cc.id, count(m.id) as replies, max(m.created_at) as last_reply_at')->groupBy('cc.id')->get()->keyBy('id');
+            $page->getCollection()->each(function ($row) use ($rep) {
+                $row->setAttribute('replies', (int) ($rep[$row->id]->replies ?? 0));
+                $row->setAttribute('last_reply_at', $rep[$row->id]->last_reply_at ?? null);
+            });
+        }
+        return $page;
     }
 
     // ─── Get pending batch for job ────────────────────────────────────────────

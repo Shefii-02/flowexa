@@ -73,7 +73,6 @@ export default function ContactInfoDrawer({
   const [creatingLead, setCreatingLead] = useState(false)
   // Lead categories — assigned the same way as labels: a chip per lead with × to clear, and an editor to pick / create one
   const [cats, setCats] = useState<{ id: number; name: string; color?: string }[]>([])
-  const [catEditorLead, setCatEditorLead] = useState<number | null>(null)   // lead whose category picker is open
   const [catSaving, setCatSaving] = useState(false)
   const [newCatName, setNewCatName] = useState('')
   const [newLeadCat, setNewLeadCat] = useState('')                          // category chosen for the next "+ Lead"
@@ -128,7 +127,7 @@ export default function ContactInfoDrawer({
       .then(async r => {
         const conv = (r.data?.conversations ?? [])[0]
         if (!conv) { if (!cancelled) setChat({ loading: false, messages: [], empty: true }); return }
-        const m = await conversationApi.messages(conv.id, { limit: 40 })
+        const m = await conversationApi.messages(conv.id, { limit: 40, peek: 1 })
         if (!cancelled) setChat({ loading: false, number: conv.number, messages: m.data?.messages ?? [] })
       })
       .catch(() => { if (!cancelled) setChat({ loading: false, messages: [], empty: true }) })
@@ -198,7 +197,6 @@ export default function ContactInfoDrawer({
     try {
       await leadCategoryApi.assign(leadId, name)
       setLeads(ls => ls.map(l => l.id === leadId ? { ...l, category: name } : l))
-      setCatEditorLead(null)
     } catch (e) { toast.error(getError(e)) }
     finally { setCatSaving(false) }
   }
@@ -473,43 +471,28 @@ export default function ContactInfoDrawer({
                       {l.assigned_to ? `👤 ${l.assigned_to} · ` : ''}
                       {fmtDate(l.created_at)}
                     </div>
-                    <div className="wa-sec__label" style={{ marginTop: 6 }}>
-                      Lead category
-                      <button className="wa-linkbtn" onClick={() => { setCatEditorLead(v => v === l.id ? null : l.id); setNewCatName('') }}>
-                        <Tag size={10} /> {catEditorLead === l.id ? 'Cancel' : (l.category?.name ?? l.category) ? 'Change' : '+ Assign'}
-                      </button>
+                    <div className="wa-sec__label" style={{ marginTop: 6 }}>Lead category</div>
+                    {/* every category, one tap to assign — tap the selected one again to remove it */}
+                    <div className="wa-labels" style={{ flexWrap: 'wrap', gap: 6 }}>
+                      {cats.map(c => {
+                        const on = (l.category?.name ?? l.category) === c.name
+                        const col = c.color ?? '#6b7280'
+                        return (
+                          <button key={c.id} disabled={catSaving} onClick={() => assignCategory(l.id, on ? null : c.name)}
+                            title={on ? 'Tap to remove this category' : 'Tap to assign this category'}
+                            style={{ cursor: 'pointer', fontSize: 11, padding: '3px 9px', borderRadius: 999, border: `1px solid ${col}`,
+                                     background: on ? col : 'transparent', color: on ? '#fff' : col, fontWeight: on ? 700 : 500 }}>
+                            {on ? '✓ ' : '+ '}{c.name}{on ? ' ×' : ''}
+                          </button>
+                        )
+                      })}
+                      {cats.length === 0 && <span className="wa-muted-note">No lead categories yet — add one below.</span>}
                     </div>
-                    {catEditorLead === l.id && (
-                      <div className="wa-picker" style={{ marginBottom: 6 }}>
-                        {cats.length === 0 && <p className="wa-muted-note" style={{ padding: '4px 8px' }}>No lead categories yet — create one below.</p>}
-                        {cats.map(c => (
-                          <label key={c.id} className="wa-picker__row" style={{ cursor: 'pointer' }}>
-                            <input type="radio" name={`leadcat-${l.id}`} checked={(l.category?.name ?? l.category) === c.name}
-                              disabled={catSaving} onChange={() => assignCategory(l.id, c.name)} />
-                            <span style={{ color: c.color ?? undefined }}>{c.name}</span>
-                          </label>
-                        ))}
-                        <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
-                          <input value={newCatName} onChange={e => setNewCatName(e.target.value)} placeholder="+ New category" maxLength={100}
-                            style={{ flex: 1, fontSize: 12, padding: 4 }} onKeyDown={e => { if (e.key === 'Enter') createCategoryFor(l.id) }} />
-                          <button className="wa-btn-sm wa-btn-sm--primary" disabled={catSaving || !newCatName.trim()} onClick={() => createCategoryFor(l.id)}>Add</button>
-                        </div>
-                      </div>
-                    )}
-                    {(l.category?.name ?? l.category)
-                      ? (() => {
-                          const nm = l.category?.name ?? l.category
-                          const col = cats.find(c => c.name === nm)?.color ?? '#6b7280'
-                          return (
-                            <div className="wa-labels">
-                              <span className="wa-label" style={{ background: col + '22', color: col }}>
-                                🏷️ {nm}
-                                <button onClick={() => assignCategory(l.id, null)} disabled={catSaving}>×</button>
-                              </span>
-                            </div>
-                          )
-                        })()
-                      : <p className="wa-muted-note">No category.</p>}
+                    <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+                      <input value={newCatName} onChange={e => setNewCatName(e.target.value)} placeholder="+ New category" maxLength={100}
+                        style={{ flex: 1, fontSize: 12, padding: 4 }} onKeyDown={e => { if (e.key === 'Enter') createCategoryFor(l.id) }} />
+                      <button className="wa-btn-sm wa-btn-sm--primary" disabled={catSaving || !newCatName.trim()} onClick={() => createCategoryFor(l.id)}>Add</button>
+                    </div>
 
                     {l.activities?.length > 0 && (
                       <div className="wa-timeline">

@@ -365,7 +365,14 @@ export default function InboxPage() {
             {(['unread', 'all', 'mine', 'unassigned'] as const).map(f => (
               <button key={f} className={`wa-chip ${filter === f ? 'is-active' : ''}`} onClick={() => setFilter(f)}>
                 {f === 'unread' ? 'Unread' : f === 'all' ? 'All' : f === 'mine' ? 'Mine' : 'Unassigned'}
-                {tabCounts[f] !== undefined && <span className={`wa-chip__count ${f === 'unread' && tabCounts[f] > 0 ? 'is-alert' : ''}`}>{tabCounts[f] > 999 ? '999+' : tabCounts[f]}</span>}
+                {tabCounts[f] !== undefined && (() => {
+                  // Unread shows how many MESSAGES are waiting; the other tabs show how many chats they hold
+                  const n = f === 'unread' ? (tabCounts.unread_messages ?? tabCounts.unread) : tabCounts[f]
+                  return <span className={`wa-chip__count ${f === 'unread' && n > 0 ? 'is-alert' : ''}`}
+                    title={f === 'unread' ? `${tabCounts.unread} chat(s) · ${tabCounts.unread_messages ?? 0} unread message(s)` : `${tabCounts[f]} chat(s)`}>
+                    {n > 999 ? '999+' : n}
+                  </span>
+                })()}
               </button>
             ))}
           </div>

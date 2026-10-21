@@ -83,6 +83,11 @@ class CampaignService
             'resendable_failed' => \App\Models\CampaignContact::resendable($campaign->id)->count(),
             'starts_at'      => $campaign->starts_at?->toIso8601String(),
             'ends_at'        => $campaign->ends_at?->toIso8601String(),
+            // customers who answered this campaign (a reply after it was sent to them) and how many reply messages that is
+            ...(function () use ($campaign, $companyId, $sent) {
+                $r = $this->campaignRepository->replyTotals($campaign->id, $companyId);
+                return ['responded' => $r['responded'], 'responses' => $r['responses'], 'response_rate' => $sent ? round($r['responded'] / $sent * 100, 1) : 0];
+            })(),
             'leads_received' => $leadsByStage->sum(),
             'leads_by_stage' => $leadsByStage,
         ];

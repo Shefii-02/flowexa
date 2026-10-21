@@ -25,6 +25,10 @@ class CampaignContactResource extends JsonResource
             'sent_at'      => $this->sent_at?->toIso8601String(),
             'delivered_at' => $this->delivered_at?->toIso8601String(),
             'read_at'      => $this->read_at?->toIso8601String(),
+            'contact_id'   => $this->contact_id,
+            // customer replies to this campaign message (inbound messages after it was sent)
+            'replies'      => (int) ($this->getAttribute('replies') ?? 0),
+            'last_reply_at'=> $this->getAttribute('last_reply_at') ? \Illuminate\Support\Carbon::parse($this->getAttribute('last_reply_at'))->toIso8601String() : null,
             'contact'      => $this->whenLoaded('contact', fn() => ['id' => $this->contact?->id, 'name' => $this->contact?->name]),
         ];
     }

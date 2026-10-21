@@ -972,7 +972,7 @@ export default function CampaignsPage() {
             </div>
             <div className="grid grid-cols-3 gap-3">
               {[['Total', '👥', stats.total_contacts], ['Sent', '📤', stats.sent], ['Delivered', `✅ ${stats.delivery_rate}%`, stats.delivered],
-              ['Read', `👁️ ${stats.read_rate}%`, stats.read], ['Failed', `❌ ${stats.fail_rate}%`, stats.failed], ['Pending', '⏳', stats.pending]]
+              ['Read', `👁️ ${stats.read_rate}%`, stats.read], ['Replied', `💬 ${stats.response_rate ?? 0}%`, stats.responded ?? 0], ['Failed', `❌ ${stats.fail_rate}%`, stats.failed], ['Pending', '⏳', stats.pending]]
                 .map(([l, i, v]) => <StatCard key={l as string} label={l as string} value={v as number} icon={i as string} />)}
             </div>
             <div className="bg-gray-50 rounded-xl p-4">

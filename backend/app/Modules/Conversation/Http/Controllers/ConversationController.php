@@ -66,6 +66,8 @@ class ConversationController extends Controller
             'unread'     => $visible()->where('unread_count', '>', 0)->count(),
             'mine'       => $visible()->where('assigned_to', $user->id)->count(),
             'unassigned' => $visible()->tap($unassigned)->count(),
+            // total unread MESSAGES (the Unread tab counts chats; this is how many messages are waiting in them)
+            'unread_messages' => (int) $visible()->sum('unread_count'),
         ];
 
         return response()->json([
@@ -82,7 +84,10 @@ class ConversationController extends Controller
     public function forContact(int $contact): JsonResponse
     {
         $user = auth()->user();
-        $rows = WaConversation::where('company_id', $user->company_id)->where('contact_id', $contact)
+        // a campaign number may not be a CRM contact yet: contact 0 + ?phone= finds the chat by number instead
+        $digits = preg_replace('/\D+/', '', (string) request('phone', ''));
+        $rows = WaConversation::where('company_id', $user->company_id)
+            ->when($contact > 0, fn ($q) => $q->where('contact_id', $contact), fn ($q) => $q->where('phone', $digits ?: '__none__'))
             ->when($user->allowedAccountIds('phone_number') !== null, fn ($q) => $q->whereIn('wa_phone_number_id', $user->allowedAccountIds('phone_number')))
             ->when(!$user->hasPermission('inbox.view_all'), fn ($q) => $q->where(fn ($q2) => $q2->where('assigned_to', $user->id)->orWhereNull('assigned_to')))
             ->with('waPhoneNumber:id,label,display_number')
@@ -128,8 +133,9 @@ class ConversationController extends Controller
         $hasMore  = $rows->count() > $limit;
         $messages = $rows->take($limit)->reverse()->values();
 
-        // Opening the thread marks it read (loading older history does not need to)
-        if ($before === 0) {
+        // Opening the thread marks it read (loading older history does not need to). A read-only peek — a chat preview on a
+        // lead or campaign page — passes ?peek=1 so looking at it does not clear the agents' unread count.
+        if ($before === 0 && !request()->boolean('peek')) {
             $conversation->update(['unread_count' => 0]);
         }
 

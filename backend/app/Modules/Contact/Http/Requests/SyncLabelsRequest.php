@@ -15,7 +15,7 @@ class SyncLabelsRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'label_ids'   => ['required', 'array'],
+            'label_ids'   => ['present', 'array'], // an empty list is valid: it removes the contact's last label ('required' rejected it with a 422)
             'label_ids.*' => ['integer', 'exists:contact_labels,id'],
         ];
     }

@@ -443,7 +443,7 @@ export const templateApi = {
 
 export const conversationApi = {
   /** A contact's chats (one per WhatsApp number), newest first — for opening a contact's conversation from anywhere. */
-  forContact: (contactId: number) => api.get(`/conversations/contact/${contactId}`),
+  forContact: (contactId: number, phone?: string) => api.get(`/conversations/contact/${contactId}`, { params: phone ? { phone } : undefined }),
   // GET /conversations — inbox list, most recently active first.
   // filter: mine=1 (only conversations assigned to me), unassigned=1 (only unclaimed).
   list: (params?: { status?: string; mine?: number | boolean; unassigned?: number | boolean; unread?: number | boolean; search?: string; page?: number; per_page?: number }) =>
@@ -451,7 +451,7 @@ export const conversationApi = {
 
   // GET /conversations/{id}/messages — the newest page of the thread, oldest first, plus has_more. Marks the thread read.
   // Pass before_id (id of the oldest message you already have) to get the page before it.
-  messages: (id: number, params?: { before_id?: number; limit?: number }) =>
+  messages: (id: number, params?: { before_id?: number; limit?: number; peek?: number }) =>
     api.get(`/conversations/${id}/messages`, { params }),
 
   // POST /conversations/{id}/claim — atomic first-come-first-served assignment.

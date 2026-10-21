@@ -14,7 +14,7 @@ class CampaignContactFilterRequest extends FormRequest
     {
         return [
             // 'done' = everything that went out: sent + delivered + read
-            'status'   => ['nullable', 'in:pending,sent,delivered,read,failed,done'],
+            'status'   => ['nullable', 'in:pending,sent,delivered,read,failed,done,replied'],
             'search'   => ['nullable', 'string', 'max:100'],
             'per_page' => ['nullable', 'integer', 'min:5', 'max:100'],
             'page'     => ['nullable', 'integer', 'min:1'],

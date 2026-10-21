@@ -6,6 +6,7 @@
 // has its own start/end time — a day missing from `hours` means the AI is off that day.
 import { useEffect, useState } from 'react'
 import { toast } from 'react-hot-toast'
+import { Link } from 'react-router-dom'
 import api from '@/api/client'
 
 export type DayHours = { start: string; end: string }
@@ -107,7 +108,9 @@ export function ScheduleEditor({ mode, rows, timezone, onChange, showChatbot }: 
       {mode === 'chatbot' && (
         <p className="text-[11px] text-gray-400 bg-gray-50 border border-gray-200 rounded-lg p-3">
           The conversational AI agent is off for this number — the Flow Builder ("Chat Bot")
-          handles incoming messages instead.
+          answers incoming messages automatically: the welcome menu, keyword triggers, list / button
+          replies and any AI-agent node you added in a flow.{' '}
+          <Link to="/wa-cloud/flow-builders" className="text-purple-600 hover:underline">Open Flow Builder ›</Link>
         </p>
       )}
 
@@ -258,6 +261,8 @@ export function AiScheduleSection({ channel, only, emptyText }: { channel: Chann
     <div className="space-y-3">
       {rows.map(row => (
         <ScheduleAccountRow key={row.session_id} label={row.label} schedule={row.schedule}
+          // WA Cloud numbers can hand incoming messages to the Flow Builder ("Chat Bot") instead of the AI agent
+          showChatbot={channel === 'wa_cloud'}
           saving={savingKey === row.session_id} onSave={(s) => saveWa(row.session_id, s)} />
       ))}
     </div>
