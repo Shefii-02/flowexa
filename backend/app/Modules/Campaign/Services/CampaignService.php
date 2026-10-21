@@ -143,7 +143,11 @@ class CampaignService
         $campaign->setRelation('template', $inputs['template']); // the log shows the template that was actually sent
         $r = $this->sender->send($inputs['number']->decrypted_token, $inputs['number']->phone_number_id, $to, $inputs['template'], $inputs['variables'], $inputs['coupon']);
 
+        Log::info('[campaign-retry] Meta response', ['campaign' => $campaign->id, 'row' => $row->id, 'to' => $to, 'ok' => $r['ok'], 'wa_message_id' => $r['wa_message_id'] ?? null,
+            'error_type' => $r['error_type'] ?? null, 'reason' => $r['reason'] ?? null, 'http' => $r['http'] ?? 200, 'meta_body' => $r['meta'] ?? null]);
+
         $this->sender->record($campaign, $row, $to, $r, $row->attempts + 1, true);
+        Log::info('[campaign-retry] row + message log updated', ['campaign' => $campaign->id, 'row' => $row->id, 'status' => $r['ok'] ? 'sent' : 'failed']);
 
         if ($r['ok']) {
             if ($company->wa_config == 'wallet') {
@@ -153,6 +157,7 @@ class CampaignService
                 'sent'   => DB::raw('sent + 1'),
                 'failed' => DB::raw('IF(failed > 0, failed - 1, 0)'), // `failed` is unsigned: failed - 1 would error at 0
             ]);
+            Log::info('[campaign-retry] counters updated (sent +1, failed -1), wallet debited if wallet billing', ['campaign' => $campaign->id]);
         }
         return $r;
     }
@@ -169,7 +174,12 @@ class CampaignService
     {
         $campaign = $this->show($campaignId, $companyId);
         $company  = \App\Models\Company::find($companyId);
-        $fail = fn (string $msg, int $http = 422, $row = null) => ['ok' => false, 'http' => $http, 'error' => $msg, 'message_id' => null, 'contact' => $row, 'campaign' => $campaign];
+        Log::info('[campaign-retry] request', ['campaign' => $campaignId, 'company' => $companyId, 'contact_row' => $in['campaign_contact_id'] ?? null, 'phone' => $in['phone'] ?? null,
+            'template_id' => $in['template_id'] ?? null, 'number_id' => $in['wa_phone_number_id'] ?? null, 'variables' => $in['variables'] ?? null, 'coupon' => $in['coupon_code'] ?? null]);
+        $fail = function (string $msg, int $http = 422, $row = null) use ($campaign, $campaignId) {
+            Log::warning("[campaign-retry] refused ({$http}): {$msg}", ['campaign' => $campaignId]);
+            return ['ok' => false, 'http' => $http, 'error' => $msg, 'message_id' => null, 'contact' => $row, 'campaign' => $campaign];
+        };
 
         $to = preg_replace('/\D+/', '', (string) $in['phone']);
         if (strlen($to) < 8) { return $fail('Enter a valid number with the country code.'); }
@@ -181,8 +191,11 @@ class CampaignService
             : (clone $base)->whereIn('phone', [$to, '+' . $to])->first();
         if (!$row) { return $fail('There is no failed message to retry for that number in this campaign — it may already be sent or waiting in the retry queue.'); }
 
+        Log::info('[campaign-retry] failed row found', ['campaign' => $campaignId, 'row' => $row->id, 'phone' => $row->phone, 'attempts' => $row->attempts, 'reason' => $row->failed_reason]);
+
         [$inputs, $error] = $this->retryInputs($campaign, $companyId, $in);
         if ($error) { return $fail($error); }
+        Log::info('[campaign-retry] inputs resolved', ['template' => $inputs['template']->name, 'number' => $inputs['number']->phone_number_id, 'variables' => $inputs['variables'], 'coupon' => $inputs['coupon']]);
 
         if ($company->wa_config == 'wallet' && $this->walletService->getWallet($companyId)->balance < 1) {
             return $fail('Not enough wallet balance to send this message.', 402);
@@ -194,6 +207,7 @@ class CampaignService
             ->update(['scheduled_for' => now()]);
         if (!$claimed) { return $fail('That message is already being retried.', 409, $row); }
         $row->refresh(); // so the in-memory row matches the claim, and record() really clears scheduled_for
+        Log::info('[campaign-retry] row claimed, sending to Meta', ['campaign' => $campaignId, 'row' => $row->id, 'to' => $to]);
 
         $r = $this->deliverRetry($campaign, $row, $to, $inputs, $company);
 

@@ -40,7 +40,7 @@ class CampaignMessageSender
         }
 
         if ($response->successful()) {
-            return ['ok' => true, 'wa_message_id' => (string) ($response->json('messages.0.id') ?? ''), 'error_type' => null, 'raw' => null, 'reason' => null, 'retry_after' => null];
+            return ['ok' => true, 'wa_message_id' => (string) ($response->json('messages.0.id') ?? ''), 'error_type' => null, 'raw' => null, 'reason' => null, 'retry_after' => null, 'meta' => $response->json()];
         }
 
         $code = (int) $response->json('error.code');
@@ -49,7 +49,7 @@ class CampaignMessageSender
         // `error_data.details` names the exact parameter/component that was wrong.
         if ($details = $response->json('error.error_data.details')) { $raw .= " — {$details}"; }
 
-        return $this->failure($this->classify($response->status(), $code, $raw), $raw);
+        return $this->failure($this->classify($response->status(), $code, $raw), $raw) + ['http' => $response->status(), 'meta' => $response->json()];
     }
 
     /** @return array{ok:false, wa_message_id:null, error_type:string, raw:string, reason:string, retry_after:?\Carbon\Carbon} */
