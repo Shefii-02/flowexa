@@ -53,6 +53,11 @@ class FlowImportExportController extends Controller
             'dynamic_label_field'      => $n->dynamic_label_field,
             'dynamic_value_field'      => $n->dynamic_value_field,
             'dynamic_description_field'=> $n->dynamic_description_field,
+            'header_type'              => $n->header_type,
+            'header_text'              => $n->header_text,
+            'footer_text'              => $n->footer_text,
+            'list_button_label'        => $n->list_button_label,
+            'action_buttons'           => $n->action_buttons ?: null,
             'is_dead_end'              => $n->is_dead_end,
         ], fn($v) => !is_null($v)))->values()->toArray();
 
@@ -332,8 +337,28 @@ class FlowImportExportController extends Controller
             'dynamic_label_field'      => $d['dynamic_label_field']      ?? null,
             'dynamic_value_field'      => $d['dynamic_value_field']      ?? null,
             'dynamic_description_field'=> $d['dynamic_description_field']?? null,
+            'header_type'              => in_array($d['header_type'] ?? null, ['text', 'image', 'video', 'document'], true) ? $d['header_type'] : null,
+            'header_text'              => isset($d['header_text']) ? mb_substr((string) $d['header_text'], 0, 60) : null,
+            'footer_text'              => isset($d['footer_text']) ? mb_substr((string) $d['footer_text'], 0, 60) : null,
+            'list_button_label'        => isset($d['list_button_label']) ? mb_substr((string) $d['list_button_label'], 0, 20) : null,
+            'action_buttons'           => $this->cleanActionButtons($d['action_buttons'] ?? null),
             'is_dead_end'              => $d['is_dead_end'] ?? false,
         ]);
+    }
+
+    /** Keep only well-formed link / call / copy-code buttons from an imported file (max 3). */
+    private function cleanActionButtons($raw): ?array
+    {
+        if (!is_array($raw)) { return null; }
+        $out = [];
+        foreach ($raw as $b) {
+            if (!is_array($b) || !in_array($b['type'] ?? null, ['url', 'phone', 'copy_code'], true) || empty($b['text'])) { continue; }
+            $ok = ($b['type'] === 'url' && !empty($b['url']) && filter_var($b['url'], FILTER_VALIDATE_URL))
+               || ($b['type'] === 'phone' && !empty($b['phone']))
+               || ($b['type'] === 'copy_code' && !empty($b['code']));
+            if ($ok) { $out[] = array_intersect_key($b, array_flip(['type', 'text', 'url', 'phone', 'code'])); }
+        }
+        return $out ? array_slice($out, 0, 3) : null;
     }
 }
 

@@ -8,6 +8,8 @@ interface Props {
   form:      any
   multiMode: boolean
   nodes:     any[]
+  /** list rows / buttons being edited (see FlowOptionsEditor) */
+  options?:  any[]
 }
 
 // ── Render *bold*, _italic_, ~strike~, ```mono```, newlines ──────────────────
@@ -142,20 +144,28 @@ function WAListRow({ title, desc, idx }: { title: string; desc?: string; idx: nu
 }
 
 // ── Interactive message (button or list) ──────────────────────────────────────
-function InteractiveMessage({ message, mediaType, mediaUrl, type }: {
-  message: string; mediaType?: string; mediaUrl?: string; type: 'button'|'list'
+const BTN_ICON: Record<string, string> = { reply: '↩', survey_form: '📝', ai_agent: '🤖', url: '🔗', phone: '📞', copy_code: '📋' }
+
+function InteractiveMessage({ message, type, headerType, headerText, headerUrl, headerFile, footer, listLabel, buttons }: {
+  message: string; type: 'button' | 'list'
+  headerType?: string; headerText?: string; headerUrl?: string; headerFile?: string
+  footer?: string; listLabel?: string
+  buttons: { kind: string; label: string }[]
 }) {
-  const placeholderButtons = ['Option 1', 'Option 2', 'Option 3']
-  const placeholderList    = ['Option 1','Option 2','Option 3','Option 4','Option 5']
+  // nothing added yet: show three grey placeholders so the shape of the message is visible
+  const shown = buttons.length ? buttons : [{ kind: 'reply', label: 'Option 1' }, { kind: 'reply', label: 'Option 2' }, { kind: 'reply', label: 'Option 3' }]
 
   return (
     <div className="flex justify-end mb-2">
-      <div className="relative bg-[#dcf8c6] rounded-2xl rounded-tr-sm max-w-[90%] shadow-sm overflow-hidden">
+      <div className="relative bg-[#dcf8c6] rounded-2xl rounded-tr-sm max-w-[90%] min-w-[180px] shadow-sm overflow-hidden">
 
-        {/* Media header */}
-        {mediaType && mediaUrl && (
-          <div className="px-0 pt-0">
-            <MediaBlock type={mediaType} url={mediaUrl} />
+        {/* Header: text, or image / video / document */}
+        {headerType === 'text' && headerText && (
+          <div className="px-3 pt-2"><p className="text-sm font-bold text-gray-900 break-words">{headerText}</p></div>
+        )}
+        {['image', 'video', 'document'].includes(headerType || '') && (
+          <div className="px-1.5 pt-1.5">
+            <MediaBlock type={headerType!} url={headerUrl} filename={headerFile} />
           </div>
         )}
 
@@ -164,13 +174,14 @@ function InteractiveMessage({ message, mediaType, mediaUrl, type }: {
           {message
             ? <WAText text={message} />
             : <p className="text-sm text-gray-400 italic">Message text here…</p>}
+          {footer && <p className="text-[11px] text-[#667781] mt-1 break-words">{footer}</p>}
           <p className="text-[10px] text-[#667781] text-right mt-1">12:30 ✓✓</p>
         </div>
 
-        {/* Buttons (max 3) */}
+        {/* Buttons (max 3) — template style */}
         {type === 'button' && (
           <div className="border-t border-[#b5d9a8]">
-            {placeholderButtons.map((l, i) => <WAButton key={i} label={l} />)}
+            {shown.map((b, i) => <WAButton key={i} label={`${BTN_ICON[b.kind] || '↩'} ${b.label || 'Button'}`} />)}
           </div>
         )}
 
@@ -178,7 +189,7 @@ function InteractiveMessage({ message, mediaType, mediaUrl, type }: {
         {type === 'list' && (
           <div className="border-t border-[#b5d9a8]">
             <div className="py-2 px-3 text-center text-[#00a884] text-sm font-medium flex items-center justify-center gap-2">
-              <span className="text-base">≡</span> View Options
+              <span className="text-base">≡</span> {listLabel || 'View Options'}
             </div>
           </div>
         )}
@@ -194,7 +205,7 @@ function InteractiveMessage({ message, mediaType, mediaUrl, type }: {
 // ─────────────────────────────────────────────────────────────────────────────
 // Main FlowPreviewPanel
 // ─────────────────────────────────────────────────────────────────────────────
-export function FlowPreviewPanel({ form, multiMode, nodes }: Props) {
+export function FlowPreviewPanel({ form, multiMode, nodes, options = [] }: Props) {
   const isList   = form.type === 'list'
   const isButton = form.type === 'button'
   const isSurvey = form.type === 'survey'
@@ -347,9 +358,14 @@ export function FlowPreviewPanel({ form, multiMode, nodes }: Props) {
             {!isSurvey && !isTpl && !form.is_dynamic && (isButton || isList) && (
               <InteractiveMessage
                 message={form.message}
-                mediaType={form.media_type}
-                mediaUrl={form.media_url}
                 type={isButton ? 'button' : 'list'}
+                headerType={form.header_type}
+                headerText={form.header_text}
+                headerUrl={form.header_media_url}
+                headerFile={form.header_media_filename || form.header_media_name}
+                footer={form.footer_text}
+                listLabel={form.list_button_label}
+                buttons={options.map((o: any) => ({ kind: o.kind, label: o.title }))}
               />
             )}
 
@@ -375,10 +391,10 @@ export function FlowPreviewPanel({ form, multiMode, nodes }: Props) {
               <p className="text-xs text-gray-500 font-medium uppercase tracking-wide">Options</p>
               <span className="text-gray-300 text-xs">×</span>
             </div>
-            {['Option 1','Option 2','Option 3','Option 4','Option 5'].map((o, i) => (
-              <WAListRow key={i} idx={i} title={o} desc="Tap to select" />
+            {(options.length ? options : [{ title: 'Option 1', message: '' }, { title: 'Option 2', message: '' }, { title: 'Option 3', message: '' }]).map((o: any, i: number) => (
+              <WAListRow key={i} idx={i} title={o.title || `Option ${i + 1}`} desc={(o.message || '').slice(0, 72) || undefined} />
             ))}
-            <p className="px-4 py-1.5 text-[10px] text-gray-300 italic">Up to 10 options in real flow</p>
+            <p className="px-4 py-1.5 text-[10px] text-gray-300 italic">{options.length}/10 options</p>
           </div>
         )}
 

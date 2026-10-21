@@ -34,6 +34,12 @@ class ConversationController extends Controller
             ->when($request->boolean('mine'), fn ($q) => $q->where('assigned_to', auth()->id()))
             ->when($request->boolean('unassigned'), fn ($q) => $q->whereNull('assigned_to'))
             ->when($request->boolean('unread'), fn ($q) => $q->where('unread_count', '>', 0))
+            // server-side search, so a customer beyond the first page can still be found
+            ->when(trim((string) $request->search) !== '', function ($q) use ($request) {
+                $term = '%' . trim((string) $request->search) . '%';
+                $q->where(fn ($w) => $w->where('contact_name', 'like', $term)->orWhere('phone', 'like', $term)
+                    ->orWhereHas('contact', fn ($c) => $c->where('name', 'like', $term)));
+            })
             ->with([
                 'assignedAgent:id,name',
                 'contact:id,name',
@@ -43,11 +49,14 @@ class ConversationController extends Controller
                 'lastMessage',
             ])
             ->orderByDesc('last_message_at')
-            ->paginate($request->integer('per_page', 30));
+            ->orderByDesc('id')   // stable order, so page 2 never repeats or skips rows with equal timestamps
+            ->paginate(min(max($request->integer('per_page', 30), 10), 100));
 
         return response()->json([
             'conversations' => $conversations->items(),
             'total'         => $conversations->total(),
+            'page'          => $conversations->currentPage(),
+            'has_more'      => $conversations->hasMorePages(),
         ]);
     }
 
@@ -68,23 +77,29 @@ class ConversationController extends Controller
             ])
             ->firstOrFail();
 
-        // Cap the payload — a long-running thread can hold thousands of rows and both
-        // the transfer and the client render become the bottleneck. Take the newest
-        // slice, then hand it back oldest-first for display.
-        $limit = min(max((int) request('limit', 120), 20), 300);
+        // A long-running thread can hold thousands of rows, so it is served in pages: the newest `limit`
+        // messages first, then older ones on request with `before_id` (the id of the oldest message the
+        // client already has). Each page is handed back oldest-first for display; `has_more` says whether
+        // there is anything earlier still.
+        $limit  = min(max((int) request('limit', 50), 20), 200);
+        $before = (int) request('before_id', 0);
 
-        $messages = WaMessage::where('conversation_id', $conversation->id)
+        $rows = WaMessage::where('conversation_id', $conversation->id)
             ->with('sentBy:id,name')
-            ->latest('created_at')
-            ->limit($limit)
-            ->get()
-            ->reverse()
-            ->values();
+            ->when($before > 0, fn ($q) => $q->where('id', '<', $before))
+            ->orderByDesc('id')
+            ->limit($limit + 1)
+            ->get();
 
-        // Opening the thread marks it read
-        $conversation->update(['unread_count' => 0]);
+        $hasMore  = $rows->count() > $limit;
+        $messages = $rows->take($limit)->reverse()->values();
 
-        return response()->json(['conversation' => $conversation, 'messages' => $messages]);
+        // Opening the thread marks it read (loading older history does not need to)
+        if ($before === 0) {
+            $conversation->update(['unread_count' => 0]);
+        }
+
+        return response()->json(['conversation' => $conversation, 'messages' => $messages, 'has_more' => $hasMore]);
     }
 
     // POST /conversations/{id}/claim — atomic first-come-first-served assignment,

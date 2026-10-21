@@ -1,6 +1,6 @@
 // src/pages/inbox/InboxPage.tsx
 // WhatsApp-style single-conversation inbox for /wa-cloud/inbox.
-import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, useCallback } from 'react'
 import {
   Search, Send, Info, UserPlus, LogOut, MessageSquare,
   Image as ImageIcon, Video, FileText, Mic, MapPin, Check, CheckCheck, Clock, AlertTriangle,
@@ -96,37 +96,75 @@ export default function InboxPage() {
   const [search, setSearch]               = useState('')
   const [companyId, setCompanyId]         = useState<number | null>(null)
   const [drawerOpen, setDrawerOpen]       = useState(false)
+  // conversation list paging + server-side search
+  const [page, setPage]                   = useState(1)
+  const [hasMoreConv, setHasMoreConv]     = useState(false)
+  const [totalConv, setTotalConv]         = useState(0)
+  const [loadingMoreConv, setLoadingMoreConv] = useState(false)
+  const [debouncedSearch, setDebouncedSearch] = useState('')
+  // thread history paging
+  const [hasMoreMsgs, setHasMoreMsgs]     = useState(false)
+  const [loadingOlder, setLoadingOlder]   = useState(false)
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const taRef = useRef<HTMLTextAreaElement>(null)
   const reqRef = useRef(0)   // guards against a slow response for a thread the user already left
+  const listReqRef = useRef(0)                                   // same idea for the conversation list
+  const prependRef = useRef<{ h: number; top: number } | null>(null) // scroll position to restore after older messages are added on top
+  const stickRef = useRef(true)                                  // is the reader at the bottom of the thread?
+  const forceBottomRef = useRef(false)                           // a thread was just opened -> start at the newest message
 
   const active = activeConversation ?? conversations.find(c => c.id === activeId) ?? null
   const canReplyHere = !!active && (canReplyToAny || active.assigned_to === currentUser?.id)
 
   // ── list ────────────────────────────────────────────────────────────────
+  // 30 conversations at a time; the next page loads as you scroll to the bottom (or press "Load more").
+  // Search runs on the server, so a customer who is not in the loaded pages can still be found.
+  const PER_PAGE = 30
+  const fetchConversations = useCallback((p: number) => conversationApi.list({
+    mine: filter === 'mine' ? 1 : undefined,
+    unassigned: filter === 'unassigned' ? 1 : undefined,
+    unread: filter === 'unread' ? 1 : undefined,
+    search: debouncedSearch || undefined,
+    page: p,
+    per_page: PER_PAGE,
+  }), [filter, debouncedSearch])
+
   const loadList = useCallback(() => {
+    const token = ++listReqRef.current
     setLoadingList(true)
-    conversationApi.list({
-      mine: filter === 'mine' ? 1 : undefined,
-      unassigned: filter === 'unassigned' ? 1 : undefined,
-      unread: filter === 'unread' ? 1 : undefined,
-      per_page: 50,
-    })
-      .then(r => setConversations(r.data.conversations || []))
-      .catch(e => toast.error(getError(e)))
-      .finally(() => setLoadingList(false))
-  }, [filter])
+    fetchConversations(1)
+      .then(r => {
+        if (listReqRef.current !== token) return   // a newer filter/search superseded this request
+        setConversations(r.data.conversations || [])
+        setPage(1); setHasMoreConv(!!r.data.has_more); setTotalConv(r.data.total ?? (r.data.conversations || []).length)
+      })
+      .catch(e => { if (listReqRef.current === token) toast.error(getError(e)) })
+      .finally(() => { if (listReqRef.current === token) setLoadingList(false) })
+  }, [fetchConversations])
 
   useEffect(() => { loadList() }, [loadList])
+  useEffect(() => { const t = setTimeout(() => setDebouncedSearch(search.trim()), 350); return () => clearTimeout(t) }, [search])
 
-  const visibleConversations = useMemo(() => {
-    const q = search.trim().toLowerCase()
-    if (!q) return conversations
-    return conversations.filter(c =>
-      (c.contact_name || c.contact?.name || '').toLowerCase().includes(q) ||
-      (c.phone || '').toLowerCase().includes(q))
-  }, [conversations, search])
+  const loadMoreConversations = async () => {
+    if (loadingMoreConv || !hasMoreConv || loadingList) return
+    const token = listReqRef.current
+    setLoadingMoreConv(true)
+    try {
+      const r = await fetchConversations(page + 1)
+      if (listReqRef.current !== token) return
+      const more: any[] = r.data.conversations || []
+      // realtime events may have moved rows around meanwhile — never show the same chat twice
+      setConversations(prev => { const seen = new Set(prev.map(c => c.id)); return [...prev, ...more.filter(c => !seen.has(c.id))] })
+      setPage(page + 1); setHasMoreConv(!!r.data.has_more); setTotalConv(r.data.total ?? totalConv)
+    } catch (e) { toast.error(getError(e)) } finally { setLoadingMoreConv(false) }
+  }
+  const onListScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const el = e.currentTarget
+    if (el.scrollHeight - el.scrollTop - el.clientHeight < 240) loadMoreConversations()
+  }
+
+  const visibleConversations = conversations
 
   // ── open a thread ───────────────────────────────────────────────────────
   const openThread = (id: number) => {
@@ -136,11 +174,13 @@ export default function InboxPage() {
     // Paint the header instantly from the list row we already have, then load messages.
     setActiveConversation(conversations.find(c => c.id === id) ?? null)
     setMessages([])
+    setHasMoreMsgs(false); forceBottomRef.current = true; stickRef.current = true
     setLoadingThread(true)
     conversationApi.messages(id)
       .then(r => {
         if (reqRef.current !== token) return   // user moved on — drop this response
         setMessages(r.data.messages || [])
+        setHasMoreMsgs(!!r.data.has_more)
         setActiveConversation(r.data.conversation ?? null)
         setCompanyId(r.data.conversation?.company_id ?? companyId)
         setConversations(prev => prev.map(c => c.id === id ? { ...c, unread_count: 0 } : c))
@@ -149,9 +189,39 @@ export default function InboxPage() {
       .finally(() => { if (reqRef.current === token) setLoadingThread(false) })
   }
 
-  useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight })
+  // Where to scroll after the messages change:
+  //  • older messages were added on top -> keep what the reader was looking at in place
+  //  • a thread was just opened         -> jump to the newest message
+  //  • a new message arrived            -> follow it, but only if the reader was already at the bottom
+  useLayoutEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    if (prependRef.current) { el.scrollTop = el.scrollHeight - prependRef.current.h + prependRef.current.top; prependRef.current = null; return }
+    if (forceBottomRef.current && messages.length > 0) { el.scrollTop = el.scrollHeight; forceBottomRef.current = false; stickRef.current = true; return }
+    if (stickRef.current) el.scrollTop = el.scrollHeight
   }, [messages])
+
+  /** Earlier messages: the page before the oldest one we have. */
+  const loadOlder = async () => {
+    if (loadingOlder || loadingThread || !hasMoreMsgs || !activeId || messages.length === 0) return
+    const token = reqRef.current
+    const el = scrollRef.current
+    setLoadingOlder(true)
+    prependRef.current = el ? { h: el.scrollHeight, top: el.scrollTop } : null
+    try {
+      const r = await conversationApi.messages(activeId, { before_id: messages[0].id })
+      if (reqRef.current !== token) { prependRef.current = null; return }   // user opened another chat meanwhile
+      const older: any[] = r.data.messages || []
+      setMessages(prev => { const seen = new Set(prev.map(m => m.id)); return [...older.filter(m => !seen.has(m.id)), ...prev] })
+      setHasMoreMsgs(!!r.data.has_more)
+    } catch (e) { prependRef.current = null; toast.error(getError(e)) } finally { setLoadingOlder(false) }
+  }
+  const onThreadScroll = () => {
+    const el = scrollRef.current
+    if (!el) return
+    stickRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 200
+    if (el.scrollTop < 80) loadOlder()
+  }
 
   useEffect(() => {
     if (!taRef.current) return
@@ -251,6 +321,15 @@ export default function InboxPage() {
     if (loadingThread) return <ThreadSkeleton />
     if (messages.length === 0) return <div className="wa-center-pad">No messages in this conversation yet.</div>
     const rows: JSX.Element[] = []
+    if (hasMoreMsgs) {
+      rows.push(
+        <div key="earlier" className="wa-earlier">
+          <button type="button" onClick={loadOlder} disabled={loadingOlder}>{loadingOlder ? 'Loading earlier messages…' : '↑ Load earlier messages'}</button>
+        </div>
+      )
+    } else {
+      rows.push(<div key="start" className="wa-earlier wa-earlier--end">Start of conversation</div>)
+    }
     let lastDay = ''
     for (const m of messages) {
       const k = dayKey(m.created_at)
@@ -280,12 +359,12 @@ export default function InboxPage() {
             ))}
           </div>
         </div>
-        <div className="wa-list__scroll">
+        <div className="wa-list__scroll" onScroll={onListScroll}>
           {loadingList ? (
             <ListSkeleton />
           ) : visibleConversations.length === 0 ? (
             <div className="wa-center-pad">No conversations{search ? ' match your search' : ' yet'}.</div>
-          ) : visibleConversations.map(c => {
+          ) : <>{visibleConversations.map(c => {
             const nm = c.contact_name || c.contact?.name || c.phone
             const number = c.wa_phone_number ?? c.waPhoneNumber
             const numberLabel = number?.label || number?.display_number
@@ -319,6 +398,11 @@ export default function InboxPage() {
               </div>
             )
           })}
+            <div className="wa-list__foot">
+              {hasMoreConv
+                ? <button type="button" onClick={loadMoreConversations} disabled={loadingMoreConv}>{loadingMoreConv ? 'Loading…' : `Load more · ${visibleConversations.length} of ${totalConv}`}</button>
+                : <span>{visibleConversations.length} conversation{visibleConversations.length === 1 ? '' : 's'} · all loaded</span>}
+            </div></>}
         </div>
       </div>
 
@@ -368,7 +452,7 @@ export default function InboxPage() {
             </div>
           </div>
 
-          <div ref={scrollRef} className="wa-thread__scroll">
+          <div ref={scrollRef} className="wa-thread__scroll" onScroll={onThreadScroll}>
             {threadBody()}
           </div>
 

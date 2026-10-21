@@ -23,6 +23,7 @@ import { Button, Modal, ConfirmModal, EmptyState } from '@/components/ui'
 import { getError } from '@/utils'
 import toast from 'react-hot-toast'
 import { FlowPreviewPanel } from './components/FlowPreviewPanel'
+import { HeaderEditor, OptionsEditor, AiAgentPicker, OptionDraft, optionsFromNode, validateOptions, isChildKind, isActionKind, aiKey } from './components/FlowOptionsEditor'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface FlowNode {
@@ -69,6 +70,11 @@ const DEFAULT_FORM = {
   is_dynamic: false, dynamic_api_url: '', dynamic_api_method: 'GET',
   dynamic_api_headers: '', dynamic_label_field: 'name', dynamic_value_field: 'id',
   dynamic_description_field: '', survey_form_id: null as number | null, wa_template_id: null as number | null,
+  // interactive header / footer (list and button nodes)
+  header_type: '', header_text: '', header_media_url: '', header_media_asset_id: null as number | null,
+  header_media_name: '', header_media_filename: '', footer_text: '', list_button_label: '',
+  // AI-agent (knowledge_base) node
+  ai_agent_id: null as number | null, ai_kb_ids: [] as number[],
 }
 
 // ─── Dup helpers ──────────────────────────────────────────────────────────────
@@ -238,7 +244,7 @@ function FlowTestPreview({ nodes, startId, nonce, onRestart, builderName, onClos
   useEffect(() => { const t = startId ?? root?.id ?? null; setCurId(t); setHist([]); setBotTyping(false); setLog(t && byId[t] ? [{ from: 'bot', text: byId[t].message || '[no message]', id: nid(), time: nowTime() }] : []) }, [startId, nonce, root?.id])
   useEffect(() => { scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' }) }, [log, botTyping])
   const cur = curId ? byId[curId] : null, children = curId ? (byPid[String(curId)] || []) : []
-  const isDeadEnd = !!cur && children.length === 0 && !cur.is_dead_end && cur.type !== 'text' && cur.type !== 'survey' && cur.type !== 'template' && cur.type !== 'knowledge_base'
+  const isDeadEnd = !!cur && children.length === 0 && !(cur.action_buttons?.length) && !cur.is_dead_end && cur.type !== 'text' && cur.type !== 'survey' && cur.type !== 'template' && cur.type !== 'knowledge_base'
   const goTo = (nodeId: number) => { const n = byId[nodeId]; setCurId(nodeId); sayBot(n?.message || '[no message]') }
   const goChild = (child: any) => { say('user', child.title); setHist(h => curId !== null ? [...h, curId] : h); goTo(child.id) }
   const goMenu = (label: string) => { if (!root) return; say('user', label); setHist([]); goTo(root.id) }
@@ -254,6 +260,7 @@ function FlowTestPreview({ nodes, startId, nonce, onRestart, builderName, onClos
       {log.map(m => (<div key={m.id} className={`flex ${m.from === 'user' ? 'justify-end' : 'justify-start'}`}><div className={`max-w-[85%] rounded-lg px-3 py-1.5 text-[13px] whitespace-pre-wrap shadow-sm ${m.from === 'user' ? 'bg-[#dcf8c6] rounded-tr-none' : 'bg-white rounded-tl-none'}`}>{m.text}<span className="block text-right text-[10px] text-gray-400 mt-0.5">{m.time}</span></div></div>))}
       {botTyping && <div className="flex justify-start"><div className="bg-white rounded-lg rounded-tl-none px-3 py-2 shadow-sm flex items-center gap-1">{[0, 120, 240].map(d => (<span key={d} className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: `${d}ms` }} />))}</div></div>}
       {!botTyping && cur && children.length > 0 && (<div className="flex justify-start"><div className="max-w-[85%] bg-white rounded-lg shadow-sm overflow-hidden">{children.map((c: any) => (<button key={c.id} onClick={() => onOpt(c)} className="w-full text-left px-3 py-2 text-[13px] text-[#128C7E] border-t first:border-t-0 border-gray-100 hover:bg-gray-50 flex items-center gap-1.5"><span>{isMMNode(c.reply_id) ? '🏠' : isBackNode(c.reply_id) ? '🔙' : '▸'}</span>{c.title}</button>))}</div></div>)}
+      {!botTyping && cur && (cur.action_buttons?.length || 0) > 0 && (<div className="flex justify-start"><div className="max-w-[85%] bg-white rounded-lg shadow-sm overflow-hidden">{cur.action_buttons.map((b: any, i: number) => (<div key={i} className="px-3 py-2 text-[13px] text-[#128C7E] border-t first:border-t-0 border-gray-100"><span>{b.type === 'url' ? '🔗' : b.type === 'phone' ? '📞' : '📋'} {b.text}</span><span className="block text-[10px] text-gray-400 truncate">{b.type === 'url' ? b.url : b.type === 'phone' ? b.phone : `Code: ${b.code}`}</span></div>))}</div></div>)}
     </div>
     <div className="p-2 border-t border-gray-200 bg-white flex items-center gap-1 flex-shrink-0"><span className="text-gray-400 px-1">😊</span><input value={typed} onChange={e => setTyped(e.target.value)} onKeyDown={e => e.key === 'Enter' && onSend()} placeholder='Message… try "menu" or "back"' className="flex-1 text-sm px-3 py-1.5 rounded-full border border-gray-200 focus:outline-none focus:border-brand-400" /><button onClick={onSend} disabled={!typed.trim()} className="text-sm w-8 h-8 flex items-center justify-center rounded-full bg-[#128C7E] text-white disabled:opacity-40">{typed.trim() ? '➤' : '🎤'}</button></div>
   </div>)
@@ -285,12 +292,13 @@ export default function FlowNodesPage() {
   const [moving, setMoving] = useState(false) // in-flight guard for drag-and-drop moves
   const [togglingIds, setTogglingIds] = useState<Set<number>>(new Set()) // per-node in-flight guard for activate/deactivate
   const [deleting, setDeleting] = useState(false) // in-flight guard for single-node delete
+  const [options, setOptions] = useState<OptionDraft[]>([]) // list rows / buttons of the node being edited
   const set = (k: string, v: any) => setForm(f => ({ ...f, [k]: v }))
 
   const load = useCallback(() => {
     if (!builderId) return
     setLoading(true)
-    Promise.all([flowBuilderApi.show(builderId), flowNodeApi.list(builderId)])
+    return Promise.all([flowBuilderApi.show(builderId), flowNodeApi.list(builderId)])
       .then(([b, n]) => {
         setBuilder(b.data.builder)
         setNodes(n.data.nodes || [])
@@ -314,16 +322,16 @@ export default function FlowNodesPage() {
   }, [dragEnabled])
 
   const byParent = useMemo<Record<string, FlowNode[]>>(() => { const map: Record<string, FlowNode[]> = {}; nodes.forEach(n => { const k = String(n.parent_id ?? 'root'); if (!map[k]) map[k] = []; map[k].push(n) }); return map }, [nodes])
-  const isDeadEnd = (n: FlowNode) => { if (n.is_dead_end) return false; return (byParent[String(n.id)] || []).length === 0 && ['list', 'button'].includes(n.type) }
+  const isDeadEnd = (n: FlowNode) => { if (n.is_dead_end) return false; return (byParent[String(n.id)] || []).length === 0 && !(n.action_buttons?.length) && ['list', 'button'].includes(n.type) }
   const toggleCollapse = (id: number) => setCollapsed(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s })
   const toggleSelect = (id: number) => setSelected(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s })
 
   // reply_id check
-  useEffect(() => { const id = form.reply_id.trim(); if (!id) { setReplyStatus('idle'); return }; const clash = nodes.some(n => n.reply_id === id && (!editN || n.id !== editN.id)); if (clash) { setReplyStatus('taken'); return }; setReplyStatus('checking'); const t = setTimeout(() => { flowNodeApi.checkReplyId(builderId, { reply_id: id, exclude_id: editN?.id }).then((r: any) => setReplyStatus(r.data.exists ? 'taken' : 'ok')).catch(() => setReplyStatus('ok')) }, 400); return () => clearTimeout(t) }, [form.reply_id, nodes, editN, builderId])
+  useEffect(() => { const id = form.reply_id.trim(); if (!id) { setReplyStatus('idle'); return }; if (editN && id === editN.reply_id) { setReplyStatus('ok'); return }; const clash = nodes.some(n => n.reply_id === id && (!editN || n.id !== editN.id)); if (clash) { setReplyStatus('taken'); return }; setReplyStatus('checking'); const t = setTimeout(() => { flowNodeApi.checkReplyId(builderId, { reply_id: id, exclude_id: editN?.id }).then((r: any) => setReplyStatus(r.data.exists ? 'taken' : 'ok')).catch(() => setReplyStatus('ok')) }, 400); return () => clearTimeout(t) }, [form.reply_id, nodes, editN, builderId])
 
   const handleTitleChange = (val: string) => { set('title', val); if (!form.reply_id_manual) set('reply_id', slugify(val)) }
-  const openCreate = (parentId: number | null = null) => { setEditN(null); setForm({ ...DEFAULT_FORM, parent_id: parentId }); setMultiMode(false); setShowForm(true) }
-  const openEdit = (n: FlowNode) => { setEditN(n); setForm({ title: n.title, message: n.message || '', type: n.type, reply_id: n.reply_id, reply_id_manual: true, redirect_to_reply_id: n.redirect_to_reply_id || '', lead_category: n.lead_category || '', parent_id: n.parent_id, sort_order: n.sort_order ?? 0, is_active: n.is_active, is_dead_end: !!n.is_dead_end, multi_messages: (n.multi_messages || []).map((m: any) => ({ _key: uid(), size: null, mime_type: '', ...m, original_url: m.url || '', upload: null })), is_dynamic: !!n.is_dynamic, dynamic_api_url: n.dynamic_api_url || '', dynamic_api_method: n.dynamic_api_method || 'GET', dynamic_api_headers: n.dynamic_api_headers || '', dynamic_label_field: n.dynamic_label_field || 'name', dynamic_value_field: n.dynamic_value_field || 'id', dynamic_description_field: n.dynamic_description_field || '', survey_form_id: n.survey_form_id || null, wa_template_id: n.wa_template_id || null }); setMultiMode(!!(n.multi_messages?.length)); setShowForm(true) }
+  const openCreate = (parentId: number | null = null) => { setEditN(null); setForm({ ...DEFAULT_FORM, parent_id: parentId }); setOptions([]); setMultiMode(false); setShowForm(true) }
+  const openEdit = (n: FlowNode, all: FlowNode[] = nodes) => { setEditN(n); setOptions(optionsFromNode(n, all.filter(x => x.parent_id === n.id))); const rich = n.type === 'list' || n.type === 'button', hm = rich && ['image', 'video', 'document'].includes(n.media_type); setForm({ header_type: n.header_type || (hm ? n.media_type : ''), header_text: n.header_text || '', header_media_url: hm ? (n.media_url || '') : '', header_media_asset_id: null, header_media_name: '', header_media_filename: n.media_filename || '', footer_text: n.footer_text || '', list_button_label: n.list_button_label || '', ai_agent_id: n.ai_agent_id || null, ai_kb_ids: (n.ai_kb_ids || []).map(Number), title: n.title, message: n.message || '', type: n.type, reply_id: n.reply_id, reply_id_manual: true, redirect_to_reply_id: n.redirect_to_reply_id || '', lead_category: n.lead_category || '', parent_id: n.parent_id, sort_order: n.sort_order ?? 0, is_active: n.is_active, is_dead_end: !!n.is_dead_end, multi_messages: (n.multi_messages || []).map((m: any) => ({ _key: uid(), size: null, mime_type: '', ...m, original_url: m.url || '', upload: null })), is_dynamic: !!n.is_dynamic, dynamic_api_url: n.dynamic_api_url || '', dynamic_api_method: n.dynamic_api_method || 'GET', dynamic_api_headers: n.dynamic_api_headers || '', dynamic_label_field: n.dynamic_label_field || 'name', dynamic_value_field: n.dynamic_value_field || 'id', dynamic_description_field: n.dynamic_description_field || '', survey_form_id: n.survey_form_id || null, wa_template_id: n.wa_template_id || null }); setMultiMode(!!(n.multi_messages?.length)); setShowForm(true) }
 
   const addBlock = (type = 'text') => set('multi_messages', [...form.multi_messages, emptyBlock(type)])
   const removeBlock = (key: string) => set('multi_messages', form.multi_messages.filter((b: any) => b._key !== key))
@@ -331,9 +339,111 @@ export default function FlowNodesPage() {
   const moveBlock = (key: string, dir: -1 | 1) => { const list = [...form.multi_messages], i = list.findIndex((b: any) => b._key === key), j = i + dir; if (i < 0 || j < 0 || j >= list.length) return;[list[i], list[j]] = [list[j], list[i]]; set('multi_messages', list) }
   const isSurvey = form.type === 'survey', isTpl = form.type === 'template'
 
-  const buildPayload = (f = form, mm = form.multi_messages) => { const p: any = { title: f.title.slice(0, 24), message: f.message, type: f.type, reply_id: f.reply_id, redirect_to_reply_id: f.redirect_to_reply_id || null, lead_category: f.lead_category || null, parent_id: f.parent_id, sort_order: f.sort_order ?? 0, is_active: f.is_active, is_dead_end: f.is_dead_end, is_dynamic: f.is_dynamic, dynamic_api_url: f.is_dynamic ? f.dynamic_api_url : null, dynamic_api_method: f.is_dynamic ? f.dynamic_api_method : null, dynamic_api_headers: f.is_dynamic ? f.dynamic_api_headers : null, dynamic_label_field: f.is_dynamic ? f.dynamic_label_field : null, dynamic_value_field: f.is_dynamic ? f.dynamic_value_field : null, dynamic_description_field: f.is_dynamic ? f.dynamic_description_field : null, survey_form_id: isSurvey ? f.survey_form_id : null, wa_template_id: isTpl ? f.wa_template_id : null }; if (multiMode && mm.length > 0 && !isSurvey && !isTpl) { p.multi_messages = mm.map(({ _key, upload, uploadName, original_url, ...b }: any) => { const c: any = { type: b.type }; if (b.type === 'text') c.content = b.content; if (['image', 'video', 'document', 'audio'].includes(b.type)) { c.url = b.url; if (b.caption) c.caption = b.caption; if (b.type === 'document') c.filename = b.filename || uploadName || ''; if (b.size) c.size = b.size; if (b.mime_type) c.mime_type = b.mime_type }; if (b.type === 'location') { c.lat = Number(b.lat); c.lng = Number(b.lng); c.name = b.name; c.address = b.address }; return c }) } else p.multi_messages = null; return p }
+  const buildPayload = (f = form, mm = form.multi_messages) => { const p: any = { title: f.title.slice(0, 24), message: f.message, type: f.type, reply_id: f.reply_id, redirect_to_reply_id: f.redirect_to_reply_id || null, lead_category: f.lead_category || null, parent_id: f.parent_id, sort_order: f.sort_order ?? 0, is_active: f.is_active, is_dead_end: f.is_dead_end, is_dynamic: f.is_dynamic, dynamic_api_url: f.is_dynamic ? f.dynamic_api_url : null, dynamic_api_method: f.is_dynamic ? f.dynamic_api_method : null, dynamic_api_headers: f.is_dynamic ? f.dynamic_api_headers : null, dynamic_label_field: f.is_dynamic ? f.dynamic_label_field : null, dynamic_value_field: f.is_dynamic ? f.dynamic_value_field : null, dynamic_description_field: f.is_dynamic ? f.dynamic_description_field : null, survey_form_id: isSurvey ? f.survey_form_id : null, wa_template_id: isTpl ? f.wa_template_id : null };
+    if (f.type === 'knowledge_base') { p.ai_agent_id = f.ai_agent_id || null; p.ai_kb_ids = f.ai_kb_ids || [] }
+    // interactive header / footer / buttons — only list and button nodes carry them
+    const rich = (f.type === 'list' || f.type === 'button') && !f.is_dynamic
+    if (f.type === 'list' || f.type === 'button') {
+      const hm = ['image', 'video', 'document'].includes(f.header_type)
+      p.header_type = f.header_type || null
+      p.header_text = f.header_type === 'text' ? f.header_text : null
+      p.media_type = hm ? f.header_type : null; p.media_url = hm ? f.header_media_url : null
+      p.media_filename = hm && f.header_type === 'document' ? (f.header_media_filename || f.header_media_name || null) : null
+      p.footer_text = f.footer_text || null
+      p.list_button_label = f.type === 'list' ? (f.list_button_label || null) : null
+      p.action_buttons = f.type === 'button' && rich ? options.filter(o => isActionKind(o.kind)).map(o => ({ type: o.kind, text: o.title.slice(0, 20), ...(o.kind === 'url' ? { url: o.url.trim() } : o.kind === 'phone' ? { phone: o.phone.trim() } : { code: o.code.trim() }) })) : []
+    }
+    if (multiMode && mm.length > 0 && !isSurvey && !isTpl) { p.multi_messages = mm.map(({ _key, upload, uploadName, original_url, ...b }: any) => { const c: any = { type: b.type }; if (b.type === 'text') c.content = b.content; if (['image', 'video', 'document', 'audio'].includes(b.type)) { c.url = b.url; if (b.caption) c.caption = b.caption; if (b.type === 'document') c.filename = b.filename || uploadName || ''; if (b.size) c.size = b.size; if (b.mime_type) c.mime_type = b.mime_type }; if (b.type === 'location') { c.lat = Number(b.lat); c.lng = Number(b.lng); c.name = b.name; c.address = b.address }; return c }) } else p.multi_messages = null; return p }
 
-  const handleSave = async () => { if (saving) return; if (!form.title.trim()) { toast.error('Title required'); return }; if (!form.reply_id.trim()) { toast.error('Reply ID required'); return }; if (replyStatus === 'taken') { toast.error('Reply ID already used'); return }; if (replyStatus === 'checking') { toast.error('Still checking…'); return }; if (!isSurvey && !isTpl && !multiMode && !form.message.trim()) { toast.error('Message required'); return }; if (!isSurvey && !isTpl && multiMode && form.multi_messages.length === 0) { toast.error('Add at least one block'); return }; setSaving(true); try { const blocks = [...form.multi_messages]; for (let i = 0; i < blocks.length; i++) { if (blocks[i].upload) { const fd = new FormData(); fd.append('file', blocks[i].upload); if (editN?.id) fd.append('node_id', String(editN.id)); const { data } = await flowNodeApi.uploadMedia(builderId, fd); blocks[i] = { ...blocks[i], url: data.url, original_url: data.url, size: data.size, mime_type: data.mime_type, upload: null } } }; const payload = buildPayload(form, blocks); if (editN) { await flowNodeApi.update(builderId, editN.id, payload); toast.success('Node updated.') } else { await flowNodeApi.create(builderId, payload); toast.success('Node created.') }; setShowForm(false); load() } catch (e) { toast.error(getError(e)) } finally { setSaving(false) } }
+  // Create / update / remove the child nodes behind the list rows and reply buttons of `parent`.
+  // Returns the problems (empty = all saved). Removing an option also removes everything inside it.
+  const syncOptions = async (parent: { id: number; reply_id: string }): Promise<string[]> => {
+    const errors: string[] = []
+    if (!(form.type === 'list' || form.type === 'button') || form.is_dynamic) return errors
+    const taken = new Set(nodes.map(n => n.reply_id)); taken.add(parent.reply_id)
+    const kept = new Set(options.filter(o => o.id).map(o => o.id as number))
+    const saved = (byParent[String(parent.id)] || [])
+    for (const c of saved) {
+      if (kept.has(c.id)) continue
+      try { await flowNodeApi.delete(builderId, c.id) } catch (e) { errors.push(`Could not remove "${c.title}": ${getError(e)}`) }
+    }
+    let order = 0
+    for (const o of options.filter(x => isChildKind(x.kind))) {
+      const survey = o.kind === 'survey_form'
+      try {
+        if (o.id) {
+          const prev = saved.find(c => c.id === o.id)
+          const ai = o.kind === 'ai_agent'
+          const changed = o.title !== o.original_title || o.message !== o.original_message || (survey && o.survey_form_id !== o.original_survey_form_id) || (ai && aiKey(o) !== o.original_ai) || (prev && (prev.sort_order ?? 0) !== order)
+          if (changed) await flowNodeApi.update(builderId, o.id, { title: o.title.slice(0, 24), reply_id: o.reply_id, message: survey || ai ? (o.message || '') : o.message, sort_order: order, ...(survey ? { type: 'survey', survey_form_id: o.survey_form_id } : ai ? { type: 'knowledge_base', ai_agent_id: o.ai_agent_id, ai_kb_ids: o.ai_kb_ids } : {}) } as any)
+        } else {
+          let rid = slugify(`${parent.reply_id}_${o.title}`).slice(0, 190) || `${parent.reply_id}_opt`
+          if (taken.has(rid)) { let k = 2; while (taken.has(`${rid}_${k}`)) k++; rid = `${rid}_${k}` }
+          taken.add(rid)
+          const ai = o.kind === 'ai_agent'
+          await flowNodeApi.create(builderId, { title: o.title.slice(0, 24), message: survey ? '' : o.message, type: survey ? 'survey' : ai ? 'knowledge_base' : o.child_type, reply_id: rid, parent_id: parent.id, sort_order: order, is_active: true, ...(survey ? { survey_form_id: o.survey_form_id } : ai ? { ai_agent_id: o.ai_agent_id, ai_kb_ids: o.ai_kb_ids } : {}) } as any)
+        }
+      } catch (e) { errors.push(`"${o.title}": ${getError(e)}`) }
+      order++
+    }
+    return errors
+  }
+
+  /** Saves the node and its options. keepOpen = used by "Open ›" on an option, which must not close the form. */
+  const handleSave = async (keepOpen = false): Promise<{ id: number; reply_id: string } | null> => {
+    if (saving) return null
+    if (!form.title.trim()) { toast.error('Title required'); return null }
+    if (!form.reply_id.trim()) { toast.error('Reply ID required'); return null }
+    if (replyStatus === 'taken') { toast.error('Reply ID already used'); return null }
+    if (replyStatus === 'checking') { toast.error('Still checking…'); return null }
+    if (!isSurvey && !isTpl && form.type !== 'knowledge_base' && !multiMode && !form.message.trim()) { toast.error('Message required'); return null }
+    if (!isSurvey && !isTpl && multiMode && form.multi_messages.length === 0) { toast.error('Add at least one block'); return null }
+    if ((form.type === 'list' || form.type === 'button') && !form.is_dynamic) {
+      const problem = validateOptions(form.type, options)
+      if (problem) { toast.error(problem); return null }
+    }
+    setSaving(true)
+    try {
+      const blocks = [...form.multi_messages]
+      for (let i = 0; i < blocks.length; i++) {
+        if (blocks[i].upload) {
+          const fd = new FormData(); fd.append('file', blocks[i].upload); if (editN?.id) fd.append('node_id', String(editN.id))
+          const { data } = await flowNodeApi.uploadMedia(builderId, fd)
+          blocks[i] = { ...blocks[i], url: data.url, original_url: data.url, size: data.size, mime_type: data.mime_type, upload: null }
+        }
+      }
+      const payload = buildPayload(form, blocks)
+      const res = editN ? await flowNodeApi.update(builderId, editN.id, payload) : await flowNodeApi.create(builderId, payload)
+      const savedNode = res.data.node as { id: number; reply_id: string }
+      const problems = await syncOptions(savedNode)
+      if (problems.length) {
+        toast.error(`Node saved, but some options were not: ${problems[0]}${problems.length > 1 ? ` (+${problems.length - 1} more)` : ''}`)
+        setShowForm(false); load(); return null
+      }
+      if (!keepOpen) { toast.success(editN ? 'Node updated.' : 'Node created.'); setShowForm(false); load() }
+      return savedNode
+    } catch (e) { toast.error(getError(e)); return null } finally { setSaving(false) }
+  }
+
+  /** "Open ›" on an option: save this node first, then open that child to give it its own options. */
+  const openChildOption = async (o: OptionDraft) => {
+    const saved = await handleSave(true)
+    if (!saved || !o.id) return
+    try {
+      const { data } = await flowNodeApi.list(builderId)
+      const all: FlowNode[] = data.nodes || []
+      setNodes(all)
+      const child = all.find(n => n.id === o.id)
+      if (child) openEdit(child, all)
+    } catch (e) { toast.error(getError(e)) }
+  }
+
+  const confirmRemoveOption = (o: OptionDraft): boolean => {
+    if (!o.id) return true
+    const count = (id: number): number => (byParent[String(id)] || []).reduce((n, c) => n + 1 + count(c.id), 0)
+    const inner = count(o.id)
+    return inner === 0 || window.confirm(`Removing "${o.title}" also deletes the ${inner} option(s) inside it when you save. Remove it?`)
+  }
   const handleDelete = async () => { if (!delN || deleting) return; setDeleting(true); try { await flowNodeApi.delete(builderId, delN.id); toast.success('Deleted.'); setDelN(null); load() } catch (e) { toast.error(getError(e)) } finally { setDeleting(false) } }
   const handleToggle = async (n: FlowNode) => { if (togglingIds.has(n.id)) return; setTogglingIds(prev => new Set(prev).add(n.id)); try { n.is_active ? await flowNodeApi.deactivate(builderId, n.id) : await flowNodeApi.activate(builderId, n.id); load() } catch (e) { toast.error(getError(e)) } finally { setTogglingIds(prev => { const s = new Set(prev); s.delete(n.id); return s }) } }
 
@@ -437,7 +547,7 @@ export default function FlowNodesPage() {
           const origPid = dn.original.parent_id
           const newPid = origPid !== null && includedIds.has(origPid) && oldToNew[origPid] !== undefined ? oldToNew[origPid] : target.parentId
           const finalId = (dn.newReplyId + tSfx).slice(0, 200)
-          const { data } = await flowNodeApi.create(builderId, { title: dn.newTitle.slice(0, 24), message: dn.newMessage, type: dn.original.type, reply_id: finalId, redirect_to_reply_id: dn.original.redirect_to_reply_id || null, lead_category: dn.original.lead_category, parent_id: newPid, is_active: dn.original.is_active, multi_messages: dn.original.multi_messages || null, is_dead_end: dn.original.is_dead_end, sort_order: dn.original.sort_order } as any)
+          const { data } = await flowNodeApi.create(builderId, { title: dn.newTitle.slice(0, 24), message: dn.newMessage, type: dn.original.type, reply_id: finalId, redirect_to_reply_id: dn.original.redirect_to_reply_id || null, lead_category: dn.original.lead_category, parent_id: newPid, is_active: dn.original.is_active, multi_messages: dn.original.multi_messages || null, is_dead_end: dn.original.is_dead_end, sort_order: dn.original.sort_order, header_type: dn.original.header_type || null, header_text: dn.original.header_text || null, footer_text: dn.original.footer_text || null, list_button_label: dn.original.list_button_label || null, action_buttons: dn.original.action_buttons || null, media_type: dn.original.media_type || null, media_url: dn.original.media_url || null, media_filename: dn.original.media_filename || null, survey_form_id: dn.original.type === 'survey' ? (dn.original.survey_form_id || null) : null } as any)
           oldToNew[dn.original.id] = data.node.id; total++
         }
       }
@@ -503,6 +613,9 @@ export default function FlowNodesPage() {
               {!n.is_active ? <span className="text-xs bg-gray-100 text-gray-400 px-1.5 py-0.5 rounded-full">Inactive</span> : ''}
               {n.is_dynamic ? <span className="text-xs bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded-full">⚡</span> : ''}
               {(n.multi_messages?.length || 0) > 0 && <span className="text-xs bg-teal-50 text-teal-600 px-1.5 py-0.5 rounded-full">📨{n.multi_messages!.length}</span>}
+              {n.header_type && <span className="text-xs bg-sky-50 text-sky-600 px-1.5 py-0.5 rounded-full" title={`Header: ${n.header_type}`}>{({ text: '🔤', image: '🖼️', video: '🎬', document: '📄' } as Record<string, string>)[n.header_type] || '▭'} header</span>}
+              {(n.action_buttons?.length || 0) > 0 && <span className="text-xs bg-purple-50 text-purple-600 px-1.5 py-0.5 rounded-full" title="Link / call / copy-code buttons">🔗{n.action_buttons.length}</span>}
+              {(n.type === 'list' || n.type === 'button') && children.length > 0 && <span className={`text-xs px-1.5 py-0.5 rounded-full ${children.length >= (n.type === 'list' ? 10 : 3) ? 'bg-amber-50 text-amber-600' : 'bg-gray-100 text-gray-500'}`} title={n.type === 'list' ? 'Options (max 10)' : 'Reply buttons (max 3 in total)'}>{children.length}/{n.type === 'list' ? 10 : 3}</span>}
 
             </div>
             <div className="flex items-center gap-1 mt-0.5 text-[11px] text-gray-300 font-mono">
@@ -623,7 +736,7 @@ export default function FlowNodesPage() {
 
     {/* CREATE/EDIT MODAL */}
     <Modal open={showForm} onClose={() => setShowForm(false)} title={editN ? `Edit — ${editN.title}` : form.parent_id ? 'New child node' : 'New root node'} size="default"
-      footer={<><Button variant="secondary" onClick={() => setShowForm(false)}>Cancel</Button><Button onClick={handleSave} loading={saving} disabled={replyStatus === 'taken'}>{editN ? 'Save changes' : 'Create node'}</Button></>}>
+      footer={<><Button variant="secondary" onClick={() => setShowForm(false)}>Cancel</Button><Button onClick={() => handleSave()} loading={saving} disabled={replyStatus === 'taken'}>{editN ? 'Save changes' : 'Create node'}</Button></>}>
       <div className="flex gap-6">
         <div className="flex-1 min-w-0 space-y-4 overflow-y-auto max-h-[68vh] pr-1">
           <div className="grid grid-cols-2 gap-4">
@@ -632,6 +745,10 @@ export default function FlowNodesPage() {
           </div>
 
           <div><label className="label">Type *</label><div className="grid grid-cols-5 gap-1.5">{NODE_TYPES.map(t => (<button key={t.value} type="button" onClick={() => set('type', t.value)} className={`p-2 rounded-xl border text-left text-xs transition-all ${form.type === t.value ? 'border-brand-500 bg-brand-50 text-brand-700' : 'border-gray-200 hover:border-gray-300 text-gray-600'}`}><div className="font-semibold">{t.icon} {t.label}</div><div className="text-gray-400 text-[10px] mt-0.5">{t.desc}</div></button>))}</div></div>
+
+          {(form.type === 'list' || form.type === 'button') && !form.is_dynamic && (
+            <HeaderEditor nodeType={form.type} form={form} set={set} builderId={builderId} MediaInput={MediaInput} />
+          )}
 
           <LeadCategorySelect value={form.lead_category} onChange={v => set('lead_category', v)} />
           {/* Survey node — pick a survey form; no message/buttons needed, the bot asks questions itself */}
@@ -643,9 +760,16 @@ export default function FlowNodesPage() {
               </div>
             </div>
           )}
+          {form.type === 'knowledge_base' && (
+            <AiAgentPicker agentId={form.ai_agent_id} kbIds={form.ai_kb_ids} onChange={p => setForm(f => ({ ...f, ai_agent_id: p.agentId, ai_kb_ids: p.kbIds }))} />
+          )}
           <ReplyIdSelect nodes={nodes} value={form.redirect_to_reply_id} onChange={v => set('redirect_to_reply_id', v)} />
 
-          <div><label className="label">Message {multiMode || isSurvey || isTpl ? '(optional intro)' : '*'} <span className="text-xs text-gray-400">{form.message.length}/4096</span></label><textarea className="form-control" rows={multiMode || isSurvey || isTpl ? 2 : 4} maxLength={4096} placeholder={multiMode ? 'Intro before blocks…' : isSurvey ? 'Intro before survey…' : isTpl ? 'Intro before template…' : 'Message shown to customer…'} value={form.message} onChange={e => set('message', e.target.value)} /></div>
+          <div><label className="label">Message {multiMode || isSurvey || isTpl || form.type === 'knowledge_base' ? '(optional intro)' : '*'} <span className="text-xs text-gray-400">{form.message.length}/4096</span></label><textarea className="form-control" rows={multiMode || isSurvey || isTpl ? 2 : 4} maxLength={4096} placeholder={multiMode ? 'Intro before blocks…' : isSurvey ? 'Intro before survey…' : isTpl ? 'Intro before template…' : 'Message shown to customer…'} value={form.message} onChange={e => set('message', e.target.value)} /></div>
+
+          {(form.type === 'list' || form.type === 'button') && !form.is_dynamic && (
+            <OptionsEditor nodeType={form.type} options={options} setOptions={setOptions} onOpenChild={openChildOption} confirmRemove={confirmRemoveOption} SurveyFormSelect={SurveyFormSelect} />
+          )}
 
           <div className="grid grid-cols-2 gap-4 items-start">
             <ParentNodeSelect nodes={nodes} value={form.parent_id} onChange={v => set('parent_id', v)} excludeIds={editN ? [editN.id] : []} />
@@ -688,7 +812,7 @@ export default function FlowNodesPage() {
         </div>
         <div className="w-72 flex-shrink-0 hidden lg:flex flex-col">
           <p className="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wide">Live preview</p>
-          <div className="flex-1 rounded-2xl overflow-hidden border border-gray-200 shadow-sm bg-white min-h-0"><FlowPreviewPanel form={form} multiMode={multiMode} nodes={nodes} /></div>
+          <div className="flex-1 rounded-2xl overflow-hidden border border-gray-200 shadow-sm bg-white min-h-0"><FlowPreviewPanel form={form} multiMode={multiMode} nodes={nodes} options={options} /></div>
         </div>
       </div>
     </Modal>

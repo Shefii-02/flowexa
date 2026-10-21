@@ -66,6 +66,25 @@ class FlowNodeController extends Controller
             'location_name'    => ['nullable', 'string', 'max:150'],
             'location_address' => ['nullable', 'string', 'max:255'],
 
+            // Interactive header / footer / list button label
+            'header_type'       => ['nullable', Rule::in(['text', 'image', 'video', 'document'])],
+            'header_text'       => ['nullable', 'string', 'max:60'],
+            'footer_text'       => ['nullable', 'string', 'max:60'],
+            'list_button_label' => ['nullable', 'string', 'max:20'],
+            // Non-reply buttons (reply buttons / list rows are child nodes)
+            'action_buttons'              => ['nullable', 'array', 'max:3'],
+            'action_buttons.*.type'       => ['required_with:action_buttons', Rule::in(['url', 'phone', 'copy_code'])],
+            'action_buttons.*.text'       => ['required_with:action_buttons', 'string', 'max:20'],
+            'action_buttons.*.url'        => ['nullable', 'url', 'max:2000'],
+            'action_buttons.*.phone'      => ['nullable', 'string', 'regex:/^\+?[0-9 ()\-]{7,20}$/'],
+            'action_buttons.*.code'       => ['nullable', 'string', 'max:15'],
+            'survey_form_id'    => ['nullable', 'integer', Rule::exists('survey_forms', 'id')->where('company_id', auth()->user()->company_id)],
+            'wa_template_id'    => ['nullable', 'integer', Rule::exists('wa_templates', 'id')->where('company_id', auth()->user()->company_id)],
+            // AI-agent node: an existing agent playbook (voice) and the knowledge-base documents it may answer from
+            'ai_agent_id'       => ['nullable', 'integer', Rule::exists('agent_playbooks', 'id')->where('company_id', auth()->user()->company_id)],
+            'ai_kb_ids'         => ['nullable', 'array', 'max:50'],
+            'ai_kb_ids.*'       => ['integer', Rule::exists('ai_knowledge_base', 'id')->where('company_id', auth()->user()->company_id)],
+
             // Dynamic node (options loaded from an external API at runtime)
             'is_dynamic'                 => ['nullable', 'boolean'],
             'dynamic_api_url'            => ['nullable', 'required_if:is_dynamic,true', 'url', 'max:500'],
@@ -148,6 +167,55 @@ class FlowNodeController extends Controller
     }
 
     // POST /flow-builders/{bid}/nodes — create node
+    /**
+     * Header / button rules that depend on the node's type, and the room left in a parent for one more option.
+     * A list holds at most 10 options; a button node at most 3 buttons in total (reply buttons are child nodes,
+     * link / call / copy-code buttons live on the node). Existing flows that already exceed this keep working —
+     * the cap only stops *adding* more.
+     */
+    private function assertRichConstraints(array $d, string $type, ?FlowNode $node): ?JsonResponse
+    {
+        $h = $d['header_type'] ?? null;
+        if ($h && !in_array($type, ['list', 'button'], true)) {
+            return response()->json(['message' => 'A header can only be set on list and button nodes.'], 422);
+        }
+        if ($h === 'text' && trim((string) ($d['header_text'] ?? '')) === '') {
+            return response()->json(['message' => 'Enter the header text.'], 422);
+        }
+        if (in_array($h, ['image', 'video', 'document'], true)) {
+            if ($type === 'list') { return response()->json(['message' => 'A list can only have a text header — WhatsApp does not allow image, video or document headers on lists.'], 422); }
+            if (($d['media_type'] ?? null) !== $h || empty($d['media_url'])) { return response()->json(['message' => "Upload or enter the {$h} for the header."], 422); }
+        }
+
+        foreach (($d['action_buttons'] ?? []) as $i => $b) {
+            $n = $i + 1;
+            if ($b['type'] === 'url' && empty($b['url']))        { return response()->json(['message' => "Button #{$n}: enter the website link."], 422); }
+            if ($b['type'] === 'phone' && empty($b['phone']))    { return response()->json(['message' => "Button #{$n}: enter the phone number."], 422); }
+            if ($b['type'] === 'copy_code' && empty($b['code'])) { return response()->json(['message' => "Button #{$n}: enter the offer code."], 422); }
+        }
+        if (!empty($d['action_buttons'])) {
+            if ($type !== 'button') { return response()->json(['message' => 'Link, call and copy-code buttons are only for button nodes.'], 422); }
+            $replies = $node ? $node->children()->count() : 0;
+            if ($replies + count($d['action_buttons']) > 3) {
+                return response()->json(['message' => 'A button node can have at most 3 buttons in total (reply buttons + link / call / copy-code).'], 422);
+            }
+        }
+        return null;
+    }
+
+    /** Is there room under $parent for one more child option? */
+    private function assertParentHasRoom(FlowNode $parent, ?int $ignoreChildId = null): ?JsonResponse
+    {
+        $count = $parent->children()->when($ignoreChildId, fn ($q) => $q->where('id', '!=', $ignoreChildId))->count();
+        if ($parent->type === 'list' && $count >= 10) {
+            return response()->json(['message' => "\"{$parent->title}\" is a list and already has 10 options — WhatsApp lists allow at most 10."], 422);
+        }
+        if ($parent->type === 'button' && $count + count($parent->action_buttons ?? []) >= 3) {
+            return response()->json(['message' => "\"{$parent->title}\" is a button node and already has 3 buttons — WhatsApp allows at most 3. Switch it to a list for more options."], 422);
+        }
+        return null;
+    }
+
     public function store(Request $request, int $bid): JsonResponse
     {
         $this->builder($bid);
@@ -157,7 +225,7 @@ class FlowNodeController extends Controller
             'parent_id'   => ['nullable', 'integer'],
             'title'       => ['required', 'string', 'max:100'],
             'message'     => ['nullable', 'string', 'max:4096'],
-            'type'        => ['required', Rule::in(['text', 'button', 'list', 'image', 'video', 'document', 'audio', 'location', 'survey', 'template'])],
+            'type'        => ['required', Rule::in(['text', 'button', 'list', 'image', 'video', 'document', 'audio', 'location', 'survey', 'template', 'knowledge_base'])],
             'reply_id'    => [
                 'required',
                 'string',
@@ -168,6 +236,7 @@ class FlowNodeController extends Controller
         ]);
 
         if ($err = $this->assertMultiMessagesComplete($d['multi_messages'] ?? [])) return $err;
+        if ($err = $this->assertRichConstraints($d, $d['type'], null)) return $err;
 
         if (FlowNode::where('flow_builder_id', $bid)->where('reply_id', $d['reply_id'])->exists()) {
             return response()->json(['message' => "reply_id '{$d['reply_id']}' already used in this builder."], 422);
@@ -176,6 +245,7 @@ class FlowNodeController extends Controller
         if (!empty($d['parent_id'])) {
             $ok = FlowNode::where('id', $d['parent_id'])->where('flow_builder_id', $bid)->exists();
             if (!$ok) return response()->json(['message' => 'Parent node not found in this builder.'], 422);
+            if ($err = $this->assertParentHasRoom(FlowNode::find($d['parent_id']))) return $err;
         }
 
         // Auto-create the LeadCategory if the typed name doesn't exist yet for this
@@ -204,6 +274,15 @@ class FlowNodeController extends Controller
             'location_address' => $d['location_address'] ?? null,
             'is_dead_end'      => $d['is_dead_end'] ?? false,
             'redirect_to_reply_id' => $d['redirect_to_reply_id'] ?? null,
+            'survey_form_id'    => $d['type'] === 'survey'   ? ($d['survey_form_id'] ?? null) : null,
+            'wa_template_id'    => $d['type'] === 'template' ? ($d['wa_template_id'] ?? null) : null,
+            'ai_agent_id'       => $d['type'] === 'knowledge_base' ? ($d['ai_agent_id'] ?? null) : null,
+            'ai_kb_ids'         => $d['type'] === 'knowledge_base' && !empty($d['ai_kb_ids']) ? array_values(array_unique($d['ai_kb_ids'])) : null,
+            'header_type'       => $d['header_type']       ?? null,
+            'header_text'       => ($d['header_type'] ?? null) === 'text' ? ($d['header_text'] ?? null) : null,
+            'footer_text'       => $d['footer_text']       ?? null,
+            'list_button_label' => $d['list_button_label'] ?? null,
+            'action_buttons'    => !empty($d['action_buttons']) ? array_values($d['action_buttons']) : null,
 
             'is_dynamic'                => $d['is_dynamic']                ?? false,
             'dynamic_api_url'           => $d['dynamic_api_url']           ?? null,
@@ -234,7 +313,7 @@ class FlowNodeController extends Controller
         $d = $request->validate([
             'title'    => ['sometimes', 'string', 'max:100'],
             'message'  => ['nullable', 'string', 'max:4096'],
-            'type'     => ['sometimes', Rule::in(['text', 'button', 'list', 'image', 'video', 'document', 'audio', 'location', 'survey', 'template'])],
+            'type'     => ['sometimes', Rule::in(['text', 'button', 'list', 'image', 'video', 'document', 'audio', 'location', 'survey', 'template', 'knowledge_base'])],
             'parent_id'   => ['nullable', 'integer'],
             'reply_id'    => ['required', 'string', 'max:200'],
             'redirect_to_reply_id' => ['nullable', 'string', 'max:200'],
@@ -249,6 +328,15 @@ class FlowNodeController extends Controller
             $this->ensureLeadCategoryExists($node->company_id, $d['lead_category']);
         }
 
+        // Header / button rules use the values this save will leave on the node.
+        $effective = $d + ['header_type' => $node->header_type, 'header_text' => $node->header_text, 'media_type' => $node->media_type, 'media_url' => $node->media_url, 'action_buttons' => $node->action_buttons];
+        if ($err = $this->assertRichConstraints($effective, $d['type'] ?? $node->type, $node)) return $err;
+        if (array_key_exists('header_type', $d) && $d['header_type'] !== 'text') { $d['header_text'] = null; }
+        if (array_key_exists('action_buttons', $d)) { $d['action_buttons'] = !empty($d['action_buttons']) ? array_values($d['action_buttons']) : null; }
+        if (array_key_exists('ai_kb_ids', $d)) { $d['ai_kb_ids'] = !empty($d['ai_kb_ids']) ? array_values(array_unique($d['ai_kb_ids'])) : null; }
+        // AI settings only mean something on a knowledge_base node — clear them if the node is switched to another type
+        if (isset($d['type']) && $d['type'] !== 'knowledge_base') { $d['ai_agent_id'] = null; $d['ai_kb_ids'] = null; }
+
 
         if (array_key_exists('parent_id', $d) && $d['parent_id'] !== null) {
             // Prevent circular reference — node cannot become its own descendant
@@ -259,6 +347,9 @@ class FlowNodeController extends Controller
                 ->exists();
             if (!$parentOk) {
                 return response()->json(['message' => 'Parent node not in this builder.'], 422);
+            }
+            if ((int) $d['parent_id'] !== (int) $node->parent_id) {
+                if ($err = $this->assertParentHasRoom(FlowNode::find($d['parent_id']), $node->id)) return $err;
             }
         }
 
@@ -589,6 +680,9 @@ class FlowNodeController extends Controller
                 ->exists();
             if (!$parentOk) {
                 return response()->json(['message' => 'Target parent not found in this builder.'], 422);
+            }
+            if ((int) $newParentId !== (int) $node->parent_id) {
+                if ($err = $this->assertParentHasRoom(FlowNode::find($newParentId), $node->id)) return $err;
             }
         }
 

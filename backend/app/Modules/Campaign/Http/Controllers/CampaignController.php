@@ -121,7 +121,10 @@ class CampaignController extends Controller
 
     public function update(UpdateCampaignRequest $request, int $campaign): JsonResponse
     {
-        $c = $this->campaignService->update($campaign, auth()->user()->company_id, UpdateCampaignDTO::fromRequest($request->validated()));
+        // Once created only the send time and the lead start / end dates can be changed; every other
+        // field in the request is ignored (the screens show them read-only).
+        $fields = array_intersect_key($request->validated(), array_flip(['scheduled_at', 'starts_at', 'ends_at']));
+        $c = $this->campaignService->updateSchedule($campaign, auth()->user()->company_id, $fields);
         return response()->json(['message' => 'Campaign updated.', 'campaign' => new CampaignResource($c)]);
     }
 

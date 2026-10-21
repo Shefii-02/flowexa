@@ -43,6 +43,17 @@ class FlowNode extends Model
         'dynamic_subtitle_field',
         'trigger_count',
         'is_dead_end',
+        // survey / template nodes (columns existed but were never mass-assignable, so the chosen form/template was dropped)
+        'survey_form_id',
+        'wa_template_id',
+        'ai_agent_id',
+        'ai_kb_ids',
+        // interactive header / footer / list button label / non-reply buttons
+        'header_type',
+        'header_text',
+        'footer_text',
+        'list_button_label',
+        'action_buttons',
     ];
 
     // protected $fillable = [
@@ -66,6 +77,8 @@ class FlowNode extends Model
         'location_lat'   => 'float',
         'location_lng'   => 'float',
         'is_dead_end' => 'boolean',
+        'action_buttons' => 'array',
+        'ai_kb_ids'      => 'array',
     ];
 
 

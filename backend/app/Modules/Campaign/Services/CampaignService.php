@@ -106,6 +106,43 @@ class CampaignService
         return $this->campaignRepository->update($campaign, $dto);
     }
 
+    // ─── Update schedule ──────────────────────────────────────────────────────
+    /**
+     * The only things that can change on a campaign that has not started: when it sends, and the lead
+     * window (replies arriving between starts_at and ends_at are credited to it). Everything else —
+     * name, template, number, audience, speed, limits — is fixed once the campaign is created.
+     * A key present with a null value CLEARS that date (a cleared send time puts the campaign back to
+     * "draft", to be launched by hand); a key that is absent is left alone.
+     */
+    public function updateSchedule(int $id, int $companyId, array $fields): Campaign
+    {
+        $campaign = $this->show($id, $companyId);
+
+        if (!in_array($campaign->status, self::EDITABLE_STATUSES)) {
+            throw CampaignException::notEditable($campaign->status);
+        }
+
+        $data = [];
+        if (array_key_exists('scheduled_at', $fields)) {
+            $data['scheduled_at'] = $fields['scheduled_at']
+                ? \Illuminate\Support\Carbon::parse($fields['scheduled_at'])->setTimezone(config('app.timezone'))->format('Y-m-d H:i:s')
+                : null;
+            $data['status'] = $data['scheduled_at'] ? 'scheduled' : 'draft';
+        }
+        if (array_key_exists('starts_at', $fields)) { $data['starts_at'] = $fields['starts_at'] ?: null; }
+        if (array_key_exists('ends_at', $fields))   { $data['ends_at']   = $fields['ends_at']   ?: null; }
+
+        $starts = array_key_exists('starts_at', $data) ? $data['starts_at'] : $campaign->starts_at;
+        $ends   = array_key_exists('ends_at', $data)   ? $data['ends_at']   : $campaign->ends_at;
+        if ($starts && $ends && \Illuminate\Support\Carbon::parse($ends)->lt(\Illuminate\Support\Carbon::parse($starts)->startOfDay())) {
+            throw \Illuminate\Validation\ValidationException::withMessages(['ends_at' => ['The lead end date must be on or after the start date.']]);
+        }
+
+        if ($data) { $campaign->update($data); }
+
+        return $campaign->fresh(['creator', 'template']);
+    }
+
     // ─── Delete ───────────────────────────────────────────────────────────────
     public function delete(int $id, int $companyId): void
     {

@@ -383,6 +383,16 @@ function LabelMultiSelect({ labels, selected, onChange }: {
 }
 
 // ─── Main CampaignsPage ───────────────────────────────────────────────────────
+/** A fixed value shown in a grey box — used for the parts of a campaign that cannot be changed after it is created. */
+function ReadOnlyBox({ label, value, mono }: { label: string; value: React.ReactNode; mono?: boolean }) {
+  return (
+    <div className="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 min-w-0">
+      <p className="text-[11px] uppercase tracking-wide text-gray-400">{label}</p>
+      <p className={`text-sm text-gray-800 break-words ${mono ? 'font-mono' : ''}`}>{value || '—'}</p>
+    </div>
+  )
+}
+
 export default function CampaignsPage() {
   const dispatch = useAppDispatch()
   const { list, total, loading } = useAppSelector(s => s.campaigns)
@@ -513,6 +523,23 @@ export default function CampaignsPage() {
   }
 
   const handleSave = async () => {
+    // Editing: only the send time and the lead start / end dates can change. Always send all three so a
+    // cleared box really clears (an empty value means "none"); everything else on the campaign is fixed.
+    if (editCampaign) {
+      if (form.scheduled_at && new Date(form.scheduled_at).getTime() <= Date.now()) { toast.error('Send time must be in the future'); return }
+      if (form.starts_at && form.ends_at && form.ends_at < form.starts_at) { toast.error('Lead end date must be on or after the start date'); return }
+      setSaving(true)
+      try {
+        const fd = new FormData()
+        fd.append('scheduled_at', form.scheduled_at ? new Date(form.scheduled_at).toISOString() : '')
+        fd.append('starts_at', form.starts_at || '')
+        fd.append('ends_at', form.ends_at || '')
+        await campaignApi.update(editCampaign.id, fd)
+        toast.success('Campaign updated.')
+        setShowCreate(false); resetForm(); load()
+      } catch (e) { toast.error(getError(e)) } finally { setSaving(false) }
+      return
+    }
     if (!form.name.trim()) { toast.error('Campaign name required'); return }
     if (!selectedTemplate) { toast.error('Select a template'); return }
     if (!selectedPhoneNumber) { toast.error('Select a sending number'); return }
@@ -537,8 +564,8 @@ export default function CampaignsPage() {
       }
       if (form.target_type === 'labels') selectedLabels.forEach(id => fd.append('target_labels[]', String(id)))
       if (form.target_type === 'csv' && csvFile) fd.append('file', csvFile)
-      if (editCampaign) { await campaignApi.update(editCampaign.id, fd); toast.success('Campaign updated.') }
-      else { await campaignApi.create(fd); toast.success('Campaign created as draft.') }
+      // (editing is handled by the early return above — only the dates can change)
+      await campaignApi.create(fd); toast.success(form.scheduled_at ? 'Campaign scheduled.' : 'Campaign created as draft.')
       setShowCreate(false); resetForm(); load()
     } catch (e) { toast.error(getError(e)) }
     finally { setSaving(false) }
@@ -684,7 +711,7 @@ export default function CampaignsPage() {
 
       {/* Create/Edit Modal */}
       <Modal open={showCreate} onClose={() => { setShowCreate(false); resetForm() }}
-        title={editCampaign ? `Edit — ${editCampaign.name}` : 'New campaign'} size="lg"
+        title={editCampaign ? `Edit schedule — ${editCampaign.name}` : 'New campaign'} size="lg"
         footer={
           <>
             <Button variant="secondary" onClick={() => { setShowCreate(false); resetForm() }}>Cancel</Button>
@@ -693,6 +720,24 @@ export default function CampaignsPage() {
         }
       >
         <div className="space-y-4">
+          {editCampaign && (
+            <div className="space-y-3">
+              <p className="text-xs text-gray-500">Only the send time and the lead dates can be changed. The rest is fixed once a campaign is created.</p>
+              <div className="grid grid-cols-2 gap-3">
+                <ReadOnlyBox label="Campaign name" value={form.name} />
+                <ReadOnlyBox label="Status" value={<span className="capitalize">{editCampaign.status}</span>} />
+                <ReadOnlyBox label="Template" mono value={selectedTemplate?.name} />
+                <ReadOnlyBox label="Sending number" value={selectedPhoneNumber?.display_phone_number || selectedPhoneNumber?.label} />
+                <ReadOnlyBox label="Target" value={form.target_type === 'all' ? 'All opted-in contacts' : form.target_type === 'labels' ? `${selectedLabels.length} label(s)` : 'CSV list'} />
+                <ReadOnlyBox label="Speed" value={`${form.throttle_per_minute} msgs/min`} />
+                <ReadOnlyBox label="Daily limit" value={form.daily_limit ? `${form.daily_limit} per day` : 'No limit'} />
+                <ReadOnlyBox label="Created" value={editCampaign.created_at?.slice(0, 10)} />
+                {form.description && <div className="col-span-2"><ReadOnlyBox label="Description" value={form.description} /></div>}
+              </div>
+            </div>
+          )}
+
+          {!editCampaign && (<>
           <Input label="Campaign name *" placeholder="Univexa July Promo 2024"
             value={form.name} onChange={e => set('name', e.target.value)} />
 
@@ -801,6 +846,8 @@ export default function CampaignsPage() {
               value={form.description} onChange={e => set('description', e.target.value)} />
           </div>
 
+          </>)}
+
           <div>
             <label className="label">Send at (optional)</label>
             <input type="datetime-local" className="form-control border w-full p-2 rounded"
@@ -828,7 +875,7 @@ export default function CampaignsPage() {
             </div>
           </div>
 
-          {selectedTemplate && (
+          {!editCampaign && selectedTemplate && (
             <div className="bg-brand-50 border border-brand-200 rounded-xl p-4 text-xs">
               <p className="font-semibold text-brand-700 mb-2">Summary</p>
               <div className="grid grid-cols-2 gap-1">

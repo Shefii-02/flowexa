@@ -21,13 +21,17 @@ class QueryAgent
      *
      * @return array<array{chunk: AiKnowledgeChunk, score: float}>
      */
-    public function retrieve(string $query, int $companyId): array
+    /**
+     * @param int[] $knowledgeBaseIds restrict the search to these knowledge-base documents (empty = all of them)
+     */
+    public function retrieve(string $query, int $companyId, array $knowledgeBaseIds = []): array
     {
         $queryVector = $this->buildVector($query);
         if (empty($queryVector)) return [];
 
         $chunks = AiKnowledgeChunk::where('company_id', $companyId)
             ->whereNotNull('tfidf_vector')
+            ->when($knowledgeBaseIds, fn ($q) => $q->whereIn('knowledge_base_id', $knowledgeBaseIds))
             ->get();
 
         $scored = $chunks->map(function (AiKnowledgeChunk $chunk) use ($queryVector) {

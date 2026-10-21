@@ -423,12 +423,13 @@ export const templateApi = {
 export const conversationApi = {
   // GET /conversations — inbox list, most recently active first.
   // filter: mine=1 (only conversations assigned to me), unassigned=1 (only unclaimed).
-  list: (params?: { status?: string; mine?: number | boolean; unassigned?: number | boolean; unread?: number | boolean; page?: number; per_page?: number }) =>
+  list: (params?: { status?: string; mine?: number | boolean; unassigned?: number | boolean; unread?: number | boolean; search?: string; page?: number; per_page?: number }) =>
     api.get('/conversations', { params }),
 
-  // GET /conversations/{id}/messages — full thread, oldest first. Marks the thread read.
-  messages: (id: number) =>
-    api.get(`/conversations/${id}/messages`),
+  // GET /conversations/{id}/messages — the newest page of the thread, oldest first, plus has_more. Marks the thread read.
+  // Pass before_id (id of the oldest message you already have) to get the page before it.
+  messages: (id: number, params?: { before_id?: number; limit?: number }) =>
+    api.get(`/conversations/${id}/messages`, { params }),
 
   // POST /conversations/{id}/claim — atomic first-come-first-served assignment.
   // Returns 409 if someone else already claimed it (caller should surface that message).
@@ -664,4 +665,12 @@ export const accountsApi = {
     const a = document.createElement('a')
     a.href = URL.createObjectURL(r.data); a.download = filename; a.click(); URL.revokeObjectURL(a.href)
   },
+}
+
+// ── Flow builder: pickers for the AI-agent button / node (existing WA Agent data) ─────────────
+export const flowAiApi = {
+  /** existing AI agents (WA Agent → playbooks) */
+  agents: () => api.get('/wa-agent/playbook'),
+  /** existing knowledge-base documents */
+  knowledge: () => api.get('/wa-agent/knowledge-base'),
 }

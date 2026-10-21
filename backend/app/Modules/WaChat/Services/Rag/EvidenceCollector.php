@@ -13,13 +13,13 @@ class EvidenceCollector
      *
      * @return array<array{chunk: AiKnowledgeChunk, score: float}>
      */
-    public function collect(array $subQueries, int $companyId): array
+    public function collect(array $subQueries, int $companyId, array $knowledgeBaseIds = []): array
     {
         $seen   = [];
         $merged = [];
 
         foreach ($subQueries as $q) {
-            $results = $this->queryAgent->retrieve($q, $companyId);
+            $results = $this->queryAgent->retrieve($q, $companyId, $knowledgeBaseIds);
             foreach ($results as $item) {
                 $id = $item['chunk']->id;
                 if (isset($seen[$id])) {

@@ -23,7 +23,7 @@ class UpdateCampaignRequest extends FormRequest
             'daily_limit'         => ['nullable', 'integer', 'min:10', 'max:1000000'],
             'scheduled_at'        => ['nullable', 'date', 'after:now'],
             'starts_at'           => ['nullable', 'date'],
-            'ends_at'             => ['nullable', 'date', 'after_or_equal:starts_at'],
+            'ends_at'             => ['nullable', 'date'], // order vs starts_at is checked in CampaignService::updateSchedule
         ];
     }
 

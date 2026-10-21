@@ -42,9 +42,16 @@ class WebhookService
     ];
 
     // ── Greeting keywords → send welcome menu ──────────────────────────────
+    // 'm' is the one-key shortcut for the Main Menu (see SHORTCUT_HINT).
     private const GREETING_KEYWORDS = [
-        'hi', 'hello', 'hey', 'start', 'main menu', 'menu', 'hai', 'helo', 'hii', 'hola', 'namaste', 'vanakkam', 'ഹലോ',
+        'hi', 'hello', 'hey', 'start', 'main menu', 'menu', 'm', 'hai', 'helo', 'hii', 'hola', 'namaste', 'vanakkam', 'ഹലോ',
     ];
+
+    // ── Exit-chat keywords → end the flow session ──────────────────────────
+    private const EXIT_KEYWORDS = ['e', 'exit', 'exit chat', 'end chat'];
+
+    // Shown in the standard messages so customers always know how to get back or leave.
+    private const SHORTCUT_HINT = "• Type *M* or *Menu* for the Main Menu\n• Type *E* to Exit Chat";
 
     // Options row cap enforced by WhatsApp for interactive lists
     private const MAX_LIST_ROWS = 10;
@@ -268,6 +275,14 @@ class WebhookService
             ->where('expires_at', '>', now())
             ->first();
 
+        // 8b. "E" / "Exit" → end the chat: drop the flow session and say goodbye. (A free-text "M" or
+        // "Menu" is handled by the greeting step below and always reopens the Main Menu.)
+        if ($dto->type === 'text' && in_array(strtolower(trim($dto->text ?? '')), self::EXIT_KEYWORDS, true)) {
+            $session?->delete();
+            $this->sendText($company, $dto->phone, "Chat ended. 👋 Thank you for contacting us!\n\nType *M* anytime to open the Main Menu again.");
+            return;
+        }
+
         // 9. Interactive reply → match flow node
         if ($dto->type === 'interactive' && $dto->replyId) {
             $this->handleFlowReply($company, $contact, $dto, $builder?->id);
@@ -299,7 +314,7 @@ class WebhookService
         $this->sendText(
             $company,
             $dto->phone,
-            "Thank you for your message! 😊 Our team will get back to you shortly.\n\nReply *menu* to see our options."
+            "Thank you for your message! 😊 Our team will get back to you shortly.\n\nReply *menu* to see our options.\n\n" . self::SHORTCUT_HINT
         );
     }
 
@@ -1040,7 +1055,7 @@ class WebhookService
         // pick — answer it and stay parked on this node so the customer can keep asking
         // follow-ups until they type "menu" (handled earlier in handleInbound) to leave.
         if ($currentNode->isKnowledgeBase()) {
-            $this->answerFromKnowledgeBase($company, $dto->phone, $dto->text ?? '');
+            $this->answerFromKnowledgeBase($company, $dto->phone, $dto->text ?? '', $currentNode);
             return true;
         }
 
@@ -1079,7 +1094,11 @@ class WebhookService
     // main WA Chat/WA Cloud AI agent, WITHOUT going through RagOrchestrator's own session
     // handling — the flow builder already tracks the conversation via FlowSession, so a
     // second parallel session/Contact/Lead record would just be redundant.
-    private function answerFromKnowledgeBase(Company $company, string $phone, string $query): void
+    //
+    // An AI-agent node can be narrowed two ways (both optional, set where the node is edited):
+    //   ai_kb_ids   — answer only from these knowledge-base documents (default: the whole knowledge base)
+    //   ai_agent_id — answer in the voice of this existing agent playbook (name, tone, instructions)
+    private function answerFromKnowledgeBase(Company $company, string $phone, string $query, ?FlowNode $node = null): void
     {
         $query = trim($query);
         if ($query === '') {
@@ -1090,15 +1109,23 @@ class WebhookService
         $language    = $this->ragLanguageDetector->detect($query);
         $searchQuery = $this->ragQueryRewriter->rewrite($company, $query, []) ?: $query;
         $subQueries  = $this->ragPlanner->decompose($searchQuery);
-        $evidence    = $this->ragCollector->collect($subQueries, $company->id);
+        $evidence    = $this->ragCollector->collect($subQueries, $company->id, array_map('intval', $node?->ai_kb_ids ?? []));
         $context     = $this->ragCollector->buildContext($evidence);
         $isRelevant  = $this->ragVerifier->verify($evidence, $searchQuery);
 
         if ($isRelevant) {
-            $response = $this->ragGenerator->generate($query, $context, $language, [], [], $company);
+            $aiConfig = [];
+            if ($node?->ai_agent_id && ($playbook = \App\Modules\WaChat\Models\AgentPlaybook::where('company_id', $company->id)->find($node->ai_agent_id))) {
+                $aiConfig = [
+                    'agent_name'    => $playbook->agent_name ?: 'AI Assistant',
+                    'company_name'  => $company->name,
+                    'system_prompt' => trim(($playbook->system_prompt ?? '') . ($playbook->tone ? "\nSpeak in a {$playbook->tone} tone." : '')),
+                ];
+            }
+            $response = $this->ragGenerator->generate($query, $context, $language, [], $aiConfig, $company);
         } else {
             $response = "I couldn't find a specific answer to that in our knowledge base. "
-                . "You can try rephrasing, or reply *menu* to see our other options and reach the team.";
+                . "You can try rephrasing, or:\n\n" . self::SHORTCUT_HINT;
         }
 
         $this->sendText($company, $phone, $response);
@@ -1205,7 +1232,7 @@ class WebhookService
         // the customer's actual question. matchTextToNode() below handles every message after
         // this while the flow session stays parked on this node.
         if ($node->isKnowledgeBase()) {
-            $this->sendText($company, $phone, $node->message ?: "Sure — what would you like to know? Ask me anything, or reply *menu* to go back.");
+            $this->sendText($company, $phone, ($node->message ?: "Sure — what would you like to know? Ask me anything.") . "\n\n" . self::SHORTCUT_HINT);
             return;
         }
 
@@ -1237,6 +1264,20 @@ class WebhookService
                 // Has multi-messages but no children and NOT marked as terminal
                 // → treat as accidental dead end, send welcome menu again
                 $this->sendDeadEndRecovery($company, $phone);
+            }
+            return;
+        }
+
+        // ── List / button with header, footer and link / call / copy-code buttons ─────
+        // (older flows are covered too: the builder reproduces the plain list / button / media-header messages)
+        if (in_array($node->type, ['list', 'button'], true) && ($children->isNotEmpty() || !empty($node->action_buttons))) {
+            $messages = app(\App\Modules\Flow\Support\FlowMessageBuilder::class)->build(
+                $node, $children, $phone,
+                fn (string $type, string $url) => ($id = $this->uploadMediaToMeta($company, $url, $this->guessMimeType($type, $url))) ? ['id' => $id] : ['link' => $url]
+            );
+            foreach ($messages as $i => $payload) {
+                if ($i > 0) { usleep(300000); }
+                $this->dispatch($company, $payload);
             }
             return;
         }
@@ -1284,7 +1325,8 @@ class WebhookService
             "🙏 We're sorry if that was a dead end!\n\n" .
             "For further assistance please contact our support team or reply *menu* to start over.\n\n" .
             "📞 *Support:* " . ($company->support_phone ?? 'Contact us anytime') . "\n" .
-            "📧 *Email:* "   . ($company->support_email ?? 'support@company.com')
+            "📧 *Email:* "   . ($company->support_email ?? 'support@company.com') . "\n\n" .
+            self::SHORTCUT_HINT
         );
 
         // Re-send welcome menu after 2 seconds so customer can restart
@@ -1395,7 +1437,7 @@ class WebhookService
         $this->sendText(
             $company,
             $phone,
-            "Sorry, that option isn't available right now — please try again in a moment, or reply *menu* to start over."
+            "Sorry, that option isn't available right now — please try again in a moment, or reply *menu* to start over.\n\n" . self::SHORTCUT_HINT
         );
     }
 
@@ -1893,6 +1935,7 @@ class WebhookService
             'interactive' => match ($payload['interactive']['type'] ?? '') {
                 'button' => $payload['interactive']['body']['text'] ?? '[button message]',
                 'list'   => $payload['interactive']['body']['text'] ?? '[list message]',
+                'cta_url' => $payload['interactive']['body']['text'] ?? '[link message]',
                 default  => '[interactive]',
             },
             default => '[' . $payload['type'] . ']',
