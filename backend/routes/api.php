@@ -394,6 +394,7 @@ Route::prefix('v1')->group(function () {
 
             Route::middleware('permission:campaigns.manage')->group(function () {
                 Route::post('/test-send',               [CampaignController::class, 'testSend'])->name('test-send');
+                Route::post('/retry',                   [CampaignController::class, 'retryContact'])->name('retry');
                 Route::post('/{campaign}/launch',       [CampaignController::class, 'launch'])->name('launch');
                 Route::post('/{campaign}/pause',        [CampaignController::class, 'pause'])->name('pause');
                 Route::post('/{campaign}/resume',       [CampaignController::class, 'resume'])->name('resume');

@@ -22,12 +22,14 @@ class ResendCampaignContact implements ShouldQueue
         private readonly int $campaignId,
         private readonly int $contactRowId,
         private readonly string $phone,
+        /** template_id / wa_phone_number_id / variables / coupon_code chosen for this retry (empty = the campaign's own) */
+        private readonly array $overrides = [],
     ) {}
 
     public function handle(CampaignService $campaigns): void
     {
         Log::info("[campaign-retry] job started: campaign {$this->campaignId} row {$this->contactRowId} phone {$this->phone}");
-        $r = $campaigns->resendContact($this->campaignId, $this->contactRowId, $this->phone);
+        $r = $campaigns->resendContact($this->campaignId, $this->contactRowId, $this->phone, $this->overrides);
         Log::info("[campaign-retry] job finished: campaign {$this->campaignId} row {$this->contactRowId} -> " . ($r['ok'] ? 'sent' : 'failed: ' . ($r['error'] ?? 'row already handled')));
     }
 

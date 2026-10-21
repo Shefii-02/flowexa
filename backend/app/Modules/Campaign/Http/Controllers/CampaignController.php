@@ -91,6 +91,37 @@ class CampaignController extends Controller
         ]);
     }
 
+    /**
+     * POST /campaigns/retry — send one failed contact of a campaign right now (see CampaignService::retryContact).
+     * Takes the same inputs as test-send plus campaign_id (and campaign_contact_id when known).
+     */
+    public function retryContact(Request $request): JsonResponse
+    {
+        $user = auth()->user();
+        $d = $request->validate([
+            'campaign_id'         => ['required', 'integer'],
+            'campaign_contact_id' => ['nullable', 'integer'],
+            'template_id'         => ['nullable', 'integer'],
+            'wa_phone_number_id'  => ['nullable', 'integer'],
+            'phone'               => ['required', 'string', 'regex:/^\+?[\d\s\-()]{8,20}$/'],
+            'variables'           => ['nullable', 'array'],
+            'variables.*'         => ['nullable', 'string', 'max:255'],
+            'coupon_code'         => ['nullable', 'string', 'max:15'],
+        ]);
+
+        $res  = $this->campaignService->retryContact((int) $d['campaign_id'], $user->company_id, $d);
+        $to   = preg_replace('/\D+/', '', $d['phone']);
+        $body = [
+            'campaign' => new CampaignResource($res['campaign']),
+            'contact'  => $res['contact'] ? ['id' => $res['contact']->id, 'phone' => $res['contact']->phone, 'status' => $res['contact']->status,
+                           'attempts' => $res['contact']->attempts, 'failed_reason' => $res['contact']->failed_reason, 'wa_message_id' => $res['contact']->wa_message_id] : null,
+        ];
+
+        return $res['ok']
+            ? response()->json(['message' => "Retry sent to +{$to}.", 'message_id' => $res['message_id']] + $body)
+            : response()->json(['message' => $res['error']] + $body, $res['http']);
+    }
+
     public function show(int $campaign): JsonResponse
     {
         $c = $this->campaignService->show($campaign, auth()->user()->company_id, auth()->user()->allowedAccountIds('phone_number'));
@@ -161,12 +192,21 @@ class CampaignController extends Controller
     public function resendFailed(int $campaign, Request $request): JsonResponse
     {
         $d = $request->validate([
-            'items'         => ['nullable', 'array', 'max:500'],
-            'items.*.id'    => ['required_with:items', 'integer'],
-            'items.*.phone' => ['nullable', 'string', 'max:40'],
+            'items'              => ['nullable', 'array', 'max:500'],
+            'items.*.id'         => ['required_with:items', 'integer'],
+            'items.*.phone'      => ['nullable', 'string', 'max:40'],
+            // optional — the same inputs a single retry takes; left out, each number uses the campaign's own
+            'template_id'        => ['nullable', 'integer'],
+            'wa_phone_number_id' => ['nullable', 'integer'],
+            'variables'          => ['nullable', 'array'],
+            'variables.*'        => ['nullable', 'string', 'max:255'],
+            'coupon_code'        => ['nullable', 'string', 'max:15'],
         ]);
 
-        $r = $this->campaignService->resendFailed($campaign, auth()->user()->company_id, $d['items'] ?? []);
+        $overrides = array_filter(array_intersect_key($d, array_flip(['template_id', 'wa_phone_number_id', 'variables', 'coupon_code'])), fn ($v) => $v !== null && $v !== []);
+        $r = $overrides
+            ? $this->campaignService->retryMany($campaign, auth()->user()->company_id, $d['items'] ?? [], $overrides)
+            : $this->campaignService->resendFailed($campaign, auth()->user()->company_id, $d['items'] ?? []);
 
         $msg = "Queued {$r['queued']} number(s) for retry, sent one by one at the campaign's send gap — their status updates here as each goes out.";
         $msg .= $r['skipped'] ? ' Skipped ' . count($r['skipped']) . ' invalid number(s).' : '';

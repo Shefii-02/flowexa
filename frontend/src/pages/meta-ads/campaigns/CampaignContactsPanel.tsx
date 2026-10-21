@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { campaignApi } from '@/api'
-import { Badge, Button, Pagination } from '@/components/ui'
+import { Badge, Button, Input, Modal, Pagination } from '@/components/ui'
+import { TemplateSelector, PhoneNumberSelector } from './CampaignsPage'
 import { getError } from '@/utils'
 import toast from 'react-hot-toast'
 
@@ -42,6 +43,21 @@ export default function CampaignContactsPanel({
   const [editId, setEditId] = useState<number | null>(null)
   const [editPhone, setEditPhone] = useState('')
   const [busy, setBusy] = useState(false)
+  // "Retry with options": pick a different template / sender number / variables for the retry (blank = the campaign's own)
+  const [optOpen, setOptOpen] = useState(false)
+  const [optTemplate, setOptTemplate] = useState<any>(null)
+  const [optNumber, setOptNumber] = useState<any>(null)
+  const [optVars, setOptVars] = useState<string[]>([])
+  const [optCode, setOptCode] = useState('')
+  const optVarCount = (() => {
+    const m = [...(optTemplate?.body || '').matchAll(/\{\{\s*(\d+)\s*\}\}/g)].map(x => Number(x[1]))
+    return m.length ? Math.max(...m) : 0
+  })()
+  const optHasCode = (optTemplate?.buttons || []).some((b: any) => b.type === 'COPY_CODE')
+  useEffect(() => {
+    setOptVars(Array.from({ length: optVarCount }, (_, i) => optTemplate?.body_examples?.[i] || ''))
+    setOptCode((optTemplate?.buttons || []).find((b: any) => b.type === 'COPY_CODE')?.example || '')
+  }, [optTemplate?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // debounce the search box
   useEffect(() => { const t = setTimeout(() => { setQuery(search.trim()); setPage(1) }, 350); return () => clearTimeout(t) }, [search])
@@ -107,16 +123,39 @@ export default function CampaignContactsPanel({
   }
 
   // items undefined -> every failed number; else just those rows (optionally with a corrected phone)
-  const retry = async (items?: { id: number; phone?: string }[]) => {
+  const retry = async (items?: { id: number; phone?: string }[], overrides?: Parameters<typeof campaignApi.resendFailed>[2]) => {
     setBusy(true)
     try {
-      const { data } = await campaignApi.resendFailed(campaignId, items)
+      const { data } = await campaignApi.resendFailed(campaignId, items, overrides)
       data.sent > 0 || data.queued > 0 ? toast.success(data.message) : toast.error(data.message)
       setSelected(new Set()); setEditId(null)
       if (data.queued > 0) setPollUntil(Date.now() + 120_000)
       onChanged(); load()
     } catch (e) { toast.error(getError(e)) }
     finally { setBusy(false) }
+  }
+
+  const retryWithOptions = async () => {
+    if (optTemplate && optVars.some(v => !v.trim())) { toast.error('Fill in every variable value'); return }
+    if (optNumber?.status === 'DISCONNECTED') { toast.error('That number is disconnected — choose a connected one'); return }
+    const overrides = {
+      template_id: optTemplate?.id, wa_phone_number_id: optNumber?.id,
+      variables: optTemplate && optVars.length ? optVars : undefined,
+      coupon_code: optTemplate && optHasCode ? optCode : undefined,
+    }
+    setOptOpen(false)
+    await retry(selectedRetryable.length ? selectedRetryable.map(r => ({ id: r.id })) : undefined, overrides)
+  }
+
+  // One failed number, sent right now (not queued): updates this contact, the campaign's counts and its message-log row.
+  const retryNow = async (id: number, phone: string) => {
+    setBusy(true)
+    try {
+      const { data } = await campaignApi.retry({ campaign_id: campaignId, campaign_contact_id: id, phone })
+      toast.success(data.message)
+      setEditId(null)
+    } catch (e) { toast.error(getError(e)) }   // a refusal by WhatsApp is recorded on the contact too — show it below
+    finally { setBusy(false); onChanged(); load() }
   }
 
   return (
@@ -140,6 +179,11 @@ export default function CampaignContactsPanel({
         )}
         {resendable > 0 && !running && (
           <Button variant="secondary" loading={busy} onClick={() => retry()}>🔁 Retry all failed ({resendable})</Button>
+        )}
+        {resendable > 0 && !running && (
+          <Button variant="secondary" loading={busy} onClick={() => setOptOpen(true)}>
+            ⚙ Retry {selectedRetryable.length ? `selected (${selectedRetryable.length})` : 'all failed'} with options…
+          </Button>
         )}
       </div>
 
@@ -180,7 +224,7 @@ export default function CampaignContactsPanel({
                           onClick={() => {
                             const cleaned = editPhone.replace(/\D/g, '')
                             if (!/^\d{8,15}$/.test(cleaned)) { toast.error('Enter the full number with country code (8–15 digits).'); return }
-                            retry([{ id: r.id, phone: cleaned }])
+                            retryNow(r.id, cleaned)
                           }}
                           className="px-1.5 py-1 bg-green-500 text-white rounded hover:bg-green-600 disabled:opacity-50">Retry</button>
                         <button onClick={() => setEditId(null)} className="text-gray-400 hover:text-gray-700">✕</button>
@@ -204,7 +248,7 @@ export default function CampaignContactsPanel({
                     )}
                     {r.status === 'failed' && editId !== r.id && !running && (
                       <div className="flex gap-3 mt-0.5">
-                        <button disabled={busy} onClick={() => retry([{ id: r.id }])} className="text-blue-600 hover:underline">🔁 Retry{r.resent ? ' again' : ''}</button>
+                        <button disabled={busy} onClick={() => retryNow(r.id, String(r.phone).replace(/\D/g, ''))} className="text-blue-600 hover:underline">🔁 Retry{r.resent ? ' again' : ''}</button>
                         <button onClick={() => { setEditId(r.id); setEditPhone(String(r.phone).replace(/\D/g, '')) }} className="text-blue-600 hover:underline">
                           ✎ Edit number &amp; retry
                         </button>
@@ -217,6 +261,38 @@ export default function CampaignContactsPanel({
           </table>
         </div>
       )}
+
+      <Modal open={optOpen} onClose={() => setOptOpen(false)} title="Retry with options"
+        footer={<>
+          <Button variant="secondary" onClick={() => setOptOpen(false)}>Cancel</Button>
+          <Button onClick={retryWithOptions} loading={busy}>🔁 Retry {selectedRetryable.length ? `${selectedRetryable.length} selected` : `${resendable} failed`}</Button>
+        </>}>
+        <div className="space-y-4">
+          <p className="text-xs text-gray-400">
+            Each number is queued and sent one by one. Anything you leave empty uses this campaign's own template and sender number.
+            Results update each number, the campaign counts and the message log.
+          </p>
+          <PhoneNumberSelector value={optNumber} onChange={setOptNumber} />
+          <TemplateSelector value={optTemplate} onChange={setOptTemplate} />
+          {optTemplate && optVars.length > 0 && (
+            <div className="bg-gray-50 border border-gray-200 rounded-xl p-3 space-y-2">
+              <p className="text-xs font-semibold text-gray-600">Variable values</p>
+              {optVars.map((v, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <code className="bg-gray-200 px-1.5 py-0.5 rounded text-xs w-12 text-center">{`{{${i + 1}}}`}</code>
+                  <input className={`flex-1 text-xs border rounded px-2 py-1.5 ${v.trim() ? 'border-gray-200' : 'border-amber-300'}`}
+                    placeholder={`Value for {{${i + 1}}}`} value={v}
+                    onChange={e => setOptVars(arr => arr.map((x, idx) => idx === i ? e.target.value : x))} />
+                </div>
+              ))}
+            </div>
+          )}
+          {optTemplate && optHasCode && (
+            <Input label="Offer code (Copy offer code button)" value={optCode} maxLength={15}
+              onChange={e => setOptCode(e.target.value.replace(/[^A-Za-z0-9]/g, ''))} />
+          )}
+        </div>
+      </Modal>
 
       <Pagination page={page} lastPage={Math.ceil(total / PER_PAGE)} total={total} perPage={PER_PAGE} onChange={setPage} />
     </div>

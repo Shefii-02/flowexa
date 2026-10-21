@@ -14,7 +14,7 @@ import toast from 'react-hot-toast'
 import type { Campaign } from '@/types'
 
 // ─── Template Search & Select ─────────────────────────────────────────────────
-function TemplateSelector({ value, onChange }: {
+export function TemplateSelector({ value, onChange }: {
   value: any | null
   onChange: (t: any | null) => void
 }) {
@@ -158,7 +158,7 @@ function TemplateSelector({ value, onChange }: {
 // returning rows shaped like:
 //   { id, display_phone_number, verified_name, status, quality_rating }
 // Adjust the import/method name if your actual API client calls it something else.
-function PhoneNumberSelector({ value, onChange }: {
+export function PhoneNumberSelector({ value, onChange }: {
   value: any | null
   onChange: (p: any | null) => void
 }) {

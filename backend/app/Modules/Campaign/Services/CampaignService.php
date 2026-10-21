@@ -106,6 +106,115 @@ class CampaignService
         return $this->campaignRepository->update($campaign, $dto);
     }
 
+    // ─── Retry (one number now, or many through the queue) ────────────────────
+    /**
+     * The template, number, variables and coupon for a retry, checked the way a test send is: template approved,
+     * number active with credentials, every {{n}} filled. Anything not given falls back to the campaign's own.
+     *
+     * @param array{template_id?:int|null, wa_phone_number_id?:int|null, variables?:array|null, coupon_code?:string|null} $in
+     * @return array{0:?array{template:\App\Models\WaTemplate, number:\App\Models\WaPhoneNumber, variables:array, coupon:?string}, 1:?string}  [inputs, error]
+     */
+    private function retryInputs(Campaign $campaign, int $companyId, array $in): array
+    {
+        // show() loads the template / number with only a few columns — a send needs the full records
+        $template = \App\Models\WaTemplate::where('company_id', $companyId)->find(!empty($in['template_id']) ? (int) $in['template_id'] : $campaign->template_id);
+        $number   = \App\Models\WaPhoneNumber::where('company_id', $companyId)->find(!empty($in['wa_phone_number_id']) ? (int) $in['wa_phone_number_id'] : $campaign->wa_phone_number_id);
+        if (!$template) { return [null, 'Template not found.']; }
+        if (strtolower((string) $template->status) !== 'approved') { return [null, "Template is \"{$template->status}\" — only approved templates can be sent."]; }
+        if (!$number || !$number->is_active || !$number->access_token || !$number->phone_number_id) { return [null, 'That sending number is inactive or has no credentials.']; }
+
+        $variables = array_values(array_key_exists('variables', $in) && $in['variables'] !== null ? $in['variables'] : ($campaign->template_variables ?? []));
+        preg_match_all('/\{\{\s*(\d+)\s*\}\}/', (string) $template->body, $m);
+        $needed = $m[1] ? max(array_map('intval', $m[1])) : 0;
+        if ($needed > count(array_filter($variables, fn ($v) => trim((string) $v) !== ''))) {
+            return [null, "This template needs {$needed} variable value(s)."];
+        }
+        return [['template' => $template, 'number' => $number, 'variables' => $variables, 'coupon' => $in['coupon_code'] ?? null], null];
+    }
+
+    /**
+     * Send one retry and record it everywhere: the contact's row, its single message-log row (source "campaign",
+     * this campaign), the campaign's counters and the wallet. The result Meta reports later lands on the same row.
+     *
+     * @return array{ok:bool, wa_message_id:?string, reason:?string}
+     */
+    private function deliverRetry(Campaign $campaign, \App\Models\CampaignContact $row, string $to, array $inputs, \App\Models\Company $company): array
+    {
+        $campaign->setRelation('template', $inputs['template']); // the log shows the template that was actually sent
+        $r = $this->sender->send($inputs['number']->decrypted_token, $inputs['number']->phone_number_id, $to, $inputs['template'], $inputs['variables'], $inputs['coupon']);
+
+        $this->sender->record($campaign, $row, $to, $r, $row->attempts + 1, true);
+
+        if ($r['ok']) {
+            if ($company->wa_config == 'wallet') {
+                $this->walletService->debit($campaign->company_id, 1, "Retry — campaign #{$campaign->id}", (string) $campaign->id, 'campaign_resend');
+            }
+            $this->campaignRepository->updateStats($campaign->id, [
+                'sent'   => DB::raw('sent + 1'),
+                'failed' => DB::raw('IF(failed > 0, failed - 1, 0)'), // `failed` is unsigned: failed - 1 would error at 0
+            ]);
+        }
+        return $r;
+    }
+
+    /**
+     * Send ONE failed contact of a campaign immediately — same inputs as the test send (template, number,
+     * variables, coupon) but tied to the campaign, so analytics and the message log show it as part of the
+     * campaign (never as a "Test send"). Anything left out falls back to the campaign's own settings.
+     *
+     * @param array{campaign_contact_id?:int|null, phone:string, template_id?:int|null, wa_phone_number_id?:int|null, variables?:array|null, coupon_code?:string|null} $in
+     * @return array{ok:bool, http:int, error:?string, message_id:?string, contact:?\App\Models\CampaignContact, campaign:Campaign}
+     */
+    public function retryContact(int $campaignId, int $companyId, array $in): array
+    {
+        $campaign = $this->show($campaignId, $companyId);
+        $company  = \App\Models\Company::find($companyId);
+        $fail = fn (string $msg, int $http = 422, $row = null) => ['ok' => false, 'http' => $http, 'error' => $msg, 'message_id' => null, 'contact' => $row, 'campaign' => $campaign];
+
+        $to = preg_replace('/\D+/', '', (string) $in['phone']);
+        if (strlen($to) < 8) { return $fail('Enter a valid number with the country code.'); }
+
+        // the failed row: by its id when given (so a corrected number still finds it), else by the number
+        $base = \App\Models\CampaignContact::resendable($campaign->id);
+        $row = !empty($in['campaign_contact_id'])
+            ? (clone $base)->where('id', (int) $in['campaign_contact_id'])->first()
+            : (clone $base)->whereIn('phone', [$to, '+' . $to])->first();
+        if (!$row) { return $fail('There is no failed message to retry for that number in this campaign — it may already be sent or waiting in the retry queue.'); }
+
+        [$inputs, $error] = $this->retryInputs($campaign, $companyId, $in);
+        if ($error) { return $fail($error); }
+
+        if ($company->wa_config == 'wallet' && $this->walletService->getWallet($companyId)->balance < 1) {
+            return $fail('Not enough wallet balance to send this message.', 402);
+        }
+
+        // Claim the row first, so a second click (or the auto-retry job) cannot send it twice.
+        $claimed = \App\Models\CampaignContact::where('id', $row->id)->where('status', 'failed')
+            ->where(fn ($w) => $w->whereNull('scheduled_for')->orWhere('scheduled_for', '<', now()->subMinutes(15)))
+            ->update(['scheduled_for' => now()]);
+        if (!$claimed) { return $fail('That message is already being retried.', 409, $row); }
+        $row->refresh(); // so the in-memory row matches the claim, and record() really clears scheduled_for
+
+        $r = $this->deliverRetry($campaign, $row, $to, $inputs, $company);
+
+        return ['ok' => (bool) $r['ok'], 'http' => $r['ok'] ? 200 : 422, 'error' => $r['ok'] ? null : ($r['reason'] ?: 'Send failed'),
+                'message_id' => $r['wa_message_id'] ?? null, 'contact' => $row->fresh(), 'campaign' => $campaign->fresh(['template'])];
+    }
+
+    /**
+     * Several failed numbers (or all of them): each becomes its own queue job, spaced by the campaign's send
+     * gap, sent with the same template / number / variables / coupon rules as a single retry. The inputs are
+     * checked once up front, so a bad template or missing variable is refused before anything is queued.
+     */
+    public function retryMany(int $campaignId, int $companyId, array $items, array $in): array
+    {
+        $campaign = $this->show($campaignId, $companyId);
+        [, $error] = $this->retryInputs($campaign, $companyId, $in);
+        if ($error) { throw \Illuminate\Validation\ValidationException::withMessages(['template_id' => [$error]]); }
+        $overrides = array_intersect_key($in, array_flip(['template_id', 'wa_phone_number_id', 'variables', 'coupon_code']));
+        return $this->resendFailed($campaignId, $companyId, $items, $overrides);
+    }
+
     // ─── Update schedule ──────────────────────────────────────────────────────
     /**
      * The only things that can change on a campaign that has not started: when it sends, and the lead
@@ -296,7 +405,7 @@ class CampaignService
      *
      * @return array{sent:int, failed:int, queued:int, skipped:list<string>, last_error:?string}
      */
-    public function resendFailed(int $id, int $companyId, array $items = []): array
+    public function resendFailed(int $id, int $companyId, array $items = [], array $overrides = []): array
     {
         $campaign = $this->show($id, $companyId);
         $campaign->loadMissing(['company']);
@@ -328,7 +437,7 @@ class CampaignService
 
             $at = now()->addSeconds((int) floor($queued * $gap));
             $row->update(['scheduled_for' => $at]);
-            \App\Modules\Campaign\Jobs\ResendCampaignContact::dispatch($campaign->id, $row->id, $phone)
+            \App\Modules\Campaign\Jobs\ResendCampaignContact::dispatch($campaign->id, $row->id, $phone, $overrides)
                 ->onQueue('campaigns')->delay($at);
             $queued++;
         }
@@ -343,11 +452,23 @@ class CampaignService
      *
      * @return array{ok:bool, error:?string}
      */
-    public function resendContact(int $campaignId, int $contactRowId, string $phone): array
+    public function resendContact(int $campaignId, int $contactRowId, string $phone, array $overrides = []): array
     {
         $campaign = Campaign::with(['template', 'waPhoneNumber', 'company'])->find($campaignId);
         $row = \App\Models\CampaignContact::where('campaign_id', $campaignId)->where('id', $contactRowId)->where('status', 'failed')->first();
         if (!$campaign || !$row) { return ['ok' => false, 'error' => null]; } // already handled elsewhere
+
+        // A retry that carries its own template / number / variables / coupon goes through the shared retry path.
+        if ($overrides) {
+            [$inputs, $error] = $this->retryInputs($campaign, $campaign->company_id, $overrides);
+            if ($inputs) {
+                $r = $this->deliverRetry($campaign, $row, $phone, $inputs, \App\Models\Company::find($campaign->company_id));
+                return ['ok' => (bool) $r['ok'], 'error' => $r['ok'] ? null : ($r['reason'] ?: 'Send failed')];
+            }
+            $r = ['ok' => false, 'wa_message_id' => null, 'error_type' => 'validation', 'raw' => null, 'retry_after' => null, 'reason' => $error];
+            $this->sender->record($campaign, $row, $phone, $r, $row->attempts + 1, true);
+            return ['ok' => false, 'error' => $error];
+        }
 
         $creds = $this->sender->credentials($campaign);
         if (!$creds) {
@@ -366,7 +487,7 @@ class CampaignService
             }
             $this->campaignRepository->updateStats($campaign->id, [
                 'sent'   => DB::raw('sent + 1'),
-                'failed' => DB::raw('GREATEST(failed - 1, 0)'),
+                'failed' => DB::raw('IF(failed > 0, failed - 1, 0)')  /* `failed` is unsigned: failed - 1 would error at 0 even inside GREATEST */,
             ]);
         }
 

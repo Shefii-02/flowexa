@@ -122,12 +122,21 @@ export const campaignApi = {
   launch: (id: number) => api.post(`/campaigns/${id}/launch`),
   pause: (id: number) => api.post(`/campaigns/${id}/pause`),
   resume: (id: number) => api.post(`/campaigns/${id}/resume`),
-  resendFailed: (id: number, items?: { id: number; phone?: string }[]) =>
-    api.post(`/campaigns/${id}/resend-failed`, items ? { items } : {}),
+  /** Several failed numbers (or all, when items is left out), queued one by one. The optional overrides are the same
+   *  inputs a single retry takes; left out, each number is sent with the campaign's own template / number / variables. */
+  resendFailed: (id: number, items?: { id: number; phone?: string }[],
+                 overrides?: { template_id?: number; wa_phone_number_id?: number; variables?: string[]; coupon_code?: string }) =>
+    api.post(`/campaigns/${id}/resend-failed`, { ...(items ? { items } : {}), ...(overrides ?? {}) }),
   contacts: (id: number, p?: Record<string, unknown>) => api.get(`/campaigns/${id}/contacts`, { params: p }),
   testSend: (d: { template_id: number; wa_phone_number_id: number; phone: string; variables?: string[]; coupon_code?: string }) =>
     api.post('/campaigns/test-send', d),
+  /** Send ONE failed contact of a campaign right now. Same inputs as testSend plus the campaign; template / number /
+   *  variables may be left out (the campaign's own are used). Updates that contact, the campaign counts and the message log. */
+  retry: (d: { campaign_id: number; campaign_contact_id?: number; phone: string; template_id?: number; wa_phone_number_id?: number; variables?: string[]; coupon_code?: string }) =>
+    api.post('/campaigns/retry', d),
 }
+
+  
 
 // ── Role ─────────────────────────────────────────────────────────────────────
 
