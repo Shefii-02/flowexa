@@ -29,6 +29,9 @@ class StickyNoteController extends Controller
             'bubble_y'      => $r->bubble_y ?? null,
             'notes_visible' => (bool) ($r->notes_visible ?? false),
             'default_color' => $r->default_color ?? '#fde68a',
+            'todo_visible'  => (bool) ($r->todo_visible ?? false),
+            'todo_x'        => $r->todo_x ?? null,
+            'todo_y'        => $r->todo_y ?? null,
         ];
     }
 
@@ -87,6 +90,9 @@ class StickyNoteController extends Controller
             'bubble_y'      => ['sometimes', 'nullable', 'integer', 'min:-200', 'max:10000'],
             'notes_visible' => ['sometimes', 'boolean'],
             'default_color' => ['sometimes', 'string', 'regex:/^#[0-9a-fA-F]{6}$/'],
+            'todo_visible'  => ['sometimes', 'boolean'],
+            'todo_x'        => ['sometimes', 'nullable', 'integer', 'min:-200', 'max:10000'],
+            'todo_y'        => ['sometimes', 'nullable', 'integer', 'min:-200', 'max:10000'],
         ]);
         $uid = auth()->id();
         $exists = DB::table('sticky_note_settings')->where('user_id', $uid)->exists();

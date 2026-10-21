@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { api as http } from '@/api/client'
+import { useAppSelector } from '@/store'
 import { stickyApi, type StickyNote, type StickySettings } from '@/api'
 
 // Personal sticky notes, on every page. A small circle floats at the bottom of the screen: drag it anywhere, tap it to
@@ -7,7 +9,7 @@ import { stickyApi, type StickyNote, type StickySettings } from '@/api'
 
 const BUBBLE = 52
 const PALETTE = ['#fde68a', '#fecaca', '#fed7aa', '#bbf7d0', '#bfdbfe', '#ddd6fe', '#fbcfe8', '#e5e7eb', '#a7f3d0', '#fef08a']
-const DEFAULT_SETTINGS: StickySettings = { bubble_x: null, bubble_y: null, notes_visible: false, default_color: '#fde68a' }
+const DEFAULT_SETTINGS: StickySettings = { bubble_x: null, bubble_y: null, notes_visible: false, default_color: '#fde68a', todo_visible: false, todo_x: null, todo_y: null }
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), Math.max(lo, hi))
 // white text on a dark custom colour, dark text on a light one
@@ -109,6 +111,11 @@ export default function StickyNotes() {
           onFront={() => toFront(n.id)} onDelete={() => removeNote(n.id)} />
       ))}
 
+      {settings.todo_visible && (
+        <TodoCard vp={vp} x={settings.todo_x} y={settings.todo_y} color={settings.default_color}
+          onMove={(x, y) => patchSettings({ todo_x: x, todo_y: y }, 0)} onClose={() => patchSettings({ todo_visible: false }, 0)} />
+      )}
+
       {/* the circle */}
       <div style={{ position: 'fixed', left: shownBubble.x, top: shownBubble.y, zIndex: 56, width: BUBBLE, height: BUBBLE, touchAction: 'none' }}>
         {settings.notes_visible && (
@@ -123,6 +130,13 @@ export default function StickyNotes() {
             style={{ position: 'absolute', bottom: BUBBLE + 44, right: 0, width: 220 }}
             className="text-[11px] bg-red-50 border border-red-200 text-red-700 rounded-lg px-2.5 py-1.5 shadow cursor-pointer">{error}</div>
         )}
+        {/* on / off switch for the to-do card — works even while the notes are hidden */}
+        <button type="button" onClick={() => patchSettings({ todo_visible: !settings.todo_visible }, 0)}
+          title={settings.todo_visible ? 'Hide the to-do list' : 'Show my to-do list'} aria-pressed={settings.todo_visible} aria-label="Toggle to-do list"
+          style={{ position: 'absolute', left: -38, bottom: 0, width: 32, height: 32, borderRadius: '50%' }}
+          className={`flex items-center justify-center text-base shadow-lg border-2 border-white ${settings.todo_visible ? 'bg-emerald-500 text-white' : 'bg-white text-gray-500'}`}>
+          ✅
+        </button>
         <div role="button" tabIndex={0} aria-label="Sticky notes — tap to show or hide, drag to move" title="Sticky notes · tap to show / hide · drag to move"
           onPointerDown={bubbleDown} onPointerMove={bubbleMove} onPointerUp={bubbleUp} onPointerCancel={() => { drag.current = null; setDragPos(null) }}
           onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') patchSettings({ notes_visible: !settings.notes_visible }, 0) }}
@@ -222,6 +236,97 @@ function NoteCard({ note, vp, paletteOpen, onPalette, onChange, onColor, onFront
         <textarea value={note.content ?? ''} onChange={e => onChange({ content: e.target.value })} placeholder="Write a note…" maxLength={5000} aria-label="Note text"
           style={{ flex: 1, width: '100%', resize: 'none', background: 'transparent', border: 'none', outline: 'none', padding: 8, fontSize: 13, color: ink, minHeight: 0 }} />
       )}
+    </div>
+  )
+}
+
+type Todo = { id: number; title: string; status: string; priority: string; due_at: string | null }
+const PRIORITY_DOT: Record<string, string> = { low: '#9ca3af', medium: '#f59e0b', high: '#ef4444' }
+
+// The person's own open tasks (CRM tasks assigned to them) as a draggable sticky card: tick to complete, add one quickly.
+function TodoCard({ vp, x, y, color, onMove, onClose }: {
+  vp: { w: number; h: number }; x: number | null; y: number | null; color: string
+  onMove: (x: number, y: number) => void; onClose: () => void
+}) {
+  const me = useAppSelector((s) => s.auth.user)
+  const [items, setItems] = useState<Todo[]>([])
+  const [loading, setLoading] = useState(true)
+  const [draft, setDraft] = useState('')
+  const [adding, setAdding] = useState(false)
+  const [busy, setBusy] = useState<number | null>(null)
+  const [err, setErr] = useState('')
+  const W = 260
+  const ink = inkFor(color)
+
+  const load = useCallback(() => {
+    http.get('/crm/tasks', { params: { mine: 1, status: 'open' } })
+      .then(r => setItems(Array.isArray(r.data?.data) ? r.data.data : []))
+      .catch(() => {}).finally(() => setLoading(false))
+  }, [])
+  useEffect(() => { load(); const t = setInterval(load, 60000); return () => clearInterval(t) }, [load])
+
+  const complete = async (id: number) => {
+    setBusy(id); setErr('')
+    try { await http.post(`/crm/tasks/${id}/toggle`); setItems(is => is.filter(i => i.id !== id)) }
+    catch { setErr('Could not update the task.') } finally { setBusy(null) }
+  }
+  const add = async () => {
+    const title = draft.trim(); if (!title) return
+    setAdding(true); setErr('')
+    try {
+      const { data } = await http.post('/crm/tasks', { title, type: 'todo', assigned_to: me?.id })
+      setItems(is => [...is, data.data]); setDraft('')
+    } catch { setErr('Could not add the task.') } finally { setAdding(false) }
+  }
+
+  const pos = { x: clamp(x ?? vp.w - W - 100, 0, vp.w - Math.min(W, 120)), y: clamp(y ?? 80, 0, vp.h - 36) }
+  const drag = useRef<{ dx: number; dy: number } | null>(null)
+  const [dragPos, setDragPos] = useState<{ x: number; y: number } | null>(null)
+  const down = (e: React.PointerEvent) => {
+    if ((e.target as HTMLElement).closest('button')) return
+    ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+    drag.current = { dx: e.clientX - pos.x, dy: e.clientY - pos.y }
+  }
+  const move = (e: React.PointerEvent) => {
+    const d = drag.current; if (!d) return
+    setDragPos({ x: clamp(e.clientX - d.dx, 0, vp.w - Math.min(W, 120)), y: clamp(e.clientY - d.dy, 0, vp.h - 36) })
+  }
+  const up = () => {
+    drag.current = null
+    if (dragPos) { onMove(Math.round(dragPos.x), Math.round(dragPos.y)); setDragPos(null) }
+  }
+  const shown = dragPos ?? pos
+
+  return (
+    <div style={{ position: 'fixed', left: shown.x, top: shown.y, width: Math.min(W, vp.w - 16), maxHeight: '60vh', zIndex: 46, background: color, color: ink,
+      borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,.22)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={() => { drag.current = null; setDragPos(null) }}
+        style={{ cursor: dragPos ? 'grabbing' : 'grab', touchAction: 'none', background: 'rgba(0,0,0,.08)', display: 'flex', alignItems: 'center', gap: 6, padding: '5px 8px', flexShrink: 0 }}>
+        <span style={{ flex: 1, fontWeight: 700, fontSize: 12 }}>✅ My to-do ({items.length})</span>
+        <button type="button" onClick={onClose} aria-label="Hide to-do list" title="Hide" style={{ color: ink, cursor: 'pointer', fontSize: 14, lineHeight: 1 }}>×</button>
+      </div>
+      <div style={{ overflowY: 'auto', padding: '6px 8px', flex: 1, minHeight: 40 }}>
+        {loading ? <p style={{ fontSize: 12, opacity: .7 }}>Loading…</p>
+          : items.length === 0 ? <p style={{ fontSize: 12, opacity: .7 }}>Nothing to do — nice.</p>
+          : items.map(t => {
+            const overdue = t.due_at && new Date(t.due_at) < new Date()
+            return (
+              <label key={t.id} style={{ display: 'flex', gap: 6, alignItems: 'flex-start', padding: '3px 0', fontSize: 13, cursor: 'pointer', opacity: busy === t.id ? .5 : 1 }}>
+                <input type="checkbox" checked={false} disabled={busy === t.id} onChange={() => complete(t.id)} style={{ marginTop: 3 }} />
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  <span style={{ color: PRIORITY_DOT[t.priority] ?? '#9ca3af', marginRight: 4 }}>●</span>{t.title}
+                  {t.due_at && <span style={{ display: 'block', fontSize: 10, opacity: .75, color: overdue ? '#b91c1c' : undefined }}>🗓 {new Date(t.due_at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}</span>}
+                </span>
+              </label>
+            )
+          })}
+        {err && <p style={{ fontSize: 11, color: '#b91c1c' }}>{err}</p>}
+      </div>
+      <form onSubmit={e => { e.preventDefault(); add() }} style={{ display: 'flex', gap: 4, padding: 6, borderTop: '1px solid rgba(0,0,0,.1)', flexShrink: 0 }}>
+        <input value={draft} onChange={e => setDraft(e.target.value)} placeholder="Add a to-do…" maxLength={200} aria-label="New to-do"
+          style={{ flex: 1, minWidth: 0, background: 'rgba(255,255,255,.6)', border: 'none', outline: 'none', borderRadius: 4, padding: '4px 6px', fontSize: 12, color: '#111' }} />
+        <button type="submit" disabled={adding || !draft.trim()} style={{ fontSize: 12, fontWeight: 700, padding: '0 8px', opacity: adding || !draft.trim() ? .5 : 1, color: ink }}>{adding ? '…' : '＋'}</button>
+      </form>
     </div>
   )
 }
