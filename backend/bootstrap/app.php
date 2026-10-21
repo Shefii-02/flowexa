@@ -26,6 +26,7 @@ return Application::configure(basePath: dirname(__DIR__))
         \App\Modules\WaCloud\Console\Commands\RunWaCloudAutomations::class,
         \App\Modules\Campaign\Console\Commands\DispatchScheduledCampaigns::class,
         \App\Modules\Campaign\Console\Commands\AutoRetryCappedContacts::class,
+        \App\Modules\Campaign\Console\Commands\BackfillFailureReasons::class,
         \App\Console\Commands\PruneLogs::class,
     ])
     ->withSchedule(function (\Illuminate\Console\Scheduling\Schedule $schedule): void {

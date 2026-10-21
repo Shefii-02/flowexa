@@ -658,21 +658,30 @@ Route::prefix('v1')->group(function () {
 
         // ── Accounts: double-entry books, vouchers, GST, reports ────────────────
         Route::prefix('accounts')->middleware(['company.active'])->group(function () {
-            Route::get('settings',  [AccountsController::class, 'settings']);
-            Route::put('settings',  [AccountsController::class, 'saveSettings']);
-            Route::get('dashboard', [AccountsController::class, 'dashboard']);
-            Route::get('ledgers',          [AccountsController::class, 'ledgers']);
-            Route::post('ledgers',         [AccountsController::class, 'storeLedger']);
-            Route::put('ledgers/{id}',     [AccountsController::class, 'updateLedger']);
-            Route::delete('ledgers/{id}',  [AccountsController::class, 'destroyLedger']);
-            Route::get('vouchers/next-number', [AccountsController::class, 'nextNumber']);
-            Route::get('vouchers',         [AccountsController::class, 'vouchers']);
-            Route::post('vouchers',        [AccountsController::class, 'storeVoucher']);
-            Route::get('vouchers/{id}',    [AccountsController::class, 'showVoucher']);
-            Route::put('vouchers/{id}',    [AccountsController::class, 'updateVoucher']);
-            Route::delete('vouchers/{id}', [AccountsController::class, 'destroyVoucher']);
-            Route::get('reports/{name}',   [AccountsController::class, 'report']);
-            Route::get('gst',              [AccountsController::class, 'gst']);
+            $read   = 'permission:accounts.read,accounts.manage';
+            $manage = 'permission:accounts.manage';
+
+            Route::get('settings',  [AccountsController::class, 'settings'])->middleware($read);
+            Route::put('settings',  [AccountsController::class, 'saveSettings'])->middleware($manage);
+            Route::get('dashboard', [AccountsController::class, 'dashboard'])->middleware($read);
+            Route::get('ledgers',          [AccountsController::class, 'ledgers'])->middleware($read);
+            Route::post('ledgers',         [AccountsController::class, 'storeLedger'])->middleware($manage);
+            Route::put('ledgers/{id}',     [AccountsController::class, 'updateLedger'])->middleware($manage);
+            Route::delete('ledgers/{id}',  [AccountsController::class, 'destroyLedger'])->middleware($manage);
+            Route::get('vouchers/next-number', [AccountsController::class, 'nextNumber'])->middleware($read);
+            Route::get('vouchers',         [AccountsController::class, 'vouchers'])->middleware($read);
+            Route::post('vouchers',        [AccountsController::class, 'storeVoucher'])->middleware($manage);
+            Route::get('vouchers/{id}',    [AccountsController::class, 'showVoucher'])->middleware($read);
+            Route::put('vouchers/{id}',    [AccountsController::class, 'updateVoucher'])->middleware($manage);
+            Route::delete('vouchers/{id}', [AccountsController::class, 'destroyVoucher'])->middleware($manage);
+            Route::get('reports/{name}',   [AccountsController::class, 'report'])->middleware($read);
+            Route::get('gst',              [AccountsController::class, 'gst'])->middleware($read);
+            Route::post('reconcile',       [AccountsController::class, 'reconcile'])->middleware($manage);
+            Route::get('einvoice',         [AccountsController::class, 'einvoice'])->middleware($read);
+            Route::get('items',            [AccountsController::class, 'items'])->middleware($read);
+            Route::post('items',           [AccountsController::class, 'storeItem'])->middleware($manage);
+            Route::put('items/{id}',       [AccountsController::class, 'updateItem'])->middleware($manage);
+            Route::delete('items/{id}',    [AccountsController::class, 'destroyItem'])->middleware($manage);
         });
 
         Route::prefix('blacklist')->name('blacklist.')->group(function () {

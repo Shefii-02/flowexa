@@ -3,6 +3,7 @@
 namespace App\Modules\Accounts\Support;
 
 use App\Modules\Accounts\Models\AccEntry;
+use App\Modules\Accounts\Models\AccItem;
 use App\Modules\Accounts\Models\AccLedger;
 use App\Modules\Accounts\Models\AccSetting;
 use App\Modules\Accounts\Models\AccVoucher;
@@ -16,8 +17,8 @@ use Illuminate\Validation\ValidationException;
  */
 class AccountsService
 {
-    public const TYPES = ['sales', 'purchase', 'receipt', 'payment', 'expense', 'income', 'journal', 'contra'];
-    private const PREFIX = ['sales' => null, 'purchase' => 'PUR', 'receipt' => 'RCT', 'payment' => 'PAY', 'expense' => 'EXP', 'income' => 'INC', 'journal' => 'JV', 'contra' => 'CNT'];
+    public const TYPES = ['sales', 'purchase', 'receipt', 'payment', 'expense', 'income', 'journal', 'contra', 'credit_note', 'debit_note'];
+    private const PREFIX = ['sales' => null, 'purchase' => 'PUR', 'receipt' => 'RCT', 'payment' => 'PAY', 'expense' => 'EXP', 'income' => 'INC', 'journal' => 'JV', 'contra' => 'CNT', 'credit_note' => 'CN', 'debit_note' => 'DN'];
 
     // [name, nature, group, system_key]
     private const DEFAULT_LEDGERS = [
@@ -38,6 +39,7 @@ class AccountsService
         ['Software & Subscriptions', 'expense', 'indirect_expense', null],
         ['Bank Charges', 'expense', 'indirect_expense', null],
         ['Miscellaneous Expenses', 'expense', 'indirect_expense', null],
+        ['TDS Payable', 'liability', 'tds', 'tds_payable'],
         ['Output CGST', 'liability', 'gst_output', 'out_cgst'],
         ['Output SGST', 'liability', 'gst_output', 'out_sgst'],
         ['Output IGST', 'liability', 'gst_output', 'out_igst'],
@@ -101,11 +103,11 @@ class AccountsService
             $inter = false;
             $pos = $d['place_of_supply'] ?? null;
 
-            if (in_array($type, ['sales', 'purchase', 'expense', 'income'], true)) {
+            if (in_array($type, ['sales', 'purchase', 'expense', 'income', 'credit_note', 'debit_note'], true)) {
                 $counter = $pos ?: ($party->state_code ?? null);
                 $inter   = $counter && $set->state_code && $counter !== $set->state_code;
                 $pos     = $counter;
-                $lines   = $type === 'sales' || $type === 'purchase'
+                $lines   = in_array($type, ['sales', 'purchase', 'credit_note', 'debit_note'], true)
                     ? ($d['items'] ?? [])
                     : [['description' => $d['description'] ?? ($ledger->name ?? ucfirst($type)), 'hsn' => $d['hsn'] ?? null, 'qty' => 1, 'rate' => (float) ($d['amount'] ?? 0), 'gst_rate' => $d['gst_rate'] ?? 0]];
 
@@ -113,12 +115,13 @@ class AccountsService
                     $qty  = (float) ($ln['qty'] ?? 1);
                     $rate = (float) ($ln['rate'] ?? 0);
                     $amt  = round($qty * $rate, 2);
-                    $gr   = in_array($type, ['sales', 'income'], true) && !$set->gst_registered ? 0.0 : (float) ($ln['gst_rate'] ?? 0);
+                    $gr   = in_array($type, ['sales', 'income', 'credit_note'], true) && !$set->gst_registered ? 0.0 : (float) ($ln['gst_rate'] ?? 0);
                     $tax  = round($amt * $gr / 100, 2);
                     $c = $s = $i = 0.0;
                     if ($inter) { $i = $tax; } else { $c = round($tax / 2, 2); $s = round($tax - $c, 2); }
                     if ($amt <= 0) { continue; }
-                    $items[] = ['description' => (string) ($ln['description'] ?? '—'), 'hsn' => $ln['hsn'] ?? null, 'qty' => $qty, 'rate' => $rate,
+                    $itemId = !empty($ln['item_id']) && AccItem::where('company_id', $cid)->whereKey($ln['item_id'])->exists() ? (int) $ln['item_id'] : null;
+                    $items[] = ['item_id' => $itemId, 'description' => (string) ($ln['description'] ?? '—'), 'hsn' => $ln['hsn'] ?? null, 'qty' => $qty, 'rate' => $rate,
                                 'amount' => $amt, 'gst_rate' => $gr, 'cgst' => $c, 'sgst' => $s, 'igst' => $i];
                     $taxable += $amt; $cgst += $c; $sgst += $s; $igst += $i;
                 }
@@ -132,6 +135,16 @@ class AccountsService
                     $rows[] = [$party->id, $total, 0];
                     $rows[] = [$ledger?->id ?? $this->sys($cid, 'sales'), 0, $taxable];
                     $this->taxRows($cid, $rows, 'out', $cgst, $sgst, $igst, true);
+                } elseif ($type === 'credit_note') { // sales return / discount: reverses a sale
+                    if (!$party) { $this->fail('party_ledger_id', 'Select the customer.'); }
+                    $rows[] = [$ledger?->id ?? $this->sys($cid, 'sales'), $taxable, 0];
+                    $this->taxRows($cid, $rows, 'out', $cgst, $sgst, $igst, false);
+                    $rows[] = [$party->id, 0, $total];
+                } elseif ($type === 'debit_note') { // purchase return: reverses a purchase
+                    if (!$party) { $this->fail('party_ledger_id', 'Select the supplier.'); }
+                    $rows[] = [$party->id, $total, 0];
+                    $rows[] = [$ledger?->id ?? $this->sys($cid, 'purchase'), 0, $itc ? $taxable : $total];
+                    if ($itc) { $this->taxRows($cid, $rows, 'in', $cgst, $sgst, $igst, true); }
                 } elseif ($type === 'income') {
                     $to = $account ?? $party;
                     if (!$to || !$ledger) { $this->fail('ledger_id', 'Select the income ledger and where the money was received.'); }
@@ -145,7 +158,11 @@ class AccountsService
                     if (!$debitLedger) { $this->fail('ledger_id', 'Select the expense ledger.'); }
                     $rows[] = [$debitLedger, $itc ? $taxable : $total, 0];
                     if ($itc) { $this->taxRows($cid, $rows, 'in', $cgst, $sgst, $igst, false); }
-                    $rows[] = [$from->id, 0, $total];
+                    // TDS is deducted from what we pay the party and owed to the government (on the value before GST)
+                    $tdsRate = max(0.0, min(30.0, (float) ($d['tds_rate'] ?? 0)));
+                    $tdsAmount = round($taxable * $tdsRate / 100, 2);
+                    $rows[] = [$from->id, 0, round($total - $tdsAmount, 2)];
+                    if ($tdsAmount > 0) { $rows[] = [$this->sys($cid, 'tds_payable'), 0, $tdsAmount]; }
                 }
             } elseif (in_array($type, ['receipt', 'payment'], true)) {
                 $total = round((float) ($d['amount'] ?? 0), 2);
@@ -179,6 +196,7 @@ class AccountsService
                 'party_ledger_id' => $party?->id, 'ledger_id' => $ledger?->id, 'account_ledger_id' => $account?->id,
                 'place_of_supply' => $pos, 'is_interstate' => $inter,
                 'taxable' => round($taxable, 2), 'cgst' => round($cgst, 2), 'sgst' => round($sgst, 2), 'igst' => round($igst, 2), 'total' => $total,
+                'tds_section' => ($tdsAmount ?? 0) > 0 ? ($d['tds_section'] ?? null) : null, 'tds_rate' => ($tdsAmount ?? 0) > 0 ? $tdsRate : 0, 'tds_amount' => $tdsAmount ?? 0,
                 'reference_no' => $d['reference_no'] ?? null, 'narration' => $d['narration'] ?? null,
             ];
 
@@ -302,6 +320,86 @@ class AccountsService
                 'closing' => round($run, 2), 'rows' => $rows];
     }
 
+    /**
+     * Bank reconciliation for one bank/cash ledger as on $asOf: what the books say, what the bank has
+     * cleared so far, and the entries still waiting to clear. The user compares `reconciled_balance`
+     * with the closing balance on the bank statement; any difference is what is still unreconciled.
+     */
+    public function bankReconciliation(int $cid, int $ledgerId, string $asOf): array
+    {
+        $l = $this->ledgerOf($cid, $ledgerId);
+        $sign = $l->opening_type === 'cr' ? -1 : 1;
+        $opening = $sign * (float) $l->opening_balance;
+        $q = fn () => AccEntry::where('company_id', $cid)->where('ledger_id', $ledgerId)->where('date', '<=', $asOf);
+
+        $book = $opening + (float) $q()->sum('debit') - (float) $q()->sum('credit');
+        $clr  = $opening + (float) $q()->whereNotNull('reconciled_on')->where('reconciled_on', '<=', $asOf)->sum('debit')
+                         - (float) $q()->whereNotNull('reconciled_on')->where('reconciled_on', '<=', $asOf)->sum('credit');
+
+        $pending = $q()->whereNull('reconciled_on')->with('voucher:id,type,number,reference_no,party_ledger_id')
+            ->orderBy('date')->orderBy('id')->get()
+            ->map(fn ($e) => ['entry_id' => $e->id, 'date' => $e->date->toDateString(), 'number' => $e->voucher?->number, 'type' => $e->voucher?->type,
+                              'reference_no' => $e->voucher?->reference_no, 'narration' => $e->narration, 'debit' => $e->debit, 'credit' => $e->credit]);
+
+        return ['ledger' => $l, 'as_on' => $asOf, 'book_balance' => round($book, 2), 'reconciled_balance' => round($clr, 2),
+                'unreconciled_net' => round($book - $clr, 2), 'pending' => $pending->values()];
+    }
+
+    /** Mark entries as cleared by the bank on $date, or un-mark them when $date is null. */
+    public function reconcile(int $cid, array $entryIds, ?string $date): int
+    {
+        return AccEntry::where('company_id', $cid)->whereIn('id', $entryIds)
+            ->whereIn('ledger_id', AccLedger::where('company_id', $cid)->whereIn('group', ['bank', 'cash'])->select('id'))
+            ->update(['reconciled_on' => $date]);
+    }
+
+    /** TDS deducted in the period, by section and by party — the basis for the quarterly return and challan. */
+    public function tdsSummary(int $cid, string $from, string $to): array
+    {
+        $v = AccVoucher::with('party:id,name,pan')->where('company_id', $cid)->where('is_cancelled', false)
+            ->where('tds_amount', '>', 0)->whereBetween('date', [$from, $to])->orderBy('date')->get();
+        $bySection = $v->groupBy(fn ($x) => $x->tds_section ?: 'Other')->map(fn ($g, $k) => [
+            'section' => $k, 'count' => $g->count(), 'taxable' => round($g->sum('taxable'), 2), 'tds' => round($g->sum('tds_amount'), 2)])->values();
+        $rows = $v->map(fn ($x) => ['date' => $x->date->toDateString(), 'number' => $x->number, 'party' => $x->party?->name, 'pan' => $x->party?->pan,
+            'section' => $x->tds_section ?: 'Other', 'taxable' => $x->taxable, 'rate' => $x->tds_rate, 'tds' => $x->tds_amount])->values();
+        $paid = (float) DB::table('acc_entries as e')->join('acc_ledgers as l', 'l.id', '=', 'e.ledger_id')
+            ->where('e.company_id', $cid)->where('l.system_key', 'tds_payable')->whereBetween('e.date', [$from, $to])->sum('e.debit');
+        return ['from' => $from, 'to' => $to, 'by_section' => $bySection, 'rows' => $rows,
+                'total_deducted' => round($v->sum('tds_amount'), 2), 'deposited_to_government' => round($paid, 2),
+                'payable_now' => max(0.0, round($this->balances($cid)[$this->sys($cid, 'tds_payable')]['balance'] * -1, 2)) + 0.0];
+    }
+
+    /**
+     * Quantity and value on hand for every stock item as on $asOf. Value uses the weighted-average purchase
+     * cost (opening stock + purchases, net of purchase returns). This is a stock *report*: the profit & loss
+     * stays on a purchases basis and no closing-stock entry is posted to the books.
+     */
+    public function stockSummary(int $cid, string $asOf): array
+    {
+        $moves = DB::table('acc_voucher_items as i')->join('acc_vouchers as v', 'v.id', '=', 'i.voucher_id')
+            ->where('v.company_id', $cid)->where('v.is_cancelled', false)->whereNotNull('i.item_id')->where('v.date', '<=', $asOf)
+            ->selectRaw('i.item_id, v.type, SUM(i.qty) q, SUM(i.amount) a')->groupBy('i.item_id', 'v.type')->get()->groupBy('item_id');
+
+        $rows = [];
+        foreach (AccItem::where('company_id', $cid)->where('track_stock', true)->orderBy('name')->get() as $it) {
+            $m = ($moves[$it->id] ?? collect())->keyBy('type');
+            $q = fn ($t) => (float) ($m[$t]->q ?? 0);
+            $a = fn ($t) => (float) ($m[$t]->a ?? 0);
+            $inQty  = $it->opening_qty + $q('purchase') - $q('debit_note');
+            $inVal  = $it->opening_value + $a('purchase') - $a('debit_note');
+            $avg    = $inQty > 0 ? $inVal / $inQty : (float) $it->purchase_rate;
+            $qty    = $it->opening_qty + $q('purchase') - $q('debit_note') - $q('sales') + $q('credit_note');
+            $rows[] = [
+                'item_id' => $it->id, 'name' => $it->name, 'sku' => $it->sku, 'unit' => $it->unit,
+                'purchased' => round($q('purchase') - $q('debit_note'), 3), 'sold' => round($q('sales') - $q('credit_note'), 3),
+                'qty' => round($qty, 3), 'avg_cost' => round($avg, 2), 'value' => round(max($qty, 0) * $avg, 2),
+                'reorder_level' => $it->reorder_level, 'low' => $it->reorder_level !== null && $qty <= (float) $it->reorder_level,
+            ];
+        }
+        return ['as_on' => $asOf, 'rows' => $rows, 'total_value' => round(array_sum(array_column($rows, 'value')), 2),
+                'low_stock' => count(array_filter($rows, fn ($r) => $r['low']))];
+    }
+
     /** Receivables / payables: party ledgers with their current balance. */
     public function outstanding(int $cid, string $kind): array
     {
@@ -350,7 +448,7 @@ class AccountsService
     {
         $v = AccVoucher::with(['party:id,name,gstin,state_code', 'items'])
             ->where('company_id', $cid)->where('is_cancelled', false)->whereBetween('date', [$from, $to])
-            ->whereIn('type', ['sales', 'income', 'purchase', 'expense'])->orderBy('date')->orderBy('id')->get();
+            ->whereIn('type', ['sales', 'income', 'purchase', 'expense', 'credit_note', 'debit_note'])->orderBy('date')->orderBy('id')->get();
         $set = $this->settings($cid);
 
         $sum = fn ($rows) => [
@@ -359,7 +457,10 @@ class AccountsService
         ];
         $out = $v->whereIn('type', ['sales', 'income'])->values();
         $in  = $set->gst_registered ? $v->whereIn('type', ['purchase', 'expense'])->values() : collect();
-        $o = $sum($out); $i = $sum($in);
+        $cn = $v->where('type', 'credit_note')->values(); // sales returns reduce output tax
+        $dn = $set->gst_registered ? $v->where('type', 'debit_note')->values() : collect(); // purchase returns reduce input credit
+        $net2 = fn (array $a, array $b) => array_map(fn ($k) => round($a[$k] - $b[$k], 2), array_combine(array_keys($a), array_keys($a)));
+        $o = $net2($sum($out), $sum($cn)); $i = $net2($sum($in), $sum($dn));
         $net = ['cgst' => round($o['cgst'] - $i['cgst'], 2), 'sgst' => round($o['sgst'] - $i['sgst'], 2), 'igst' => round($o['igst'] - $i['igst'], 2)];
 
         $row = fn ($x) => [
@@ -370,21 +471,21 @@ class AccountsService
         $b2b = $out->filter(fn ($x) => !empty($x->party?->gstin))->values()->map($row);
         $b2c = $out->filter(fn ($x) => empty($x->party?->gstin))->values()->map($row);
 
-        $hsn = []; // outward HSN summary (GSTR-1 table 12)
-        foreach ($out as $x) {
-            foreach ($x->items as $it) {
-                $k = ($it->hsn ?: '—') . '|' . $it->gst_rate;
-                $hsn[$k] ??= ['hsn' => $it->hsn ?: '—', 'gst_rate' => $it->gst_rate, 'qty' => 0, 'taxable' => 0, 'cgst' => 0, 'sgst' => 0, 'igst' => 0];
-                $hsn[$k]['qty'] += $it->qty; $hsn[$k]['taxable'] += $it->amount;
-                $hsn[$k]['cgst'] += $it->cgst; $hsn[$k]['sgst'] += $it->sgst; $hsn[$k]['igst'] += $it->igst;
-            }
-        }
+        $hsn = []; // outward HSN summary (GSTR-1 table 12), net of credit notes
         $byRate = [];
-        foreach ($out as $x) {
-            foreach ($x->items as $it) {
-                $byRate[(string) $it->gst_rate] ??= ['gst_rate' => $it->gst_rate, 'taxable' => 0, 'cgst' => 0, 'sgst' => 0, 'igst' => 0];
-                $byRate[(string) $it->gst_rate]['taxable'] += $it->amount; $byRate[(string) $it->gst_rate]['cgst'] += $it->cgst;
-                $byRate[(string) $it->gst_rate]['sgst'] += $it->sgst; $byRate[(string) $it->gst_rate]['igst'] += $it->igst;
+        foreach ([[$out, 1], [$cn, -1]] as [$vouchers, $sign]) {
+            foreach ($vouchers as $x) {
+                foreach ($x->items as $it) {
+                    $k = ($it->hsn ?: '—') . '|' . $it->gst_rate;
+                    $hsn[$k] ??= ['hsn' => $it->hsn ?: '—', 'gst_rate' => $it->gst_rate, 'qty' => 0, 'taxable' => 0, 'cgst' => 0, 'sgst' => 0, 'igst' => 0];
+                    $hsn[$k]['qty'] += $sign * $it->qty; $hsn[$k]['taxable'] += $sign * $it->amount;
+                    $hsn[$k]['cgst'] += $sign * $it->cgst; $hsn[$k]['sgst'] += $sign * $it->sgst; $hsn[$k]['igst'] += $sign * $it->igst;
+
+                    $r = (string) $it->gst_rate;
+                    $byRate[$r] ??= ['gst_rate' => $it->gst_rate, 'taxable' => 0, 'cgst' => 0, 'sgst' => 0, 'igst' => 0];
+                    $byRate[$r]['taxable'] += $sign * $it->amount; $byRate[$r]['cgst'] += $sign * $it->cgst;
+                    $byRate[$r]['sgst'] += $sign * $it->sgst; $byRate[$r]['igst'] += $sign * $it->igst;
+                }
             }
         }
         ksort($byRate, SORT_NUMERIC);
@@ -393,10 +494,49 @@ class AccountsService
             'from' => $from, 'to' => $to, 'gstin' => $set->gstin, 'legal_name' => $set->legal_name, 'registered' => $set->gst_registered,
             'summary' => ['outward' => $o, 'itc' => $i, 'net_payable' => $net, 'total_payable' => round(array_sum($net), 2)],
             'b2b' => $b2b, 'b2c' => $b2c,
+            'notes' => $cn->concat($dn)->sortBy('date')->values()->map($row),
             'purchases' => $in->map($row)->values(),
             'hsn' => array_values(array_map(fn ($h) => array_map(fn ($x) => is_float($x) || is_int($x) ? round($x, 2) : $x, $h), $hsn)),
             'by_rate' => array_values($byRate),
         ];
+    }
+
+    /**
+     * One invoice / credit note / debit note in the government e-invoice (IRP) JSON schema 1.1, ready to upload.
+     * Only B2B documents qualify (buyer GSTIN required). Returns [document, list of missing details].
+     */
+    public function einvoiceJson(AccVoucher $v, AccSetting $set): array
+    {
+        $buyer = $v->party;
+        $missing = [];
+        if (!$set->gstin)              { $missing[] = 'your GSTIN (Accounts → Settings)'; }
+        if (!$set->legal_name)         { $missing[] = 'your legal name (Settings)'; }
+        if (!$set->address || !$set->city || !$set->pincode) { $missing[] = 'your address, city and pincode (Settings)'; }
+        if (!$buyer?->gstin)           { $missing[] = 'customer GSTIN (B2B only)'; }
+        if ($buyer && (!$buyer->address || !$buyer->city || !$buyer->pincode)) { $missing[] = 'customer address, city and pincode'; }
+        if ($v->items->isEmpty())      { $missing[] = 'line items'; }
+        foreach ($v->items as $it) { if (!$it->hsn) { $missing[] = "HSN/SAC for '{$it->description}'"; break; } }
+
+        $stcd = $buyer?->state_code ?: substr((string) $buyer?->gstin, 0, 2);
+        $items = [];
+        foreach ($v->items->values() as $i => $it) {
+            $tot = round($it->amount + $it->cgst + $it->sgst + $it->igst, 2);
+            $items[] = [
+                'SlNo' => (string) ($i + 1), 'PrdDesc' => $it->description, 'IsServc' => str_starts_with((string) $it->hsn, '99') ? 'Y' : 'N', 'HsnCd' => (string) $it->hsn,
+                'Qty' => (float) $it->qty, 'Unit' => 'OTH', 'UnitPrice' => (float) $it->rate, 'TotAmt' => (float) $it->amount, 'AssAmt' => (float) $it->amount,
+                'GstRt' => (float) $it->gst_rate, 'IgstAmt' => (float) $it->igst, 'CgstAmt' => (float) $it->cgst, 'SgstAmt' => (float) $it->sgst, 'TotItemVal' => $tot,
+            ];
+        }
+        $doc = [
+            'Version' => '1.1',
+            'TranDtls' => ['TaxSch' => 'GST', 'SupTyp' => 'B2B', 'RegRev' => 'N', 'IgstOnIntra' => 'N'],
+            'DocDtls' => ['Typ' => ['sales' => 'INV', 'credit_note' => 'CRN', 'debit_note' => 'DBN'][$v->type] ?? 'INV', 'No' => $v->number, 'Dt' => $v->date->format('d/m/Y')],
+            'SellerDtls' => ['Gstin' => $set->gstin, 'LglNm' => $set->legal_name, 'Addr1' => mb_substr((string) $set->address, 0, 100), 'Loc' => $set->city, 'Pin' => (int) $set->pincode, 'Stcd' => $set->state_code ?: substr((string) $set->gstin, 0, 2)],
+            'BuyerDtls' => ['Gstin' => $buyer?->gstin, 'LglNm' => $buyer?->name, 'Pos' => $v->place_of_supply ?: $stcd, 'Addr1' => mb_substr((string) $buyer?->address, 0, 100), 'Loc' => $buyer?->city, 'Pin' => (int) $buyer?->pincode, 'Stcd' => $stcd],
+            'ItemList' => $items,
+            'ValDtls' => ['AssVal' => (float) $v->taxable, 'CgstVal' => (float) $v->cgst, 'SgstVal' => (float) $v->sgst, 'IgstVal' => (float) $v->igst, 'TotInvVal' => (float) $v->total],
+        ];
+        return [$doc, $missing];
     }
 
     /** Financial-year range containing $date, using the company's FY start month. */

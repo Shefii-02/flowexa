@@ -26,6 +26,10 @@ class PermissionsSeeder extends Seeder
         // Campaigns
         ['key' => 'campaigns.view',    'label' => 'View Campaigns',           'group' => 'Campaign Management',          'type' => 'viewer', 'sort_order' => 50],
         ['key' => 'campaigns.manage',  'label' => 'Manage Campaigns',         'group' => 'Campaign Management',          'type' => 'manage', 'sort_order' => 51],
+        // Accounts (books, GST, expenses). Keys deliberately don't end in ".view" so the read-only
+        // roles that get every ".view" automatically do not see company financials by default.
+        ['key' => 'accounts.read',     'label' => 'View Accounts & GST',      'group' => 'Accounts',                     'type' => 'viewer', 'sort_order' => 55],
+        ['key' => 'accounts.manage',   'label' => 'Manage Accounts & GST',    'group' => 'Accounts',                     'type' => 'manage', 'sort_order' => 56],
         // Flow Builder
         ['key' => 'flow_builder.view',   'label' => 'View Flow Builder',      'group' => 'Flow Builder',                 'type' => 'viewer', 'sort_order' => 60],
         ['key' => 'flow_builder.manage', 'label' => 'Manage Flow Builder',    'group' => 'Flow Builder',                 'type' => 'manage', 'sort_order' => 61],

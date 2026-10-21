@@ -646,6 +646,18 @@ export const accountsApi = {
   deleteVoucher: (id: number) => api.delete(`/accounts/vouchers/${id}`),
   report: (name: string, p?: Record<string, unknown>) => api.get(`/accounts/reports/${name}`, { params: p }),
   gst: (p?: Record<string, unknown>) => api.get('/accounts/gst', { params: p }),
+  items: (p?: Record<string, unknown>) => api.get('/accounts/items', { params: p }),
+  createItem: (d: Record<string, unknown>) => api.post('/accounts/items', d),
+  updateItem: (id: number, d: Record<string, unknown>) => api.put(`/accounts/items/${id}`, d),
+  deleteItem: (id: number) => api.delete(`/accounts/items/${id}`),
+  /** e-invoice JSON for the government portal: one voucher, or every B2B sale in a date range. */
+  einvoiceCheck: (p: Record<string, unknown>) => api.get('/accounts/einvoice', { params: p }),
+  einvoiceDownload: async (params: Record<string, unknown>, filename: string) => {
+    const r = await api.get('/accounts/einvoice', { params, responseType: 'blob' })
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(r.data); a.download = filename; a.click(); URL.revokeObjectURL(a.href)
+  },
+  reconcile: (entryIds: number[], date: string | null) => api.post('/accounts/reconcile', { entry_ids: entryIds, date }),
   /** CSV export — fetched with the auth header, then saved as a file. */
   download: async (url: string, params: Record<string, unknown>, filename: string) => {
     const r = await api.get(url, { params: { ...params, format: 'csv' }, responseType: 'blob' })

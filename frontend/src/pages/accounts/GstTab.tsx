@@ -5,7 +5,7 @@ import { getError } from '@/utils'
 import toast from 'react-hot-toast'
 import { inr, RangePicker, useRange } from './shared'
 
-const PARTS: [string, string][] = [['b2b', 'B2B invoices (GSTR-1)'], ['b2c', 'B2C sales'], ['rate', 'Rate-wise'], ['hsn', 'HSN summary'], ['purchases', 'Purchases & ITC']]
+const PARTS: [string, string][] = [['b2b', 'B2B invoices (GSTR-1)'], ['b2c', 'B2C sales'], ['notes', 'Credit / debit notes'], ['rate', 'Rate-wise'], ['hsn', 'HSN summary'], ['purchases', 'Purchases & ITC']]
 
 export default function GstTab() {
   const [range, setRange] = useRange()
@@ -30,6 +30,14 @@ export default function GstTab() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
         <RangePicker range={range} onChange={setRange} />
+        <Button variant="secondary" size="sm" onClick={async () => {
+          try {
+            const { data } = await accountsApi.einvoiceCheck(range)
+            if (!data.count) { toast.error(data.skipped?.length ? `${data.skipped.length} invoice(s) are missing details, e.g. ${data.skipped[0].number}: ${data.skipped[0].missing.join('; ')}` : 'No B2B invoices in this period.'); return }
+            await accountsApi.einvoiceDownload({ ...range, format: 'json' }, 'einvoice-bulk.json')
+            if (data.skipped?.length) toast(`${data.count} exported, ${data.skipped.length} skipped (missing customer GSTIN/address). Fix them and export again.`)
+          } catch (e) { toast.error(getError(e)) }
+        }}>⬇ e-Invoice JSON (B2B)</Button>
         {d && !d.gstin && <span className="text-xs text-amber-600">Add your GSTIN in Settings to use these for filing.</span>}
       </div>
       {!d ? <Skeleton className="h-40 w-full" /> : (
@@ -59,6 +67,7 @@ export default function GstTab() {
             <div className="table-wrapper">
               {part === 'b2b' && inv(d.b2b)}
               {part === 'b2c' && inv(d.b2c)}
+              {part === 'notes' && inv(d.notes)}
               {part === 'purchases' && inv(d.purchases)}
               {part === 'rate' && <table className="table">{th(['GST rate', 'Taxable', 'CGST', 'SGST', 'IGST'])}<tbody>{d.by_rate.map((r: any) => <tr key={r.gst_rate}><td>{r.gst_rate}%</td><td className="text-right">{inr(r.taxable)}</td><td className="text-right">{inr(r.cgst)}</td><td className="text-right">{inr(r.sgst)}</td><td className="text-right">{inr(r.igst)}</td></tr>)}</tbody></table>}
               {part === 'hsn' && <table className="table">{th(['HSN/SAC', 'Rate', 'Qty', 'Taxable', 'CGST', 'SGST', 'IGST'])}<tbody>{d.hsn.map((r: any, i: number) => <tr key={i}><td>{r.hsn}</td><td>{r.gst_rate}%</td><td>{r.qty}</td><td className="text-right">{inr(r.taxable)}</td><td className="text-right">{inr(r.cgst)}</td><td className="text-right">{inr(r.sgst)}</td><td className="text-right">{inr(r.igst)}</td></tr>)}</tbody></table>}

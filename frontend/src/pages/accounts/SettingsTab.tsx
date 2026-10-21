@@ -15,7 +15,7 @@ export default function SettingsTab() {
   const save = async () => {
     setSaving(true)
     try {
-      const { data } = await accountsApi.saveSettings({ ...f, gstin: f.gstin || null, pan: f.pan || null })
+      const { data } = await accountsApi.saveSettings({ ...f, gstin: f.gstin || null, pan: f.pan || null, pincode: f.pincode || null, city: f.city || null })
       setF(data.settings); toast.success('Saved.')
     } catch (e) { toast.error(getError(e)) } finally { setSaving(false) }
   }
@@ -29,6 +29,8 @@ export default function SettingsTab() {
         <Input label="PAN" value={f.pan || ''} onChange={e => set('pan', e.target.value.toUpperCase())} />
         <Select label="State (place of business)" value={f.state_code || ''} onChange={e => set('state_code', e.target.value)}
           options={[{ value: '', label: 'Select state' }, ...GST_STATES.map(([c, n]) => ({ value: c, label: `${c} — ${n}` }))]} />
+        <Input label="City" value={f.city || ''} onChange={e => set('city', e.target.value)} />
+        <Input label="Pincode" maxLength={6} value={f.pincode || ''} onChange={e => set('pincode', e.target.value.replace(/\D/g, ''))} />
         <Input label="Invoice prefix" value={f.invoice_prefix || ''} onChange={e => set('invoice_prefix', e.target.value)} />
         <Select label="Financial year starts" value={String(f.fy_start_month || 4)} onChange={e => set('fy_start_month', Number(e.target.value))}
           options={['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'].map((m, i) => ({ value: String(i + 1), label: m }))} />

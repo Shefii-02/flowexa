@@ -15,6 +15,12 @@ export const GST_STATES: [string, string][] = [
 
 export const GST_RATES = [0, 5, 12, 18, 28]
 
+/** Common TDS sections with their usual rate (user can still edit the rate). */
+export const TDS_SECTIONS: [string, string, number][] = [
+  ['194C', 'Contractors (194C)', 1], ['194J', 'Professional / technical fees (194J)', 10], ['194H', 'Commission / brokerage (194H)', 5],
+  ['194I', 'Rent (194I)', 10], ['194A', 'Interest other than securities (194A)', 10], ['194Q', 'Purchase of goods (194Q)', 0.1],
+]
+
 export const VOUCHER_TYPES: Record<string, { label: string; icon: string; color: string }> = {
   sales:    { label: 'Sales Invoice', icon: '🧾', color: 'text-green-600' },
   purchase: { label: 'Purchase Bill', icon: '🛒', color: 'text-orange-600' },
@@ -24,6 +30,8 @@ export const VOUCHER_TYPES: Record<string, { label: string; icon: string; color:
   income:   { label: 'Other Income',  icon: '💰', color: 'text-green-600' },
   journal:  { label: 'Journal',       icon: '📒', color: 'text-gray-600' },
   contra:   { label: 'Contra (Cash/Bank)', icon: '🔁', color: 'text-gray-600' },
+  credit_note: { label: 'Credit Note (sales return)', icon: '↩️', color: 'text-red-600' },
+  debit_note:  { label: 'Debit Note (purchase return)', icon: '↪️', color: 'text-green-600' },
 }
 
 const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`

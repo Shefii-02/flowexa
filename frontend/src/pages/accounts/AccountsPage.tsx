@@ -1,17 +1,24 @@
 import { Link, Navigate, useParams } from 'react-router-dom'
+import { usePermission } from '@/store'
 import DashboardTab from './DashboardTab'
 import VouchersTab from './VouchersTab'
 import LedgersTab from './LedgersTab'
 import ReportsTab from './ReportsTab'
 import GstTab from './GstTab'
 import SettingsTab from './SettingsTab'
+import ItemsTab from './ItemsTab'
 
 const TABS: [string, string][] = [
-  ['', '📊 Dashboard'], ['vouchers', '🧾 Vouchers'], ['ledgers', '📒 Ledgers'], ['reports', '📑 Reports'], ['gst', '🏛️ GST'], ['settings', '⚙️ Settings'],
+  ['', '📊 Dashboard'], ['vouchers', '🧾 Vouchers'], ['ledgers', '📒 Ledgers'], ['items', '📦 Items'], ['reports', '📑 Reports'], ['gst', '🏛️ GST'], ['settings', '⚙️ Settings'],
 ]
 
 export default function AccountsPage() {
   const { tab = '' } = useParams()
+  const canRead = usePermission('accounts.read')
+  const canManage = usePermission('accounts.manage')
+  if (!canRead && !canManage) {
+    return <div className="card"><div className="card-body text-sm text-gray-500">You don't have access to Accounts. Ask an admin to grant the "View Accounts &amp; GST" permission.</div></div>
+  }
   if (!TABS.some(([k]) => k === tab)) return <Navigate to="/accounts" replace />
   return (
     <div className="space-y-4">
@@ -28,6 +35,7 @@ export default function AccountsPage() {
       {tab === '' && <DashboardTab />}
       {tab === 'vouchers' && <VouchersTab />}
       {tab === 'ledgers' && <LedgersTab />}
+      {tab === 'items' && <ItemsTab />}
       {tab === 'reports' && <ReportsTab />}
       {tab === 'gst' && <GstTab />}
       {tab === 'settings' && <SettingsTab />}

@@ -9,7 +9,7 @@ class AccLedger extends Model
     protected $table = 'acc_ledgers';
     protected $fillable = [
         'company_id', 'name', 'nature', 'group', 'opening_balance', 'opening_type', 'gstin', 'state_code',
-        'phone', 'email', 'address', 'pan', 'system_key', 'is_active',
+        'phone', 'email', 'address', 'pincode', 'city', 'pan', 'system_key', 'is_active',
     ];
     protected $casts = ['opening_balance' => 'float', 'is_active' => 'boolean'];
 

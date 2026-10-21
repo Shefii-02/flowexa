@@ -16,6 +16,7 @@ export default function VouchersTab({ initialType = '' }: { initialType?: string
   const [loading, setLoading] = useState(true)
   const [ledgers, setLedgers] = useState<any[]>([])
   const [company, setCompany] = useState<any>(null)
+  const [catalog, setCatalog] = useState<any[]>([])
   const [form, setForm] = useState<any>(null)
   const [del, setDel] = useState<any>(null)
   const [menu, setMenu] = useState(false)
@@ -29,6 +30,7 @@ export default function VouchersTab({ initialType = '' }: { initialType?: string
   useEffect(() => {
     accountsApi.ledgers().then(r => setLedgers(r.data.ledgers)).catch(() => {})
     accountsApi.settings().then(r => setCompany(r.data.settings)).catch(() => {})
+    accountsApi.items().then(r => setCatalog(r.data.items)).catch(() => {})
   }, [])
 
   const edit = async (id: number) => {
@@ -36,6 +38,14 @@ export default function VouchersTab({ initialType = '' }: { initialType?: string
   }
   const print = async (id: number) => {
     try { const { data } = await accountsApi.voucher(id); printInvoice(data.voucher, data.company) } catch (e) { toast.error(getError(e)) }
+  }
+  const einvoice = async (v: any) => {
+    try { await accountsApi.einvoiceDownload({ voucher_id: v.id }, `einvoice-${v.number}.json`) }
+    catch (e: any) {
+      // errors come back as a blob — read the server's message out of it
+      const text = e?.response?.data instanceof Blob ? await e.response.data.text() : ''
+      try { toast.error(JSON.parse(text).message) } catch { toast.error(getError(e)) }
+    }
   }
   const remove = async () => {
     try { await accountsApi.deleteVoucher(del.id); toast.success('Deleted.'); setDel(null); load() } catch (e) { toast.error(getError(e)); setDel(null) }
@@ -82,7 +92,8 @@ export default function VouchersTab({ initialType = '' }: { initialType?: string
                         {v.narration && <p className="text-xs text-gray-400 truncate max-w-[260px]">{v.narration}</p>}</td>
                       <td className="text-right font-medium">{inr(v.total)}</td>
                       <td className="text-right whitespace-nowrap">
-                        {['sales', 'purchase'].includes(v.type) && <button className="text-xs text-blue-600 hover:underline mr-2" onClick={() => print(v.id)}>Print</button>}
+                        {['sales', 'credit_note', 'debit_note'].includes(v.type) && <button className="text-xs text-purple-600 hover:underline mr-2" onClick={() => einvoice(v)}>e-Invoice</button>}
+                        {['sales', 'purchase', 'credit_note', 'debit_note'].includes(v.type) && <button className="text-xs text-blue-600 hover:underline mr-2" onClick={() => print(v.id)}>Print</button>}
                         <button className="text-xs text-gray-600 hover:underline mr-2" onClick={() => edit(v.id)}>Edit</button>
                         <button className="text-xs text-red-500 hover:underline" onClick={() => setDel(v)}>Delete</button>
                       </td>
@@ -96,7 +107,7 @@ export default function VouchersTab({ initialType = '' }: { initialType?: string
         )}
       </div>
 
-      <VoucherForm form={form} setForm={setForm} ledgers={ledgers} company={company} onClose={() => setForm(null)}
+      <VoucherForm form={form} setForm={setForm} ledgers={ledgers} items={catalog} company={company} onClose={() => setForm(null)}
         onSaved={() => { setForm(null); load(); accountsApi.ledgers().then(r => setLedgers(r.data.ledgers)) }} />
       <ConfirmModal open={!!del} title="Delete voucher?" message={`Delete ${del?.number}? Its ledger entries are removed too.`} onConfirm={remove} onCancel={() => setDel(null)} />
     </div>

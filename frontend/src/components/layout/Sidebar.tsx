@@ -217,6 +217,7 @@ export const Sidebar = () => {
 
   // ── Permission hooks (all at top level) ──────────────────────────────────────
   const canViewDash = usePermission('dashboard.view')
+  const canViewAccounts = usePermission('accounts.read') || usePermission('accounts.manage')
   const canViewWaChat = usePermission('wa_chat.sessions.view')
   const canViewChats = usePermission('wa_chat.chats.view')
   const canViewMsgSend = usePermission('wa_chat.message_sender.view')
@@ -514,15 +515,20 @@ export const Sidebar = () => {
  {/* Catalog is a top-level item now (📦 Catalog under CRM) */}
               <FlatLink to="/website-widget" icon="🌐" label="Website Widget" />
             {/* ── ACCOUNTS ── */}
-            <SectionHeader label="Accounts" />
-            <NestedAccordion icon="🧮" label="Accounts" basePaths={['/accounts']}>
-              <SubLink to="/accounts" icon="📊" label="Dashboard" end />
-              <SubLink to="/accounts/vouchers" icon="🧾" label="Vouchers" />
-              <SubLink to="/accounts/ledgers" icon="📒" label="Ledgers" />
-              <SubLink to="/accounts/reports" icon="📑" label="Reports" />
-              <SubLink to="/accounts/gst" icon="🏛️" label="GST" />
-              <SubLink to="/accounts/settings" icon="⚙️" label="Settings" />
-            </NestedAccordion>
+            {canViewAccounts && (
+              <>
+                <SectionHeader label="Accounts" />
+                <NestedAccordion icon="🧮" label="Accounts" basePaths={['/accounts']}>
+                  <SubLink to="/accounts" icon="📊" label="Dashboard" end />
+                  <SubLink to="/accounts/vouchers" icon="🧾" label="Vouchers" />
+                  <SubLink to="/accounts/ledgers" icon="📒" label="Ledgers" />
+                  <SubLink to="/accounts/items" icon="📦" label="Items & Stock" />
+                  <SubLink to="/accounts/reports" icon="📑" label="Reports" />
+                  <SubLink to="/accounts/gst" icon="🏛️" label="GST" />
+                  <SubLink to="/accounts/settings" icon="⚙️" label="Settings" />
+                </NestedAccordion>
+              </>
+            )}
 
             {/* ── CRM ── */}
             <SectionHeader label="CRM" />

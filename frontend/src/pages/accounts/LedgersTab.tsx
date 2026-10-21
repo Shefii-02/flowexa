@@ -13,6 +13,7 @@ const GROUPS: Record<string, { nature: string; label: string }> = {
   fixed_asset: { nature: 'asset', label: 'Fixed asset' },
   gst_input: { nature: 'asset', label: 'GST input credit' },
   gst_output: { nature: 'liability', label: 'GST payable' },
+  tds: { nature: 'liability', label: 'TDS payable' },
   loan: { nature: 'liability', label: 'Loan' },
   capital: { nature: 'equity', label: 'Capital / drawings' },
   sales: { nature: 'income', label: 'Sales income' },
@@ -23,7 +24,7 @@ const GROUPS: Record<string, { nature: string; label: string }> = {
   indirect_expense: { nature: 'expense', label: 'Office / indirect expense' },
   other: { nature: 'asset', label: 'Other asset' },
 }
-const EMPTY = { name: '', group: 'indirect_expense', opening_balance: '', opening_type: 'dr', gstin: '', state_code: '', phone: '', email: '', address: '' }
+const EMPTY = { name: '', group: 'indirect_expense', opening_balance: '', opening_type: 'dr', gstin: '', state_code: '', phone: '', email: '', address: '', city: '', pincode: '' }
 const NATURES = ['', 'asset', 'liability', 'income', 'expense', 'equity']
 
 export default function LedgersTab() {
@@ -49,7 +50,7 @@ export default function LedgersTab() {
     setSaving(true)
     try {
       const body = { ...form, nature: GROUPS[form.group].nature, opening_balance: Number(form.opening_balance) || 0,
-        gstin: form.gstin || null, state_code: form.state_code || null }
+        gstin: form.gstin || null, state_code: form.state_code || null, pincode: form.pincode || null, city: form.city || null }
       form.id ? await accountsApi.updateLedger(form.id, body) : await accountsApi.createLedger(body)
       toast.success('Saved.'); setForm(null); load()
     } catch (e) { toast.error(getError(e)) } finally { setSaving(false) }
@@ -79,7 +80,7 @@ export default function LedgersTab() {
                   <td className="text-xs font-mono">{l.gstin || '—'}</td>
                   <td className="text-right">{inr(Math.abs(l.balance))} <span className="text-xs text-gray-400">{l.balance === 0 ? '' : l.balance > 0 ? 'Dr' : 'Cr'}</span></td>
                   <td className="text-right whitespace-nowrap">
-                    <button className="text-xs text-gray-600 hover:underline mr-2" onClick={() => setForm({ ...l, opening_balance: l.opening_balance || '', gstin: l.gstin || '', state_code: l.state_code || '', phone: l.phone || '', email: l.email || '', address: l.address || '' })}>Edit</button>
+                    <button className="text-xs text-gray-600 hover:underline mr-2" onClick={() => setForm({ ...l, opening_balance: l.opening_balance || '', gstin: l.gstin || '', state_code: l.state_code || '', phone: l.phone || '', email: l.email || '', address: l.address || '', city: l.city || '', pincode: l.pincode || '' })}>Edit</button>
                     {!l.system_key && <button className="text-xs text-red-500 hover:underline" onClick={() => setDel(l)}>Delete</button>}
                   </td>
                 </tr>
@@ -107,6 +108,8 @@ export default function LedgersTab() {
                 <Input label="Phone" value={form.phone} onChange={e => set('phone', e.target.value)} />
                 <Input label="Email" value={form.email} onChange={e => set('email', e.target.value)} />
                 <div className="sm:col-span-2"><Input label="Address" value={form.address} onChange={e => set('address', e.target.value)} /></div>
+                <Input label="City" value={form.city} onChange={e => set('city', e.target.value)} />
+                <Input label="Pincode" maxLength={6} value={form.pincode} onChange={e => set('pincode', e.target.value.replace(/\D/g, ''))} />
               </>
             )}
           </div>
