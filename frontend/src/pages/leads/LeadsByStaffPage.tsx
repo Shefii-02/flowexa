@@ -62,7 +62,7 @@ export default function LeadsByStaffPage() {
                 {rows.map((r) => (
                   <tr key={r.id}>
                     <td>
-                      <Link to={`/leads/staff/${r.id}`} className="font-medium text-brand-700 hover:underline">{r.name}</Link>
+                      <Link to={`/crm/leads/staff/${r.id}`} className="font-medium text-brand-700 hover:underline">{r.name}</Link>
                       {r.department && <p className="text-xs text-gray-400">{r.department}</p>}
                     </td>
                     <td className="text-right font-medium">{fmt.number(r.leads.total)}</td>

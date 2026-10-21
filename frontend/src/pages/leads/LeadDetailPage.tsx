@@ -114,7 +114,7 @@ export default function LeadDetailPage() {
     try {
       await leadApi.delete(lead.id)
       toast.success('Lead deleted.')
-      navigate('/leads')
+      navigate('/crm/leads')
     } catch (e) { toast.error(getError(e)) }
     finally { setDeleting(false) }
   }
@@ -143,7 +143,7 @@ export default function LeadDetailPage() {
 
   return (
     <div className="space-y-5 max-w-5xl">
-      <Link to="/leads" className="text-xs text-gray-400 hover:underline">← All leads</Link>
+      <Link to="/crm/leads" className="text-xs text-gray-400 hover:underline">← All leads</Link>
 
       {/* Header */}
       <div className="flex flex-wrap items-start justify-between gap-3">

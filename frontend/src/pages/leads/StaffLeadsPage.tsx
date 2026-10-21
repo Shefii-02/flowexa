@@ -99,7 +99,7 @@ export default function StaffLeadsPage() {
   return (
     <div className="space-y-5">
       <div>
-        <Link to="/leads/by-staff" className="text-xs text-gray-400 hover:underline">← Leads by staff</Link>
+        <Link to="/crm/leads/by-staff" className="text-xs text-gray-400 hover:underline">← Leads by staff</Link>
         <div className="flex items-center gap-3 mt-1">
           <h1 className="page-title">{staff?.name ?? 'Employee'}'s leads</h1>
           {staff?.department && <Badge variant="gray">{staff.department}</Badge>}
@@ -170,7 +170,7 @@ export default function StaffLeadsPage() {
                     <td><span className={`badge ${priorityConfig[l.priority].badge}`}>{priorityConfig[l.priority].label}</span></td>
                     <td className="text-xs text-gray-600">{l.category || '—'}</td>
                     <td className="text-xs text-gray-400">{fmt.date(l.created_at)}</td>
-                    <td><Link to={`/leads/${l.id}`} className="text-xs text-blue-600 hover:underline">View</Link></td>
+                    <td><Link to={`/crm/leads/${l.id}`} className="text-xs text-blue-600 hover:underline">View</Link></td>
                   </tr>
                 ))}
               </tbody>

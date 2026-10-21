@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { api } from '@/api/client'
 import toast from 'react-hot-toast'
+import LeadCategoryDetail from './LeadCategoryDetail'
 
 type LeadCategory = {
   id: number
@@ -10,6 +11,7 @@ type LeadCategory = {
   is_active: boolean
   sort_order: number
   leads_count: number
+  contacts_count?: number
 }
 
 const DEFAULT_COLORS = [
@@ -55,6 +57,7 @@ export default function LeadCategoriesPage() {
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState('')
 
+  const [detailCat, setDetailCat] = useState<LeadCategory | null>(null)   // category whose contacts are open
   const [deleteTarget, setDeleteTarget] = useState<LeadCategory | null>(null)
   const [deleting, setDeleting] = useState(false)
 
@@ -203,6 +206,7 @@ export default function LeadCategoriesPage() {
                 <tr className="border-b border-gray-100 bg-gray-50/60">
                   <th className="text-left px-5 py-3 text-xs text-gray-400 font-medium">Category</th>
                   <th className="text-left px-4 py-3 text-xs text-gray-400 font-medium">Description</th>
+                  <th className="text-center px-4 py-3 text-xs text-gray-400 font-medium">Contacts</th>
                   <th className="text-center px-4 py-3 text-xs text-gray-400 font-medium">Leads</th>
                   <th className="text-center px-4 py-3 text-xs text-gray-400 font-medium">Status</th>
                   <th className="text-right px-5 py-3 text-xs text-gray-400 font-medium">Actions</th>
@@ -224,6 +228,11 @@ export default function LeadCategoriesPage() {
                       {cat.description || <span className="text-gray-300">—</span>}
                     </td>
                     <td className="px-4 py-3 text-center">
+                      <button onClick={() => setDetailCat(cat)} className="text-xs font-semibold tabular-nums text-brand-600 hover:underline" title="Show the contacts in this category">
+                        {cat.contacts_count ?? 0}
+                      </button>
+                    </td>
+                    <td className="px-4 py-3 text-center">
                       <span className="text-xs font-semibold tabular-nums text-gray-700">
                         {cat.leads_count ?? 0}
                       </span>
@@ -235,6 +244,12 @@ export default function LeadCategoriesPage() {
                     </td>
                     <td className="px-5 py-3 text-right">
                       <div className="flex items-center justify-end gap-2">
+                        <button
+                          onClick={() => setDetailCat(cat)}
+                          className="text-xs px-3 py-1 border border-brand-200 rounded-lg text-brand-600 hover:bg-brand-50 transition-colors"
+                        >
+                          Contacts
+                        </button>
                         <button
                           onClick={() => openEdit(cat)}
                           className="text-xs px-3 py-1 border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 transition-colors"
@@ -256,6 +271,8 @@ export default function LeadCategoriesPage() {
           </div>
         )}
       </div>
+
+      {detailCat && <LeadCategoryDetail cat={detailCat} onClose={() => setDetailCat(null)} onChanged={load} />}
 
       {/* Create / Edit modal */}
       {showForm && (

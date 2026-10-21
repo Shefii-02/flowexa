@@ -291,7 +291,7 @@ export default function DashboardPage() {
 
         {/* Lead stage pie */}
         <div className="card p-5">
-          <SectionHeader title="Lead funnel" action="View leads" onAction={() => navigate('/leads')} />
+          <SectionHeader title="Lead funnel" action="View leads" onAction={() => navigate('/crm/leads')} />
           {leadStageData.length > 0 ? (
             <>
               <ResponsiveContainer width="100%" height={140}>
@@ -666,7 +666,7 @@ export default function DashboardPage() {
         <SectionHeader title="Quick actions" />
         <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3">
           {[
-            { icon: '👥', label: 'Import contacts',  to: '/contacts' },
+            { icon: '👥', label: 'Import contacts',  to: '/crm/contacts' },
             { icon: '📢', label: 'New campaign',      to: '/campaigns',    hide: !canViewCamp },
             { icon: '🌿', label: 'Flow builder',      to: '/wa-cloud/flow-builders', hide: !canViewFlow },
             { icon: '💬', label: 'WA Campaign', to: '/wa-chat/message-sender' },

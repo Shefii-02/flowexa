@@ -77,6 +77,23 @@ class ConversationController extends Controller
         ]);
     }
 
+    // GET /conversations/contact/{contact} — this contact's chats (one per WhatsApp number), newest first, so a contact
+    // opened from anywhere (a lead category, the CRM) can show its conversation. Same access rule as index().
+    public function forContact(int $contact): JsonResponse
+    {
+        $user = auth()->user();
+        $rows = WaConversation::where('company_id', $user->company_id)->where('contact_id', $contact)
+            ->when($user->allowedAccountIds('phone_number') !== null, fn ($q) => $q->whereIn('wa_phone_number_id', $user->allowedAccountIds('phone_number')))
+            ->when(!$user->hasPermission('inbox.view_all'), fn ($q) => $q->where(fn ($q2) => $q2->where('assigned_to', $user->id)->orWhereNull('assigned_to')))
+            ->with('waPhoneNumber:id,label,display_number')
+            ->orderByDesc('last_message_at')->get();
+
+        return response()->json(['conversations' => $rows->map(fn ($c) => [
+            'id' => $c->id, 'phone' => $c->phone, 'status' => $c->status, 'unread_count' => $c->unread_count,
+            'last_message_at' => $c->last_message_at, 'number' => $c->waPhoneNumber?->label ?: $c->waPhoneNumber?->display_number,
+        ])->values()]);
+    }
+
     // GET /conversations/{id}/messages — full thread, oldest first
     public function messages(int $id): JsonResponse
     {

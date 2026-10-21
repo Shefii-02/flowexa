@@ -121,7 +121,7 @@ export default function LeadLogsPage() {
                       <td className="text-xs text-gray-400 whitespace-nowrap">{fmt.relative(r.created_at)}</td>
                       <td>
                         {r.lead ? (
-                          <Link to={`/leads/${r.lead.id}`} className="text-brand-600 hover:underline">
+                          <Link to={`/crm/leads/${r.lead.id}`} className="text-brand-600 hover:underline">
                             {r.lead.contact?.name || formatPhone(r.lead.contact?.phone || '')}
                           </Link>
                         ) : <span className="text-gray-300">—</span>}

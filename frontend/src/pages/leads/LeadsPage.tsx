@@ -310,7 +310,7 @@ export default function LeadsPage() {
           {counsellors.map((c) => <option key={c.id} value={c.id}>{c.name} — all stages</option>)}
         </select>
         {assignedFilter && (
-          <Link to={`/leads/staff/${assignedFilter}`} className="text-xs text-brand-600 hover:underline mb-1.5">
+          <Link to={`/crm/leads/staff/${assignedFilter}`} className="text-xs text-brand-600 hover:underline mb-1.5">
             Open as page →
           </Link>
         )}
@@ -396,7 +396,7 @@ export default function LeadsPage() {
                             <td className="text-xs text-gray-600">{l.assigned_to?.name || <span className="text-gray-300">Unassigned</span>}</td>
                             <td>
                               <div className="flex gap-1">
-                                <Link to={`/leads/${l.id}`} className="text-xs text-blue-600 hover:underline">View</Link>
+                                <Link to={`/crm/leads/${l.id}`} className="text-xs text-blue-600 hover:underline">View</Link>
                                 <button onClick={() => { setShowAssign(l); setAssignUserId('') }} className="text-xs text-brand-600 hover:underline">Assign</button>
                               </div>
                             </td>
@@ -419,7 +419,7 @@ export default function LeadsPage() {
           <div className="flex gap-4 overflow-x-auto pb-4">
             {STAGES.map((s) => (
               <KanbanColumn key={s} stage={s} leads={kanbanByStage[s]}
-                stageUpdating={stageUpdating} onCardClick={(l) => navigate(`/leads/${l.id}`)} />
+                stageUpdating={stageUpdating} onCardClick={(l) => navigate(`/crm/leads/${l.id}`)} />
             ))}
           </div>
         </DndContext>

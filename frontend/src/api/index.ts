@@ -256,6 +256,13 @@ export const leadCategoryApi = {
   create: (d: Record<string, unknown>) => api.post('/lead-categories', d),
   update: (id: number, d: Record<string, unknown>) => api.put(`/lead-categories/${id}`, d),
   delete: (id: number) => api.delete(`/lead-categories/${id}`),
+  /** Contacts that have a lead in this category (with labels, latest lead, campaigns, last chat) + stage counts. */
+  contacts: (id: number, p?: Record<string, unknown>) => api.get(`/lead-categories/${id}/contacts`, { params: p }),
+  /** Put contacts into the category: an open lead is moved in, a contact without one gets a new lead. */
+  addContacts: (id: number, contact_ids: number[]) => api.post(`/lead-categories/${id}/contacts`, { contact_ids }),
+  removeContact: (id: number, contactId: number) => api.delete(`/lead-categories/${id}/contacts/${contactId}`),
+  /** Set (name) or clear (null) ONE lead's category. */
+  assign: (lead_id: number, category: string | null) => api.post('/lead-categories/assign', { lead_id, category }),
 }
 
 // ── Lead Sources ─────────────────────────────────────────────────────────────
@@ -435,6 +442,8 @@ export const templateApi = {
 
 
 export const conversationApi = {
+  /** A contact's chats (one per WhatsApp number), newest first — for opening a contact's conversation from anywhere. */
+  forContact: (contactId: number) => api.get(`/conversations/contact/${contactId}`),
   // GET /conversations — inbox list, most recently active first.
   // filter: mine=1 (only conversations assigned to me), unassigned=1 (only unclaimed).
   list: (params?: { status?: string; mine?: number | boolean; unassigned?: number | boolean; unread?: number | boolean; search?: string; page?: number; per_page?: number }) =>

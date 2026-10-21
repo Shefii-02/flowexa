@@ -171,7 +171,7 @@ export default function LeadAdsPage() {
                   <td className="px-3 py-2">
                     <Badge variant={STATUS_BADGE[l.process_status] ?? 'gray'}>{l.process_status}</Badge>
                     {l.lead && (
-                      <Link to="/leads" className="ml-2 text-xs text-brand-600 hover:underline">in CRM</Link>
+                      <Link to="/crm/leads" className="ml-2 text-xs text-brand-600 hover:underline">in CRM</Link>
                     )}
                     {l.process_error && <span className="ml-2 text-xs text-red-500" title={l.process_error}>ⓘ</span>}
                   </td>

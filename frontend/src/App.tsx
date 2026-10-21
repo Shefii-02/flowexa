@@ -193,6 +193,12 @@ function LegacyTemplateRedirect() {
   return <Navigate to={`/wa-cloud/templates/${id}`} replace />
 }
 
+// /contacts, /labels, /blacklist, /short-links and /leads/* moved under /crm — send old bookmarks and links there.
+function LegacyCrmRedirect() {
+  const { pathname, search, hash } = useLocation()
+  return <Navigate to={`/crm${pathname}${search}${hash}`} replace />
+}
+
 export default function App() {
   return (
     <Provider store={store}>
@@ -268,8 +274,8 @@ export default function App() {
               <Route path="staff/index" element={<StaffPage />} />
               <Route path="staff/roles" element={<RolesPage />} />
               <Route path="staff/account-access" element={<StaffAccountAccessPage />} />
-              <Route path="contacts" element={<ContactsPage />} />
-              <Route path="labels" element={<LabelsPage />} />
+              <Route path="crm/contacts" element={<ContactsPage />} />
+              <Route path="crm/labels" element={<LabelsPage />} />
               {/* <Route path="flow" element={<FlowPage />} /> */}
               <Route path="/wa-cloud/flow-builders" element={<FlowBuildersPage />} />
               <Route path="/flow-builders" element={<Navigate to="/wa-cloud/flow-builders" replace />} />
@@ -278,16 +284,16 @@ export default function App() {
               <Route path="/wa-cloud/flow" element={<LegacyFlowRedirect />} />
               <Route path="/flow" element={<LegacyFlowRedirect />} />
 
-              <Route path="leads" element={<LeadsPage />} />
-              <Route path="leads/by-staff" element={<LeadsByStaffPage />} />
-              <Route path="leads/logs" element={<LeadLogsPage />} />
-              <Route path="leads/staff/:staffId" element={<StaffLeadsPage />} />
-              <Route path="leads/:id" element={<LeadDetailPage />} />
-              <Route path="leads/summary" element={<LeadsSummaryPage />} />
-              <Route path="leads/report" element={<LeadsReportPage />} />
-              <Route path="leads/assignments" element={<AssignmentPage />} />
-              <Route path="leads/staff-availability" element={<Navigate to="/leads/assignment-rules" replace />} />
-              <Route path="leads/assignment-rules" element={<AssignmentRulesPage />} />
+              <Route path="crm/leads" element={<LeadsPage />} />
+              <Route path="crm/leads/by-staff" element={<LeadsByStaffPage />} />
+              <Route path="crm/leads/logs" element={<LeadLogsPage />} />
+              <Route path="crm/leads/staff/:staffId" element={<StaffLeadsPage />} />
+              <Route path="crm/leads/:id" element={<LeadDetailPage />} />
+              <Route path="crm/leads/summary" element={<LeadsSummaryPage />} />
+              <Route path="crm/leads/report" element={<LeadsReportPage />} />
+              <Route path="crm/leads/assignments" element={<AssignmentPage />} />
+              <Route path="crm/leads/staff-availability" element={<Navigate to="/crm/leads/assignment-rules" replace />} />
+              <Route path="crm/leads/assignment-rules" element={<AssignmentRulesPage />} />
               <Route path="wallet" element={<WalletPage />} />
               <Route path="analytics" element={<AnalyticsPage />} />
               <Route path="settings/index" element={<SettingsPage />} />
@@ -304,11 +310,16 @@ export default function App() {
               {/* Template detail now lives under /wa-cloud — keep old /templates/:id links working */}
               <Route path="templates/:id" element={<LegacyTemplateRedirect />} />
               <Route path="plan-purchase" element={<PlanPurchasePage />} />
-              <Route path="blacklist" element={<BlacklistPage />} />
-              <Route path="short-links" element={<ShortLinksPage />} />
+              <Route path="crm/blacklist" element={<BlacklistPage />} />
+              <Route path="crm/short-links" element={<ShortLinksPage />} />
               <Route path="accounts" element={<AccountsPage />} />
               <Route path="accounts/:tab" element={<AccountsPage />} />
-              <Route path="leads/categories" element={<LeadCategoriesPage />} />
+              <Route path="crm/leads/categories" element={<LeadCategoriesPage />} />
+
+              {/* Old CRM / lead URLs (before everything lived under /crm) keep working: /leads/12 → /crm/leads/12 */}
+              {['contacts', 'labels', 'blacklist', 'short-links', 'leads'].map(seg => (
+                <Route key={seg} path={`${seg}/*`} element={<LegacyCrmRedirect />} />
+              ))}
 
               {/* Advanced CRM */}
               <Route path="crm/deals" element={<DealsPage />} />

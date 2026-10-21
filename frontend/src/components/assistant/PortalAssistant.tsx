@@ -63,7 +63,7 @@ function save(key: string, value: unknown) {
 // Quick starters, tuned to where the user currently is.
 function startersFor(path: string): string[] {
   const base = ['What can I do in this portal?', 'How do I connect a WhatsApp number?', 'How do I add a staff member?']
-  if (path.startsWith('/leads')) return ['How do leads get assigned to staff?', 'How do I change a lead status?', 'Where can I see lead reports?']
+  if (path.startsWith('/crm/leads')) return ['How do leads get assigned to staff?', 'How do I change a lead status?', 'Where can I see lead reports?']
   if (path.startsWith('/wa-agent')) return ['How do I teach the AI agent about my business?', 'How do I add an AI key?', 'How do I enable voice replies?']
   if (path.startsWith('/wa-chat') || path.startsWith('/wa-cloud')) return ['How do I send a bulk campaign?', 'How do I reply to a customer?', 'How do I set an auto-reply?']
   if (path.startsWith('/hr')) return ['How do I mark my attendance?', 'How do I apply for leave?', 'Where is my payslip?']

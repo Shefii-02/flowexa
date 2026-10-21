@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Activity, Loader2, Megaphone, Tag, UserCheck, X } from 'lucide-react'
-import { contactApi, labelApi, staffApi, leadApi } from '@/api'
+import { contactApi, labelApi, staffApi, leadApi, leadCategoryApi, conversationApi } from '@/api'
 import { getError } from '@/utils'
 import toast from 'react-hot-toast'
 import { avatarColor, initials } from './avatar'
 
-type Tab = 'info' | 'labels' | 'campaigns' | 'leads'
+type Tab = 'info' | 'labels' | 'campaigns' | 'leads' | 'chat'
 
 interface Label { id: number; name: string; color?: string }
 interface Staff { id: number; name: string; email?: string }
@@ -16,6 +16,8 @@ interface Props {
   fallbackName: string
   fallbackPhone: string
   conversationMeta?: { assignedAgent?: string | null; status?: string | null }
+  /** Adds a Chat tab with the contact's recent messages — for opening a contact from outside the inbox (lead categories). */
+  showChat?: boolean
   onClose: () => void
   /** Bubble a fresh contact up so the parent can refresh the header / list row. */
   onContactChanged?: (contact: any) => void
@@ -50,7 +52,7 @@ const CAMPAIGN_STATUS: Record<string, { text: string; cls: string }> = {
 }
 
 export default function ContactInfoDrawer({
-  open, contactId, fallbackName, fallbackPhone, conversationMeta, onClose, onContactChanged,
+  open, contactId, fallbackName, fallbackPhone, conversationMeta, showChat = false, onClose, onContactChanged,
 }: Props) {
   const [tab, setTab] = useState<Tab>('info')
   const [contact, setContact] = useState<any>(null)
@@ -69,6 +71,13 @@ export default function ContactInfoDrawer({
   const [leads, setLeads] = useState<any[]>([])
   const [leadsLoading, setLeadsLoading] = useState(false)
   const [creatingLead, setCreatingLead] = useState(false)
+  // Lead categories — assigned the same way as labels: a chip per lead with × to clear, and an editor to pick / create one
+  const [cats, setCats] = useState<{ id: number; name: string; color?: string }[]>([])
+  const [catEditorLead, setCatEditorLead] = useState<number | null>(null)   // lead whose category picker is open
+  const [catSaving, setCatSaving] = useState(false)
+  const [newCatName, setNewCatName] = useState('')
+  const [newLeadCat, setNewLeadCat] = useState('')                          // category chosen for the next "+ Lead"
+  const [chat, setChat] = useState<{ loading: boolean; number?: string; messages: any[]; empty?: boolean }>({ loading: false, messages: [] })
 
   const [campaigns, setCampaigns] = useState<any[]>([])
   const [campaignsLoading, setCampaignsLoading] = useState(false)
@@ -104,6 +113,26 @@ export default function ContactInfoDrawer({
       .then(r => setLeads(r.data?.leads ?? r.data?.data ?? []))
       .catch(() => setLeads([]))
       .finally(() => setLeadsLoading(false))
+  }, [open, tab, contactId])
+
+  useEffect(() => {
+    if (!open || tab !== 'leads' || cats.length) return
+    leadCategoryApi.list().then(r => setCats(r.data?.categories ?? [])).catch(() => {})
+  }, [open, tab, cats.length])
+
+  useEffect(() => {
+    if (!open || tab !== 'chat' || !contactId) return
+    let cancelled = false
+    setChat({ loading: true, messages: [] })
+    conversationApi.forContact(contactId)
+      .then(async r => {
+        const conv = (r.data?.conversations ?? [])[0]
+        if (!conv) { if (!cancelled) setChat({ loading: false, messages: [], empty: true }); return }
+        const m = await conversationApi.messages(conv.id, { limit: 40 })
+        if (!cancelled) setChat({ loading: false, number: conv.number, messages: m.data?.messages ?? [] })
+      })
+      .catch(() => { if (!cancelled) setChat({ loading: false, messages: [], empty: true }) })
+    return () => { cancelled = true }
   }, [open, tab, contactId])
 
   useEffect(() => {
@@ -154,12 +183,39 @@ export default function ContactInfoDrawer({
     if (!contactId) return
     setCreatingLead(true)
     try {
-      await leadApi.create({ contact_id: contactId, source: 'whatsapp_cloud', stage: 'new' })
+      await leadApi.create({ contact_id: contactId, source: 'whatsapp_cloud', stage: 'new', ...(newLeadCat ? { category: newLeadCat } : {}) })
+      setNewLeadCat('')
       const r = await contactApi.leads(contactId)
       setLeads(r.data?.leads ?? r.data?.data ?? [])
       toast.success('Lead created.')
     } catch (e) { toast.error(getError(e)) }
     finally { setCreatingLead(false) }
+  }
+
+  // Set / clear one lead's category (null clears)
+  const assignCategory = async (leadId: number, name: string | null) => {
+    setCatSaving(true)
+    try {
+      await leadCategoryApi.assign(leadId, name)
+      setLeads(ls => ls.map(l => l.id === leadId ? { ...l, category: name } : l))
+      setCatEditorLead(null)
+    } catch (e) { toast.error(getError(e)) }
+    finally { setCatSaving(false) }
+  }
+  // Create a brand-new category on the spot and put the lead in it
+  const createCategoryFor = async (leadId: number | null) => {
+    const name = newCatName.trim()
+    if (!name) return
+    setCatSaving(true)
+    try {
+      const r = await leadCategoryApi.create({ name })
+      const c = r.data?.category
+      if (c) setCats(cs => [...cs, c])
+      setNewCatName('')
+      if (leadId) await assignCategory(leadId, name); else setNewLeadCat(name)
+      toast.success(`Category “${name}” created.`)
+    } catch (e) { toast.error(getError(e)) }
+    finally { setCatSaving(false) }
   }
 
   const toggleDraft = (id: number) => setLabelDraft(prev => {
@@ -210,9 +266,9 @@ export default function ContactInfoDrawer({
       </div>
 
       <div className="wa-drawer__tabs">
-        {(['info', 'labels', 'campaigns', 'leads'] as Tab[]).map(t => (
+        {(['info', 'labels', 'campaigns', 'leads', ...(showChat ? ['chat'] : [])] as Tab[]).map(t => (
           <button key={t} className={`wa-drawer__tab ${tab === t ? 'is-active' : ''}`} onClick={() => setTab(t)}>
-            {t === 'info' ? 'Info' : t === 'labels' ? 'Labels' : t === 'campaigns' ? 'Campaigns' : 'Leads'}
+            {t === 'info' ? 'Info' : t === 'labels' ? 'Labels' : t === 'campaigns' ? 'Campaigns' : t === 'leads' ? 'Leads' : 'Chat'}
           </button>
         ))}
       </div>
@@ -378,6 +434,22 @@ export default function ContactInfoDrawer({
                 </button>
               )}
             </div>
+            {contact && (
+              <div className="wa-picker" style={{ marginBottom: 10 }}>
+                <div className="wa-muted-note" style={{ marginBottom: 4 }}>Category for the new lead (optional)</div>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <select value={newLeadCat} onChange={e => setNewLeadCat(e.target.value)} style={{ flex: 1, fontSize: 12, padding: 4 }}>
+                    <option value="">— none —</option>
+                    {cats.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                  </select>
+                </div>
+                <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+                  <input value={newCatName} onChange={e => setNewCatName(e.target.value)} placeholder="+ New category" maxLength={100}
+                    style={{ flex: 1, fontSize: 12, padding: 4 }} onKeyDown={e => { if (e.key === 'Enter') createCategoryFor(null) }} />
+                  <button className="wa-btn-sm" disabled={catSaving || !newCatName.trim()} onClick={() => createCategoryFor(null)}>Add</button>
+                </div>
+              </div>
+            )}
             {!contact ? (
               <p className="wa-muted-note">Contact not in CRM — no lead history.</p>
             ) : leadsLoading ? (
@@ -398,10 +470,46 @@ export default function ContactInfoDrawer({
                       </span>
                     </div>
                     <div className="wa-muted-note">
-                      {(l.category?.name || l.category) ? `🏷️ ${l.category?.name ?? l.category} · ` : ''}
                       {l.assigned_to ? `👤 ${l.assigned_to} · ` : ''}
                       {fmtDate(l.created_at)}
                     </div>
+                    <div className="wa-sec__label" style={{ marginTop: 6 }}>
+                      Lead category
+                      <button className="wa-linkbtn" onClick={() => { setCatEditorLead(v => v === l.id ? null : l.id); setNewCatName('') }}>
+                        <Tag size={10} /> {catEditorLead === l.id ? 'Cancel' : (l.category?.name ?? l.category) ? 'Change' : '+ Assign'}
+                      </button>
+                    </div>
+                    {catEditorLead === l.id && (
+                      <div className="wa-picker" style={{ marginBottom: 6 }}>
+                        {cats.length === 0 && <p className="wa-muted-note" style={{ padding: '4px 8px' }}>No lead categories yet — create one below.</p>}
+                        {cats.map(c => (
+                          <label key={c.id} className="wa-picker__row" style={{ cursor: 'pointer' }}>
+                            <input type="radio" name={`leadcat-${l.id}`} checked={(l.category?.name ?? l.category) === c.name}
+                              disabled={catSaving} onChange={() => assignCategory(l.id, c.name)} />
+                            <span style={{ color: c.color ?? undefined }}>{c.name}</span>
+                          </label>
+                        ))}
+                        <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+                          <input value={newCatName} onChange={e => setNewCatName(e.target.value)} placeholder="+ New category" maxLength={100}
+                            style={{ flex: 1, fontSize: 12, padding: 4 }} onKeyDown={e => { if (e.key === 'Enter') createCategoryFor(l.id) }} />
+                          <button className="wa-btn-sm wa-btn-sm--primary" disabled={catSaving || !newCatName.trim()} onClick={() => createCategoryFor(l.id)}>Add</button>
+                        </div>
+                      </div>
+                    )}
+                    {(l.category?.name ?? l.category)
+                      ? (() => {
+                          const nm = l.category?.name ?? l.category
+                          const col = cats.find(c => c.name === nm)?.color ?? '#6b7280'
+                          return (
+                            <div className="wa-labels">
+                              <span className="wa-label" style={{ background: col + '22', color: col }}>
+                                🏷️ {nm}
+                                <button onClick={() => assignCategory(l.id, null)} disabled={catSaving}>×</button>
+                              </span>
+                            </div>
+                          )
+                        })()
+                      : <p className="wa-muted-note">No category.</p>}
 
                     {l.activities?.length > 0 && (
                       <div className="wa-timeline">
@@ -427,6 +535,31 @@ export default function ContactInfoDrawer({
                 ))}
               </div>
             )}
+          </div>
+        )}
+
+        {!loading && tab === 'chat' && (
+          <div className="wa-sec" style={{ borderBottom: 'none' }}>
+            <div className="wa-sec__label">Chat{chat.number ? ` · ${chat.number}` : ''}</div>
+            {chat.loading ? (
+              <div className="wa-center-pad"><Loader2 size={16} className="animate-spin" style={{ margin: '0 auto' }} /></div>
+            ) : chat.empty || chat.messages.length === 0 ? (
+              <div className="wa-center-pad">No chat with this number yet.</div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, background: 'var(--wa-chat-bg)', padding: 8, borderRadius: 8, maxHeight: '55vh', overflowY: 'auto' }}>
+                {chat.messages.map((m: any) => {
+                  const out = m.direction === 'outbound'
+                  const body = typeof m.content === 'string' ? m.content : (m.content?.body ?? m.content?.text ?? m.content?.caption ?? '')
+                  return (
+                    <div key={m.id} style={{ alignSelf: out ? 'flex-end' : 'flex-start', maxWidth: '85%', background: out ? 'var(--wa-bubble-out)' : 'var(--wa-bubble-in)', borderRadius: 8, padding: '5px 8px', fontSize: 12.5 }}>
+                      <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{body || `[${m.type}]`}</div>
+                      <div style={{ fontSize: 10, color: 'var(--wa-muted)', textAlign: 'right' }}>{fmtDateTime(m.created_at)}</div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+            <p className="wa-muted-note" style={{ marginTop: 8 }}>Latest 40 messages. Reply from the WA Cloud inbox.</p>
           </div>
         )}
       </div>

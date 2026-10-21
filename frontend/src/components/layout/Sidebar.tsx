@@ -535,24 +535,24 @@ export const Sidebar = () => {
             <NestedAccordion
               icon="🗂️"
               label="CRM"
-              basePaths={['/contacts', '/labels', '/blacklist', '/short-links', '/lead-categories', '/crm']}
+              basePaths={['/crm/contacts', '/crm/labels', '/crm/blacklist', '/crm/short-links', '/crm/deals', '/crm/tasks', '/crm/calendar', '/crm/segments']}
               defaultOpen
             >
               {/* <NestedAccordion icon="🟢" label="Basic CRM" basePaths={['/contacts', '/labels', '/blacklist']}>
-                <SubLink to="/contacts" icon="👥" label="Contacts" />
-                <SubLink to="/labels" icon="🏷️" label="Labels" />
-                <SubLink to="/blacklist" icon="🚫" label="Blacklist" />
+                <SubLink to="/crm/contacts" icon="👥" label="Contacts" />
+                <SubLink to="/crm/labels" icon="🏷️" label="Labels" />
+                <SubLink to="/crm/blacklist" icon="🚫" label="Blacklist" />
               </NestedAccordion> */}
 
               {/* <NestedAccordion icon="🔷" label="Advanced CRM" basePaths={['/crm', '/lead-categories']}> */}
-                <SubLink to="/contacts" icon="👥" label="Contacts" />
-                <SubLink to="/labels" icon="🏷️" label="Labels" />
+                <SubLink to="/crm/contacts" icon="👥" label="Contacts" />
+                <SubLink to="/crm/labels" icon="🏷️" label="Labels" />
                 <SubLink to="/crm/deals" icon="💼" label="Deals Pipeline" />
                 <SubLink to="/crm/tasks" icon="📋" label="Tasks & Follow-ups" />
                 <SubLink to="/crm/calendar" icon="📅" label="Calendar" />
                 <SubLink to="/crm/segments" icon="🧩" label="Segments" />
-                <SubLink to="/blacklist" icon="🚫" label="Blacklist" />
-                <SubLink to="/short-links" icon="🔗" label="Short Links" />
+                <SubLink to="/crm/blacklist" icon="🚫" label="Blacklist" />
+                <SubLink to="/crm/short-links" icon="🔗" label="Short Links" />
               {/* </NestedAccordion> */}
             </NestedAccordion>
 
@@ -563,25 +563,25 @@ export const Sidebar = () => {
             <NestedAccordion
               icon="🎯"
               label="Leads"
-              basePaths={['/leads']}
+              basePaths={['/crm/leads']}
               defaultOpen
             >
                 {/* Shared by both views — the lead list itself */}
-              <SubLink to="/leads" icon="🎯" label="All Leads" end />
-              <SubLink to="/leads/categories" icon="📂" label="Lead Categories" />
+              <SubLink to="/crm/leads" icon="🎯" label="All Leads" end />
+              <SubLink to="/crm/leads/categories" icon="📂" label="Lead Categories" />
 
-              <SubLink to="/leads/by-staff" icon="👤" label="Leads by Staff" />
-              <SubLink to="/leads/logs" icon="📜" label="Lead Logs" />
+              <SubLink to="/crm/leads/by-staff" icon="👤" label="Leads by Staff" />
+              <SubLink to="/crm/leads/logs" icon="📜" label="Lead Logs" />
 
               {/* Basic — at-a-glance metrics */}
               {/* <NestedAccordion icon="🟢" label="Basic" basePaths={['/leads/summary']}>
     
               </NestedAccordion> */}
 
-              <SubLink to="/leads/summary" icon="📈" label="Leads Summary" />
-              <SubLink to="/leads/report" icon="📊" label="Leads Report" />
-              <SubLink to="/leads/assignments" icon="🧭" label="Assignment Queues" />
-              <SubLink to="/leads/assignment-rules" icon="📋" label="Assignment Rules" />
+              <SubLink to="/crm/leads/summary" icon="📈" label="Leads Summary" />
+              <SubLink to="/crm/leads/report" icon="📊" label="Leads Report" />
+              <SubLink to="/crm/leads/assignments" icon="🧭" label="Assignment Queues" />
+              <SubLink to="/crm/leads/assignment-rules" icon="📋" label="Assignment Rules" />
 
               {/* Advanced — filtered reporting + assignment engine */}
               {/* <NestedAccordion

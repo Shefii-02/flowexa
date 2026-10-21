@@ -414,14 +414,19 @@ Route::prefix('v1')->group(function () {
             Route::post('/',          [LeadCategoryController::class, 'store'])->middleware('plan.limit:lead_categories')->name('store');
             // fixed paths first — otherwise POST /lead-categories/sync-from-nodes is matched by GET /{category} and answers 405
             Route::post('/reorder',         [LeadCategoryController::class, 'reorder'])->name('reorder');
+            Route::post('/assign',          [LeadCategoryController::class, 'assignLead'])->name('assign');
             Route::post('/sync-from-nodes', [LeadCategoryController::class, 'syncFromNodes'])->name('sync-from-nodes');
             Route::get('/{category}', [LeadCategoryController::class, 'show'])->name('show');
+            Route::get('/{category}/contacts',            [LeadCategoryController::class, 'contacts'])->name('contacts');
+            Route::post('/{category}/contacts',           [LeadCategoryController::class, 'addContacts'])->name('contacts.add');
+            Route::delete('/{category}/contacts/{contact}', [LeadCategoryController::class, 'removeContact'])->name('contacts.remove');
             Route::put('/{category}', [LeadCategoryController::class, 'update'])->name('update');
             Route::delete('/{category}', [LeadCategoryController::class, 'destroy'])->name('destroy');
         });
 
         Route::middleware('permission:inbox.view')->group(function () {
             Route::get('conversations', [ConversationController::class, 'index']);
+            Route::get('conversations/contact/{contact}', [ConversationController::class, 'forContact']);
             Route::get('conversations/{id}/messages', [ConversationController::class, 'messages']);
         });
         Route::middleware('permission:inbox.manage')->group(function () {
