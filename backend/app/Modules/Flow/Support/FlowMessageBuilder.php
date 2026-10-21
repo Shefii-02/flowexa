@@ -23,6 +23,9 @@ class FlowMessageBuilder
 {
     public const BODY_MAX = 1024;
 
+    /** Shown under the options when a node has "show shortcuts" on. */
+    public const SHORTCUT_LINES = "Type M for Main Menu\nType E to Exit Chat";
+
     /**
      * @param string|null $bodyOverride text to use as the message body instead of the node's own message — used when
      *        a node sends several messages one after another: its last text message then carries the buttons / list.
@@ -57,7 +60,7 @@ class FlowMessageBuilder
         foreach ($actions as $i => $a) { if ($a['type'] === 'url') { $firstUrl = $i; break; } }
         if ($firstUrl !== null) {
             $rest = $actions; $main = $rest[$firstUrl]; unset($rest[$firstUrl]);
-            $i = ['type' => 'cta_url', 'body' => ['text' => $this->clip($this->withActionLines($body, array_values($rest)))],
+            $i = ['type' => 'cta_url', 'body' => ['text' => $this->finish($this->withActionLines($body, array_values($rest)), $node)],
                   'action' => ['name' => 'cta_url', 'parameters' => ['display_text' => mb_substr($main['text'], 0, 20), 'url' => $main['url']]]];
             $this->decorate($i, $node, $mediaRef, true);
             return [$this->interactive($to, $i)];
@@ -68,7 +71,7 @@ class FlowMessageBuilder
         if ($media = $this->headerMedia($node, $mediaRef)) {
             $out[] = ['messaging_product' => 'whatsapp', 'to' => $to, 'type' => $media['type'], $media['type'] => $media['ref']];
         }
-        $out[] = ['messaging_product' => 'whatsapp', 'to' => $to, 'type' => 'text', 'text' => ['body' => $this->withActionLines($body, $actions), 'preview_url' => false]];
+        $out[] = ['messaging_product' => 'whatsapp', 'to' => $to, 'type' => 'text', 'text' => ['body' => $this->withActionLines($body, $actions) . ($node->show_shortcuts ? "\n\n" . self::SHORTCUT_LINES : ''), 'preview_url' => false]];
         return $out;
     }
 
@@ -76,7 +79,7 @@ class FlowMessageBuilder
     {
         $i = [
             'type' => 'button',
-            'body' => ['text' => $this->clip($body)],
+            'body' => ['text' => $this->finish($body, $node)],
             'action' => ['buttons' => $replies->map(fn ($c) => [
                 'type' => 'reply', 'reply' => ['id' => mb_substr($c->reply_id, 0, 256), 'title' => mb_substr($c->title, 0, 20)],
             ])->all()],
@@ -88,7 +91,7 @@ class FlowMessageBuilder
     {
         $i = [
             'type' => 'list',
-            'body' => ['text' => $this->clip($body)],
+            'body' => ['text' => $this->finish($body, $node)],
             'action' => [
                 'button'   => mb_substr(trim((string) $node->list_button_label) !== '' ? $node->list_button_label : 'View Options', 0, 20),
                 'sections' => [[
@@ -155,7 +158,13 @@ class FlowMessageBuilder
         return $body . "\n\n" . implode("\n", $lines);
     }
 
-    private function clip(string $s): string { return mb_substr($s, 0, self::BODY_MAX); }
+    /** Body text of an options message: clipped to WhatsApp's limit, with the M / E lines kept intact at the end. */
+    private function finish(string $body, FlowNode $node): string
+    {
+        if (!$node->show_shortcuts) { return mb_substr($body, 0, self::BODY_MAX); }
+        $hint = "\n\n" . self::SHORTCUT_LINES;
+        return mb_substr($body, 0, self::BODY_MAX - mb_strlen($hint)) . $hint;
+    }
 
     private function interactive(string $to, array $interactive): array
     {

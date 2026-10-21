@@ -146,8 +146,9 @@ function WAListRow({ title, desc, idx }: { title: string; desc?: string; idx: nu
 // ── Interactive message (button or list) ──────────────────────────────────────
 const BTN_ICON: Record<string, string> = { reply: '↩', survey_form: '📝', ai_agent: '🤖', url: '🔗', phone: '📞', copy_code: '📋' }
 
-function InteractiveMessage({ message, type, headerType, headerText, headerUrl, headerFile, footer, listLabel, buttons, descriptions = [] }: {
+function InteractiveMessage({ message, type, headerType, headerText, headerUrl, headerFile, footer, listLabel, buttons, descriptions = [], shortcuts = false }: {
   message: string; type: 'button' | 'list'
+  shortcuts?: boolean
   descriptions?: string[]
   headerType?: string; headerText?: string; headerUrl?: string; headerFile?: string
   footer?: string; listLabel?: string
@@ -175,6 +176,7 @@ function InteractiveMessage({ message, type, headerType, headerText, headerUrl, 
           {message
             ? <WAText text={message} />
             : <p className="text-sm text-gray-400 italic">Message text here…</p>}
+          {shortcuts && <p className="text-sm text-gray-900 mt-2 whitespace-pre-line">{'Type M for Main Menu\nType E to Exit Chat'}</p>}
           {type === 'button' && descriptions.length > 0 && (
             <div className="mt-2 space-y-0.5">{descriptions.map((d, i) => <p key={i} className="text-xs text-gray-700 break-words">▸ {d}</p>)}</div>
           )}
@@ -360,8 +362,11 @@ export function FlowPreviewPanel({ form, multiMode, nodes, options = [] }: Props
 
             {/* Button / List interactive */}
             {!isSurvey && !isTpl && !form.is_dynamic && (isButton || isList) && (
+              <>
+              {form.options_prompt?.trim() && hasMessage && <Bubble><WAText text={form.message} /></Bubble>}
               <InteractiveMessage
-                message={form.message}
+                message={form.options_prompt?.trim() ? form.options_prompt : form.message}
+                shortcuts={!!form.show_shortcuts}
                 type={isButton ? 'button' : 'list'}
                 headerType={form.header_type}
                 headerText={form.header_text}
@@ -372,6 +377,7 @@ export function FlowPreviewPanel({ form, multiMode, nodes, options = [] }: Props
                 buttons={options.map((o: any) => ({ kind: o.kind, label: o.title }))}
                 descriptions={options.filter((o: any) => o.description?.trim()).map((o: any) => `${o.title}: ${o.description.trim()}`)}
               />
+              </>
             )}
 
             {/* Plain text node */}

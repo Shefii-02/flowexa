@@ -52,6 +52,8 @@ const NODE_TYPES = [
   { value: 'knowledge_base', label: 'Knowledge Base', desc: 'AI Q&A', icon: '🧠' },
   // { value: 'template', label: 'Template', desc: 'WA tpl', icon: '📨' },
 ]
+// "Dynamic — options from API" is hidden for now (to be added later); nodes that already use it keep working on the server.
+const SHOW_DYNAMIC = false
 const MSG_TYPES = [
   { value: 'text', label: 'Text', icon: '💬' }, { value: 'image', label: 'Image', icon: '🖼️' },
   { value: 'video', label: 'Video', icon: '🎬' }, { value: 'document', label: 'Doc', icon: '📄' },
@@ -77,6 +79,8 @@ const DEFAULT_FORM = {
   ai_agent_id: null as number | null, ai_kb_ids: [] as number[],
   // text under this option's title when its parent is sent as a list
   option_description: '',
+  // list / button nodes: the options as a second message with this text, and the M / E lines under them
+  options_prompt: '', show_shortcuts: true,
 }
 
 // ─── Dup helpers ──────────────────────────────────────────────────────────────
@@ -333,7 +337,7 @@ export default function FlowNodesPage() {
 
   const handleTitleChange = (val: string) => { set('title', val); if (!form.reply_id_manual) set('reply_id', slugify(val)) }
   const openCreate = (parentId: number | null = null) => { setEditN(null); setForm({ ...DEFAULT_FORM, parent_id: parentId }); setOptions([]); setMultiMode(false); setShowForm(true) }
-  const openEdit = (n: FlowNode, all: FlowNode[] = nodes) => { setEditN(n); setOptions(optionsFromNode(n, all.filter(x => x.parent_id === n.id))); const rich = n.type === 'list' || n.type === 'button', hm = rich && ['image', 'video', 'document'].includes(n.media_type); setForm({ header_type: n.header_type || (hm ? n.media_type : ''), header_text: n.header_text || '', header_media_url: hm ? (n.media_url || '') : '', header_media_asset_id: null, header_media_name: '', header_media_filename: n.media_filename || '', footer_text: n.footer_text || '', list_button_label: n.list_button_label || '', ai_agent_id: n.ai_agent_id || null, ai_kb_ids: (n.ai_kb_ids || []).map(Number), option_description: n.option_description || '', title: n.title, message: n.message || '', type: n.type, reply_id: n.reply_id, reply_id_manual: true, redirect_to_reply_id: n.redirect_to_reply_id || '', lead_category: n.lead_category || '', parent_id: n.parent_id, sort_order: n.sort_order ?? 0, is_active: n.is_active, is_dead_end: !!n.is_dead_end, multi_messages: (n.multi_messages || []).map((m: any) => ({ _key: uid(), size: null, mime_type: '', ...m, original_url: m.url || '', upload: null })), is_dynamic: !!n.is_dynamic, dynamic_api_url: n.dynamic_api_url || '', dynamic_api_method: n.dynamic_api_method || 'GET', dynamic_api_headers: n.dynamic_api_headers || '', dynamic_label_field: n.dynamic_label_field || 'name', dynamic_value_field: n.dynamic_value_field || 'id', dynamic_description_field: n.dynamic_description_field || '', survey_form_id: n.survey_form_id || null, wa_template_id: n.wa_template_id || null }); setMultiMode(!!(n.multi_messages?.length)); setShowForm(true) }
+  const openEdit = (n: FlowNode, all: FlowNode[] = nodes) => { setEditN(n); setOptions(optionsFromNode(n, all.filter(x => x.parent_id === n.id))); const rich = n.type === 'list' || n.type === 'button', hm = rich && ['image', 'video', 'document'].includes(n.media_type); setForm({ header_type: n.header_type || (hm ? n.media_type : ''), header_text: n.header_text || '', header_media_url: hm ? (n.media_url || '') : '', header_media_asset_id: null, header_media_name: '', header_media_filename: n.media_filename || '', footer_text: n.footer_text || '', list_button_label: n.list_button_label || '', ai_agent_id: n.ai_agent_id || null, ai_kb_ids: (n.ai_kb_ids || []).map(Number), option_description: n.option_description || '', options_prompt: n.options_prompt || '', show_shortcuts: !!n.show_shortcuts, title: n.title, message: n.message || '', type: n.type, reply_id: n.reply_id, reply_id_manual: true, redirect_to_reply_id: n.redirect_to_reply_id || '', lead_category: n.lead_category || '', parent_id: n.parent_id, sort_order: n.sort_order ?? 0, is_active: n.is_active, is_dead_end: !!n.is_dead_end, multi_messages: (n.multi_messages || []).map((m: any) => ({ _key: uid(), size: null, mime_type: '', ...m, original_url: m.url || '', upload: null })), is_dynamic: !!n.is_dynamic, dynamic_api_url: n.dynamic_api_url || '', dynamic_api_method: n.dynamic_api_method || 'GET', dynamic_api_headers: n.dynamic_api_headers || '', dynamic_label_field: n.dynamic_label_field || 'name', dynamic_value_field: n.dynamic_value_field || 'id', dynamic_description_field: n.dynamic_description_field || '', survey_form_id: n.survey_form_id || null, wa_template_id: n.wa_template_id || null }); setMultiMode(!!(n.multi_messages?.length)); setShowForm(true) }
 
   const addBlock = (type = 'text') => set('multi_messages', [...form.multi_messages, emptyBlock(type)])
   const removeBlock = (key: string) => set('multi_messages', form.multi_messages.filter((b: any) => b._key !== key))
@@ -353,6 +357,8 @@ export default function FlowNodesPage() {
       p.media_type = hm ? f.header_type : null; p.media_url = hm ? f.header_media_url : null
       p.media_filename = hm && f.header_type === 'document' ? (f.header_media_filename || f.header_media_name || null) : null
       p.footer_text = f.footer_text || null
+      p.options_prompt = f.options_prompt?.trim() ? f.options_prompt.trim() : null
+      p.show_shortcuts = !!f.show_shortcuts
       p.list_button_label = f.type === 'list' ? (f.list_button_label || null) : null
       p.action_buttons = f.type === 'button' && rich ? options.filter(o => isActionKind(o.kind)).map(o => ({ type: o.kind, text: o.title.slice(0, 20), ...(o.kind === 'url' ? { url: o.url.trim() } : o.kind === 'phone' ? { phone: o.phone.trim() } : { code: o.code.trim() }) })) : []
     }
@@ -770,6 +776,20 @@ export default function FlowNodesPage() {
 
           <div><label className="label">Message {multiMode || isSurvey || isTpl || form.type === 'knowledge_base' ? '(optional intro)' : '*'} <span className="text-xs text-gray-400">{form.message.length}/4096</span></label><textarea className="form-control" rows={multiMode || isSurvey || isTpl ? 2 : 4} maxLength={4096} placeholder={multiMode ? 'Intro before blocks…' : isSurvey ? 'Intro before survey…' : isTpl ? 'Intro before template…' : 'Message shown to customer…'} value={form.message} onChange={e => set('message', e.target.value)} /></div>
 
+          {(form.type === 'list' || form.type === 'button') && !form.is_dynamic && (
+            <div className="border border-gray-200 rounded-xl p-3 space-y-2 bg-white">
+              <div>
+                <label className="label">Options message <span className="text-xs text-gray-400">(optional)</span></label>
+                <textarea className="form-control" rows={2} maxLength={1024} placeholder="Please choose from any of the options below👇" value={form.options_prompt} onChange={e => set('options_prompt', e.target.value)} />
+                <p className="text-[11px] text-gray-400 mt-1">Filled in: the message above is sent first, then the {form.type === 'list' ? 'list' : 'buttons'} arrive as a second message with this text. Empty: everything goes in one message.</p>
+              </div>
+              <label className="flex items-center gap-2 text-sm cursor-pointer">
+                <input type="checkbox" className="rounded text-brand-500" checked={form.show_shortcuts} onChange={e => set('show_shortcuts', e.target.checked)} />
+                Add “Type M for Main Menu · Type E to Exit Chat” under the options
+              </label>
+            </div>
+          )}
+
           {form.parent_id && (
             <div>
               <label className="label">Description in the list <span className="text-xs text-gray-400">(optional · shown under this option's title when its parent is a list — {form.option_description.length}/72)</span></label>
@@ -819,7 +839,7 @@ export default function FlowNodesPage() {
             </div>)}
           </>)}
 
-          {!isSurvey && !isTpl && (<div className="border border-indigo-200 rounded-xl overflow-hidden">
+          {SHOW_DYNAMIC && !isSurvey && !isTpl && (<div className="border border-indigo-200 rounded-xl overflow-hidden">
             <div className="flex items-center gap-3 px-4 py-3 bg-indigo-50 cursor-pointer" onClick={() => set('is_dynamic', !form.is_dynamic)}><input type="checkbox" className="w-4 h-4 rounded text-indigo-500" checked={form.is_dynamic} onChange={e => set('is_dynamic', e.target.checked)} onClick={e => e.stopPropagation()} /><div><p className="text-sm font-semibold text-indigo-800">⚡ Dynamic — options from API</p><p className="text-xs text-indigo-500">Doctor slots, products, live from your DB</p></div></div>
             {form.is_dynamic && (<div className="p-4 space-y-3 bg-white"><div className="grid grid-cols-4 gap-3"><div className="col-span-3"><label className="label text-xs">API URL *</label><input className="form-control font-mono text-sm" placeholder="https://api.yourdomain.com/options" value={form.dynamic_api_url} onChange={e => set('dynamic_api_url', e.target.value)} /></div><div><label className="label text-xs">Method</label><select className="form-control" value={form.dynamic_api_method} onChange={e => set('dynamic_api_method', e.target.value)}><option>GET</option><option>POST</option></select></div></div><div className="grid grid-cols-3 gap-3">{[['Label', 'name', 'dynamic_label_field'], ['Value (reply_id)', 'id', 'dynamic_value_field'], ['Description', 'spec', 'dynamic_description_field']].map(([l, p, k]) => (<div key={k}><label className="label text-xs">{l}</label><input className="form-control font-mono text-sm" placeholder={p} value={(form as any)[k]} onChange={e => set(k, e.target.value)} /></div>))}</div><div><label className="label text-xs">Headers (JSON)</label><input className="form-control font-mono text-sm" placeholder='{"Authorization":"Bearer TOKEN"}' value={form.dynamic_api_headers} onChange={e => set('dynamic_api_headers', e.target.value)} /></div></div>)}
           </div>)}

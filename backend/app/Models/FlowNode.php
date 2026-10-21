@@ -18,6 +18,8 @@ class FlowNode extends Model
         'title',
         'message',
         'option_description',
+        'options_prompt',
+        'show_shortcuts',
         'multi_messages',
         'type',
         'reply_id',
@@ -79,6 +81,7 @@ class FlowNode extends Model
         'location_lng'   => 'float',
         'is_dead_end' => 'boolean',
         'action_buttons' => 'array',
+        'show_shortcuts' => 'boolean',
         'ai_kb_ids'      => 'array',
     ];
 

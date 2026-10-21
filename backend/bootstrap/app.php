@@ -27,6 +27,7 @@ return Application::configure(basePath: dirname(__DIR__))
         \App\Modules\Campaign\Console\Commands\DispatchScheduledCampaigns::class,
         \App\Modules\Campaign\Console\Commands\AutoRetryCappedContacts::class,
         \App\Modules\Campaign\Console\Commands\BackfillFailureReasons::class,
+        \App\Modules\Campaign\Console\Commands\ExpireFlowSessions::class,
         \App\Console\Commands\PruneLogs::class,
     ])
     ->withSchedule(function (\Illuminate\Console\Scheduling\Schedule $schedule): void {
@@ -36,6 +37,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $schedule->command('wa-cloud:dispatch-scheduled-campaigns')->everyMinute()->withoutOverlapping();
         // Marketing-capped (131049) numbers whose wait time has passed -> retried once automatically
         $schedule->command('wa-cloud:auto-retry-capped')->everyTenMinutes()->withoutOverlapping();
+        $schedule->command('wa-cloud:expire-flow-sessions')->everyFiveMinutes()->withoutOverlapping();
         // Ticks every 5 min; each sync only actually fires once its own cadence
         // (as fast as every 10 minutes) is due — see GoogleSheetSync::isDue().
         $schedule->command('google:sync-sheets')->everyFiveMinutes()->withoutOverlapping();

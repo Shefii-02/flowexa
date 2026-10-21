@@ -53,6 +53,10 @@ class WebhookService
     // Shown in the standard messages so customers always know how to get back or leave.
     private const SHORTCUT_HINT = "• Type *M* or *Menu* for the Main Menu\n• Type *E* to Exit Chat";
 
+    // A flow session ends after this long without a message from the customer; they are then told it timed out.
+    public const SESSION_IDLE_MINUTES = 60;
+    public const SESSION_TIMEOUT_MESSAGE = "Your session has timed out due to inactivity on the channel. You may clear your chat for safety and security reasons.\n\nPlease type “Hi” to go to the welcome message menu.";
+
     // Options row cap enforced by WhatsApp for interactive lists
     private const MAX_LIST_ROWS = 10;
 
@@ -274,6 +278,7 @@ class WebhookService
             ->where('phone', $dto->phone)
             ->where('expires_at', '>', now())
             ->first();
+        $session?->update(['expires_at' => now()->addMinutes(self::SESSION_IDLE_MINUTES)]);
 
         // 8b. "E" / "Exit" → end the chat: drop the flow session and say goodbye. (A free-text "M" or
         // "Menu" is handled by the greeting step below and always reopens the Main Menu.)
@@ -316,6 +321,12 @@ class WebhookService
             $dto->phone,
             "Thank you for your message! 😊 Our team will get back to you shortly.\n\nReply *menu* to see our options.\n\n" . self::SHORTCUT_HINT
         );
+    }
+
+    /** Sent when a flow session ran out after an hour of silence (see wa-cloud:expire-flow-sessions). */
+    public function sendSessionTimeout(Company $company, string $phone): void
+    {
+        $this->sendText($company, $phone, self::SESSION_TIMEOUT_MESSAGE);
     }
 
     // ─── Handle status update (sent/delivered/read/failed) ────────────────────
@@ -975,7 +986,7 @@ class WebhookService
                         'contact_id'      => $contact->id,
                         'current_node_id' => $target->id,
                         'flow_builder_id' => $target->flow_builder_id,
-                        'expires_at'      => now()->addHours(24),
+                        'expires_at'      => now()->addMinutes(self::SESSION_IDLE_MINUTES),
                     ]
                 );
 
@@ -1012,7 +1023,7 @@ class WebhookService
                     'last_title'    => $dto->replyTitle,
                     'history'       => [$dto->replyId],
                 ],
-                'expires_at' => now()->addHours(24),
+                'expires_at' => now()->addMinutes(self::SESSION_IDLE_MINUTES),
             ]
         );
 
@@ -1258,7 +1269,8 @@ class WebhookService
             // The options (up to 3 buttons, or a list) travel WITH the last text message instead of arriving as a
             // separate "please select" message: that text becomes the body of the interactive message.
             $carrier = null;
-            if ($hasOptions) {
+            $prompt  = trim((string) $node->options_prompt);
+            if ($hasOptions && $prompt === '') {
                 $last = end($blocks);
                 $text = trim((string) ($last['content'] ?? $last['text'] ?? ''));
                 if (($last['type'] ?? 'text') === 'text' && $text !== '') {
@@ -1276,7 +1288,7 @@ class WebhookService
                 $messages = app(\App\Modules\Flow\Support\FlowMessageBuilder::class)->build(
                     $node, $children, $phone,
                     fn (string $type, string $url) => ($id = $this->uploadMediaToMeta($company, $url, $this->guessMimeType($type, $url))) ? ['id' => $id] : ['link' => $url],
-                    $carrier ?? '👇 Please select an option:'
+                    $carrier ?? ($prompt !== '' ? $prompt : '👇 Please select an option:')
                 );
                 foreach ($messages as $i => $payload) {
                     if ($i > 0) { usleep(300000); }
@@ -1300,9 +1312,17 @@ class WebhookService
         // ── List / button with header, footer and link / call / copy-code buttons ─────
         // (older flows are covered too: the builder reproduces the plain list / button / media-header messages)
         if (in_array($node->type, ['list', 'button'], true) && ($children->isNotEmpty() || !empty($node->action_buttons))) {
+            // "Options message": the node's own text goes out first, then the list / buttons arrive as a second
+            // message carrying the prompt ("Please choose from any of the options below 👇").
+            $prompt = trim((string) $node->options_prompt);
+            if ($prompt !== '' && trim((string) $node->message) !== '') {
+                $this->sendText($company, $phone, $node->message);
+                usleep(400000);
+            }
             $messages = app(\App\Modules\Flow\Support\FlowMessageBuilder::class)->build(
                 $node, $children, $phone,
-                fn (string $type, string $url) => ($id = $this->uploadMediaToMeta($company, $url, $this->guessMimeType($type, $url))) ? ['id' => $id] : ['link' => $url]
+                fn (string $type, string $url) => ($id = $this->uploadMediaToMeta($company, $url, $this->guessMimeType($type, $url))) ? ['id' => $id] : ['link' => $url],
+                $prompt !== '' ? $prompt : null
             );
             foreach ($messages as $i => $payload) {
                 if ($i > 0) { usleep(300000); }
