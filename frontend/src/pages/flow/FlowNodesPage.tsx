@@ -17,7 +17,7 @@
 import {
   useEffect, useState, useCallback, useMemo, useRef, DragEvent,
 } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useParams } from 'react-router-dom'
 import { flowBuilderApi, flowNodeApi, surveyFormApi } from '@/api'
 import { Button, Modal, ConfirmModal, EmptyState } from '@/components/ui'
 import { getError } from '@/utils'
@@ -263,7 +263,7 @@ function FlowTestPreview({ nodes, startId, nonce, onRestart, builderName, onClos
 // MAIN
 // ─────────────────────────────────────────────────────────────────────────────
 export default function FlowNodesPage() {
-  const [params] = useSearchParams(); const builderId = Number(params.get('builder'))
+  const { builderId: builderParam } = useParams(); const builderId = Number(builderParam)
   const [builder, setBuilder] = useState<any>(null); const [nodes, setNodes] = useState<FlowNode[]>([]); const [loading, setLoading] = useState(true)
   // Starts empty — tree is fully expanded by default.
   const [collapsed, setCollapsed] = useState<Set<number>>(new Set())

@@ -190,7 +190,7 @@ export default function FlowBuildersPage() {
             </div>
           </div>
           <button
-            onClick={() => navigate(`/wa-cloud/flow?builder=${activeBuilder.id}`)}
+            onClick={() => navigate(`/wa-cloud/flow/builder/${activeBuilder.id}`)}
             className="text-xs text-green-700 font-medium hover:underline"
           >
             Edit nodes →
@@ -328,7 +328,7 @@ export default function FlowBuildersPage() {
                       {/* Edit nodes */}
                       <Button
                         variant="secondary"
-                        onClick={() => navigate(`/wa-cloud/flow?builder=${b.id}`)}
+                        onClick={() => navigate(`/wa-cloud/flow/builder/${b.id}`)}
                         className="text-xs"
                       >
                         🌿 Nodes

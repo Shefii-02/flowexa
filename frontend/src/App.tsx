@@ -181,10 +181,11 @@ const RoleBasedRedirect = () => {
 }
 
 // /templates/:id → /wa-cloud/templates/:id (the detail page moved under the WA Cloud section)
-/** /flow?builder=7 moved under WA Cloud — keep the query string so old links still open the right builder. */
+/** Old ?builder=7 links open the same builder at /wa-cloud/flow/builder/7 (no id: back to the list). */
 function LegacyFlowRedirect() {
   const { search } = useLocation()
-  return <Navigate to={`/wa-cloud/flow${search}`} replace />
+  const id = Number(new URLSearchParams(search).get('builder'))
+  return <Navigate to={id ? `/wa-cloud/flow/builder/${id}` : '/wa-cloud/flow-builders'} replace />
 }
 
 function LegacyTemplateRedirect() {
@@ -272,8 +273,9 @@ export default function App() {
               {/* <Route path="flow" element={<FlowPage />} /> */}
               <Route path="/wa-cloud/flow-builders" element={<FlowBuildersPage />} />
               <Route path="/flow-builders" element={<Navigate to="/wa-cloud/flow-builders" replace />} />
-              <Route path="/wa-cloud/flow" element={<FlowNodesPage />} />
-              {/* old bookmarks: /flow?builder=7 -> /wa-cloud/flow?builder=7 */}
+              <Route path="/wa-cloud/flow/builder/:builderId" element={<FlowNodesPage />} />
+              {/* old bookmarks: /flow?builder=7 and /wa-cloud/flow?builder=7 -> /wa-cloud/flow/builder/7 */}
+              <Route path="/wa-cloud/flow" element={<LegacyFlowRedirect />} />
               <Route path="/flow" element={<LegacyFlowRedirect />} />
 
               <Route path="leads" element={<LeadsPage />} />
