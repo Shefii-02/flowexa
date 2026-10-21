@@ -476,8 +476,9 @@ export default function CampaignsPage() {
         variables: testVars,
         coupon_code: testHasCode ? testCode : undefined,
       })
-      toast.success(data.message)
-    } catch (e) { toast.error(getError(e)) }
+      toast.success(data.message || 'Test message sent.')
+      setTestOpen(false)   // sent → loading stops (finally) and the drawer closes
+    } catch (e) { toast.error(`Test send failed: ${getError(e)}`) }   // failed → stay open so it can be retried
     finally { setTesting(false) }
   }
 

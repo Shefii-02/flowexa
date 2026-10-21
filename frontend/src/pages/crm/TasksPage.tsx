@@ -16,6 +16,7 @@ type Task = {
   due_at: string | null
   contact?: { id: number; name: string | null; phone: string } | null
   assignee?: { id: number; name: string } | null
+  creator?: { id: number; name: string } | null
   deal?: { id: number; title: string } | null
 }
 type Agent = { id: number; name: string }
@@ -43,17 +44,19 @@ export default function TasksPage() {
   const [tasks, setTasks] = useState<Task[]>([])
   const [loading, setLoading] = useState(true)
   const [agents, setAgents] = useState<Agent[]>([])
-  const [mine, setMine] = useState(false)
+  const [scope, setScope] = useState<'all' | 'mine' | 'by_me'>('all')
+  const [monitor, setMonitor] = useState(false)
+  const [saving, setSaving] = useState(false)
   const [modal, setModal] = useState(false)
   const [editId, setEditId] = useState<number | null>(null)
   const [form, setForm] = useState(emptyForm())
 
   const load = useCallback(() => {
     setLoading(true)
-    api.get('/crm/tasks', { params: mine ? { mine: 1 } : {} })
-      .then(r => setTasks(Array.isArray(r.data?.data) ? r.data.data : []))
+    api.get('/crm/tasks', { params: scope === 'all' ? {} : { [scope]: 1 } })
+      .then(r => { setTasks(Array.isArray(r.data?.data) ? r.data.data : []); setMonitor(!!r.data?.monitor) })
       .finally(() => setLoading(false))
-  }, [mine])
+  }, [scope])
 
   useEffect(() => { load() }, [load])
   useEffect(() => { api.get('/wa-cloud/inbox-analytics/agents').then(r => setAgents(r.data?.data ?? [])).catch(() => {}) }, [])
@@ -64,8 +67,14 @@ export default function TasksPage() {
     return g
   }, [tasks])
 
-  const toggle = async (id: number) => { await api.post(`/crm/tasks/${id}/toggle`); load() }
-  const remove = async (id: number) => { if (confirm('Delete this task?')) { await api.delete(`/crm/tasks/${id}`); load() } }
+  const toggle = async (id: number) => {
+    try { await api.post(`/crm/tasks/${id}/toggle`); load() } catch { toast.error('Could not update the task.') }
+  }
+  const remove = async (id: number) => {
+    if (!confirm('Delete this task?')) return
+    try { await api.delete(`/crm/tasks/${id}`); toast.success('Task deleted.'); load() }
+    catch (e: any) { toast.error(e?.response?.data?.message ?? 'Could not delete the task.') }
+  }
 
   const openCreate = () => { setEditId(null); setForm(emptyForm()); setModal(true) }
   const openEdit = (t: Task) => {
@@ -79,6 +88,7 @@ export default function TasksPage() {
 
   const save = async () => {
     if (!form.title.trim()) { toast.error('Title is required.'); return }
+    setSaving(true)
     try {
       const payload = {
         title: form.title.trim(), description: form.description || null, type: form.type,
@@ -87,8 +97,10 @@ export default function TasksPage() {
       }
       if (editId) await api.patch(`/crm/tasks/${editId}`, payload)
       else await api.post('/crm/tasks', payload)
+      toast.success(editId ? 'Task updated.' : 'Task created.')
       setModal(false); load()
-    } catch { toast.error('Could not save task.') }
+    } catch (e: any) { toast.error(e?.response?.data?.message ?? 'Could not save task.') }
+    finally { setSaving(false) }
   }
 
   const set = (k: keyof ReturnType<typeof emptyForm>, v: string) => setForm(p => ({ ...p, [k]: v }))
@@ -101,9 +113,11 @@ export default function TasksPage() {
           <p className="page-sub">Calls, reminders and to-dos across your CRM</p>
         </div>
         <div className="flex items-center gap-3">
-          <label className="text-xs text-gray-500 flex items-center gap-1.5">
-            <input type="checkbox" checked={mine} onChange={e => setMine(e.target.checked)} /> Assigned to me
-          </label>
+          <select value={scope} onChange={e => setScope(e.target.value as typeof scope)} className="border border-gray-300 rounded-lg px-2 py-1.5 text-xs">
+            <option value="all">{monitor ? 'All tasks (monitoring)' : 'All my tasks'}</option>
+            <option value="mine">Assigned to me</option>
+            <option value="by_me">Assigned by me</option>
+          </select>
           <button onClick={openCreate} className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700">+ New Task</button>
         </div>
       </div>
@@ -130,6 +144,7 @@ export default function TasksPage() {
                         {t.due_at && <span>🗓️ {new Date(t.due_at).toLocaleString()}</span>}
                         {t.contact && <span>👤 {t.contact.name || t.contact.phone}</span>}
                         {t.assignee && <span>➡️ {t.assignee.name}</span>}
+                        {t.creator && <span>✍️ by {t.creator.name}</span>}
                         {t.deal && <span>💼 {t.deal.title}</span>}
                       </div>
                     </div>
@@ -173,7 +188,7 @@ export default function TasksPage() {
             </div>
             <div className="p-5 border-t flex justify-end gap-3">
               <button onClick={() => setModal(false)} className="px-4 py-2 border border-gray-300 rounded-lg text-sm">Cancel</button>
-              <button onClick={save} className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium">Save</button>
+              <button onClick={save} disabled={saving} className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium disabled:opacity-60">{saving ? 'Saving…' : 'Save'}</button>
             </div>
           </div>
         </div>

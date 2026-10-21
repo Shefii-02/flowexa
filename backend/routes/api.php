@@ -141,6 +141,15 @@ Route::prefix('v1')->group(function () {
             Route::post('logout',  [AuthController::class, 'logout'])->name('logout');
         });
 
+        // ── Personal sticky notes (floating widget on every page) — per USER, never shared ──
+        Route::prefix('sticky-notes')->group(function () {
+            Route::get('/',          [\App\Http\Controllers\StickyNoteController::class, 'index']);
+            Route::put('/settings',  [\App\Http\Controllers\StickyNoteController::class, 'updateSettings']);
+            Route::post('/',         [\App\Http\Controllers\StickyNoteController::class, 'store']);
+            Route::put('/{id}',      [\App\Http\Controllers\StickyNoteController::class, 'update']);
+            Route::delete('/{id}',   [\App\Http\Controllers\StickyNoteController::class, 'destroy']);
+        });
+
         // ── Linked devices (web management) ──────────────────────────────────
         Route::prefix('devices')->group(function () {
             Route::get('/',                          [\App\Modules\Auth\Http\Controllers\DeviceController::class, 'index']);

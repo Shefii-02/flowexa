@@ -3,8 +3,9 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { leadApi, leadCategoryApi, staffApi, contactApi, labelApi } from '@/api'
 import { catalogApi } from '@/pages/wa-agent/catalog/api'
-import StaffPicker from './components/StaffPicker'
 import { LeadChatCard, LeadChatDrawer } from './components/LeadChat'
+import SideDrawer from './components/SideDrawer'
+import AssignStaffDrawer from './components/AssignStaffDrawer'
 import { Button, ConfirmModal, Badge, Spinner } from '@/components/ui'
 import { fmt, formatPhone, getError, stageConfig, priorityConfig } from '@/utils'
 import toast from 'react-hot-toast'
@@ -31,6 +32,7 @@ export default function LeadDetailPage() {
   const [newCat, setNewCat] = useState('')
   const [contactEditing, setContactEditing] = useState(false)
   const [chatOpen, setChatOpen] = useState(false)   // drawer with the contact's chats
+  const [assignOpen, setAssignOpen] = useState(false) // drawer with the staff list
   const [contactForm, setContactForm] = useState({ name: '', email: '' })
   const [contactSaving, setContactSaving] = useState(false)
   const [listings, setListings] = useState<any[]>([])
@@ -109,15 +111,17 @@ export default function LeadDetailPage() {
     finally { setPostingActivity(false) }
   }
 
-  const handleAssign = async () => {
-    if (!lead || !assignTo) return
-    setAssigning(true)
+  // Tap a staff member in the Assign drawer → the lead goes to them (a switch, if it already had someone)
+  const handleAssign = async (staffId: number | string) => {
+    if (!lead) return
+    setAssigning(true); setAssignTo(String(staffId))
     try {
-      await leadApi.assign(lead.id, +assignTo)
-      toast.success('Lead assigned.')
-      setShowAssign(false); setAssignTo(''); load()
+      await leadApi.assign(lead.id, +staffId)
+      const who = counsellors.find((c) => String(c.id) === String(staffId))?.name
+      toast.success(lead.assigned_to?.name ? `Switched to ${who ?? 'the new staff member'}.` : `Assigned to ${who ?? 'staff member'}.`)
+      setAssignOpen(false); setAssignTo(''); load()
     } catch (e) { toast.error(getError(e)) }
-    finally { setAssigning(false) }
+    finally { setAssigning(false); setAssignTo('') }
   }
 
   // Lead category: tap one to assign (switches from any other), tap the selected one again to remove
@@ -213,6 +217,7 @@ export default function LeadDetailPage() {
           <p className="page-sub font-mono">{formatPhone(lead.contact?.phone || '')}{lead.contact?.email ? ` · ${lead.contact.email}` : ''}</p>
         </div>
         <div className="flex gap-2">
+          <Button variant="secondary" onClick={() => setAssignOpen(true)}>{lead.assigned_to?.name ? `👤 ${lead.assigned_to.name} · Switch` : 'Assign'}</Button>
           <Button variant={editing ? 'secondary' : 'primary'} onClick={() => setEditing((v) => !v)}>{editing ? 'Cancel edit' : 'Edit lead'}</Button>
           <Button variant="danger" onClick={() => setShowDelete(true)}>Delete</Button>
         </div>
@@ -222,11 +227,18 @@ export default function LeadDetailPage() {
       <div className="card p-5 grid grid-cols-1 lg:grid-cols-3 gap-5">
         <div>
           <p className="text-sm font-semibold text-gray-800 mb-2">Assigned staff</p>
-          <p className="text-sm mb-2">{lead.assigned_to?.name ? <>👤 <b>{lead.assigned_to.name}</b></> : <span className="text-gray-400">Unassigned</span>}</p>
-          <StaffPicker staff={counsellors} value={assignTo} onChange={setAssignTo} placeholder={lead.assigned_to?.name ? 'Reassign to…' : 'Assign to…'} />
-          <div className="flex justify-end mt-2">
-            <Button onClick={handleAssign} loading={assigning} disabled={!assignTo}>{lead.assigned_to?.name ? 'Reassign' : 'Assign'}</Button>
-          </div>
+          {lead.assigned_to?.name ? (
+            <div className="flex items-center gap-3 mb-3">
+              <span className="w-9 h-9 rounded-full bg-brand-100 text-brand-700 flex items-center justify-center text-sm font-semibold">
+                {lead.assigned_to.name.trim().charAt(0).toUpperCase()}
+              </span>
+              <span className="min-w-0">
+                <span className="block text-sm font-medium text-gray-900 truncate">{lead.assigned_to.name}</span>
+                {lead.assigned_at && <span className="block text-[11px] text-gray-400">since {fmt.date(lead.assigned_at as any)}</span>}
+              </span>
+            </div>
+          ) : <p className="text-sm text-gray-400 mb-3">Not assigned to anyone yet</p>}
+          <Button variant="secondary" onClick={() => setAssignOpen(true)}>{lead.assigned_to?.name ? 'Switch to another staff' : 'Assign staff'}</Button>
         </div>
 
         <div>
@@ -317,6 +329,7 @@ export default function LeadDetailPage() {
           <Button onClick={handleAddActivity} loading={postingActivity} disabled={!activityText.trim()}>Add activity</Button>
         </div>
 
+        <p className="text-sm font-semibold text-gray-800 mb-2">Lead activities</p>
         {/* Activity feed */}
         <div className="space-y-0.5 max-h-80 overflow-y-auto">
           {(lead.events?.length ?? 0) === 0 && <p className="text-xs text-gray-300">No activity recorded yet.</p>}
@@ -402,17 +415,6 @@ export default function LeadDetailPage() {
                 onClick={() => { setContactForm({ name: lead.contact?.name ?? '', email: lead.contact?.email ?? '' }); setContactEditing(true) }}>Edit</button>
             )}
           </div>
-          {contactEditing ? (
-            <div className="space-y-3 text-sm">
-              <div><span className="label">Name</span><input className="input w-full mt-1" value={contactForm.name} maxLength={100} onChange={(e) => setContactForm((f) => ({ ...f, name: e.target.value }))} /></div>
-              <div><span className="label">Email</span><input type="email" className="input w-full mt-1" value={contactForm.email} maxLength={150} onChange={(e) => setContactForm((f) => ({ ...f, email: e.target.value }))} /></div>
-              <div><span className="label">Phone</span><p className="font-mono text-gray-500">{formatPhone(lead.contact?.phone || '')} <span className="text-xs text-gray-400">(can't be changed)</span></p></div>
-              <div className="flex justify-end gap-2">
-                <Button variant="secondary" onClick={() => setContactEditing(false)}>Cancel</Button>
-                <Button onClick={saveContact} loading={contactSaving}>Save</Button>
-              </div>
-            </div>
-          ) : (
             <div className="space-y-2 text-sm">
               <div><span className="label">Name</span><p>{lead.contact?.name || '—'}</p></div>
               <div><span className="label">Phone</span><p className="font-mono">{formatPhone(lead.contact?.phone || '')}</p></div>
@@ -425,13 +427,27 @@ export default function LeadDetailPage() {
                 </div>
               )}
             </div>
-          )}
         </div>
       </div>
 
       {lead.contact?.phone && (
         <LeadChatDrawer open={chatOpen} contactId={lead.contact.id} phone={lead.contact.phone} name={lead.contact.name} onClose={() => setChatOpen(false)} />
       )}
+
+      <AssignStaffDrawer open={assignOpen} staff={counsellors} currentId={lead.assigned_to?.id} currentName={lead.assigned_to?.name}
+        busyId={assigning ? assignTo : null} onAssign={handleAssign} onClose={() => setAssignOpen(false)} />
+
+      <SideDrawer open={contactEditing} onClose={() => setContactEditing(false)} title="Edit contact" subtitle={lead.contact?.phone ? formatPhone(lead.contact.phone) : undefined}
+        footer={<>
+          <Button variant="secondary" onClick={() => setContactEditing(false)}>Cancel</Button>
+          <Button onClick={saveContact} loading={contactSaving}>Save</Button>
+        </>}>
+        <div className="p-5 space-y-4 text-sm">
+          <div><span className="label">Name</span><input className="input w-full mt-1" value={contactForm.name} maxLength={100} autoFocus onChange={(e) => setContactForm((f) => ({ ...f, name: e.target.value }))} /></div>
+          <div><span className="label">Email</span><input type="email" className="input w-full mt-1" value={contactForm.email} maxLength={150} onChange={(e) => setContactForm((f) => ({ ...f, email: e.target.value }))} /></div>
+          <div><span className="label">Phone</span><p className="font-mono text-gray-500 mt-1">{formatPhone(lead.contact?.phone || '')}</p><p className="text-xs text-gray-400">The phone number identifies the contact, so it can't be changed here.</p></div>
+        </div>
+      </SideDrawer>
 
       <ConfirmModal open={showDelete} title="Delete this lead?"
         message={`This permanently removes the lead for ${lead.contact?.name || 'this contact'}. The contact itself is kept.`}

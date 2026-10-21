@@ -23,5 +23,6 @@ class CrmTask extends Model
 
     public function contact(): BelongsTo { return $this->belongsTo(Contact::class); }
     public function deal(): BelongsTo { return $this->belongsTo(CrmDeal::class, 'deal_id'); }
+    public function creator(): BelongsTo { return $this->belongsTo(User::class, 'created_by'); }
     public function assignee(): BelongsTo { return $this->belongsTo(User::class, 'assigned_to'); }
 }

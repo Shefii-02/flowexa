@@ -1,3 +1,4 @@
+import StickyNotes from '@/components/sticky/StickyNotes'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { Toaster } from 'react-hot-toast'
 import { useEffect } from 'react'
@@ -96,6 +97,9 @@ export const DashboardLayout = () => {
 
       {/* In-app "Ask in portal" helper (text / voice, any language) */}
       <PortalAssistant />
+
+      {/* Personal sticky notes: a draggable circle + coloured notes, on every page */}
+      <StickyNotes />
     </div>
   )
 }

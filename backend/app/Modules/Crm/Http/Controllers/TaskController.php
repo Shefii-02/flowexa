@@ -15,17 +15,33 @@ class TaskController extends Controller
         return (int) auth()->user()->company_id;
     }
 
+    /** Admin / owner / team lead (the "parent" staff) monitor every task in the company. */
+    private function isMonitor(): bool
+    {
+        $u = auth()->user();
+        return $u->isSuperAdmin() || $u->isOwner() || in_array($u->role?->name, ['admin', 'team_lead'], true);
+    }
+
+    /** Company tasks; everyone else only sees tasks assigned to them or created by them. */
     private function scoped()
     {
-        return CrmTask::where('company_id', $this->companyId());
+        return CrmTask::where('company_id', $this->companyId())
+            ->when(!$this->isMonitor(), fn ($q) => $q->where(fn ($w) => $w->where('assigned_to', auth()->id())->orWhere('created_by', auth()->id())));
+    }
+
+    /** Full edit/delete: monitors and whoever created the task. The assignee can only update progress (see update/toggle). */
+    private function canManage(CrmTask $t): bool
+    {
+        return $this->isMonitor() || (int) $t->created_by === (int) auth()->id();
     }
 
     public function index(Request $request): JsonResponse
     {
         $tasks = $this->scoped()
-            ->with(['contact:id,name,phone', 'assignee:id,name', 'deal:id,title'])
+            ->with(['contact:id,name,phone', 'assignee:id,name', 'creator:id,name', 'deal:id,title'])
             ->when($request->filled('status'), fn ($q) => $q->where('status', $request->string('status')))
             ->when($request->filled('assigned_to'), fn ($q) => $q->where('assigned_to', $request->integer('assigned_to')))
+            ->when($request->boolean('by_me'), fn ($q) => $q->where('created_by', auth()->id()))
             ->when($request->boolean('mine'), fn ($q) => $q->where('assigned_to', auth()->id()))
             ->when($request->filled('contact_id'), fn ($q) => $q->where('contact_id', $request->integer('contact_id')))
             ->when($request->filled('deal_id'), fn ($q) => $q->where('deal_id', $request->integer('deal_id')))
@@ -34,7 +50,7 @@ class TaskController extends Controller
             ->orderByDesc('id')
             ->get();
 
-        return response()->json(['data' => $tasks]);
+        return response()->json(['data' => $tasks, 'monitor' => $this->isMonitor()]);
     }
 
     public function store(Request $request): JsonResponse
@@ -43,15 +59,23 @@ class TaskController extends Controller
         $data['company_id'] = $this->companyId();
         $data['created_by'] = auth()->id();
 
-        return response()->json(['data' => CrmTask::create($data)->load('contact:id,name,phone', 'assignee:id,name')], 201);
+        return response()->json(['data' => CrmTask::create($data)->load('contact:id,name,phone', 'assignee:id,name', 'creator:id,name')], 201);
     }
 
     public function update(Request $request, int $id): JsonResponse
     {
         $task = $this->scoped()->findOrFail($id);
-        $task->update($this->validated($request, isUpdate: true));
+        $data = $this->validated($request, isUpdate: true);
+        if (!$this->canManage($task)) {
+            // the assignee may only move the status along
+            $data = array_intersect_key($data, ['status' => 1]);
+        }
+        if (isset($data['status'])) {
+            $data['completed_at'] = $data['status'] === 'done' ? ($task->completed_at ?? now()) : null;
+        }
+        $task->update($data);
 
-        return response()->json(['data' => $task->fresh()->load('contact:id,name,phone', 'assignee:id,name')]);
+        return response()->json(['data' => $task->fresh()->load('contact:id,name,phone', 'assignee:id,name', 'creator:id,name')]);
     }
 
     /** POST /crm/tasks/{id}/toggle — flip open ⇄ done. */
@@ -64,12 +88,14 @@ class TaskController extends Controller
             'completed_at' => $done ? now() : null,
         ]);
 
-        return response()->json(['data' => $task->fresh()->load('contact:id,name,phone', 'assignee:id,name')]);
+        return response()->json(['data' => $task->fresh()->load('contact:id,name,phone', 'assignee:id,name', 'creator:id,name')]);
     }
 
     public function destroy(int $id): JsonResponse
     {
-        $this->scoped()->findOrFail($id)->delete();
+        $task = $this->scoped()->findOrFail($id);
+        abort_unless($this->canManage($task), 403, 'Only the person who assigned this task, or an admin, can delete it.');
+        $task->delete();
 
         return response()->json(['message' => 'Deleted.']);
     }
