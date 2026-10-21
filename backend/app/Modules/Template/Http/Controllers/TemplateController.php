@@ -173,10 +173,25 @@ class TemplateController extends Controller
 
         // A rejected/errored template that already exists on Meta must be EDITED there — a create
         // call would only hit "name already exists" (2388024) and leave it rejected forever.
-        $this->submitToMeta(
-            $template, $company, $this->mergedPayloadForSubmit($template),
-            isUpdate: (bool) $template->wa_template_id
-        );
+        try {
+            $this->submitToMeta(
+                $template, $company, $this->mergedPayloadForSubmit($template),
+                isUpdate: (bool) $template->wa_template_id
+            );
+        } catch (\Throwable $e) {
+            // Whatever went wrong, record the exact cause in the log and on the template, and answer with a message
+            // the form can show — instead of a bare 500 that tells nobody anything.
+            Log::error('[template-submit] UNEXPECTED ERROR: ' . $e->getMessage(), [
+                'template_id' => $template->id, 'company_id' => $company->id,
+                'exception'   => get_class($e), 'where' => basename($e->getFile()) . ':' . $e->getLine(),
+                'trace'       => collect(explode("\n", $e->getTraceAsString()))->take(8)->all(),
+            ]);
+            $template->update(['status' => 'error', 'rejection_reason' => 'Submit failed: ' . mb_substr($e->getMessage(), 0, 300)]);
+            return response()->json([
+                'message'  => 'Could not submit the template: ' . mb_substr($e->getMessage(), 0, 300),
+                'template' => $template->fresh(),
+            ], 500);
+        }
 
         return response()->json(['template' => $template->fresh()]);
     }
