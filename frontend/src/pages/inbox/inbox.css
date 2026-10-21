@@ -436,3 +436,11 @@
 .wa-list__foot button:disabled, .wa-earlier button:disabled { opacity: .6; cursor: wait; }
 .wa-earlier { text-align: center; margin: 4px 0 10px; }
 .wa-earlier--end { font-size: 11px; color: var(--wa-muted); }
+
+/* total on each tab (Unread / All / Mine / Unassigned) */
+.wa-chip__count {
+  display: inline-block; min-width: 18px; margin-left: 6px; padding: 0 6px; border-radius: 9px;
+  background: rgba(0,0,0,.08); font-size: 11px; font-weight: 700; line-height: 18px; text-align: center;
+}
+.wa-chip.is-active .wa-chip__count { background: rgba(255,255,255,.28); }
+.wa-chip__count.is-alert { background: #25d366; color: #fff; }

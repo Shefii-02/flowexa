@@ -27,12 +27,20 @@ class ConversationController extends Controller
         // lead by default) lifts this to every conversation, same permission send() already uses.
         $canViewAll = $user->hasPermission('inbox.view_all');
 
-        $conversations = WaConversation::where('company_id', $companyId)
+        // What this person may see at all (their company, their numbers, their own or unassigned chats).
+        $visible = fn () => WaConversation::where('company_id', $companyId)
             ->when($allowedNumbers !== null, fn ($q) => $q->whereIn('wa_phone_number_id', $allowedNumbers))
-            ->when(!$canViewAll, fn ($q) => $q->where(fn ($q2) => $q2->where('assigned_to', $user->id)->orWhereNull('assigned_to')))
+            ->when(!$canViewAll, fn ($q) => $q->where(fn ($q2) => $q2->where('assigned_to', $user->id)->orWhereNull('assigned_to')));
+        // "Unassigned" is the queue of customers waiting for someone: only chats where the customer has actually written.
+        // A number we only sent a campaign template to (nothing back yet) is not waiting for anybody, so it stays out.
+        $unassigned = fn ($q) => $q->whereNull('assigned_to')
+            ->whereExists(fn ($m) => $m->selectRaw('1')->from('wa_messages')
+                ->whereColumn('wa_messages.conversation_id', 'wa_conversations.id')->where('wa_messages.direction', 'inbound'));
+
+        $conversations = $visible()
             ->when($request->status, fn ($q, $s) => $q->where('status', $s))
             ->when($request->boolean('mine'), fn ($q) => $q->where('assigned_to', auth()->id()))
-            ->when($request->boolean('unassigned'), fn ($q) => $q->whereNull('assigned_to'))
+            ->when($request->boolean('unassigned'), $unassigned)
             ->when($request->boolean('unread'), fn ($q) => $q->where('unread_count', '>', 0))
             // server-side search, so a customer beyond the first page can still be found
             ->when(trim((string) $request->search) !== '', function ($q) use ($request) {
@@ -52,7 +60,16 @@ class ConversationController extends Controller
             ->orderByDesc('id')   // stable order, so page 2 never repeats or skips rows with equal timestamps
             ->paginate(min(max($request->integer('per_page', 30), 10), 100));
 
+        // Totals for the tab badges (same visibility rules; not narrowed by the search box)
+        $counts = [
+            'all'        => $visible()->when($request->status, fn ($q, $s) => $q->where('status', $s))->count(),
+            'unread'     => $visible()->where('unread_count', '>', 0)->count(),
+            'mine'       => $visible()->where('assigned_to', $user->id)->count(),
+            'unassigned' => $visible()->tap($unassigned)->count(),
+        ];
+
         return response()->json([
+            'counts'        => $counts,
             'conversations' => $conversations->items(),
             'total'         => $conversations->total(),
             'page'          => $conversations->currentPage(),

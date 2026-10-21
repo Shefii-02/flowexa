@@ -412,6 +412,9 @@ Route::prefix('v1')->group(function () {
         Route::prefix('lead-categories')->name('lead-categories.')->group(function () {
             Route::get('/',           [LeadCategoryController::class, 'index'])->name('index');
             Route::post('/',          [LeadCategoryController::class, 'store'])->middleware('plan.limit:lead_categories')->name('store');
+            // fixed paths first — otherwise POST /lead-categories/sync-from-nodes is matched by GET /{category} and answers 405
+            Route::post('/reorder',         [LeadCategoryController::class, 'reorder'])->name('reorder');
+            Route::post('/sync-from-nodes', [LeadCategoryController::class, 'syncFromNodes'])->name('sync-from-nodes');
             Route::get('/{category}', [LeadCategoryController::class, 'show'])->name('show');
             Route::put('/{category}', [LeadCategoryController::class, 'update'])->name('update');
             Route::delete('/{category}', [LeadCategoryController::class, 'destroy'])->name('destroy');

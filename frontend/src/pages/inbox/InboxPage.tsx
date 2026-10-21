@@ -121,6 +121,8 @@ export default function InboxPage() {
   // 30 conversations at a time; the next page loads as you scroll to the bottom (or press "Load more").
   // Search runs on the server, so a customer who is not in the loaded pages can still be found.
   const PER_PAGE = 30
+  // Totals shown on the tabs (unread / all / mine / unassigned); refreshed with every list load and every 30 s
+  const [tabCounts, setTabCounts] = useState<Record<string, number>>({})
   const fetchConversations = useCallback((p: number) => conversationApi.list({
     mine: filter === 'mine' ? 1 : undefined,
     unassigned: filter === 'unassigned' ? 1 : undefined,
@@ -137,6 +139,7 @@ export default function InboxPage() {
       .then(r => {
         if (listReqRef.current !== token) return   // a newer filter/search superseded this request
         setConversations(r.data.conversations || [])
+        if (r.data.counts) setTabCounts(r.data.counts)
         setPage(1); setHasMoreConv(!!r.data.has_more); setTotalConv(r.data.total ?? (r.data.conversations || []).length)
       })
       .catch(e => { if (listReqRef.current === token) toast.error(getError(e)) })
@@ -144,6 +147,13 @@ export default function InboxPage() {
   }, [fetchConversations])
 
   useEffect(() => { loadList() }, [loadList])
+  useEffect(() => {
+    const t = setInterval(() => {
+      if (document.hidden) return
+      conversationApi.list({ page: 1, per_page: 10 }).then(r => { if (r.data.counts) setTabCounts(r.data.counts) }).catch(() => {})
+    }, 30_000)
+    return () => clearInterval(t)
+  }, [])
   useEffect(() => { const t = setTimeout(() => setDebouncedSearch(search.trim()), 350); return () => clearTimeout(t) }, [search])
 
   const loadMoreConversations = async () => {
@@ -355,6 +365,7 @@ export default function InboxPage() {
             {(['unread', 'all', 'mine', 'unassigned'] as const).map(f => (
               <button key={f} className={`wa-chip ${filter === f ? 'is-active' : ''}`} onClick={() => setFilter(f)}>
                 {f === 'unread' ? 'Unread' : f === 'all' ? 'All' : f === 'mine' ? 'Mine' : 'Unassigned'}
+                {tabCounts[f] !== undefined && <span className={`wa-chip__count ${f === 'unread' && tabCounts[f] > 0 ? 'is-alert' : ''}`}>{tabCounts[f] > 999 ? '999+' : tabCounts[f]}</span>}
               </button>
             ))}
           </div>
