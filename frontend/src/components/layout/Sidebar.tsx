@@ -536,7 +536,7 @@ export const Sidebar = () => {
               icon="🗂️"
               label="CRM"
               basePaths={['/crm/contacts', '/crm/labels', '/crm/blacklist', '/crm/short-links', '/crm/deals', '/crm/tasks', '/crm/followups', '/crm/calendar', '/crm/segments']}
-              defaultOpen
+
             >
               {/* <NestedAccordion icon="🟢" label="Basic CRM" basePaths={['/contacts', '/labels', '/blacklist']}>
                 <SubLink to="/crm/contacts" icon="👥" label="Contacts" />
@@ -565,7 +565,7 @@ export const Sidebar = () => {
               icon="🎯"
               label="Leads"
               basePaths={['/crm/leads']}
-              defaultOpen
+
             >
                 {/* Shared by both views — the lead list itself */}
               <SubLink to="/crm/leads" icon="🎯" label="All Leads" end />
@@ -596,7 +596,7 @@ export const Sidebar = () => {
 
             {/* ── HR ── */}
             <SectionHeader label="HR" />
-            <NestedAccordion icon="👥" label="HR" basePaths={['/hr']} defaultOpen>
+            <NestedAccordion icon="👥" label="HR" basePaths={['/hr']}>
               <SubLink to="/hr/attendance" icon="🕒" label="My Attendance" />
               <SubLink to="/hr/target" icon="🎯" label="My Target" />
               <SubLink to="/hr/payroll" icon="💰" label="My Payroll" />

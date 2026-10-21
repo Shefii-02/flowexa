@@ -24,6 +24,7 @@ export default function StickyNotes() {
   const [settings, setSettings] = useState<StickySettings>(DEFAULT_SETTINGS)
   const [ready, setReady] = useState(false)
   const [vp, setVp] = useState({ w: window.innerWidth, h: window.innerHeight })
+  const [todoFocus, setTodoFocus] = useState(0)   // bumped by the "＋ New to-do" pill → the card focuses its add box
   const [paletteFor, setPaletteFor] = useState<number | null>(null)
   const [error, setError] = useState('')
 
@@ -95,7 +96,7 @@ export default function StickyNotes() {
       ))}
 
       {settings.todo_visible && (
-        <TodoCard vp={vp} x={settings.todo_x} y={settings.todo_y} color={settings.default_color}
+        <TodoCard focusSignal={todoFocus} vp={vp} x={settings.todo_x} y={settings.todo_y} color={settings.default_color}
           onMove={(x, y) => patchSettings({ todo_x: x, todo_y: y }, 0)} onClose={() => patchSettings({ todo_visible: false }, 0)} />
       )}
 
@@ -120,7 +121,15 @@ export default function StickyNotes() {
       <FloatBubble icon="✅" label="To-do list" color={settings.default_color} on={settings.todo_visible} vp={vp}
         x={todoPos.x} y={todoPos.y}
         onMove={(x, y) => patchSettings({ todo_bubble_x: x, todo_bubble_y: y }, 0)}
-        onTap={() => patchSettings({ todo_visible: !settings.todo_visible }, 0)} />
+        onTap={() => patchSettings({ todo_visible: !settings.todo_visible }, 0)}>
+        {settings.todo_visible && (
+          <button type="button" onClick={() => setTodoFocus(n => n + 1)} title="Add a to-do"
+            style={{ position: 'absolute', bottom: BUBBLE + 8, left: '50%', transform: 'translateX(-50%)', whiteSpace: 'nowrap' }}
+            className="px-3 py-1.5 rounded-full bg-white border border-gray-200 shadow-lg text-xs font-semibold text-gray-700 hover:bg-gray-50">
+            ＋ New to-do
+          </button>
+        )}
+      </FloatBubble>
     </>
   )
 }
@@ -263,8 +272,8 @@ type Todo = { id: number; title: string; status: string; priority: string; due_a
 const PRIORITY_DOT: Record<string, string> = { low: '#9ca3af', medium: '#f59e0b', high: '#ef4444' }
 
 // The person's own open tasks (CRM tasks assigned to them) as a draggable sticky card: tick to complete, add one quickly.
-function TodoCard({ vp, x, y, color, onMove, onClose }: {
-  vp: { w: number; h: number }; x: number | null; y: number | null; color: string
+function TodoCard({ focusSignal, vp, x, y, color, onMove, onClose }: {
+  focusSignal: number; vp: { w: number; h: number }; x: number | null; y: number | null; color: string
   onMove: (x: number, y: number) => void; onClose: () => void
 }) {
   const me = useAppSelector((s) => s.auth.user)
@@ -275,6 +284,8 @@ function TodoCard({ vp, x, y, color, onMove, onClose }: {
   const [busy, setBusy] = useState<number | null>(null)
   const [err, setErr] = useState('')
   const W = 260
+  const inputRef = useRef<HTMLInputElement>(null)
+  useEffect(() => { if (focusSignal > 0) inputRef.current?.focus() }, [focusSignal])
   const ink = inkFor(color)
 
   const load = useCallback(() => {
@@ -342,7 +353,7 @@ function TodoCard({ vp, x, y, color, onMove, onClose }: {
         {err && <p style={{ fontSize: 11, color: '#b91c1c' }}>{err}</p>}
       </div>
       <form onSubmit={e => { e.preventDefault(); add() }} style={{ display: 'flex', gap: 4, padding: 6, borderTop: '1px solid rgba(0,0,0,.1)', flexShrink: 0 }}>
-        <input value={draft} onChange={e => setDraft(e.target.value)} placeholder="Add a to-do…" maxLength={200} aria-label="New to-do"
+        <input ref={inputRef} value={draft} onChange={e => setDraft(e.target.value)} placeholder="Add a to-do…" maxLength={200} aria-label="New to-do"
           style={{ flex: 1, minWidth: 0, background: 'rgba(255,255,255,.6)', border: 'none', outline: 'none', borderRadius: 4, padding: '4px 6px', fontSize: 12, color: '#111' }} />
         <button type="submit" disabled={adding || !draft.trim()} style={{ fontSize: 12, fontWeight: 700, padding: '0 8px', opacity: adding || !draft.trim() ? .5 : 1, color: ink }}>{adding ? '…' : '＋'}</button>
       </form>
