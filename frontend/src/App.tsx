@@ -1,5 +1,5 @@
 // src/App.tsx
-import { BrowserRouter, Routes, Route, Navigate, useParams } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, useParams, useLocation } from 'react-router-dom'
 import { Provider } from 'react-redux'
 import { store } from '@/store'
 import { ProtectedRoute } from '@/components/shared/ProtectedRoute'
@@ -181,6 +181,12 @@ const RoleBasedRedirect = () => {
 }
 
 // /templates/:id → /wa-cloud/templates/:id (the detail page moved under the WA Cloud section)
+/** /flow?builder=7 moved under WA Cloud — keep the query string so old links still open the right builder. */
+function LegacyFlowRedirect() {
+  const { search } = useLocation()
+  return <Navigate to={`/wa-cloud/flow${search}`} replace />
+}
+
 function LegacyTemplateRedirect() {
   const { id } = useParams()
   return <Navigate to={`/wa-cloud/templates/${id}`} replace />
@@ -266,7 +272,9 @@ export default function App() {
               {/* <Route path="flow" element={<FlowPage />} /> */}
               <Route path="/wa-cloud/flow-builders" element={<FlowBuildersPage />} />
               <Route path="/flow-builders" element={<Navigate to="/wa-cloud/flow-builders" replace />} />
-              <Route path="/flow" element={<FlowNodesPage />} />
+              <Route path="/wa-cloud/flow" element={<FlowNodesPage />} />
+              {/* old bookmarks: /flow?builder=7 -> /wa-cloud/flow?builder=7 */}
+              <Route path="/flow" element={<LegacyFlowRedirect />} />
 
               <Route path="leads" element={<LeadsPage />} />
               <Route path="leads/by-staff" element={<LeadsByStaffPage />} />
