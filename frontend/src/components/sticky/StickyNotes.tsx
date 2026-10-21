@@ -9,7 +9,7 @@ import { stickyApi, type StickyNote, type StickySettings } from '@/api'
 
 const BUBBLE = 52
 const PALETTE = ['#fde68a', '#fecaca', '#fed7aa', '#bbf7d0', '#bfdbfe', '#ddd6fe', '#fbcfe8', '#e5e7eb', '#a7f3d0', '#fef08a']
-const DEFAULT_SETTINGS: StickySettings = { bubble_x: null, bubble_y: null, notes_visible: false, default_color: '#fde68a', todo_visible: false, todo_x: null, todo_y: null }
+const DEFAULT_SETTINGS: StickySettings = { bubble_x: null, bubble_y: null, notes_visible: false, default_color: '#fde68a', todo_visible: false, todo_x: null, todo_y: null, todo_bubble_x: null, todo_bubble_y: null }
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), Math.max(lo, hi))
 // white text on a dark custom colour, dark text on a light one
@@ -56,27 +56,10 @@ export default function StickyNotes() {
     x: clamp(settings.bubble_x ?? vp.w - BUBBLE - 24, 0, vp.w - BUBBLE),
     y: clamp(settings.bubble_y ?? vp.h - BUBBLE - 96, 0, vp.h - BUBBLE),   // above the "Ask in portal" button by default
   }
-  const drag = useRef<{ dx: number; dy: number; sx: number; sy: number; moved: boolean } | null>(null)
-  const [dragPos, setDragPos] = useState<{ x: number; y: number } | null>(null)
-
-  const bubbleDown = (e: React.PointerEvent) => {
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
-    drag.current = { dx: e.clientX - bubblePos.x, dy: e.clientY - bubblePos.y, sx: e.clientX, sy: e.clientY, moved: false }
+  const todoPos = {
+    x: settings.todo_bubble_x ?? bubblePos.x - BUBBLE - 12,   // beside the notes circle by default
+    y: settings.todo_bubble_y ?? bubblePos.y,
   }
-  const bubbleMove = (e: React.PointerEvent) => {
-    const d = drag.current; if (!d) return
-    if (!d.moved && Math.hypot(e.clientX - d.sx, e.clientY - d.sy) < 5) return   // a tap, not a drag
-    d.moved = true
-    setDragPos({ x: clamp(e.clientX - d.dx, 0, vp.w - BUBBLE), y: clamp(e.clientY - d.dy, 0, vp.h - BUBBLE) })
-  }
-  const bubbleUp = () => {
-    const d = drag.current; drag.current = null
-    if (!d) return
-    if (d.moved && dragPos) { patchSettings({ bubble_x: Math.round(dragPos.x), bubble_y: Math.round(dragPos.y) }, 0) }
-    else patchSettings({ notes_visible: !settings.notes_visible }, 0)   // tap → show / hide the notes
-    setDragPos(null)
-  }
-  const shownBubble = dragPos ?? bubblePos
 
   // ── notes ──
   const addNote = async () => {
@@ -116,8 +99,11 @@ export default function StickyNotes() {
           onMove={(x, y) => patchSettings({ todo_x: x, todo_y: y }, 0)} onClose={() => patchSettings({ todo_visible: false }, 0)} />
       )}
 
-      {/* the circle */}
-      <div style={{ position: 'fixed', left: shownBubble.x, top: shownBubble.y, zIndex: 56, width: BUBBLE, height: BUBBLE, touchAction: 'none' }}>
+      {/* the two circles — same look, each draggable on its own; tap to show / hide its notes or to-do card */}
+      <FloatBubble icon="📝" label="Sticky notes" color={settings.default_color} on={settings.notes_visible} vp={vp}
+        x={bubblePos.x} y={bubblePos.y} badge={notes.length}
+        onMove={(x, y) => patchSettings({ bubble_x: x, bubble_y: y }, 0)}
+        onTap={() => patchSettings({ notes_visible: !settings.notes_visible }, 0)}>
         {settings.notes_visible && (
           <button type="button" onClick={addNote} title="Add a sticky note"
             style={{ position: 'absolute', bottom: BUBBLE + 8, left: '50%', transform: 'translateX(-50%)', whiteSpace: 'nowrap' }}
@@ -130,25 +116,58 @@ export default function StickyNotes() {
             style={{ position: 'absolute', bottom: BUBBLE + 44, right: 0, width: 220 }}
             className="text-[11px] bg-red-50 border border-red-200 text-red-700 rounded-lg px-2.5 py-1.5 shadow cursor-pointer">{error}</div>
         )}
-        {/* on / off switch for the to-do card — works even while the notes are hidden */}
-        <button type="button" onClick={() => patchSettings({ todo_visible: !settings.todo_visible }, 0)}
-          title={settings.todo_visible ? 'Hide the to-do list' : 'Show my to-do list'} aria-pressed={settings.todo_visible} aria-label="Toggle to-do list"
-          style={{ position: 'absolute', left: -38, bottom: 0, width: 32, height: 32, borderRadius: '50%' }}
-          className={`flex items-center justify-center text-base shadow-lg border-2 border-white ${settings.todo_visible ? 'bg-emerald-500 text-white' : 'bg-white text-gray-500'}`}>
-          ✅
-        </button>
-        <div role="button" tabIndex={0} aria-label="Sticky notes — tap to show or hide, drag to move" title="Sticky notes · tap to show / hide · drag to move"
-          onPointerDown={bubbleDown} onPointerMove={bubbleMove} onPointerUp={bubbleUp} onPointerCancel={() => { drag.current = null; setDragPos(null) }}
-          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') patchSettings({ notes_visible: !settings.notes_visible }, 0) }}
-          style={{ width: BUBBLE, height: BUBBLE, borderRadius: '50%', background: settings.default_color, cursor: dragPos ? 'grabbing' : 'grab', userSelect: 'none' }}
-          className="flex items-center justify-center text-2xl shadow-xl border-2 border-white select-none">
-          📝
-          {notes.length > 0 && (
-            <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-gray-800 text-white text-[10px] font-bold flex items-center justify-center">{notes.length}</span>
-          )}
-        </div>
-      </div>
+      </FloatBubble>
+      <FloatBubble icon="✅" label="To-do list" color={settings.default_color} on={settings.todo_visible} vp={vp}
+        x={todoPos.x} y={todoPos.y}
+        onMove={(x, y) => patchSettings({ todo_bubble_x: x, todo_bubble_y: y }, 0)}
+        onTap={() => patchSettings({ todo_visible: !settings.todo_visible }, 0)} />
     </>
+  )
+}
+
+// A draggable floating circle (tap = on / off). Both the notes and the to-do circle use it so they look and behave the same.
+function FloatBubble({ icon, label, color, on, vp, x, y, badge, onMove, onTap, children }: {
+  icon: string; label: string; color: string; on: boolean; vp: { w: number; h: number }
+  x: number; y: number; badge?: number
+  onMove: (x: number, y: number) => void; onTap: () => void; children?: React.ReactNode
+}) {
+  const pos = { x: clamp(x, 0, vp.w - BUBBLE), y: clamp(y, 0, vp.h - BUBBLE) }
+  const drag = useRef<{ dx: number; dy: number; sx: number; sy: number; moved: boolean } | null>(null)
+  const [dragPos, setDragPos] = useState<{ x: number; y: number } | null>(null)
+
+  const down = (e: React.PointerEvent) => {
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+    drag.current = { dx: e.clientX - pos.x, dy: e.clientY - pos.y, sx: e.clientX, sy: e.clientY, moved: false }
+  }
+  const move = (e: React.PointerEvent) => {
+    const d = drag.current; if (!d) return
+    if (!d.moved && Math.hypot(e.clientX - d.sx, e.clientY - d.sy) < 5) return   // a tap, not a drag
+    d.moved = true
+    setDragPos({ x: clamp(e.clientX - d.dx, 0, vp.w - BUBBLE), y: clamp(e.clientY - d.dy, 0, vp.h - BUBBLE) })
+  }
+  const up = () => {
+    const d = drag.current; drag.current = null
+    if (!d) return
+    if (d.moved && dragPos) onMove(Math.round(dragPos.x), Math.round(dragPos.y))
+    else onTap()
+    setDragPos(null)
+  }
+  const shown = dragPos ?? pos
+
+  return (
+    <div style={{ position: 'fixed', left: shown.x, top: shown.y, zIndex: 56, width: BUBBLE, height: BUBBLE, touchAction: 'none' }}>
+      {children}
+      <div role="button" tabIndex={0} aria-pressed={on} aria-label={`${label} — tap to show or hide, drag to move`} title={`${label} · tap to ${on ? 'hide' : 'show'} · drag to move`}
+        onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={() => { drag.current = null; setDragPos(null) }}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onTap() }}
+        style={{ width: BUBBLE, height: BUBBLE, borderRadius: '50%', background: color, cursor: dragPos ? 'grabbing' : 'grab', userSelect: 'none', opacity: on ? 1 : 0.75 }}
+        className={`flex items-center justify-center text-2xl shadow-xl border-2 select-none ${on ? 'border-gray-800' : 'border-white'}`}>
+        {icon}
+        {!!badge && badge > 0 && (
+          <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-gray-800 text-white text-[10px] font-bold flex items-center justify-center">{badge}</span>
+        )}
+      </div>
+    </div>
   )
 }
 
@@ -259,7 +278,7 @@ function TodoCard({ vp, x, y, color, onMove, onClose }: {
   const ink = inkFor(color)
 
   const load = useCallback(() => {
-    http.get('/crm/tasks', { params: { mine: 1, status: 'open' } })
+    http.get('/crm/tasks', { params: { mine: 1, status: 'open', exclude_type: 'followup' } })
       .then(r => setItems(Array.isArray(r.data?.data) ? r.data.data : []))
       .catch(() => {}).finally(() => setLoading(false))
   }, [])

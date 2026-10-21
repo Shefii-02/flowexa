@@ -323,7 +323,8 @@ export default function App() {
 
               {/* Advanced CRM */}
               <Route path="crm/deals" element={<DealsPage />} />
-              <Route path="crm/tasks" element={<CrmTasksPage />} />
+              <Route path="crm/tasks" element={<CrmTasksPage key="tasks" mode="tasks" />} />
+              <Route path="crm/followups" element={<CrmTasksPage key="followups" mode="followups" />} />
               <Route path="crm/calendar" element={<CalendarPage />} />
               <Route path="crm/segments" element={<SegmentsPage />} />
 

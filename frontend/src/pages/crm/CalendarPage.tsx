@@ -154,7 +154,7 @@ export default function CalendarPage() {
   }
 
   return (
-    <div className="p-6 space-y-5 max-w-3xl">
+    <div className="p-6 space-y-5 ">
       <div className="flex items-end justify-between flex-wrap gap-3">
         <div>
           <h1 className="page-title">📅 Calendar</h1>
