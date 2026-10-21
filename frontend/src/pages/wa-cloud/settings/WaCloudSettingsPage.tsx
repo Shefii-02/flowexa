@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { settingsApi } from '@/api'
+import { settingsApi, campaignApi } from '@/api'
 import { Button, Input } from '@/components/ui'
 import { getError } from '@/utils'
 import toast from 'react-hot-toast'
@@ -7,6 +7,7 @@ import toast from 'react-hot-toast'
 const TABS = [
   { id: 'credentials', label: '📱 WA Credentials' },
   { id: 'webhooks',    label: '🔗 Webhooks' },
+  { id: 'background',  label: '⏳ Background sending' },
 ] as const
 
 const APP_NAME = import.meta.env.VITE_APP_NAME || 'Flowexa Platform'
@@ -304,6 +305,63 @@ function WebhooksTab() {
   )
 }
 
+// ── Background sending tab ────────────────────────────────────────────────────
+// What is still waiting to be sent behind the scenes. Read from the server on every refresh (and every 10 s),
+// so only what is still pending is listed — a message that was sent or failed drops off by itself.
+function BackgroundTab() {
+  const [data, setData] = useState<any>(null)
+  const [loading, setLoading] = useState(true)
+  const load = useCallback(() => {
+    campaignApi.backgroundQueue().then(r => setData(r.data)).catch(e => toast.error(getError(e))).finally(() => setLoading(false))
+  }, [])
+  useEffect(() => { load(); const t = setInterval(load, 10_000); return () => clearInterval(t) }, [load])
+
+  if (loading && !data) return <p className="text-sm text-gray-400">Loading…</p>
+  const items = data?.items ?? [], campaigns = data?.campaigns ?? []
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-3">
+        <p className="text-sm text-gray-500 flex-1">
+          Messages waiting to be sent in the background. Sent or failed ones leave this list automatically (refreshes every 10 s).
+        </p>
+        <Button variant="secondary" onClick={load}>↻ Refresh</Button>
+      </div>
+
+      <div className="card">
+        <div className="card-header"><h3 className="card-title">Campaigns with unsent messages ({campaigns.length})</h3></div>
+        {campaigns.length === 0 ? <p className="p-4 text-sm text-gray-400">Nothing waiting.</p> : (
+          <table className="w-full text-sm">
+            <thead><tr className="text-left text-xs text-gray-400"><th className="p-3">Campaign</th><th>Status</th><th>Not sent yet</th><th>Speed</th></tr></thead>
+            <tbody>{campaigns.map((c: any) => (
+              <tr key={c.id} className="border-t border-gray-100">
+                <td className="p-3 font-medium">{c.name}</td>
+                <td className="capitalize">{c.status}{c.status === 'scheduled' && c.scheduled_at ? ` · ${fmtTime(c.scheduled_at)}` : ''}</td>
+                <td>{c.pending}</td><td>{c.per_minute}/min</td>
+              </tr>))}</tbody>
+          </table>
+        )}
+      </div>
+
+      <div className="card">
+        <div className="card-header"><h3 className="card-title">Retries waiting in the queue ({data?.retries_waiting ?? 0})</h3></div>
+        {items.length === 0 ? <p className="p-4 text-sm text-gray-400">No retries waiting.</p> : (
+          <div className="max-h-[50vh] overflow-auto">
+            <table className="w-full text-sm">
+              <thead><tr className="text-left text-xs text-gray-400"><th className="p-3">Number</th><th>Campaign</th><th>Tries</th><th>Last error</th></tr></thead>
+              <tbody>{items.map((r: any) => (
+                <tr key={r.id} className="border-t border-gray-100">
+                  <td className="p-3 font-mono">{r.phone}</td><td>{r.campaign}</td><td>{r.attempts}</td>
+                  <td className="text-xs text-gray-500 max-w-xs truncate" title={r.last_error ?? ''}>{r.last_error ?? '—'}</td>
+                </tr>))}</tbody>
+            </table>
+            {(data?.retries_waiting ?? 0) > items.length && <p className="p-3 text-xs text-gray-400">Showing the first {items.length}.</p>}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function WaCloudSettingsPage() {
@@ -321,6 +379,7 @@ export default function WaCloudSettingsPage() {
       <div className="pt-2">
         {tab === 'credentials' && <CredentialsTab />}
         {tab === 'webhooks'    && <WebhooksTab />}
+        {tab === 'background'  && <BackgroundTab />}
       </div>
     </div>
   )

@@ -431,7 +431,7 @@ class CampaignService
         $rows = \App\Models\CampaignContact::resendable($campaign->id)
             ->when($edits->isNotEmpty(), fn ($q) => $q->whereIn('id', $edits->keys()))
             ->limit(500)
-            ->get();
+            ->get(['id', 'phone']); // only what is needed — this runs inside a web request
 
         if ($rows->isEmpty()) { throw CampaignException::noFailedMessages(); }
 
@@ -444,18 +444,23 @@ class CampaignService
         }
 
         $gap = 60 / max(1, (int) $campaign->throttle_per_minute);
-        $skipped = []; $queued = 0;
+        $skipped = []; $jobs = [];
 
         foreach ($rows as $row) {
             $phone = preg_replace('/\D+/', '', (string) (($edits[$row->id]['phone'] ?? null) ?: $row->phone));
             if (!preg_match('/^\d{8,15}$/', $phone)) { $skipped[] = (string) $row->phone; continue; }
-
-            $at = now()->addSeconds((int) floor($queued * $gap));
-            $row->update(['scheduled_for' => $at]);
-            \App\Modules\Campaign\Jobs\ResendCampaignContact::dispatch($campaign->id, $row->id, $phone, $overrides)
-                ->onQueue('campaigns')->delay($at);
-            $queued++;
+            $jobs[] = [$row->id, $phone, now()->addSeconds((int) floor(count($jobs) * $gap))];
         }
+
+        // ONE update marks every queued number (it stays marked until the last job is due + 15 min, so a second
+        // click cannot queue them again) — a row-by-row update made a 500-number click take long enough to time out.
+        if ($jobs) {
+            \App\Models\CampaignContact::whereIn('id', array_column($jobs, 0))->update(['scheduled_for' => end($jobs)[2]]);
+            foreach ($jobs as [$rowId, $phone, $at]) {
+                \App\Modules\Campaign\Jobs\ResendCampaignContact::dispatch($campaign->id, $rowId, $phone, $overrides)->onQueue('campaigns')->delay($at);
+            }
+        }
+        $queued = count($jobs);
 
         Log::info("[campaign-retry] campaign {$campaign->id}: queued {$queued} retry job(s), gap " . round($gap, 2) . 's, skipped ' . count($skipped) . ' invalid');
 

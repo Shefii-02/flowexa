@@ -202,6 +202,41 @@ class CampaignController extends Controller
         return response()->json(['message' => 'Campaign resumed.', 'campaign' => new CampaignResource($c)]);
     }
 
+    /**
+     * GET /campaigns/background-queue — what is still waiting to be sent in the background for this company:
+     * retries queued behind the worker, and campaign messages not sent yet. Read from the database on every call,
+     * so a refresh shows only what is still pending — anything already sent or failed drops off the list.
+     */
+    public function backgroundQueue(): JsonResponse
+    {
+        $companyId = auth()->user()->company_id;
+        $queuedSince = now()->subMinutes(15); // same window CampaignContact::resendable uses for "already waiting"
+
+        $retries = \App\Models\CampaignContact::query()
+            ->join('campaigns', 'campaigns.id', '=', 'campaign_contacts.campaign_id')
+            ->where('campaigns.company_id', $companyId)->whereNull('campaigns.deleted_at')
+            ->where('campaign_contacts.status', 'failed')->where('campaign_contacts.scheduled_for', '>=', $queuedSince);
+
+        $items = (clone $retries)->orderBy('campaign_contacts.scheduled_for')->limit(200)
+            ->get(['campaign_contacts.id', 'campaign_contacts.phone', 'campaign_contacts.attempts', 'campaign_contacts.failed_reason',
+                   'campaign_contacts.scheduled_for', 'campaigns.id as campaign_id', 'campaigns.name as campaign_name'])
+            ->map(fn ($r) => ['id' => $r->id, 'phone' => $r->phone, 'attempts' => (int) $r->attempts, 'last_error' => $r->failed_reason,
+                              'campaign_id' => $r->campaign_id, 'campaign' => $r->campaign_name, 'type' => 'retry']);
+
+        $campaigns = \App\Models\Campaign::where('company_id', $companyId)->whereIn('status', ['running', 'scheduled', 'paused'])
+            ->withCount(['contacts as pending_count' => fn ($q) => $q->where('status', 'pending')])
+            ->get(['id', 'name', 'status', 'scheduled_at', 'throttle_per_minute'])
+            ->map(fn ($c) => ['id' => $c->id, 'name' => $c->name, 'status' => $c->status, 'pending' => (int) $c->pending_count,
+                              'scheduled_at' => $c->scheduled_at?->toIso8601String(), 'per_minute' => $c->throttle_per_minute]);
+
+        return response()->json([
+            'retries_waiting' => (clone $retries)->count(),
+            'items'           => $items,
+            'campaigns'       => $campaigns->filter(fn ($c) => $c['pending'] > 0 || $c['status'] === 'scheduled')->values(),
+            'as_of'           => now()->toIso8601String(),
+        ]);
+    }
+
     /** Turn the automatic retry of marketing-capped failures on or off for one campaign (works at any stage). */
     public function autoRetry(int $campaign, Request $request): JsonResponse
     {

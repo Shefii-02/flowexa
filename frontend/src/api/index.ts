@@ -127,6 +127,8 @@ export const campaignApi = {
   resendFailed: (id: number, items?: { id: number; phone?: string }[],
                  overrides?: { template_id?: number; wa_phone_number_id?: number; variables?: string[]; coupon_code?: string }) =>
     api.post(`/campaigns/${id}/resend-failed`, { ...(items ? { items } : {}), ...(overrides ?? {}) }),
+  /** Everything still waiting to be sent in the background (queued retries + unsent campaign messages). */
+  backgroundQueue: () => api.get('/campaigns/background-queue'),
   /** Turn the automatic retry of marketing-capped (131049) failures on / off for one campaign. */
   autoRetry: (id: number, enabled: boolean) => api.post(`/campaigns/${id}/auto-retry`, { enabled }),
   contacts: (id: number, p?: Record<string, unknown>) => api.get(`/campaigns/${id}/contacts`, { params: p }),
@@ -399,11 +401,12 @@ export const templateApi = {
   show: (id: number) => api.get(`/templates/${id}`),
   create: (d: Record<string, unknown>) => api.post('/templates', d),
   duplicate: (id: number) => api.post(`/templates/${id}/duplicate`),
-  update: (id: number, d: Record<string, unknown>) => api.put(`/templates/${id}`, d),
+  update: (id: number, d: Record<string, unknown>) => api.put(`/templates/${id}`, d, { timeout: 120_000 }), // an edit of a submitted template is re-pushed to Meta
   delete: (id: number) => api.delete(`/templates/${id}`),
   sync: (id: number) => api.post(`/templates/${id}/sync`),
   syncSingle: (id: number) => api.post(`/templates/${id}/sync`),
-  submit: (id: number) => api.post(`/templates/${id}/submit`),
+  // Submitting talks to Meta (and may wait on it), and a header sample is a real file upload — both can take well over 30 s
+  submit: (id: number) => api.post(`/templates/${id}/submit`, undefined, { timeout: 120_000 }),
   syncFromMeta: (d?: { template_id?: string; language?: string }) =>
     api.post('/templates/sync-from-meta', d),
   // A File to upload, or { media_url } for a file already in the Media Library (the server reads it from
@@ -413,9 +416,9 @@ export const templateApi = {
     if (source instanceof File) {
       const fd = new FormData(); fd.append('file', source)
       if (headerFormat) fd.append('header_format', headerFormat)
-      return api.post(`/templates/${id}/upload-header-media`, fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+      return api.post(`/templates/${id}/upload-header-media`, fd, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 180_000 })
     }
-    return api.post(`/templates/${id}/upload-header-media`, { ...source, ...(headerFormat ? { header_format: headerFormat } : {}) })
+    return api.post(`/templates/${id}/upload-header-media`, { ...source, ...(headerFormat ? { header_format: headerFormat } : {}) }, { timeout: 180_000 })
   },
   deleteHeaderMedia: (id: number) => api.delete(`/templates/${id}/delete-header-media`),
   uploadFooterMedia: (id: number, file: File) => {

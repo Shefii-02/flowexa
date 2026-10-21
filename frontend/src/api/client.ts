@@ -151,7 +151,10 @@ api.interceptors.response.use(
     }
 
     // ── Network failed / server down / timeout (no auth involved) → Network / Server page ──
-    if (isOutage(error) && !original?._skipPreCheck) reportOutage(error)
+    // A failed SAVE (POST / PUT / PATCH / DELETE) must not replace the page: that would throw away the form the person
+    // just filled in. The caller's own catch shows the error as a message on the form; only reads get the full-page screen.
+    const isWrite = !['get', 'head', 'options'].includes(String(error.config?.method ?? 'get').toLowerCase())
+    if (isOutage(error) && !original?._skipPreCheck && !isWrite) reportOutage(error)
 
     // ── 403 → surface an Access Denied screen (not just a toast) ──────────────
     if (error.response?.status === 403) {

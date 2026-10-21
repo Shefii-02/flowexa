@@ -73,7 +73,14 @@ export const downloadBlob = (blob: Blob, filename: string) => {
 // ── Get API error message ─────────────────────────────────────────────────────
 export const getError = (e: unknown): string => {
   const err = e as any
-  return err?.response?.data?.message || err?.message || 'Something went wrong'
+  if (err?.response?.data?.message) return err.response.data.message
+  // No answer from the server (timeout / dropped connection) on a save: the request may still have gone through.
+  if (err?.isAxiosError && !err.response) {
+    return err.code === 'ECONNABORTED'
+      ? 'The server took too long to answer. Your changes may have been saved — refresh the list to check before trying again.'
+      : 'Could not reach the server. Check your connection and try again.'
+  }
+  return err?.message || 'Something went wrong'
 }
 
 // ── Truncate text ─────────────────────────────────────────────────────────────

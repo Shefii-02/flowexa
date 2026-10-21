@@ -378,6 +378,7 @@ Route::prefix('v1')->group(function () {
 
             Route::middleware('permission:campaigns.view')->group(function () {
                 Route::get('/',              [CampaignController::class, 'index'])->name('index');
+                Route::get('/background-queue', [CampaignController::class, 'backgroundQueue'])->name('background-queue');
                 Route::get('/{campaign}',    [CampaignController::class, 'show'])->name('show');
                 Route::get('/{campaign}/contacts', [CampaignContactController::class, 'index'])->name('contacts');
                 Route::get('/{campaign}/stats',    [CampaignController::class, 'stats'])->name('stats');

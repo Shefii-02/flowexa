@@ -349,6 +349,7 @@ export default function TemplatesPage() {
   }
 
   const handleSave = async () => {
+    let createdId = 0 // set once step 1 has saved a brand-new draft
     if (!form.name.trim())  { toast.error('Template name required (lowercase, underscores only)'); return }
     if (!/^[a-z0-9_]+$/.test(form.name)) { toast.error('Name must be lowercase letters, numbers, underscores only'); return }
 
@@ -473,13 +474,14 @@ export default function TemplatesPage() {
       if (isResubmit && needsSampleUpload) await uploadSample(editTpl.id)
 
       // Step 1 — create (as draft) or update the text/structure fields, get a template id
-      let templateId: number
+      let templateId = 0
       if (editTpl) {
         await templateApi.update(editTpl.id, payload)
         templateId = editTpl.id
       } else {
         const { data } = await templateApi.create(payload)
         templateId = data.template.id
+        createdId = templateId
       }
 
       // Step 2 — brand-new / draft templates: upload the sample now (the id exists only after step 1).
@@ -496,7 +498,11 @@ export default function TemplatesPage() {
 
       toast.success(editTpl ? 'Template updated and re-submitted to Meta.' : 'Template created and submitted to Meta for review.')
       setShowCreate(false); resetForm(); load()
-    } catch (e) { toast.error(getError(e)) }
+    } catch (e) {
+      toast.error(getError(e))
+      // the draft was already saved by step 1 — say so, and show it in the list instead of leaving the person guessing
+      if (createdId) { toast('Your template was saved as a draft — open it from the list to finish and submit.', { icon: 'ℹ️', duration: 7000 }); load() }
+    }
     finally     { setSaving(false); setUploadingSample(false) }
   }
 
