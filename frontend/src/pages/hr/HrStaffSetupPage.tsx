@@ -12,7 +12,7 @@ export default function HrStaffSetupPage() {
     try { await api.put(`/hr/staff-profiles/${userId}`, patch); load() } catch (e) { toast.error(err(e)) }
   }
   return (
-    <div className="p-6 max-w-6xl mx-auto space-y-5">
+    <div className="p-6 mx-auto space-y-5">
       <PageHeader icon="⚙️" title="Staff Setup" sub="Duty time, work mode, pay rate and monthly target — per staff member" />
 
       <div className="bg-white border border-gray-200 rounded-xl overflow-x-auto">

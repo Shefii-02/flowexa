@@ -76,7 +76,7 @@ export default function LeadsSummaryPage() {
   const agentBars = useMemo(() => (data?.by_agent ?? []).slice(0, 8), [data])
 
   return (
-    <div className="p-6 space-y-6 max-w-6xl">
+    <div className="p-6 space-y-6 ">
       <div className="flex items-end justify-between flex-wrap gap-3">
         <div>
           <h1 className="page-title">🎯 Leads Summary</h1>

@@ -51,7 +51,7 @@ export default function HrSalesPage() {
   }
 
   return (
-    <div className="p-6 max-w-6xl mx-auto space-y-4">
+    <div className="p-6 mx-auto space-y-4">
       <PageHeader icon="🧾" title="Sales" sub="Record what each staff member sold — the incentive posts automatically" />
 
       <div className="bg-indigo-50 border border-indigo-200 rounded-xl px-4 py-2.5 text-xs text-indigo-700">

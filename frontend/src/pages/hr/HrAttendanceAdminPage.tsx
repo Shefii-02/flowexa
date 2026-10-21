@@ -56,7 +56,7 @@ export default function HrAttendanceAdminPage() {
   }
 
   return (
-    <div className="p-6 max-w-6xl mx-auto space-y-5">
+    <div className="p-6 mx-auto space-y-5">
       <PageHeader icon="🗓️" title="Attendance" sub="Every staff member's daily clock in/out — fix or backfill an entry" />
 
       <div className="space-y-3">

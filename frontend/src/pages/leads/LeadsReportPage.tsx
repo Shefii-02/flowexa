@@ -102,7 +102,7 @@ export default function LeadsReportPage() {
   const hasFilters = Object.values(filters).some(v => v !== undefined)
 
   return (
-    <div className="p-6 space-y-6 max-w-6xl">
+    <div className="p-6 space-y-6 ">
       <div>
         <h1 className="page-title">📊 Leads Report</h1>
         <p className="page-sub">Filtered, grouped lead breakdowns — the Advanced view</p>

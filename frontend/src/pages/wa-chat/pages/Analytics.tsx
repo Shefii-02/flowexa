@@ -58,7 +58,7 @@ export default function WaChatAnalytics() {
   }))
 
   return (
-    <div className="p-6 max-w-6xl mx-auto space-y-6">
+    <div className="p-6  mx-auto space-y-6">
       <div>
         <h1 className="text-xl font-bold text-gray-900">WA Chat Analytics</h1>
         <p className="text-sm text-gray-500 mt-0.5">

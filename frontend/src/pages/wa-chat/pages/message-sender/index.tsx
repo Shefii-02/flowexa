@@ -1703,7 +1703,7 @@ export function MessageSender() {
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <div className="p-4 space-y-4 max-w-6xl mx-auto">
+    <div className="p-4 space-y-4 mx-auto">
       {cropModal}
 
       {/* ITEM 4 — Schedule confirmation modal */}

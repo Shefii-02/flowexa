@@ -44,7 +44,7 @@ export default function HrPayrollPage() {
   }
 
   return (
-    <div className="p-6 max-w-6xl mx-auto space-y-5">
+    <div className="p-6 mx-auto space-y-5">
       <PageHeader icon="💰" title="Payroll" sub="Generate, adjust and release each month's payroll" />
 
       {open ? (

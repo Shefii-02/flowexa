@@ -23,7 +23,7 @@ export default function HrLeaveRequestsPage() {
     try { await api.post(`/hr/leave/${id}/review`, { decision, note }); load() } catch (e) { toast.error(err(e)) }
   }
   return (
-    <div className="p-6 max-w-6xl mx-auto space-y-3">
+    <div className="p-6 mx-auto space-y-3">
       <PageHeader icon="🌴" title="Leave Requests" sub="Review and approve or reject the team's leave, day by day or staff by staff" />
 
       <div className="bg-white border border-gray-200 rounded-xl p-3 flex flex-wrap items-center gap-2">

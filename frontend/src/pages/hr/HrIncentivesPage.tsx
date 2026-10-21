@@ -34,7 +34,7 @@ export default function HrIncentivesPage() {
   const delIncentive = async (id: number) => { await api.delete(`/hr/incentives/${id}`); load() }
 
   return (
-    <div className="p-6 max-w-6xl mx-auto space-y-5">
+    <div className="p-6  mx-auto space-y-5">
       <PageHeader icon="🎁" title="Incentives" sub="Commission rules per item, and the earned-incentive ledger" />
 
       <div className="bg-white border border-gray-200 rounded-xl p-4 space-y-3">
