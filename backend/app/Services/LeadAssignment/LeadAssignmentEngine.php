@@ -81,12 +81,12 @@ class LeadAssignmentEngine
             $updatePayload = [
                 'current_assignment_id' => $assignment->id,
                 'last_lead_at'          => now(),
-                'total_leads_count'     => DB::raw('total_leads_count + 1'),
             ];
             if (!$contact->first_lead_at) {
                 $updatePayload['first_lead_at'] = now();
             }
-            $contact->update($updatePayload);
+            // increment() — a DB::raw() inside update() cannot pass the model's integer cast on total_leads_count
+            $contact->increment('total_leads_count', 1, $updatePayload);
 
             // Outside the company's working hours (per-weekday schedule + holiday
             // overrides) → hand straight to the AI agent so the lead isn't dropped.

@@ -254,6 +254,7 @@ class CampaignService
         }
         if (array_key_exists('starts_at', $fields)) { $data['starts_at'] = $fields['starts_at'] ?: null; }
         if (array_key_exists('ends_at', $fields))   { $data['ends_at']   = $fields['ends_at']   ?: null; }
+        if (array_key_exists('auto_retry', $fields) && $fields['auto_retry'] !== null) { $data['auto_retry'] = (bool) $fields['auto_retry']; }
 
         $starts = array_key_exists('starts_at', $data) ? $data['starts_at'] : $campaign->starts_at;
         $ends   = array_key_exists('ends_at', $data)   ? $data['ends_at']   : $campaign->ends_at;

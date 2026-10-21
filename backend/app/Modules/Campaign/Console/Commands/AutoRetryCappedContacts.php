@@ -30,6 +30,7 @@ class AutoRetryCappedContacts extends Command
         foreach ($due as $campaignId => $rows) {
             $campaign = Campaign::find($campaignId);
             if (!$campaign || $campaign->status === 'running') { continue; } // picked up on a later run
+            if (!$campaign->auto_retry) { Log::info("[auto-retry] campaign {$campaign->id}: auto-retry is stopped, skipped."); continue; }
             try {
                 $r = $campaigns->resendFailed($campaign->id, $campaign->company_id, $rows->map(fn ($c) => ['id' => $c->id])->all());
                 Log::info("Auto-retry queued {$r['queued']} capped number(s) for campaign {$campaign->id}.");

@@ -399,6 +399,7 @@ Route::prefix('v1')->group(function () {
                 Route::post('/{campaign}/pause',        [CampaignController::class, 'pause'])->name('pause');
                 Route::post('/{campaign}/resume',       [CampaignController::class, 'resume'])->name('resume');
                 Route::post('/{campaign}/resend-failed', [CampaignController::class, 'resendFailed'])->name('resend-failed');
+                Route::post('/{campaign}/auto-retry',   [CampaignController::class, 'autoRetry'])->name('auto-retry');
             });
         });
 

@@ -22,6 +22,7 @@ readonly class CreateCampaignDTO
         public ?string $startsAt           = null,
         public ?string $endsAt             = null,
         public ?int    $dailyLimit         = null,
+        public bool    $autoRetry          = true,
     ) {}
 
     public static function fromRequest(array $data, ?string $csvPath = null): self
@@ -42,6 +43,7 @@ readonly class CreateCampaignDTO
             startsAt:           $data['starts_at']            ?? null,
             endsAt:             $data['ends_at']               ?? null,
             dailyLimit:         !empty($data['daily_limit']) ? (int) $data['daily_limit'] : null,
+            autoRetry:          !array_key_exists('auto_retry', $data) || filter_var($data['auto_retry'], FILTER_VALIDATE_BOOLEAN),
         );
     }
 }

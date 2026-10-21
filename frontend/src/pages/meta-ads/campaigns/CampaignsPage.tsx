@@ -418,6 +418,7 @@ export default function CampaignsPage() {
     starts_at: '', ends_at: '',
     scheduled_at: '', // when to send (blank = launch manually)
     daily_limit: '',  // max messages per 24h (blank = no limit)
+    auto_retry: true, // retry marketing-capped (131049) numbers automatically
   })
   const [selectedTemplate, setSelectedTemplate] = useState<any>(null)
   const [selectedPhoneNumber, setSelectedPhoneNumber] = useState<any>(null)
@@ -500,7 +501,7 @@ export default function CampaignsPage() {
   }
 
   const resetForm = () => {
-    setForm({ name: '', target_type: 'all', throttle_per_minute: '60', description: '', starts_at: '', ends_at: '', scheduled_at: '', daily_limit: '' })
+    setForm({ name: '', target_type: 'all', throttle_per_minute: '60', description: '', starts_at: '', ends_at: '', scheduled_at: '', daily_limit: '', auto_retry: true })
     setSelectedTemplate(null); setSelectedPhoneNumber(null); setSelectedLabels([]); setCsvFile(null); setCsvMode('file'); setPasteText(''); setPasted({ valid: [], invalid: [], dupes: 0 }); setEditCampaign(null)
   }
 
@@ -513,6 +514,7 @@ export default function CampaignsPage() {
       ends_at:   (c as any).ends_at   ? (c as any).ends_at.slice(0, 10)   : '',
       scheduled_at: (c as any).scheduled_at ? toLocalInput((c as any).scheduled_at) : '',
       daily_limit: (c as any).daily_limit ? String((c as any).daily_limit) : '',
+      auto_retry: (c as any).auto_retry !== false,
     })
     setSelectedTemplate(c.template ? { id: c.template.id, name: c.template.name, body: c.template.body, components: (c.template as any).components, buttons: (c.template as any).buttons, body_examples: (c.template as any).body_examples } : null)
     // Backend should include the related phone number on the campaign resource
@@ -534,6 +536,7 @@ export default function CampaignsPage() {
         fd.append('scheduled_at', form.scheduled_at ? new Date(form.scheduled_at).toISOString() : '')
         fd.append('starts_at', form.starts_at || '')
         fd.append('ends_at', form.ends_at || '')
+        fd.append('auto_retry', form.auto_retry ? '1' : '0')
         await campaignApi.update(editCampaign.id, fd)
         toast.success('Campaign updated.')
         setShowCreate(false); resetForm(); load()
@@ -558,6 +561,7 @@ export default function CampaignsPage() {
       if (form.starts_at) fd.append('starts_at', form.starts_at)
       if (form.ends_at) fd.append('ends_at', form.ends_at)
       if (form.daily_limit) fd.append('daily_limit', form.daily_limit)
+      fd.append('auto_retry', form.auto_retry ? '1' : '0')
       if (form.scheduled_at) {
         if (new Date(form.scheduled_at).getTime() <= Date.now()) { toast.error('Send time must be in the future'); setSaving(false); return }
         fd.append('scheduled_at', new Date(form.scheduled_at).toISOString())
@@ -736,6 +740,17 @@ export default function CampaignsPage() {
               </div>
             </div>
           )}
+          {editCampaign && (<div>
+            <label className="flex items-start gap-3 cursor-pointer bg-gray-50 border border-gray-200 rounded-xl p-3">
+              <input type="checkbox" className="mt-1" checked={form.auto_retry} onChange={e => set('auto_retry', e.target.checked)} />
+              <span>
+                <span className="text-sm font-semibold text-gray-700">Auto-retry limited numbers</span>
+                <span className="block text-xs text-gray-400">
+                  Numbers WhatsApp refuses with the marketing limit (error 131049) are retried once automatically after the wait. Turn off to retry them yourself.
+                </span>
+              </span>
+            </label>
+          </div>)}
 
           {!editCampaign && (<>
           <Input label="Campaign name *" placeholder="Univexa July Promo 2024"
@@ -842,6 +857,15 @@ export default function CampaignsPage() {
                 {form.daily_limit && ' The campaign stays "running" between days.'}
               </p>
             </div>
+            <label className="flex items-start gap-3 cursor-pointer bg-gray-50 border border-gray-200 rounded-xl p-3">
+              <input type="checkbox" className="mt-1" checked={form.auto_retry} onChange={e => set('auto_retry', e.target.checked)} />
+              <span>
+                <span className="text-sm font-semibold text-gray-700">Auto-retry limited numbers</span>
+                <span className="block text-xs text-gray-400">
+                  Numbers WhatsApp refuses with the marketing limit (error 131049) are retried once automatically after the wait. Turn off to retry them yourself.
+                </span>
+              </span>
+            </label>
             <Textarea rows={4} label="Description (optional)" placeholder="Internal note"
               value={form.description} onChange={e => set('description', e.target.value)} />
           </div>
@@ -975,6 +999,7 @@ export default function CampaignsPage() {
                 campaignStatus={selected!.status}
                 initialStatus={detailFilter}
                 resendable={stats.resendable_failed ?? 0}
+                autoRetry={(selected as any)?.auto_retry !== false}
                 onChanged={refreshStats}
               />
             </div>

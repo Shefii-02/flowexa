@@ -127,6 +127,8 @@ export const campaignApi = {
   resendFailed: (id: number, items?: { id: number; phone?: string }[],
                  overrides?: { template_id?: number; wa_phone_number_id?: number; variables?: string[]; coupon_code?: string }) =>
     api.post(`/campaigns/${id}/resend-failed`, { ...(items ? { items } : {}), ...(overrides ?? {}) }),
+  /** Turn the automatic retry of marketing-capped (131049) failures on / off for one campaign. */
+  autoRetry: (id: number, enabled: boolean) => api.post(`/campaigns/${id}/auto-retry`, { enabled }),
   contacts: (id: number, p?: Record<string, unknown>) => api.get(`/campaigns/${id}/contacts`, { params: p }),
   testSend: (d: { template_id: number; wa_phone_number_id: number; phone: string; variables?: string[]; coupon_code?: string }) =>
     api.post('/campaigns/test-send', d),

@@ -63,6 +63,7 @@ class CampaignRepository implements CampaignRepositoryInterface
             'csv_file'            => $dto->csvFilePath,
             'throttle_per_minute' => $dto->throttlePerMinute,
             'daily_limit'         => $dto->dailyLimit,
+            'auto_retry'          => $dto->autoRetry,
             'status'              => $dto->scheduledAt ? 'scheduled' : 'draft',
             'scheduled_at'        => $dto->scheduledAt,
             'starts_at'           => $dto->startsAt,

@@ -22,6 +22,7 @@ use App\Modules\Campaign\Support\TemplateMessagePayload;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 
 class CampaignController extends Controller
@@ -54,32 +55,45 @@ class CampaignController extends Controller
             'coupon_code'        => ['nullable', 'string', 'max:15'],
         ]);
 
+        $log  = fn (string $m, array $ctx = []) => Log::info("[campaign-test-send] {$m}", ['company' => $user->company_id, 'user' => $user->id] + $ctx);
+        $deny = function (string $msg) use ($user) {
+            Log::warning("[campaign-test-send] refused (422): {$msg}", ['company' => $user->company_id, 'user' => $user->id]);
+            return response()->json(['message' => $msg], 422);
+        };
+        $log('request', ['phone' => $d['phone'], 'template_id' => $d['template_id'], 'number_id' => $d['wa_phone_number_id'], 'variables' => $d['variables'] ?? null, 'coupon' => $d['coupon_code'] ?? null]);
+
         $template = WaTemplate::where('id', $d['template_id'])->where('company_id', $user->company_id)->firstOrFail();
         $number   = WaPhoneNumber::where('id', $d['wa_phone_number_id'])->where('company_id', $user->company_id)->firstOrFail();
 
         if (strtolower($template->status) !== 'approved') {
-            return response()->json(['message' => "Template is \"{$template->status}\" — only approved templates can be sent."], 422);
+            return $deny("Template is \"{$template->status}\" — only approved templates can be sent.");
         }
         if (!$number->is_active || !$number->access_token || !$number->phone_number_id) {
-            return response()->json(['message' => 'That sending number is inactive or has no credentials.'], 422);
+            return $deny('That sending number is inactive or has no credentials.');
         }
 
         $variables = array_values($d['variables'] ?? []);
         preg_match_all('/\{\{\s*(\d+)\s*\}\}/', (string) $template->body, $m);
         $needed = $m[1] ? max(array_map('intval', $m[1])) : 0;
         if ($needed > count(array_filter($variables, fn ($v) => trim((string) $v) !== ''))) {
-            return response()->json(['message' => "This template needs {$needed} variable value(s) for the test."], 422);
+            return $deny("This template needs {$needed} variable value(s) for the test.");
         }
 
         $to = preg_replace('/\D+/', '', $d['phone']);
+        $log('inputs resolved, sending to Meta', ['template' => $template->name, 'number' => $number->phone_number_id, 'to' => $to, 'variables' => $variables]);
 
         // Same sender (classification, wording, logging) as real campaign sends.
         $r = $sender->send($number->decrypted_token, $number->phone_number_id, $to, $template, $variables, $d['coupon_code'] ?? null);
+
+        $log('Meta response', ['to' => $to, 'ok' => $r['ok'], 'wa_message_id' => $r['wa_message_id'] ?? null, 'error_type' => $r['error_type'] ?? null,
+            'reason' => $r['reason'] ?? null, 'http' => $r['http'] ?? 200, 'meta_body' => $r['meta'] ?? null]);
 
         $body = ['body' => "[Template] {$template->name} — test send", 'template' => $template->name];
         \App\Models\MessageLog::recordCloudOutbound($user->company_id, $to, 'template', $body, 'test',
             $r['wa_message_id'], $r['ok'] ? null : ($r['reason'] ?: 'Send failed'), null, 'Test send',
             strtolower((string) $template->category), $r['retry_after']);
+
+        $log('message log recorded', ['to' => $to, 'status' => $r['ok'] ? 'sent' : 'failed']);
 
         if (!$r['ok']) {
             return response()->json(['message' => $r['reason']], 422);
@@ -152,9 +166,9 @@ class CampaignController extends Controller
 
     public function update(UpdateCampaignRequest $request, int $campaign): JsonResponse
     {
-        // Once created only the send time and the lead start / end dates can be changed; every other
+        // Once created only the send time, the lead start / end dates and the auto-retry switch can be changed; every other
         // field in the request is ignored (the screens show them read-only).
-        $fields = array_intersect_key($request->validated(), array_flip(['scheduled_at', 'starts_at', 'ends_at']));
+        $fields = array_intersect_key($request->validated(), array_flip(['scheduled_at', 'starts_at', 'ends_at', 'auto_retry']));
         $c = $this->campaignService->updateSchedule($campaign, auth()->user()->company_id, $fields);
         return response()->json(['message' => 'Campaign updated.', 'campaign' => new CampaignResource($c)]);
     }
@@ -186,6 +200,16 @@ class CampaignController extends Controller
     {
         $c = $this->campaignService->resume($campaign, auth()->user()->company_id);
         return response()->json(['message' => 'Campaign resumed.', 'campaign' => new CampaignResource($c)]);
+    }
+
+    /** Turn the automatic retry of marketing-capped failures on or off for one campaign (works at any stage). */
+    public function autoRetry(int $campaign, Request $request): JsonResponse
+    {
+        $d = $request->validate(['enabled' => ['required', 'boolean']]);
+        $model = $this->campaignService->show($campaign, auth()->user()->company_id);
+        $model->update(['auto_retry' => (bool) $d['enabled']]);
+        Log::info('[campaign-auto-retry] ' . ($d['enabled'] ? 'enabled' : 'stopped'), ['campaign' => $campaign, 'user' => auth()->id()]);
+        return response()->json(['message' => $d['enabled'] ? 'Auto-retry is on.' : 'Auto-retry stopped for this campaign.', 'auto_retry' => (bool) $d['enabled']]);
     }
 
     /** Resend all failed contacts, or only `items` (each optionally with a corrected phone number). */

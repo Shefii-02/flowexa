@@ -21,6 +21,7 @@ class UpdateCampaignRequest extends FormRequest
             'template_variables'  => ['nullable', 'array'],
             'throttle_per_minute' => ['sometimes', 'integer', 'min:10', 'max:1000'],
             'daily_limit'         => ['nullable', 'integer', 'min:10', 'max:1000000'],
+            'auto_retry'          => ['nullable', 'boolean'],
             'scheduled_at'        => ['nullable', 'date', 'after:now'],
             'starts_at'           => ['nullable', 'date'],
             'ends_at'             => ['nullable', 'date'], // order vs starts_at is checked in CampaignService::updateSchedule

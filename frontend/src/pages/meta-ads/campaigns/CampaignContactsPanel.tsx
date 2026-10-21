@@ -24,12 +24,13 @@ const when = (iso?: string | null) =>
   iso ? new Date(iso).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—'
 
 export default function CampaignContactsPanel({
-  campaignId, campaignStatus, initialStatus = '', resendable, onChanged,
+  campaignId, campaignStatus, initialStatus = '', resendable, autoRetry = true, onChanged,
 }: {
   campaignId: number
   campaignStatus: string
   initialStatus?: string
   resendable: number            // failed numbers that can still be retried
+  autoRetry?: boolean           // the campaign's automatic retry of marketing-capped failures is on
   onChanged: () => void         // refresh campaign list + stats after a retry
 }) {
   const [status, setStatus] = useState(initialStatus)
@@ -43,6 +44,12 @@ export default function CampaignContactsPanel({
   const [editId, setEditId] = useState<number | null>(null)
   const [editPhone, setEditPhone] = useState('')
   const [busy, setBusy] = useState(false)
+  const [autoOn, setAutoOn] = useState(autoRetry)
+  useEffect(() => setAutoOn(autoRetry), [autoRetry])
+  const toggleAuto = async () => {
+    try { const { data } = await campaignApi.autoRetry(campaignId, !autoOn); setAutoOn(data.auto_retry); toast.success(data.message); onChanged() }
+    catch (e) { toast.error(getError(e)) }
+  }
   // "Retry with options": pick a different template / sender number / variables for the retry (blank = the campaign's own)
   const [optOpen, setOptOpen] = useState(false)
   const [optTemplate, setOptTemplate] = useState<any>(null)
@@ -180,6 +187,9 @@ export default function CampaignContactsPanel({
         {resendable > 0 && !running && (
           <Button variant="secondary" loading={busy} onClick={() => retry()}>🔁 Retry all failed ({resendable})</Button>
         )}
+        <Button variant="secondary" onClick={toggleAuto} title="Numbers WhatsApp limited (error 131049) are retried once automatically after the wait">
+          {autoOn ? '⏸ Stop auto-retry' : '▶ Turn on auto-retry'}
+        </Button>
         {resendable > 0 && !running && (
           <Button variant="secondary" loading={busy} onClick={() => setOptOpen(true)}>
             ⚙ Retry {selectedRetryable.length ? `selected (${selectedRetryable.length})` : 'all failed'} with options…
