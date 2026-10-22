@@ -9,7 +9,7 @@ import { stickyApi, type StickyNote, type StickySettings } from '@/api'
 
 const BUBBLE = 52
 const PALETTE = ['#fde68a', '#fecaca', '#fed7aa', '#bbf7d0', '#bfdbfe', '#ddd6fe', '#fbcfe8', '#e5e7eb', '#a7f3d0', '#fef08a']
-const DEFAULT_SETTINGS: StickySettings = { bubble_x: null, bubble_y: null, notes_visible: false, default_color: '#fde68a', todo_visible: false, todo_x: null, todo_y: null, todo_bubble_x: null, todo_bubble_y: null }
+const DEFAULT_SETTINGS: StickySettings = { bubble_x: null, bubble_y: null, notes_visible: false, default_color: '#fde68a', todo_visible: false, todo_x: null, todo_y: null, todo_bubble_x: null, todo_bubble_y: null, notes_enabled: true, todo_enabled: true }
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), Math.max(lo, hi))
 // white text on a dark custom colour, dark text on a light one
@@ -27,6 +27,7 @@ export default function StickyNotes() {
   const [todoFocus, setTodoFocus] = useState(0)   // bumped by the "＋ New to-do" pill → the card focuses its add box
   const [paletteFor, setPaletteFor] = useState<number | null>(null)
   const [error, setError] = useState('')
+  const [cfgOpen, setCfgOpen] = useState(false)
 
   // ── load + keep the circle / notes inside the window when it is resized ──
   useEffect(() => {
@@ -87,7 +88,7 @@ export default function StickyNotes() {
 
   return (
     <>
-      {settings.notes_visible && sorted.map(n => (
+      {settings.notes_enabled && settings.notes_visible && sorted.map(n => (
         <NoteCard key={n.id} note={n} vp={vp} paletteOpen={paletteFor === n.id}
           onPalette={(open) => setPaletteFor(open ? n.id : null)}
           onChange={(patch, delay) => patchNote(n.id, patch, delay)}
@@ -95,13 +96,13 @@ export default function StickyNotes() {
           onFront={() => toFront(n.id)} onDelete={() => removeNote(n.id)} />
       ))}
 
-      {settings.todo_visible && (
+      {settings.todo_enabled && settings.todo_visible && (
         <TodoCard focusSignal={todoFocus} vp={vp} x={settings.todo_x} y={settings.todo_y} color={settings.default_color}
           onMove={(x, y) => patchSettings({ todo_x: x, todo_y: y }, 0)} onClose={() => patchSettings({ todo_visible: false }, 0)} />
       )}
 
       {/* the two circles — same look, each draggable on its own; tap to show / hide its notes or to-do card */}
-      <FloatBubble icon="📝" label="Sticky notes" color={settings.default_color} on={settings.notes_visible} vp={vp}
+      {settings.notes_enabled && <FloatBubble icon="📝" label="Sticky notes" color={settings.default_color} on={settings.notes_visible} vp={vp}
         x={bubblePos.x} y={bubblePos.y} badge={notes.length}
         onMove={(x, y) => patchSettings({ bubble_x: x, bubble_y: y }, 0)}
         onTap={() => patchSettings({ notes_visible: !settings.notes_visible }, 0)}>
@@ -117,8 +118,8 @@ export default function StickyNotes() {
             style={{ position: 'absolute', bottom: BUBBLE + 44, right: 0, width: 220 }}
             className="text-[11px] bg-red-50 border border-red-200 text-red-700 rounded-lg px-2.5 py-1.5 shadow cursor-pointer">{error}</div>
         )}
-      </FloatBubble>
-      <FloatBubble icon="✅" label="To-do list" color={settings.default_color} on={settings.todo_visible} vp={vp}
+      </FloatBubble>}
+      {settings.todo_enabled && <FloatBubble icon="✅" label="To-do list" color={settings.default_color} on={settings.todo_visible} vp={vp}
         x={todoPos.x} y={todoPos.y}
         onMove={(x, y) => patchSettings({ todo_bubble_x: x, todo_bubble_y: y }, 0)}
         onTap={() => patchSettings({ todo_visible: !settings.todo_visible }, 0)}>
@@ -129,7 +130,23 @@ export default function StickyNotes() {
             ＋ New to-do
           </button>
         )}
-      </FloatBubble>
+      </FloatBubble>}
+
+      {/* on / off for each circle — the gear stays put so a hidden circle can always be brought back */}
+      <div style={{ position: 'fixed', left: clamp(bubblePos.x + BUBBLE - 4, 0, vp.w - 22), top: clamp(bubblePos.y - 18, 0, vp.h - 22), zIndex: 57 }}>
+        <button type="button" onClick={() => setCfgOpen(o => !o)} aria-label="Sticky notes & to-do settings" title="Sticky notes & to-do settings"
+          className="w-[22px] h-[22px] rounded-full bg-white border border-gray-300 shadow text-[12px] leading-none flex items-center justify-center text-gray-600 hover:bg-gray-50">⚙</button>
+        {cfgOpen && (
+          <div className="absolute right-0 mt-1 w-48 bg-white border border-gray-200 rounded-lg shadow-xl p-2 text-xs text-gray-700 space-y-1.5">
+            {([['notes_enabled', '📝 Sticky notes'], ['todo_enabled', '✅ To-do list']] as const).map(([k, l]) => (
+              <label key={k} className="flex items-center justify-between cursor-pointer">
+                <span>{l}</span>
+                <input type="checkbox" checked={settings[k]} onChange={e => patchSettings({ [k]: e.target.checked }, 0)} />
+              </label>
+            ))}
+          </div>
+        )}
+      </div>
     </>
   )
 }
