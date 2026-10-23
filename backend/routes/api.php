@@ -47,6 +47,7 @@ use App\Modules\Settings\Http\Controllers\SettingsController;
 use App\Modules\Settings\Http\Controllers\SuperAdminController;
 use App\Modules\Staff\Http\Controllers\RoleController;
 use App\Modules\Staff\Http\Controllers\StaffAccountAccessController;
+use App\Modules\Staff\Http\Controllers\StaffAccessController;
 use App\Modules\Staff\Http\Controllers\StaffController;
 use App\Modules\SuperadminStaff\Http\Controllers\SuperadminStaffController;
 use App\Modules\Template\Http\Controllers\TemplateController;
@@ -357,6 +358,9 @@ Route::prefix('v1')->group(function () {
             // Account access — which specific WA Chat sessions / WA Cloud numbers /
             // Instagram accounts a staff member can see (StaffAccountAccess).
             Route::middleware('permission:staff.manage')->group(function () {
+                Route::get('/access/sections',         [StaffAccessController::class, 'sections'])->name('access.sections');
+                Route::get('/{staff}/access',          [StaffAccessController::class, 'show'])->name('access.show');
+                Route::put('/{staff}/access',          [StaffAccessController::class, 'update'])->name('access.update');
                 Route::get('/account-access/options', [StaffAccountAccessController::class, 'options'])->name('account-access.options');
                 Route::get('/{staff}/account-access',  [StaffAccountAccessController::class, 'show'])->name('account-access.show');
                 Route::put('/{staff}/account-access',  [StaffAccountAccessController::class, 'update'])->name('account-access.update');

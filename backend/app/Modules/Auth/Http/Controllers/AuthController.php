@@ -30,6 +30,14 @@ class AuthController extends Controller
             LoginDTO::fromRequest($request->validated())
         );
 
+        $isMobile = $request->header('X-Client') === 'mobile';
+        if (!$result->user->canUseChannel($isMobile ? 'mobile' : 'portal')) {
+            return response()->json([
+                'message'    => $isMobile ? 'Mobile app access is disabled for your account.' : 'Web portal access is disabled for your account.',
+                'error_code' => $isMobile ? 'mobile_access_disabled' : 'portal_access_disabled',
+            ], 403);
+        }
+
         return AuthResource::make($result)
             ->response()
             ->setStatusCode(200);

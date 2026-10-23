@@ -61,7 +61,7 @@ export default function WalletPage() {
         amount:      data.amount,
         currency:    data.currency,
         order_id:    data.order_id,
-        name:        'WA SaaS Platform',
+        name:        'Teamzo',
         description: pkg.label,
         theme:       { color: '#1D9E75' },
          prefill: {

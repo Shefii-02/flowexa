@@ -10,7 +10,7 @@ const TABS = [
   { id: 'background',  label: '⏳ Background sending' },
 ] as const
 
-const APP_NAME = import.meta.env.VITE_APP_NAME || 'Flowexa Platform'
+const APP_NAME = import.meta.env.VITE_APP_NAME || 'Teamzo'
 // Webhook must point at the API host (VITE_API_URL), not the frontend origin.
 const API_BASE = (import.meta.env.VITE_API_URL || `${window.location.origin}/api/v1`).replace(/\/$/, '')
 const fmtTime = (v?: string | null) => (v ? new Date(v).toLocaleString() : '—')

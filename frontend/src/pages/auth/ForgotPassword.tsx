@@ -26,8 +26,8 @@ export default function ForgotPassword() {
       <div className="w-full max-w-md">
         {/* Logo */}
         <div className="text-center mb-8">
-          <div className="w-14 h-14 bg-brand-500 rounded-2xl flex items-center justify-center text-white text-2xl font-bold mx-auto mb-3">💬</div>
-          <h1 className="text-2xl font-bold text-gray-900">WA SaaS</h1>
+          <img src="/teamzo-icon.png" alt="Teamzo" className="w-14 h-14 rounded-2xl mx-auto mb-3" />
+          <h1 className="text-2xl font-bold text-gray-900">Teamzo</h1>
           <p className="text-sm text-gray-400 mt-1">WhatsApp Business Platform</p>
         </div>
 

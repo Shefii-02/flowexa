@@ -91,7 +91,7 @@ export default function PlanPurchasePage() {
         amount: data.amount,
         currency: data.currency || 'INR',
         order_id: data.order_id,
-        name: 'Flowexa By Univexa Techonologies',
+        name: 'Teamzo By Univexa Technologies',
         description: `${plan.name} — ${DURATIONS.find(d => d.key === duration)?.label}`,
         prefill: {
           name: data.user.name,

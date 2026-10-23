@@ -86,7 +86,7 @@ export function buildErrorReport(input: {
 
 export function reportToText(r: ErrorReport): string {
   const L: string[] = []
-  L.push('FLOWEXA ERROR REPORT')
+  L.push('TEAMZO ERROR REPORT')
   L.push('='.repeat(60))
   L.push(`Reference   : ${r.id}`)
   L.push(`Type        : ${r.kind}`)
@@ -142,7 +142,7 @@ export function printReport(r: ErrorReport) {
   const esc = (s: string) =>
     s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c] as string))
   w.document.write(`<!doctype html><html><head><meta charset="utf-8">
-<title>${esc(r.id)} — Flowexa error report</title>
+<title>${esc(r.id)} — Teamzo error report</title>
 <style>
   body{font:12px/1.5 -apple-system,Segoe UI,Roboto,sans-serif;color:#111;margin:32px;}
   h1{font-size:16px;margin:0 0 4px;}
@@ -151,7 +151,7 @@ export function printReport(r: ErrorReport) {
       background:#f6f7f9;border:1px solid #e5e7eb;border-radius:8px;padding:14px;}
   @media print{body{margin:12mm;} pre{border:none;background:transparent;padding:0;}}
 </style></head><body>
-<h1>Flowexa error report</h1>
+<h1>Teamzo error report</h1>
 <div class="muted">Reference ${esc(r.id)} · generated ${esc(new Date().toLocaleString())}</div>
 <pre>${esc(reportToText(r))}</pre>
 <script>window.onload=function(){window.focus();window.print();}</script>
@@ -199,7 +199,7 @@ export async function shareReport(r: ErrorReport): Promise<'shared' | 'copied' |
   const nav = navigator as Navigator & { share?: (d: ShareData) => Promise<void> }
   if (nav.share) {
     try {
-      await nav.share({ title: `Flowexa error ${r.id}`, text })
+      await nav.share({ title: `Teamzo error ${r.id}`, text })
       return 'shared'
     } catch {
       /* user cancelled or unsupported — fall through to copy */
@@ -209,9 +209,9 @@ export async function shareReport(r: ErrorReport): Promise<'shared' | 'copied' |
 }
 
 export function supportMailto(r: ErrorReport): string {
-  const subject = encodeURIComponent(`[Flowexa] ${r.kind} error ${r.id}`)
+  const subject = encodeURIComponent(`[Teamzo] ${r.kind} error ${r.id}`)
   const body = encodeURIComponent(
-    `Hi Support team,\n\nI hit an error in Flowexa. Details below.\n\n${reportToText(r)}\n`,
+    `Hi Support team,\n\nI hit an error in Teamzo. Details below.\n\n${reportToText(r)}\n`,
   )
   return `mailto:support@flowexa.app?subject=${subject}&body=${body}`
 }

@@ -69,7 +69,7 @@ export default function PlanPurchasePage() {
         amount:      data.amount,
         currency:    data.currency || 'INR',
         order_id:    data.order_id,
-        name:        'WA SaaS Platform',
+        name:        'Teamzo',
         description: `${plan.name} — ${DURATIONS.find(d => d.key === duration)?.label}`,
         theme:       { color: '#1D9E75' },
         handler: async (response: any) => {

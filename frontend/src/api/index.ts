@@ -47,6 +47,13 @@ export const staffAccountAccessApi = {
     api.put(`/staff/${userId}/account-access`, d),
 }
 
+export const staffAccessApi = {
+  sections: () => api.get('/staff/access/sections'),
+  show: (userId: number) => api.get(`/staff/${userId}/access`),
+  update: (userId: number, d: { portal_access: boolean; mobile_access: boolean; main: string | null; subs: string[] }) =>
+    api.put(`/staff/${userId}/access`, d),
+}
+
 // ── Contacts ──────────────────────────────────────────────────────────────────
 export const contactApi = {
   list: (p?: Record<string, unknown>) => api.get('/contacts', { params: p }),

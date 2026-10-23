@@ -21,7 +21,12 @@ class UserResource extends JsonResource
             'created_at' => $this->created_at->toIso8601String(),
 
             // Flat permissions array for fast frontend checks
-            'permissions' => $this->role?->permissions ?? [],
+            'permissions' => $this->effectivePermissions(),
+
+            // Access sections (prebuilt permission bundles) + which channels this account may use
+            'access_sections' => $this->accessSectionKeys(),
+            'portal_access'   => (bool) $this->portal_access,
+            'mobile_access'   => (bool) $this->mobile_access,
 
             // Role with permissions
             'role' => $this->whenLoaded('role', fn() => [

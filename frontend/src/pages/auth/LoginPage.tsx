@@ -31,10 +31,8 @@ export default function LoginPage() {
       <div className="w-full max-w-sm">
         {/* Logo */}
         <div className="text-center mb-8">
-          <div className="w-12 h-12 bg-brand-500 rounded-2xl flex items-center justify-center text-white text-2xl mx-auto mb-3 shadow-lg">
-            💬
-          </div>
-          <h1 className="text-xl font-bold text-gray-900">WA SaaS Platform</h1>
+          <img src="/teamzo-icon.png" alt="Teamzo" className="w-14 h-14 rounded-2xl mx-auto mb-3 shadow-lg" />
+          <h1 className="text-xl font-bold text-gray-900">Teamzo</h1>
           <p className="text-sm text-gray-500 mt-1">Sign in to your account</p>
         </div>
 

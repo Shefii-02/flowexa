@@ -372,7 +372,7 @@ const SECTIONS: Section[] = [
         body: (
           <>
             Go to <b>console.cloud.google.com</b> → project dropdown (top bar) → <b>New Project</b>.
-            Name it (e.g. “Flowexa”) and create it, then make sure it’s the selected project.
+            Name it (e.g. “Teamzo”) and create it, then make sure it’s the selected project.
           </>
         ),
       },

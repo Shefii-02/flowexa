@@ -303,12 +303,10 @@ export const Sidebar = () => {
       {/* Header */}
       <div className="px-4 py-4 border-b border-gray-100 flex-shrink-0">
         <div className="flex items-center gap-2.5">
-          <div className="w-7 h-7 bg-brand-500 rounded-lg flex items-center justify-center text-white text-sm">
-            💬
-          </div>
+          <img src="/teamzo-icon.png" alt="Teamzo" className="w-7 h-7 rounded-lg" />
           <div className="min-w-0">
             <p className="text-sm font-semibold text-gray-900 truncate">
-              {user?.company?.name ?? 'WA SaaS'}
+              {user?.company?.name ?? 'Teamzo'}
             </p>
             <p className="text-xs text-gray-400 truncate">{user?.role?.label}</p>
           </div>
@@ -625,6 +623,7 @@ export const Sidebar = () => {
             {/* Assignment Rules now lives under Leads → Advanced */}
             {/* {canViewRoles &&  */}
             <FlatLink to="/staff/roles" icon="🎭" label="Roles" />
+            <FlatLink to="/staff/access" icon="🧩" label="Staff Access" />
             <FlatLink to="/staff/account-access" icon="🔐" label="Account Access" />
             {/* } */}
 

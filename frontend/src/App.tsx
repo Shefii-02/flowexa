@@ -18,6 +18,7 @@ import DashboardPage from '@/pages/dashboard/DashboardPage'
 import StaffPage from '@/pages/staff/StaffPage'
 import RolesPage from '@/pages/staff/RolesPage'
 import StaffAccountAccessPage from '@/pages/staff/StaffAccountAccessPage'
+import StaffAccessPage from '@/pages/staff/StaffAccessPage'
 import ContactsPage from '@/pages/contacts/ContactsPage'
 // import FlowPage from '@/pages/flow/FlowPage'
 import CampaignsPage from '@/pages/meta-ads/campaigns/CampaignsPage'
@@ -273,6 +274,7 @@ export default function App() {
               <Route path="setup-guide" element={<SetupGuidePage />} />
               <Route path="staff/index" element={<StaffPage />} />
               <Route path="staff/roles" element={<RolesPage />} />
+              <Route path="staff/access" element={<StaffAccessPage />} />
               <Route path="staff/account-access" element={<StaffAccountAccessPage />} />
               <Route path="crm/contacts" element={<ContactsPage />} />
               <Route path="crm/labels" element={<LabelsPage />} />

@@ -78,6 +78,10 @@ class DeviceAuthController extends Controller
         $challenge = $this->resolve($request);
         $user = $challenge->user;
 
+        if (!$user->canUseChannel('mobile')) {
+            return response()->json(['error' => 'mobile_access_disabled', 'message' => 'Mobile app access is disabled for this account.'], 403);
+        }
+
         $existing = UserDevice::where('user_id', $user->id)->where('device_uid', $device['device_uid'])->first();
         $max = (int) ($user->company?->max_devices_per_user ?? 2);
 

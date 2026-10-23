@@ -18,13 +18,15 @@ class User extends Authenticatable implements JWTSubject
     protected $fillable = [
         'company_id', 'role_id', 'name', 'email', 'phone',
         'avatar', 'department', 'password', 'is_active',
-        'max_leads', 'last_login_at',
+        'max_leads', 'last_login_at', 'portal_access', 'mobile_access',
     ];
 
     protected $hidden = ['password', 'remember_token'];
 
     protected $casts = [
         'is_active'       => 'boolean',
+        'portal_access'   => 'boolean',
+        'mobile_access'   => 'boolean',
         'last_login_at'   => 'datetime',
         'email_verified_at' => 'datetime',
     ];
@@ -56,16 +58,50 @@ class User extends Authenticatable implements JWTSubject
         return $this->role?->name === 'owner';
     }
 
+    public function accessSections(): HasMany { return $this->hasMany(StaffAccessSection::class); }
+
+    /** Assigned access section keys (main first), memoised for the request. */
+    public function accessSectionKeys(): array
+    {
+        return $this->_sectionKeys ??= $this->accessSections()->orderByDesc('is_main')->pluck('section_key')->all();
+    }
+
+    /** Role permissions plus every assigned access section's permissions (see config/access_sections.php). */
+    public function effectivePermissions(): array
+    {
+        if ($this->_effectivePerms !== null) return $this->_effectivePerms;
+
+        $perms = $this->role?->permissions ?? [];
+        foreach ($this->accessSectionKeys() as $key) {
+            $section = config("access_sections.$key.permissions");
+            if (!$section) continue;
+            $perms = in_array('*', $section, true)
+                ? array_merge($perms, Permission::pluck('key')->all())
+                : array_merge($perms, $section);
+        }
+        return $this->_effectivePerms = array_values(array_unique($perms));
+    }
+
+    /** Whether this account may use the given channel: 'portal' (web) or 'mobile'. Owners/superadmins always can. */
+    public function canUseChannel(string $channel): bool
+    {
+        if ($this->isSuperAdmin() || $this->isOwner()) return true;
+        return $channel === 'mobile' ? (bool) $this->mobile_access : (bool) $this->portal_access;
+    }
+
+    private ?array $_sectionKeys = null;
+    private ?array $_effectivePerms = null;
+
     public function hasPermission(string $permission): bool
     {
         if ($this->isSuperAdmin()) return true;
-        return $this->role?->hasPermission($permission) ?? false;
+        return in_array($permission, $this->effectivePermissions(), true);
     }
 
     public function hasAnyPermission(array $permissions): bool
     {
         if ($this->isSuperAdmin()) return true;
-        return $this->role?->hasAnyPermission($permissions) ?? false;
+        return !empty(array_intersect($permissions, $this->effectivePermissions()));
     }
 
     /** Permission key that fully unrestricts each account_type — see StaffAccountAccess. */

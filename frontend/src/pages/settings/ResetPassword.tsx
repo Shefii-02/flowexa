@@ -54,8 +54,8 @@ export default function ResetPassword() {
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-brand-50 flex items-center justify-center p-4">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <div className="w-14 h-14 bg-brand-500 rounded-2xl flex items-center justify-center text-white text-2xl font-bold mx-auto mb-3">💬</div>
-          <h1 className="text-2xl font-bold text-gray-900">WA SaaS</h1>
+          <img src="/teamzo-icon.png" alt="Teamzo" className="w-14 h-14 rounded-2xl mx-auto mb-3" />
+          <h1 className="text-2xl font-bold text-gray-900">Teamzo</h1>
         </div>
 
         <div className="card p-8">
