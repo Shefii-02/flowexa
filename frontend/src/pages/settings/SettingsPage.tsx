@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Link } from 'react-router-dom'
-import { settingsApi, roleApi, staffApi, deviceApi } from '@/api'
+import { settingsApi, roleApi, staffApi, deviceApi, stickyApi, type StickySettings } from '@/api'
 import { Button, Input } from '@/components/ui'
 import { getError } from '@/utils'
 import { useCurrentUser, usePermission, useIsSuperAdmin } from '@/store'
@@ -25,7 +25,7 @@ type TabId = (typeof TABS)[number]['id']
 
 function TabBar({ active, onChange }: { active: TabId; onChange: (t: TabId) => void }) {
   return (
-    <div className="flex gap-1 border-b border-gray-200 overflow-x-auto">
+    <div className="flex gap-1 border-b border-gray-200 overflow-hidden">
       {TABS.map(t => (
         <button
           key={t.id}
@@ -276,6 +276,8 @@ function ProfileTab() {
         </div>
       </div>
 
+      <FloatingWidgetsCard />
+
       <div className="card">
         <div className="card-header"><h3 className="card-title">Change password</h3></div>
         <div className="card-body space-y-3">
@@ -293,6 +295,36 @@ function ProfileTab() {
 }
 
 // ── Staff tab ─────────────────────────────────────────────────────────────────
+
+/** On / off for the floating 📝 Sticky notes and ✅ To-do circles (per user; applies instantly). */
+function FloatingWidgetsCard() {
+  const [cfg, setCfg] = useState<Pick<StickySettings, 'notes_enabled' | 'todo_enabled'> | null>(null)
+
+  useEffect(() => {
+    stickyApi.list().then(r => setCfg({ notes_enabled: r.data.settings.notes_enabled, todo_enabled: r.data.settings.todo_enabled })).catch(() => {})
+  }, [])
+
+  const set = async (patch: Partial<StickySettings>) => {
+    setCfg(c => (c ? { ...c, ...patch } as typeof c : c))
+    window.dispatchEvent(new CustomEvent('sticky-settings-changed', { detail: patch }))
+    try { await stickyApi.settings(patch) } catch (e) { toast.error(getError(e)) }
+  }
+
+  return (
+    <div className="card">
+      <div className="card-header"><h3 className="card-title">Floating widgets</h3></div>
+      <div className="card-body space-y-3">
+        <p className="text-sm text-gray-500">Turn the floating buttons on to show them on every page; turn off to hide them.</p>
+        {cfg && ([['notes_enabled', '📝 Sticky notes'], ['todo_enabled', '✅ To-do list']] as const).map(([k, label]) => (
+          <label key={k} className="flex items-center justify-between cursor-pointer text-sm text-gray-700">
+            <span>{label}</span>
+            <input type="checkbox" checked={cfg[k]} onChange={e => set({ [k]: e.target.checked })} />
+          </label>
+        ))}
+      </div>
+    </div>
+  )
+}
 
 function StaffTab() {
   const [rows, setRows] = useState<any[]>([])

@@ -27,15 +27,17 @@ export default function StickyNotes() {
   const [todoFocus, setTodoFocus] = useState(0)   // bumped by the "＋ New to-do" pill → the card focuses its add box
   const [paletteFor, setPaletteFor] = useState<number | null>(null)
   const [error, setError] = useState('')
-  const [cfgOpen, setCfgOpen] = useState(false)
 
   // ── load + keep the circle / notes inside the window when it is resized ──
   useEffect(() => {
     let off = false
     stickyApi.list().then(r => { if (!off) { setNotes(r.data.notes); setSettings(r.data.settings); setReady(true) } }).catch(() => { if (!off) setReady(true) })
     const onResize = () => setVp({ w: window.innerWidth, h: window.innerHeight })
+    // Settings → Floating widgets flips notes_enabled / todo_enabled: show or hide the circles right away
+    const onCfg = (e: Event) => setSettings(s => ({ ...s, ...(e as CustomEvent<Partial<StickySettings>>).detail }))
     window.addEventListener('resize', onResize)
-    return () => { off = true; window.removeEventListener('resize', onResize) }
+    window.addEventListener('sticky-settings-changed', onCfg)
+    return () => { off = true; window.removeEventListener('resize', onResize); window.removeEventListener('sticky-settings-changed', onCfg) }
   }, [])
 
   // ── saving: optimistic local change, debounced write per note ──
@@ -132,21 +134,6 @@ export default function StickyNotes() {
         )}
       </FloatBubble>}
 
-      {/* on / off for each circle — the gear stays put so a hidden circle can always be brought back */}
-      <div style={{ position: 'fixed', left: clamp(bubblePos.x + BUBBLE - 4, 0, vp.w - 22), top: clamp(bubblePos.y - 18, 0, vp.h - 22), zIndex: 57 }}>
-        <button type="button" onClick={() => setCfgOpen(o => !o)} aria-label="Sticky notes & to-do settings" title="Sticky notes & to-do settings"
-          className="w-[22px] h-[22px] rounded-full bg-white border border-gray-300 shadow text-[12px] leading-none flex items-center justify-center text-gray-600 hover:bg-gray-50">⚙</button>
-        {cfgOpen && (
-          <div className="absolute right-0 mt-1 w-48 bg-white border border-gray-200 rounded-lg shadow-xl p-2 text-xs text-gray-700 space-y-1.5">
-            {([['notes_enabled', '📝 Sticky notes'], ['todo_enabled', '✅ To-do list']] as const).map(([k, l]) => (
-              <label key={k} className="flex items-center justify-between cursor-pointer">
-                <span>{l}</span>
-                <input type="checkbox" checked={settings[k]} onChange={e => patchSettings({ [k]: e.target.checked }, 0)} />
-              </label>
-            ))}
-          </div>
-        )}
-      </div>
     </>
   )
 }
