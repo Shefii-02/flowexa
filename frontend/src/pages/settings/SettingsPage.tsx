@@ -13,6 +13,7 @@ import type { Role } from '@/types'
 const TABS = [
   { id: 'company',     label: '🏢 Company' },
   { id: 'profile',     label: '👤 My Profile' },
+  { id: 'display',     label: '🖥️ Display' },
   { id: 'staff',       label: '👥 Staff' },
   { id: 'devices',     label: '📱 Linked Devices' },
   { id: 'permissions', label: '🛡️ Permissions' },
@@ -276,8 +277,6 @@ function ProfileTab() {
         </div>
       </div>
 
-      <FloatingWidgetsCard />
-
       <div className="card">
         <div className="card-header"><h3 className="card-title">Change password</h3></div>
         <div className="card-body space-y-3">
@@ -295,6 +294,15 @@ function ProfileTab() {
 }
 
 // ── Staff tab ─────────────────────────────────────────────────────────────────
+
+/** Display tab — how the portal looks and what floats over it (per user, applies instantly). */
+function DisplayTab() {
+  return (
+    <div className="space-y-6">
+      <FloatingWidgetsCard />
+    </div>
+  )
+}
 
 /** On / off for the floating 📝 Sticky notes and ✅ To-do circles (per user; applies instantly). */
 function FloatingWidgetsCard() {
@@ -612,6 +620,7 @@ export default function SettingsPage() {
       <div className="pt-2">
         {tab === 'company'      && <CompanyTab />}
         {tab === 'profile'      && <ProfileTab />}
+        {tab === 'display'      && <DisplayTab />}
         {tab === 'staff'        && <StaffTab />}
         {tab === 'devices'      && <DevicesTab />}
         {tab === 'permissions'  && <PermissionsTab />}
