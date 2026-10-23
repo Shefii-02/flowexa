@@ -4,6 +4,7 @@ namespace App\Modules\Hr\Http\Controllers;
 
 use App\Http\Controllers\Controller;
 use App\Modules\Hr\Models\HrAttendance;
+use App\Modules\Hr\Models\HrAttendanceSession;
 use App\Modules\Hr\Models\HrBreakSession;
 use App\Modules\Hr\Models\HrBreakType;
 use App\Modules\Hr\Models\HrSetting;
@@ -34,6 +35,18 @@ class AttendanceController extends Controller
     {
         $u = auth()->user();
         return $u->isOwner() || $u->isSuperAdmin() || $u->hasAnyPermission(['hr.manage', 'hr.attendance.view_all', 'staff.view']);
+    }
+
+    private function canEdit(): bool
+    {
+        $u = auth()->user();
+        return $u->isOwner() || $u->isSuperAdmin() || $u->hasAnyPermission(['hr.manage', 'hr.attendance.edit']);
+    }
+
+    private function canViewPhotos(): bool
+    {
+        $u = auth()->user();
+        return $u->isOwner() || $u->isSuperAdmin() || $u->hasAnyPermission(['hr.manage', 'hr.attendance.view_photos']);
     }
 
     /**
@@ -78,7 +91,7 @@ class AttendanceController extends Controller
         $profile = HrStaffProfile::forUser($companyId, $userId);
 
         $today = HrAttendance::where('company_id', $companyId)->where('user_id', $userId)
-            ->whereDate('work_date', today())->with('breaks.breakType')->first();
+            ->whereDate('work_date', today())->with('breaks.breakType', 'sessions')->first();
 
         $monthRows = HrAttendance::where('company_id', $companyId)->where('user_id', $userId)
             ->whereBetween('work_date', [now()->startOfMonth(), now()->endOfMonth()])->get();
@@ -121,7 +134,7 @@ class AttendanceController extends Controller
 
         $days = HrAttendance::where('company_id', $companyId)->where('user_id', $userId)
             ->whereBetween('work_date', [$start, $end])
-            ->with('breaks.breakType:id,name')
+            ->with('breaks.breakType:id,name', 'sessions')
             ->orderByDesc('work_date')
             ->get();
 
@@ -242,7 +255,7 @@ class AttendanceController extends Controller
                 : "You're {$geo['distance']} m from the office (allowed: {$settings->geofence_radius_m} m).";
         }
 
-        if ($data['action'] === 'clock_in') {
+        if ($data['action'] === 'clock_in' && !$att?->clock_in_at) {
             $sched = $this->svc->schedule($settings, $profile, $now);
             $status = $this->svc->clockInStatus($now, $sched['start'], $settings->early_window_minutes, $settings->grace_minutes);
             $result['late_minutes'] = $status['late_minutes'];
@@ -302,13 +315,18 @@ class AttendanceController extends Controller
         $att = HrAttendance::firstOrNew([
             'company_id' => $companyId, 'user_id' => $userId, 'work_date' => $now->toDateString(),
         ]);
-        if ($att->clock_in_at) {
-            throw ValidationException::withMessages(['clock_in' => 'Already clocked in today.']);
+        // Several sessions a day are allowed (split shifts, accidental clock-outs) — only a
+        // session that's still open blocks a new clock-in. Lateness is judged on the first one.
+        $isFirstSession = !$att->clock_in_at;
+        if (!$isFirstSession && !$att->clock_out_at) {
+            throw ValidationException::withMessages(['clock_in' => "You're already clocked in."]);
         }
 
-        $workMode = $data['work_mode'] ?? $profile->work_mode;
+        $workMode = $data['work_mode'] ?? $att->work_mode ?? $profile->work_mode;
         $sched = $this->svc->schedule($settings, $profile, $now);
-        $status = $this->svc->clockInStatus($now, $sched['start'], $settings->early_window_minutes, $settings->grace_minutes);
+        $status = $isFirstSession
+            ? $this->svc->clockInStatus($now, $sched['start'], $settings->early_window_minutes, $settings->grace_minutes)
+            : ['color' => $att->clock_in_status ?: 'success', 'late_minutes' => (int) $att->late_minutes, 'requires_note' => false];
         $geo = $this->svc->geofence($settings, $profile, $data['lat'] ?? null, $data['lng'] ?? null);
 
         $this->guardMandatoryRadius($settings, $workMode, $geo, $data['radius_reason'] ?? null);
@@ -324,27 +342,50 @@ class AttendanceController extends Controller
         $noteMsg = $geo['note_message']
             ?? ($status['late_minutes'] > 0 ? "Clocked in {$status['late_minutes']} min late." : 'On time.');
 
-        $att->fill([
-            'clock_in_at'              => $now,
-            'clock_in_lat'            => $data['lat'] ?? null,
-            'clock_in_lng'            => $data['lng'] ?? null,
-            'clock_in_distance_m'     => $geo['distance'],
-            'clock_in_out_of_geofence' => $geo['out_of_geofence'],
-            'clock_in_photo_url'      => $photoUrl,
-            'clock_in_radius_reason'  => $geo['out_of_geofence'] ? ($data['radius_reason'] ?? null) : null,
-            'clock_in_status'         => $status['color'],
-            'work_mode'               => $workMode,
-            'source'                  => $data['source'] ?? 'web',
-            'late_minutes'            => $status['late_minutes'],
-            'late_note'               => $data['note'] ?? null,
-            'status'                  => 'present',
-            'note_color'              => $noteColor,
-            'note_message'            => ($data['note'] ?? null) ? ($noteMsg . ' — ' . $data['note']) : $noteMsg,
-        ])->save();
+        if ($isFirstSession) {
+            $att->fill([
+                'clock_in_at'              => $now,
+                'clock_in_lat'            => $data['lat'] ?? null,
+                'clock_in_lng'            => $data['lng'] ?? null,
+                'clock_in_distance_m'     => $geo['distance'],
+                'clock_in_out_of_geofence' => $geo['out_of_geofence'],
+                'clock_in_photo_url'      => $photoUrl,
+                'clock_in_radius_reason'  => $geo['out_of_geofence'] ? ($data['radius_reason'] ?? null) : null,
+                'clock_in_status'         => $status['color'],
+                'work_mode'               => $workMode,
+                'source'                  => $data['source'] ?? 'web',
+                'late_minutes'            => $status['late_minutes'],
+                'late_note'               => $data['note'] ?? null,
+                'status'                  => 'present',
+                'note_color'              => $noteColor,
+                'note_message'            => ($data['note'] ?? null) ? ($noteMsg . ' — ' . $data['note']) : $noteMsg,
+            ]);
+        } else {
+            // Back on the clock: the day is open again, so the previous session's punch-out
+            // summary (early leave / overtime) is dropped and recomputed at the next clock-out.
+            $att->fill([
+                'clock_out_at' => null, 'clock_out_lat' => null, 'clock_out_lng' => null,
+                'clock_out_distance_m' => null, 'clock_out_photo_url' => null, 'clock_out_radius_reason' => null,
+                'early_leave_minutes' => 0, 'early_leave_note' => null,
+                'overtime_minutes' => 0, 'overtime_note' => null, 'overtime_status' => 'none',
+            ]);
+        }
+        $att->save();
+
+        HrAttendanceSession::create([
+            'company_id' => $companyId, 'user_id' => $userId, 'attendance_id' => $att->id,
+            'clock_in_at' => $now,
+            'clock_in_lat' => $data['lat'] ?? null, 'clock_in_lng' => $data['lng'] ?? null,
+            'clock_in_distance_m' => $geo['distance'],
+            'clock_in_photo_url' => $photoUrl,
+            'clock_in_radius_reason' => $geo['out_of_geofence'] ? ($data['radius_reason'] ?? null) : null,
+            'clock_in_note' => $data['note'] ?? null,
+            'source' => $data['source'] ?? 'web',
+        ]);
 
         $this->svc->syncAvailability($settings, $companyId, $userId, 'working');
 
-        if ($status['requires_note']) {
+        if ($isFirstSession && $status['requires_note']) {
             $this->notifier->notify(
                 $settings->late_clockin_notify_user_ids,
                 'hr_late_clock_in',
@@ -355,7 +396,7 @@ class AttendanceController extends Controller
             );
         }
 
-        return response()->json(['data' => $att->fresh()->load('breaks'), 'status' => $status, 'geofence' => $geo], 201);
+        return response()->json(['data' => $att->fresh()->load('breaks', 'sessions'), 'status' => $status, 'geofence' => $geo], 201);
     }
 
     /** POST /hr/attendance/clock-out */
@@ -380,8 +421,9 @@ class AttendanceController extends Controller
         if (!$att || !$att->clock_in_at) {
             throw ValidationException::withMessages(['clock_out' => 'Not clocked in today.']);
         }
-        if ($att->clock_out_at) {
-            throw ValidationException::withMessages(['clock_out' => 'Already clocked out today.']);
+        $session = $att->openSession();
+        if ($att->clock_out_at || !$session) {
+            throw ValidationException::withMessages(['clock_out' => "You're already clocked out. Clock in to start a new session."]);
         }
         if ($att->openBreak()) {
             throw ValidationException::withMessages(['clock_out' => 'End your open break before clocking out.']);
@@ -419,6 +461,15 @@ class AttendanceController extends Controller
             'overtime_status'      => $overtime > 0 ? ($settings->overtime_needs_approval ? 'pending' : 'approved') : 'none',
         ])->save();
 
+        $session->update([
+            'clock_out_at' => $now,
+            'clock_out_lat' => $data['lat'] ?? null, 'clock_out_lng' => $data['lng'] ?? null,
+            'clock_out_distance_m' => $geo['distance'],
+            'clock_out_photo_url' => $photoUrl,
+            'clock_out_radius_reason' => $geo['out_of_geofence'] ? ($data['radius_reason'] ?? null) : null,
+            'clock_out_note' => $data['note'] ?? null,
+        ]);
+
         $this->svc->recomputeTotals($att);
         $this->svc->syncAvailability($settings, $companyId, $userId, 'off');
 
@@ -435,13 +486,13 @@ class AttendanceController extends Controller
             );
         }
 
-        return response()->json(['data' => $att->fresh()->load('breaks')]);
+        return response()->json(['data' => $att->fresh()->load('breaks', 'sessions')]);
     }
 
     /**
      * POST /hr/attendance/request-reopen — self-service "I accidentally clocked out".
-     * One clock-in/clock-out per day is enforced everywhere else (clockIn() rejects a second
-     * clock-in outright); this is the only door back in, and it always needs a manager's
+     * Superseded by multi-session days (clockIn() now simply opens a new session after a
+     * clock-out); kept so older app builds that still call it keep working. It needs a manager's
      * approval — clock_out_at is never cleared just because the staff member asked.
      */
     public function requestReopen(Request $request): JsonResponse
@@ -697,7 +748,7 @@ class AttendanceController extends Controller
         abort_unless($this->canManage(), 403, 'No HR permission.');
 
         $rows = HrAttendance::where('company_id', $this->companyId())
-            ->with('user:id,name,avatar,department', 'breaks:id,attendance_id,minutes,over_limit,break_type_id')
+            ->with('user:id,name,avatar,department', 'breaks:id,attendance_id,minutes,over_limit,break_type_id', 'sessions')
             ->when($request->filled('user_id'), fn ($q) => $q->where('user_id', $request->integer('user_id')))
             ->when($request->filled('status'), fn ($q) => $q->where('status', $request->string('status')))
             ->when($request->filled('date'), fn ($q) => $q->whereDate('work_date', $request->date('date')))
@@ -707,13 +758,20 @@ class AttendanceController extends Controller
             ->orderByDesc('work_date')->orderByDesc('clock_in_at')
             ->paginate((int) min(max($request->integer('per_page', 100), 1), 1000));
 
+        if (!$this->canViewPhotos()) {
+            $rows->getCollection()->each(function ($att) {
+                $att->makeHidden(['clock_in_photo_url', 'clock_out_photo_url', 'clock_in_lat', 'clock_in_lng', 'clock_out_lat', 'clock_out_lng']);
+                $att->sessions->each->makeHidden(['clock_in_photo_url', 'clock_out_photo_url', 'clock_in_lat', 'clock_in_lng', 'clock_out_lat', 'clock_out_lng']);
+            });
+        }
+
         return response()->json($rows);
     }
 
     /** POST /hr/attendance — admin creates a missed / manual attendance row. */
     public function storeEntry(Request $request): JsonResponse
     {
-        abort_unless($this->canManage(), 403, 'No HR permission.');
+        abort_unless($this->canEdit(), 403, 'No permission to edit attendance.');
 
         $data = $request->validate([
             'user_id'      => 'required|integer',
@@ -740,15 +798,16 @@ class AttendanceController extends Controller
             'source'       => 'admin',
         ]);
         $att->save();
+        $this->syncSessionsFromDay($att);
         $this->applyScheduleMetrics($att);
 
-        return response()->json(['data' => $att->fresh()], 201);
+        return response()->json(['data' => $att->fresh()->load('sessions')], 201);
     }
 
     /** PATCH /hr/attendance/{id} — admin correction of a wrong / missed entry. */
     public function update(Request $request, int $id): JsonResponse
     {
-        abort_unless($this->canManage(), 403, 'No HR permission.');
+        abort_unless($this->canEdit(), 403, 'No permission to edit attendance.');
 
         $att = HrAttendance::where('company_id', $this->companyId())->findOrFail($id);
         $data = $request->validate([
@@ -760,9 +819,34 @@ class AttendanceController extends Controller
             'overtime_status' => 'nullable|in:none,pending,approved,rejected',
         ]);
         $att->update($data);
+        $this->syncSessionsFromDay($att);
         $this->applyScheduleMetrics($att);
 
-        return response()->json(['data' => $att->fresh()]);
+        return response()->json(['data' => $att->fresh()->load('sessions')]);
+    }
+
+    /**
+     * An admin edits the day's first clock-in / last clock-out. Mirror that onto the sessions:
+     * the first session takes the new clock-in, the last takes the new clock-out, and a day
+     * with a clock-in but no sessions (manual entry) gets one.
+     */
+    private function syncSessionsFromDay(HrAttendance $att): void
+    {
+        if (!$att->clock_in_at) {
+            return;
+        }
+        $sessions = $att->sessions()->get();
+        if ($sessions->isEmpty()) {
+            HrAttendanceSession::create([
+                'company_id' => $att->company_id, 'user_id' => $att->user_id, 'attendance_id' => $att->id,
+                'clock_in_at' => $att->clock_in_at, 'clock_out_at' => $att->clock_out_at, 'source' => 'admin',
+            ]);
+            return;
+        }
+        $sessions->first()->update(['clock_in_at' => $att->clock_in_at]);
+        if ($att->clock_out_at) {
+            $sessions->last()->update(['clock_out_at' => $att->clock_out_at]);
+        }
     }
 
     /** Recompute late / early-leave / overtime / worked minutes against the schedule. */

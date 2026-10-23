@@ -157,12 +157,22 @@ class AttendanceService
     {
         $breakMinutes = (int) $att->breaks()->whereNotNull('end_at')->sum('minutes');
 
-        $worked = 0;
-        if ($att->clock_in_at && $att->clock_out_at) {
-            $worked = max(0, (int) round($att->clock_in_at->diffInSeconds($att->clock_out_at) / 60) - $breakMinutes);
-        }
+        $worked = max(0, $this->closedSessionMinutes($att) - $breakMinutes);
 
         $att->update(['break_minutes' => $breakMinutes, 'worked_minutes' => $worked]);
+    }
+
+    /** Whole minutes across every completed clock-in/out session (falls back to the day's own punches for sessionless legacy/manual rows). */
+    private function closedSessionMinutes(HrAttendance $att): int
+    {
+        $sessions = $att->sessions()->get();
+        if ($sessions->isEmpty()) {
+            return ($att->clock_in_at && $att->clock_out_at)
+                ? (int) round($att->clock_in_at->diffInSeconds($att->clock_out_at) / 60) : 0;
+        }
+
+        return (int) round($sessions->filter(fn ($s) => $s->clock_out_at)
+            ->sum(fn ($s) => $s->clock_in_at->diffInSeconds($s->clock_out_at)) / 60);
     }
 
     /**
@@ -176,12 +186,15 @@ class AttendanceService
         if (!$att->clock_in_at) {
             return 0;
         }
-        $end = $att->clock_out_at ?: now();
+        $sessions = $att->sessions()->get();
+        $total = $sessions->isEmpty()
+            ? $att->clock_in_at->diffInSeconds($att->clock_out_at ?: now())
+            : $sessions->sum(fn ($s) => $s->clock_in_at->diffInSeconds($s->clock_out_at ?: now()));
         $completedBreaks = (int) $att->breaks()->whereNotNull('end_at')->sum('minutes');
         $openBreak = $att->openBreak();
         $openBreakMinutes = $openBreak ? max(0, (int) round($openBreak->start_at->diffInSeconds(now()) / 60)) : 0;
 
-        return max(0, (int) round($att->clock_in_at->diffInSeconds($end) / 60) - $completedBreaks - $openBreakMinutes);
+        return max(0, (int) round($total / 60) - $completedBreaks - $openBreakMinutes);
     }
 
     /**

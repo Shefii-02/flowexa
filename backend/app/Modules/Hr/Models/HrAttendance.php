@@ -44,6 +44,14 @@ class HrAttendance extends Model
     public function user(): BelongsTo { return $this->belongsTo(User::class); }
     public function breaks(): HasMany { return $this->hasMany(HrBreakSession::class, 'attendance_id'); }
 
+    public function sessions(): HasMany { return $this->hasMany(HrAttendanceSession::class, 'attendance_id')->orderBy('clock_in_at'); }
+
+    /** The clock-in with no clock-out yet, if the staff member is currently on the clock. */
+    public function openSession(): ?HrAttendanceSession
+    {
+        return $this->sessions()->whereNull('clock_out_at')->latest('clock_in_at')->first();
+    }
+
     public function openBreak(): ?HrBreakSession
     {
         return $this->breaks()->whereNull('end_at')->latest('id')->first();

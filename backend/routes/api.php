@@ -507,8 +507,10 @@ Route::prefix('v1')->group(function () {
             Route::middleware('permission:hr.manage,hr.attendance.view_all,staff.view')->group(function () {
                 Route::get('attendance',             [AttendanceController::class, 'index']);
                 Route::get('attendance/payroll',     [AttendanceController::class, 'payroll']);
-                Route::post('attendance',            [AttendanceController::class, 'storeEntry']);
-                Route::patch('attendance/{id}',      [AttendanceController::class, 'update']);
+                Route::post('attendance',            [AttendanceController::class, 'storeEntry'])
+                    ->middleware('permission:hr.manage,hr.attendance.edit');
+                Route::patch('attendance/{id}',      [AttendanceController::class, 'update'])
+                    ->middleware('permission:hr.manage,hr.attendance.edit');
                 Route::get('attendance/reopen-requests', [AttendanceController::class, 'reopenRequests']);
                 Route::post('attendance/{id}/reopen', [AttendanceController::class, 'reviewReopen']);
             });

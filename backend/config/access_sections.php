@@ -44,7 +44,7 @@ return [
     'hr' => [
         'label' => 'HR Team', 'icon' => '👥', 'color' => '#ec4899',
         'description' => 'Attendance, leave, payroll and staff directory.',
-        'permissions' => ['dashboard.view', 'hr.manage', 'hr.attendance.view_all', 'hr.leave.approve', 'staff.view', 'reports.view'],
+        'permissions' => ['dashboard.view', 'hr.manage', 'hr.attendance.view_all', 'hr.attendance.edit', 'hr.attendance.view_photos', 'hr.leave.approve', 'staff.view', 'reports.view'],
     ],
     'accounts' => [
         'label' => 'Accounts Team', 'icon' => '🧾', 'color' => '#eab308',

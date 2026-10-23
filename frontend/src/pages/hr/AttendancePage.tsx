@@ -1,11 +1,15 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from '@/api/client'
 import toast from 'react-hot-toast'
 import type { BreakType, BreakSession, Attendance } from './hrShared'
 
 type MeResponse = {
   profile: { attendance_type: string; work_mode: string }
-  settings: { office_start: string; office_end: string; geofence_radius_m: number }
+  settings: {
+    office_start: string; office_end: string; geofence_radius_m: number
+    selfie_required_clock_in?: boolean; selfie_required_clock_out?: boolean
+    selfie_required_break_start?: boolean; selfie_required_break_end?: boolean
+  }
   schedule: { start: string; end: string }
   today: Attendance | null
   open_break: BreakSession | null
@@ -40,6 +44,51 @@ function getPosition(): Promise<{ lat: number; lng: number } | null> {
   })
 }
 
+/** Webcam capture dialog — resolves with a JPEG blob, or null if cancelled / no camera (file picker is the fallback). */
+function SelfieCapture({ onDone }: { onDone: (f: File | null) => void }) {
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const streamRef = useRef<MediaStream | null>(null)
+  const [ready, setReady] = useState(false)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    navigator.mediaDevices?.getUserMedia({ video: { facingMode: 'user' }, audio: false })
+      .then(stream => {
+        streamRef.current = stream
+        if (videoRef.current) { videoRef.current.srcObject = stream; setReady(true) }
+      })
+      .catch(() => setError('Camera unavailable — choose a photo instead.'))
+    return () => streamRef.current?.getTracks().forEach(t => t.stop())
+  }, [])
+
+  const snap = () => {
+    const v = videoRef.current
+    if (!v) return
+    const canvas = document.createElement('canvas')
+    canvas.width = v.videoWidth; canvas.height = v.videoHeight
+    canvas.getContext('2d')?.drawImage(v, 0, 0)
+    canvas.toBlob(b => onDone(b ? new File([b], 'selfie.jpg', { type: 'image/jpeg' }) : null), 'image/jpeg', 0.85)
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl p-4 w-full max-w-sm space-y-3">
+        <h3 className="text-sm font-semibold text-gray-800">📷 Take a selfie</h3>
+        {error ? <p className="text-xs text-red-600">{error}</p>
+          : <video ref={videoRef} autoPlay playsInline muted className="w-full rounded-xl bg-black aspect-[4/3] object-cover -scale-x-100" />}
+        <div className="flex gap-2 justify-end">
+          <button onClick={() => onDone(null)} className="px-3 py-2 text-sm text-gray-500">Cancel</button>
+          <label className="px-3 py-2 text-sm border border-gray-200 rounded-lg cursor-pointer">
+            Choose photo
+            <input type="file" accept="image/*" capture="user" className="hidden" onChange={e => onDone(e.target.files?.[0] ?? null)} />
+          </label>
+          {!error && <button onClick={snap} disabled={!ready} className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-semibold disabled:opacity-50">Capture</button>}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function AttendancePage() {
   const [tab, setTab] = useState<'attendance' | 'leave'>('attendance')
   const [me, setMe] = useState<MeResponse | null>(null)
@@ -47,6 +96,9 @@ export default function AttendancePage() {
   const [busy, setBusy] = useState(false)
   const [breakTypeId, setBreakTypeId] = useState<string>('')
   const [note, setNote] = useState('')
+  const [withSelfie, setWithSelfie] = useState(false)
+  const [camera, setCamera] = useState<{ resolve: (f: File | null) => void } | null>(null)
+  const askSelfie = () => new Promise<File | null>(resolve => setCamera({ resolve }))
 
   const [month, setMonth] = useState(new Date().toISOString().slice(0, 7))
   const [history, setHistory] = useState<HistoryDay[]>([])
@@ -73,8 +125,25 @@ export default function AttendancePage() {
   const act = async (path: string, body: Record<string, unknown> = {}) => {
     setBusy(true)
     try {
+      const action = path.split('/hr/attendance/')[1].replace('/', '_').replace('-', '_') // clock_in | clock_out | break_start | break_end
+      const required = !!(me?.settings as any)?.[`selfie_required_${action}`]
+      let selfie: File | null = null
+      if (required || withSelfie) {
+        selfie = await askSelfie()
+        setCamera(null)
+        if (!selfie && required) { toast.error('A selfie is required for this action.'); return }
+      }
+
       const pos = await getPosition()
-      await api.post(path, { ...body, ...(pos ?? {}), source: 'web', note: note || undefined })
+      const payload: Record<string, unknown> = { ...body, ...(pos ?? {}), source: 'web', note: note || undefined }
+      if (selfie) {
+        const fd = new FormData()
+        Object.entries(payload).forEach(([k, v]) => { if (v !== undefined && v !== null) fd.append(k, String(v)) })
+        fd.append('selfie', selfie)
+        await api.post(path, fd)
+      } else {
+        await api.post(path, payload)
+      }
       setNote(''); load(); loadHistory()
     } catch (e: any) {
       toast.error(e.response?.data?.message ?? (Object.values(e.response?.data?.errors ?? {})[0] as string[] | undefined)?.[0] ?? 'Failed')
@@ -90,6 +159,7 @@ export default function AttendancePage() {
 
   return (
     <div className="p-6 max-w-2xl mx-auto space-y-5">
+      {camera && <SelfieCapture onDone={f => camera.resolve(f)} />}
       <div>
         <h1 className="page-title">🕒 My Attendance</h1>
         <p className="page-sub">Office {me.settings.office_start.slice(0, 5)}–{me.settings.office_end.slice(0, 5)} · {me.profile.attendance_type === 'gps' ? `GPS check-in (${me.settings.geofence_radius_m}m)` : 'Manual check-in'} · {me.profile.work_mode.toUpperCase()}</p>
@@ -121,10 +191,15 @@ export default function AttendancePage() {
                 className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 mb-3" />
             )}
 
+            <label className="flex items-center gap-2 text-xs text-gray-500 mb-3">
+              <input type="checkbox" checked={withSelfie} onChange={e => setWithSelfie(e.target.checked)} />
+              📷 Attach a selfie to my next punch
+            </label>
+
             <div className="flex flex-wrap gap-2">
-              {!t?.clock_in_at && (
+              {!clockedIn && !onBreak && (
                 <button onClick={() => act('/hr/attendance/clock-in')} disabled={busy}
-                  className="px-5 py-2.5 bg-green-600 text-white rounded-lg text-sm font-semibold disabled:opacity-50">📍 Clock In</button>
+                  className="px-5 py-2.5 bg-green-600 text-white rounded-lg text-sm font-semibold disabled:opacity-50">📍 {done ? 'Clock In Again (new session)' : 'Clock In'}</button>
               )}
               {clockedIn && !onBreak && (
                 <>
@@ -144,7 +219,7 @@ export default function AttendancePage() {
                 <button onClick={() => act('/hr/attendance/break/end')} disabled={busy}
                   className="px-5 py-2.5 bg-amber-600 text-white rounded-lg text-sm font-semibold disabled:opacity-50">▶️ End Break</button>
               )}
-              {done && <span className="text-sm text-gray-400 py-2">Shift complete — worked {hm(t!.worked_minutes)}</span>}
+              {done && <span className="text-sm text-gray-400 py-2">Worked {hm(t!.worked_minutes)} so far today</span>}
             </div>
 
             {t && (t.late_minutes > 0 || t.overtime_minutes > 0 || t.early_leave_minutes > 0 || t.break_minutes > 0) && (
@@ -156,6 +231,19 @@ export default function AttendancePage() {
               </div>
             )}
           </div>
+
+          {/* Sessions list */}
+          {((t as any)?.sessions?.length ?? 0) > 1 && (
+            <div className="bg-white border border-gray-200 rounded-xl p-4">
+              <h3 className="text-sm font-semibold text-gray-700 mb-2">Today's sessions</h3>
+              {(t as any).sessions.map((x: any, i: number) => (
+                <div key={x.id} className="flex justify-between text-xs border-b border-gray-50 py-1.5">
+                  <span>Session {i + 1}</span>
+                  <span className="text-gray-500">{time(x.clock_in_at)} – {x.clock_out_at ? time(x.clock_out_at) : 'now'}</span>
+                </div>
+              ))}
+            </div>
+          )}
 
           {/* Breaks list */}
           {(t?.breaks?.length ?? 0) > 0 && (

@@ -80,6 +80,8 @@ class PermissionsSeeder extends Seeder
         ['key' => 'hr.manage',            'label' => 'Manage HR settings, break & leave types', 'group' => 'HR', 'type' => 'manage', 'sort_order' => 107],
         ['key' => 'hr.attendance.view_all', 'label' => 'View team attendance',                  'group' => 'HR', 'type' => 'viewer', 'sort_order' => 108],
         ['key' => 'hr.leave.approve',     'label' => 'Approve leave & overtime',                'group' => 'HR', 'type' => 'manage', 'sort_order' => 109],
+        ['key' => 'hr.attendance.edit',   'label' => 'Add / edit attendance entries & sessions', 'group' => 'HR', 'type' => 'manage', 'sort_order' => 330],
+        ['key' => 'hr.attendance.view_photos', 'label' => 'View attendance selfies & locations',  'group' => 'HR', 'type' => 'viewer', 'sort_order' => 331],
         // Phone Numbers
         ['key' => 'phone_numbers.view',   'label' => 'View Phone Numbers',    'group' => 'Phone Numbers',                'type' => 'viewer', 'sort_order' => 110],
         ['key' => 'phone_numbers.manage', 'label' => 'Manage Phone Numbers',  'group' => 'Phone Numbers',                'type' => 'manage', 'sort_order' => 111],
