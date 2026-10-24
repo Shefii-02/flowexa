@@ -23,6 +23,12 @@ class RoleController extends Controller
         $companyId = auth()->user()->company_id;
         $roles = $this->staffService->roles($companyId);
 
+        // A company only ever sees the roles it created itself — never platform defaults
+        // or another company's roles. (Platform admins, with no company, still see everything.)
+        if ($companyId) {
+            $roles = $roles->where('company_id', $companyId)->values();
+        }
+
         return response()->json([
             'roles' => RoleResource::collection($roles),
         ]);

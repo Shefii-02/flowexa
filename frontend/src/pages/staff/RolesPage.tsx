@@ -326,14 +326,14 @@ const RoleModal = ({
             <>
               <div className="flex items-center justify-between">
                 <label className="text-xs font-medium text-gray-600">Permissions</label>
-                {roles.length > 0 && (
+                {roles.filter((r) => r.id !== editing?.id).length > 0 && (
                   <select
                     value={copyFrom}
                     onChange={(e) => handleCopyFrom(e.target.value)}
                     className="text-xs border border-gray-200 rounded px-2 py-1 text-gray-600 focus:outline-none"
                   >
                     <option value="">Copy from role…</option>
-                    {roles.map((r) => (
+                    {roles.filter((r) => r.id !== editing?.id).map((r) => (
                       <option key={r.id} value={String(r.id)}>
                         {r.label || r.name}
                       </option>
@@ -590,7 +590,7 @@ export default function RolesPage() {
         <RoleModal
           editing={editTarget}
           groups={groups}
-          roles={roles}
+          roles={companyRoles}   // copy-from lists only this company's own roles
           onClose={() => setEditTarget(undefined)}
           onSaved={load}
         />
