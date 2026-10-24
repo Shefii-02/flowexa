@@ -2,6 +2,7 @@
 import { useNavigate } from 'react-router-dom'
 import { useAppSelector } from '@/store'
 import { Button } from '@/components/ui'
+import { useBilling } from '@/hooks/useBilling'
 
 interface LockedDashboardProps {
   status: 'suspended' | 'expired' | 'cancelled'
@@ -40,6 +41,7 @@ const config = {
 export const LockedDashboard = ({ status }: LockedDashboardProps) => {
   const navigate = useNavigate()
   const user     = useAppSelector(s => s.auth.user)
+  const { usesWallet } = useBilling()
   const cfg      = config[status]
 
   return (
@@ -77,7 +79,7 @@ export const LockedDashboard = ({ status }: LockedDashboardProps) => {
               {cfg.btnText}
             </Button>
           )}
-          {status !== 'suspended' && (
+          {status !== 'suspended' && usesWallet && (
             <Button variant="secondary" className="w-full justify-center" onClick={() => navigate('/wallet')}>
               Top up wallet
             </Button>

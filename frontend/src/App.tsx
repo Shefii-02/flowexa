@@ -50,6 +50,13 @@ import AssignmentRulesPage from '@/pages/leads/AssignmentRulesPage'
 import LeadNotificationPopup from '@/components/leads/LeadNotificationPopup'
 import AiHandoffOfferPopup from '@/components/leads/AiHandoffOfferPopup'
 import WalletPage from '@/pages/wallet/WalletPage'
+import { useBilling } from '@/hooks/useBilling'
+
+/** Own-account companies are billed by Meta directly — they have no wallet page. */
+function WalletRoute() {
+  const { usesWallet } = useBilling()
+  return usesWallet ? <WalletPage /> : <Navigate to="/dashboard" replace />
+}
 import AnalyticsPage from '@/pages/analytics/AnalyticsPage'
 import SettingsPage from '@/pages/settings/SettingsPage'
 import GoogleSheetsPage from '@/pages/settings/integrations/GoogleSheetsPage'
@@ -297,7 +304,7 @@ export default function App() {
               <Route path="crm/leads/assignments" element={<AssignmentPage />} />
               <Route path="crm/leads/staff-availability" element={<Navigate to="/crm/leads/assignment-rules" replace />} />
               <Route path="crm/leads/assignment-rules" element={<AssignmentRulesPage />} />
-              <Route path="wallet" element={<WalletPage />} />
+              <Route path="wallet" element={<WalletRoute />} />
               <Route path="analytics" element={<AnalyticsPage />} />
               <Route path="settings/index" element={<SettingsPage />} />
               <Route path="settings/integrations" element={<Navigate to="/settings/integrations/google-sheets" replace />} />

@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { analyticsApi } from '@/api'
 import { StatCard, Spinner } from '@/components/ui'
 import { fmt } from '@/utils'
+import { useBilling } from '@/hooks/useBilling'
 import {
   ResponsiveContainer, BarChart, Bar, LineChart, Line,
   XAxis, YAxis, Tooltip, CartesianGrid, PieChart, Pie, Cell, Legend,
@@ -28,6 +29,7 @@ const TABS = [
 type TabId = (typeof TABS)[number]['id']
 
 export default function AnalyticsPage() {
+  const { usesWallet } = useBilling()
   const [tab,        setTab]        = useState<TabId>('overview')
   const [overview,   setOverview]   = useState<any>(null)
   const [campaigns,  setCampaigns]  = useState<any>(null)
@@ -103,7 +105,9 @@ export default function AnalyticsPage() {
               <StatCard label="Total contacts"    value={fmt.number(overview.contacts?.total)} sub={`+${overview.contacts?.new_today} today`} icon="👥" />
               <StatCard label="Total leads"       value={fmt.number(overview.leads?.total)}    sub={`${overview.leads?.conversion_rate}% converted`} icon="🎯" color="text-brand-600" />
               <StatCard label="Messages sent"     value={fmt.number(overview.messages?.total_sent)} sub={`${overview.messages?.sent_today} today`} icon="💬" />
-              <StatCard label="Wallet balance"    value={fmt.number(overview.wallet?.balance)} sub={`${fmt.number(overview.wallet?.total_used)} used`} icon="💳" />
+              {usesWallet && (
+                <StatCard label="Wallet balance"    value={fmt.number(overview.wallet?.balance)} sub={`${fmt.number(overview.wallet?.total_used)} used`} icon="💳" />
+              )}
             </div>
           )}
           {dailyMsgData.length > 0 && (
