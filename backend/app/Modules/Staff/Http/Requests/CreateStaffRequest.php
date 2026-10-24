@@ -27,7 +27,7 @@ class CreateStaffRequest extends FormRequest
             )],
             'phone'      => ['nullable', 'string', 'max:20'],
             'department' => ['nullable', 'string', 'max:100'],
-            'max_leads'  => ['nullable', 'integer', 'min:1', 'max:500'],
+            'max_leads'  => ['nullable', 'integer', 'min:0', 'max:500'],   // 0 = not a lead-handling account
         ];
     }
 

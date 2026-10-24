@@ -255,6 +255,9 @@ class RoleController extends Controller
             'color'          => 'nullable|string|max:7',
             'permission_ids' => 'nullable|array',
             'permission_ids.*' => 'integer|exists:permissions,id',
+            'access_main'    => ['nullable', \Illuminate\Validation\Rule::in(array_keys(config('access_sections')))],
+            'access_subs'    => 'nullable|array',
+            'access_subs.*'  => [\Illuminate\Validation\Rule::in(array_keys(config('access_sections')))],
         ]);
 
         // Prevent name collision with system roles
@@ -281,6 +284,8 @@ class RoleController extends Controller
                 'permissions' => $permKeys,
                 'is_system'   => false,
                 'is_active'   => true,
+                'access_main' => $data['access_main'] ?? null,
+                'access_subs' => array_values(array_diff($data['access_subs'] ?? [], [$data['access_main'] ?? null])),
             ]);
 
             if (!empty($permIds)) {
@@ -327,6 +332,9 @@ class RoleController extends Controller
             'is_active'      => 'sometimes|boolean',
             'permission_ids' => 'nullable|array',
             'permission_ids.*' => 'integer|exists:permissions,id',
+            'access_main'    => ['nullable', \Illuminate\Validation\Rule::in(array_keys(config('access_sections')))],
+            'access_subs'    => 'nullable|array',
+            'access_subs.*'  => [\Illuminate\Validation\Rule::in(array_keys(config('access_sections')))],
         ]);
 
         // Duplicate name guard
@@ -363,6 +371,9 @@ class RoleController extends Controller
                 $record->permissionRelations()->sync($permIds);
             }
 
+            if (array_key_exists('access_subs', $data)) {
+                $data['access_subs'] = array_values(array_diff($data['access_subs'] ?? [], [$data['access_main'] ?? $record->access_main]));
+            }
             $record->update($data);
         });
 

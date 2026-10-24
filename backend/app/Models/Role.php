@@ -11,11 +11,12 @@ class Role extends Model
 {
     protected $fillable = [
         'company_id', 'name', 'label', 'description', 'color',
-        'permissions', 'is_system', 'is_active', 'sort_order', 'protected',
+        'permissions', 'is_system', 'is_active', 'sort_order', 'protected', 'access_main', 'access_subs',
     ];
 
     protected $casts = [
         'permissions' => 'array',
+        'access_subs' => 'array',
         'is_system'   => 'boolean',
         'is_active'   => 'boolean',
         'protected'   => 'boolean',

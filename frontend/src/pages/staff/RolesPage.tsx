@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
-import { roleApi } from '@/api'
+import { roleApi, staffAccessApi } from '@/api'
+import AccessSectionPicker, { type AccessSection } from './AccessSectionPicker'
 import { getError } from '@/utils'
 import toast from 'react-hot-toast'
 import type { Role, PermissionGroup } from '@/types'
@@ -210,6 +211,11 @@ const RoleModal = ({
   })
   const [saving, setSaving] = useState(false)
   const [copyFrom, setCopyFrom] = useState<string>('')
+  // Default access sections for everyone holding this role (staff can still get their own on top).
+  const [sections, setSections] = useState<AccessSection[]>([])
+  const [acc, setAcc] = useState<{ main: string | null; subs: string[] }>({
+    main: (editing as any)?.access_main ?? null, subs: (editing as any)?.access_subs ?? [] })
+  useEffect(() => { staffAccessApi.sections().then((r) => setSections(r.data.sections ?? [])).catch(() => {}) }, [])
 
   const patch = (partial: Partial<Omit<FormState, 'permission_ids'>>) =>
     setForm((f) => ({ ...f, ...partial }))
@@ -237,6 +243,8 @@ const RoleModal = ({
       if (!isSystem) {
         payload.name = form.name.trim()
         payload.permission_ids = Array.from(form.permission_ids)
+        payload.access_main = acc.main
+        payload.access_subs = acc.subs
       } else {
         // system roles: only description + color
       }
@@ -324,6 +332,12 @@ const RoleModal = ({
           {/* Permissions */}
           {!isSystem && (
             <>
+              <div className="space-y-2">
+                <label className="text-xs font-medium text-gray-600">Access sections</label>
+                <p className="text-xs text-gray-400">Choose one main, tick any extra sub sections. Applied to everyone with this role who has no sections of their own.</p>
+                <AccessSectionPicker compact sections={sections} main={acc.main} subs={acc.subs} onChange={setAcc} />
+              </div>
+
               <div className="flex items-center justify-between">
                 <label className="text-xs font-medium text-gray-600">Permissions</label>
                 {roles.filter((r) => r.id !== editing?.id).length > 0 && (

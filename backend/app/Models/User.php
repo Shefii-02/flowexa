@@ -63,7 +63,13 @@ class User extends Authenticatable implements JWTSubject
     /** Assigned access section keys (main first), memoised for the request. */
     public function accessSectionKeys(): array
     {
-        return $this->_sectionKeys ??= $this->accessSections()->orderByDesc('is_main')->pluck('section_key')->all();
+        if ($this->_sectionKeys !== null) return $this->_sectionKeys;
+        $own = $this->accessSections()->orderByDesc('is_main')->pluck('section_key')->all();
+        // No personal sections → inherit the role's defaults (Roles → Access sections).
+        if (!$own && $this->role && ($this->role->access_main || $this->role->access_subs)) {
+            $own = array_values(array_filter(array_merge([$this->role->access_main], $this->role->access_subs ?? [])));
+        }
+        return $this->_sectionKeys = $own;
     }
 
     /** Role permissions plus every assigned access section's permissions (see config/access_sections.php). */

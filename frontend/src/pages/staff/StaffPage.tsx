@@ -56,6 +56,13 @@ export default function StaffPage() {
     role_id: '', department: '', max_leads: '50',
   })
 
+  // Lead capacity only matters for accounts that handle leads (Sales, admins …) — hidden otherwise.
+  const handlesLeads = [access.main, ...access.subs].some((k) => {
+    const perms = sections.find((s) => s.key === k)?.permissions ?? []
+    return perms.includes('*') || perms.includes('leads.view')
+  })
+  const maxLeadsValue = handlesLeads ? Math.max(1, +form.max_leads || 50) : 0
+
   useEffect(() => {
     // Only this company's own roles — the platform's built-in system roles
     // (owner / admin / counsellor …) aren't assignable to company staff here.
@@ -85,13 +92,13 @@ export default function StaffPage() {
     setSaving(true)
     try {
       if (editUser) {
-        const payload: any = { name: form.name, role_id: +form.role_id, department: form.department, max_leads: +form.max_leads }
+        const payload: any = { name: form.name, role_id: +form.role_id, department: form.department, max_leads: maxLeadsValue }
         if (form.password) { payload.password = form.password; payload.password_confirmation = form.password_confirmation }
         await staffApi.update(editUser.id, payload)
         await staffAccessApi.update(editUser.id, { portal_access: access.portal, mobile_access: access.mobile, main: access.main, subs: access.subs })
         toast.success('Staff updated.')
       } else {
-        const { data } = await staffApi.create({ ...form, role_id: +form.role_id, max_leads: +form.max_leads })
+        const { data } = await staffApi.create({ ...form, role_id: +form.role_id, max_leads: maxLeadsValue })
         const newId = data?.staff?.id ?? data?.data?.id
         if (newId) await staffAccessApi.update(newId, { portal_access: access.portal, mobile_access: access.mobile, main: access.main, subs: access.subs })
         toast.success('Staff created.')
@@ -176,9 +183,9 @@ export default function StaffPage() {
                     <td>
                       <div className="text-xs">
                         <span className="font-medium">{u.active_leads ?? 0}</span>
-                        <span className="text-gray-400">/{u.max_leads}</span>
+                        <span className="text-gray-400">/{u.max_leads || '—'}</span>
                         <div className="w-16 h-1 bg-gray-100 rounded mt-1">
-                          <div className="h-full bg-brand-400 rounded" style={{ width: `${Math.min(100, ((u.active_leads ?? 0) / u.max_leads) * 100)}%` }} />
+                          <div className="h-full bg-brand-400 rounded" style={{ width: `${Math.min(100, ((u.active_leads ?? 0) / (u.max_leads || 1)) * 100)}%` }} />
                         </div>
                       </div>
                     </td>
@@ -226,7 +233,9 @@ export default function StaffPage() {
           <Input label="Confirm password" type="password" value={form.password_confirmation} onChange={(e) => set('password_confirmation', e.target.value)} required={!editUser} />
           <Select label="Role" value={form.role_id} onChange={(e) => set('role_id', e.target.value)} options={roleOptions} />
           <Input label="Department" placeholder="Sales, Support..." value={form.department} onChange={(e) => set('department', e.target.value)} />
-          <Input label="Max leads" type="number" min={1} max={500} value={form.max_leads} onChange={(e) => set('max_leads', e.target.value)} />
+          {handlesLeads && (
+            <Input label="Max leads" type="number" min={1} max={500} value={form.max_leads} onChange={(e) => set('max_leads', e.target.value)} />
+          )}
         </div>
 
         {canManageAccess && (

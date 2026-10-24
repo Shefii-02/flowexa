@@ -24,6 +24,8 @@ class RoleResource extends JsonResource
             'company_id'     => $this->company_id,
             'users_count'    => $this->users_count ?? $this->whenCounted('users'),
             'permissions'    => $this->permissions ?? [],
+            'access_main'    => $this->access_main,
+            'access_subs'    => $this->access_subs ?? [],
             'permission_ids' => $this->whenLoaded('permissionRelations',
                 fn() => $this->permissionRelations->pluck('id')->toArray(),
                 []
