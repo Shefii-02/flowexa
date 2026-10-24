@@ -36,6 +36,50 @@ const MEDIA_ICON: Record<string, JSX.Element> = {
   audio: <Mic size={13} />, sticker: <ImageIcon size={13} />, location: <MapPin size={13} />,
 }
 
+const MEDIA_LABEL: Record<string, string> = {
+  image: 'Photo', video: 'Video', audio: 'Voice message', document: 'Document', sticker: 'Sticker', location: 'Location',
+}
+
+const fileSize = (n?: number | null) => {
+  if (!n) return ''
+  if (n < 1024) return `${n} B`
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`
+  return `${(n / 1024 / 1024).toFixed(1)} MB`
+}
+
+/** The real photo / video / voice note / file of a message, laid out the way WhatsApp does. */
+function MediaBody({ type, media, body }: { type: string; media: any; body: string }) {
+  const caption = body ? <div className="wa-media__caption">{body}</div> : null
+  let el: JSX.Element
+  if (type === 'image' || type === 'sticker') {
+    el = (
+      <a href={media.url} target="_blank" rel="noreferrer">
+        <img className={type === 'sticker' ? 'wa-media__sticker' : 'wa-media__img'} src={media.url} alt={media.filename || type} loading="lazy" />
+      </a>
+    )
+  } else if (type === 'video') {
+    el = <video className="wa-media__video" src={media.url} controls preload="metadata" />
+  } else if (type === 'audio') {
+    el = (
+      <div className="wa-media__audio">
+        {media.voice && <Mic size={18} className="wa-media__mic" />}
+        <audio src={media.url} controls preload="none" />
+      </div>
+    )
+  } else {
+    el = (
+      <a className="wa-media__doc" href={media.url} target="_blank" rel="noreferrer" download={media.filename || undefined}>
+        <FileText size={28} />
+        <span className="wa-media__docname">
+          <b>{media.filename || 'Document'}</b>
+          <small>{[(media.mime || '').split('/').pop()?.toUpperCase(), fileSize(media.size)].filter(Boolean).join(' · ')}</small>
+        </span>
+      </a>
+    )
+  }
+  return <div className="wa-media">{el}{caption}</div>
+}
+
 const LIST_SKELETON = Array.from({ length: 7 })
 const THREAD_SKELETON: Array<'in' | 'out'> = ['in', 'in', 'out', 'in', 'out', 'out', 'in', 'out']
 
@@ -315,9 +359,11 @@ export default function InboxPage() {
       <div key={m.id} className={`wa-row ${out ? 'out' : ''}`}>
         <div className="wa-bubble">
           {senderName && <div className="wa-bubble__sender">{senderName}</div>}
-          {media
-            ? <span className="wa-bubble__media">{MEDIA_ICON[media] ?? <FileText size={13} />}{body || `[${media}]`}</span>
-            : <span>{body}</span>}
+          {media && m.content?.media?.url
+            ? <MediaBody type={media} media={m.content.media} body={body} />
+            : media
+              ? <span className="wa-bubble__media">{MEDIA_ICON[media] ?? <FileText size={13} />}{body || MEDIA_LABEL[media] || `[${media}]`}</span>
+              : <span>{body}</span>}
           <span className="wa-bubble__meta">
             {clockTime(m.created_at)}
             {out && <Ticks status={m.status} />}
@@ -388,7 +434,7 @@ export default function InboxPage() {
             const numberLabel = number?.label || number?.display_number
             const last = c.last_message ?? c.lastMessage
             const preview = last?.content?.body
-              || (last?.type && last.type !== 'text' ? `[${last.type}]` : '')
+              || (last?.type && last.type !== 'text' ? (MEDIA_LABEL[last.type] ?? last.type) : '')
             return (
               <div key={c.id} className={`wa-conv ${activeId === c.id ? 'is-active' : ''}`} onClick={() => openThread(c.id)}>
                 <div className="wa-avatar" style={{ background: avatarColor(c.phone || nm) }}>{initials(nm)}</div>

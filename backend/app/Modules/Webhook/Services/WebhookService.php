@@ -814,7 +814,7 @@ class WebhookService
                 'sender_type'     => 'customer',
                 'wa_message_id'   => $dto->messageId,
                 'type'            => $dto->type,
-                'content'         => ['body' => $this->extractContent($dto)],
+                'content'         => $this->inboxContentFor($company, $dto),
                 'status'          => 'delivered',
                 'status_updated_at' => now(),
             ]);
@@ -859,7 +859,7 @@ class WebhookService
                 'sender_type'     => 'bot',
                 'wa_message_id'   => $waId,
                 'type'            => $payload['type'],
-                'content'         => ['body' => $this->extractOutboundContent($payload)],
+                'content'         => $this->outboundInboxContent($payload),
                 'status'          => $status,
                 'failure_reason'  => $failureReason,
                 'status_updated_at' => now(),
@@ -1567,6 +1567,29 @@ class WebhookService
         }
 
         return $contact;
+    }
+
+    /**
+     * wa_messages.content for an inbound message. Media is downloaded and kept so the inbox can show
+     * the real photo / voice note / video / file; `body` then only carries the caption (the inbox
+     * falls back to a "[Image]"-style label when there is no media, e.g. the download failed).
+     */
+    private function inboxContentFor(Company $company, InboundMessageDTO $dto): array
+    {
+        $media = app(InboxMediaStore::class)->storeInbound($company, $dto);
+        if (!$media) {
+            return ['body' => $this->extractContent($dto)];
+        }
+        return ['body' => (string) ($media['caption'] ?? ''), 'media' => $media];
+    }
+
+    private function outboundInboxContent(array $payload): array
+    {
+        $media = app(InboxMediaStore::class)->fromOutboundPayload($payload);
+        if (!$media) {
+            return ['body' => $this->extractOutboundContent($payload)];
+        }
+        return ['body' => (string) ($media['caption'] ?? ''), 'media' => $media];
     }
 
     // ─── Extract readable content from message ────────────────────────────────
