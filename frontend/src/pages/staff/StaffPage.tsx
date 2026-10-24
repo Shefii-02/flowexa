@@ -16,9 +16,11 @@ interface Role { id: number; name: string; label: string }
 export default function StaffPage() {
   const dispatch   = useAppDispatch()
   const { list, total, loading } = useAppSelector((s) => s.staff)
-  const canCreate  = usePermission('staff.create')
-  const canEdit    = usePermission('staff.edit')
-  const canDelete  = usePermission('staff.delete')
+  // Backend only defines 'staff.manage' (no create/edit/delete split).
+  const canManage  = usePermission('staff.manage')
+  const canCreate  = canManage
+  const canEdit    = canManage
+  const canDelete  = canManage
 
   const [deviceUser, setDeviceUser] = useState<any>(null)
   const deviceService: DeviceService | null = useMemo(() => {
