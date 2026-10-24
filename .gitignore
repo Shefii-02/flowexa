@@ -81,3 +81,8 @@ backend-node
 /unichat_mobile_app
 unichat_mobile_app
 .claude/worktrees/agent-a58a8e75d1ab03704
+
+# Firebase service-account keys (secrets) — never commit
+*firebase-adminsdk*.json
+firebase-service-account*.json
+/backend/storage/app/firebase/
