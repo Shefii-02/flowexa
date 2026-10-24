@@ -1195,6 +1195,8 @@ Route::prefix('v1')->group(function () {
                 Route::post('/register-token',   [PushNotificationController::class, 'registerToken'])->middleware('jwt.auth');
                 Route::delete('/unregister-token', [PushNotificationController::class, 'unregisterToken'])->middleware('jwt.auth');
                 Route::get('/history',           [PushNotificationController::class, 'history'])->middleware('jwt.auth');
+                Route::get('/status',            [PushNotificationController::class, 'status'])->middleware('jwt.auth');
+                Route::post('/test',             [PushNotificationController::class, 'test'])->middleware('jwt.auth');
                 //
             });
 

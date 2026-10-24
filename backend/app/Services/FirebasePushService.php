@@ -174,6 +174,69 @@ class FirebasePushService
         ]);
     }
 
+    // ── Settings → Push notifications: configuration check ────────────────
+    /** Step-by-step server-side health check. Never throws; each step is {key,label,ok,detail}. */
+    public function diagnose(): array
+    {
+        $steps = [];
+        $add = function (string $key, string $label, bool $ok, string $detail = '') use (&$steps) {
+            $steps[] = compact('key', 'label', 'ok', 'detail');
+            return $ok;
+        };
+
+        $projectId = (string) config('services.firebase.project_id');
+        $placeholder = $projectId === '' || str_contains($projectId, 'your-project');
+        if (!$add('project_id', 'Firebase project ID set', !$placeholder, $placeholder ? 'Set FIREBASE_PROJECT_ID in the backend .env.' : $projectId)) return $steps;
+
+        $path = (string) config('services.firebase.credentials_path');
+        $exists = $path !== '' && is_file($path) && is_readable($path);
+        if (!$add('credentials_file', 'Service-account key file found', $exists, $exists ? basename($path) : 'FIREBASE_CREDENTIALS_PATH does not point to a readable file.')) return $steps;
+
+        $json = json_decode((string) file_get_contents($path), true);
+        $valid = is_array($json) && !empty($json['client_email']) && !empty($json['private_key']);
+        if (!$add('credentials_valid', 'Key file is a valid service account', $valid, $valid ? (string) $json['client_email'] : 'Not a service-account JSON (needs client_email and private_key).')) return $steps;
+
+        $match = ($json['project_id'] ?? null) === $projectId;
+        $add('project_match', 'Key belongs to this project', $match, $match ? '' : 'Key is for "' . ($json['project_id'] ?? '?') . '" but FIREBASE_PROJECT_ID is "' . $projectId . '".');
+
+        try {
+            cache()->forget('firebase_access_token');
+            $this->getAccessToken();
+            $add('google_auth', 'Google accepted the key (access token issued)', true);
+        } catch (\Throwable $e) {
+            $add('google_auth', 'Google accepted the key (access token issued)', false, 'Google rejected the credentials — check the key is active and the FCM API is enabled.');
+        }
+        return $steps;
+    }
+
+    /** Sends a real test push to every active device of the user; returns per-device results. */
+    public function sendTest(int $userId): array
+    {
+        $tokens = PushToken::where('user_id', $userId)->where('is_active', true)->get(['id', 'fcm_token', 'device_type']);
+        if ($tokens->isEmpty()) return [];
+
+        $accessToken = $this->getAccessToken();
+        $url = str_replace('{PROJECT_ID}', config('services.firebase.project_id'), $this->fcmUrl);
+        $out = [];
+        foreach ($tokens as $t) {
+            try {
+                $r = Http::withToken($accessToken)->timeout(10)->post($url, ['message' => [
+                    'token'        => $t->fcm_token,
+                    'notification' => ['title' => '✅ Push is working', 'body' => 'This is a test notification from Teamzo.'],
+                    'data'         => ['type' => 'test'],
+                ]]);
+                $err = $r->successful() ? null : ($r->json('error.message') ?? 'Unknown error');
+                if ($err && (str_contains($err, 'NOT_FOUND') || str_contains($err, 'UNREGISTERED'))) {
+                    PushToken::where('id', $t->id)->update(['is_active' => false]);
+                }
+                $out[] = ['device_type' => $t->device_type, 'ok' => $r->successful(), 'error' => $err];
+            } catch (\Throwable $e) {
+                $out[] = ['device_type' => $t->device_type, 'ok' => false, 'error' => $e->getMessage()];
+            }
+        }
+        return $out;
+    }
+
     // ── Get Firebase access token (Service Account) ────────────────────────
     private function getAccessToken(): string
     {
@@ -204,7 +267,7 @@ class FirebasePushService
             'assertion'  => $jwt,
         ])->json();
 
-        $token = $response['access_token'];
+        $token = $response['access_token'] ?? throw new \RuntimeException($response['error_description'] ?? 'Could not obtain a Google access token.');
         cache(['firebase_access_token' => $token], 3500); // cache for ~58 min
         return $token;
     }

@@ -6,6 +6,8 @@ import { getError } from '@/utils'
 import { useCurrentUser, usePermission, useIsSuperAdmin } from '@/store'
 import LinkedDevicesModal, { LinkedDevicesPanel, type DeviceService } from '@/components/devices/LinkedDevicesModal'
 import toast from 'react-hot-toast'
+import api from '@/api/client'
+import { registerWebPush, webPushSupport } from '@/lib/push'
 import type { Role } from '@/types'
 
 // ── Tab definitions ───────────────────────────────────────────────────────────
@@ -17,6 +19,7 @@ const TABS = [
   { id: 'staff',       label: '👥 Staff' },
   { id: 'devices',     label: '📱 Linked Devices' },
   { id: 'permissions', label: '🛡️ Permissions' },
+  { id: 'push',        label: '🔔 Push' },
   { id: 'crm-sync',    label: '🔄 CRM Sync' },
 ] as const
 
@@ -507,6 +510,101 @@ function DevicesTab() {
   )
 }
 
+// ── Push notifications tab ────────────────────────────────────────────────────
+
+interface PushStep { key: string; label: string; ok: boolean; detail: string }
+
+function PushTab() {
+  const [steps, setSteps] = useState<PushStep[]>([])
+  const [devices, setDevices] = useState<{ device_type: string; last_used_at: string | null }[]>([])
+  const [browser, setBrowser] = useState<{ supported: boolean; permission: string; hasVapid: boolean } | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [enabling, setEnabling] = useState(false)
+  const [testing, setTesting] = useState(false)
+  const [results, setResults] = useState<{ device_type: string; ok: boolean; error: string | null }[] | null>(null)
+
+  const check = useCallback(async () => {
+    setLoading(true)
+    try {
+      const [{ data }, b] = await Promise.all([api.get('/push/status'), webPushSupport()])
+      setSteps(data.steps ?? []); setDevices(data.devices ?? []); setBrowser(b)
+    } catch (e) { toast.error(getError(e)) }
+    finally { setLoading(false) }
+  }, [])
+  useEffect(() => { check() }, [check])
+
+  const enable = async () => {
+    setEnabling(true)
+    const r = await registerWebPush()
+    r.ok ? toast.success('This browser is registered for push.') : toast.error(r.reason ?? 'Could not enable push.')
+    setEnabling(false); check()
+  }
+
+  const sendTest = async () => {
+    setTesting(true); setResults(null)
+    try {
+      const { data } = await api.post('/push/test')
+      setResults(data.results)
+    } catch (e: any) {
+      toast.error(e.response?.data?.message ?? getError(e))
+    } finally { setTesting(false) }
+  }
+
+  const serverOk = steps.length > 0 && steps.every((s) => s.ok)
+  const Row = ({ ok, label, detail }: { ok: boolean; label: string; detail?: string }) => (
+    <li className="flex items-start gap-2 text-sm">
+      <span>{ok ? '✅' : '❌'}</span>
+      <div><p className={ok ? 'text-gray-800' : 'text-red-700 font-medium'}>{label}</p>
+        {detail && <p className="text-xs text-gray-500">{detail}</p>}</div>
+    </li>
+  )
+
+  if (loading) return <p className="text-sm text-gray-400">Checking push notifications…</p>
+
+  return (
+    <div className="space-y-5">
+      <div className="card">
+        <div className="card-header"><h3 className="card-title">Server (Firebase)</h3>
+          <span className={`text-xs font-semibold ${serverOk ? 'text-green-600' : 'text-red-600'}`}>{serverOk ? 'Ready' : 'Not ready'}</span></div>
+        <ul className="card-body space-y-2">
+          {steps.map((s) => <Row key={s.key} ok={s.ok} label={s.label} detail={s.detail} />)}
+        </ul>
+      </div>
+
+      <div className="card">
+        <div className="card-header"><h3 className="card-title">This browser</h3></div>
+        <div className="card-body space-y-3">
+          <ul className="space-y-2">
+            <Row ok={!!browser?.supported} label="Browser supports web push" detail={browser?.supported ? '' : 'Needs HTTPS and a modern browser.'} />
+            <Row ok={!!browser?.hasVapid} label="Web push key configured" detail={browser?.hasVapid ? '' : 'Set VITE_FIREBASE_VAPID_KEY in the web build.'} />
+            <Row ok={browser?.permission === 'granted'} label={`Notification permission: ${browser?.permission}`}
+              detail={browser?.permission === 'denied' ? 'Blocked — allow notifications for this site in the browser settings.' : ''} />
+          </ul>
+          <Button variant="secondary" onClick={enable} loading={enabling}>Enable on this browser</Button>
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="card-header"><h3 className="card-title">Your registered devices</h3><span className="text-xs text-gray-400">{devices.length}</span></div>
+        <div className="card-body space-y-3">
+          {devices.length === 0
+            ? <p className="text-sm text-gray-500">None yet — click “Enable on this browser”, or sign in on the mobile app.</p>
+            : <ul className="text-sm text-gray-700 space-y-1">
+                {devices.map((d, i) => <li key={i}>{d.device_type === 'web' ? '🖥️ Web' : d.device_type === 'ios' ? '📱 iOS' : '📱 Android'}
+                  {d.last_used_at ? <span className="text-xs text-gray-400"> · last used {new Date(d.last_used_at).toLocaleString()}</span> : null}</li>)}
+              </ul>}
+          <Button onClick={sendTest} loading={testing} disabled={!serverOk || devices.length === 0}>Send test notification</Button>
+          {results && (
+            <ul className="space-y-1">
+              {results.map((r, i) => <Row key={i} ok={r.ok} label={`${r.device_type}: ${r.ok ? 'delivered to Firebase' : 'failed'}`} detail={r.error ?? ''} />)}
+            </ul>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── CRM Sync tab ──────────────────────────────────────────────────────────────
 
 function Toggle({ checked, onChange, disabled }: { checked: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
@@ -630,6 +728,7 @@ export default function SettingsPage() {
         {tab === 'staff'        && <StaffTab />}
         {tab === 'devices'      && <DevicesTab />}
         {tab === 'permissions'  && <PermissionsTab />}
+        {tab === 'push'         && <PushTab />}
         {tab === 'crm-sync'     && <CrmSyncTab />}
       </div>
     </div>

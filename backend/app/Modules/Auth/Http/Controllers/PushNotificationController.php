@@ -42,6 +42,34 @@ class PushNotificationController extends Controller
         return response()->json(['message' => 'Token unregistered.']);
     }
 
+    // GET /api/v1/push/status — config health check + this user's registered devices
+    public function status(\App\Services\FirebasePushService $push): JsonResponse
+    {
+        $steps = $push->diagnose();
+        $devices = PushToken::where('user_id', auth()->id())->where('is_active', true)
+            ->orderByDesc('last_used_at')->get(['device_type', 'device_id', 'last_used_at']);
+
+        return response()->json([
+            'configured' => collect($steps)->every(fn ($s) => $s['ok']),
+            'steps'      => $steps,
+            'devices'    => $devices,
+        ]);
+    }
+
+    // POST /api/v1/push/test — send a real test notification to this user's devices
+    public function test(\App\Services\FirebasePushService $push): JsonResponse
+    {
+        try {
+            $results = $push->sendTest((int) auth()->id());
+        } catch (\Throwable $e) {
+            return response()->json(['message' => 'Could not reach Firebase: ' . $e->getMessage()], 502);
+        }
+        if (!$results) {
+            return response()->json(['message' => 'No registered device yet — allow notifications in the browser or open the mobile app, then try again.', 'results' => []], 422);
+        }
+        return response()->json(['results' => $results]);
+    }
+
     // GET /api/v1/push/history
     public function history(): JsonResponse
     {
