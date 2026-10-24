@@ -70,7 +70,7 @@ export default function WaDataExportPage() {
   const readySessions = sessions.filter(s => s.status === 'ready');
 
   const [sessionId,           setSessionId]           = useState('');
-  const [exportType,          setExportType]          = useState<'chats' | 'contacts' | 'groups' | 'group_participants' | 'labels' | 'broadcast_groups' | 'lists'>('chats');
+  const [exportType,          setExportType]          = useState<'chats' | 'contacts' | 'groups' | 'group_participants' | 'labels' | 'wa_labels' | 'broadcast_groups' | 'lists'>('chats');
   const [includeParticipants, setIncludeParticipants] = useState(false);
   const [showGroupPreview,    setShowGroupPreview]    = useState(false);
   const [selectedGroupIds,    setSelectedGroupIds]    = useState<Set<string>>(new Set());
@@ -92,6 +92,14 @@ export default function WaDataExportPage() {
       setDeletingId(null);
     }
   };
+
+  // WhatsApp (session) labels export state — the labels live inside the chosen WhatsApp session.
+  const [waLabels,           setWaLabels]           = useState<{ id: string; name: string; hexColor?: string }[]>([]);
+  const [waLabelsLoading,    setWaLabelsLoading]    = useState(false);
+  const [waLabelsError,      setWaLabelsError]      = useState('');
+  const [selectedWaLabelIds, setSelectedWaLabelIds] = useState<Set<string>>(new Set());
+  const [separateFiles,      setSeparateFiles]      = useState(false);
+  const [exportingWaLabels,  setExportingWaLabels]  = useState(false);
 
   // Labels export state
   const [labels,              setLabels]              = useState<{ id: string; name: string }[]>([]);
@@ -126,6 +134,60 @@ export default function WaDataExportPage() {
     }).finally(() => setLabelsLoading(false));
     setSelectedLabelIds(new Set());
   }, [exportType]);
+
+  // Load the chosen session's own WhatsApp labels
+  useEffect(() => {
+    setSelectedWaLabelIds(new Set()); setWaLabels([]); setWaLabelsError('');
+    if (exportType !== 'wa_labels' || !sessionId) return;
+    let cancelled = false;
+    setWaLabelsLoading(true);
+    sessionApi.getLabels(sessionId)
+      .then(l => { if (!cancelled) setWaLabels(l ?? []); })
+      .catch((e: any) => { if (!cancelled) setWaLabelsError(e?.message ?? 'Could not load labels. Labels need a WhatsApp Business account.'); })
+      .finally(() => { if (!cancelled) setWaLabelsLoading(false); });
+    return () => { cancelled = true; };
+  }, [exportType, sessionId]);
+
+  const toggleWaLabel = (id: string) =>
+    setSelectedWaLabelIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+
+  const doWaLabelsExport = async () => {
+    if (selectedWaLabelIds.size === 0) { setError('Select at least one label.'); return; }
+    setError(''); setExportingWaLabels(true);
+    try {
+      const picked = waLabels.filter(l => selectedWaLabelIds.has(l.id));
+      const results = await Promise.allSettled(picked.map(l => sessionApi.getLabelChats(sessionId, l.id)));
+      const phoneOf = (id: string) => id.endsWith('@c.us') ? id.split('@')[0] : '';
+      const head = ['Phone', 'Name', 'Type', 'Chat ID'];
+
+      if (separateFiles) {
+        // one CSV per label
+        results.forEach((res, i) => {
+          if (res.status !== 'fulfilled') return;
+          const rows = [head, ...res.value.map(c => [phoneOf(c.id), c.name ?? '', c.isGroup ? 'Group' : 'Contact', c.id])];
+          downloadCsv(rows, `label_${picked[i].name.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_${Date.now()}.csv`);
+        });
+      } else {
+        // one combined CSV — a chat sitting in several selected labels appears once, with all its labels
+        const byChat = new Map<string, { name: string; isGroup: boolean; labels: string[] }>();
+        results.forEach((res, i) => {
+          if (res.status !== 'fulfilled') return;
+          for (const c of res.value) {
+            const cur = byChat.get(c.id) ?? { name: c.name ?? '', isGroup: c.isGroup, labels: [] };
+            cur.labels.push(picked[i].name);
+            byChat.set(c.id, cur);
+          }
+        });
+        const rows = [[...head, 'Labels'], ...[...byChat.entries()].map(([id, c]) =>
+          [phoneOf(id), c.name, c.isGroup ? 'Group' : 'Contact', id, c.labels.join(' | ')])];
+        if (rows.length === 1) { setError('No chats are assigned to the selected labels.'); return; }
+        const tag = picked.length === 1 ? picked[0].name.replace(/[^a-z0-9]/gi, '_').toLowerCase() : `${picked.length}_labels`;
+        downloadCsv(rows, `labels_${tag}_${Date.now()}.csv`);
+      }
+      if (results.some(r => r.status === 'rejected')) setError('Some labels could not be read and were skipped.');
+    } catch { setError('Export failed. Try again.'); }
+    finally { setExportingWaLabels(false); }
+  };
 
   const toggleGroup = (id: string) =>
     setSelectedGroupIds(prev => {
@@ -213,6 +275,7 @@ export default function WaDataExportPage() {
 
   const isGroupParticipants = exportType === 'group_participants';
   const isLabels = exportType === 'labels';
+  const isWaLabels = exportType === 'wa_labels';
   const isBroadcastGroups = exportType === 'broadcast_groups';
   const isLists = exportType === 'lists';
 
@@ -290,7 +353,8 @@ export default function WaDataExportPage() {
               <option value="contacts">Saved Contacts</option>
               <option value="groups">Groups (all groups)</option>
               <option value="group_participants">Group Participants (select groups)</option>
-              <option value="labels">📋 Labels — export contacts by label</option>
+              <option value="wa_labels">🏷️ WhatsApp Labels — this session's labels (one or many)</option>
+              <option value="labels">📋 CRM Labels — export contacts by CRM label</option>
               <option value="broadcast_groups">📢 Broadcast Groups — select groups to export</option>
               <option value="lists">📝 Lists — select groups to export</option>
             </select>
@@ -417,6 +481,57 @@ export default function WaDataExportPage() {
                       </div>
                     </div>
                   ) : null}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── WhatsApp (session) labels export ───────────────────── */}
+          {isWaLabels && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div style={{ fontSize: 13, fontWeight: 500, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span>Select label{waLabels.length > 1 ? 's' : ''} <span style={{ fontWeight: 400, color: '#9ca3af' }}>(tick one, or several)</span></span>
+                {waLabels.length > 0 && (
+                  <span style={{ display: 'flex', gap: 10 }}>
+                    <button onClick={() => setSelectedWaLabelIds(new Set(waLabels.map(l => l.id)))} style={{ fontSize: 12, color: '#6366f1', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 500 }}>Select all</button>
+                    <button onClick={() => setSelectedWaLabelIds(new Set())} style={{ fontSize: 12, color: '#6b7280', background: 'none', border: 'none', cursor: 'pointer' }}>Clear</button>
+                  </span>
+                )}
+              </div>
+              {!sessionId ? (
+                <div style={{ fontSize: 13, color: '#9ca3af' }}>Select a session first.</div>
+              ) : waLabelsLoading ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#6b7280' }}>
+                  <Loader2 size={14} className="animate-spin" /> Loading this session's labels…
+                </div>
+              ) : waLabelsError ? (
+                <div style={{ fontSize: 13, color: '#ef4444' }}>{waLabelsError}</div>
+              ) : waLabels.length === 0 ? (
+                <div style={{ fontSize: 13, color: '#ef4444' }}>This session has no WhatsApp labels (labels need a WhatsApp Business account).</div>
+              ) : (
+                <div style={{ border: '1px solid #e5e7eb', borderRadius: 8, overflow: 'hidden', maxHeight: 240, overflowY: 'auto' }}>
+                  {waLabels.map((l, i) => {
+                    const checked = selectedWaLabelIds.has(l.id);
+                    return (
+                      <label key={l.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 12px', borderBottom: i < waLabels.length - 1 ? '1px solid #f3f4f6' : 'none', cursor: 'pointer', background: checked ? '#eef2ff' : '#fff' }}>
+                        <input type="checkbox" checked={checked} onChange={() => toggleWaLabel(l.id)} style={{ accentColor: '#6366f1', width: 15, height: 15, flexShrink: 0 }} />
+                        <Tag size={13} color={l.hexColor || (checked ? '#4338ca' : '#9ca3af')} />
+                        <span style={{ flex: 1, fontSize: 13, fontWeight: checked ? 500 : 400, color: checked ? '#3730a3' : '#374151' }}>{l.name}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+              {selectedWaLabelIds.size > 1 && (
+                <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13, cursor: 'pointer' }}>
+                  <input type="checkbox" checked={separateFiles} onChange={e => setSeparateFiles(e.target.checked)} />
+                  One file per label (otherwise a single combined file, duplicates merged)
+                </label>
+              )}
+              {selectedWaLabelIds.size > 0 && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#4338ca', fontWeight: 500 }}>
+                  <CheckCircle size={14} color="#6366f1" />
+                  {selectedWaLabelIds.size} label{selectedWaLabelIds.size !== 1 ? 's' : ''} selected
                 </div>
               )}
             </div>
@@ -552,7 +667,14 @@ export default function WaDataExportPage() {
           )}
 
           {/* Action button */}
-          {isLabels ? (
+          {isWaLabels ? (
+            <button onClick={doWaLabelsExport}
+              disabled={exportingWaLabels || !sessionId || selectedWaLabelIds.size === 0}
+              style={{ alignSelf: 'flex-start', display: 'flex', gap: 8, alignItems: 'center', padding: '9px 18px', background: selectedWaLabelIds.size > 0 ? '#6366f1' : '#e5e7eb', color: selectedWaLabelIds.size > 0 ? '#fff' : '#9ca3af', border: 'none', borderRadius: 8, fontWeight: 600, fontSize: 14, cursor: selectedWaLabelIds.size > 0 ? 'pointer' : 'not-allowed', opacity: exportingWaLabels ? 0.6 : 1 }}>
+              {exportingWaLabels ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
+              {exportingWaLabels ? 'Fetching chats…' : selectedWaLabelIds.size > 0 ? `Export ${selectedWaLabelIds.size} Label${selectedWaLabelIds.size !== 1 ? 's' : ''} (CSV)` : 'Select labels first'}
+            </button>
+          ) : isLabels ? (
             <button onClick={doLabelsExport}
               disabled={exportingLabels || selectedLabelIds.size === 0}
               style={{ alignSelf: 'flex-start', display: 'flex', gap: 8, alignItems: 'center', padding: '9px 18px', background: selectedLabelIds.size > 0 ? '#6366f1' : '#e5e7eb', color: selectedLabelIds.size > 0 ? '#fff' : '#9ca3af', border: 'none', borderRadius: 8, fontWeight: 600, fontSize: 14, cursor: selectedLabelIds.size > 0 ? 'pointer' : 'not-allowed', opacity: exportingLabels ? 0.6 : 1 }}>
