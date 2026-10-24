@@ -66,6 +66,7 @@ import SuperAdminBilling from '@/pages/superadmin/SuperAdminBilling'
 import SuperAdminStats from '@/pages/superadmin/SuperAdminStats'
 import SuperAdminStaffPage from '@/pages/superadmin/SuperAdminStaffPage'
 import PermissionsEditorPage from '@/pages/superadmin/PermissionsEditorPage'
+import MobileModulesPage from '@/pages/superadmin/MobileModulesPage'
 import CompanyPermissionsPage from '@/pages/superadmin/CompanyPermissionsPage'
 import TopupPackagesPage from '@/pages/superadmin/TopupPackagesPage'
 import PrebuiltTemplatesPage from '@/pages/superadmin/PrebuiltTemplatesPage'
@@ -409,6 +410,10 @@ export default function App() {
               <Route
                 path="superadmin/staff"
                 element={<SuperAdminRoute><SuperAdminStaffPage /></SuperAdminRoute>}
+              />
+              <Route
+                path="superadmin/mobile-modules"
+                element={<SuperAdminRoute><MobileModulesPage /></SuperAdminRoute>}
               />
               <Route
                 path="superadmin/permissions"

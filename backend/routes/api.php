@@ -137,6 +137,8 @@ Route::prefix('v1')->group(function () {
 
     Route::middleware(['jwt.auth'])->group(function () {
 
+        Route::get('mobile-modules/hidden', [\App\Http\Controllers\MobileModulesController::class, 'hidden']);
+
         Route::prefix('auth')->name('auth.')->group(function () {
             Route::get('me',       [AuthController::class, 'me'])->name('me');
             Route::post('logout',  [AuthController::class, 'logout'])->name('logout');
@@ -229,6 +231,10 @@ Route::prefix('v1')->group(function () {
                 Route::get('reports/platform',          [ReportController::class, 'platformReport'])->name('reports.platform');
                 Route::get('reports/company/{company}', [ReportController::class, 'companyReport'])->name('reports.company');
                 Route::get('reports/purchases',         [ReportController::class, 'purchaseReport'])->name('reports.purchases');
+
+                // Mobile app Explore-tile visibility (web unaffected)
+                Route::get('mobile-modules', [\App\Http\Controllers\MobileModulesController::class, 'show']);
+                Route::put('mobile-modules', [\App\Http\Controllers\MobileModulesController::class, 'update']);
 
                 // Role permissions editor
                 Route::get('permissions',         [SuperAdminController::class, 'permissions'])->name('permissions');
