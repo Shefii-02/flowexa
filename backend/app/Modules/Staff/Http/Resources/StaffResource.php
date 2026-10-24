@@ -22,6 +22,9 @@ class StaffResource extends JsonResource
             'is_active'       => $this->is_active,
             'max_leads'       => $this->max_leads,
             'last_login'      => $this->last_login_at?->toIso8601String(),
+            'access_sections' => $this->accessSectionKeys(),   // main first
+            'portal_access'   => (bool) $this->portal_access,
+            'mobile_access'   => (bool) $this->mobile_access,
             'created_at'      => $this->created_at->toIso8601String(),
 
             // Lead counts (from withCount)

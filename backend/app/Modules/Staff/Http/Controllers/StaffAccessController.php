@@ -40,6 +40,10 @@ class StaffAccessController extends Controller
             'mobile_access' => (bool) $user->mobile_access,
             'main'          => $rows->firstWhere('is_main', true)?->section_key,
             'subs'          => $rows->where('is_main', false)->pluck('section_key')->values(),
+            // Role + sections = what this person can actually do (see User::effectivePermissions()).
+            'role_permissions'      => array_values((array) ($user->role?->permissions ?? [])),
+            'effective_permissions' => $user->effectivePermissions(),
+            'all_permissions'       => \App\Models\Permission::pluck('key')->all(),
         ]);
     }
 

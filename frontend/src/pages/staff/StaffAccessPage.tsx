@@ -4,10 +4,11 @@
 import { useEffect, useState, useCallback, useMemo } from 'react'
 import { staffAccessApi, staffAccountAccessApi } from '@/api'
 import { Button, EmptyState, Spinner } from '@/components/ui'
+import AccessSectionPicker, { sectionAddedPermissions, type AccessSection } from './AccessSectionPicker'
 import { getError } from '@/utils'
 import toast from 'react-hot-toast'
 
-type Section = { key: string; label: string; icon: string; color: string; description: string; permissions: string[] }
+type Section = AccessSection
 type StaffRow = { id: number; name: string; email: string; role?: { label: string } }
 
 export default function StaffAccessPage() {
@@ -22,6 +23,8 @@ export default function StaffAccessPage() {
   const [mobile, setMobile] = useState(true)
   const [main, setMain] = useState<string | null>(null)
   const [subs, setSubs] = useState<string[]>([])
+  const [rolePerms, setRolePerms] = useState<string[]>([])
+  const [allPerms, setAllPerms] = useState<string[]>([])
 
   useEffect(() => {
     Promise.all([staffAccountAccessApi.options(), staffAccessApi.sections()])
@@ -33,7 +36,7 @@ export default function StaffAccessPage() {
   const load = useCallback((id: number) => {
     setBusy(true)
     staffAccessApi.show(id)
-      .then((r) => { setPortal(r.data.portal_access); setMobile(r.data.mobile_access); setMain(r.data.main ?? null); setSubs(r.data.subs ?? []) })
+      .then((r) => { setPortal(r.data.portal_access); setMobile(r.data.mobile_access); setMain(r.data.main ?? null); setSubs(r.data.subs ?? []); setRolePerms(r.data.role_permissions ?? []); setAllPerms(r.data.all_permissions ?? []) })
       .catch((e) => toast.error(getError(e)))
       .finally(() => setBusy(false))
   }, [])
@@ -44,12 +47,6 @@ export default function StaffAccessPage() {
     [staff, search],
   )
   const selected = staff.find((s) => s.id === selectedId) ?? null
-
-  const toggleSub = (key: string) => setSubs((p) => (p.includes(key) ? p.filter((k) => k !== key) : [...p, key]))
-  const pickMain = (key: string) => {
-    setMain((cur) => (cur === key ? null : key))
-    setSubs((p) => p.filter((k) => k !== key))
-  }
 
   const save = async () => {
     if (!selectedId) return
@@ -102,25 +99,33 @@ export default function StaffAccessPage() {
 
               <div className="card">
                 <div className="card-header"><h3 className="card-title">Access sections</h3><span className="text-xs text-gray-400">Choose one main, tick any extra sub sections</span></div>
-                <div className="card-body grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {sections.map((s) => {
-                    const isMain = main === s.key, isSub = subs.includes(s.key)
-                    return (
-                      <div key={s.key} className={`border rounded-xl p-3 ${isMain ? 'border-brand-500 bg-brand-50' : isSub ? 'border-gray-400' : 'border-gray-200'}`}>
-                        <div className="flex items-center gap-2">
-                          <span>{s.icon}</span><span className="font-semibold text-sm text-gray-900">{s.label}</span>
-                          {isMain && <span className="text-[10px] px-1.5 py-0.5 rounded bg-brand-500 text-white">MAIN</span>}
-                        </div>
-                        <p className="text-xs text-gray-500 mt-1">{s.description}</p>
-                        <div className="flex gap-4 mt-2 text-xs text-gray-700">
-                          <label className="flex items-center gap-1"><input type="radio" checked={isMain} onChange={() => pickMain(s.key)} onClick={() => isMain && pickMain(s.key)} /> Main</label>
-                          <label className="flex items-center gap-1"><input type="checkbox" disabled={isMain} checked={isSub} onChange={() => toggleSub(s.key)} /> Sub</label>
-                        </div>
-                      </div>
-                    )
-                  })}
+                <div className="card-body">
+                  <AccessSectionPicker sections={sections} main={main} subs={subs} onChange={(n) => { setMain(n.main); setSubs(n.subs) }} />
                 </div>
               </div>
+
+              {(() => {
+                const keys = [...(main ? [main] : []), ...subs]
+                const { all, added } = sectionAddedPermissions(sections, keys, rolePerms, allPerms)
+                return (
+                  <div className="card">
+                    <div className="card-header"><h3 className="card-title">Role &amp; permissions</h3>
+                      <span className="text-xs text-gray-400">{selected.role?.label ?? 'No role'} + chosen sections</span></div>
+                    <div className="card-body space-y-3">
+                      <p className="text-sm text-gray-700">
+                        Role gives <b>{rolePerms.length}</b> permission{rolePerms.length === 1 ? '' : 's'};
+                        the chosen sections add <b>{all ? 'every remaining' : added.length}</b>{all ? '' : ' more'}.
+                      </p>
+                      {added.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5 max-h-40 overflow-y-auto">
+                          {added.map((p) => <span key={p} className="text-[11px] px-2 py-0.5 rounded-full bg-green-50 text-green-700 border border-green-200">+ {p}</span>)}
+                        </div>
+                      )}
+                      <p className="text-xs text-gray-400">Change the role's own permissions under Roles.</p>
+                    </div>
+                  </div>
+                )
+              })()}
 
               <div className="flex justify-end"><Button loading={saving} onClick={save}>Save access</Button></div>
             </>

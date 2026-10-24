@@ -76,6 +76,9 @@ export interface User {
   phone: string | null
   avatar: string | null
   department: string | null
+  access_sections?: string[]   // main first
+  portal_access?: boolean
+  mobile_access?: boolean
   is_active: boolean
   max_leads: number
   total_leads?: number

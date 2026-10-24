@@ -105,6 +105,15 @@ export default function DashboardPage() {
   const canViewStaff = usePermission('staff.view')
   const canViewCamp  = usePermission('campaigns.view')
   const canViewFlow  = usePermission('flow.view')
+  // The home screen follows the person's effective permissions (role + access sections), so each
+  // section (Sales / Marketing / HR / Accounts …) sees a different set of blocks.
+  const canContacts  = usePermission('contacts.view')
+  const canLeads     = usePermission('leads.view')
+  const canWallet    = usePermission('wallet.view')
+  const canMessages  = usePermission('message_logs.view') || usePermission('inbox.view') || canViewCamp
+  const mainSection  = (user as any)?.access_sections?.[0] as string | undefined
+  const sectionLabel = ({ company_admin: 'Company Admin', administrators: 'Administrators', sales: 'Sales Team',
+    marketing: 'Marketing Team', hr: 'HR Team', accounts: 'Accounts Team' } as Record<string, string>)[mainSection ?? '']
   const waConfig     = user?.company?.wa_config ?? 'wallet'
 
   const [overview,  setOverview]  = useState<Overview | null>(null)
@@ -186,6 +195,9 @@ export default function DashboardPage() {
         <h1 className="page-title">{greeting}, {user?.name?.split(' ')[0]} 👋</h1>
         <p className="page-sub">
           Here's your company overview for {user?.company?.name}
+          {sectionLabel && (
+            <span className="ml-2 text-xs px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700">{sectionLabel}</span>
+          )}
           {(user?.company as any)?.industry_template_name && (
             <span className="ml-2 text-xs px-2 py-0.5 rounded-full bg-brand-50 text-brand-700">
               {(user?.company as any).industry_template_name}
@@ -243,22 +255,22 @@ export default function DashboardPage() {
       {/* ── KPI stat cards ───────────────────────────────────────────────── */}
       {overview && (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <StatCard icon="👥" label="Total contacts"
+          {canContacts && <StatCard icon="👥" label="Total contacts"
             value={fmt.number(overview.contacts.total)}
-            sub={`+${overview.contacts.new_today} today · ${fmt.number(overview.contacts.new_month)} this month`} />
-          <StatCard icon="🎯" label="Active leads"
+            sub={`+${overview.contacts.new_today} today · ${fmt.number(overview.contacts.new_month)} this month`} />}
+          {canLeads && <StatCard icon="🎯" label="Active leads"
             value={fmt.number(overview.leads.total)}
             sub={`${overview.leads.conversion_rate}% conversion rate`}
-            subColor="text-indigo-600" />
-          <StatCard icon="💬" label="Messages sent"
+            subColor="text-indigo-600" />}
+          {canMessages && <StatCard icon="💬" label="Messages sent"
             value={fmt.number(overview.messages.total_sent)}
-            sub={`${fmt.number(overview.messages.sent_today)} today · ${fmt.number(overview.messages.sent_this_month)} this month`} />
-          {waConfig === 'wallet' ? (
+            sub={`${fmt.number(overview.messages.sent_today)} today · ${fmt.number(overview.messages.sent_this_month)} this month`} />}
+          {waConfig === 'wallet' ? (canWallet &&
             <StatCard icon="💳" label="Wallet balance"
               value={fmt.number(overview.wallet.balance)}
               sub={`${fmt.number(overview.wallet.total_used)} used of ${fmt.number(overview.wallet.total_purchased)} purchased`}
-              subColor={overview.wallet.balance < 500 ? 'text-red-500' : 'text-gray-400'} />
-          ) : (
+ subColor={overview.wallet.balance < 500 ? 'text-red-500' : 'text-gray-400'} />
+          ) : (canViewCamp &&
             <StatCard icon="📢" label="Campaigns"
               value={fmt.number(overview.campaigns?.total ?? 0)}
               sub={`${overview.campaigns?.running ?? 0} running · ${overview.campaigns?.completed ?? 0} completed`} />
@@ -270,7 +282,7 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
 
         {/* 30-day message bar chart */}
-        <div className="card p-5 lg:col-span-2">
+        {canMessages && <div className="card p-5 lg:col-span-2">
           <SectionHeader title="Messages — last 14 days" action="View logs" onAction={() => navigate('/message-logs')} />
           {msgChartData.length > 0 ? (
             <ResponsiveContainer width="100%" height={200}>
@@ -287,10 +299,10 @@ export default function DashboardPage() {
           ) : (
             <div className="h-48 flex items-center justify-center text-sm text-gray-400">No message data yet</div>
           )}
-        </div>
+        </div>}
 
         {/* Lead stage pie */}
-        <div className="card p-5">
+        {canLeads && <div className="card p-5">
           <SectionHeader title="Lead funnel" action="View leads" onAction={() => navigate('/crm/leads')} />
           {leadStageData.length > 0 ? (
             <>
@@ -320,7 +332,7 @@ export default function DashboardPage() {
           ) : (
             <div className="h-48 flex items-center justify-center text-sm text-gray-400">No lead data yet</div>
           )}
-        </div>
+        </div>}
       </div>
 
       {/* ── Campaigns ────────────────────────────────────────────────────── */}
@@ -413,7 +425,7 @@ export default function DashboardPage() {
         )}
 
         {/* Wallet monthly usage */}
-        {waConfig === 'wallet' && walletChartData.length > 0 && (
+        {waConfig === 'wallet' && canWallet && walletChartData.length > 0 && (
           <div className="card p-5">
             <SectionHeader title="Wallet usage (6 months)" action="View wallet" onAction={() => navigate('/wallet')} />
             <div className="flex gap-4 mb-3">
@@ -515,7 +527,7 @@ export default function DashboardPage() {
       )}
 
       {/* ── Leads breakdown ───────────────────────────────────────────────── */}
-      {leads && (
+      {canLeads && leads && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
 
           {/* By source */}
@@ -579,7 +591,7 @@ export default function DashboardPage() {
       )}
 
       {/* ── Message breakdown ─────────────────────────────────────────────── */}
-      {messages && (
+      {canMessages && messages && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <div className="card p-5">
             <SectionHeader title="Messages by type" />
@@ -666,11 +678,11 @@ export default function DashboardPage() {
         <SectionHeader title="Quick actions" />
         <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3">
           {[
-            { icon: '👥', label: 'Import contacts',  to: '/crm/contacts' },
+            { icon: '👥', label: 'Import contacts',  to: '/crm/contacts', hide: !canContacts },
             { icon: '📢', label: 'New campaign',      to: '/campaigns',    hide: !canViewCamp },
             { icon: '🌿', label: 'Flow builder',      to: '/wa-cloud/flow-builders', hide: !canViewFlow },
             { icon: '💬', label: 'WA Campaign', to: '/wa-chat/message-sender' },
-            { icon: '💳', label: 'Recharge wallet',   to: '/wallet',       hide: waConfig !== 'wallet' },
+            { icon: '💳', label: 'Recharge wallet',   to: '/wallet',       hide: waConfig !== 'wallet' || !canWallet },
             { icon: '📊', label: 'WA Chat',           to: '/wa-chat/chats' },
           ].filter(a => !a.hide).map((a) => (
             <button key={a.label} onClick={() => navigate(a.to)}

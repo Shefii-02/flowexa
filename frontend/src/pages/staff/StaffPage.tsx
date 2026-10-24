@@ -2,7 +2,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useAppDispatch, useAppSelector, usePermission } from '@/store'
 import { fetchStaffThunk } from '@/store/slices'
-import { staffApi, labelApi, deviceApi } from '@/api'
+import { staffApi, staffAccessApi, labelApi, deviceApi } from '@/api'
+import AccessSectionPicker, { type AccessSection } from './AccessSectionPicker'
 import {
   Button, Input, Select, Modal, ConfirmModal,
   Badge, EmptyState, Pagination, TableSkeleton, Spinner,
@@ -21,6 +22,7 @@ export default function StaffPage() {
   const canCreate  = canManage
   const canEdit    = canManage
   const canDelete  = canManage
+  const canManageAccess = canManage
 
   const [deviceUser, setDeviceUser] = useState<any>(null)
   const deviceService: DeviceService | null = useMemo(() => {
@@ -43,6 +45,12 @@ export default function StaffPage() {
   const [saving,    setSaving]    = useState(false)
   const [deleting,  setDeleting]  = useState(false)
 
+  // Access sections (main + subs) and channels, saved together with the staff record.
+  const [sections, setSections] = useState<AccessSection[]>([])
+  const [access, setAccess] = useState<{ main: string | null; subs: string[]; portal: boolean; mobile: boolean }>(
+    { main: null, subs: [], portal: true, mobile: true })
+  const sectionLabel = (k?: string) => sections.find((s) => s.key === k)
+
   const [form, setForm] = useState({
     name: '', email: '', password: '', password_confirmation: '',
     role_id: '', department: '', max_leads: '50',
@@ -51,6 +59,7 @@ export default function StaffPage() {
   useEffect(() => {
     // Only this company's own roles — the platform's built-in system roles
     // (owner / admin / counsellor …) aren't assignable to company staff here.
+    staffAccessApi.sections().then((r) => setSections(r.data.sections ?? [])).catch(() => {})
     staffApi.roles().then((r) => setRoles((r.data.roles ?? []).filter((x: any) => !x.is_system)))
   }, [])
 
@@ -60,12 +69,14 @@ export default function StaffPage() {
 
   const openCreate = () => {
     setEditUser(null)
+    setAccess({ main: null, subs: [], portal: true, mobile: true })
     setForm({ name:'', email:'', password:'', password_confirmation:'', role_id: roles[0]?.id?.toString() || '', department:'', max_leads:'50' })
     setShowModal(true)
   }
 
   const openEdit = (u: any) => {
     setEditUser(u)
+    setAccess({ main: u.access_sections?.[0] ?? null, subs: (u.access_sections ?? []).slice(1), portal: u.portal_access ?? true, mobile: u.mobile_access ?? true })
     setForm({ name: u.name, email: u.email, password:'', password_confirmation:'', role_id: u.role?.id?.toString() || '', department: u.department || '', max_leads: u.max_leads?.toString() || '50' })
     setShowModal(true)
   }
@@ -77,9 +88,12 @@ export default function StaffPage() {
         const payload: any = { name: form.name, role_id: +form.role_id, department: form.department, max_leads: +form.max_leads }
         if (form.password) { payload.password = form.password; payload.password_confirmation = form.password_confirmation }
         await staffApi.update(editUser.id, payload)
+        await staffAccessApi.update(editUser.id, { portal_access: access.portal, mobile_access: access.mobile, main: access.main, subs: access.subs })
         toast.success('Staff updated.')
       } else {
-        await staffApi.create({ ...form, role_id: +form.role_id, max_leads: +form.max_leads })
+        const { data } = await staffApi.create({ ...form, role_id: +form.role_id, max_leads: +form.max_leads })
+        const newId = data?.staff?.id ?? data?.data?.id
+        if (newId) await staffAccessApi.update(newId, { portal_access: access.portal, mobile_access: access.mobile, main: access.main, subs: access.subs })
         toast.success('Staff created.')
       }
       setShowModal(false)
@@ -130,7 +144,7 @@ export default function StaffPage() {
             <table className="table">
               <thead>
                 <tr>
-                  <th>Name</th><th>Role</th><th>Department</th><th>Leads</th><th>Status</th><th>Actions</th>
+                  <th>Name</th><th>Role</th><th>Access</th><th>Department</th><th>Leads</th><th>Status</th><th>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -148,6 +162,16 @@ export default function StaffPage() {
                       </div>
                     </td>
                     <td><Badge variant="blue">{u.role?.label}</Badge></td>
+                    <td>
+                      <div className="flex flex-wrap items-center gap-1">
+                        {(u.access_sections ?? []).map((k: string, i: number) => {
+                          const sec = sectionLabel(k)
+                          return <Badge key={k} variant={i === 0 ? 'blue' : 'gray'}>{sec ? `${sec.icon} ${sec.label}` : k}</Badge>
+                        })}
+                        {u.portal_access === false && <span title="Web portal off" className="text-xs line-through text-gray-400">🖥️</span>}
+                        {u.mobile_access === false && <span title="Mobile app off" className="text-xs line-through text-gray-400">📱</span>}
+                      </div>
+                    </td>
                     <td className="text-gray-600">{u.department || '—'}</td>
                     <td>
                       <div className="text-xs">
@@ -204,6 +228,19 @@ export default function StaffPage() {
           <Input label="Department" placeholder="Sales, Support..." value={form.department} onChange={(e) => set('department', e.target.value)} />
           <Input label="Max leads" type="number" min={1} max={500} value={form.max_leads} onChange={(e) => set('max_leads', e.target.value)} />
         </div>
+
+        {canManageAccess && (
+          <div className="mt-5 space-y-3">
+            <p className="text-sm font-semibold text-gray-800">Access</p>
+            <div className="flex gap-5 text-sm text-gray-700">
+              <label className="flex items-center gap-2"><input type="checkbox" checked={access.portal} onChange={(e) => setAccess((a) => ({ ...a, portal: e.target.checked }))} /> 🖥️ Web portal</label>
+              <label className="flex items-center gap-2"><input type="checkbox" checked={access.mobile} onChange={(e) => setAccess((a) => ({ ...a, mobile: e.target.checked }))} /> 📱 Mobile app</label>
+            </div>
+            <p className="text-xs text-gray-400">Choose one main section, tick any extra sub sections. They add to what the role allows and decide the home screen they see.</p>
+            <AccessSectionPicker compact sections={sections} main={access.main} subs={access.subs}
+              onChange={(n) => setAccess((a) => ({ ...a, ...n }))} />
+          </div>
+        )}
       </Modal>
 
       {/* Linked devices */}
