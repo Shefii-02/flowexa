@@ -82,6 +82,7 @@ export default function CompanyDetailPage() {
     trial_ends_at: c.trial_ends_at ? String(c.trial_ends_at).slice(0, 10) : '',
     plan_expires_at: c.plan_expires_at ? String(c.plan_expires_at).slice(0, 10) : '',
     storage_limit_mb: Math.round((c.storage_limit_bytes ?? 0) / (1024 * 1024)),
+    wa_config: c.wa_config === 'wallet' || !c.wa_config ? 'wallet' : 'own_account',
     wa_phone_id: c.wa_phone_id ?? '',
     wa_business_id: c.wa_business_id ?? '',
     meta_app_id: c.meta_app_id ?? '',
@@ -147,6 +148,7 @@ export default function CompanyDetailPage() {
 
   const saveWhatsAppCloud = () => {
     const payload: Record<string, unknown> = {
+      wa_config: form.wa_config,
       wa_phone_id: form.wa_phone_id || null,
       wa_business_id: form.wa_business_id || null,
       meta_app_id: form.meta_app_id || null,
@@ -321,6 +323,16 @@ export default function CompanyDetailPage() {
       {/* WhatsApp Cloud */}
       <Section title="WhatsApp Cloud (Meta)"
         footer={<Button size="sm" loading={savingSection === 'WhatsApp Cloud'} onClick={saveWhatsAppCloud}>Save WhatsApp Cloud</Button>}>
+        <div className="sm:col-span-2">
+          <label className="label">Message billing</label>
+          <select className="input" value={form.wa_config} onChange={(e) => set('wa_config', e.target.value)}>
+            <option value="wallet">Wallet — company buys message credits, 1 credit debited per message</option>
+            <option value="own_account">Own account — company pays Meta directly, wallet not used</option>
+          </select>
+          <p className="text-xs text-gray-400 mt-1">
+            Own account needs the Phone number ID and Access token below. Campaigns, retries, resends and OTP follow this setting.
+          </p>
+        </div>
         <Input label="Phone number ID" value={form.wa_phone_id} onChange={(e) => set('wa_phone_id', e.target.value)} />
         <Input label="Business account ID" value={form.wa_business_id} onChange={(e) => set('wa_business_id', e.target.value)} />
         <Input label="Meta app ID" value={form.meta_app_id} onChange={(e) => set('meta_app_id', e.target.value)} />

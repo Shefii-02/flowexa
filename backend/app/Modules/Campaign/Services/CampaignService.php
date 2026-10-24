@@ -155,7 +155,7 @@ class CampaignService
         Log::info('[campaign-retry] row + message log updated', ['campaign' => $campaign->id, 'row' => $row->id, 'status' => $r['ok'] ? 'sent' : 'failed']);
 
         if ($r['ok']) {
-            if ($company->wa_config == 'wallet') {
+            if ($this->walletService->usesWallet($company)) {
                 $this->walletService->debit($campaign->company_id, 1, "Retry — campaign #{$campaign->id}", (string) $campaign->id, 'campaign_resend');
             }
             $this->campaignRepository->updateStats($campaign->id, [
@@ -202,7 +202,7 @@ class CampaignService
         if ($error) { return $fail($error); }
         Log::info('[campaign-retry] inputs resolved', ['template' => $inputs['template']->name, 'number' => $inputs['number']->phone_number_id, 'variables' => $inputs['variables'], 'coupon' => $inputs['coupon']]);
 
-        if ($company->wa_config == 'wallet' && $this->walletService->getWallet($companyId)->balance < 1) {
+        if ($this->walletService->usesWallet($company) && $this->walletService->getWallet($companyId)->balance < 1) {
             return $fail('Not enough wallet balance to send this message.', 402);
         }
 
@@ -317,7 +317,7 @@ class CampaignService
 
         $total  = $contacts->count();
 
-        $walletMode = $company->wa_config == 'wallet';
+        $walletMode = $this->walletService->usesWallet($company);
         $wallet     = $walletMode ? $this->walletService->getWallet($companyId) : null;
 
         if ($walletMode && $wallet->balance < $total) {
@@ -356,7 +356,7 @@ class CampaignService
             ]);
 
 
-            if ($company->wa_config == 'wallet') {
+            if ($this->walletService->usesWallet($company)) {
                 // Debit wallet upfront
                 $this->walletService->debit(
                     companyId: $companyId,
@@ -441,7 +441,7 @@ class CampaignService
         if ($rows->isEmpty()) { throw CampaignException::noFailedMessages(); }
 
         // Only wallet-mode companies pay per message from the wallet; own-account ones are billed by Meta.
-        if ($company->wa_config == 'wallet') {
+        if ($this->walletService->usesWallet($company)) {
             $wallet = $this->walletService->getWallet($companyId);
             if ($wallet->balance < $rows->count()) {
                 throw CampaignException::insufficientBalance($wallet->balance, $rows->count());
@@ -507,7 +507,7 @@ class CampaignService
         $this->sender->record($campaign, $row, $phone, $r, $row->attempts + 1, true);
 
         if ($r['ok']) {
-            if ($campaign->company->wa_config == 'wallet') {
+            if ($this->walletService->usesWallet($campaign->company)) {
                 $this->walletService->debit($campaign->company_id, 1, "Resend failed — campaign #{$campaign->id}", (string) $campaign->id, 'campaign_resend');
             }
             $this->campaignRepository->updateStats($campaign->id, [

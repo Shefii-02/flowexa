@@ -161,6 +161,23 @@ class WalletService
         );
     }
 
+    // ─── Billing mode ────────────────────────────────────────────────────────
+    // companies.wa_config: 'wallet'      → the company pays per message from its prepaid wallet.
+    //                      'own_account' → messages go out on the company's own Meta WABA and Meta
+    //                                      bills them directly; the wallet is never touched.
+    public function usesWallet(\App\Models\Company $company): bool
+    {
+        return ($company->wa_config ?? 'wallet') === 'wallet';
+    }
+
+    /** Debit only for wallet-billed companies; own-account companies are a no-op. */
+    public function chargeIfWallet(\App\Models\Company $company, int $amount, string $description, ?string $refId = null, ?string $refType = null): void
+    {
+        if ($this->usesWallet($company)) {
+            $this->debit($company->id, $amount, $description, $refId, $refType);
+        }
+    }
+
     // ─── Manual debit (used by other modules: OTP, Campaign) ─────────────────
     public function debit(int $companyId, int $amount, string $description, ?string $refId = null, ?string $refType = null): void
     {

@@ -24,6 +24,7 @@ class Company extends Model
         'website',
         'logo',
         'status',
+        'wa_config',
         'suspended_reason',
         'trial_ends_at',
         'plan_expires_at',

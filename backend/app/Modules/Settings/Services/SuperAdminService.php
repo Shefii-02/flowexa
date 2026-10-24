@@ -168,6 +168,21 @@ class SuperAdminService
             $update['status'] = $data['status'];
         }
 
+        // Billing mode. 'own_account' means Meta bills the company directly, so it must already
+        // have its own WABA credentials — otherwise campaigns would send for free or fail.
+        if (!empty($data['wa_config'])) {
+            if ($data['wa_config'] === 'own_account') {
+                $phoneId = array_key_exists('wa_phone_id', $update) ? $update['wa_phone_id'] : $company->wa_phone_id;
+                $hasToken = !empty($data['wa_access_token']) || !empty($company->wa_access_token);
+                if (!$phoneId || !$hasToken) {
+                    throw \Illuminate\Validation\ValidationException::withMessages([
+                        'wa_config' => 'Own-account billing needs the Phone number ID and Access token saved first.',
+                    ]);
+                }
+            }
+            $update['wa_config'] = $data['wa_config'];
+        }
+
         foreach (['trial_ends_at', 'plan_expires_at', 'wa_chat_token_expires_at'] as $f) {
             if (array_key_exists($f, $data)) {
                 $update[$f] = $data[$f] ? \Carbon\Carbon::parse($data[$f]) : null;

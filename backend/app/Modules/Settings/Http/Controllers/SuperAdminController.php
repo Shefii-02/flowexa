@@ -124,6 +124,7 @@ class SuperAdminController extends Controller
 
             'storage_limit_bytes'      => ['sometimes', 'integer', 'min:0'],
 
+            'wa_config'                => ['sometimes', \Illuminate\Validation\Rule::in(['wallet', 'own_account'])],
             'wa_phone_id'              => ['sometimes', 'nullable', 'string', 'max:100'],
             'wa_business_id'           => ['sometimes', 'nullable', 'string', 'max:100'],
             'meta_app_id'              => ['sometimes', 'nullable', 'string', 'max:100'],

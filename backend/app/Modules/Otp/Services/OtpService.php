@@ -23,8 +23,8 @@ class OtpService
 
     public function send(Company $company, SendOtpDTO $dto): OtpResultDTO
     {
-        $this->walletService->debit(
-            companyId:   $company->id,
+        $this->walletService->chargeIfWallet(
+            company:     $company,
             amount:      1,
             description: "OTP send to {$dto->phone}",
             refId:       $dto->phone,
