@@ -30,6 +30,7 @@ class SuperAdminCompanyConfigResource extends JsonResource
             'suspended_reason'     => $this->suspended_reason,
             'industry_template'    => $this->industry_template,
             'max_devices_per_user' => $this->max_devices_per_user,
+            'max_web_devices_per_user' => $this->max_web_devices_per_user ?? 3,
 
             'plan_id'          => $this->plan_id,
             'trial_ends_at'    => $this->trial_ends_at,

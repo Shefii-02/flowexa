@@ -26,6 +26,7 @@ type Company = {
   plan_id: number
   app_id?: string
   max_devices_per_user?: number
+  max_web_devices_per_user?: number
   industry_template?: string
   trial_ends_at?: string | null
   plan?: {
@@ -68,6 +69,7 @@ const emptyForm = {
   status: 'active',
   trial_days: '14',
   max_devices_per_user: '2',
+  max_web_devices_per_user: '3',
 }
 
 export default function SuperAdminCompanies() {
@@ -200,6 +202,7 @@ export default function SuperAdminCompanies() {
       status: company.status ?? 'active',
       trial_days: '14',
       max_devices_per_user: company.max_devices_per_user?.toString() ?? '2',
+      max_web_devices_per_user: company.max_web_devices_per_user?.toString() ?? '3',
     })
 
     setOpenMenuId(null)
@@ -252,6 +255,7 @@ export default function SuperAdminCompanies() {
         plan_id: Number(form.plan_id),
         initial_balance: Number(form.initial_balance),
         max_devices_per_user: Number(form.max_devices_per_user) || 2,
+        max_web_devices_per_user: Number(form.max_web_devices_per_user) || 3,
       }
 
       // Business type / trial status — only meaningful when creating.
@@ -915,12 +919,20 @@ export default function SuperAdminCompanies() {
 
           {/* Max devices per user */}
           <Input
-            label="Max devices per user"
+            label="Max mobile devices per user"
             type="number"
             min={1}
             max={20}
             value={form.max_devices_per_user}
             onChange={(event) => set('max_devices_per_user', event.target.value)}
+          />
+          <Input
+            label="Max web browsers per user"
+            type="number"
+            min={1}
+            max={20}
+            value={form.max_web_devices_per_user}
+            onChange={(event) => set('max_web_devices_per_user', event.target.value)}
           />
 
           {/* Business type — create only */}

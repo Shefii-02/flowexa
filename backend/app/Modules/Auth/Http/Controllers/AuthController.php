@@ -38,9 +38,28 @@ class AuthController extends Controller
             ], 403);
         }
 
+        // Web portal sign-ins are tracked per browser and capped per user
+        // (companies.max_web_devices_per_user). Over the cap → 409 + the list of browsers to remove.
+        if (!$isMobile) {
+            $limited = app(\App\Support\WebSessions::class)->admit($request, $result->user);
+            if ($limited instanceof JsonResponse) {
+                return $limited;
+            }
+            $result = new \App\Modules\Auth\DTOs\AuthResultDTO(
+                token: \App\Modules\Auth\DTOs\TokenDTO::fromJwt($limited),
+                user:  $result->user,
+            );
+        }
+
         return AuthResource::make($result)
             ->response()
             ->setStatusCode(200);
+    }
+
+    // ─── POST /auth/web-sessions/remove — free a browser slot when the limit page is shown ──
+    public function removeWebSession(Request $request): JsonResponse
+    {
+        return app(\App\Support\WebSessions::class)->remove($request);
     }
 
     // ─── POST /auth/register ──────────────────────────────────────────────────
@@ -80,6 +99,7 @@ class AuthController extends Controller
     // ─── POST /auth/logout ────────────────────────────────────────────────────
     public function logout(): JsonResponse
     {
+        app(\App\Support\WebSessions::class)->release();
         $this->authService->logout();
 
         return response()->json([

@@ -192,11 +192,12 @@ class FirebasePushService
             'scope' => 'https://www.googleapis.com/auth/firebase.messaging',
         ];
 
-        $header    = base64_encode(json_encode(['alg' => 'RS256', 'typ' => 'JWT']));
-        $claims    = base64_encode(json_encode($payload));
+        $b64       = fn (string $v) => rtrim(strtr(base64_encode($v), '+/', '-_'), '=');
+        $header    = $b64(json_encode(['alg' => 'RS256', 'typ' => 'JWT']));
+        $claims    = $b64(json_encode($payload));
         $signature = '';
         openssl_sign("{$header}.{$claims}", $signature, $serviceAccount['private_key'], OPENSSL_ALGO_SHA256);
-        $jwt       = "{$header}.{$claims}." . base64_encode($signature);
+        $jwt       = "{$header}.{$claims}." . $b64($signature);
 
         $response  = Http::asForm()->post('https://oauth2.googleapis.com/token', [
             'grant_type' => 'urn:ietf:params:oauth:grant-type:jwt-bearer',

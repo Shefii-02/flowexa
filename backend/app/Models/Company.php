@@ -53,6 +53,7 @@ class Company extends Model
         'ai_provider',
         'ai_model',
         'max_devices_per_user',
+        'max_web_devices_per_user',
         'industry_template',
     ];
 

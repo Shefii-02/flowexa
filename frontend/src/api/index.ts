@@ -9,6 +9,7 @@ export const authApi = {
   me: () => api.get('/auth/me'),
   refresh: () => api.post('/auth/refresh'),
   logout: () => api.post('/auth/logout'),
+  removeWebSession: (limit_token: string, device_id: number) => api.post('/auth/web-sessions/remove', { limit_token, device_id }),
   updateProfile: (d: { name: string; phone: string; language: string; department: string }) =>
     api.put('/auth/profile', d),
   changePassword: (d: { current_password: string; password: string; password_confirmation: string }) =>

@@ -111,6 +111,7 @@ Route::prefix('v1')->group(function () {
     Route::prefix('auth')->name('auth.')->group(function () {
         Route::post('register', [AuthController::class, 'register'])->name('register');
         Route::post('login',    [AuthController::class, 'login'])->name('login');
+        Route::post('web-sessions/remove', [AuthController::class, 'removeWebSession'])->name('web-sessions.remove');
     });
 
     // ── Mobile app QR / PIN device login (public — the challenge is the credential) ──

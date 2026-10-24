@@ -1,6 +1,7 @@
 // src/api/client.ts
 import axios, { AxiosInstance, AxiosError } from 'axios'
 import { store } from '@/store'
+import { getDeviceId, getDeviceName } from '@/lib/deviceId'
 import { setToken, setForbidden, setSessionExpired, setConnectionError } from '@/store/slices'
 
 const BASE_URL = import.meta.env.VITE_API_URL || '/api/v1'
@@ -52,6 +53,8 @@ api.interceptors.request.use(async (config) => {
     }
   }
   if (token) config.headers.Authorization = `Bearer ${token}`
+  config.headers['X-Device-Id'] = getDeviceId()
+  config.headers['X-Device-Name'] = getDeviceName()
   return config
 })
 

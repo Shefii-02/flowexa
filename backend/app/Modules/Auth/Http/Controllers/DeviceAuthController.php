@@ -86,13 +86,13 @@ class DeviceAuthController extends Controller
         $max = (int) ($user->company?->max_devices_per_user ?? 2);
 
         if (!$existing) {
-            $activeCount = UserDevice::where('user_id', $user->id)->active()->count();
+            $activeCount = UserDevice::where('user_id', $user->id)->where('platform', '!=', 'web')->active()->count();
             if ($activeCount >= $max) {
                 return response()->json([
                     'error'   => 'device_limit',
                     'message' => "This account already has {$max} linked devices. Remove one to continue.",
                     'max'     => $max,
-                    'devices' => UserDevice::where('user_id', $user->id)->active()
+                    'devices' => UserDevice::where('user_id', $user->id)->where('platform', '!=', 'web')->active()
                         ->orderByDesc('last_active_at')->get()
                         ->map(fn (UserDevice $d) => [
                             'id'             => $d->id,

@@ -82,6 +82,7 @@ class SuperAdminController extends Controller
             'company_phone' => ['sometimes', 'nullable', 'string', 'max:20'],
             'website'       => ['sometimes', 'nullable', 'string', 'max:150'],
             'max_devices_per_user' => ['sometimes', 'integer', 'min:1', 'max:20'],
+            'max_web_devices_per_user' => ['sometimes', 'integer', 'min:1', 'max:20'],
         ]);
         $c = $this->superAdminService->updateCompany($company, $request->all());
         return response()->json(['message' => 'Company updated.', 'company' => $c]);
@@ -118,6 +119,7 @@ class SuperAdminController extends Controller
             'suspended_reason'         => ['sometimes', 'nullable', 'string', 'max:255'],
             'industry_template'        => ['sometimes', \Illuminate\Validation\Rule::in(array_keys(config('industry_templates', [])))],
             'max_devices_per_user'     => ['sometimes', 'integer', 'min:1', 'max:20'],
+            'max_web_devices_per_user' => ['sometimes', 'integer', 'min:1', 'max:20'],
 
             'trial_ends_at'            => ['sometimes', 'nullable', 'date'],
             'plan_expires_at'          => ['sometimes', 'nullable', 'date'],

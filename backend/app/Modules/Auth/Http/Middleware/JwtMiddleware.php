@@ -22,6 +22,14 @@ class JwtMiddleware
 
             // Per-staff channel switch (Staff → Access): the phone app sends X-Client: mobile and its
             // device-login tokens carry a `duid` claim; everything else is the web portal.
+            $payload = JWTAuth::getPayload();
+            foreach (['wuid', 'duid'] as $claim) {
+                if ($payload->hasKey($claim)
+                    && \App\Models\UserDevice::where('user_id', $user->id)->where('device_uid', $payload->get($claim))->whereNotNull('revoked_at')->exists()) {
+                    return $this->error('This device was signed out from another device.', 401, 'device_revoked');
+                }
+            }
+
             $isMobile = $request->header('X-Client') === 'mobile' || JWTAuth::getPayload()->hasKey('duid');
             if (!$user->canUseChannel($isMobile ? 'mobile' : 'portal')) {
                 return $this->error(

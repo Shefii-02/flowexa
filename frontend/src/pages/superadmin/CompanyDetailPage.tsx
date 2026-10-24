@@ -79,6 +79,7 @@ export default function CompanyDetailPage() {
     status: c.status ?? 'active',
     suspended_reason: c.suspended_reason ?? '',
     max_devices_per_user: c.max_devices_per_user ?? 2,
+    max_web_devices_per_user: c.max_web_devices_per_user ?? 3,
     trial_ends_at: c.trial_ends_at ? String(c.trial_ends_at).slice(0, 10) : '',
     plan_expires_at: c.plan_expires_at ? String(c.plan_expires_at).slice(0, 10) : '',
     storage_limit_mb: Math.round((c.storage_limit_bytes ?? 0) / (1024 * 1024)),
@@ -138,6 +139,7 @@ export default function CompanyDetailPage() {
     status: form.status,
     suspended_reason: form.status === 'suspended' ? (form.suspended_reason || null) : null,
     max_devices_per_user: Number(form.max_devices_per_user) || 2,
+    max_web_devices_per_user: Number(form.max_web_devices_per_user) || 3,
     trial_ends_at: form.trial_ends_at || null,
     plan_expires_at: form.plan_expires_at || null,
   })
@@ -296,7 +298,8 @@ export default function CompanyDetailPage() {
             {INDUSTRY_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
           </select>
         </div>
-        <Input label="Max devices per user" type="number" min={1} max={20} value={form.max_devices_per_user} onChange={(e) => set('max_devices_per_user', e.target.value)} />
+        <Input label="Max mobile devices per user" type="number" min={1} max={20} value={form.max_devices_per_user} onChange={(e) => set('max_devices_per_user', e.target.value)} />
+        <Input label="Max web browsers per user" type="number" min={1} max={20} value={form.max_web_devices_per_user} onChange={(e) => set('max_web_devices_per_user', e.target.value)} />
         <div>
           <label className="label">Account status</label>
           <select className="select" value={form.status} onChange={(e) => set('status', e.target.value)}>

@@ -147,7 +147,7 @@ class SuperAdminService
             }
         }
 
-        foreach (['storage_limit_bytes', 'max_devices_per_user', 'waha_max_sessions',
+        foreach (['storage_limit_bytes', 'max_devices_per_user', 'max_web_devices_per_user', 'waha_max_sessions',
                   'waha_max_webhooks', 'waha_media_limit_mb'] as $f) {
             if (array_key_exists($f, $data) && $data[$f] !== null && $data[$f] !== '') {
                 $update[$f] = (int) $data[$f];

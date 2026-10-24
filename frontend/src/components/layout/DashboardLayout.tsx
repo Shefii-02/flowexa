@@ -12,6 +12,7 @@ import PortalAssistant from '@/components/assistant/PortalAssistant'
 import { connectStaffSocket, disconnectStaffSocket } from '@/socket/staffSocket'
 import { ErrorBoundary, AccessDeniedScreen, ConnectionErrorScreen } from '@/components/error'
 import { Spinner } from '@/components/ui'
+import { registerWebPush } from '@/lib/push'
 
 export const DashboardLayout = () => {
   const dispatch    = useAppDispatch()
@@ -22,6 +23,10 @@ export const DashboardLayout = () => {
   const forbidden   = useAppSelector((s) => s.appError.forbidden)
   const sessionExpired = useAppSelector((s) => s.appError.sessionExpired)
   const connection = useAppSelector((s) => s.appError.connection)
+
+  useEffect(() => {
+    if (user?.id) registerWebPush()
+  }, [user?.id])
 
   useEffect(() => {
     if (user?.id && user.company?.id) {

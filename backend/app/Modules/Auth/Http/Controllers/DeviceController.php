@@ -60,7 +60,7 @@ class DeviceController extends Controller
     public function index(): JsonResponse
     {
         $user = $this->me();
-        $active = UserDevice::where('user_id', $user->id)->active()->count();
+        $active = UserDevice::where('user_id', $user->id)->where('platform', '!=', 'web')->active()->count();
 
         return response()->json([
             'max'      => (int) ($user->company->max_devices_per_user ?? 2),
@@ -101,7 +101,7 @@ class DeviceController extends Controller
         return response()->json([
             'user'    => ['id' => $target->id, 'name' => $target->name],
             'max'     => (int) ($this->me()->company->max_devices_per_user ?? 2),
-            'active'  => UserDevice::where('user_id', $target->id)->active()->count(),
+            'active'  => UserDevice::where('user_id', $target->id)->where('platform', '!=', 'web')->active()->count(),
             'devices' => $this->deviceList($target->id),
         ]);
     }

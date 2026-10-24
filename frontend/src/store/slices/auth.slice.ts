@@ -42,11 +42,13 @@ const initialAuth: AuthState = {
     error: null,
 }
 
+export const DEVICE_LIMIT_ERROR = 'device_limit'
+
 export const loginThunk = createAsyncThunk(
     'auth/login',
     async (
         creds: { email: string; password: string },
-        { rejectWithValue }
+        { rejectWithValue }: any
     ) => {
         try {
             const { data } = await authApi.login(creds.email, creds.password);
@@ -58,6 +60,10 @@ export const loginThunk = createAsyncThunk(
                 expiresIn: data.data.expires_in,
             };
         } catch (e: any) {
+            // Too many browsers signed in: the login page shows the "registered browsers" list instead of an error.
+            if (e.response?.status === 409 && e.response?.data?.error === 'device_limit') {
+                return rejectWithValue(DEVICE_LIMIT_ERROR, e.response.data);
+            }
             return rejectWithValue(
                 e.response?.data?.message || 'Login failed'
             );
@@ -112,7 +118,7 @@ export const authSlice = createSlice({
                 localStorage.setItem('wa_token', action.payload.token)
                 syncWaChatSession(action.payload.user)
             })
-            .addCase(loginThunk.rejected, (s, a) => { s.loading = false; s.error = a.payload as string })
+            .addCase(loginThunk.rejected, (s, a) => { s.loading = false; s.error = a.payload === DEVICE_LIMIT_ERROR ? null : (a.payload as string) })
             .addCase(fetchMeThunk.pending, (s) => { s.loading = true })
             .addCase(fetchMeThunk.fulfilled, (s, a) => {
                 s.user = a.payload; s.isAuthenticated = true; s.error = null; s.loading = false
