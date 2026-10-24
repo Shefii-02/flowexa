@@ -24,10 +24,10 @@ type TabId = (typeof TABS)[number]['id']
 
 // ── Tab bar ───────────────────────────────────────────────────────────────────
 
-function TabBar({ active, onChange }: { active: TabId; onChange: (t: TabId) => void }) {
+function TabBar({ tabs, active, onChange }: { tabs: readonly (typeof TABS)[number][]; active: TabId; onChange: (t: TabId) => void }) {
   return (
     <div className="flex gap-1 border-b border-gray-200 overflow-hidden">
-      {TABS.map(t => (
+      {tabs.map(t => (
         <button
           key={t.id}
           onClick={() => onChange(t.id)}
@@ -606,7 +606,13 @@ function CrmSyncTab() {
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function SettingsPage() {
-  const [tab, setTab] = useState<TabId>('company')
+  const isSuper = useIsSuperAdmin()
+  // Superadmins have no company: they get profile, display, staff, devices and permissions only.
+  const tabs = useMemo(
+    () => isSuper ? TABS.filter(t => t.id !== 'company' && t.id !== 'crm-sync') : TABS,
+    [isSuper],
+  )
+  const [tab, setTab] = useState<TabId>(isSuper ? 'profile' : 'company')
 
   return (
     <div className="max-w-3xl space-y-6">
@@ -615,7 +621,7 @@ export default function SettingsPage() {
         <p className="page-sub">Company profile, your account and staff</p>
       </div>
 
-      <TabBar active={tab} onChange={setTab} />
+      <TabBar tabs={tabs} active={tab} onChange={setTab} />
 
       <div className="pt-2">
         {tab === 'company'      && <CompanyTab />}

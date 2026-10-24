@@ -64,9 +64,9 @@ class GoogleIntegrationController extends Controller
                 $integration->update(['drive_folder_id' => $folder['id'], 'drive_folder_url' => $folder['url']]);
             }
 
-            return redirect()->away(rtrim($frontend, '/') . '/settings/integrations?google=connected');
+            return redirect()->away(rtrim($frontend, '/') . '/settings/integrations/google-sheets?google=connected');
         } catch (\Throwable $e) {
-            return redirect()->away(rtrim($frontend, '/') . '/settings/integrations?google=error&message=' . urlencode($e->getMessage()));
+            return redirect()->away(rtrim($frontend, '/') . '/settings/integrations/google-sheets?google=error&message=' . urlencode($e->getMessage()));
         }
     }
 

@@ -96,7 +96,7 @@ class HrConfigController extends Controller
     {
         $this->guard();
         $bt = HrBreakType::where('company_id', $this->companyId())->findOrFail($id);
-        $bt->update($this->validateBreakType($request, true));
+        $bt->update($this->validateBreakType($request, true, $bt->id));
 
         return response()->json(['data' => $bt->fresh()]);
     }
@@ -109,12 +109,12 @@ class HrConfigController extends Controller
         return response()->json(['message' => 'Deleted.']);
     }
 
-    private function validateBreakType(Request $request, bool $isUpdate = false): array
+    private function validateBreakType(Request $request, bool $isUpdate = false, ?int $ignoreId = null): array
     {
         $req = $isUpdate ? 'sometimes' : 'required';
 
-        return $request->validate([
-            'name'         => [$req, 'string', 'max:60'],
+        $data = $request->validate([
+            'name'         => [$req, 'string', 'max:60', $this->uniqueName('hr_break_types', $ignoreId)],
             'max_minutes'  => ['nullable', 'integer', 'min:1', 'max:480'],
             'daily_limit'  => ['nullable', 'integer', 'min:1', 'max:20'],
             'is_paid'      => ['boolean'],
@@ -122,6 +122,24 @@ class HrConfigController extends Controller
             'sort_order'   => ['integer'],
             'is_active'    => ['boolean'],
         ]);
+
+        // A day only has so many minutes: the break allowance (minutes × times) must fit in a shift.
+        $minutes = $data['max_minutes'] ?? $request->input('max_minutes');
+        $perDay  = $data['daily_limit'] ?? $request->input('daily_limit');
+        if ($minutes && $perDay && $minutes * $perDay > 480) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'daily_limit' => "{$perDay} breaks × {$minutes} min is " . ($minutes * $perDay) . ' min — more than an 8-hour day allows.',
+            ]);
+        }
+
+        return $data;
+    }
+
+    private function uniqueName(string $table, ?int $ignoreId): \Illuminate\Validation\Rules\Unique
+    {
+        return \Illuminate\Validation\Rule::unique($table, 'name')
+            ->where('company_id', $this->companyId())
+            ->ignore($ignoreId);
     }
 
     // ── Leave types ───────────────────────────────────────────────────────
@@ -145,7 +163,7 @@ class HrConfigController extends Controller
     {
         $this->guard();
         $lt = HrLeaveType::where('company_id', $this->companyId())->findOrFail($id);
-        $lt->update($this->validateLeaveType($request, true));
+        $lt->update($this->validateLeaveType($request, true, $lt->id));
 
         return response()->json(['data' => $lt->fresh()]);
     }
@@ -158,12 +176,12 @@ class HrConfigController extends Controller
         return response()->json(['message' => 'Deleted.']);
     }
 
-    private function validateLeaveType(Request $request, bool $isUpdate = false): array
+    private function validateLeaveType(Request $request, bool $isUpdate = false, ?int $ignoreId = null): array
     {
         $req = $isUpdate ? 'sometimes' : 'required';
 
         return $request->validate([
-            'name'              => [$req, 'string', 'max:60'],
+            'name'              => [$req, 'string', 'max:60', $this->uniqueName('hr_leave_types', $ignoreId)],
             'is_paid'           => ['boolean'],
             'max_days_per_year' => ['nullable', 'integer', 'min:1', 'max:365'],
             'requires_approval' => ['boolean'],

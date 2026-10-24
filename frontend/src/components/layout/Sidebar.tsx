@@ -672,6 +672,7 @@ export const Sidebar = () => {
             <FlatLink to="/superadmin/failed-jobs" icon="🧯" label="Failed Jobs" />
             <FlatLink to="/superadmin/industry-templates" icon="🏭" label="Business Types / Industries" />
             <FlatLink to="/superadmin/agent-playbook-templates" icon="🗒️" label="Agent Playbook Templates" />
+            <FlatLink to="/settings/index" icon="⚙️" label="Settings" />
             {/* } */}
             <FlatLink to="/setup-guide" icon="🧭" label="Setup Guide" />
           </>
