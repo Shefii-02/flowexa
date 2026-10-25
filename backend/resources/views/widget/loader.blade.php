@@ -45,11 +45,16 @@
       .msg { max-width: 82%; padding: 9px 12px; border-radius: 14px; font-size: 14px; line-height: 1.4; white-space: pre-wrap; word-wrap: break-word; }
       .msg.a { background: #fff; color: #1f2937; align-self: flex-start; border: 1px solid #e5e7eb; }
       .msg.v { background: ${color}; color: #fff; align-self: flex-end; }
+      .opts { align-self: flex-start; display: flex; flex-wrap: wrap; gap: 6px; max-width: 92%; }
+      .opt { background: #fff; color: ${color}; border: 1px solid ${color}; border-radius: 999px; padding: 6px 12px; font-size: 13px; cursor: pointer; }
+      .opt:hover { background: ${color}; color: #fff; }
       .typing { align-self: flex-start; color: #9ca3af; font-size: 13px; padding: 4px 6px; }
       .ft { padding: 10px; border-top: 1px solid #eee; display: flex; gap: 8px; background: #fff; }
       .ft input { flex: 1; border: 1px solid #d1d5db; border-radius: 999px; padding: 10px 14px; font-size: 14px; outline: none; }
       .ft button { background: ${color}; color: #fff; border: none; border-radius: 999px; width: 40px; cursor: pointer; font-size: 16px; }
       .ft button:disabled { opacity: .5; }
+      .pw a { color: inherit; font-weight: 600; text-decoration: none; }
+      .pw a:hover { text-decoration: underline; }
       .pw { text-align: center; font-size: 10px; color: #b0b6bf; padding: 4px; background:#fff; }
     `;
   }
@@ -74,16 +79,28 @@
     inputEl = h("input", { type: "text", placeholder: "Type a message…" });
     inputEl.addEventListener("keydown", function (e) { if (e.key === "Enter") send(); });
     sendBtn = h("button", {}, "➤");
-    sendBtn.addEventListener("click", send);
+    sendBtn.addEventListener("click", function () { send(); });
     ft.appendChild(inputEl); ft.appendChild(sendBtn);
     panel.appendChild(ft);
-    panel.appendChild(h("div", { class: "pw" }, "Powered by AI"));
+    panel.appendChild(h("div", { class: "pw" }, 'Powered by <a href="https://teamzo.io" target="_blank" rel="noopener">TeamZo</a>'));
     shadow.appendChild(panel);
   }
 
   function addMsg(role, text) {
     var m = h("div", { class: "msg " + (role === "visitor" ? "v" : "a") }, esc(text));
     bodyEl.appendChild(m);
+    bodyEl.scrollTop = bodyEl.scrollHeight;
+  }
+  function clearOpts() { var o = shadow.querySelectorAll(".opts"); for (var i = 0; i < o.length; i++) o[i].remove(); }
+  function addOpts(list) {
+    if (!list || !list.length) return;
+    var wrap = h("div", { class: "opts" });
+    list.forEach(function (label) {
+      var b = h("button", { class: "opt" }, esc(label));
+      b.addEventListener("click", function () { send(label); });
+      wrap.appendChild(b);
+    });
+    bodyEl.appendChild(wrap);
     bodyEl.scrollTop = bodyEl.scrollHeight;
   }
   function typing(on) {
@@ -95,14 +112,18 @@
   function toggle() {
     open = !open;
     panel.classList.toggle("show", open);
-    if (open && bodyEl.childElementCount === 0) addMsg("agent", cfg.greeting);
+    if (open && bodyEl.childElementCount === 0) {
+      addMsg("agent", cfg.greeting);
+      if (cfg.has_flow) addOpts(["Start"]);
+    }
     if (open) setTimeout(function () { inputEl.focus(); }, 100);
   }
 
-  function send() {
-    var text = (inputEl.value || "").trim();
+  function send(preset) {
+    var text = (typeof preset === "string" ? preset : (inputEl.value || "")).trim();
     if (!text || sending) return;
     inputEl.value = "";
+    clearOpts();
     addMsg("visitor", text);
     sending = true; sendBtn.disabled = true; typing(true);
     fetch(API + "/" + KEY + "/chat", {
@@ -117,6 +138,7 @@
       typing(false);
       if (d.session_token) localStorage.setItem(LS, d.session_token);
       addMsg("agent", d.reply || "Thanks!");
+      addOpts(d.options);
     }).catch(function () {
       typing(false);
       addMsg("agent", "Sorry, something went wrong. Please try again.");

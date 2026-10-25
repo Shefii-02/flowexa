@@ -81,13 +81,21 @@ class WidgetController extends Controller
     {
         return array_merge($w->toArray(), [
             'embed_snippet' => $this->snippet($w),
-            'script_url'    => url("/api/v1/public/widget/{$w->public_key}.js"),
+            'script_url'    => $this->secureUrl("/api/v1/public/widget/{$w->public_key}.js"),
         ]);
+    }
+
+    /** Always https for real hosts so the embed never trips mixed-content on https sites. */
+    private function secureUrl(string $path): string
+    {
+        $u = url($path);
+        $host = parse_url($u, PHP_URL_HOST);
+        return in_array($host, ['localhost', '127.0.0.1'], true) ? $u : preg_replace('#^http://#', 'https://', $u);
     }
 
     private function snippet(ChatWidget $w): string
     {
-        $url = url("/api/v1/public/widget/{$w->public_key}.js");
+        $url = $this->secureUrl("/api/v1/public/widget/{$w->public_key}.js");
         return "<script async src=\"{$url}\"></script>";
     }
 
@@ -111,6 +119,7 @@ class WidgetController extends Controller
             'notify_whatsapp'    => ['sometimes', 'nullable', 'array'],
             'notify_whatsapp.*'  => ['string', 'max:20'],
             'wa_session_id'      => ['sometimes', 'nullable', 'string', 'max:100'],
+            'flow_builder_id'    => ['sometimes', 'nullable', 'integer', Rule::exists('flow_builders', 'id')->where('company_id', auth()->user()->company_id)],
         ]);
     }
 

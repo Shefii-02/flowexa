@@ -52,6 +52,9 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware): void {
         // Log viewer clear button is guarded by LOG_VIEWER_KEY instead of a session.
         $middleware->validateCsrfTokens(except: ['backend/logs/clear']);
+        // Behind nginx/TLS termination: trust X-Forwarded-Proto so url() emits https
+        // (otherwise the widget embed gets http:// URLs -> blocked as mixed content).
+        $middleware->trustProxies(at: '*');
         //
         // ── Global API middleware ──────────────────────────────────────────────
         $middleware->api(prepend: [

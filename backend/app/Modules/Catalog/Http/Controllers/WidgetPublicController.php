@@ -15,7 +15,10 @@ use Illuminate\Support\Str;
  */
 class WidgetPublicController extends Controller
 {
-    public function __construct(private readonly WidgetChatAgent $agent) {}
+    public function __construct(
+        private readonly WidgetChatAgent $agent,
+        private readonly \App\Modules\Catalog\WidgetFlowRunner $flow,
+    ) {}
 
     /** Widget config for the loader script. */
     public function bootstrap(Request $request, string $key): JsonResponse
@@ -31,6 +34,7 @@ class WidgetPublicController extends Controller
         return response()->json([
             'agent_name' => $widget->agent_name,
             'greeting'   => $widget->greeting,
+            'has_flow'   => (bool) $widget->flow_builder_id,
             'branding'   => $widget->branding ?: (object) [],
         ]);
     }
@@ -70,11 +74,13 @@ class WidgetPublicController extends Controller
             $widget->increment('conversations_count');
         }
 
-        $reply = $this->agent->reply($widget, $convo, $data['message']);
+        $flowTurn = $this->flow->handle($widget, $convo, $data['message']);
+        $reply = $flowTurn['reply'] ?? $this->agent->reply($widget, $convo, $data['message']);
 
         return response()->json([
             'session_token' => $convo->session_token,
             'reply'         => $reply,
+            'options'       => $flowTurn['options'] ?? [],
             'status'        => $convo->fresh()->status,
         ]);
     }
@@ -83,6 +89,9 @@ class WidgetPublicController extends Controller
     public function script(string $key): Response
     {
         $apiBase = url('/api/v1/public/widget');
+        if (!in_array(parse_url($apiBase, PHP_URL_HOST), ['localhost', '127.0.0.1'], true)) {
+            $apiBase = preg_replace('#^http://#', 'https://', $apiBase);
+        }
         $js = view('widget.loader', ['key' => $key, 'apiBase' => $apiBase])->render();
 
         return response($js, 200, [

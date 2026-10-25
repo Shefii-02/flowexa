@@ -75,7 +75,7 @@ interface Props {
   builderId?:    number
   builderName?:  string
   onClose:       () => void
-  onImported:    () => void
+  onImported:    (result?: { builder_id?: number; name?: string }) => void
 }
 
 export function FlowImportExportModal({
@@ -137,7 +137,7 @@ export function FlowImportExportModal({
       const { data } = await flowBuilderApi.import(upload, activate)
       setResult(data.result)
       toast.success(data.message)
-      onImported()
+      onImported(data.result)
     } catch (e) {
       toast.error('Import failed: ' + getError(e))
     } finally {

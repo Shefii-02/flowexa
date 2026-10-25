@@ -13,6 +13,7 @@ export interface ChatWidget {
   notify_emails: string[] | null
   notify_whatsapp: string[] | null
   wa_session_id: string | null
+  flow_builder_id: number | null
   conversations_count: number
   leads_count: number
   embed_snippet: string

@@ -4,6 +4,9 @@ import { Button, Input, Textarea, Badge, EmptyState, Modal, ConfirmModal } from 
 import { getError } from '@/utils'
 import toast from 'react-hot-toast'
 import api from '@/api/client'
+import { Link } from 'react-router-dom'
+import { flowBuilderApi } from '@/api'
+import { FlowImportExportModal } from '../../flow/components/FlowImportExportModal'
 import { widgetApi, type ChatWidget, type WidgetConversation, type WidgetMessage } from './api'
 
 type WaSession = { id: number; session_name: string; status: string }
@@ -22,12 +25,13 @@ type Draft = {
   notify_emails: string
   notify_whatsapp: string
   wa_session_id: string
+  flow_builder_id: string
 }
 
 const emptyDraft = (): Draft => ({
   name: 'Website chat', is_active: true, industry_template: '', agent_name: 'Assistant',
   greeting: 'Hi! 👋 How can I help you today?', primary_color: '#4f46e5', position: 'right',
-  launcher_text: 'Chat with us', allowed_origins: '', notify_emails: '', notify_whatsapp: '', wa_session_id: '',
+  launcher_text: 'Chat with us', allowed_origins: '', notify_emails: '', notify_whatsapp: '', wa_session_id: '', flow_builder_id: '',
 })
 
 export default function WidgetPage() {
@@ -40,6 +44,17 @@ export default function WidgetPage() {
   const [saving, setSaving] = useState(false)
   const [deleteId, setDeleteId] = useState<number | null>(null)
   const [inboxFor, setInboxFor] = useState<ChatWidget | null>(null)
+  const [flows, setFlows] = useState<{ id: number; name: string }[]>([])
+  const [importOpen, setImportOpen] = useState(false)
+
+  const loadFlows = async () => {
+    try {
+      const r = await flowBuilderApi.list()
+      const rows = r.data?.builders ?? []
+      setFlows(Array.isArray(rows) ? rows : [])
+    } catch { /* flow list is optional here */ }
+  }
+  useEffect(() => { void loadFlows() }, [])
 
   const load = async () => {
     setLoading(true)
@@ -67,6 +82,7 @@ export default function WidgetPage() {
     notify_emails: (w.notify_emails ?? []).join(', '),
     notify_whatsapp: (w.notify_whatsapp ?? []).join(', '),
     wa_session_id: w.wa_session_id ?? '',
+    flow_builder_id: w.flow_builder_id ? String(w.flow_builder_id) : '',
   })
 
   const save = async () => {
@@ -84,6 +100,7 @@ export default function WidgetPage() {
         notify_emails: editor.notify_emails.split(/[\s,]+/).map(s => s.trim()).filter(Boolean),
         notify_whatsapp: editor.notify_whatsapp.split(/[\s,]+/).map(s => s.trim()).filter(Boolean),
         wa_session_id: editor.wa_session_id || null,
+        flow_builder_id: editor.flow_builder_id ? Number(editor.flow_builder_id) : null,
       }
       if (editor.id) { await widgetApi.update(editor.id, payload); toast.success('Saved.') }
       else { await widgetApi.create(payload); toast.success('Widget created.') }
@@ -217,6 +234,23 @@ export default function WidgetPage() {
               </div>
             </div>
 
+            <div className="rounded-lg border border-gray-200 p-3 space-y-2">
+              <p className="text-xs font-medium text-gray-600">Chat flow (optional) — visitors walk through your flow nodes as button options; free text falls back to the AI</p>
+              <div className="flex gap-2 items-end">
+                <div className="flex-1">
+                  <label className="label">Flow</label>
+                  <select className="select" value={editor.flow_builder_id} onChange={e => setEditor({ ...editor, flow_builder_id: e.target.value })}>
+                    <option value="">None (AI only)</option>
+                    {flows.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+                  </select>
+                </div>
+                <Button variant="secondary" onClick={() => setImportOpen(true)}>Import nodes</Button>
+                {editor.flow_builder_id && (
+                  <Link to={`/wa-cloud/flow/builder/${editor.flow_builder_id}`} className="text-xs text-brand-600 hover:underline pb-2 whitespace-nowrap">Edit nodes →</Link>
+                )}
+              </div>
+            </div>
+
             <label className="flex items-center gap-2 text-sm">
               <input type="checkbox" checked={editor.is_active} onChange={e => setEditor({ ...editor, is_active: e.target.checked })} />
               Widget is live
@@ -224,6 +258,18 @@ export default function WidgetPage() {
           </div>
         )}
       </Modal>
+
+      {importOpen && (
+        <FlowImportExportModal
+          mode="import"
+          onClose={() => setImportOpen(false)}
+          onImported={(res) => {
+            setImportOpen(false)
+            void loadFlows()
+            if (res?.builder_id) setEditor(ed => ed ? { ...ed, flow_builder_id: String(res.builder_id) } : ed)
+          }}
+        />
+      )}
 
       {inboxFor && <WidgetInbox widget={inboxFor} onClose={() => setInboxFor(null)} />}
 

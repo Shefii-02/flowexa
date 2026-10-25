@@ -16,6 +16,7 @@ import ResetPassword from '@/pages/settings/ResetPassword'
 // Main pages
 import DashboardPage from '@/pages/dashboard/DashboardPage'
 import StaffPage from '@/pages/staff/StaffPage'
+import PrivacyPolicyPage from '@/pages/legal/PrivacyPolicyPage'
 import RolesPage from '@/pages/staff/RolesPage'
 import StaffAccountAccessPage from '@/pages/staff/StaffAccountAccessPage'
 import StaffAccessPage from '@/pages/staff/StaffAccessPage'
@@ -215,6 +216,7 @@ export default function App() {
         <ErrorBoundary>
           <Routes>
             {/* Public routes */}
+            <Route path="/privacy-policy" element={<PrivacyPolicyPage />} />
             <Route path="/login" element={<LoginPage />} />
             <Route path="/register" element={<RegisterPage />} />
             <Route path="/forgot-password" element={<ForgotPassword />} />

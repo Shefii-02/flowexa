@@ -4,7 +4,7 @@ import { api } from '@/api/client';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { PageHeader } from '../components/PageHeader';
 import { useSessionsQuery, useSessionGroupsQuery, useGroupInfoQuery } from '../hooks/queries';
-import { sessionApi, getGroupInfoCached } from '../api/api';
+import { sessionApi, contactApi, getGroupInfoCached } from '../api/api';
 
 type ExportJob = {
   id: number;
@@ -99,6 +99,7 @@ export default function WaDataExportPage() {
   const [waLabelsError,      setWaLabelsError]      = useState('');
   const [selectedWaLabelIds, setSelectedWaLabelIds] = useState<Set<string>>(new Set());
   const [separateFiles,      setSeparateFiles]      = useState(false);
+  const [exportProgress,     setExportProgress]     = useState('');
   const [exportingWaLabels,  setExportingWaLabels]  = useState(false);
 
   // Labels export state
@@ -151,42 +152,98 @@ export default function WaDataExportPage() {
   const toggleWaLabel = (id: string) =>
     setSelectedWaLabelIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
 
-  const doWaLabelsExport = async () => {
+  // Phone numbers only — never WhatsApp chat/client ids. `@c.us` chats carry the number in the id; a `@lid`
+  // privacy id is resolved through the gateway, falling back to the chat name when that is itself a number.
+  type WaContact = { phone: string; name: string; labels: string[] };
+  type WaPreview = {
+    perLabel: { label: string; contacts: WaContact[] }[];
+    combined: WaContact[];
+    unresolved: number;
+    groups: number;
+    failedLabels: number;
+  };
+  const [waPreview, setWaPreview] = useState<WaPreview | null>(null);
+  // Any change to the session or the ticked labels invalidates a loaded preview.
+  useEffect(() => { setWaPreview(null); }, [sessionId, exportType, selectedWaLabelIds]);
+
+  const loadWaLabelNumbers = async () => {
     if (selectedWaLabelIds.size === 0) { setError('Select at least one label.'); return; }
-    setError(''); setExportingWaLabels(true);
+    setError(''); setExportingWaLabels(true); setWaPreview(null);
     try {
       const picked = waLabels.filter(l => selectedWaLabelIds.has(l.id));
       const results = await Promise.allSettled(picked.map(l => sessionApi.getLabelChats(sessionId, l.id)));
-      const phoneOf = (id: string) => id.endsWith('@c.us') ? id.split('@')[0] : '';
-      const head = ['Phone', 'Name', 'Type', 'Chat ID'];
 
-      if (separateFiles) {
-        // one CSV per label
-        results.forEach((res, i) => {
-          if (res.status !== 'fulfilled') return;
-          const rows = [head, ...res.value.map(c => [phoneOf(c.id), c.name ?? '', c.isGroup ? 'Group' : 'Contact', c.id])];
-          downloadCsv(rows, `label_${picked[i].name.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_${Date.now()}.csv`);
-        });
-      } else {
-        // one combined CSV — a chat sitting in several selected labels appears once, with all its labels
-        const byChat = new Map<string, { name: string; isGroup: boolean; labels: string[] }>();
-        results.forEach((res, i) => {
-          if (res.status !== 'fulfilled') return;
-          for (const c of res.value) {
-            const cur = byChat.get(c.id) ?? { name: c.name ?? '', isGroup: c.isGroup, labels: [] };
-            cur.labels.push(picked[i].name);
-            byChat.set(c.id, cur);
-          }
-        });
-        const rows = [[...head, 'Labels'], ...[...byChat.entries()].map(([id, c]) =>
-          [phoneOf(id), c.name, c.isGroup ? 'Group' : 'Contact', id, c.labels.join(' | ')])];
-        if (rows.length === 1) { setError('No chats are assigned to the selected labels.'); return; }
-        const tag = picked.length === 1 ? picked[0].name.replace(/[^a-z0-9]/gi, '_').toLowerCase() : `${picked.length}_labels`;
-        downloadCsv(rows, `labels_${tag}_${Date.now()}.csv`);
+      const looksLikePhone = (n: string) => /^\+?[\d\s()-]{7,}$/.test(n.trim());
+      const digits = (v: string) => v.replace(/\D/g, '');
+      const chats = new Map<string, { name: string; isGroup: boolean }>();
+      results.forEach(res => { if (res.status === 'fulfilled') res.value.forEach(c => chats.set(c.id, { name: c.name ?? '', isGroup: c.isGroup })); });
+
+      const phones = new Map<string, string>();
+      const toResolve: string[] = [];
+      let groups = 0;
+      for (const [id, c] of chats) {
+        if (c.isGroup || id.endsWith('@g.us')) { groups++; continue; }
+        if (id.endsWith('@c.us')) phones.set(id, id.split('@')[0].split(':')[0]);
+        else toResolve.push(id);
       }
-      if (results.some(r => r.status === 'rejected')) setError('Some labels could not be read and were skipped.');
-    } catch { setError('Export failed. Try again.'); }
-    finally { setExportingWaLabels(false); }
+      let done = 0, cursor = 0;
+      setExportProgress(toResolve.length ? `Resolving numbers 0/${toResolve.length}…` : '');
+      await Promise.all(Array.from({ length: Math.min(4, toResolve.length) }, async () => {
+        while (cursor < toResolve.length) {
+          const id = toResolve[cursor++];
+          let phone: string | null = null;
+          try { phone = (await contactApi.resolvePhone(sessionId, id)).phone; } catch { /* best-effort */ }
+          if (!phone) { const nm = chats.get(id)?.name ?? ''; if (looksLikePhone(nm)) phone = digits(nm); }
+          if (phone) phones.set(id, digits(phone));
+          setExportProgress(`Resolving numbers ${++done}/${toResolve.length}…`);
+        }
+      }));
+      setExportProgress('');
+
+      const combinedMap = new Map<string, WaContact>();
+      const perLabel = picked.map((l, i) => {
+        const res = results[i];
+        const contacts: WaContact[] = [];
+        if (res.status === 'fulfilled') {
+          for (const c of res.value) {
+            const phone = phones.get(c.id);
+            if (!phone) continue;
+            const name = looksLikePhone(c.name ?? '') || c.name === 'Unknown user' ? '' : (c.name ?? '');
+            contacts.push({ phone, name, labels: [l.name] });
+            const cur = combinedMap.get(phone) ?? { phone, name, labels: [] };
+            if (!cur.name && name) cur.name = name;
+            if (!cur.labels.includes(l.name)) cur.labels.push(l.name);
+            combinedMap.set(phone, cur);
+          }
+        }
+        return { label: l.name, contacts };
+      });
+
+      setWaPreview({
+        perLabel,
+        combined: [...combinedMap.values()],
+        unresolved: toResolve.filter(id => !phones.has(id)).length,
+        groups,
+        failedLabels: results.filter(r => r.status === 'rejected').length,
+      });
+    } catch { setError('Could not load numbers. Try again.'); }
+    finally { setExportingWaLabels(false); setExportProgress(''); }
+  };
+
+  const downloadWaLabelNumbers = () => {
+    if (!waPreview) return;
+    const head = ['Phone', 'Name'];
+    if (separateFiles) {
+      waPreview.perLabel.forEach(pl => {
+        if (pl.contacts.length === 0) return;
+        downloadCsv([head, ...pl.contacts.map(c => ['+' + c.phone, c.name])],
+          `label_${pl.label.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_${Date.now()}.csv`);
+      });
+    } else {
+      const tag = waPreview.perLabel.length === 1 ? waPreview.perLabel[0].label.replace(/[^a-z0-9]/gi, '_').toLowerCase() : `${waPreview.perLabel.length}_labels`;
+      downloadCsv([[...head, 'Labels'], ...waPreview.combined.map(c => ['+' + c.phone, c.name, c.labels.join(' | ')])],
+        `labels_${tag}_${Date.now()}.csv`);
+    }
   };
 
   const toggleGroup = (id: string) =>
@@ -668,12 +725,49 @@ export default function WaDataExportPage() {
 
           {/* Action button */}
           {isWaLabels ? (
-            <button onClick={doWaLabelsExport}
-              disabled={exportingWaLabels || !sessionId || selectedWaLabelIds.size === 0}
-              style={{ alignSelf: 'flex-start', display: 'flex', gap: 8, alignItems: 'center', padding: '9px 18px', background: selectedWaLabelIds.size > 0 ? '#6366f1' : '#e5e7eb', color: selectedWaLabelIds.size > 0 ? '#fff' : '#9ca3af', border: 'none', borderRadius: 8, fontWeight: 600, fontSize: 14, cursor: selectedWaLabelIds.size > 0 ? 'pointer' : 'not-allowed', opacity: exportingWaLabels ? 0.6 : 1 }}>
-              {exportingWaLabels ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
-              {exportingWaLabels ? 'Fetching chats…' : selectedWaLabelIds.size > 0 ? `Export ${selectedWaLabelIds.size} Label${selectedWaLabelIds.size !== 1 ? 's' : ''} (CSV)` : 'Select labels first'}
-            </button>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <button onClick={loadWaLabelNumbers}
+                disabled={exportingWaLabels || !sessionId || selectedWaLabelIds.size === 0}
+                style={{ alignSelf: 'flex-start', display: 'flex', gap: 8, alignItems: 'center', padding: '9px 18px', background: selectedWaLabelIds.size > 0 ? '#6366f1' : '#e5e7eb', color: selectedWaLabelIds.size > 0 ? '#fff' : '#9ca3af', border: 'none', borderRadius: 8, fontWeight: 600, fontSize: 14, cursor: selectedWaLabelIds.size > 0 ? 'pointer' : 'not-allowed', opacity: exportingWaLabels ? 0.6 : 1 }}>
+                {exportingWaLabels ? <Loader2 size={16} className="animate-spin" /> : <Users size={16} />}
+                {exportingWaLabels ? (exportProgress || 'Fetching chats…') : selectedWaLabelIds.size > 0 ? `Show numbers from ${selectedWaLabelIds.size} label${selectedWaLabelIds.size !== 1 ? 's' : ''}` : 'Select labels first'}
+              </button>
+
+              {waPreview && (
+                <div style={{ border: '1px solid #e5e7eb', borderRadius: 10, overflow: 'hidden' }}>
+                  <div style={{ padding: '10px 12px', background: '#f9fafb', borderBottom: '1px solid #e5e7eb', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+                    <span style={{ fontSize: 14, fontWeight: 600 }}>{waPreview.combined.length} phone number{waPreview.combined.length !== 1 ? 's' : ''}</span>
+                    <span style={{ fontSize: 12, color: '#6b7280' }}>
+                      {waPreview.perLabel.map(pl => `${pl.label}: ${pl.contacts.length}`).join(' · ')}
+                    </span>
+                  </div>
+                  <div style={{ maxHeight: 220, overflowY: 'auto', padding: '6px 0' }}>
+                    {waPreview.combined.length === 0
+                      ? <div style={{ padding: 14, fontSize: 13, color: '#ef4444' }}>No phone numbers could be found for these labels.</div>
+                      : waPreview.combined.map(c => (
+                          <div key={c.phone} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '5px 12px', fontSize: 13 }}>
+                            <span style={{ fontFamily: 'monospace' }}>+{c.phone}</span>
+                            <span style={{ color: '#6b7280', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name}</span>
+                          </div>
+                        ))}
+                  </div>
+                  {(waPreview.unresolved > 0 || waPreview.groups > 0 || waPreview.failedLabels > 0) && (
+                    <div style={{ padding: '8px 12px', borderTop: '1px solid #f3f4f6', fontSize: 12, color: '#92400e', background: '#fffbeb' }}>
+                      {waPreview.unresolved > 0 && <div>{waPreview.unresolved} contact{waPreview.unresolved !== 1 ? 's' : ''} hide their number (WhatsApp privacy) — not included.</div>}
+                      {waPreview.groups > 0 && <div>{waPreview.groups} group{waPreview.groups !== 1 ? 's' : ''} skipped (groups have no phone number).</div>}
+                      {waPreview.failedLabels > 0 && <div>{waPreview.failedLabels} label{waPreview.failedLabels !== 1 ? 's' : ''} could not be read.</div>}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {waPreview && waPreview.combined.length > 0 && (
+                <button onClick={downloadWaLabelNumbers}
+                  style={{ alignSelf: 'flex-start', display: 'flex', gap: 8, alignItems: 'center', padding: '9px 18px', background: '#16a34a', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 600, fontSize: 14, cursor: 'pointer' }}>
+                  <Download size={16} /> Download {waPreview.combined.length} number{waPreview.combined.length !== 1 ? 's' : ''} (CSV)
+                </button>
+              )}
+            </div>
           ) : isLabels ? (
             <button onClick={doLabelsExport}
               disabled={exportingLabels || selectedLabelIds.size === 0}
