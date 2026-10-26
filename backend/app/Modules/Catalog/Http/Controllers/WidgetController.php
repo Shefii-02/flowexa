@@ -5,7 +5,6 @@ namespace App\Modules\Catalog\Http\Controllers;
 use App\Http\Controllers\Controller;
 use App\Models\ChatWidget;
 use App\Models\WidgetConversation;
-use App\Modules\Catalog\IndustryTemplates;
 use Illuminate\Http\{JsonResponse, Request};
 use Illuminate\Validation\Rule;
 
@@ -16,24 +15,12 @@ class WidgetController extends Controller
         $widgets = ChatWidget::where('company_id', auth()->user()->company_id)->get();
         return response()->json([
             'widgets'   => $widgets->map(fn ($w) => $this->present($w)),
-            'templates' => IndustryTemplates::all(),
-            // So the editor's "Company default" option can show what it actually resolves to,
-            // instead of leaving the operator guessing (see store()'s industry_template fallback).
-            'company_industry_template' => auth()->user()->company->industry_template,
         ]);
     }
 
     public function store(Request $request): JsonResponse
     {
         $data = $this->validated($request);
-
-        // Default to the company's own business type (set once at signup/company creation)
-        // instead of asking again per-widget — a company only gets asked to override this
-        // if they explicitly want a widget to represent a different business type than the
-        // one already on file.
-        if (!array_key_exists('industry_template', $data) || $data['industry_template'] === null) {
-            $data['industry_template'] = auth()->user()->company->industry_template;
-        }
 
         $w = ChatWidget::create(array_merge($data, [
             'company_id' => auth()->user()->company_id,
@@ -105,7 +92,6 @@ class WidgetController extends Controller
         return $request->validate([
             'name'               => [$req, 'string', 'max:120'],
             'is_active'          => ['sometimes', 'boolean'],
-            'industry_template'  => ['sometimes', 'nullable', Rule::in(IndustryTemplates::keys())],
             'agent_name'         => ['sometimes', 'string', 'max:80'],
             'greeting'           => ['sometimes', 'string', 'max:500'],
             'branding'           => ['sometimes', 'nullable', 'array'],
