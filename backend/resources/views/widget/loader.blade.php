@@ -92,7 +92,7 @@
       .typing { align-self: flex-start; color: #9ca3af; font-size: 13px; padding: 4px 6px; }
       .ft { padding: 10px; border-top: 1px solid #eee; display: flex; gap: 8px; background: #fff; }
       .ft input { flex: 1; border: 1px solid #d1d5db; border-radius: 999px; padding: 10px 14px; font-size: 14px; outline: none; }
-      .ft button { background: ${color}; color: #fff; border: none; border-radius: 999px; width: 40px; cursor: pointer; font-size: 16px; }
+      .ft button { color: #3bc987; border: 1px solid #3bc987; border-radius: 999px; width: 40px; cursor: pointer; font-size: 16px; }
       .ft button:disabled { opacity: .5; }
       .pw a { color: inherit; font-weight: 600; text-decoration: none; }
       .pw a:hover { text-decoration: underline; }
