@@ -86,3 +86,8 @@ unichat_mobile_app
 *firebase-adminsdk*.json
 firebase-service-account*.json
 /backend/storage/app/firebase/
+
+# Environment files (never commit secrets)
+.env
+.env.*
+!.env.example
