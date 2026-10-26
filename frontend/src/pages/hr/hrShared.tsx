@@ -225,7 +225,7 @@ export function TypeCrud({ kind }: { kind: TypeKind }) {
   }
   const saveEdit = async () => {
     if (!editId || Object.keys(editErrors).length) return
-    try { await api.put(`${base}/${editId}`, payloadFor(kind, edit)); setEditId(null); load() } catch (e) { toast.error(err(e)) }
+    try { await api.patch(`${base}/${editId}`, payloadFor(kind, edit)); setEditId(null); load() } catch (e) { toast.error(err(e)) }
   }
   const del = async (id: number) => { await api.delete(`${base}/${id}`); load() }
 
