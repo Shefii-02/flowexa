@@ -159,6 +159,8 @@ export default function WaDataExportPage() {
     perLabel: { label: string; contacts: WaContact[] }[];
     combined: WaContact[];
     unresolved: number;
+    // Contacts that hide their number (WhatsApp privacy): no phone to export, so they get their own file.
+    hidden: { id: string; name: string; labels: string[] }[];
     groups: number;
     failedLabels: number;
   };
@@ -219,7 +221,22 @@ export default function WaDataExportPage() {
         return { label: l.name, contacts };
       });
 
+      const hiddenMap = new Map<string, { id: string; name: string; labels: string[] }>();
+      picked.forEach((l, i) => {
+        const res = results[i];
+        if (res.status !== 'fulfilled') return;
+        for (const c of res.value) {
+          if (c.isGroup || c.id.endsWith('@g.us') || phones.has(c.id)) continue;
+          const name = looksLikePhone(c.name ?? '') || c.name === 'Unknown user' ? '' : (c.name ?? '');
+          const cur = hiddenMap.get(c.id) ?? { id: c.id, name, labels: [] };
+          if (!cur.name && name) cur.name = name;
+          if (!cur.labels.includes(l.name)) cur.labels.push(l.name);
+          hiddenMap.set(c.id, cur);
+        }
+      });
+
       setWaPreview({
+        hidden: [...hiddenMap.values()],
         perLabel,
         combined: [...combinedMap.values()],
         unresolved: toResolve.filter(id => !phones.has(id)).length,
@@ -244,6 +261,53 @@ export default function WaDataExportPage() {
       downloadCsv([[...head, 'Labels'], ...waPreview.combined.map(c => ['+' + c.phone, c.name, c.labels.join(' | ')])],
         `labels_${tag}_${Date.now()}.csv`);
     }
+  };
+
+  // Upload the hidden-number CSV (or any CSV containing @lid ids) and ask the WhatsApp engine to map each one back
+  // to a real number. Only works where the engine knows the mapping — people who truly hide their number stay hidden.
+  const [resolving, setResolving] = useState(false);
+  const [resolveMsg, setResolveMsg] = useState('');
+  const resolveFromFile = async (file: File) => {
+    if (!sessionId) { setError('Select a session first.'); return; }
+    setError(''); setResolving(true); setResolveMsg('');
+    try {
+      const text = await file.text();
+      const items: { id: string; name: string }[] = [];
+      const seen = new Set<string>();
+      for (const line of text.split(/\r?\n/)) {
+        const id = line.match(/[\w.:-]+@lid/)?.[0];
+        if (!id || seen.has(id)) continue;
+        seen.add(id);
+        items.push({ id, name: (line.match(/^"((?:[^"]|"")*)"/)?.[1] ?? line.split(',')[0] ?? '').replace(/""/g, '"').replace(id, '').trim() });
+      }
+      if (items.length === 0) { setError('No @lid chat IDs found in that file.'); return; }
+
+      const digits = (v: string) => v.replace(/\D/g, '');
+      const out: string[][] = [['Name', 'Chat ID', 'Phone', 'Status']];
+      let cursor = 0, done = 0, found = 0;
+      await Promise.all(Array.from({ length: Math.min(4, items.length) }, async () => {
+        while (cursor < items.length) {
+          const it = items[cursor++];
+          let phone: string | null = null;
+          try { phone = (await contactApi.resolvePhone(sessionId, it.id)).phone; } catch { /* best-effort */ }
+          if (phone) found++;
+          out.push([it.name, it.id, phone ? '+' + digits(phone) : '', phone ? 'Resolved' : 'Still hidden']);
+          setResolveMsg(`Resolving ${++done}/${items.length}…`);
+        }
+      }));
+      downloadCsv(out, `resolved_numbers_${Date.now()}.csv`);
+      setResolveMsg(`Done — ${found} of ${items.length} resolved to real numbers; ${items.length - found} still hidden by WhatsApp privacy.`);
+    } catch { setError('Could not read that file.'); }
+    finally { setResolving(false); }
+  };
+
+  // Second file: contacts whose number WhatsApp hides. Keeps their name, chat id and labels so nothing is lost.
+  const downloadHiddenContacts = () => {
+    if (!waPreview || waPreview.hidden.length === 0) return;
+    downloadCsv(
+      [['Name', 'Chat ID (number hidden)', 'Labels'], ...waPreview.hidden.map(h => [h.name, h.id, h.labels.join(' | ')])],
+      `labels_hidden_numbers_${Date.now()}.csv`,
+    );
   };
 
   const toggleGroup = (id: string) =>
@@ -753,7 +817,7 @@ export default function WaDataExportPage() {
                   </div>
                   {(waPreview.unresolved > 0 || waPreview.groups > 0 || waPreview.failedLabels > 0) && (
                     <div style={{ padding: '8px 12px', borderTop: '1px solid #f3f4f6', fontSize: 12, color: '#92400e', background: '#fffbeb' }}>
-                      {waPreview.unresolved > 0 && <div>{waPreview.unresolved} contact{waPreview.unresolved !== 1 ? 's' : ''} hide their number (WhatsApp privacy) — not included.</div>}
+                      {waPreview.unresolved > 0 && <div>{waPreview.unresolved} contact{waPreview.unresolved !== 1 ? 's' : ''} hide their number (WhatsApp privacy) — not in the numbers file; download them separately below.</div>}
                       {waPreview.groups > 0 && <div>{waPreview.groups} group{waPreview.groups !== 1 ? 's' : ''} skipped (groups have no phone number).</div>}
                       {waPreview.failedLabels > 0 && <div>{waPreview.failedLabels} label{waPreview.failedLabels !== 1 ? 's' : ''} could not be read.</div>}
                     </div>
@@ -767,6 +831,22 @@ export default function WaDataExportPage() {
                   <Download size={16} /> Download {waPreview.combined.length} number{waPreview.combined.length !== 1 ? 's' : ''} (CSV)
                 </button>
               )}
+              {waPreview && waPreview.hidden.length > 0 && (
+                <button onClick={downloadHiddenContacts}
+                  style={{ alignSelf: 'flex-start', display: 'flex', gap: 8, alignItems: 'center', padding: '9px 18px', background: '#fff', color: '#92400e', border: '1px solid #f59e0b', borderRadius: 8, fontWeight: 600, fontSize: 14, cursor: 'pointer' }}>
+                  <Download size={16} /> Download {waPreview.hidden.length} hidden-number contact{waPreview.hidden.length !== 1 ? 's' : ''} (CSV)
+                </button>
+              )}
+              <div style={{ border: '1px dashed #d1d5db', borderRadius: 8, padding: 12, fontSize: 13 }}>
+                <div style={{ fontWeight: 600, marginBottom: 4 }}>Find real numbers for hidden contacts</div>
+                <div style={{ color: '#6b7280', marginBottom: 8 }}>
+                  Upload the hidden-number CSV (any CSV with <code>…@lid</code> chat IDs). We ask WhatsApp to map each ID to a number and give you a file back.
+                  Contacts who truly hide their number can't be revealed — they stay marked "Still hidden".
+                </div>
+                <input type="file" accept=".csv,text/csv,text/plain" disabled={resolving || !sessionId}
+                  onChange={e => { const f = e.target.files?.[0]; if (f) void resolveFromFile(f); e.target.value = ''; }} />
+                {resolveMsg && <div style={{ marginTop: 6, color: '#374151' }}>{resolveMsg}</div>}
+              </div>
             </div>
           ) : isLabels ? (
             <button onClick={doLabelsExport}

@@ -19,8 +19,38 @@ class LeadAlertService
 
     public function notifyQualified(ChatWidget $widget, WidgetConversation $convo, ?Lead $lead): void
     {
-        $profile = $this->profile($widget, $convo, $lead);
+        $this->broadcast($widget, $this->profile($widget, $convo, $lead));
+    }
 
+    /** A visitor asked for a live agent ($callback = nobody picked up and they confirmed their number). */
+    public function notifyLiveRequest(ChatWidget $widget, WidgetConversation $convo, bool $callback = false): void
+    {
+        $who = trim(($convo->visitor_name ?: 'Website visitor') . ($convo->visitor_phone ? " ({$convo->visitor_phone})" : ''));
+        $head = $callback ? '📞 Call back requested' : '💬 Live chat waiting';
+        $text = implode("\n", array_filter([
+            "{$head} — {$widget->name}", '',
+            "Name:  {$convo->visitor_name}",
+            "Phone: {$convo->visitor_phone}",
+            $convo->page_url ? "Page: {$convo->page_url}" : null,
+            '', $callback ? 'Nobody accepted in time — please contact them.' : 'Open Website Widget → Live chats to accept.',
+        ], fn ($l) => $l !== null));
+
+        try {
+            // Only staff with live-chat access, not muted, and under their concurrent-chat limit.
+            $push = app(\App\Services\FirebasePushService::class);
+            foreach (\App\Modules\Catalog\Support\LiveChatSupport::alertRecipients($widget) as $userId) {
+                $push->sendToUser($userId, 'live_chat', $head, $who,
+                    ['widget_id' => (string) $widget->id, 'conversation_id' => (string) $convo->id]);
+            }
+        } catch (\Throwable $e) {
+            Log::warning('LeadAlertService: push failed', ['error' => $e->getMessage()]);
+        }
+        $this->broadcast($widget, ['subject' => "{$head}: {$who}", 'text' => $text]);
+    }
+
+    /** @param array{subject:string, text:string} $profile */
+    private function broadcast(ChatWidget $widget, array $profile): void
+    {
         foreach ($widget->notify_emails ?? [] as $email) {
             try {
                 Mail::raw($profile['text'], function ($m) use ($email, $profile) {

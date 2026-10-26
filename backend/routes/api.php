@@ -1128,6 +1128,19 @@ Route::prefix('v1')->group(function () {
         });
 
         // ── Website chat widget management ──
+        Route::prefix('/widgets/live')->middleware(['company.active', 'permission:widget_chat.handle'])->group(function () {
+            $c = \App\Modules\Catalog\Http\Controllers\LiveChatController::class;
+            Route::get('/queue',          [$c, 'queue']);
+            Route::get('/inbox',          [$c, 'inbox']);
+            Route::get('/me',             [$c, 'me']);
+            Route::put('/me',             [$c, 'setMuted']);
+            Route::get('/{id}',           [$c, 'show']);
+            Route::post('/{id}/read',     [$c, 'markRead']);
+            Route::post('/{id}/accept',   [$c, 'accept']);
+            Route::post('/{id}/reply',    [$c, 'reply']);
+            Route::post('/{id}/end',      [$c, 'end']);
+            Route::delete('/{id}',        [$c, 'destroy'])->middleware('permission:widget_chat.delete');
+        });
         Route::prefix('/widgets')->middleware(['company.active'])->group(function () {
             Route::get('/',        [\App\Modules\Catalog\Http\Controllers\WidgetController::class, 'index']);
             Route::post('/',       [\App\Modules\Catalog\Http\Controllers\WidgetController::class, 'store'])->middleware('plan.limit:website_widgets');
@@ -1269,6 +1282,10 @@ Route::prefix('v1')->group(function () {
         Route::get('/{key}/bootstrap', [\App\Modules\Catalog\Http\Controllers\WidgetPublicController::class, 'bootstrap']);
         Route::match(['post', 'options'], '/{key}/chat', [\App\Modules\Catalog\Http\Controllers\WidgetPublicController::class, 'chat'])
             ->middleware('throttle:30,1');
+        Route::match(['post', 'options'], '/{key}/live/start',   [\App\Modules\Catalog\Http\Controllers\WidgetPublicController::class, 'liveStart'])->middleware('throttle:10,1');
+        Route::match(['post', 'options'], '/{key}/live/upload',  [\App\Modules\Catalog\Http\Controllers\WidgetPublicController::class, 'liveUpload'])->middleware('throttle:20,1');
+        Route::match(['post', 'options'], '/{key}/live/confirm', [\App\Modules\Catalog\Http\Controllers\WidgetPublicController::class, 'liveConfirm'])->middleware('throttle:10,1');
+        Route::match(['get', 'options'],  '/{key}/live/poll',    [\App\Modules\Catalog\Http\Controllers\WidgetPublicController::class, 'livePoll'])->middleware('throttle:60,1');
     });
 });
 

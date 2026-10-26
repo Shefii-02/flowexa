@@ -19,9 +19,18 @@ class WidgetConversation extends Model
         'matched_listing_ids' => 'array',
         'qualified_at'        => 'datetime',
         'last_message_at'     => 'datetime',
+        'staff_read_at'       => 'datetime',
+        'live_requested_at'   => 'datetime',
+        'live_accepted_at'    => 'datetime',
+        'callback_confirmed_at' => 'datetime',
         'created_at'          => 'datetime',
         'updated_at'          => 'datetime',
     ];
+
+    protected static function booted(): void
+    {
+        static::deleting(fn (WidgetConversation $c) => \App\Modules\Catalog\Support\LiveChatSupport::purgeFiles($c));
+    }
 
     public function widget(): BelongsTo { return $this->belongsTo(ChatWidget::class, 'chat_widget_id'); }
     public function company(): BelongsTo { return $this->belongsTo(Company::class); }

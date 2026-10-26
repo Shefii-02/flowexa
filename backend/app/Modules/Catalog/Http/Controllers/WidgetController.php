@@ -104,6 +104,9 @@ class WidgetController extends Controller
             'notify_emails.*'    => ['email'],
             'notify_whatsapp'    => ['sometimes', 'nullable', 'array'],
             'notify_whatsapp.*'  => ['string', 'max:20'],
+            'live_chat_enabled'  => ['sometimes', 'boolean'],
+            'live_max_per_staff' => ['sometimes', 'integer', 'min:1', 'max:50'],
+            'live_wait_seconds'  => ['sometimes', 'integer', 'min:15', 'max:900'],
             'wa_session_id'      => ['sometimes', 'nullable', 'string', 'max:100'],
             'flow_builder_id'    => ['sometimes', 'nullable', 'integer', Rule::exists('flow_builders', 'id')->where('company_id', auth()->user()->company_id)],
         ]);

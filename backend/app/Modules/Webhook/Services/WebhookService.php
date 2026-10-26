@@ -288,6 +288,11 @@ class WebhookService
             return;
         }
 
+        // 8c. "Was your issue solved?" feedback after a terminal node (see askIfResolved()).
+        if ($session && $this->handleResolutionReply($company, $dto, $session)) {
+            return;
+        }
+
         // 9. Interactive reply → match flow node
         if ($dto->type === 'interactive' && $dto->replyId) {
             $this->handleFlowReply($company, $contact, $dto, $builder?->id);
@@ -1305,6 +1310,8 @@ class WebhookService
                 // Has multi-messages but no children and NOT marked as terminal
                 // → treat as accidental dead end, send welcome menu again
                 $this->sendDeadEndRecovery($company, $phone);
+            } else {
+                $this->askIfResolved($company, $phone);
             }
             return;
         }
@@ -1352,6 +1359,9 @@ class WebhookService
             if (!$node->is_dead_end && in_array($node->type, ['list', 'button'])) {
                 usleep(600000);
                 $this->sendDeadEndRecovery($company, $phone);
+            } else {
+                // Terminal node (no options left) — check the customer got what they needed.
+                $this->askIfResolved($company, $phone);
             }
             return;
         }
@@ -1362,6 +1372,68 @@ class WebhookService
         } else {
             $this->sendList($company, $phone, $node->message, $children);
         }
+    }
+
+    // ── Resolution check — after a terminal node's answer, ask "Was your issue solved?" ──
+    // YES  → thank them and close the chat.
+    // NO   → ask them to type their issue, tell them staff will contact them, then close the chat.
+    private const RESOLVED_YES = '__RESOLVED_YES__';
+    private const RESOLVED_NO  = '__RESOLVED_NO__';
+
+    private function askIfResolved(Company $company, string $phone): void
+    {
+        $session = FlowSession::where('company_id', $company->id)->where('phone', $phone)->first();
+        $session?->update(['context' => array_merge($session->context ?? [], ['awaiting' => 'resolved'])]);
+
+        usleep(500000);
+        $this->sendButtonFromArray($company, $phone, 'Was your issue solved?', [
+            ['reply_id' => self::RESOLVED_YES, 'title' => '✅ Yes'],
+            ['reply_id' => self::RESOLVED_NO,  'title' => '❌ No'],
+        ]);
+    }
+
+    /** @return bool true when the message was consumed by the resolution check */
+    private function handleResolutionReply(Company $company, InboundMessageDTO $dto, FlowSession $session): bool
+    {
+        $awaiting = ($session->context ?? [])['awaiting'] ?? null;
+        if (!$awaiting) {
+            return false;
+        }
+
+        $text = strtolower(trim($dto->text ?? ''));
+        $reply = $dto->type === 'interactive' ? $dto->replyId : null;
+        $isNav = in_array($text, self::EXIT_KEYWORDS, true) || $this->isGreeting($dto->text);
+
+        if ($awaiting === 'resolved') {
+            $yes = $reply === self::RESOLVED_YES || in_array($text, ['yes', 'y'], true);
+            $no  = $reply === self::RESOLVED_NO  || in_array($text, ['no', 'n'], true);
+
+            if ($yes) {
+                $session->delete();
+                $this->sendText($company, $dto->phone, "Glad we could help! 😊\n\nThis conversation is now closed. Type *M* anytime to start again.");
+                return true;
+            }
+            if ($no) {
+                $session->update(['context' => array_merge($session->context ?? [], ['awaiting' => 'issue'])]);
+                $this->sendText($company, $dto->phone, "Sorry about that. Please type your issue in a message and our team will look into it.");
+                return true;
+            }
+            // Anything else (menu, a node button, …) abandons the check and flows on as normal.
+            $session->update(['context' => collect($session->context ?? [])->except('awaiting')->all()]);
+            return false;
+        }
+
+        if ($awaiting === 'issue' && $dto->type === 'text' && $text !== '' && !$isNav) {
+            $session->delete();
+            Log::info("Unresolved issue reported: company={$company->id} phone={$dto->phone}");
+            $this->sendText($company, $dto->phone, "Thank you. Our staff will contact you shortly. 🙏");
+            usleep(400000);
+            $this->sendText($company, $dto->phone, "This conversation is now closed. Type *M* anytime to start again.");
+            return true;
+        }
+
+        $session->update(['context' => collect($session->context ?? [])->except('awaiting')->all()]);
+        return false;
     }
 
     // ── Dead end recovery — sent when customer reaches a node with no options ──

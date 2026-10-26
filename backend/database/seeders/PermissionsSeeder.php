@@ -72,6 +72,8 @@ class PermissionsSeeder extends Seeder
         ['key' => 'instagram.view_all',  'label' => 'View every connected Instagram account', 'group' => 'Instagram', 'type' => 'viewer', 'sort_order' => 114],
         // Catalog — listings/products the AI agent answers about and matches leads against.
         ['key' => 'catalog.view',   'label' => 'View Catalog',   'group' => 'Catalog', 'type' => 'viewer', 'sort_order' => 115],
+        ['key' => 'widget_chat.handle', 'label' => 'Handle Website Live Chats (get alerts, accept, reply)', 'group' => 'Website Chat', 'type' => 'manage', 'sort_order' => 117],
+        ['key' => 'widget_chat.delete', 'label' => 'Delete Website Chat Conversations (and their files)', 'group' => 'Website Chat', 'type' => 'manage', 'sort_order' => 118],
         ['key' => 'catalog.manage', 'label' => 'Manage Catalog (incl. import/export)', 'group' => 'Catalog', 'type' => 'manage', 'sort_order' => 116],
         // Integrations — Google Sheets/Drive connect + sync config.
         ['key' => 'integrations.view',   'label' => 'View Integrations',   'group' => 'Integrations', 'type' => 'viewer', 'sort_order' => 117],
@@ -184,6 +186,7 @@ class PermissionsSeeder extends Seeder
                 'wa_agent.automations.manage', 'wa_agent.leads.manage',
                 'staff.manage', 'devices.manage',
                 'instagram.manage', 'catalog.manage', 'integrations.manage', 'lead_assignment.manage',
+                'widget_chat.handle',
                 // "view_all" scoping doesn't end in ".view" so it isn't in $allViewer —
                 // a team lead should see everyone's leads/sessions/inbox/IG accounts, not
                 // just the ones they've been individually granted account access to.
@@ -197,7 +200,7 @@ class PermissionsSeeder extends Seeder
                 'wa_chat.chats.view', 'wa_chat.chats.manage',
                 'wa_chat.message_sender.view', 'wa_chat.message_sender.manage',
                 'message_logs.view', 'templates.view',
-                'wa_agent.leads.view',
+                'wa_agent.leads.view', 'widget_chat.handle',
             ],
 
             'viewer' => [
