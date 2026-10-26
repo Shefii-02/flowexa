@@ -223,6 +223,15 @@ return Application::configure(basePath: dirname(__DIR__))
             }
 
             if ($e instanceof \Symfony\Component\HttpKernel\Exception\NotFoundHttpException) {
+                // Laravel turns a failed route-model binding (e.g. /companies/3 with no such company) into this
+                // same exception — say which model so it isn't mistaken for a missing route.
+                $prev = $e->getPrevious();
+                if ($prev instanceof \Illuminate\Database\Eloquent\ModelNotFoundException) {
+                    return response()->json([
+                        'message' => class_basename($prev->getModel()) . ' not found.',
+                    ], 404);
+                }
+
                 return response()->json([
                     'message' => 'Route not found.',
                 ], 404);
