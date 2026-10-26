@@ -31,7 +31,7 @@ export default function StickyNotes() {
   // ── load + keep the circle / notes inside the window when it is resized ──
   useEffect(() => {
     let off = false
-    stickyApi.list().then(r => { if (!off) { setNotes(r.data.notes); setSettings(r.data.settings); setReady(true) } }).catch(() => { if (!off) setReady(true) })
+    stickyApi.list().then(r => { if (!off) { setNotes(r.data.notes ?? []); setSettings({ ...DEFAULT_SETTINGS, ...(r.data.settings ?? {}) }); setReady(true) } }).catch(() => { if (!off) setReady(true) })
     const onResize = () => setVp({ w: window.innerWidth, h: window.innerHeight })
     // Settings → Floating widgets flips notes_enabled / todo_enabled: show or hide the circles right away
     const onCfg = (e: Event) => setSettings(s => ({ ...s, ...(e as CustomEvent<Partial<StickySettings>>).detail }))
