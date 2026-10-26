@@ -98,6 +98,7 @@ class WidgetPublicController extends Controller
         if (!empty($data['name']) && !empty($data['phone'])
             && ($convo->visitor_name !== trim($data['name']) || $convo->visitor_phone !== trim($data['phone']))) {
             $convo->update(['visitor_name' => trim($data['name']), 'visitor_phone' => trim($data['phone'])]);
+            $this->closePrevious($widget, $convo->fresh());
             $this->saveToCrm($widget, $convo->fresh());
         }
 
@@ -115,12 +116,20 @@ class WidgetPublicController extends Controller
                 WidgetMessage::create(['widget_conversation_id' => $convo->id, 'role' => 'agent', 'text' => $reply]);
                 return response()->json(['session_token' => $convo->session_token, 'reply' => $reply, 'options' => [], 'controls' => [], 'closed' => true, 'status' => 'closed']);
             }
+            if ($action === 'no') {
+                $convo->update(['ai_active' => false, 'case_status' => 'pending']);
+                $convo->flag('not_solved');
+                $reply = 'Thank you for your patience. Our staff will connect with you soon. 🙏';
+                WidgetMessage::create(['widget_conversation_id' => $convo->id, 'role' => 'agent', 'text' => $reply]);
+                $this->alerts->notifyLiveRequest($widget, $convo->fresh(), true);
+                return response()->json(['session_token' => $convo->session_token, 'reply' => $reply, 'options' => [], 'controls' => [], 'closed' => true, 'status' => $convo->status]);
+            }
             if ($message !== '') {
                 $reply = $this->agent->reply($widget, $convo, $message);
                 $convo->update(['last_message_at' => now()]);
                 return response()->json([
                     'session_token' => $convo->session_token, 'reply' => $reply, 'options' => [],
-                    'controls' => [['action' => 'yes', 'label' => '✅ Issue solved']], 'closed' => false, 'ai' => true, 'status' => $convo->status,
+                    'controls' => [['action' => 'yes', 'label' => '✅ Issue solved'], ['action' => 'no', 'label' => '❌ Not solved']], 'closed' => false, 'ai' => true, 'status' => $convo->status,
                 ]);
             }
         }
@@ -137,6 +146,19 @@ class WidgetPublicController extends Controller
         }
 
         $flowTurn = $this->flow->handle($widget, $convo, $message, $action);
+
+        // The bot has nothing more to offer: next level is a person from the team (the AI only steps in
+        // if nobody is available — see livePoll). Name + mobile were already collected by the widget.
+        if ($flowTurn === null && $widget->live_chat_enabled && $message !== '') {
+            $reply = 'Let me connect you with our team…';
+            WidgetMessage::create(['widget_conversation_id' => $convo->id, 'role' => 'visitor', 'text' => $message]);
+            WidgetMessage::create(['widget_conversation_id' => $convo->id, 'role' => 'agent', 'text' => $reply]);
+            $convo->update(['case_status' => 'pending', 'last_message_at' => now()]);
+            return response()->json([
+                'session_token' => $convo->session_token, 'reply' => $reply, 'options' => [], 'controls' => [],
+                'closed' => false, 'start_live' => true, 'status' => $convo->status,
+            ]);
+        }
         $reply = $flowTurn['reply'] ?? $this->agent->reply($widget, $convo, $message);
 
         return response()->json([
@@ -182,14 +204,16 @@ class WidgetPublicController extends Controller
             $convo->update($details);                       // edit while waiting / chatting
             $this->saveToCrm($widget, $convo->fresh());
         } elseif ($existing = $this->openCaseFor($widget, $convo, $details['visitor_phone'])) {
-            // Same visitor already has an unattended / in-progress request: don't queue (or alert) staff twice.
+            // Same visitor is being served by a staff member right now (e.g. a second tab): join that chat, don't queue twice.
             $convo->update($details + ['duplicate_of_id' => $existing->id, 'case_status' => 'closed', 'closed_at' => now()]);
             $existing->flag('repeated');
             $this->sysMsg($existing, "{$details['visitor_name']} contacted again about the same issue.");
             $existing->update(['last_message_at' => now()]);
             return response()->json($this->liveState($widget, $existing->fresh(), 0) + ['repeat' => true]);
         } else {
-            $convo->update($details + [
+            $convo->update($details);
+            $this->closePrevious($widget, $convo->fresh());
+            $convo->update([
                 'case_status' => 'unread', 'status' => 'active', 'live_status' => 'waiting', 'live_requested_at' => now(),
                 'live_accepted_at' => null, 'assigned_user_id' => null, 'staff_name' => null,
                 'callback_confirmed_at' => null, 'last_message_at' => now(),
@@ -247,10 +271,12 @@ class WidgetPublicController extends Controller
             'callback_confirmed_at' => now(),
         ]);
         $this->saveToCrm($widget, $convo->fresh());
-        $this->sysMsg($convo, "Thank you {$convo->visitor_name}. Our staff will contact you on {$convo->visitor_phone}.");
+        $this->sysMsg($convo, "Thank you {$convo->visitor_name}. Our staff will connect with you soon on {$convo->visitor_phone}. 🙏");
         $this->alerts->notifyLiveRequest($widget, $convo->fresh(), true);
 
-        return response()->json($this->liveState($widget, $convo->fresh(), (int) $request->input('after', 0)));
+        // No AI fallback → this is the end of the road for the visitor; staff follow up from the inbox.
+        return response()->json($this->liveState($widget, $convo->fresh(), (int) $request->input('after', 0))
+            + ['closed' => !$convo->ai_active]);
     }
 
     /** Visitor sends a photo / voice note / file (max 2 MB) to the staff member in a live chat. */
@@ -377,10 +403,31 @@ class WidgetPublicController extends Controller
     {
         $digits = preg_replace('/\D+/', '', $phone);
         return WidgetConversation::where('chat_widget_id', $widget->id)->where('id', '!=', $current->id)
-            ->whereIn('case_status', ['unread', 'attended'])->whereIn('live_status', ['waiting', 'missed', 'live'])
+            ->where('live_status', 'live')
             ->where('last_message_at', '>', now()->subDay())
             ->whereRaw("REGEXP_REPLACE(visitor_phone, '[^0-9]', '') = ?", [$digits])
             ->latest('id')->first();
+    }
+
+    /**
+     * A visitor starting a fresh chat (same mobile number) must not leave their earlier chats dangling as
+     * "open": close them (status), end any request still waiting. Chats a staff member is live in are left alone.
+     */
+    private function closePrevious(ChatWidget $widget, WidgetConversation $current): void
+    {
+        $digits = preg_replace('/\D+/', '', (string) $current->visitor_phone);
+        if (strlen($digits) < 7) return;
+        WidgetConversation::where('chat_widget_id', $widget->id)->where('id', '!=', $current->id)
+            ->where('status', '!=', 'closed')
+            ->where(fn ($q) => $q->whereNull('live_status')->orWhere('live_status', '!=', 'live'))
+            ->whereRaw("REGEXP_REPLACE(visitor_phone, '[^0-9]', '') = ?", [$digits])
+            ->get()->each(function ($old) {
+                $old->update([
+                    'status' => 'closed', 'ai_active' => false, 'closed_at' => $old->closed_at ?? now(),
+                    'live_status' => $old->live_status === 'waiting' ? 'ended' : $old->live_status,   // a 'missed' callback stays on the staff queue
+                ]);
+                $this->sysMsg($old, 'Visitor started a new chat — this one was closed.');
+            });
     }
 
     private function findConvo(ChatWidget $widget, ?string $token): ?WidgetConversation
@@ -404,7 +451,7 @@ class WidgetPublicController extends Controller
 
         return response($js, 200, [
             'Content-Type'  => 'application/javascript; charset=utf-8',
-            'Cache-Control' => 'public, max-age=300',
+            'Cache-Control' => 'public, max-age=60',
         ]);
     }
 

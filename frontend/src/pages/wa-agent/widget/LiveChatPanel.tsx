@@ -1,5 +1,5 @@
 // Website chat inbox for staff — Unread / Read / Closed, plus live handling (accept, reply, end).
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
 import Picker from '@emoji-mart/react'
 import data from '@emoji-mart/data'
@@ -36,6 +36,17 @@ export default function LiveChatPanel() {
   const endRef = useRef<HTMLDivElement>(null)
 
   const active = rows.find(r => r.id === activeId) ?? null
+
+  // Same visitor (mobile number, else name) → one group; rows arrive latest-first so a group's first row is its latest chat.
+  const [openKey, setOpenKey] = useState<string | null>(null)
+  const groups = useMemo(() => {
+    const m = new Map<string, InboxRow[]>()
+    rows.forEach(r => {
+      const key = (r.visitor_phone || '').replace(/\D+/g, '') || `n:${(r.visitor_name || '').trim().toLowerCase()}` || `id:${r.id}`
+      m.set(key, [...(m.get(key) ?? []), r])
+    })
+    return [...m.entries()].map(([key, list]) => ({ key, list }))
+  }, [rows])
 
   const load = useCallback(async () => {
     try {
@@ -185,22 +196,45 @@ export default function LiveChatPanel() {
       <div className="grid md:grid-cols-[300px_1fr] min-h-[280px]">
         <div className="border-r border-gray-100 max-h-[440px] overflow-y-auto">
           {rows.length === 0 && <p className="p-4 text-sm text-gray-400">No {tab} chats.</p>}
-          {rows.map(r => (
-            <button key={r.id} onClick={() => setActiveId(r.id)}
-              className={`w-full text-left px-4 py-3 border-b border-gray-50 ${r.id === activeId ? 'bg-brand-50' : 'hover:bg-gray-50'}`}>
-              <div className="flex items-center gap-2">
-                <span className={`text-sm truncate flex-1 ${tab === 'unread' ? 'font-semibold' : 'font-medium'}`}>{r.visitor_name || 'Visitor'}</span>
-                {badge(r)}
+          {groups.map(({ key, list }) => {
+            const r = list[0]
+            const multi = list.length > 1
+            const expanded = openKey === key
+            return (
+              <div key={key}>
+                <button onClick={() => { setActiveId(r.id); if (multi) setOpenKey(expanded ? null : key) }}
+                  className={`w-full text-left px-4 py-3 border-b border-gray-50 ${r.id === activeId ? 'bg-brand-50' : 'hover:bg-gray-50'}`}>
+                  <div className="flex items-center gap-2">
+                    <span className={`text-sm truncate flex-1 ${tab === 'unread' ? 'font-semibold' : 'font-medium'}`}>{r.visitor_name || 'Visitor'}</span>
+                    {multi && <span className="text-[11px] px-1.5 rounded-full bg-gray-100 text-gray-600">{list.length} chats {expanded ? '▴' : '▾'}</span>}
+                    {badge(r)}
+                  </div>
+                  <div className="text-xs text-gray-500 truncate">{r.visitor_phone || 'No number'} · {r.widget?.name}{r.staff_name && r.case_status === 'attended' ? ` · by ${r.staff_name}` : ''}</div>
+                  {r.last_text && <div className="text-xs text-gray-400 truncate mt-0.5">{r.last_text}</div>}
+                  {canAccept(r) && (
+                    <Button size="sm" className="mt-2" onClick={(e: React.MouseEvent) => { e.stopPropagation(); void accept(r.id) }}>
+                      {r.live_status === 'waiting' ? 'Accept chat' : 'Start chat'}
+                    </Button>
+                  )}
+                </button>
+                {multi && expanded && list.map(c => (
+                  <button key={c.id} onClick={() => setActiveId(c.id)}
+                    className={`w-full text-left pl-7 pr-4 py-2 border-b border-gray-50 text-xs ${c.id === activeId ? 'bg-brand-50' : 'bg-gray-50/60 hover:bg-gray-100'}`}>
+                    <div className="flex items-center gap-2">
+                      <span className="text-gray-500">{c.last_message_at ? new Date(c.last_message_at).toLocaleString() : ''}</span>
+                      <span className="ml-auto">{badge(c)}</span>
+                    </div>
+                    {c.last_text && <div className="text-gray-400 truncate">{c.last_text}</div>}
+                    {canAccept(c) && (
+                      <Button size="sm" className="mt-1" onClick={(e: React.MouseEvent) => { e.stopPropagation(); void accept(c.id) }}>
+                        {c.live_status === 'waiting' ? 'Accept chat' : 'Start chat'}
+                      </Button>
+                    )}
+                  </button>
+                ))}
               </div>
-              <div className="text-xs text-gray-500 truncate">{r.visitor_phone || 'No number'} · {r.widget?.name}{r.staff_name && r.case_status === 'attended' ? ` · by ${r.staff_name}` : ''}</div>
-              {r.last_text && <div className="text-xs text-gray-400 truncate mt-0.5">{r.last_text}</div>}
-              {canAccept(r) && (
-                <Button size="sm" className="mt-2" onClick={(e: React.MouseEvent) => { e.stopPropagation(); void accept(r.id) }}>
-                  {r.live_status === 'waiting' ? 'Accept chat' : 'Start chat'}
-                </Button>
-              )}
-            </button>
-          ))}
+            )
+          })}
         </div>
 
         <div className="flex flex-col max-h-[440px]">

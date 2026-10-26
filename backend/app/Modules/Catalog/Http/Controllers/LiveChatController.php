@@ -23,8 +23,14 @@ class LiveChatController extends Controller
         $base = fn () => WidgetConversation::where('company_id', auth()->user()->company_id)
             ->whereHas('messages')
             ->when($request->query('widget_id'), fn ($q, $w) => $q->where('chat_widget_id', $w))
-            ->when($request->query('q'), fn ($q, $s) => $q->where(fn ($w) => $w
-                ->where('visitor_name', 'like', "%{$s}%")->orWhere('visitor_phone', 'like', "%{$s}%")));
+            ->when($request->query('q'), function ($q, $s) {
+                $digits = preg_replace('/\D+/', '', $s);
+                return $q->where(function ($w) use ($s, $digits) {
+                    $w->where('visitor_name', 'like', "%{$s}%")->orWhere('visitor_phone', 'like', "%{$s}%");
+                    // "98 4 7…" / "+91-98…" still finds the number whatever the stored formatting
+                    if (strlen($digits) >= 3) $w->orWhereRaw("REGEXP_REPLACE(visitor_phone, '[^0-9]', '') LIKE ?", ["%{$digits}%"]);
+                });
+            });
 
         $scope = fn ($q, string $tab) => match ($tab) {
             'closed' => $q->whereRaw(self::CLOSED),
@@ -39,9 +45,8 @@ class LiveChatController extends Controller
             ->addSelect(['last_text' => \App\Models\WidgetMessage::selectRaw(
                 "CASE WHEN text <> '' THEN text WHEN type = 'image' THEN '📷 Photo' WHEN type = 'audio' THEN '🎤 Voice message' ELSE '📎 File' END")
                 ->whereColumn('widget_conversation_id', 'widget_conversations.id')->latest('id')->limit(1)])
-            ->orderByRaw("FIELD(live_status, 'waiting', 'missed', 'live') DESC")
-            ->orderByDesc('last_message_at')
-            ->paginate(30, ['widget_conversations.*']);
+            ->orderByDesc('last_message_at')->orderByDesc('id')     // latest first; the widget groups the same visitor together
+            ->paginate(100, ['widget_conversations.*']);
 
         return response()->json(array_merge($rows->toArray(), [
             'counts' => [

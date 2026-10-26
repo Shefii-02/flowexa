@@ -178,6 +178,7 @@
     rbarEl.classList.toggle("on", !!r);
     if (r) { rbarEl.firstChild.textContent = "↩ " + r.text; inputEl.focus(); }
   }
+  var AI_CTL = [{ action: "yes", label: "✅ Issue solved" }, { action: "no", label: "❌ Not solved" }];
   function setBadge() {
     badgeEl.textContent = live.unread > 99 ? "99+" : String(live.unread);
     badgeEl.classList.toggle("on", live.unread > 0 && !open);
@@ -336,8 +337,12 @@
     });
     setBadge(); if (open) markSeen();
     bodyEl.scrollTop = bodyEl.scrollHeight;
+    if (d.closed) {   // final message shown (staff will contact the visitor) → end this chat in the browser
+      stopPolling(); try { localStorage.removeItem(LS); } catch (e) {} clearCtl(); live.status = null; live.ai = false; syncTools();
+      addOpts(["Start new chat"]); return;
+    }
     var prev = live.status; live.status = d.live_status; live.ai = !!d.ai_active; syncTools();
-    if (d.ai_active && prev !== "missed") { clearCtl(); addControls([{ action: "yes", label: "✅ Issue solved" }]); }
+    if (d.ai_active && prev !== "missed") { clearCtl(); addControls(AI_CTL); }
     if (d.live_status === "missed" && prev !== "missed" && !d.callback_confirmed) {
       var sv = savedVisitor(), nm = d.name || sv.name, ph = d.phone || sv.phone;
       if (nm && PHONE_RE.test(ph || "")) {
@@ -391,7 +396,7 @@
           startPolling();
           if (d.live_status === "waiting") addMsg("agent", "Waiting for your assistance — a staff member will join shortly.");
           else if (d.live_status === "missed" && !d.callback_confirmed) askConfirm(d.name, d.phone);
-          if (d.ai_active) addControls([{ action: "yes", label: "✅ Issue solved" }]);
+          if (d.ai_active) addControls(AI_CTL);
         } else {
           var ctl = [{ action: "menu", label: "🏠 Main menu" }, { action: "reset", label: "🔄 Reset" }];
           if (cfg.live_chat && live.canLive) ctl = [{ action: "live", label: "💬 Chat with a person" }];   // only after "issue not solved"
