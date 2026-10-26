@@ -65,7 +65,7 @@ export default function HrOfficeDetailsPage() {
       <PageHeader icon="🏢" title="Office Details" sub="Working hours, geofence and payroll rules for the whole company" />
 
       {!s ? <div className="text-gray-400">Loading…</div> : (
-        <div className="space-y-4 max-w-xl">
+        <div className="space-y-4">
           {/* Tabs */}
           <div className="flex gap-1 border-b border-gray-200 overflow-x-auto">
             {TABS.map(t => (
