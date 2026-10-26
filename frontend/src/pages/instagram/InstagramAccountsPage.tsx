@@ -23,6 +23,10 @@ function loadFb(appId: string): Promise<any> {
   return fbReady
 }
 
+// Meta must reach Laravel directly: use the configured API host (e.g. https://api.teamzo.io/api/v1), not the SPA origin.
+const API_BASE = ((import.meta.env.VITE_API_URL as string | undefined) || '/api/v1').replace(/\/$/, '')
+const webhookUrl = `${/^https?:\/\//.test(API_BASE) ? API_BASE : window.location.origin + API_BASE}/instagram/webhook`.replace(/^http:/, 'https:')
+
 export default function InstagramAccountsPage() {
   const [accounts, setAccounts] = useState<IgAccount[]>([])
   const [loading, setLoading] = useState(true)
@@ -285,7 +289,7 @@ export default function InstagramAccountsPage() {
           )}
 
           <p className="text-xs text-gray-400 border-t border-gray-100 pt-3">
-            Webhook URL for your app: <code>{window.location.origin.replace(/^http:/, 'https:')}/api/v1/instagram/webhook</code>
+            Webhook URL for your app: <code>{webhookUrl}</code>
             {' '}— subscribe to <b>comments</b> and <b>messages</b>.
           </p>
         </div>
