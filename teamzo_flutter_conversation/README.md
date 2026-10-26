@@ -29,3 +29,17 @@ confirms name + mobile (remembered on the device, editable), waits for a staff m
 photo / file attachments (max 2 MB), emoji and quote-reply (long-press a staff message). If nobody accepts in
 time they are asked to confirm their details and staff call back. Voice messages are staff-only — staff
 voice notes open in the system player.
+
+### Already-logged-in users
+
+If your app knows the user, pass their details and the widget skips the form entirely:
+
+```dart
+TeamzoChatWidget(
+  widgetKey: '…', apiBase: '…',
+  visitorName: user.name,
+  visitorPhone: user.phone,
+)
+```
+
+Anonymous website visitors (no `visitorName` / `visitorPhone`) still get the name + mobile form.

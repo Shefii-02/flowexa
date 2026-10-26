@@ -42,8 +42,16 @@ class TeamzoChatWidget extends StatefulWidget {
   final String? origin;
   final Color? primaryColor;
 
+  /// The signed-in user of the host app. When both are given the widget never asks for details:
+  /// "Chat with a person" starts straight away and a missed request is confirmed automatically.
+  /// Leave them null for anonymous visitors (they get the name + mobile form instead).
+  final String? visitorName;
+  final String? visitorPhone;
+
   const TeamzoChatWidget({
     super.key,
+    this.visitorName,
+    this.visitorPhone,
     required this.widgetKey,
     required this.apiBase,
     this.origin,
@@ -78,6 +86,9 @@ class _TeamzoChatWidgetState extends State<TeamzoChatWidget> {
   final _nameCtl = TextEditingController();
   final _phoneCtl = TextEditingController();
   String? _formError;
+
+  bool get _knownUser =>
+      (widget.visitorName ?? '').trim().length >= 2 && _phoneRe.hasMatch((widget.visitorPhone ?? '').trim());
 
   String get _tokenKey => 'teamzo_session_${widget.widgetKey}';
   String get _visitorKey => 'teamzo_visitor_${widget.widgetKey}';
@@ -178,6 +189,13 @@ class _TeamzoChatWidgetState extends State<TeamzoChatWidget> {
 
   /// Details already collected on this device → show them with Continue / Edit; otherwise ask.
   Future<void> _beginLive() async {
+    if (_knownUser) {
+      // Already logged in to the host app — no form, no confirmation step.
+      _nameCtl.text = widget.visitorName!.trim();
+      _phoneCtl.text = widget.visitorPhone!.trim();
+      _confirmMode = false;
+      return _submitForm();
+    }
     final prefs = await SharedPreferences.getInstance();
     final saved = prefs.getString(_visitorKey)?.split('\u0001') ?? const [];
     if (saved.length > 1 && saved[0].trim().length >= 2 && _phoneRe.hasMatch(saved[1])) {
@@ -253,7 +271,12 @@ class _TeamzoChatWidgetState extends State<TeamzoChatWidget> {
       }
       _liveStatus = st.status;
     });
-    if (st.status == 'missed' && prev != 'missed' && !st.callbackConfirmed) {
+    if (st.status == 'missed' && prev != 'missed' && !st.callbackConfirmed && _knownUser) {
+      // Known user: confirm the callback with their account details, nothing to type.
+      _client
+          .liveConfirm(name: widget.visitorName!.trim(), phone: widget.visitorPhone!.trim(), after: _lastId)
+          .then((s) { if (mounted) _applyLive(s); }).catchError((_) {});
+    } else if (st.status == 'missed' && prev != 'missed' && !st.callbackConfirmed) {
       _msgs.add(_Msg(false, 'Our staff will connect with you. Please check and confirm your name and mobile number:'));
       _nameCtl.text = st.name ?? _nameCtl.text;
       _phoneCtl.text = st.phone ?? _phoneCtl.text;
