@@ -117,7 +117,7 @@ class SuperAdminController extends Controller
             'website'                  => ['sometimes', 'nullable', 'string', 'max:150'],
             'status'                   => ['sometimes', \Illuminate\Validation\Rule::in(['active', 'trial', 'suspended', 'expired'])],
             'suspended_reason'         => ['sometimes', 'nullable', 'string', 'max:255'],
-            'industry_template'        => ['sometimes', \Illuminate\Validation\Rule::in(array_keys(config('industry_templates', [])))],
+            'industry_template'        => ['sometimes', \Illuminate\Validation\Rule::in(\App\Modules\Catalog\IndustryTemplates::keys())],
             'max_devices_per_user'     => ['sometimes', 'integer', 'min:1', 'max:20'],
             'max_web_devices_per_user' => ['sometimes', 'integer', 'min:1', 'max:20'],
 

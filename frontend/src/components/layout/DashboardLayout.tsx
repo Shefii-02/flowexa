@@ -56,7 +56,7 @@ export const DashboardLayout = () => {
   return (
     <div className="flex h-screen overflow-hidden bg-gray-50">
       <Toaster position="top-right" toastOptions={{
-        style: { fontSize: '13px', borderRadius: '10px', padding: '10px 14px' },
+        style: { fontSize: '13px', borderRadius: '10px', padding: '10px 14px', whiteSpace: 'pre-line' },
         success: { iconTheme: { primary: '#1D9E75', secondary: '#fff' } },
       }} />
 

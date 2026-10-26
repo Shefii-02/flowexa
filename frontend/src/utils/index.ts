@@ -73,7 +73,14 @@ export const downloadBlob = (blob: Blob, filename: string) => {
 // ── Get API error message ─────────────────────────────────────────────────────
 export const getError = (e: unknown): string => {
   const err = e as any
-  if (err?.response?.data?.message) return err.response.data.message
+  const data = err?.response?.data
+  if (data?.message) {
+    // Laravel validation: { message, errors: { field: [msg, ...] } } — list each error on its own line.
+    const lines: string[] = data.errors && typeof data.errors === 'object'
+      ? Object.values(data.errors).flat().map(String)
+      : []
+    return lines.length ? `${data.message}\n${lines.map(l => `• ${l}`).join('\n')}` : data.message
+  }
   // No answer from the server (timeout / dropped connection) on a save: the request may still have gone through.
   if (err?.isAxiosError && !err.response) {
     return err.code === 'ECONNABORTED'

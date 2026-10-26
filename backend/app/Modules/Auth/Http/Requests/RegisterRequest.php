@@ -19,7 +19,7 @@ class RegisterRequest extends FormRequest
             'password'      => ['required', 'string', 'min:8', 'confirmed'],
             'phone'         => ['nullable', 'string', 'max:15'],
             // Set once at signup — drives the catalog / agent templates / sample data.
-            'business_type' => ['nullable', \Illuminate\Validation\Rule::in(array_keys(config('industry_templates', [])))],
+            'business_type' => ['nullable', \Illuminate\Validation\Rule::in(\App\Modules\Catalog\IndustryTemplates::keys())],
         ];
     }
 
