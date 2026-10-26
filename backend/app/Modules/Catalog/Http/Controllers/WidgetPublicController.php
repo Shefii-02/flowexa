@@ -151,6 +151,7 @@ class WidgetPublicController extends Controller
 
         if (in_array($convo->live_status, ['waiting', 'live'], true)) {
             $convo->update($details);                       // edit while waiting / chatting
+            $this->saveToCrm($widget, $convo->fresh());
         } else {
             $convo->update($details + [
                 'status' => 'active', 'live_status' => 'waiting', 'live_requested_at' => now(),
@@ -158,6 +159,7 @@ class WidgetPublicController extends Controller
                 'callback_confirmed_at' => null, 'last_message_at' => now(),
             ]);
             $this->sysMsg($convo, "Live chat requested by {$details['visitor_name']} ({$details['visitor_phone']}).");
+            $this->saveToCrm($widget, $convo->fresh());
             $this->alerts->notifyLiveRequest($widget, $convo->fresh());
         }
 
@@ -203,6 +205,7 @@ class WidgetPublicController extends Controller
             'visitor_name' => trim($data['name']), 'visitor_phone' => trim($data['phone']),
             'callback_confirmed_at' => now(),
         ]);
+        $this->saveToCrm($widget, $convo->fresh());
         $this->sysMsg($convo, "Thank you {$convo->visitor_name}. Our staff will contact you on {$convo->visitor_phone}.");
         $this->alerts->notifyLiveRequest($widget, $convo->fresh(), true);
 
@@ -238,6 +241,24 @@ class WidgetPublicController extends Controller
     private function quotable(WidgetConversation $convo, $id): ?int
     {
         return $id ? WidgetMessage::where('widget_conversation_id', $convo->id)->where('id', $id)->value('id') : null;
+    }
+
+    /**
+     * Save the visitor's name + mobile as a CRM contact and lead (deduped by number), so staff can find
+     * them in Contacts / Leads and the normal lead-assignment pipeline runs. Never blocks the chat.
+     */
+    private function saveToCrm(ChatWidget $widget, WidgetConversation $convo): void
+    {
+        try {
+            $r = app(\App\Modules\Catalog\LeadIntake::class)->capture(
+                $widget->company, ['name' => $convo->visitor_name, 'phone' => $convo->visitor_phone, 'source_detail' => 'live chat request'],
+                'website_widget', "widget:{$convo->id}",
+                originType: 'widget', originId: $widget->id, originLabel: $widget->name,
+            );
+            $convo->update(array_filter(['contact_id' => $r['contact']?->id, 'lead_id' => $r['lead']?->id]));
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Live chat: saving to CRM failed', ['error' => $e->getMessage()]);
+        }
     }
 
     private function liveState(ChatWidget $widget, WidgetConversation $convo, int $after): array

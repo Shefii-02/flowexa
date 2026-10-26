@@ -74,6 +74,7 @@ class _TeamzoChatWidgetState extends State<TeamzoChatWidget> {
   bool _emojiOpen = false;
   bool _showForm = false;
   bool _confirmMode = false;
+  ({String name, String phone})? _savedCard; // details already collected on this device: Continue or Edit
   final _nameCtl = TextEditingController();
   final _phoneCtl = TextEditingController();
   String? _formError;
@@ -175,6 +176,41 @@ class _TeamzoChatWidgetState extends State<TeamzoChatWidget> {
     _toBottom();
   }
 
+  /// Details already collected on this device → show them with Continue / Edit; otherwise ask.
+  Future<void> _beginLive() async {
+    final prefs = await SharedPreferences.getInstance();
+    final saved = prefs.getString(_visitorKey)?.split('\u0001') ?? const [];
+    if (saved.length > 1 && saved[0].trim().length >= 2 && _phoneRe.hasMatch(saved[1])) {
+      setState(() {
+        _msgs.add(_Msg(false, 'Continue with these details?'));
+        _savedCard = (name: saved[0], phone: saved[1]);
+        _options = [];
+        _controls = [];
+        _formError = null;
+      });
+      _toBottom();
+      return;
+    }
+    setState(() => _msgs.add(_Msg(false, 'Please enter your details so our team can reach you.')));
+    await _openForm(confirm: false);
+  }
+
+  Future<void> _continueWithSaved() async {
+    final c = _savedCard;
+    if (c == null) return;
+    _nameCtl.text = c.name;
+    _phoneCtl.text = c.phone;
+    setState(() => _savedCard = null);
+    _confirmMode = false;
+    await _submitForm();
+    if (mounted && !_liveOn) setState(() => _savedCard = c); // failed — show the card (with the error) again
+  }
+
+  Future<void> _editSaved() async {
+    setState(() => _savedCard = null);
+    await _openForm(confirm: false);
+  }
+
   Future<void> _submitForm() async {
     final name = _nameCtl.text.trim(), phone = _phoneCtl.text.trim();
     if (name.length < 2) return setState(() => _formError = 'Please enter your name.');
@@ -257,8 +293,7 @@ class _TeamzoChatWidgetState extends State<TeamzoChatWidget> {
     final msg = (text ?? '').trim();
     if ((msg.isEmpty && action == null) || _busy) return;
     if (action == 'live') {
-      setState(() => _msgs.add(_Msg(false, 'Please confirm your details so our team can reach you.')));
-      return _openForm(confirm: false);
+      return _beginLive();
     }
     if (action == 'editlive') {
       return _openForm(confirm: false);
@@ -372,6 +407,7 @@ class _TeamzoChatWidgetState extends State<TeamzoChatWidget> {
             children: [
               for (final m in _msgs) _bubble(m, color),
               if (_busy) const Padding(padding: EdgeInsets.all(6), child: Text('typing…', style: TextStyle(color: Colors.grey))),
+              if (_savedCard != null) _savedCardView(color),
               if (_showForm) _form(color),
               if (_options.isNotEmpty)
                 Wrap(spacing: 6, runSpacing: 6, children: [
@@ -452,6 +488,20 @@ class _TeamzoChatWidgetState extends State<TeamzoChatWidget> {
       ),
     ]);
   }
+
+  Widget _savedCardView(Color color) => Container(
+        margin: const EdgeInsets.only(top: 8),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: const Color(0xFFE5E7EB))),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Text(_savedCard!.name, style: const TextStyle(fontWeight: FontWeight.w700)),
+          Text(_savedCard!.phone),
+          if (_formError != null) Padding(padding: const EdgeInsets.only(top: 6), child: Text(_formError!, style: const TextStyle(color: Colors.red, fontSize: 12))),
+          const SizedBox(height: 10),
+          FilledButton(style: FilledButton.styleFrom(backgroundColor: color), onPressed: _busy ? null : _continueWithSaved, child: const Text('Continue')),
+          TextButton(onPressed: _editSaved, child: const Text('✏️ Edit details')),
+        ]),
+      );
 
   Widget _form(Color color) => Container(
         margin: const EdgeInsets.only(top: 8),

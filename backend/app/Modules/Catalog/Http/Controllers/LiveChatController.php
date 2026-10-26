@@ -76,7 +76,7 @@ class LiveChatController extends Controller
         $convo = $this->find($id);
         $convo->forceFill(['staff_read_at' => now()])->saveQuietly();
         return response()->json([
-            'conversation' => $convo->only(['id', 'visitor_name', 'visitor_phone', 'status', 'live_status', 'staff_name', 'assigned_user_id', 'page_url', 'callback_confirmed_at']),
+            'conversation' => $convo->only(['id', 'visitor_name', 'visitor_phone', 'status', 'live_status', 'staff_name', 'assigned_user_id', 'page_url', 'callback_confirmed_at', 'contact_id', 'lead_id']),
             'messages'     => $convo->messages()->where('id', '>', (int) $request->query('after', 0))->get()->map(fn ($m) => Live::format($m))->values(),
         ]);
     }

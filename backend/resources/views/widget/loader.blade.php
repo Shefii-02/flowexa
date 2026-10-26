@@ -256,21 +256,43 @@
     live.formEl = f; bodyEl.appendChild(f); bodyEl.scrollTop = bodyEl.scrollHeight;
   }
 
+  var PHONE_RE = /^\+?[0-9 ()-]{7,20}$/;
+  function requestLive(name, phone, onError) {
+    post("live/start", { session_token: localStorage.getItem(LS) || null, name: name, phone: phone, page_url: location.href })
+      .then(function (d) {
+        removeForm();
+        if (d.session_token) localStorage.setItem(LS, d.session_token);
+        addMsg("agent", "Thanks " + name + "! Waiting for your assistance — a staff member will join shortly.");
+        addControls([{ action: "editlive", label: "✏️ Edit my details" }]);
+        applyLive(d); startPolling();
+      })
+      .catch(function (e) { onError((e && (e.message || (e.errors && Object.values(e.errors)[0][0]))) || "Could not start chat."); });
+  }
+
+  // Details already collected in this browser: show them and let the visitor continue or edit. Otherwise ask.
   function startLive() {
-    addMsg("agent", "Please confirm your details so our team can reach you.");
+    var v = savedVisitor();
+    if (v.name && v.name.length >= 2 && PHONE_RE.test(v.phone || "")) {
+      clearOpts(); clearCtl(); removeForm();
+      addMsg("agent", "Continue with these details?");
+      var c = h("div", { class: "form" },
+        '<div><b>' + esc(v.name) + '</b><br>' + esc(v.phone) + '</div><div class="err"></div>' +
+        '<button class="go">Continue</button><button class="lnk">✏️ Edit details</button>');
+      var err = c.querySelector(".err");
+      c.querySelector(".go").addEventListener("click", function () {
+        requestLive(v.name, v.phone, function (m) { err.textContent = m; });
+      });
+      c.querySelector(".lnk").addEventListener("click", function () { removeForm(); showEditForm(); });
+      live.formEl = c; bodyEl.appendChild(c); bodyEl.scrollTop = bodyEl.scrollHeight;
+      return;
+    }
+    addMsg("agent", "Please enter your details so our team can reach you.");
+    showEditForm();
+  }
+  function showEditForm() {
     showForm({
       cta: "Start chat",
-      submit: function (name, phone, err) {
-        post("live/start", { session_token: localStorage.getItem(LS) || null, name: name, phone: phone, page_url: location.href })
-          .then(function (d) {
-            removeForm();
-            if (d.session_token) localStorage.setItem(LS, d.session_token);
-            addMsg("agent", "Thanks " + name + "! Waiting for your assistance — a staff member will join shortly.");
-            addControls([{ action: "editlive", label: "✏️ Edit my details" }]);
-            applyLive(d); startPolling();
-          })
-          .catch(function (e) { err.textContent = (e && (e.message || (e.errors && Object.values(e.errors)[0][0]))) || "Could not start chat."; });
-      }
+      submit: function (name, phone, err) { requestLive(name, phone, function (m) { err.textContent = m; }); }
     });
   }
 

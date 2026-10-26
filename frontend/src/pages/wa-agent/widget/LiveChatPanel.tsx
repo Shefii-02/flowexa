@@ -197,7 +197,8 @@ export default function LiveChatPanel() {
           ) : (
             <>
               <div className="px-4 py-2 border-b border-gray-100 flex items-center gap-2">
-                <div className="flex-1 text-sm"><b>{active.visitor_name}</b> <span className="text-gray-500">{active.visitor_phone}</span></div>
+                <div className="flex-1 text-sm"><b>{active.visitor_name}</b> <span className="text-gray-500">{active.visitor_phone}</span>
+                  {(active as any).lead_id && <span className="ml-2 text-[11px] text-emerald-600">✓ Saved in Contacts &amp; Leads</span>}</div>
                 {active.live_status === 'live' && <Button size="sm" variant="secondary" onClick={end}>End chat</Button>}
                 <button onClick={removeChat} className="text-xs text-red-500 hover:underline" title="Delete conversation and files">Delete</button>
               </div>
