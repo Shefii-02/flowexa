@@ -6,6 +6,23 @@ import { fmt, getError } from '@/utils'
 import toast from 'react-hot-toast'
 import { instagramApi, type IgAccount, type IgMedia, type IgPage } from './api/instagram'
 
+const META_APP_ID = import.meta.env.VITE_META_APP_ID as string | undefined
+const FB_SCOPES = 'pages_show_list,pages_read_engagement,pages_messaging,instagram_basic,instagram_manage_messages,instagram_manage_comments,instagram_manage_insights'
+
+// Loads Facebook's JS SDK once (needed for the one-click "Continue with Facebook" login).
+let fbReady: Promise<any> | null = null
+function loadFb(appId: string): Promise<any> {
+  fbReady ??= new Promise((resolve, reject) => {
+    const w = window as any
+    w.fbAsyncInit = () => { w.FB.init({ appId, cookie: true, xfbml: false, version: 'v21.0' }); resolve(w.FB) }
+    const el = document.createElement('script')
+    el.src = 'https://connect.facebook.net/en_US/sdk.js'; el.async = true
+    el.onerror = () => { fbReady = null; reject(new Error('Could not load Facebook login.')) }
+    document.body.appendChild(el)
+  })
+  return fbReady
+}
+
 export default function InstagramAccountsPage() {
   const [accounts, setAccounts] = useState<IgAccount[]>([])
   const [loading, setLoading] = useState(true)
@@ -49,15 +66,32 @@ export default function InstagramAccountsPage() {
     setUserToken(''); setPages(null)
   }
 
-  const findPages = async () => {
-    if (!userToken.trim()) { toast.error('Paste a User access token first.'); return }
+  const discover = async (token: string) => {
     setDiscovering(true)
     try {
-      const r = await instagramApi.discoverPages(userToken.trim())
+      const r = await instagramApi.discoverPages(token)
       setPages(r.data.pages ?? [])
       if (!(r.data.pages ?? []).length) toast('No Facebook Pages found for this token.', { icon: 'ℹ️' })
     } catch (e) { toast.error(getError(e)) }
     finally { setDiscovering(false) }
+  }
+
+  const findPages = () => {
+    if (!userToken.trim()) { toast.error('Paste a User access token first.'); return }
+    void discover(userToken.trim())
+  }
+
+  // One-click: Facebook Login popup → user token → same page picker as pasting a token.
+  const loginWithFacebook = async () => {
+    if (!META_APP_ID) return
+    try {
+      const FB = await loadFb(META_APP_ID)
+      FB.login((res: any) => {
+        const token = res?.authResponse?.accessToken
+        if (!token) { toast.error('Facebook login was cancelled or not authorised.'); return }
+        void discover(token)
+      }, { scope: FB_SCOPES })
+    } catch (e) { toast.error(getError(e)) }
   }
 
   const connectPage = async (p: IgPage) => {
@@ -188,6 +222,12 @@ export default function InstagramAccountsPage() {
 
           {connectTab === 'discover' ? (
             <div className="space-y-3">
+              {META_APP_ID && (
+                <>
+                  <Button onClick={loginWithFacebook} loading={discovering}>Continue with Facebook</Button>
+                  <p className="text-xs text-gray-400">Sign in, allow access to your Page and Instagram account, then pick the one to connect. Or paste a token below.</p>
+                </>
+              )}
               <p className="text-xs text-gray-500">
                 Paste a <b>User access token</b> (Graph API Explorer, or your login flow) granted with{' '}
                 <code>pages_show_list</code>, <code>pages_read_engagement</code> and{' '}
@@ -245,7 +285,7 @@ export default function InstagramAccountsPage() {
           )}
 
           <p className="text-xs text-gray-400 border-t border-gray-100 pt-3">
-            Webhook URL for your app: <code>{window.location.origin.replace(/^http/, 'https')}/api/v1/instagram/webhook</code>
+            Webhook URL for your app: <code>{window.location.origin.replace(/^http:/, 'https:')}/api/v1/instagram/webhook</code>
             {' '}— subscribe to <b>comments</b> and <b>messages</b>.
           </p>
         </div>
