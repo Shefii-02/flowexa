@@ -15,7 +15,6 @@ type Draft = {
   id?: number
   name: string
   is_active: boolean
-  industry_template: string
   agent_name: string
   greeting: string
   primary_color: string
@@ -29,15 +28,13 @@ type Draft = {
 }
 
 const emptyDraft = (): Draft => ({
-  name: 'Website chat', is_active: true, industry_template: '', agent_name: 'Assistant',
+  name: 'Website chat', is_active: true, agent_name: 'Assistant',
   greeting: 'Hi! 👋 How can I help you today?', primary_color: '#4f46e5', position: 'right',
   launcher_text: 'Chat with us', allowed_origins: '', notify_emails: '', notify_whatsapp: '', wa_session_id: '', flow_builder_id: '',
 })
 
 export default function WidgetPage() {
   const [widgets, setWidgets] = useState<ChatWidget[]>([])
-  const [templates, setTemplates] = useState<Record<string, { name: string }>>({})
-  const [companyIndustry, setCompanyIndustry] = useState<string | null>(null)
   const [sessions, setSessions] = useState<WaSession[]>([])
   const [loading, setLoading] = useState(true)
   const [editor, setEditor] = useState<Draft | null>(null)
@@ -64,8 +61,6 @@ export default function WidgetPage() {
         api.get('/waha/sessions').catch(() => ({ data: { data: [] } })),
       ])
       setWidgets(r.data.widgets ?? [])
-      setTemplates(r.data.templates ?? {})
-      setCompanyIndustry(r.data.company_industry_template ?? null)
       setSessions(sessRes.data?.data ?? [])
     } catch (e) { toast.error(getError(e)) }
     finally { setLoading(false) }
@@ -73,7 +68,7 @@ export default function WidgetPage() {
   useEffect(() => { void load() }, [])
 
   const toDraft = (w: ChatWidget): Draft => ({
-    id: w.id, name: w.name, is_active: w.is_active, industry_template: w.industry_template ?? '',
+    id: w.id, name: w.name, is_active: w.is_active,
     agent_name: w.agent_name, greeting: w.greeting,
     primary_color: w.branding?.primary_color ?? '#4f46e5',
     position: w.branding?.position ?? 'right',
@@ -92,7 +87,6 @@ export default function WidgetPage() {
       const payload = {
         name: editor.name,
         is_active: editor.is_active,
-        industry_template: editor.industry_template || null,
         agent_name: editor.agent_name,
         greeting: editor.greeting,
         branding: { primary_color: editor.primary_color, position: editor.position, launcher_text: editor.launcher_text },
@@ -176,16 +170,6 @@ export default function WidgetPage() {
           <div className="space-y-3">
             <div className="grid grid-cols-2 gap-3">
               <Input label="Internal name" value={editor.name} onChange={e => setEditor({ ...editor, name: e.target.value })} />
-              <div>
-                <label className="label">Industry</label>
-                <select className="select" value={editor.industry_template} onChange={e => setEditor({ ...editor, industry_template: e.target.value })}>
-                  <option value="">
-                    Company default{companyIndustry && templates[companyIndustry] ? ` (${templates[companyIndustry].name})` : ''}
-                  </option>
-                  {Object.entries(templates).map(([k, t]) => <option key={k} value={k}>{t.name}</option>)}
-                </select>
-                <p className="text-[11px] text-gray-400 mt-1">Leave on "Company default" to use the industry already set on your company — no need to pick it again here.</p>
-              </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <Input label="Agent display name" value={editor.agent_name} onChange={e => setEditor({ ...editor, agent_name: e.target.value })} />
