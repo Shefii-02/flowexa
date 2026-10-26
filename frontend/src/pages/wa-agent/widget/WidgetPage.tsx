@@ -8,6 +8,7 @@ import { Link } from 'react-router-dom'
 import { flowBuilderApi } from '@/api'
 import { FlowImportExportModal } from '../../flow/components/FlowImportExportModal'
 import LiveChatPanel from './LiveChatPanel'
+import { PermissionGate } from '@/components/ui/PermissionGate'
 import { widgetApi, type ChatWidget, type WidgetConversation, type WidgetMessage } from './api'
 
 type WaSession = { id: number; session_name: string; status: string }
@@ -129,7 +130,7 @@ export default function WidgetPage() {
         <Button onClick={() => setEditor(emptyDraft())}>+ New widget</Button>
       </div>
 
-      <LiveChatPanel />
+      <PermissionGate permission="widget_chat.handle"><LiveChatPanel /></PermissionGate>
 
       {loading ? (
         <p className="text-sm text-gray-400">Loading…</p>
