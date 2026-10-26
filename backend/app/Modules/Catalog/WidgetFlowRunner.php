@@ -39,9 +39,18 @@ class WidgetFlowRunner
             $yes = $action === 'yes' || in_array($t, self::YES, true);
             $no  = $action === 'no'  || in_array($t, self::NO, true);
             if ($yes) {
+                $convo->update(['case_status' => 'closed', 'closed_at' => now()]);
                 return $this->close($convo, $text, "Glad we could help! 😊");
             }
             if ($no) {
+                $convo->update(['case_status' => 'pending']);
+                $convo->flag('not_solved');
+                // Live chat on: now (and only now) offer "Chat with a person". The widget already has name + mobile.
+                if ($widget->live_chat_enabled) {
+                    $convo->update(['flow_state' => null]);
+                    return $this->say($convo, $text, "Sorry about that. Would you like to chat with a person from our team?", [],
+                        [['action' => 'live', 'label' => '💬 Chat with a person']]);
+                }
                 $convo->update(['flow_state' => 'issue']);
                 return $this->say($convo, $text, "Sorry about that. Please type your issue below and our team will look into it.", [], []);
             }

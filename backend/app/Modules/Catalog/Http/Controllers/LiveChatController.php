@@ -52,6 +52,67 @@ class LiveChatController extends Controller
         ]));
     }
 
+    /** Staff mark a chat as "visitor not satisfied" so an admin can study it. */
+    public function flag(int $id): JsonResponse
+    {
+        $this->find($id)->flag('staff_flag');
+        return response()->json(['flagged' => true]);
+    }
+
+    /** Admin / higher staff: chats marked not satisfied. ?reviewed=0|1 */
+    public function review(Request $request): JsonResponse
+    {
+        $rows = WidgetConversation::where('company_id', auth()->user()->company_id)->whereNotNull('flagged_at')
+            ->where($request->boolean('reviewed') ? fn ($q) => $q->whereNotNull('reviewed_at') : fn ($q) => $q->whereNull('reviewed_at'))
+            ->with(['widget:id,name', 'attendedBy:id,name'])
+            ->orderByDesc('flagged_at')
+            ->paginate(30, ['id', 'chat_widget_id', 'visitor_name', 'visitor_phone', 'case_status', 'flag_reason', 'flagged_at',
+                'attended_by', 'staff_name', 'reviewed_at', 'reviewed_by', 'review_note', 'collected', 'last_message_at']);
+        return response()->json($rows);
+    }
+
+    public function markReviewed(Request $request, int $id): JsonResponse
+    {
+        $data = $request->validate(['note' => ['nullable', 'string', 'max:2000']]);
+        $this->find($id)->update(['reviewed_at' => now(), 'reviewed_by' => auth()->id(), 'review_note' => $data['note'] ?? null]);
+        return response()->json(['reviewed' => true]);
+    }
+
+    /** Bot vs staff outcomes, handoff and satisfaction numbers, per-staff workload. ?days=30 */
+    public function analytics(Request $request): JsonResponse
+    {
+        $days = min(365, max(1, (int) $request->query('days', 30)));
+        $base = fn () => WidgetConversation::where('company_id', auth()->user()->company_id)
+            ->where('created_at', '>=', now()->subDays($days))->whereNull('duplicate_of_id');
+
+        $total   = $base()->whereHas('messages')->count();
+        $by      = $base()->whereHas('messages')->selectRaw('case_status, COUNT(*) c')->groupBy('case_status')->pluck('c', 'case_status');
+        $handoff = $base()->whereNotNull('live_requested_at')->count();
+        $flags   = $base()->whereNotNull('flagged_at')->selectRaw('flag_reason, COUNT(*) c')->groupBy('flag_reason')->pluck('c', 'flag_reason');
+        $repeats = WidgetConversation::where('company_id', auth()->user()->company_id)
+            ->where('created_at', '>=', now()->subDays($days))->whereNotNull('duplicate_of_id')->count();
+
+        $staff = $base()->whereNotNull('attended_by')
+            ->selectRaw("attended_by, MAX(staff_name) name, COUNT(*) attended,
+                SUM(case_status = 'closed') closed,
+                AVG(TIMESTAMPDIFF(SECOND, live_requested_at, attended_at)) avg_wait_seconds")
+            ->groupBy('attended_by')->orderByDesc('attended')->get();
+
+        $issues = $base()->whereNotNull('flagged_at')->latest('flagged_at')->limit(10)->get(['id', 'visitor_name', 'flag_reason', 'collected'])
+            ->map(fn ($c) => ['id' => $c->id, 'visitor' => $c->visitor_name, 'reason' => $c->flag_reason,
+                'issue' => $c->collected['unresolved_issue'] ?? null]);
+
+        return response()->json([
+            'days' => $days, 'total' => $total,
+            'solved_by_bot'  => (int) ($by['closed'] ?? 0) - $base()->where('case_status', 'closed')->whereNotNull('attended_by')->count(),
+            'status'         => ['open' => (int) ($by['open'] ?? 0), 'closed' => (int) ($by['closed'] ?? 0), 'pending' => (int) ($by['pending'] ?? 0),
+                                 'unread' => (int) ($by['unread'] ?? 0), 'attended' => (int) ($by['attended'] ?? 0)],
+            'handed_to_staff' => $handoff, 'repeat_requests_merged' => $repeats,
+            'not_satisfied'  => $flags, 'awaiting_review' => $base()->whereNotNull('flagged_at')->whereNull('reviewed_at')->count(),
+            'staff'          => $staff, 'recent_flagged' => $issues,
+        ]);
+    }
+
     public function markRead(int $id): JsonResponse
     {
         $this->find($id)->update(['staff_read_at' => now()]);
@@ -76,7 +137,7 @@ class LiveChatController extends Controller
         $convo = $this->find($id);
         $convo->forceFill(['staff_read_at' => now()])->saveQuietly();
         return response()->json([
-            'conversation' => $convo->only(['id', 'visitor_name', 'visitor_phone', 'status', 'live_status', 'staff_name', 'assigned_user_id', 'page_url', 'callback_confirmed_at', 'contact_id', 'lead_id']),
+            'conversation' => $convo->only(['id', 'visitor_name', 'visitor_phone', 'status', 'case_status', 'flag_reason', 'flagged_at', 'review_note', 'reviewed_at', 'live_status', 'staff_name', 'assigned_user_id', 'page_url', 'callback_confirmed_at', 'contact_id', 'lead_id']),
             'messages'     => $convo->messages()->where('id', '>', (int) $request->query('after', 0))->get()->map(fn ($m) => Live::format($m))->values(),
         ]);
     }
@@ -93,7 +154,8 @@ class LiveChatController extends Controller
 
         // Atomic: only one staff member can win a waiting / missed request.
         $won = WidgetConversation::where('id', $convo->id)->whereIn('live_status', ['waiting', 'missed'])
-            ->update(['live_status' => 'live', 'live_accepted_at' => now(), 'assigned_user_id' => $user->id, 'staff_name' => $user->name]);
+            ->update(['live_status' => 'live', 'ai_active' => false, 'live_accepted_at' => now(), 'assigned_user_id' => $user->id, 'staff_name' => $user->name,
+                'case_status' => 'attended', 'attended_by' => $user->id, 'attended_at' => now()]);
         if (!$won) {
             return response()->json(['message' => $convo->live_status === 'live' ? 'Another staff member already accepted this chat.' : 'This chat is no longer waiting.'], 409);
         }
@@ -151,7 +213,7 @@ class LiveChatController extends Controller
     public function end(int $id): JsonResponse
     {
         $convo = $this->find($id);
-        $convo->update(['live_status' => 'ended', 'status' => 'closed']);
+        $convo->update(['live_status' => 'ended', 'status' => 'closed', 'case_status' => 'closed', 'closed_at' => now()]);
         WidgetMessage::create(['widget_conversation_id' => $convo->id, 'role' => 'system', 'text' => 'This conversation is now closed. Thank you!']);
         return response()->json(['ended' => true]);
     }

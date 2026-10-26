@@ -10,7 +10,10 @@
   var cfg = { agent_name: "Assistant", greeting: "Hi! How can I help?", branding: {} };
   var open = false, booted = false, sending = false;
   var LSV = "wgt_visitor_" + KEY;          // name + mobile remembered in this browser
-  var live = { status: null, lastId: 0, timer: null, formEl: null, replyTo: null, rec: null };
+  var live = { ident: false, status: null, lastId: 0, timer: null, formEl: null, replyTo: null, rec: null, unread: 0, canLive: false, ai: false };
+  var LSS = "wgt_seen_" + KEY;            // last staff message id the visitor has actually seen (survives page changes)
+  function seenId() { try { return parseInt(localStorage.getItem(LSS), 10) || 0; } catch (e) { return 0; } }
+  function markSeen() { try { localStorage.setItem(LSS, String(live.lastId)); } catch (e) {} }
   var MAX_BYTES = 2 * 1024 * 1024;
   var EMOJIS = "😀 😁 😂 🤣 😊 😍 😘 😎 🤔 😢 😭 😡 👍 👎 👏 🙏 🙌 💪 🎉 🔥 ❤️ 💯 ✅ ❌ 👋 🤝 😅 😉 🙂 😇".split(" ");
 
@@ -37,6 +40,11 @@
       .launcher { position: fixed; ${pos}: 20px; bottom: 20px; z-index: 2147483000;
         background: ${color}; color: #fff; border: none; border-radius: 999px; cursor: pointer;
         padding: 14px 18px; font-size: 15px; font-weight: 600; box-shadow: 0 8px 30px rgba(0,0,0,.22); display: flex; align-items: center; gap: 8px; }
+      .launcher { position: fixed; }
+      .badge { position: absolute; top: -6px; right: -4px; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 999px; background: #ef4444; color: #fff; font-size: 12px; font-weight: 700; display: none; align-items: center; justify-content: center; border: 2px solid #fff; }
+      .badge.on { display: flex; }
+      .launcher.ping { animation: wping 1.2s ease-in-out 3; }
+      @keyframes wping { 50% { transform: scale(1.08); } }
       .launcher svg { width: 20px; height: 20px; }
       .panel { position: fixed; ${pos}: 20px; bottom: 84px; z-index: 2147483000; width: 370px; max-width: calc(100vw - 32px);
         height: 540px; max-height: calc(100vh - 120px); background: #fff; border-radius: 16px; overflow: hidden;
@@ -92,7 +100,7 @@
     `;
   }
 
-  var launcher, panel, bodyEl, inputEl, sendBtn, rbarEl, emoEl, toolsEl, fileEl;
+  var badgeEl, launcher, panel, bodyEl, inputEl, sendBtn, rbarEl, emoEl, toolsEl, fileEl;
 
   function build() {
     var st = h("style"); st.textContent = styleBlock(); shadow.appendChild(st);
@@ -100,6 +108,7 @@
     launcher = h("button", { class: "launcher" },
       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span>' +
       esc(cfg.branding.launcher_text || "Chat with us") + "</span>");
+    badgeEl = h("span", { class: "badge" }); launcher.appendChild(badgeEl);
     launcher.addEventListener("click", toggle);
     shadow.appendChild(launcher);
 
@@ -169,14 +178,20 @@
     rbarEl.classList.toggle("on", !!r);
     if (r) { rbarEl.firstChild.textContent = "↩ " + r.text; inputEl.focus(); }
   }
+  function setBadge() {
+    badgeEl.textContent = live.unread > 99 ? "99+" : String(live.unread);
+    badgeEl.classList.toggle("on", live.unread > 0 && !open);
+  }
   function liveOn() { return ["waiting", "live", "missed"].indexOf(live.status) >= 0; }
-  function syncTools() { toolsEl.classList.toggle("on", liveOn()); if (!liveOn()) { setReply(null); emoEl.classList.remove("on"); } }
+  function syncTools() { toolsEl.classList.add("on"); if (!liveOn()) { setReply(null); emoEl.classList.remove("on"); } }
 
   function uploadFile(file, caption) {
-    if (!liveOn()) return;
+    if (!liveOn() && !live.ident) { addMsg("agent", "Please tap Start and share your name and mobile number first.", "sys"); return; }
     if (file.size > MAX_BYTES) { addMsg("agent", "That file is too large — the limit is 2 MB.", "sys"); return; }
     var fd = new FormData();
     fd.append("session_token", localStorage.getItem(LS) || "");
+    if (live.name) { fd.append("name", live.name); fd.append("phone", live.phone || ""); }
+    fd.append("page_url", location.href);
     fd.append("file", file, file.name || "voice.webm");
     if (caption) fd.append("text", caption);
     if (live.replyTo) fd.append("reply_to_id", live.replyTo.id);
@@ -185,7 +200,11 @@
     setReply(null);
     fetch(API + "/" + KEY + "/live/upload", { method: "POST", headers: { "Accept": "application/json" }, body: fd })
       .then(function (r) { return r.json().then(function (d) { if (!r.ok) throw d; return d; }); })
-      .then(function () { addRich(echo, "v"); })
+      .then(function (d) {
+        if (d.session_token) localStorage.setItem(LS, d.session_token);
+        addRich(echo, "v");
+        if (!liveOn()) addMsg("agent", "Thanks — we've received your file. Our team can view it.", "sys");
+      })
       .catch(function (e) { addMsg("agent", (e && e.message) || "Could not send the file.", "sys"); });
   }
   function clearOpts() { var o = shadow.querySelectorAll(".opts"); for (var i = 0; i < o.length; i++) o[i].remove(); }
@@ -222,8 +241,7 @@
   }
   function greet() {
     addMsg("agent", cfg.greeting);
-    if (cfg.has_flow) addOpts(["Start"]);
-    if (cfg.live_chat) addControls([{ action: "live", label: "💬 Chat with a person" }]);
+    addOpts(["Start"]);   // "Chat with a person" only appears after the bot has replied (see send)
   }
 
   // ── Live chat with staff ──────────────────────────────────────────────────
@@ -262,7 +280,8 @@
       .then(function (d) {
         removeForm();
         if (d.session_token) localStorage.setItem(LS, d.session_token);
-        addMsg("agent", "Thanks " + name + "! Waiting for your assistance — a staff member will join shortly.");
+        addMsg("agent", d.repeat ? "We already have your request, " + name + ". Our staff will connect with you shortly — no need to ask again."
+          : "Thanks " + name + "! Waiting for your assistance — a staff member will join shortly.");
         addControls([{ action: "editlive", label: "✏️ Edit my details" }]);
         applyLive(d); startPolling();
       })
@@ -271,6 +290,7 @@
 
   // Details already collected in this browser: show them and let the visitor continue or edit. Otherwise ask.
   function startLive() {
+    if (live.ident && live.name && live.phone) { clearOpts(); clearCtl(); requestLive(live.name, live.phone, function (m) { addMsg("agent", m); }); return; }
     var v = savedVisitor();
     if (v.name && v.name.length >= 2 && PHONE_RE.test(v.phone || "")) {
       clearOpts(); clearCtl(); removeForm();
@@ -312,37 +332,79 @@
     (d.messages || []).forEach(function (m) {
       if (m.id > live.lastId) live.lastId = m.id;
       if (m.role === "system") { var el = h("div", { class: "msg sys" }, esc(m.text)); bodyEl.appendChild(el); }
-      else addRich(m, "s");
+      else { addRich(m, "s"); if (!open && m.id > seenId()) { live.unread++; launcher.classList.add("ping"); setTimeout(function () { launcher.classList.remove("ping"); }, 4000); } }
     });
+    setBadge(); if (open) markSeen();
     bodyEl.scrollTop = bodyEl.scrollHeight;
-    var prev = live.status; live.status = d.live_status; syncTools();
-    if (d.live_status === "missed" && prev !== "missed" && !d.callback_confirmed) askConfirm(d.name, d.phone);
+    var prev = live.status; live.status = d.live_status; live.ai = !!d.ai_active; syncTools();
+    if (d.ai_active && prev !== "missed") { clearCtl(); addControls([{ action: "yes", label: "✅ Issue solved" }]); }
+    if (d.live_status === "missed" && prev !== "missed" && !d.callback_confirmed) {
+      var sv = savedVisitor(), nm = d.name || sv.name, ph = d.phone || sv.phone;
+      if (nm && PHONE_RE.test(ph || "")) {
+        // Details already given at the start — no form, just tell them and register the callback.
+        addMsg("agent", "Our staff are not available right now. They will connect with you soon. 🙏");
+        post("live/confirm", { session_token: localStorage.getItem(LS), name: nm, phone: ph, after: live.lastId }).then(applyLive).catch(function () {});
+      } else askConfirm(d.name, d.phone);
+    }
     if (d.live_status === "ended") { stopPolling(); try { localStorage.removeItem(LS); } catch (e) {} clearCtl(); addOpts(["Start new chat"]); live.status = null; syncTools(); }
     if (d.live_status === "live" && prev !== "live") clearCtl();
   }
-  function poll() {
-    var t = localStorage.getItem(LS); if (!t) return stopPolling();
-    fetch(API + "/" + KEY + "/live/poll?session_token=" + encodeURIComponent(t) + "&after=" + live.lastId, { headers: { "Accept": "application/json" } })
-      .then(function (r) { if (!r.ok) throw 0; return r.json(); }).then(applyLive).catch(function () {});
+  // Adaptive polling (keeps server load low): only while a live request/chat exists; fast when the panel is open
+  // and the tab visible, slow when the panel is closed, very slow in a background tab or once we only owe a callback.
+  function pollDelay() {
+    if (document.hidden) return 30000;
+    if (live.status === "missed") return open && live.ai ? 8000 : 30000;   // AI is answering; just watch for a staff member joining
+    return open ? 3000 : 10000;
   }
-  function startPolling() { stopPolling(); live.timer = setInterval(poll, 3000); }
-  function stopPolling() { if (live.timer) { clearInterval(live.timer); live.timer = null; } }
+  function poll() {
+    var t = localStorage.getItem(LS); if (!t || !liveOn()) return stopPolling();
+    fetch(API + "/" + KEY + "/live/poll?session_token=" + encodeURIComponent(t) + "&after=" + live.lastId, { headers: { "Accept": "application/json" } })
+      .then(function (r) { if (!r.ok) throw 0; return r.json(); }).then(applyLive).catch(function () {})
+      .then(function () { if (live.timer) schedulePoll(); });
+  }
+  function schedulePoll() { clearTimeout(live.timer); live.timer = setTimeout(poll, pollDelay()); }
+  function startPolling() { stopPolling(); schedulePoll(); }
+  function stopPolling() { if (live.timer) { clearTimeout(live.timer); live.timer = null; } }
+  document.addEventListener("visibilitychange", function () { if (!document.hidden && live.timer) { clearTimeout(live.timer); poll(); } });
+
+  // After a refresh: redraw this browser's whole conversation (bot + staff) and reconnect to a live chat if there is one.
   function resumeLive() {
-    if (!cfg.live_chat || !localStorage.getItem(LS)) return;
-    fetch(API + "/" + KEY + "/live/poll?session_token=" + encodeURIComponent(localStorage.getItem(LS)) + "&after=0", { headers: { "Accept": "application/json" } })
+    var token = localStorage.getItem(LS);
+    if (!token) return;
+    fetch(API + "/" + KEY + "/history?session_token=" + encodeURIComponent(token), { headers: { "Accept": "application/json" } })
       .then(function (r) { if (!r.ok) throw 0; return r.json(); })
       .then(function (d) {
-        if (["waiting", "live", "missed"].indexOf(d.live_status) < 0) return;
+        if (!d.active) { try { localStorage.removeItem(LS); } catch (e) {} return; }   // closed / gone → fresh start
         bodyEl.innerHTML = ""; addMsg("agent", cfg.greeting);
-        applyLive(d); startPolling();
-        if (d.live_status === "waiting") addMsg("agent", "Waiting for your assistance — a staff member will join shortly.");
+        var seen = seenId();
+        d.messages.forEach(function (m) {
+          if (m.id > live.lastId) live.lastId = m.id;
+          if (m.role === "staff" && m.id > seen && !open) live.unread++;
+          if (m.role === "system") bodyEl.appendChild(h("div", { class: "msg sys" }, esc(m.text)));
+          else if (m.role === "staff") addRich(m, "s");
+          else if (m.role === "visitor") { if (m.type && m.type !== "text") addRich(m, "v"); else addMsg("visitor", m.text); }
+          else addMsg("agent", m.text);
+        });
+        if (d.name && d.phone) { live.ident = true; live.name = d.name; live.phone = d.phone; }
+        live.status = d.live_status; live.ai = !!d.ai_active; live.canLive = !!d.can_request_live; syncTools(); setBadge(); if (open) markSeen();
+        if (liveOn()) {
+          startPolling();
+          if (d.live_status === "waiting") addMsg("agent", "Waiting for your assistance — a staff member will join shortly.");
+          else if (d.live_status === "missed" && !d.callback_confirmed) askConfirm(d.name, d.phone);
+          if (d.ai_active) addControls([{ action: "yes", label: "✅ Issue solved" }]);
+        } else {
+          var ctl = [{ action: "menu", label: "🏠 Main menu" }, { action: "reset", label: "🔄 Reset" }];
+          if (cfg.live_chat && live.canLive) ctl = [{ action: "live", label: "💬 Chat with a person" }];   // only after "issue not solved"
+          addControls(ctl);
+        }
+        bodyEl.scrollTop = bodyEl.scrollHeight;
       }).catch(function () {});
   }
   function resetChat() {
     if (sending) return;
     var token = localStorage.getItem(LS);
     try { localStorage.removeItem(LS); } catch (e) {}
-    stopPolling(); live.status = null; live.lastId = 0; live.formEl = null; syncTools();
+    stopPolling(); live.status = null; live.lastId = 0; live.formEl = null; live.ident = false; syncTools();
     bodyEl.innerHTML = "";
     greet();
     if (token) {
@@ -362,9 +424,9 @@
   function toggle() {
     open = !open;
     panel.classList.toggle("show", open);
-    if (open && bodyEl.childElementCount === 0) {
-      greet(); resumeLive();
-    }
+    if (open && bodyEl.childElementCount === 0) greet();
+    if (open) { live.unread = 0; markSeen(); if (live.timer) schedulePoll(); }
+    setBadge();
     if (open) setTimeout(function () { inputEl.focus(); }, 100);
   }
 
@@ -373,6 +435,14 @@
     var text = (typeof preset === "string" ? preset : (inputEl.value || "")).trim();
     if (action) text = "";
     if ((!text && !action) || sending) return;
+    // Ask for name + mobile before the conversation starts (prefilled from this browser; confirm or edit).
+    if (!action && !live.ident && !liveOn()) {
+      addMsg("agent", "Before we start, please share your name and mobile number.");
+      showForm({ cta: "Start", submit: function (n, p) {
+        live.ident = true; live.name = n; live.phone = p; removeForm(); send(typeof preset === "string" ? preset : null);
+      } });
+      return;
+    }
     inputEl.value = "";
     clearOpts(); clearCtl();
     if (liveOn() && !action && live.replyTo) { addRich({ text: text, reply_to: { text: live.replyTo.text } }, "v"); }
@@ -386,6 +456,7 @@
         message: text || null,
         action: action || null,
         reply_to_id: liveOn() && live.replyTo ? live.replyTo.id : null,
+        name: live.name || null, phone: live.phone || null,
         page_url: location.href
       })
     }).then(function (r) { return r.json(); }).then(function (d) {
@@ -394,8 +465,15 @@
       if (d.live_status) { setReply(null); applyLive({ live_status: d.live_status, messages: [] }); return; }
       addMsg("agent", d.reply || "Thanks!");
       addOpts(d.options);
-      if (d.closed) { addOpts(["Start new chat"]); }
-      else addControls(d.controls);
+      if (d.start_live && cfg.live_chat) { requestLive(live.name || savedVisitor().name, live.phone || savedVisitor().phone, function (m) { addMsg("agent", m); }); }
+      else if (d.closed) {
+        if (live.status) { stopPolling(); try { localStorage.removeItem(LS); } catch (e) {} live.status = null; live.ai = false; syncTools(); }
+        addOpts(["Start new chat"]);
+      }
+      else {
+        // "Chat with a person" arrives from the server only after the visitor says the issue was not solved.
+        addControls(d.controls || []);
+      }
     }).catch(function () {
       typing(false);
       addMsg("agent", "Sorry, something went wrong. Please try again.");
@@ -413,6 +491,7 @@
       if (cfg.branding.position === "left") pos = "left";
       build();
       booted = true;
+      if (localStorage.getItem(LS)) resumeLive();   // reconnect on every page, panel closed or not
     })
     .catch(function () { /* widget inactive or domain not allowed — render nothing */ });
 

@@ -18,7 +18,7 @@ class LiveChatSupport
     public const MAX_FILE_KB = 2048; // 2 MB
 
     private const ALLOWED = [
-        'image' => ['image/jpeg', 'image/png', 'image/webp', 'image/gif'],
+        'image' => ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/gif', 'image/heic', 'image/heif'],
         'audio' => ['audio/webm', 'audio/ogg', 'audio/mpeg', 'audio/mp4', 'audio/x-m4a', 'audio/aac', 'audio/wav', 'audio/x-wav', 'video/webm', 'video/mp4'],
         'file'  => ['application/pdf', 'text/plain', 'text/csv', 'application/zip',
             'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',

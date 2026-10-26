@@ -1133,6 +1133,10 @@ Route::prefix('v1')->group(function () {
             Route::get('/queue',          [$c, 'queue']);
             Route::get('/inbox',          [$c, 'inbox']);
             Route::get('/me',             [$c, 'me']);
+            Route::get('/analytics',      [$c, 'analytics'])->middleware('permission:widget_chat.review');
+            Route::get('/review',         [$c, 'review'])->middleware('permission:widget_chat.review');
+            Route::post('/{id}/review',   [$c, 'markReviewed'])->middleware('permission:widget_chat.review');
+            Route::post('/{id}/flag',     [$c, 'flag']);
             Route::put('/me',             [$c, 'setMuted']);
             Route::get('/{id}',           [$c, 'show']);
             Route::post('/{id}/read',     [$c, 'markRead']);
@@ -1282,6 +1286,7 @@ Route::prefix('v1')->group(function () {
         Route::get('/{key}/bootstrap', [\App\Modules\Catalog\Http\Controllers\WidgetPublicController::class, 'bootstrap']);
         Route::match(['post', 'options'], '/{key}/chat', [\App\Modules\Catalog\Http\Controllers\WidgetPublicController::class, 'chat'])
             ->middleware('throttle:30,1');
+        Route::match(['get', 'options'],  '/{key}/history', [\App\Modules\Catalog\Http\Controllers\WidgetPublicController::class, 'history'])->middleware('throttle:60,1');
         Route::match(['post', 'options'], '/{key}/live/start',   [\App\Modules\Catalog\Http\Controllers\WidgetPublicController::class, 'liveStart'])->middleware('throttle:10,1');
         Route::match(['post', 'options'], '/{key}/live/upload',  [\App\Modules\Catalog\Http\Controllers\WidgetPublicController::class, 'liveUpload'])->middleware('throttle:20,1');
         Route::match(['post', 'options'], '/{key}/live/confirm', [\App\Modules\Catalog\Http\Controllers\WidgetPublicController::class, 'liveConfirm'])->middleware('throttle:10,1');

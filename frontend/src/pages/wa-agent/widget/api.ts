@@ -15,6 +15,7 @@ export interface ChatWidget {
   wa_session_id: string | null
   flow_builder_id: number | null
   live_chat_enabled: boolean
+  ai_fallback_enabled?: boolean
   live_max_per_staff: number
   live_wait_seconds: number
   conversations_count: number
@@ -75,10 +76,15 @@ export interface LiveMessage {
   created_at: string
 }
 
+export type CaseStatus = 'open' | 'closed' | 'pending' | 'unread' | 'attended'
 export type InboxTab = 'unread' | 'read' | 'closed'
 export interface InboxRow extends Omit<LiveChatRow, 'live_status'> {
   live_status: LiveChatRow['live_status'] | 'ended' | null
   status: 'active' | 'qualified' | 'closed'
+  case_status?: CaseStatus
+  attended_by?: number | null
+  flag_reason?: string | null
+  flagged_at?: string | null
   last_text: string | null
   last_message_at: string | null
 }
@@ -99,5 +105,9 @@ export const liveChatApi = {
   me: () => api.get('/widgets/live/me'),
   setMuted: (muted: boolean) => api.put('/widgets/live/me', { muted }),
   remove: (id: number) => api.delete(`/widgets/live/${id}`),
+  flag: (id: number) => api.post(`/widgets/live/${id}/flag`),
+  review: (reviewed = false, page = 1) => api.get('/widgets/live/review', { params: { reviewed: reviewed ? 1 : 0, page } }),
+  markReviewed: (id: number, note?: string) => api.post(`/widgets/live/${id}/review`, { note }),
+  analytics: (days = 30) => api.get('/widgets/live/analytics', { params: { days } }),
   end: (id: number) => api.post(`/widgets/live/${id}/end`),
 }

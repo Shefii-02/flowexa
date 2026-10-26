@@ -52,6 +52,8 @@ class WidgetPublicController extends Controller
             'action'        => ['nullable', 'in:reset,back,menu,yes,no'],
             'page_url'      => ['nullable', 'string', 'max:500'],
             'reply_to_id'   => ['nullable', 'integer'],
+            'name'          => ['nullable', 'string', 'min:2', 'max:80'],
+            'phone'         => ['nullable', 'string', 'regex:/^\+?[0-9 ()-]{7,20}$/'],
         ]);
 
         $widget = $this->widget($key);
@@ -92,9 +94,35 @@ class WidgetPublicController extends Controller
             $widget->increment('conversations_count');
         }
 
+        // Name + mobile collected by the widget before the chat starts.
+        if (!empty($data['name']) && !empty($data['phone'])
+            && ($convo->visitor_name !== trim($data['name']) || $convo->visitor_phone !== trim($data['phone']))) {
+            $convo->update(['visitor_name' => trim($data['name']), 'visitor_phone' => trim($data['phone'])]);
+            $this->saveToCrm($widget, $convo->fresh());
+        }
+
         // A closed conversation (resolved, or handed to staff) restarts cleanly on the next message.
         if ($convo->status === 'closed') {
             $convo->update(['status' => 'active', 'flow_node_id' => null, 'flow_state' => null, 'live_status' => null]);
+        }
+
+        // Nobody took the request and the AI fallback is on: the AI agent (knowledge base) keeps helping
+        // until the issue is solved or a staff member picks the chat up.
+        if ($convo->ai_active && $convo->live_status === 'missed') {
+            if ($action === 'yes') {
+                $convo->update(['ai_active' => false, 'live_status' => 'ended', 'status' => 'closed', 'case_status' => 'closed', 'closed_at' => now()]);
+                $reply = 'Glad we could help! 😊 This conversation is now closed.';
+                WidgetMessage::create(['widget_conversation_id' => $convo->id, 'role' => 'agent', 'text' => $reply]);
+                return response()->json(['session_token' => $convo->session_token, 'reply' => $reply, 'options' => [], 'controls' => [], 'closed' => true, 'status' => 'closed']);
+            }
+            if ($message !== '') {
+                $reply = $this->agent->reply($widget, $convo, $message);
+                $convo->update(['last_message_at' => now()]);
+                return response()->json([
+                    'session_token' => $convo->session_token, 'reply' => $reply, 'options' => [],
+                    'controls' => [['action' => 'yes', 'label' => '✅ Issue solved']], 'closed' => false, 'ai' => true, 'status' => $convo->status,
+                ]);
+            }
         }
 
         // With a live agent (or still waiting for one) the visitor's text goes to staff, not the bot.
@@ -117,6 +145,7 @@ class WidgetPublicController extends Controller
             'options'       => $flowTurn['options'] ?? [],
             'controls'      => $flowTurn['controls'] ?? [],
             'closed'        => $flowTurn['closed'] ?? false,
+            'start_live'    => $flowTurn['start_live'] ?? false,
             'status'        => $convo->fresh()->status,
         ]);
     }
@@ -152,9 +181,16 @@ class WidgetPublicController extends Controller
         if (in_array($convo->live_status, ['waiting', 'live'], true)) {
             $convo->update($details);                       // edit while waiting / chatting
             $this->saveToCrm($widget, $convo->fresh());
+        } elseif ($existing = $this->openCaseFor($widget, $convo, $details['visitor_phone'])) {
+            // Same visitor already has an unattended / in-progress request: don't queue (or alert) staff twice.
+            $convo->update($details + ['duplicate_of_id' => $existing->id, 'case_status' => 'closed', 'closed_at' => now()]);
+            $existing->flag('repeated');
+            $this->sysMsg($existing, "{$details['visitor_name']} contacted again about the same issue.");
+            $existing->update(['last_message_at' => now()]);
+            return response()->json($this->liveState($widget, $existing->fresh(), 0) + ['repeat' => true]);
         } else {
             $convo->update($details + [
-                'status' => 'active', 'live_status' => 'waiting', 'live_requested_at' => now(),
+                'case_status' => 'unread', 'status' => 'active', 'live_status' => 'waiting', 'live_requested_at' => now(),
                 'live_accepted_at' => null, 'assigned_user_id' => null, 'staff_name' => null,
                 'callback_confirmed_at' => null, 'last_message_at' => now(),
             ]);
@@ -179,7 +215,12 @@ class WidgetPublicController extends Controller
         if ($convo->live_status === 'waiting'
             && $convo->live_requested_at?->lt(now()->subSeconds((int) ($widget->live_wait_seconds ?: 90)))) {
             if ($convo->update(['live_status' => 'missed'])) {
+                $convo->flag('no_staff');
                 $this->sysMsg($convo, 'No staff member was available in time.');
+                if ($this->aiFallbackAvailable($widget)) {
+                    $convo->update(['ai_active' => true]);
+                    $this->sysMsg($convo, 'In the meantime our AI assistant can help — just ask your question here. If a staff member becomes free, they will join this chat.');
+                }
                 $this->alerts->notifyLiveRequest($widget, $convo, true);
             }
         }
@@ -216,16 +257,27 @@ class WidgetPublicController extends Controller
     public function liveUpload(Request $request, string $key): JsonResponse
     {
         $request->validate([
-            'session_token' => ['required', 'string', 'max:64'],
+            'session_token' => ['nullable', 'string', 'max:64'],
             'file'          => ['required', 'file'],
             'text'          => ['nullable', 'string', 'max:500'],
             'reply_to_id'   => ['nullable', 'integer'],
+            'name'          => ['nullable', 'string', 'min:2', 'max:80'],
+            'phone'         => ['nullable', 'string', 'regex:/^\\+?[0-9 ()-]{7,20}$/'],
+            'page_url'      => ['nullable', 'string', 'max:500'],
         ]);
-        $widget = $this->liveWidget($request, $key);
-        if ($widget instanceof JsonResponse) return $widget;
+        // Photos / files can be shared at any point of the chat (bot or live) — staff see them in the inbox.
+        $widget = $this->widget($key);
+        if (!$widget || !$widget->is_active) return response()->json(['message' => 'Widget not found'], 404);
+        if (!$widget->originAllowed($request->headers->get('Origin'))) return response()->json(['message' => 'Origin not allowed'], 403);
+
         $convo = $this->findConvo($widget, $request->input('session_token'));
-        if (!$convo || !in_array($convo->live_status, ['waiting', 'live', 'missed'], true)) {
-            return response()->json(['message' => 'Start a live chat first.'], 422);
+        if (!$convo) {
+            $convo = WidgetConversation::create([
+                'chat_widget_id' => $widget->id, 'company_id' => $widget->company_id, 'session_token' => (string) Str::uuid(),
+                'status' => 'active', 'page_url' => $request->input('page_url'), 'visitor_ip' => $request->ip(), 'last_message_at' => now(),
+                'visitor_name' => $request->input('name'), 'visitor_phone' => $request->input('phone'),
+            ]);
+            $widget->increment('conversations_count');
         }
 
         $cols = \App\Modules\Catalog\Support\LiveChatSupport::storeUpload($request->file('file'), $convo, ['image', 'file']); // visitors: photos & files only (voice is staff-only)
@@ -235,7 +287,36 @@ class WidgetPublicController extends Controller
         ], $cols));
         $convo->update(['last_message_at' => now()]);
 
-        return response()->json(['message' => \App\Modules\Catalog\Support\LiveChatSupport::format($msg)]);
+        return response()->json(['message' => \App\Modules\Catalog\Support\LiveChatSupport::format($msg), 'session_token' => $convo->session_token]);
+    }
+
+    /** Whole conversation for this browser's session token — lets the widget restore itself after a page refresh. */
+    public function history(Request $request, string $key): JsonResponse
+    {
+        $widget = $this->widget($key);
+        if (!$widget || !$widget->is_active) return response()->json(['message' => 'Widget not found'], 404);
+        if (!$widget->originAllowed($request->headers->get('Origin'))) return response()->json(['message' => 'Origin not allowed'], 403);
+
+        $convo = $this->findConvo($widget, (string) $request->query('session_token'));
+        if (!$convo || $convo->status === 'closed' || $convo->live_status === 'ended') {
+            return response()->json(['active' => false]);
+        }
+        $messages = $convo->messages()->latest('id')->limit(200)->get()->reverse()
+            ->map(fn ($m) => \App\Modules\Catalog\Support\LiveChatSupport::format($m))->values();
+
+        return response()->json([
+            'active' => $messages->isNotEmpty(), 'session_token' => $convo->session_token, 'live_status' => $convo->live_status,
+            'name' => $convo->visitor_name, 'phone' => $convo->visitor_phone, 'callback_confirmed' => (bool) $convo->callback_confirmed_at,
+            'ai_active' => (bool) $convo->ai_active && $convo->live_status === 'missed',
+            'can_request_live' => $widget->live_chat_enabled && $convo->case_status === 'pending' && !$convo->live_status,
+            'messages' => $messages,
+        ]);
+    }
+
+    /** AI fallback = enabled on the widget AND the company has an AI provider key configured. */
+    private function aiFallbackAvailable(ChatWidget $widget): bool
+    {
+        return (bool) $widget->ai_fallback_enabled && $this->agent->isConfigured($widget);
     }
 
     private function quotable(WidgetConversation $convo, $id): ?int
@@ -271,6 +352,7 @@ class WidgetPublicController extends Controller
             'name'          => $convo->visitor_name,
             'phone'         => $convo->visitor_phone,
             'callback_confirmed' => (bool) $convo->callback_confirmed_at,
+            'ai_active'     => (bool) $convo->ai_active,
             'wait_remaining' => $convo->live_status === 'waiting' && $convo->live_requested_at
                 ? max(0, $wait - (int) $convo->live_requested_at->diffInSeconds(now())) : 0,
             'messages' => $convo->messages()->whereIn('role', ['staff', 'system'])->where('id', '>', $after)
@@ -288,6 +370,17 @@ class WidgetPublicController extends Controller
             return response()->json(['message' => 'Origin not allowed'], 403);
         }
         return $widget;
+    }
+
+    /** An unattended or in-progress request from the same mobile number (last 24h) on this widget. */
+    private function openCaseFor(ChatWidget $widget, WidgetConversation $current, string $phone): ?WidgetConversation
+    {
+        $digits = preg_replace('/\D+/', '', $phone);
+        return WidgetConversation::where('chat_widget_id', $widget->id)->where('id', '!=', $current->id)
+            ->whereIn('case_status', ['unread', 'attended'])->whereIn('live_status', ['waiting', 'missed', 'live'])
+            ->where('last_message_at', '>', now()->subDay())
+            ->whereRaw("REGEXP_REPLACE(visitor_phone, '[^0-9]', '') = ?", [$digits])
+            ->latest('id')->first();
     }
 
     private function findConvo(ChatWidget $widget, ?string $token): ?WidgetConversation

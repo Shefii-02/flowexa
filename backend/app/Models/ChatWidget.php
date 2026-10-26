@@ -19,6 +19,7 @@ class ChatWidget extends Model
     protected $casts = [
         'is_active'            => 'boolean',
         'live_chat_enabled'    => 'boolean',
+        'ai_fallback_enabled'  => 'boolean',
         'branding'             => 'array',
         'allowed_origins'      => 'array',
         'notify_emails'        => 'array',

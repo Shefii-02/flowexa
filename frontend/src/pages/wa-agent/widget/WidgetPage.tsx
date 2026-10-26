@@ -8,6 +8,7 @@ import { Link } from 'react-router-dom'
 import { flowBuilderApi } from '@/api'
 import { FlowImportExportModal } from '../../flow/components/FlowImportExportModal'
 import LiveChatPanel from './LiveChatPanel'
+import ChatReviewPanel from './ChatReviewPanel'
 import { PermissionGate } from '@/components/ui/PermissionGate'
 import { widgetApi, type ChatWidget, type WidgetConversation, type WidgetMessage } from './api'
 
@@ -18,6 +19,7 @@ type Draft = {
   name: string
   live_chat_enabled: boolean
   live_wait_seconds: string
+  ai_fallback_enabled: boolean
   live_max_per_staff: string
   is_active: boolean
   agent_name: string
@@ -33,7 +35,7 @@ type Draft = {
 }
 
 const emptyDraft = (): Draft => ({
-  name: 'Website chat', is_active: true, live_chat_enabled: false, live_wait_seconds: '90', live_max_per_staff: '5', agent_name: 'Assistant',
+  name: 'Website chat', is_active: true, live_chat_enabled: false, live_wait_seconds: '90', ai_fallback_enabled: true, live_max_per_staff: '5', agent_name: 'Assistant',
   greeting: 'Hi! 👋 How can I help you today?', primary_color: '#4f46e5', position: 'right',
   launcher_text: 'Chat with us', allowed_origins: '', notify_emails: '', notify_whatsapp: '', wa_session_id: '', flow_builder_id: '',
 })
@@ -74,7 +76,7 @@ export default function WidgetPage() {
 
   const toDraft = (w: ChatWidget): Draft => ({
     id: w.id, name: w.name, is_active: w.is_active,
-    live_chat_enabled: !!w.live_chat_enabled, live_wait_seconds: String(w.live_wait_seconds ?? 90), live_max_per_staff: String(w.live_max_per_staff ?? 5),
+    live_chat_enabled: !!w.live_chat_enabled, live_wait_seconds: String(w.live_wait_seconds ?? 90), ai_fallback_enabled: w.ai_fallback_enabled !== false, live_max_per_staff: String(w.live_max_per_staff ?? 5),
     agent_name: w.agent_name, greeting: w.greeting,
     primary_color: w.branding?.primary_color ?? '#4f46e5',
     position: w.branding?.position ?? 'right',
@@ -95,6 +97,7 @@ export default function WidgetPage() {
         is_active: editor.is_active,
         live_chat_enabled: editor.live_chat_enabled,
         live_wait_seconds: Number(editor.live_wait_seconds) || 90,
+        ai_fallback_enabled: editor.ai_fallback_enabled,
         live_max_per_staff: Number(editor.live_max_per_staff) || 5,
         agent_name: editor.agent_name,
         greeting: editor.greeting,
@@ -131,6 +134,7 @@ export default function WidgetPage() {
       </div>
 
       <PermissionGate permission="widget_chat.handle"><LiveChatPanel /></PermissionGate>
+      <PermissionGate permission="widget_chat.review"><ChatReviewPanel /></PermissionGate>
 
       {loading ? (
         <p className="text-sm text-gray-400">Loading…</p>
@@ -259,6 +263,15 @@ export default function WidgetPage() {
               {editor.live_chat_enabled && (
                 <Input label="Wait for staff (seconds) before showing “we'll contact you”" type="number" min={15} max={900}
                   value={editor.live_wait_seconds} onChange={e => setEditor({ ...editor, live_wait_seconds: e.target.value })} />
+              )}
+              {editor.live_chat_enabled && (
+                <>
+                  <label className="flex items-center gap-2 text-sm font-medium">
+                    <input type="checkbox" checked={editor.ai_fallback_enabled} onChange={e => setEditor({ ...editor, ai_fallback_enabled: e.target.checked })} />
+                    AI assistant answers when no staff is available
+                  </label>
+                  <p className="text-[11px] text-gray-400">Uses your knowledge base and continues until the visitor marks the issue solved or a staff member joins. Requires an AI provider key to be set up in AI Agent settings; without one, visitors only see “we'll contact you”.</p>
+                </>
               )}
             </div>
 

@@ -23,6 +23,11 @@ class WidgetConversation extends Model
         'live_requested_at'   => 'datetime',
         'live_accepted_at'    => 'datetime',
         'callback_confirmed_at' => 'datetime',
+        'ai_active'           => 'boolean',
+        'attended_at'         => 'datetime',
+        'closed_at'           => 'datetime',
+        'flagged_at'          => 'datetime',
+        'reviewed_at'         => 'datetime',
         'created_at'          => 'datetime',
         'updated_at'          => 'datetime',
     ];
@@ -36,5 +41,14 @@ class WidgetConversation extends Model
     public function company(): BelongsTo { return $this->belongsTo(Company::class); }
     public function contact(): BelongsTo { return $this->belongsTo(Contact::class); }
     public function lead(): BelongsTo { return $this->belongsTo(Lead::class); }
+    public function attendedBy(): BelongsTo { return $this->belongsTo(User::class, 'attended_by'); }
+
+    /** Mark as not satisfied so an admin can study it. Keeps the first reason; clears any earlier review. */
+    public function flag(string $reason): void
+    {
+        if ($this->flagged_at) return;
+        $this->update(['flag_reason' => $reason, 'flagged_at' => now(), 'reviewed_at' => null, 'reviewed_by' => null]);
+    }
+
     public function messages(): HasMany { return $this->hasMany(WidgetMessage::class)->orderBy('created_at'); }
 }

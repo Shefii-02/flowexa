@@ -142,11 +142,23 @@ export default function LiveChatPanel() {
     catch (e) { toast.error(getError(e)) }
   }
 
-  const badge = (r: InboxRow) =>
-    r.live_status === 'waiting' ? <Badge variant="yellow">Waiting</Badge>
+  const badge = (r: InboxRow) => {
+    const live = r.live_status === 'waiting' ? <Badge variant="yellow">Waiting</Badge>
       : r.live_status === 'live' ? <Badge variant="green">Live</Badge>
       : r.live_status === 'missed' ? <Badge variant="red">{r.callback_confirmed_at ? 'Call back' : 'Missed'}</Badge>
       : null
+    const cs = r.case_status
+    const status = cs === 'pending' ? <Badge variant="yellow">Pending</Badge>
+      : cs === 'unread' && !live ? <Badge variant="red">Unread</Badge>
+      : cs === 'attended' && !live ? <Badge variant="blue">Attended</Badge>
+      : cs === 'closed' ? <Badge variant="gray">Solved</Badge> : null
+    return <>{live ?? status}{r.flagged_at && <span title="Marked not satisfied" className="ml-1">🚩</span>}</>
+  }
+  const flagChat = async () => {
+    if (!activeId) return
+    try { await liveChatApi.flag(activeId); toast.success('Marked as not satisfied — admin will review it.'); void load() }
+    catch (e) { toast.error(getError(e)) }
+  }
 
   const canAccept = (r: InboxRow) => r.live_status === 'waiting' || r.live_status === 'missed'
   if (forbidden) return <div className="card p-4 text-sm text-gray-500">You don't have access to website live chats. Ask an admin for the “Handle Website Live Chats” permission.</div>
@@ -180,7 +192,7 @@ export default function LiveChatPanel() {
                 <span className={`text-sm truncate flex-1 ${tab === 'unread' ? 'font-semibold' : 'font-medium'}`}>{r.visitor_name || 'Visitor'}</span>
                 {badge(r)}
               </div>
-              <div className="text-xs text-gray-500 truncate">{r.visitor_phone || 'No number'} · {r.widget?.name}</div>
+              <div className="text-xs text-gray-500 truncate">{r.visitor_phone || 'No number'} · {r.widget?.name}{r.staff_name && r.case_status === 'attended' ? ` · by ${r.staff_name}` : ''}</div>
               {r.last_text && <div className="text-xs text-gray-400 truncate mt-0.5">{r.last_text}</div>}
               {canAccept(r) && (
                 <Button size="sm" className="mt-2" onClick={(e: React.MouseEvent) => { e.stopPropagation(); void accept(r.id) }}>
@@ -200,6 +212,7 @@ export default function LiveChatPanel() {
                 <div className="flex-1 text-sm"><b>{active.visitor_name}</b> <span className="text-gray-500">{active.visitor_phone}</span>
                   {(active as any).lead_id && <span className="ml-2 text-[11px] text-emerald-600">✓ Saved in Contacts &amp; Leads</span>}</div>
                 {active.live_status === 'live' && <Button size="sm" variant="secondary" onClick={end}>End chat</Button>}
+                {!(active as any).flagged_at && <button onClick={flagChat} className="text-xs text-amber-600 hover:underline" title="Visitor was not satisfied — send to admin review">🚩 Not satisfied</button>}
                 <button onClick={removeChat} className="text-xs text-red-500 hover:underline" title="Delete conversation and files">Delete</button>
               </div>
               <div className="flex-1 overflow-y-auto p-3 space-y-2 bg-gray-50">
