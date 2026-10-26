@@ -61,7 +61,7 @@ export default function HrOfficeDetailsPage() {
   const useMyLocation = () => navigator.geolocation?.getCurrentPosition(p => { setF('office_lat', p.coords.latitude.toFixed(7)); setF('office_lng', p.coords.longitude.toFixed(7)) })
 
   return (
-    <div className="p-6 max-w-4xl mx-auto space-y-5">
+    <div className="p-6 mx-auto space-y-5">
       <PageHeader icon="🏢" title="Office Details" sub="Working hours, geofence and payroll rules for the whole company" />
 
       {!s ? <div className="text-gray-400">Loading…</div> : (

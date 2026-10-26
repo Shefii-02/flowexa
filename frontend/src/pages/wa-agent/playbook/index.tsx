@@ -313,7 +313,7 @@ export default function PlaybookPage() {
   const showPicker = !companyWide || pickMode
 
   return (
-    <div className="p-6 max-w-4xl mx-auto space-y-6">
+    <div className="p-6 mx-auto space-y-6">
       <div className="flex items-start gap-3">
         <Bot size={22} className="text-indigo-500 mt-0.5" />
         <div>

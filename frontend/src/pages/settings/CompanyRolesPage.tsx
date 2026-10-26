@@ -85,7 +85,7 @@ export default function CompanyRolesPage() {
   const customRoles = roles.filter(r => !r.is_system)
 
   return (
-    <div className="space-y-5 max-w-4xl">
+    <div className="space-y-5 ">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="page-title">Roles & Permissions</h1>

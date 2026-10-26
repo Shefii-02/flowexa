@@ -101,7 +101,7 @@ export default function LeadCategoryDetail({ cat, onClose, onChanged }: { cat: C
 
   return (
     <div className="fixed inset-0 bg-black/40 z-50 flex justify-end" onClick={onClose}>
-      <div className="bg-white w-full max-w-4xl h-full flex flex-col shadow-2xl transition-[margin]" style={{ marginRight: openContact ? 340 : 0 }} onClick={e => e.stopPropagation()}>
+      <div className="bg-white w-full h-full flex flex-col shadow-2xl transition-[margin]" style={{ marginRight: openContact ? 340 : 0 }} onClick={e => e.stopPropagation()}>
         <div className="px-6 py-4 border-b border-gray-100 flex items-start gap-3">
           <span className="w-3 h-3 rounded-full mt-1.5" style={{ backgroundColor: cat.color }} />
           <div className="flex-1 min-w-0">

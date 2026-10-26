@@ -41,7 +41,7 @@ export default function DrivePage() {
   const { configured, integration, loading, reload } = useGoogleIntegration()
 
   return (
-    <div className="space-y-5 max-w-4xl">
+    <div className="space-y-5 ">
       <div>
         <h1 className="page-title">🗂️ Drive</h1>
         <p className="page-sub">Browse, upload and manage every file and folder in your connected Google account</p>
