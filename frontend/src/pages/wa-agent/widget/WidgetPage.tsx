@@ -46,6 +46,7 @@ export default function WidgetPage() {
   const [loading, setLoading] = useState(true)
   const [editor, setEditor] = useState<Draft | null>(null)
   const [saving, setSaving] = useState(false)
+  const [aiConfigured, setAiConfigured] = useState(true)
   const [deleteId, setDeleteId] = useState<number | null>(null)
   const [inboxFor, setInboxFor] = useState<ChatWidget | null>(null)
   const [flows, setFlows] = useState<{ id: number; name: string }[]>([])
@@ -68,6 +69,7 @@ export default function WidgetPage() {
         api.get('/waha/sessions').catch(() => ({ data: { data: [] } })),
       ])
       setWidgets(r.data.widgets ?? [])
+      setAiConfigured(r.data.ai_configured !== false)
       setSessions(sessRes.data?.data ?? [])
     } catch (e) { toast.error(getError(e)) }
     finally { setLoading(false) }
@@ -97,7 +99,7 @@ export default function WidgetPage() {
         is_active: editor.is_active,
         live_chat_enabled: editor.live_chat_enabled,
         live_wait_seconds: Number(editor.live_wait_seconds) || 90,
-        ai_fallback_enabled: editor.ai_fallback_enabled,
+        ai_fallback_enabled: aiConfigured && editor.ai_fallback_enabled,
         live_max_per_staff: Number(editor.live_max_per_staff) || 5,
         agent_name: editor.agent_name,
         greeting: editor.greeting,
@@ -267,10 +269,13 @@ export default function WidgetPage() {
               {editor.live_chat_enabled && (
                 <>
                   <label className="flex items-center gap-2 text-sm font-medium">
-                    <input type="checkbox" checked={editor.ai_fallback_enabled} onChange={e => setEditor({ ...editor, ai_fallback_enabled: e.target.checked })} />
+                    <input type="checkbox" disabled={!aiConfigured} checked={aiConfigured && editor.ai_fallback_enabled} onChange={e => setEditor({ ...editor, ai_fallback_enabled: e.target.checked })} />
                     AI assistant answers when no staff is available
                   </label>
-                  <p className="text-[11px] text-gray-400">Uses your knowledge base and continues until the visitor marks the issue solved or a staff member joins. Requires an AI provider key to be set up in AI Agent settings; without one, visitors only see “we'll contact you”.</p>
+                  <p className="text-[11px] text-gray-400">Uses your knowledge base and continues until the visitor marks the issue solved or a staff member joins. Without it, visitors only see “we'll contact you”.</p>
+                  {!aiConfigured && (
+                    <p className="text-[11px] text-amber-600">No AI key is configured for this company yet. Add one under <Link to="/wa-agent/settings" className="underline">AI Settings → API Keys</Link>.</p>
+                  )}
                 </>
               )}
             </div>

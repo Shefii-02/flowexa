@@ -15,12 +15,13 @@ class WidgetController extends Controller
         $widgets = ChatWidget::where('company_id', auth()->user()->company_id)->get();
         return response()->json([
             'widgets'   => $widgets->map(fn ($w) => $this->present($w)),
+            'ai_configured' => $this->aiConfigured(),
         ]);
     }
 
     public function store(Request $request): JsonResponse
     {
-        $data = $this->validated($request);
+        $data = $this->withAiGuard($this->validated($request));
 
         $w = ChatWidget::create(array_merge($data, [
             'company_id' => auth()->user()->company_id,
@@ -31,7 +32,7 @@ class WidgetController extends Controller
     public function update(Request $request, int $id): JsonResponse
     {
         $w = $this->find($id);
-        $w->update($this->validated($request, false));
+        $w->update($this->withAiGuard($this->validated($request, false)));
         return response()->json(['message' => 'Widget updated.', 'widget' => $this->present($w->fresh())]);
     }
 
@@ -63,6 +64,21 @@ class WidgetController extends Controller
     }
 
     // ── helpers ──
+
+    /** True when the company has an AI provider key set up (own key or platform fallback). */
+    private function aiConfigured(): bool
+    {
+        return app(\App\Modules\WaChat\Services\Rag\LlmClient::class)->isConfigured(auth()->user()->company);
+    }
+
+    /** The AI fallback can't be switched on until AI is set up. */
+    private function withAiGuard(array $data): array
+    {
+        if (!empty($data['ai_fallback_enabled']) && !$this->aiConfigured()) {
+            $data['ai_fallback_enabled'] = false;
+        }
+        return $data;
+    }
 
     private function present(ChatWidget $w): array
     {

@@ -309,10 +309,10 @@ function DisplayTab() {
 
 /** On / off for the floating 📝 Sticky notes and ✅ To-do circles (per user; applies instantly). */
 function FloatingWidgetsCard() {
-  const [cfg, setCfg] = useState<Pick<StickySettings, 'notes_enabled' | 'todo_enabled'> | null>(null)
+  const [cfg, setCfg] = useState<Pick<StickySettings, 'notes_enabled' | 'todo_enabled' | 'assistant_enabled'> | null>(null)
 
   useEffect(() => {
-    stickyApi.list().then(r => setCfg({ notes_enabled: r.data.settings.notes_enabled, todo_enabled: r.data.settings.todo_enabled })).catch(() => {})
+    stickyApi.list().then(r => setCfg({ notes_enabled: r.data.settings.notes_enabled, todo_enabled: r.data.settings.todo_enabled, assistant_enabled: r.data.settings.assistant_enabled })).catch(() => {})
   }, [])
 
   const set = async (patch: Partial<StickySettings>) => {
@@ -326,7 +326,7 @@ function FloatingWidgetsCard() {
       <div className="card-header"><h3 className="card-title">Floating widgets</h3></div>
       <div className="card-body space-y-3">
         <p className="text-sm text-gray-500">Turn the floating buttons on to show them on every page; turn off to hide them.</p>
-        {cfg && ([['notes_enabled', '📝 Sticky notes'], ['todo_enabled', '✅ To-do list']] as const).map(([k, label]) => (
+        {cfg && ([['notes_enabled', '📝 Sticky notes'], ['todo_enabled', '✅ To-do list'], ['assistant_enabled', '✨ Ask in portal']] as const).map(([k, label]) => (
           <label key={k} className="flex items-center justify-between cursor-pointer text-sm text-gray-700">
             <span>{label}</span>
             <input type="checkbox" checked={cfg[k]} onChange={e => set({ [k]: e.target.checked })} />
@@ -713,7 +713,7 @@ export default function SettingsPage() {
   const [tab, setTab] = useState<TabId>(isSuper ? 'profile' : 'company')
 
   return (
-    <div className="max-w-3xl space-y-6">
+    <div className="space-y-6">
       <div>
         <h1 className="page-title">Settings</h1>
         <p className="page-sub">Company profile, your account and staff</p>

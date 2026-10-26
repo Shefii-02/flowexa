@@ -456,7 +456,7 @@ export type StickyNote = {
   id: number; title: string | null; content: string | null; color: string
   x: number; y: number; width: number; height: number; minimized: boolean; sort_order: number
 }
-export type StickySettings = { bubble_x: number | null; bubble_y: number | null; notes_visible: boolean; default_color: string; todo_visible: boolean; todo_x: number | null; todo_y: number | null; todo_bubble_x: number | null; todo_bubble_y: number | null; notes_enabled: boolean; todo_enabled: boolean }
+export type StickySettings = { bubble_x: number | null; bubble_y: number | null; notes_visible: boolean; default_color: string; todo_visible: boolean; todo_x: number | null; todo_y: number | null; todo_bubble_x: number | null; todo_bubble_y: number | null; notes_enabled: boolean; todo_enabled: boolean; assistant_enabled: boolean }
 export const stickyApi = {
   list: () => api.get<{ notes: StickyNote[]; settings: StickySettings }>('/sticky-notes'),
   create: (d: Partial<StickyNote>) => api.post<{ note: StickyNote }>('/sticky-notes', d),

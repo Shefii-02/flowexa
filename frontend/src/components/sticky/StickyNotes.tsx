@@ -9,7 +9,7 @@ import { stickyApi, type StickyNote, type StickySettings } from '@/api'
 
 const BUBBLE = 52
 const PALETTE = ['#fde68a', '#fecaca', '#fed7aa', '#bbf7d0', '#bfdbfe', '#ddd6fe', '#fbcfe8', '#e5e7eb', '#a7f3d0', '#fef08a']
-const DEFAULT_SETTINGS: StickySettings = { bubble_x: null, bubble_y: null, notes_visible: false, default_color: '#fde68a', todo_visible: false, todo_x: null, todo_y: null, todo_bubble_x: null, todo_bubble_y: null, notes_enabled: true, todo_enabled: true }
+const DEFAULT_SETTINGS: StickySettings = { bubble_x: null, bubble_y: null, notes_visible: false, default_color: '#fde68a', todo_visible: false, todo_x: null, todo_y: null, todo_bubble_x: null, todo_bubble_y: null, notes_enabled: true, todo_enabled: true, assistant_enabled: true }
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), Math.max(lo, hi))
 // white text on a dark custom colour, dark text on a light one

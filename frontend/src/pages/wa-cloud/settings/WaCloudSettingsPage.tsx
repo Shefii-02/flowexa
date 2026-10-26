@@ -368,7 +368,7 @@ export default function WaCloudSettingsPage() {
   const [tab, setTab] = useState<TabId>('credentials')
 
   return (
-    <div className="max-w-3xl space-y-6">
+    <div className="space-y-6">
       <div>
         <h1 className="page-title">☁️ WA Cloud Settings</h1>
         <p className="page-sub">Meta Business API credentials and webhooks</p>

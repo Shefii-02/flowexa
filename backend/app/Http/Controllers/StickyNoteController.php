@@ -36,6 +36,7 @@ class StickyNoteController extends Controller
             'todo_bubble_y' => $r->todo_bubble_y ?? null,
             'notes_enabled' => (bool) ($r->notes_enabled ?? true),
             'todo_enabled'  => (bool) ($r->todo_enabled ?? true),
+            'assistant_enabled' => (bool) ($r->assistant_enabled ?? true),
         ];
     }
 
@@ -101,6 +102,7 @@ class StickyNoteController extends Controller
             'todo_bubble_y' => ['sometimes', 'nullable', 'integer', 'min:-200', 'max:10000'],
             'notes_enabled' => ['sometimes', 'boolean'],
             'todo_enabled'  => ['sometimes', 'boolean'],
+            'assistant_enabled' => ['sometimes', 'boolean'],
         ]);
         $uid = auth()->id();
         $exists = DB::table('sticky_note_settings')->where('user_id', $uid)->exists();

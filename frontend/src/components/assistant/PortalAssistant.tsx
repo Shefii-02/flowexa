@@ -7,6 +7,7 @@ import {
 import { toast } from 'react-hot-toast'
 import { api } from '@/api/client'
 import { cn } from '@/utils'
+import { stickyApi } from '@/api'
 
 // ── Types & settings ───────────────────────────────────────────────────────────
 type ReplyMode = 'text' | 'voice' | 'both'
@@ -134,6 +135,7 @@ export default function PortalAssistant() {
   const location = useLocation()
 
   const [open, setOpen] = useState(false)
+  const [enabled, setEnabled] = useState(true)   // Settings → Floating widgets → Ask in portal
   const [tab, setTab] = useState<'chat' | 'settings'>('chat')
   const [prefs, setPrefs] = useState<Prefs>(() => load(PREFS_KEY, DEFAULT_PREFS))
   const [msgs, setMsgs] = useState<Msg[]>(loadHistory)
@@ -173,11 +175,23 @@ export default function PortalAssistant() {
   // Ctrl/Cmd + / toggles the assistant, Esc closes it.
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === '/') { e.preventDefault(); setOpen(o => !o) }
+      if (enabled && (e.ctrlKey || e.metaKey) && e.key === '/') { e.preventDefault(); setOpen(o => !o) }
       else if (e.key === 'Escape') setOpen(false)
     }
     window.addEventListener('keydown', h)
     return () => window.removeEventListener('keydown', h)
+  }, [enabled])
+
+  // Per-user show / hide, flipped live from Settings → Floating widgets
+  useEffect(() => {
+    let off = false
+    stickyApi.list().then(r => { if (!off) setEnabled(r.data.settings.assistant_enabled !== false) }).catch(() => {})
+    const onCfg = (e: Event) => {
+      const v = (e as CustomEvent<{ assistant_enabled?: boolean }>).detail?.assistant_enabled
+      if (typeof v === 'boolean') { setEnabled(v); if (!v) setOpen(false) }
+    }
+    window.addEventListener('sticky-settings-changed', onCfg)
+    return () => { off = true; window.removeEventListener('sticky-settings-changed', onCfg) }
   }, [])
 
   useEffect(() => () => { stopSpeaking(); recogRef.current?.abort?.() }, [])
@@ -325,6 +339,7 @@ export default function PortalAssistant() {
   const lastAssistantId = [...msgs].reverse().find(m => m.role === 'assistant')?.id
 
   // ── Render ────────────────────────────────────────────────────────────────
+  if (!enabled) return null
   return (
     <>
       {!open && (
