@@ -710,6 +710,8 @@ export default function SettingsPage() {
     () => isSuper ? TABS.filter(t => t.id !== 'company' && t.id !== 'crm-sync') : TABS,
     [isSuper],
   )
+
+  
   const [tab, setTab] = useState<TabId>(isSuper ? 'profile' : 'company')
 
   return (
