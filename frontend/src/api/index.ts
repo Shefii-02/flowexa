@@ -5,7 +5,7 @@ import api from './client'
 export const authApi = {
   login: (email: string, password: string, captcha_id: string, captcha: string) =>
     api.post('/auth/login', { email, password, captcha_id, captcha }),
-  captcha: () => api.get<{ captcha_id: string; image: string; expires_in: number }>('/auth/captcha'),
+  captcha: () => api.get<{ enabled: boolean; captcha_id: string; image: string; expires_in: number }>('/auth/captcha'),
   forgotPassword: (d: { email: string }) => api.post('/auth/forgot-password', d),
   register: (d: Record<string, string>) => api.post('/auth/register', d),
   me: () => api.get('/auth/me'),

@@ -114,4 +114,13 @@ return [
 
     'password_timeout' => env('AUTH_PASSWORD_TIMEOUT', 10800),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Web login captcha
+    |--------------------------------------------------------------------------
+    | LOGIN_CAPTCHA_ENABLED=false turns the text captcha off for the web login form.
+    */
+
+    'login_captcha' => env('LOGIN_CAPTCHA_ENABLED', true),
+
 ];

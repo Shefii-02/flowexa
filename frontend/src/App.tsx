@@ -8,6 +8,7 @@ import { ErrorBoundary } from '@/components/error'
 import { useIsSuperAdmin } from '@/store'
 
 // Auth pages
+import HomePage from '@/pages/home/HomePage'
 import LoginPage from '@/pages/auth/LoginPage'
 import RegisterPage from '@/pages/auth/RegisterPage'
 import ForgotPassword from '@/pages/auth/ForgotPassword'
@@ -216,6 +217,7 @@ export default function App() {
         <ErrorBoundary>
           <Routes>
             {/* Public routes */}
+            <Route path="/" element={<HomePage />} />
             <Route path="/privacy-policy" element={<PrivacyPolicyPage />} />
             <Route path="/login" element={<LoginPage />} />
             <Route path="/register" element={<RegisterPage />} />
@@ -224,15 +226,12 @@ export default function App() {
 
             {/* Protected routes — inside dashboard layout */}
             <Route
-              path="/"
               element={
                 <ProtectedRoute>
                   <DashboardLayout />
                 </ProtectedRoute>
               }
             >
-              <Route index element={<RoleBasedRedirect />} />
-
               {/* Main app */}
               <Route path="dashboard" element={<DashboardRouter />} />
 

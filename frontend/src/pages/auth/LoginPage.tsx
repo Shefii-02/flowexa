@@ -27,11 +27,14 @@ export default function LoginPage() {
   const [secondsLeft,  setSecondsLeft]  = useState(0)
   const [captchaBusy,  setCaptchaBusy]  = useState(false)
   const [captchaFailed, setCaptchaFailed] = useState(false)
+  const [captchaOn,     setCaptchaOn]     = useState(true) // server can switch it off (LOGIN_CAPTCHA_ENABLED)
 
   const loadCaptcha = useCallback(async () => {
     setCaptchaBusy(true); setCaptchaFailed(false); setCaptchaText('')
     try {
       const { data } = await authApi.captcha()
+      setCaptchaOn(data.enabled !== false)
+      if (data.enabled === false) { setCaptchaId(''); setSecondsLeft(0); return }
       setCaptchaId(data.captcha_id); setCaptchaImg(data.image); setSecondsLeft(data.expires_in)
     } catch {
       setCaptchaId(''); setCaptchaImg(''); setSecondsLeft(0); setCaptchaFailed(true)
@@ -165,7 +168,7 @@ export default function LoginPage() {
               required
             />
 
-            <div>
+            {captchaOn && (<div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Security check</label>
               <div className="flex items-center gap-2">
                 <div className="h-14 w-[190px] rounded-lg border border-gray-200 bg-slate-100 overflow-hidden flex items-center justify-center">
@@ -190,13 +193,13 @@ export default function LoginPage() {
                 spellCheck={false}
                 required
               />
-            </div>
+            </div>)}
 
             <div className="text-right -mt-2">
               <Link to="/forgot-password" className="text-xs text-brand-600 hover:underline">Forgot password?</Link>
             </div>
 
-            <Button type="submit" className="w-full justify-center" loading={loading} disabled={!captchaId || captchaText.length < 5}>
+            <Button type="submit" className="w-full justify-center" loading={loading} disabled={captchaOn && (!captchaId || captchaText.length < 5)}>
               Sign in
             </Button>
           </form>

@@ -19,6 +19,10 @@ class CaptchaController extends Controller
     // ─── GET /auth/captcha ────────────────────────────────────────────────────
     public function show(): JsonResponse
     {
+        if (!self::enabled()) {
+            return response()->json(['enabled' => false]);
+        }
+
         $code = '';
         for ($i = 0; $i < 5; $i++) {
             $code .= self::ALPHABET[random_int(0, strlen(self::ALPHABET) - 1)];
@@ -28,10 +32,16 @@ class CaptchaController extends Controller
         Cache::put("captcha:$id", $code, self::TTL + 5); // small grace for network latency
 
         return response()->json([
+            'enabled'    => true,
             'captcha_id' => $id,
             'image'      => 'data:image/svg+xml;base64,' . base64_encode($this->svg($code)),
             'expires_in' => self::TTL,
         ])->header('Cache-Control', 'no-store');
+    }
+
+    public static function enabled(): bool
+    {
+        return (bool) config('auth.login_captcha', true);
     }
 
     /** Single-use, case-insensitive check. The challenge is consumed whether or not it matches. */

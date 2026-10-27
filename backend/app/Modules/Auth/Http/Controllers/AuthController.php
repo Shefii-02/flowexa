@@ -27,7 +27,7 @@ class AuthController extends Controller
     public function login(LoginRequest $request): JsonResponse
     {
         // The web form carries a text captcha; the mobile app (X-Client: mobile) is exempt.
-        if ($request->header('X-Client') !== 'mobile'
+        if (CaptchaController::enabled() && $request->header('X-Client') !== 'mobile'
             && !CaptchaController::verify($request->input('captcha_id'), $request->input('captcha'))) {
             return response()->json([
                 'message'    => 'Captcha is incorrect or expired. Please try again.',
