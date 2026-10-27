@@ -56,10 +56,10 @@ export default function HomePage() {
             <h1 className="serif">Every customer chat, <em>handled by a team</em> — not a phone.</h1>
             <p className="lead">Teamzo puts your WhatsApp Business number on a shared inbox, with campaigns, automation and a lead pipeline attached. Built on Meta’s official WhatsApp Business Platform.</p>
             <div className="cta">
-              <Link to="/register" className="btn fill">Start 14-day trial</Link>
+              <Link to="/register" className="btn fill">Book a demo</Link>
               <Link to="/login" className="btn line">Log in</Link>
             </div>
-            <p className="fine">No card required · 1,000 free messages on sign-up</p>
+            <p className="fine">30-minute walkthrough · We reply the same business day</p>
           </div>
 
           <div className="thread" aria-hidden="true">
@@ -107,7 +107,7 @@ export default function HomePage() {
         <div className="wrap close">
           <h2 className="serif">Give your WhatsApp number a team behind it.</h2>
           <div className="cta" style={{ marginTop: 0 }}>
-            <Link to="/register" className="btn fill">Start free trial</Link>
+            <Link to="/register" className="btn fill">Book a demo</Link>
             <Link to="/login" className="btn line">Log in</Link>
           </div>
         </div>

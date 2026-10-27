@@ -112,6 +112,7 @@ Route::prefix('v1')->group(function () {
         Route::post('register', [AuthController::class, 'register'])->name('register');
         Route::get('captcha',   [\App\Modules\Auth\Http\Controllers\CaptchaController::class, 'show'])->middleware('throttle:30,1')->name('captcha');
         Route::post('login',    [AuthController::class, 'login'])->name('login');
+        Route::post('demo-requests', [\App\Http\Controllers\DemoRequestController::class, 'store'])->middleware('throttle:5,1')->name('demo-requests.store');
         Route::post('web-sessions/remove', [AuthController::class, 'removeWebSession'])->name('web-sessions.remove');
     });
 
@@ -174,6 +175,10 @@ Route::prefix('v1')->group(function () {
         Route::prefix('superadmin')->name('superadmin.')->group(function () {
 
             Route::middleware(['superadmin'])->group(function () {
+
+                Route::get('demo-requests',         [\App\Http\Controllers\DemoRequestController::class, 'index']);
+                Route::put('demo-requests/{id}',    [\App\Http\Controllers\DemoRequestController::class, 'update']);
+                Route::delete('demo-requests/{id}', [\App\Http\Controllers\DemoRequestController::class, 'destroy']);
 
                 Route::get('topup-packages',    [PlanPurchaseController::class, 'topupPackages']);
 

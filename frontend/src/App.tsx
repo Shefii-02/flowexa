@@ -11,6 +11,7 @@ import { useIsSuperAdmin } from '@/store'
 import HomePage from '@/pages/home/HomePage'
 import LoginPage from '@/pages/auth/LoginPage'
 import RegisterPage from '@/pages/auth/RegisterPage'
+import SignupPage from '@/pages/auth/SignupPage'
 import ForgotPassword from '@/pages/auth/ForgotPassword'
 import ResetPassword from '@/pages/settings/ResetPassword'
 
@@ -84,6 +85,7 @@ import ApiLogsPage from '@/pages/superadmin/ApiLogsPage'
 import ErrorLogsPage from '@/pages/superadmin/ErrorLogsPage'
 import SystemLogPage from '@/pages/superadmin/SystemLogPage'
 import AiTestPage from '@/pages/superadmin/AiTestPage'
+import DemoRequestsPage from '@/pages/superadmin/DemoRequestsPage'
 import FailedJobsPage from '@/pages/superadmin/FailedJobsPage'
 import IndustryTemplatesPage from '@/pages/superadmin/IndustryTemplatesPage'
 import AgentPlaybookTemplatesPage from '@/pages/superadmin/AgentPlaybookTemplatesPage'
@@ -221,6 +223,7 @@ export default function App() {
             <Route path="/privacy-policy" element={<PrivacyPolicyPage />} />
             <Route path="/login" element={<LoginPage />} />
             <Route path="/register" element={<RegisterPage />} />
+            <Route path="/signup" element={<SignupPage />} />
             <Route path="/forgot-password" element={<ForgotPassword />} />
             <Route path="/reset-password" element={<ResetPassword />} />
 
@@ -462,6 +465,10 @@ export default function App() {
               <Route
                 path="superadmin/ai-test"
                 element={<SuperAdminRoute><AiTestPage /></SuperAdminRoute>}
+              />
+              <Route
+                path="superadmin/demo-requests"
+                element={<SuperAdminRoute><DemoRequestsPage /></SuperAdminRoute>}
               />
               <Route
                 path="superadmin/failed-jobs"

@@ -656,6 +656,7 @@ export const Sidebar = () => {
           <>
             <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider px-2 pt-3 pb-1">SuperAdmin</p>
             <FlatLink to="/superadmin" icon="📊" label="Dashboard" end />
+            <FlatLink to="/superadmin/demo-requests" icon="📅" label="Demo Requests" />
             <FlatLink to="/superadmin/companies" icon="🏢" label="Companies" />
             <FlatLink to="/superadmin/plans" icon="📦" label="Plans" />
             <FlatLink to="/superadmin/billing" icon="💰" label="Billing" />

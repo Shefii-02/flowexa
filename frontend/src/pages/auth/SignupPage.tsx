@@ -14,7 +14,7 @@ const BUSINESS_TYPES = [
   { value: 'education',      label: 'Education & Coaching' },
 ]
 
-export default function RegisterPage() {
+export default function SignupPage() {
   const navigate = useNavigate()
 
   const [form, setForm] = useState({

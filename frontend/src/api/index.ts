@@ -723,3 +723,11 @@ export const flowAiApi = {
   /** existing knowledge-base documents */
   knowledge: () => api.get('/wa-agent/knowledge-base'),
 }
+
+// ── Demo requests (public "Book a demo" form + superadmin lead management) ───
+export const demoApi = {
+  book: (d: Record<string, unknown>) => api.post('/auth/demo-requests', d),
+  list: (params: Record<string, unknown>) => api.get('/superadmin/demo-requests', { params }),
+  update: (id: number, d: Record<string, unknown>) => api.put(`/superadmin/demo-requests/${id}`, d),
+  remove: (id: number) => api.delete(`/superadmin/demo-requests/${id}`),
+}
