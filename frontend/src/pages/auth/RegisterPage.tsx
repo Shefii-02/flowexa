@@ -1,8 +1,6 @@
 // src/pages/auth/RegisterPage.tsx
 import { useState, FormEvent } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
-import { useAppDispatch } from '@/store'
-import { loginThunk } from '@/store/slices'
 import { authApi } from '@/api'
 import { Button, Input, Select } from '@/components/ui'
 import { getError } from '@/utils'
@@ -17,7 +15,6 @@ const BUSINESS_TYPES = [
 ]
 
 export default function RegisterPage() {
-  const dispatch = useAppDispatch()
   const navigate = useNavigate()
 
   const [form, setForm] = useState({
@@ -37,11 +34,9 @@ export default function RegisterPage() {
     }
     setLoading(true); setError('')
     try {
-      const { data } = await authApi.register(form)
-      // Store token and redirect
-      localStorage.setItem('wa_token', data.access_token)
-      await dispatch(loginThunk({ email: form.email, password: form.password }))
-      navigate('/dashboard')
+      await authApi.register(form)
+      // Sign-in now needs the login captcha, so hand over to the login page.
+      navigate('/login', { state: { message: 'Account created — please sign in.' } })
     } catch (e) {
       setError(getError(e))
     } finally {

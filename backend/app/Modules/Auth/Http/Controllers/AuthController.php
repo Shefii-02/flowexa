@@ -26,6 +26,15 @@ class AuthController extends Controller
     // ─── POST /auth/login ─────────────────────────────────────────────────────
     public function login(LoginRequest $request): JsonResponse
     {
+        // The web form carries a text captcha; the mobile app (X-Client: mobile) is exempt.
+        if ($request->header('X-Client') !== 'mobile'
+            && !CaptchaController::verify($request->input('captcha_id'), $request->input('captcha'))) {
+            return response()->json([
+                'message'    => 'Captcha is incorrect or expired. Please try again.',
+                'error_code' => 'captcha_invalid',
+            ], 422);
+        }
+
         $result = $this->authService->login(
             LoginDTO::fromRequest($request->validated())
         );

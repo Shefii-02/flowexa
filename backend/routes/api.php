@@ -110,6 +110,7 @@ Route::prefix('v1')->group(function () {
     // ── Public ──────────────────────────────────────────────────────────────
     Route::prefix('auth')->name('auth.')->group(function () {
         Route::post('register', [AuthController::class, 'register'])->name('register');
+        Route::get('captcha',   [\App\Modules\Auth\Http\Controllers\CaptchaController::class, 'show'])->middleware('throttle:30,1')->name('captcha');
         Route::post('login',    [AuthController::class, 'login'])->name('login');
         Route::post('web-sessions/remove', [AuthController::class, 'removeWebSession'])->name('web-sessions.remove');
     });

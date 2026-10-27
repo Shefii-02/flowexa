@@ -1,5 +1,5 @@
 // src/pages/auth/LoginPage.tsx
-import { useState, FormEvent } from 'react'
+import { useState, useEffect, useCallback, FormEvent } from 'react'
 import { useNavigate, useLocation, Link } from 'react-router-dom'
 import { useAppDispatch, useAppSelector } from '@/store'
 import { loginThunk, clearAuthError, DEVICE_LIMIT_ERROR } from '@/store/slices'
@@ -20,6 +20,38 @@ export default function LoginPage() {
   const [email,    setEmail]    = useState('')
   const [password, setPassword] = useState('')
 
+  // Text captcha: server-issued, single-use, valid for `expires_in` seconds, auto-refreshed when the timer hits 0.
+  const [captchaId,    setCaptchaId]    = useState('')
+  const [captchaImg,   setCaptchaImg]   = useState('')
+  const [captchaText,  setCaptchaText]  = useState('')
+  const [secondsLeft,  setSecondsLeft]  = useState(0)
+  const [captchaBusy,  setCaptchaBusy]  = useState(false)
+  const [captchaFailed, setCaptchaFailed] = useState(false)
+
+  const loadCaptcha = useCallback(async () => {
+    setCaptchaBusy(true); setCaptchaFailed(false); setCaptchaText('')
+    try {
+      const { data } = await authApi.captcha()
+      setCaptchaId(data.captcha_id); setCaptchaImg(data.image); setSecondsLeft(data.expires_in)
+    } catch {
+      setCaptchaId(''); setCaptchaImg(''); setSecondsLeft(0); setCaptchaFailed(true)
+    } finally {
+      setCaptchaBusy(false)
+    }
+  }, [])
+
+  useEffect(() => { loadCaptcha() }, [loadCaptcha])
+
+  useEffect(() => {
+    if (secondsLeft <= 0) return
+    const t = setTimeout(() => setSecondsLeft((s) => s - 1), 1000)
+    return () => clearTimeout(t)
+  }, [secondsLeft])
+
+  useEffect(() => {
+    if (secondsLeft === 0 && captchaId && !captchaBusy) loadCaptcha()
+  }, [secondsLeft, captchaId, captchaBusy, loadCaptcha])
+
   // Set when this user is already signed in on the maximum number of browsers.
   const [limit, setLimit] = useState<LimitInfo | null>(null)
   const [removing, setRemoving] = useState<number | null>(null)
@@ -27,7 +59,7 @@ export default function LoginPage() {
 
   const attemptLogin = async () => {
     dispatch(clearAuthError())
-    const result = await dispatch(loginThunk({ email, password }))
+    const result = await dispatch(loginThunk({ email, password, captcha_id: captchaId, captcha: captchaText }))
     if (loginThunk.fulfilled.match(result)) {
       setLimit(null)
       const role = result.payload.user.role?.name
@@ -35,6 +67,8 @@ export default function LoginPage() {
     } else if (loginThunk.rejected.match(result) && result.payload === DEVICE_LIMIT_ERROR) {
       setLimit(result.meta as unknown as LimitInfo)
     }
+    // The captcha is single-use, so every attempt that didn't sign in needs a fresh one.
+    if (!loginThunk.fulfilled.match(result)) loadCaptcha()
   }
 
   const handleSubmit = async (e: FormEvent) => {
@@ -50,7 +84,8 @@ export default function LoginPage() {
       const { data } = await authApi.removeWebSession(limit.limit_token, d.id)
       const remaining: LimitDevice[] = data.devices ?? limit.devices.filter((x) => x.id !== d.id)
       if (remaining.length < limit.max) {
-        await attemptLogin()
+        // The captcha was consumed by the attempt that hit the limit — back to the form for a new one.
+        setLimit(null)
       } else {
         setLimit({ ...limit, devices: remaining })
       }
@@ -130,11 +165,38 @@ export default function LoginPage() {
               required
             />
 
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Security check</label>
+              <div className="flex items-center gap-2">
+                <div className="h-14 w-[190px] rounded-lg border border-gray-200 bg-slate-100 overflow-hidden flex items-center justify-center">
+                  {captchaImg && !captchaBusy
+                    ? <img src={captchaImg} alt="Captcha" className="h-full w-full select-none" draggable={false} />
+                    : <span className="text-xs text-gray-400">{captchaFailed ? 'Could not load' : 'Loading…'}</span>}
+                </div>
+                <button type="button" onClick={loadCaptcha} disabled={captchaBusy}
+                  className="text-xs text-brand-600 hover:underline disabled:opacity-50" title="Get a new code">↻ New code</button>
+              </div>
+              <p className={`text-xs mt-1 ${secondsLeft > 0 && secondsLeft <= 10 ? 'text-red-500' : 'text-gray-400'}`}>
+                {captchaFailed ? 'Captcha unavailable — tap “New code” to retry.' : `Code refreshes in ${secondsLeft}s`}
+              </p>
+              <input
+                className="input mt-2 uppercase tracking-widest"
+                placeholder="Enter the code above"
+                value={captchaText}
+                onChange={(e) => setCaptchaText(e.target.value.replace(/\s/g, ''))}
+                maxLength={5}
+                autoComplete="off"
+                autoCapitalize="characters"
+                spellCheck={false}
+                required
+              />
+            </div>
+
             <div className="text-right -mt-2">
               <Link to="/forgot-password" className="text-xs text-brand-600 hover:underline">Forgot password?</Link>
             </div>
 
-            <Button type="submit" className="w-full justify-center" loading={loading}>
+            <Button type="submit" className="w-full justify-center" loading={loading} disabled={!captchaId || captchaText.length < 5}>
               Sign in
             </Button>
           </form>

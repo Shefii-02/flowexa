@@ -47,11 +47,11 @@ export const DEVICE_LIMIT_ERROR = 'device_limit'
 export const loginThunk = createAsyncThunk(
     'auth/login',
     async (
-        creds: { email: string; password: string },
+        creds: { email: string; password: string; captcha_id: string; captcha: string },
         { rejectWithValue }: any
     ) => {
         try {
-            const { data } = await authApi.login(creds.email, creds.password);
+            const { data } = await authApi.login(creds.email, creds.password, creds.captcha_id, creds.captcha);
 
             return {
                 user: data.data.user,

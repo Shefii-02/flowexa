@@ -27,6 +27,14 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Meta partner badge on the home page. Leave empty to hide it — only set it to
+    | a status your Meta Business account actually holds.
+    |--------------------------------------------------------------------------
+    */
+    'meta_partner_label' => env('LANDING_META_PARTNER_LABEL', 'Meta Business Partner'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Company address shown in footer
     |--------------------------------------------------------------------------
     */
