@@ -447,7 +447,7 @@ class WidgetPublicController extends Controller
         if (!in_array(parse_url($apiBase, PHP_URL_HOST), ['localhost', '127.0.0.1'], true)) {
             $apiBase = preg_replace('#^http://#', 'https://', $apiBase);
         }
-        $js = view('widget.loader', ['key' => $key, 'apiBase' => $apiBase])->render();
+        $js = view('widget.loader', ['key' => $key, 'apiBase' => $apiBase, 'socketBase' => rtrim((string) config('services.node.public_url'), '/')])->render();
 
         return response($js, 200, [
             'Content-Type'  => 'application/javascript; charset=utf-8',

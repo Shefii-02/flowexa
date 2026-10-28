@@ -2,6 +2,7 @@
   "use strict";
   var KEY = @json($key);
   var API = @json($apiBase);
+  var SOCKET = @json($socketBase ?? "");   // realtime socket server (empty → polling only)
   if (window.__wgt_loaded_ && window.__wgt_loaded_[KEY]) return;
   window.__wgt_loaded_ = window.__wgt_loaded_ || {};
   window.__wgt_loaded_[KEY] = true;
@@ -357,19 +358,59 @@
   // Adaptive polling (keeps server load low): only while a live request/chat exists; fast when the panel is open
   // and the tab visible, slow when the panel is closed, very slow in a background tab or once we only owe a callback.
   function pollDelay() {
+    if (rt.up) return 60000;   // realtime socket is connected → it pings us on changes; this is only a safety net
     if (document.hidden) return 30000;
     if (live.status === "missed") return open && live.ai ? 8000 : 30000;   // AI is answering; just watch for a staff member joining
-    return open ? 3000 : 10000;
+    // open panel: 3s right after activity, easing to 8s once the chat has been quiet (idle resets on any new message)
+    var base = open ? Math.min(8000, 3000 + (live.idle || 0) * 500) : 10000;
+    // back off hard on errors / 429 / server trouble so a struggling server isn't hammered by every open widget
+    return live.fail ? Math.min(60000, base * Math.pow(2, live.fail)) : base;
   }
   function poll() {
     var t = localStorage.getItem(LS); if (!t || !liveOn()) return stopPolling();
+    var before = live.lastId;
     fetch(API + "/" + KEY + "/live/poll?session_token=" + encodeURIComponent(t) + "&after=" + live.lastId, { headers: { "Accept": "application/json" } })
-      .then(function (r) { if (!r.ok) throw 0; return r.json(); }).then(applyLive).catch(function () {})
+      .then(function (r) { if (!r.ok) throw 0; return r.json(); })
+      .then(function (d) { live.fail = 0; applyLive(d); live.idle = live.lastId !== before ? 0 : (live.idle || 0) + 1; })
+      .catch(function () { live.fail = Math.min((live.fail || 0) + 1, 4); })
       .then(function () { if (live.timer) schedulePoll(); });
   }
   function schedulePoll() { clearTimeout(live.timer); live.timer = setTimeout(poll, pollDelay()); }
-  function startPolling() { stopPolling(); schedulePoll(); }
-  function stopPolling() { if (live.timer) { clearTimeout(live.timer); live.timer = null; } }
+  function startPolling() { stopPolling(); schedulePoll(); connectRt(); }
+  function stopPolling() { if (live.timer) { clearTimeout(live.timer); live.timer = null; } closeRt(); }
+
+  // Realtime: the server pings this visitor's own conversation room when staff/AI reply or the status changes;
+  // we then run the normal /live/poll once. Falls back to adaptive polling whenever the socket is down.
+  var rt = { sock: null, up: false, token: null, loading: false, debounce: null };
+  function connectRt() {
+    var t = localStorage.getItem(LS);
+    if (!SOCKET || !t) return;
+    if (rt.sock && rt.token === t) return;
+    closeRt();
+    if (typeof window.io !== "function") {
+      if (rt.loading) return;
+      rt.loading = true;
+      var sc = document.createElement("script");
+      sc.src = SOCKET + "/socket.io/socket.io.js"; sc.async = true;
+      sc.onload = function () { rt.loading = false; if (live.timer) connectRt(); };
+      sc.onerror = function () { rt.loading = false; };
+      document.head.appendChild(sc);
+      return;
+    }
+    rt.token = t;
+    rt.sock = window.io(SOCKET + "/widget", { transports: ["websocket"], auth: { key: KEY, session_token: t }, reconnectionDelayMax: 30000 });
+    rt.sock.on("connect", function () { rt.up = true; if (live.timer) { clearTimeout(live.timer); poll(); } });   // resync after (re)connect
+    rt.sock.on("disconnect", function () { rt.up = false; if (live.timer) schedulePoll(); });
+    rt.sock.on("connect_error", function () { rt.up = false; });
+    rt.sock.on("widget_update", function () {
+      clearTimeout(rt.debounce);
+      rt.debounce = setTimeout(function () { if (live.timer) { clearTimeout(live.timer); poll(); } }, 100);
+    });
+  }
+  function closeRt() {
+    if (rt.sock) { try { rt.sock.disconnect(); } catch (e) {} }
+    rt.sock = null; rt.up = false; rt.token = null;
+  }
   document.addEventListener("visibilitychange", function () { if (!document.hidden && live.timer) { clearTimeout(live.timer); poll(); } });
 
   // After a refresh: redraw this browser's whole conversation (bot + staff) and reconnect to a live chat if there is one.

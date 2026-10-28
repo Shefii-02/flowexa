@@ -16,7 +16,12 @@ class WaMessageReceived implements ShouldBroadcastNow
 {
     use InteractsWithSockets, SerializesModels;
 
-    public function __construct(public WaMessage $message) {}
+    public function __construct(public WaMessage $message)
+    {
+        // The Laravel broadcaster is not wired to a socket server; mirror the event to staff browsers through
+        // backend-node's /staff socket (the web Inbox listens for `wa_message_new` there).
+        \App\Services\StaffRealtime::toCompany($message->company_id, 'wa_message_new', fn () => $this->broadcastWith());
+    }
 
     // Company-scoped private channel — every agent's browser subscribes to their
     // own company's channel, so a company only ever sees its own conversations.

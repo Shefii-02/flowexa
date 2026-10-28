@@ -5,9 +5,10 @@ import Picker from '@emoji-mart/react'
 import data from '@emoji-mart/data'
 import { Button, Badge } from '@/components/ui'
 import { getError } from '@/utils'
+import { subscribeWidgetChat } from '@/socket/staffSocket'
 import { liveChatApi, type InboxRow, type InboxTab, type LiveMessage } from './api'
 
-const POLL_MS = 3000
+const FALLBACK_POLL_MS = 30000 // only used while the realtime socket is down
 const MAX_BYTES = 2 * 1024 * 1024 // chat files are capped at 2 MB (also enforced server-side)
 const TABS: { key: InboxTab; label: string }[] = [
   { key: 'unread', label: 'Unread' },
@@ -76,11 +77,31 @@ export default function LiveChatPanel() {
   useEffect(() => {
     if ('Notification' in window && Notification.permission === 'default') void Notification.requestPermission()
   }, [])
+  const [socketUp, setSocketUp] = useState(false)
+  const activeRef = useRef<number | null>(null)
+  activeRef.current = activeId
+  const loadRef = useRef(load); loadRef.current = load
+  const loadMessagesRef = useRef<() => Promise<void>>(async () => {})
+
+  // Realtime: the server pushes "something changed" → refetch just that. Debounced so a burst of events is one fetch.
   useEffect(() => {
-    void load()
-    const t = setInterval(load, POLL_MS)
+    let listT: ReturnType<typeof setTimeout> | undefined
+    let msgT: ReturnType<typeof setTimeout> | undefined
+    const unsub = subscribeWidgetChat(e => {
+      clearTimeout(listT); listT = setTimeout(() => void loadRef.current(), 300)
+      if (e.conversation_id === activeRef.current) {
+        clearTimeout(msgT); msgT = setTimeout(() => void loadMessagesRef.current(), 150)
+      }
+    }, setSocketUp)
+    return () => { unsub(); clearTimeout(listT); clearTimeout(msgT) }
+  }, [])
+
+  useEffect(() => {
+    void load() // initial load + whenever the tab/search changes (and re-sync on reconnect)
+    if (socketUp) return
+    const t = setInterval(() => { if (!document.hidden) void load() }, FALLBACK_POLL_MS)
     return () => clearInterval(t)
-  }, [load])
+  }, [load, socketUp])
 
   const loadMessages = useCallback(async () => {
     if (!activeId) return
@@ -93,15 +114,17 @@ export default function LiveChatPanel() {
       }
     } catch { /* ignore */ }
   }, [activeId])
+  loadMessagesRef.current = loadMessages
 
   useEffect(() => {
     lastId.current = 0
     setMessages([])
     if (!activeId) return
-    void loadMessages()
-    const t = setInterval(loadMessages, POLL_MS)
+    void loadMessages().then(() => loadRef.current()) // opening marks it read → refresh counts
+    if (socketUp) return
+    const t = setInterval(() => { if (!document.hidden) void loadMessages() }, FALLBACK_POLL_MS / 6)
     return () => clearInterval(t)
-  }, [activeId, loadMessages])
+  }, [activeId, loadMessages, socketUp])
 
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages])
 

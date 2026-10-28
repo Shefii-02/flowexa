@@ -20,6 +20,10 @@ class WidgetMessage extends Model
     protected static function booted(): void
     {
         static::creating(fn (WidgetMessage $m) => $m->created_at ??= now());
+        static::created(function (WidgetMessage $m) {
+            $companyId = WidgetConversation::whereKey($m->widget_conversation_id)->value('company_id');
+            \App\Modules\Catalog\Support\WidgetRealtime::changed($companyId, (int) $m->widget_conversation_id, 'message', !in_array($m->role, ['user', 'visitor'], true));
+        });
     }
 
     public function conversation(): BelongsTo

@@ -1,5 +1,6 @@
 // src/pages/inbox/InboxPage.tsx
 // WhatsApp-style single-conversation inbox for /wa-cloud/inbox.
+import { subscribeStaffEvent } from '@/socket/staffSocket'
 import { useEffect, useLayoutEffect, useRef, useState, useCallback } from 'react'
 import {
   Search, Send, Info, UserPlus, LogOut, MessageSquare,
@@ -138,7 +139,6 @@ export default function InboxPage() {
   const [loadingThread, setLoadingThread] = useState(false)
   const [filter, setFilter]               = useState<'unread' | 'all' | 'mine' | 'unassigned'>('all')
   const [search, setSearch]               = useState('')
-  const [companyId, setCompanyId]         = useState<number | null>(null)
   const [drawerOpen, setDrawerOpen]       = useState(false)
   // conversation list paging + server-side search
   const [page, setPage]                   = useState(1)
@@ -190,6 +190,7 @@ export default function InboxPage() {
       .finally(() => { if (listReqRef.current === token) setLoadingList(false) })
   }, [fetchConversations])
 
+  const loadListRef = useRef(loadList); loadListRef.current = loadList
   useEffect(() => { loadList() }, [loadList])
   useEffect(() => {
     const t = setInterval(() => {
@@ -236,7 +237,6 @@ export default function InboxPage() {
         setMessages(r.data.messages || [])
         setHasMoreMsgs(!!r.data.has_more)
         setActiveConversation(r.data.conversation ?? null)
-        setCompanyId(r.data.conversation?.company_id ?? companyId)
         setConversations(prev => prev.map(c => c.id === id ? { ...c, unread_count: 0 } : c))
       })
       .catch(e => { if (reqRef.current === token) toast.error(getError(e)) })
@@ -284,33 +284,32 @@ export default function InboxPage() {
   }, [reply])
 
   // ── realtime ────────────────────────────────────────────────────────────
+  // Pushed by Laravel through backend-node's /staff socket (same payload the old Echo `.message.new` carried).
   useEffect(() => {
-    if (!companyId || !window.Echo) return
-    const chan = window.Echo.private(`company.${companyId}.conversations`)
-      .listen('.message.new', (e: any) => {
-        const { message, conversation } = e
-        setConversations(prev => {
-          const others = prev.filter(c => c.id !== conversation.id)
-          const merged = { ...prev.find(c => c.id === conversation.id), ...conversation }
-          return [merged, ...others]
-        })
-        setActiveId(current => {
-          if (current === message.conversation_id) {
-            setMessages(prev => {
-              const exists = prev.some(m => m.id === message.id)
-              const withSender = { ...message, sentBy: message.sent_by_name ? { name: message.sent_by_name } : message.sentBy }
-              return exists ? prev.map(m => m.id === message.id ? { ...m, ...withSender } : m) : [...prev, withSender]
-            })
-          }
-          return current
-        })
+    let everUp = false
+    return subscribeStaffEvent<any>('wa_message_new', ({ message, conversation }) => {
+      setConversations(prev => {
+        const others = prev.filter(c => c.id !== conversation.id)
+        const merged = { ...prev.find(c => c.id === conversation.id), ...conversation }
+        return [merged, ...others]
       })
-    return () => { window.Echo.leave(`company.${companyId}.conversations`) }
-  }, [companyId])
-
-  useEffect(() => {
-    if (!companyId && conversations[0]?.company_id) setCompanyId(conversations[0].company_id)
-  }, [conversations, companyId])
+      setActiveId(current => {
+        if (current === message.conversation_id) {
+          setMessages(prev => {
+            const exists = prev.some(m => m.id === message.id)
+            const withSender = { ...message, sentBy: message.sent_by_name ? { name: message.sent_by_name } : message.sentBy }
+            return exists ? prev.map(m => m.id === message.id ? { ...m, ...withSender } : m) : [...prev, withSender]
+          })
+        }
+        return current
+      })
+    }, up => {
+      // After a socket reconnect, resync the list — pushes sent while we were offline are lost.
+      if (!up) return
+      if (everUp) loadListRef.current()
+      everUp = true
+    })
+  }, [])
 
   // ── claim / release / send ──────────────────────────────────────────────
   const patchActive = (patch: any) => {

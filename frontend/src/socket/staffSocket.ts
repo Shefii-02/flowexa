@@ -82,3 +82,48 @@ export function disconnectStaffSocket(staffId: number): void {
 export function getStaffSocket(): Socket | null {
   return socket
 }
+
+/**
+ * Subscribe to a server-pushed event on the staff socket. Works even if called before the socket exists
+ * (child effects run before DashboardLayout connects), and `onConnectionChange` reports socket up/down so
+ * callers can run a slow fallback poll only while disconnected. Returns an unsubscribe function.
+ */
+export function subscribeStaffEvent<T>(
+  event: string,
+  onEvent: (payload: T) => void,
+  onConnectionChange: (connected: boolean) => void = () => {},
+): () => void {
+  const up = () => onConnectionChange(true)
+  const down = () => onConnectionChange(false)
+  let attached: Socket | null = null
+  const attach = (): boolean => {
+    if (!socket) return false
+    attached = socket
+    attached.on(event, onEvent)
+    attached.on('connect', up)
+    attached.on('disconnect', down)
+    attached.on('connect_error', down)
+    onConnectionChange(attached.connected)
+    return true
+  }
+  let waiter: ReturnType<typeof setInterval> | undefined
+  if (!attach()) {
+    onConnectionChange(false)
+    waiter = setInterval(() => { if (attach()) clearInterval(waiter) }, 500)
+  }
+  return () => {
+    clearInterval(waiter)
+    attached?.off(event, onEvent)
+    attached?.off('connect', up)
+    attached?.off('disconnect', down)
+    attached?.off('connect_error', down)
+  }
+}
+
+/** Website-chat changes (new visitor/staff/AI message, status change) for this company. */
+export function subscribeWidgetChat(
+  onChange: (e: { conversation_id: number; kind: string }) => void,
+  onConnectionChange: (connected: boolean) => void,
+): () => void {
+  return subscribeStaffEvent('widget_chat_update', onChange, onConnectionChange)
+}

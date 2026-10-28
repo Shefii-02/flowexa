@@ -23,6 +23,9 @@ return [
     // .env exactly, or NotifyStaffAiHandoff/NotifyStaffNewLead's calls will be rejected.
     'node' => [
         'url' => env('NODE_SERVICE_URL', 'http://localhost:3000'),
+        // Browser-reachable URL of the same service — used by the embeddable website-chat widget to open its
+        // realtime socket. Leave empty to keep the widget on (adaptive) polling only.
+        'public_url' => env('NODE_PUBLIC_URL', ''),
     ],
     'internal' => [
         'key' => env('INTERNAL_API_KEY'),

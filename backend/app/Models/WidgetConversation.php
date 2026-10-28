@@ -34,6 +34,11 @@ class WidgetConversation extends Model
 
     protected static function booted(): void
     {
+        static::saved(fn (WidgetConversation $c) => \App\Modules\Catalog\Support\WidgetRealtime::changed(
+            $c->company_id, $c->id, 'conversation',
+            $c->wasChanged(['live_status', 'status', 'ai_active', 'staff_name']),
+        ));
+        static::deleted(fn (WidgetConversation $c) => \App\Modules\Catalog\Support\WidgetRealtime::changed($c->company_id, $c->id, 'deleted'));
         static::deleting(fn (WidgetConversation $c) => \App\Modules\Catalog\Support\LiveChatSupport::purgeFiles($c));
     }
 
