@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Modules\Analytics\Services\AnalyticsService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 
 class AnalyticsController extends Controller
 {
@@ -40,6 +41,7 @@ class AnalyticsController extends Controller
     // GET /v1/analytics/staff
     public function staff(): JsonResponse
     {
+        Log::info('Fetching staff analytics.');
         $this->authorizeViewAll();
         return response()->json(
             $this->analyticsService->staff(auth()->user()->company_id)
