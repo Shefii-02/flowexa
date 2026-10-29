@@ -111,3 +111,51 @@ export const liveChatApi = {
   analytics: (days = 30) => api.get('/widgets/live/analytics', { params: { days } }),
   end: (id: number) => api.post(`/widgets/live/${id}/end`),
 }
+
+// ── Website live chat served by backend-node (same MySQL tables; realtime over the /staff socket) ──
+import { nodeApi } from '@/api/nodeClient'
+
+export interface NodeInboxRow extends InboxRow {
+  widget_name?: string
+  is_unread: boolean
+  ai_active: boolean
+}
+export interface NodeInboxPage {
+  data: NodeInboxRow[]
+  page: number
+  per_page: number
+  has_more: boolean
+  counts: Record<InboxTab, number>
+}
+export interface NodeConversation {
+  id: number
+  chat_widget_id: number
+  visitor_name: string | null
+  visitor_phone: string | null
+  status: string
+  case_status?: CaseStatus
+  live_status: 'waiting' | 'live' | 'missed' | 'ended' | null
+  staff_name: string | null
+  assigned_user_id: number | null
+  page_url: string | null
+  contact_id: number | null
+  lead_id: number | null
+  flagged_at: string | null
+  callback_confirmed_at: string | null
+}
+
+export const nodeChatApi = {
+  inbox: (p: { tab: InboxTab; q?: string; page?: number; per_page?: number }) =>
+    nodeApi.get<NodeInboxPage>('/widget-chat/inbox', { params: { ...p, q: p.q || undefined } }),
+  me: () => nodeApi.get<{ muted: boolean; handling: number; limit: number }>('/widget-chat/me'),
+  setMuted: (muted: boolean) => nodeApi.put<{ muted: boolean }>('/widget-chat/me', { muted }),
+  show: (id: number, after = 0) =>
+    nodeApi.get<{ conversation: NodeConversation; messages: LiveMessage[] }>(`/widget-chat/${id}`, { params: { after } }),
+  older: (id: number, before: number) =>
+    nodeApi.get<{ messages: LiveMessage[]; has_more: boolean }>(`/widget-chat/${id}/older`, { params: { before, limit: 50 } }),
+  accept: (id: number) => nodeApi.post(`/widget-chat/${id}/accept`),
+  reply: (id: number, text: string, replyToId?: number | null) =>
+    nodeApi.post<{ message: LiveMessage }>(`/widget-chat/${id}/reply`, { text, reply_to_id: replyToId ?? undefined }),
+  end: (id: number) => nodeApi.post(`/widget-chat/${id}/end`),
+  markRead: (id: number) => nodeApi.post(`/widget-chat/${id}/read`),
+}

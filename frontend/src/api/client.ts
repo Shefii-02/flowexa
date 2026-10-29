@@ -66,6 +66,20 @@ let isRefreshing = false
 let refreshFailed = false
 let queue: Array<{ resolve: (v: unknown) => void; reject: (e: unknown) => void }> = []
 
+// A valid access token for callers that talk to a DIFFERENT server than this client (e.g. backend-node): same
+// expiry pre-check + shared refresh as the request interceptor above. Never throws — a failed refresh just
+// returns whatever token we have and the server's 401 surfaces through the normal error path.
+export const getFreshToken = async (): Promise<string | null> => {
+  let token = store.getState().auth.token
+  if (token && !refreshFailed) {
+    const left = tokenExpiresInMs(token)
+    if (left !== null && left < 30_000) {
+      try { token = await refreshOnce() } catch { /* handled by the next api call */ }
+    }
+  }
+  return token
+}
+
 // Called when another tab hands this tab a fresh token (see the `storage`
 // listener in store/index.ts) — clears this tab's "refresh is dead" flag so
 // it doesn't keep treating the session as unrecoverable after a token it

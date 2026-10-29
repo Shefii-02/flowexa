@@ -121,6 +121,14 @@
     @apply btn text-gray-600 hover:bg-gray-100;
   }
 
+  .pill {
+    @apply text-[10px] font-semibold px-1.5 py-0.5 rounded-full shrink-0;
+  }
+
+  .icon-btn {
+    @apply inline-grid place-items-center w-8 h-8 shrink-0 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-gray-800 transition text-base leading-none;
+  }
+
   .btn-sm {
     @apply px-3 py-1.5 text-xs;
   }

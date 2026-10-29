@@ -149,6 +149,7 @@ import WaAgentPipelines from '@/pages/wa-agent/pipelines'
 import WaAgentAiAgent from '@/pages/wa-agent/ai-agent'
 import CatalogPage from '@/pages/wa-agent/catalog/CatalogPage'
 import WidgetPage from '@/pages/wa-agent/widget/WidgetPage'
+import WidgetChatsPage from '@/pages/wa-agent/widget/chats/WidgetChatsPage'
 import SetupGuidePage from '@/pages/setup-guide/SetupGuidePage'
 import WaAgentLogs from '@/pages/wa-agent/logs'
 import LeadIntelligencePage from '@/pages/wa-agent/lead-intelligence'
@@ -263,6 +264,7 @@ export default function App() {
 
               <Route path="catalog" element={<CatalogPage />} />
               <Route path="website-widget" element={<WidgetPage />} />
+              <Route path="website-widget/chats" element={<WidgetChatsPage />} />
               {/* WA Agent module */}
               <Route path="wa-agent" element={<WaAgentShell />}>
 

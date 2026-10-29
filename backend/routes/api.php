@@ -1286,6 +1286,18 @@ Route::prefix('v1')->group(function () {
     // Google OAuth redirect-back (browser hit, not an API call).
     Route::get('/google/callback', [\App\Modules\Google\Http\Controllers\GoogleIntegrationController::class, 'callback']);
 
+    // ── Server-to-server: backend-node asks "may this staff member use X?" (single source of truth for permissions) ──
+    Route::post('/internal/staff-can', function (\Illuminate\Http\Request $request) {
+        $key = (string) config('services.internal.key');
+        abort_unless($key !== '' && hash_equals($key, (string) $request->header('X-Internal-Key')), 401);
+        $data = $request->validate(['user_id' => ['required', 'integer'], 'permission' => ['required', 'string', 'max:100']]);
+        $u = \App\Models\User::find($data['user_id']);
+        return response()->json([
+            'can'        => (bool) ($u && $u->is_active && $u->hasPermission($data['permission'])),
+            'company_id' => $u?->company_id, 'name' => $u?->name,
+        ]);
+    })->middleware('throttle:600,1');
+
     // ── Public website chat widget (called from customer sites) ──
     Route::prefix('public/widget')->middleware(['widget.cors'])->group(function () {
         Route::get('/{key}.js',        [\App\Modules\Catalog\Http\Controllers\WidgetPublicController::class, 'script']);

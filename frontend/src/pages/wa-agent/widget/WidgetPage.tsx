@@ -7,7 +7,6 @@ import api from '@/api/client'
 import { Link } from 'react-router-dom'
 import { flowBuilderApi } from '@/api'
 import { FlowImportExportModal } from '../../flow/components/FlowImportExportModal'
-import LiveChatPanel from './LiveChatPanel'
 import ChatReviewPanel from './ChatReviewPanel'
 import { PermissionGate } from '@/components/ui/PermissionGate'
 import { widgetApi, type ChatWidget, type WidgetConversation, type WidgetMessage } from './api'
@@ -135,7 +134,16 @@ export default function WidgetPage() {
         <Button onClick={() => setEditor(emptyDraft())}>+ New widget</Button>
       </div>
 
-      <PermissionGate permission="widget_chat.handle"><LiveChatPanel /></PermissionGate>
+      <PermissionGate permission="widget_chat.handle">
+        <Link to="/website-widget/chats" className="card p-4 flex items-center gap-4 hover:shadow-md transition group">
+          <div className="w-11 h-11 rounded-xl bg-brand-50 grid place-items-center text-xl">💬</div>
+          <div className="flex-1">
+            <div className="font-semibold text-sm">Website chats</div>
+            <div className="text-xs text-gray-500">Realtime inbox — handle up to 4 visitors side by side.</div>
+          </div>
+          <span className="text-brand-600 text-sm font-medium group-hover:translate-x-0.5 transition">Open →</span>
+        </Link>
+      </PermissionGate>
       <PermissionGate permission="widget_chat.review"><ChatReviewPanel /></PermissionGate>
 
       {loading ? (
