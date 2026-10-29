@@ -243,6 +243,14 @@ return Application::configure(basePath: dirname(__DIR__))
                 ], 405);
             }
 
+            // abort(403, '...') / abort(422, ...) etc. — keep the status the code asked for instead of
+            // collapsing it into the generic 500 below.
+            if ($e instanceof \Symfony\Component\HttpKernel\Exception\HttpExceptionInterface) {
+                return response()->json([
+                    'message' => $e->getMessage() ?: (\Symfony\Component\HttpFoundation\Response::$statusTexts[$e->getStatusCode()] ?? 'Error'),
+                ], $e->getStatusCode(), $e->getHeaders());
+            }
+
             if ($e instanceof \Illuminate\Database\QueryException) {
                 \Illuminate\Support\Facades\Log::error($e);
 
