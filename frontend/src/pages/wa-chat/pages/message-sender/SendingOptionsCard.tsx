@@ -8,7 +8,7 @@ export interface SenderLimits {
 }
 
 export interface SendingOpts {
-  perMinMin: number; perMinMax: number; cap5: number
+  perMinMin: number; perMinMax: number; cap5: number     // set by the platform admin — shown read-only, never sent
   variationOn: boolean
   variants: string[]        // extra texts; the message being written is always the first one
   shareNumbers: string[]    // numbers rotated into the messages
@@ -28,9 +28,6 @@ const digits = (s: string) => s.replace(/\D/g, '')
 
 /** Why the options cannot be sent yet, or null when they are fine. */
 export function sendingOptionsError(o: SendingOpts, l: SenderLimits): string | null {
-  if (o.perMinMin < 1 || o.perMinMax < o.perMinMin) return 'Messages per minute: the lowest must be at least 1 and not above the highest.'
-  if (o.perMinMax > l.max_per_min) return `Messages per minute cannot be more than ${l.max_per_min}.`
-  if (o.cap5 < l.min_per_5min_cap || o.cap5 > l.max_per_5min_cap) return `Messages per 5 minutes must be between ${l.min_per_5min_cap} and ${l.max_per_5min_cap}.`
   if (o.variationOn) {
     const valid = new Set(o.shareNumbers.map(digits).filter(d => d.length >= 7 && d.length <= 15))
     if (o.shareNumbers.some(n => n.trim() && !(digits(n).length >= 7 && digits(n).length <= 15))) return 'One of the numbers to share is not a valid phone number.'
@@ -40,7 +37,6 @@ export function sendingOptionsError(o: SendingOpts, l: SenderLimits): string | n
 }
 
 export const toSendingOptionsPayload = (o: SendingOpts) => ({
-  pacing: { per_min_min: o.perMinMin, per_min_max: o.perMinMax, per_5min_cap: o.cap5 },
   variation: {
     enabled: o.variationOn,
     variants: o.variants.map(v => v.trim()).filter(Boolean),
@@ -64,7 +60,6 @@ export default function SendingOptionsCard({ value, onChange, limits, recipientC
   recipientCount: number; textOnly: boolean; disabled?: boolean
 }) {
   const set = (patch: Partial<SendingOpts>) => onChange({ ...value, ...patch })
-  const num = (s: string) => Math.max(0, Math.floor(Number(s) || 0))
 
   // keep at least the required number of share boxes on screen
   useEffect(() => {
@@ -79,23 +74,11 @@ export default function SendingOptionsCard({ value, onChange, limits, recipientC
 
   return (
     <div className="space-y-3">
-      <div className="rounded-lg bg-gray-50 border border-gray-100 p-3 space-y-2">
-        <p className="text-xs font-medium text-gray-600">Delivery speed</p>
-        <div className="grid grid-cols-3 gap-2">
-          <label className="text-[11px] text-gray-500">Per minute (from)
-            <input type="number" min={1} max={limits.max_per_min} disabled={disabled} className={inputCls} value={value.perMinMin} onChange={e => set({ perMinMin: num(e.target.value) })} />
-          </label>
-          <label className="text-[11px] text-gray-500">Per minute (to)
-            <input type="number" min={1} max={limits.max_per_min} disabled={disabled} className={inputCls} value={value.perMinMax} onChange={e => set({ perMinMax: num(e.target.value) })} />
-          </label>
-          <label className="text-[11px] text-gray-500">Max per 5 min
-            <input type="number" min={limits.min_per_5min_cap} max={limits.max_per_5min_cap} disabled={disabled} className={inputCls} value={value.cap5} onChange={e => set({ cap5: num(e.target.value) })} />
-          </label>
-        </div>
+      <div className="rounded-lg bg-gray-50 border border-gray-100 p-3 space-y-1">
+        <p className="text-xs font-medium text-gray-600">Delivery speed <span className="text-gray-400 font-normal">· set by the platform</span></p>
         <p className="text-[11px] text-gray-500">
-          Each minute a random {value.perMinMin}–{value.perMinMax} messages go out, spread across the minute, and never more than {value.cap5} in any 5 minutes
-          (allowed: up to {limits.max_per_min}/min, {limits.min_per_5min_cap}–{limits.max_per_5min_cap} per 5 min).
-          {recipientCount > 0 && !err && <> <b className="text-gray-700">{recipientCount} recipients ≈ {formatDuration(mins)}.</b></>}
+          Each minute a random <b className="text-gray-700">{value.perMinMin}–{value.perMinMax}</b> messages go out, spread across the minute, and never more than <b className="text-gray-700">{value.cap5}</b> in any 5 minutes.
+          {recipientCount > 0 && <> <b className="text-gray-700">{recipientCount} recipients ≈ {formatDuration(mins)}.</b></>}
         </p>
       </div>
 

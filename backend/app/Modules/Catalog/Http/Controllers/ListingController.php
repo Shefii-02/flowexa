@@ -7,6 +7,7 @@ use App\Models\Listing;
 use App\Models\ListingCustomField;
 use App\Modules\Catalog\IndustryTemplates;
 use App\Modules\Catalog\ListingMatcher;
+use App\Modules\Catalog\Support\ListingCsv;
 use Illuminate\Http\{JsonResponse, Request};
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
@@ -159,71 +160,127 @@ class ListingController extends Controller
         return Storage::download($path, 'listings.csv');
     }
 
-    /** CSV import — matches export()'s column set. Skips a row if a listing with the same (type, title) already exists. */
+    private function companyTemplate(): array
+    {
+        return IndustryTemplates::get(auth()->user()->company->industry_template ?? null);
+    }
+
+    /** The columns this company's business type uses in an import file — shown next to the upload box. */
+    public function importColumns(): JsonResponse
+    {
+        $t = $this->companyTemplate();
+        return response()->json(['business_type' => $t['name'] ?? 'Other business', 'listing_type' => $t['listing_type'] ?? 'product', 'columns' => ListingCsv::columns($t)]);
+    }
+
+    /** A ready-to-fill sample file for this company's business type (header + two example rows). */
+    public function importTemplate(): \Symfony\Component\HttpFoundation\Response
+    {
+        $t = $this->companyTemplate();
+        $type = $t['listing_type'] ?? 'product';
+        return response(ListingCsv::sample($t), 200, [
+            'Content-Type'        => 'text/csv; charset=UTF-8',
+            'Content-Disposition' => "attachment; filename=\"{$type}_import_sample.csv\"",
+        ]);
+    }
+
+    /**
+     * CSV import. Reads the plain columns of this business type (title, price… plus `attr_<field>` per tracked field,
+     * `custom:<Name>` for extra fields) and still accepts the older attributes_json / custom_fields_json / type columns,
+     * so an exported file re-imports. A row whose (type, title) already exists is skipped, or updated when
+     * on_duplicate=update. Problems in one row never stop the others.
+     */
     public function import(Request $request): JsonResponse
     {
-        $request->validate(['file' => ['required', 'file', 'mimes:csv,txt']]);
-        $companyId    = auth()->user()->company_id;
-        $defaultType  = IndustryTemplates::listingType(auth()->user()->company->industry_template ?? null);
+        $request->validate([
+            'file'         => ['required', 'file', 'mimes:csv,txt', 'max:5120'],
+            'on_duplicate' => ['nullable', Rule::in(['skip', 'update'])],
+        ]);
+        $update      = $request->input('on_duplicate') === 'update';
+        $companyId   = auth()->user()->company_id;
+        $template    = $this->companyTemplate();
+        $defaultType = $template['listing_type'] ?? 'product';
+        $schema      = collect($template['attribute_schema'] ?? [])->keyBy('key');
 
-        $handle = fopen($request->file('file')->getRealPath(), 'r');
-        if ($handle === false) {
-            return response()->json(['message' => 'Unable to open the uploaded file.'], 422);
+        [$handle, $delimiter] = ListingCsv::open((string) file_get_contents($request->file('file')->getRealPath()));
+        $headers = array_map(fn ($h) => trim((string) $h), fgetcsv($handle, 0, $delimiter, '"', '\\') ?: []);
+        $lower   = array_map('mb_strtolower', $headers);
+        if (!in_array('title', $lower, true)) {
+            fclose($handle);
+            return response()->json(['message' => 'The first row must be a header row containing a “title” column. Download the sample file to see the layout.'], 422);
         }
 
-        $headers = array_map('trim', fgetcsv($handle));
-        $imported = 0; $skipped = 0; $failed = 0; $errors = []; $row = 0;
+        $imported = $updated = $skipped = $failed = 0; $errors = []; $warnings = []; $row = 0;
 
-        while (($line = fgetcsv($handle)) !== false) {
+        while (($line = fgetcsv($handle, 0, $delimiter, '"', '\\')) !== false) {
             $row++;
-            if (count($line) < count($headers)) { $skipped++; continue; }
-            $data = array_combine($headers, $line);
-            $title = trim($data['title'] ?? '');
-            if (!$title) { $errors[] = "Row {$row}: missing title"; $failed++; continue; }
+            if (count(array_filter($line, fn ($c) => trim((string) $c) !== '')) === 0) continue;       // blank line
+            $line = array_pad($line, count($headers), '');
+            $data = [];
+            foreach ($headers as $i => $h) $data[mb_strtolower($h)] = (string) ($line[$i] ?? '');
 
+            $title = trim($data['title'] ?? '');
+            if ($title === '') { $errors[] = "Row {$row}: missing title"; $failed++; continue; }
             $type = trim($data['type'] ?? '') ?: $defaultType;
 
             try {
-                $exists = Listing::where('company_id', $companyId)
-                    ->where('type', $type)
-                    ->whereRaw('LOWER(title) = ?', [mb_strtolower($title)])
-                    ->exists();
-                if ($exists) { $skipped++; continue; }
-
-                $attributes = null;
-                if (!empty($data['attributes_json'])) {
+                // attributes: the JSON column first, then the plain attr_ columns on top
+                $attributes = [];
+                if (trim($data['attributes_json'] ?? '') !== '') {
                     $decoded = json_decode($data['attributes_json'], true);
-                    if (json_last_error() !== JSON_ERROR_NONE) { $errors[] = "Row {$row}: attributes_json is not valid JSON"; $failed++; continue; }
+                    if (json_last_error() !== JSON_ERROR_NONE || !is_array($decoded)) { $errors[] = "Row {$row}: attributes_json is not valid JSON"; $failed++; continue; }
                     $attributes = $decoded;
                 }
+                foreach ($schema as $key => $field) {
+                    $col = 'attr_' . mb_strtolower($key);
+                    if (!array_key_exists($col, $data)) continue;
+                    [$val, $problem] = ListingCsv::typed($field, $data[$col]);
+                    if ($problem) $warnings[] = "Row {$row}: {$problem}";
+                    if ($val !== null) $attributes[$key] = $val;
+                }
 
+                // extra fields: custom_fields_json, then "custom:<Name>" columns
                 $customFields = null;
-                if (!empty($data['custom_fields_json'])) {
+                if (trim($data['custom_fields_json'] ?? '') !== '') {
                     $decoded = json_decode($data['custom_fields_json'], true);
-                    if (json_last_error() !== JSON_ERROR_NONE) { $errors[] = "Row {$row}: custom_fields_json is not valid JSON"; $failed++; continue; }
+                    if (json_last_error() !== JSON_ERROR_NONE || !is_array($decoded)) { $errors[] = "Row {$row}: custom_fields_json is not valid JSON"; $failed++; continue; }
                     $customFields = $decoded;
+                }
+                foreach ($headers as $i => $h) {
+                    if (!preg_match('/^custom\s*[:_]\s*(.+)$/i', $h, $m) || trim((string) ($line[$i] ?? '')) === '') continue;
+                    $customFields[] = ['key' => trim($m[1]), 'value' => trim((string) $line[$i])];
                 }
 
                 $media = null;
-                if (!empty($data['media_urls'])) {
-                    $media = collect(preg_split('/[|,]/', $data['media_urls']))
+                if (trim($data['media_urls'] ?? '') !== '') {
+                    $media = collect(preg_split('/[|\s]+|,(?=https?:)/', $data['media_urls']))
                         ->map(fn ($u) => trim($u))->filter()->map(fn ($u) => ['url' => $u])->values()->all();
                 }
 
-                $listing = Listing::create([
-                    'company_id'   => $companyId,
-                    'created_by'   => auth()->id(),
-                    'type'         => $type,
-                    'title'        => $title,
-                    'description'  => $data['description'] ?? null,
-                    'status'       => in_array($data['status'] ?? null, ['draft', 'active', 'inactive', 'sold'], true) ? $data['status'] : 'active',
-                    'price'        => is_numeric($data['price'] ?? null) ? $data['price'] : null,
-                    'price_unit'   => $data['price_unit'] ?? null,
-                    'currency'     => $data['currency'] ?? 'INR',
-                    'location'     => $data['location'] ?? null,
-                    'incentive_percentage' => is_numeric($data['incentive_percentage'] ?? null) ? $data['incentive_percentage'] : null,
-                    'attributes'   => $attributes,
-                    'media'        => $media,
+                $status = mb_strtolower(trim($data['status'] ?? ''));
+                $price  = preg_replace('/[^0-9.]/', '', $data['price'] ?? '');
+                $incent = preg_replace('/[^0-9.]/', '', $data['incentive_percentage'] ?? '');
+                $fields = [
+                    'description'  => trim($data['description'] ?? '') ?: null,
+                    'status'       => in_array($status, ListingCsv::STATUSES, true) ? $status : 'active',
+                    'price'        => is_numeric($price) ? $price : null,
+                    'price_unit'   => trim($data['price_unit'] ?? '') ?: null,
+                    'currency'     => strtoupper(trim($data['currency'] ?? '')) ?: 'INR',
+                    'location'     => trim($data['location'] ?? '') ?: null,
+                    'incentive_percentage' => is_numeric($incent) ? $incent : null,
+                ];
+
+                $existing = Listing::where('company_id', $companyId)->where('type', $type)->whereRaw('LOWER(title) = ?', [mb_strtolower($title)])->first();
+                if ($existing) {
+                    if (!$update) { $skipped++; continue; }
+                    $existing->update($fields + ['attributes' => array_merge($existing->attributes ?? [], $attributes) ?: null] + ($media !== null ? ['media' => $media] : []));
+                    $this->syncCustomFields($existing, $customFields);
+                    $updated++;
+                    continue;
+                }
+
+                $listing = Listing::create($fields + [
+                    'company_id' => $companyId, 'created_by' => auth()->id(), 'type' => $type, 'title' => $title,
+                    'attributes' => $attributes ?: null, 'media' => $media,
                 ]);
                 $this->syncCustomFields($listing, $customFields);
                 $imported++;
@@ -234,10 +291,15 @@ class ListingController extends Controller
         }
         fclose($handle);
 
+        $parts = ["{$imported} added"];
+        if ($update) $parts[] = "{$updated} updated";
+        $parts[] = "{$skipped} skipped (already exist)";
+        $parts[] = "{$failed} failed";
         return response()->json([
-            'message'  => "{$imported} imported, {$skipped} skipped, {$failed} failed.",
-            'imported' => $imported, 'skipped' => $skipped, 'failed' => $failed,
+            'message'  => implode(', ', $parts) . '.',
+            'imported' => $imported, 'updated' => $updated, 'skipped' => $skipped, 'failed' => $failed,
             'errors'   => array_slice($errors, 0, 50),
+            'warnings' => array_slice($warnings, 0, 50),
         ], 202);
     }
 

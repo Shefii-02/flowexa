@@ -1210,6 +1210,8 @@ Route::prefix('v1')->group(function () {
         Route::prefix('/listings')->middleware(['company.active', 'permission:catalog.view'])->group(function () {
             Route::get('/templates',       [\App\Modules\Catalog\Http\Controllers\ListingController::class, 'templates']);
             Route::get('/export',          [\App\Modules\Catalog\Http\Controllers\ListingController::class, 'export']);
+            Route::get('/import-columns',  [\App\Modules\Catalog\Http\Controllers\ListingController::class, 'importColumns']);
+            Route::get('/import-template', [\App\Modules\Catalog\Http\Controllers\ListingController::class, 'importTemplate']);
             Route::get('/',                [\App\Modules\Catalog\Http\Controllers\ListingController::class, 'index']);
             Route::get('/{id}',            [\App\Modules\Catalog\Http\Controllers\ListingController::class, 'show']);
 

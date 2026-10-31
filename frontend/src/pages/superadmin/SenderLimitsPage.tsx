@@ -8,14 +8,11 @@ import toast from 'react-hot-toast'
 type Limits = Record<string, number>
 
 const FIELDS: { key: string; label: string; help: string }[] = [
-  { key: 'default_per_min_min',  label: 'Default messages per minute — from', help: 'A new campaign starts with this as its lowest.' },
-  { key: 'default_per_min_max',  label: 'Default messages per minute — to',   help: 'A random number between “from” and “to” goes out each minute (default 2–3).' },
-  { key: 'default_per_5min_cap', label: 'Default max per 5 minutes',          help: 'Pre-filled cap for any 5 minutes of sending.' },
-  { key: 'max_per_min',          label: 'Highest messages per minute a company may choose', help: 'Companies cannot set a campaign faster than this.' },
-  { key: 'min_per_5min_cap',     label: 'Lowest allowed 5-minute cap',        help: 'e.g. 10' },
-  { key: 'max_per_5min_cap',     label: 'Highest allowed 5-minute cap',       help: 'e.g. 500' },
-  { key: 'min_share_numbers',    label: 'Numbers to share — minimum',         help: 'Anti-block variation needs at least this many different numbers (default 3).' },
-  { key: 'max_variants',         label: 'Message versions — maximum',         help: 'Including the main message.' },
+  { key: 'default_per_min_min',  label: 'Messages per minute — from', help: 'The lowest number sent in a minute.' },
+  { key: 'default_per_min_max',  label: 'Messages per minute — to',   help: 'A random number between “from” and “to” goes out each minute (default 2–3).' },
+  { key: 'default_per_5min_cap', label: 'Max messages per 5 minutes', help: 'Never exceeded in any 5 minutes (10–500).' },
+  { key: 'min_share_numbers',    label: 'Numbers to share — minimum', help: 'Anti-block variation needs at least this many different numbers (default 3).' },
+  { key: 'max_variants',         label: 'Message versions — maximum', help: 'Including the main message.' },
 ]
 
 export default function SenderLimitsPage() {
@@ -40,10 +37,10 @@ export default function SenderLimitsPage() {
   return (
     <div className="space-y-5 max-w-3xl">
       <div>
-        <h1 className="text-xl font-bold text-gray-900">Message Sender Limits</h1>
+        <h1 className="text-xl font-bold text-gray-900">Message Sender Speed</h1>
         <p className="text-sm text-gray-500">
-          Controls how fast companies can send from WA Chat → Message Sender. Each campaign sends a random number of messages per minute inside a rolling 5-minute cap.
-          Companies pick their own speed, but only within these limits.
+          Sets the delivery speed for every company's WA Chat → Message Sender campaigns: a random number of messages each minute, inside a rolling 5-minute cap.
+          Companies see this speed but cannot change it.
         </p>
       </div>
       <div className="card p-4 grid sm:grid-cols-2 gap-4">

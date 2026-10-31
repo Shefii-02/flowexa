@@ -424,7 +424,7 @@ export function MessageSender() {
     api.get('/message-sender/limits').then(r => {
       const l: SenderLimits = { ...FALLBACK_LIMITS, ...(r.data?.data ?? {}) }
       setSenderLimits(l)
-      setSendingOpts(prev => ({ ...defaultOpts(l), variants: prev.variants, shareNumbers: prev.shareNumbers.some(n => n.trim()) ? prev.shareNumbers : defaultOpts(l).shareNumbers }))
+      setSendingOpts(prev => ({ ...defaultOpts(l), variationOn: prev.variationOn, variants: prev.variants, shareNumbers: prev.shareNumbers.some(n => n.trim()) ? prev.shareNumbers : defaultOpts(l).shareNumbers }))
     }).catch(() => { /* keep the built-in defaults; the server re-checks everything */ })
   }, [])
 

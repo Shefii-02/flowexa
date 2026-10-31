@@ -33,7 +33,7 @@ class SenderLimits
 
     public static function save(array $input): array
     {
-        $limits = self::sanitize(array_merge(self::DEFAULTS, array_intersect_key($input, self::DEFAULTS)));
+        $limits = self::sanitize(array_merge(self::get(), array_intersect_key($input, self::DEFAULTS)));
         DB::table('platform_settings')->updateOrInsert(['key' => self::KEY], ['value' => json_encode($limits), 'updated_at' => now(), 'created_at' => now()]);
         return $limits;
     }
@@ -55,7 +55,7 @@ class SenderLimits
 
     /**
      * Turns what the sender page posted into the options stored on the job, or throws a 422 that says what to fix.
-     * A request without options gets the platform defaults (2–3 a minute, capped per 5 minutes).
+     * The delivery speed always comes from the platform settings (superadmin-managed); only the message variation is the company's.
      */
     public static function normalize(?array $in, ?array $limits = null): array
     {
@@ -63,15 +63,10 @@ class SenderLimits
         $in = $in ?? [];
         $fail = fn (string $field, string $msg) => throw ValidationException::withMessages(["sending_options.$field" => $msg]);
 
-        $p = $in['pacing'] ?? [];
-        $min = (int) ($p['per_min_min'] ?? $L['default_per_min_min']);
-        $max = (int) ($p['per_min_max'] ?? $L['default_per_min_max']);
-        $cap = (int) ($p['per_5min_cap'] ?? $L['default_per_5min_cap']);
-        if ($min < 1 || $max < $min) $fail('pacing', 'Messages per minute: the lowest must be at least 1 and not above the highest.');
-        if ($max > $L['max_per_min']) $fail('pacing', "Messages per minute cannot be more than {$L['max_per_min']}.");
-        if ($cap < $L['min_per_5min_cap'] || $cap > $L['max_per_5min_cap']) {
-            $fail('pacing', "Messages per 5 minutes must be between {$L['min_per_5min_cap']} and {$L['max_per_5min_cap']}.");
-        }
+        // Speed is the superadmin's call: whatever a client sends for pacing is ignored.
+        $min = $L['default_per_min_min'];
+        $max = $L['default_per_min_max'];
+        $cap = $L['default_per_5min_cap'];
 
         $v = $in['variation'] ?? [];
         $enabled = (bool) ($v['enabled'] ?? false);

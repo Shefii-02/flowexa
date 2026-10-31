@@ -46,9 +46,13 @@ export const catalogApi = {
 
   // Bulk CSV — attributes/media travel as JSON/pipe-joined columns so export → edit → import round-trips.
   export: (p?: Record<string, unknown>) => api.get('/listings/export', { params: p, responseType: 'blob' }),
-  import: (file: File) => {
+  /** The columns this company's business type uses in an import file, and a ready-to-fill sample for it. */
+  importColumns: () => api.get<{ business_type: string; listing_type: string; columns: { column: string; label: string; required: boolean; help: string; example: string }[] }>('/listings/import-columns'),
+  importTemplate: () => api.get('/listings/import-template', { responseType: 'blob' }),
+  import: (file: File, onDuplicate: 'skip' | 'update' = 'skip') => {
     const fd = new FormData()
     fd.append('file', file)
+    fd.append('on_duplicate', onDuplicate)
     return api.post('/listings/import', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
   },
 

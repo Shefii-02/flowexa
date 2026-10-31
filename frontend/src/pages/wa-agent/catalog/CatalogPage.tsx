@@ -73,6 +73,9 @@ export default function CatalogPage() {
   const [showImport, setShowImport] = useState(false)
   const [csvFile, setCsvFile] = useState<File | null>(null)
   const [importing, setImporting] = useState(false)
+  const [onDuplicate, setOnDuplicate] = useState<'skip' | 'update'>('skip')
+  const [importCols, setImportCols] = useState<{ column: string; label: string; required: boolean; help: string; example: string }[]>([])
+  const [importResult, setImportResult] = useState<{ message: string; errors: string[]; warnings: string[] } | null>(null)
   const [exporting, setExporting] = useState(false)
 
   const template = templates[activeKey]
@@ -153,35 +156,31 @@ export default function CatalogPage() {
     finally { setExporting(false) }
   }
 
+  const openImport = () => {
+    setShowImport(true); setImportResult(null); setCsvFile(null)
+    catalogApi.importColumns().then(r => setImportCols(r.data.columns)).catch(() => setImportCols([]))
+  }
+
   const handleImport = async () => {
     if (!csvFile) return
     setImporting(true)
     try {
-      const { data } = await catalogApi.import(csvFile)
+      const { data } = await catalogApi.import(csvFile, onDuplicate)
       toast.success(data.message ?? 'Imported.')
-      setShowImport(false); setCsvFile(null); void load()
+      void load()
+      // stay open when something needs the user's attention, so they can read what to fix
+      if (data.errors?.length || data.warnings?.length) setImportResult({ message: data.message, errors: data.errors ?? [], warnings: data.warnings ?? [] })
+      else { setShowImport(false); setCsvFile(null) }
     } catch (e) { toast.error(getError(e)) }
     finally { setImporting(false) }
   }
 
-  const csvCell = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`
-
-  const downloadSampleCsv = () => {
-    const schema = template?.attribute_schema ?? []
-    const sampleAttrs: Record<string, unknown> = {}
-    schema.forEach((f) => {
-      sampleAttrs[f.key] = f.type === 'enum' ? (f.options?.[0] ?? '')
-        : f.type === 'number' ? 1
-        : f.type === 'boolean' ? true
-        : `Sample ${f.label}`
-    })
-    const header = ['title', 'description', 'status', 'price', 'price_unit', 'currency', 'location', 'incentive_percentage', 'attributes_json', 'media_urls']
-    const row = [
-      `Sample ${listingType}`, 'Describe it here', 'active', '10000', 'total', 'INR', 'Kochi', '',
-      JSON.stringify(sampleAttrs), 'https://example.com/photo1.jpg|https://example.com/photo2.jpg',
-    ]
-    const csv = header.map(csvCell).join(',') + '\n' + row.map(csvCell).join(',')
-    downloadBlob(new Blob([csv], { type: 'text/csv' }), `${listingType}_sample.csv`)
+  // Built on the server from this company's business type, so the columns match what the importer reads.
+  const downloadSampleCsv = async () => {
+    try {
+      const { data } = await catalogApi.importTemplate()
+      downloadBlob(data, `${listingType}_import_sample.csv`)
+    } catch (e) { toast.error(getError(e)) }
   }
 
   const toDraft = (l: Listing): Draft => ({
@@ -220,7 +219,7 @@ export default function CatalogPage() {
           </span>
         )}
         <Button variant="secondary" loading={exporting} onClick={handleExport}>↓ Export</Button>
-        <Button variant="secondary" onClick={() => setShowImport(true)}>↑ Import CSV</Button>
+        <Button variant="secondary" onClick={openImport}>↑ Import CSV</Button>
         <Button onClick={() => openEditor(emptyDraft(listingType))}>+ Add {listingType}</Button>
       </div>
 
@@ -386,23 +385,55 @@ export default function CatalogPage() {
           </>
         }>
         <div className="space-y-4">
-          <div className="flex justify-end">
-            <button onClick={downloadSampleCsv} className="text-xs text-brand-600 hover:underline">↓ Download sample CSV</button>
+          <div className="flex items-center justify-between gap-3 bg-brand-50 border border-brand-100 rounded-lg px-3 py-2">
+            <p className="text-xs text-gray-700">
+              <b>1.</b> Download the sample for your business type (<b>{template?.name ?? 'your business'}</b>), <b>2.</b> fill in your {listingType}s in Excel, <b>3.</b> save as CSV and upload it here.
+            </p>
+            <Button size="sm" variant="secondary" onClick={downloadSampleCsv}>↓ Sample CSV</Button>
           </div>
-          <div className="bg-gray-50 border-2 border-dashed border-gray-200 rounded-xl p-6 text-center">
-            <input type="file" accept=".csv,.txt" onChange={e => setCsvFile(e.target.files?.[0] || null)} className="hidden" id="listing-csv-input" />
+
+          <div className="bg-gray-50 border-2 border-dashed border-gray-200 rounded-xl p-5 text-center">
+            <input type="file" accept=".csv,.txt" onChange={e => { setCsvFile(e.target.files?.[0] || null); setImportResult(null) }} className="hidden" id="listing-csv-input" />
             <label htmlFor="listing-csv-input" className="cursor-pointer">
-              <p className="text-2xl mb-2">📂</p>
-              <p className="text-sm font-medium text-gray-700">{csvFile ? csvFile.name : 'Click to select CSV file'}</p>
-              <p className="text-xs text-gray-400 mt-1">Required column: <strong>title</strong>. Optional: description, status, price, price_unit, currency, location, incentive_percentage, attributes_json, media_urls</p>
+              <p className="text-2xl mb-1">📂</p>
+              <p className="text-sm font-medium text-gray-700">{csvFile ? csvFile.name : 'Click to select your filled CSV file'}</p>
+              <p className="text-xs text-gray-400 mt-1">Only the <strong>title</strong> column is required.</p>
             </label>
           </div>
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-700">
-            <strong>attributes_json</strong> holds the {template?.name ?? 'vertical'}-specific fields
-            ({template?.attribute_schema.map(f => f.key).join(', ') || 'none for this template'}) as a JSON object.
-            <strong className="ml-1">media_urls</strong> is one or more photo/video links separated by <code>|</code>.
-          </div>
-          <p className="text-xs text-gray-400">Matched by title (case-insensitive) within this listing type — a row for a title that already exists is skipped.</p>
+
+          <label className="text-xs text-gray-600 flex items-center gap-2">
+            If a {listingType} with the same title already exists:
+            <select className="input !py-1 !text-xs w-44" value={onDuplicate} onChange={e => setOnDuplicate(e.target.value as 'skip' | 'update')}>
+              <option value="skip">Skip it</option>
+              <option value="update">Update it with the new values</option>
+            </select>
+          </label>
+
+          {importResult && (
+            <div className="border border-amber-200 bg-amber-50 rounded-lg p-3 text-xs space-y-1 max-h-40 overflow-y-auto">
+              <p className="font-semibold text-amber-800">{importResult.message}</p>
+              {importResult.errors.map((m, i) => <p key={`e${i}`} className="text-red-600">✗ {m}</p>)}
+              {importResult.warnings.map((m, i) => <p key={`w${i}`} className="text-amber-700">! {m}</p>)}
+            </div>
+          )}
+
+          {importCols.length > 0 && (
+            <details className="text-xs">
+              <summary className="cursor-pointer text-gray-600 font-medium">Columns for {template?.name ?? 'your business type'} ({importCols.length})</summary>
+              <table className="w-full mt-2 text-[11px]">
+                <thead><tr className="text-left text-gray-400"><th className="py-1 pr-2 font-medium">Column</th><th className="py-1 pr-2 font-medium">What to enter</th></tr></thead>
+                <tbody>
+                  {importCols.map(c => (
+                    <tr key={c.column} className="border-t border-gray-100 align-top">
+                      <td className="py-1 pr-2 font-mono text-gray-700 whitespace-nowrap">{c.column}{c.required && <span className="text-red-500"> *</span>}</td>
+                      <td className="py-1 text-gray-500">{c.label}{c.help ? ` — ${c.help}` : ''}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <p className="text-gray-400 mt-2">Need an extra field? Add a column named <code>custom:Field name</code>. Photo links go in <code>media_urls</code>, separated by <code>|</code>.</p>
+            </details>
+          )}
         </div>
       </Modal>
     </div>

@@ -88,9 +88,13 @@ class MessageSenderPacingTest extends TestCase
         SenderLimits::normalize(['variation' => ['enabled' => true, 'share_numbers' => ['919876543210', '919876543211']]], SenderLimits::DEFAULTS);
     }
 
-    public function test_pacing_outside_the_admin_limits_is_rejected(): void
+    public function test_delivery_speed_comes_from_the_platform_never_from_the_company(): void
     {
-        $this->expectException(ValidationException::class);
-        SenderLimits::normalize(['pacing' => ['per_min_min' => 2, 'per_min_max' => 3, 'per_5min_cap' => 501]], SenderLimits::DEFAULTS);
+        $o = SenderLimits::normalize(['pacing' => ['per_min_min' => 90, 'per_min_max' => 100, 'per_5min_cap' => 500]], SenderLimits::DEFAULTS);
+        $this->assertSame(['per_min_min' => 2, 'per_min_max' => 3, 'per_5min_cap' => 15], $o['pacing']);
+
+        $custom = SenderLimits::sanitize(array_merge(SenderLimits::DEFAULTS, ['default_per_min_min' => 4, 'default_per_min_max' => 6, 'default_per_5min_cap' => 40]));
+        $o = SenderLimits::normalize(null, $custom);
+        $this->assertSame(['per_min_min' => 4, 'per_min_max' => 6, 'per_5min_cap' => 40], $o['pacing']);
     }
 }
