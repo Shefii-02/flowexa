@@ -4,8 +4,9 @@ import { useMediaGate } from '@/hooks/useMediaGate'
 import { MEDIA_RULES } from '@/utils/mediaRules'
 import MediaPickerModal from '@/components/MediaPickerModal'
 
-export type CarouselButtonType = 'QUICK_REPLY' | 'URL' | 'PHONE_NUMBER'
-export type CarouselButton = { type: CarouselButtonType; text: string; url?: string; phone_cc?: string; phone_local?: string }
+export type CarouselButtonType = 'QUICK_REPLY' | 'URL' | 'PHONE_NUMBER' | 'SURVEY_FORM'
+export type CarouselButton = { type: CarouselButtonType; text: string; url?: string; example?: string; survey_form_id?: number; phone_cc?: string; phone_local?: string }
+export type SurveyFormOption = { id: number; name: string; is_active: boolean }
 export type CarouselCard = { uid: string; body: string; buttons: CarouselButton[] }
 // A card's sample media: a freshly picked file, a Media Library URL, and/or what is already stored on the template.
 export type CardMedia = { file?: File; libraryUrl?: string; previewUrl?: string }
@@ -17,7 +18,7 @@ export const CARD_BODY_MAX = 160
 const DEFAULT_CC = '91'
 
 const BUTTON_LABEL: Record<CarouselButtonType, string> = {
-  QUICK_REPLY: 'Quick reply', URL: 'Visit website', PHONE_NUMBER: 'Call phone number',
+  QUICK_REPLY: 'Custom (quick reply)', URL: 'Visit website', PHONE_NUMBER: 'Call phone number', SURVEY_FORM: 'Survey form',
 }
 
 export const newCardUid = () => 'c' + Math.random().toString(36).slice(2, 11).padEnd(9, '0')
@@ -52,9 +53,14 @@ export function carouselIssues(
       seen.add(k)
       if (b.type === 'URL') {
         const u = (b.url || '').trim()
-        if (!/^https?:\/\/\S+$/i.test(u)) out.push(`${label}: enter a full link starting with https://`)
-        else if (/(^|\.)(wa\.me|whatsapp\.com)(\/|$)/i.test(u.replace(/^https?:\/\//i, ''))) out.push(`${label}: a website button can't link to WhatsApp`)
+        const vars = (u.match(/\{\{\s*\d+\s*\}\}/g) || []).length
+        const plain = u.replace(/\{\{1\}\}$/, '')
+        if (vars > 1 || (vars === 1 && !/\{\{1\}\}$/.test(u))) out.push(`${label}: the link can have one variable, {{1}}, only at the end`)
+        else if (!/^https?:\/\/\S+$/i.test(plain)) out.push(`${label}: enter a full link starting with https://`)
+        else if (/(^|\.)(wa\.me|whatsapp\.com)(\/|$)/i.test(plain.replace(/^https?:\/\//i, ''))) out.push(`${label}: a website button can't link to WhatsApp`)
+        else if (vars === 1 && !(b.example || '').trim()) out.push(`${label}: add an example value for {{1}}`)
       }
+      if (b.type === 'SURVEY_FORM' && !b.survey_form_id) out.push(`${label}: pick a survey form`)
       if (b.type === 'PHONE_NUMBER' && (!b.phone_cc?.trim() || !/^\d{7,14}$/.test(b.phone_local || ''))) {
         out.push(`${label}: enter a country code and a valid number`)
       }
@@ -70,10 +76,11 @@ type Props = {
   onFormat: (f: CarouselMediaFormat) => void
   media: Record<string, CardMedia>
   onMedia: (uid: string, m: CardMedia | null) => void
+  surveyForms?: SurveyFormOption[]
   disabled?: boolean
 }
 
-export default function CarouselCardsEditor({ cards, onCards, format, onFormat, media, onMedia, disabled }: Props) {
+export default function CarouselCardsEditor({ cards, onCards, format, onFormat, media, onMedia, surveyForms = [], disabled }: Props) {
   const { gate, cropModal } = useMediaGate()
   const [pickerFor, setPickerFor] = useState<string | null>(null)
   const ruleKey = format === 'IMAGE' ? 'header_image' : 'header_video'
@@ -133,30 +140,22 @@ export default function CarouselCardsEditor({ cards, onCards, format, onFormat, 
         </div>
       </div>
 
-      {/* Button layout shared by every card */}
-      <div className="bg-gray-50 border border-gray-200 rounded-xl p-3 space-y-2">
-        <p className="text-xs font-semibold text-gray-600">
-          Buttons on every card <span className="font-normal text-gray-400">— Meta needs the same buttons, in the same order, on all cards</span>
+      {/* Meta needs the same buttons, in the same order, on every card — so a button's type is chosen once
+          (in any card) and applies to all; the text, link, number etc. stay per card. */}
+      <div className="bg-gray-50 border border-gray-200 rounded-xl p-3 flex items-center justify-between gap-3 flex-wrap">
+        <p className="text-xs text-gray-500">
+          Button types are shared by all cards (Meta rule) — labels, links and numbers are set per card.
         </p>
-        {types.map((t, i) => (
-          <div key={i} className="flex items-center gap-2">
-            <span className="text-xs text-gray-400 w-14">Button {i + 1}</span>
-            <select className="select text-xs flex-1" value={t} disabled={disabled}
-              onChange={e => setTypes(types.map((x, k) => k === i ? e.target.value as CarouselButtonType : x))}>
-              {(Object.keys(BUTTON_LABEL) as CarouselButtonType[])
-                .filter(opt => opt !== 'PHONE_NUMBER' || t === 'PHONE_NUMBER' || !types.includes('PHONE_NUMBER'))
-                .map(opt => <option key={opt} value={opt}>{BUTTON_LABEL[opt]}</option>)}
-            </select>
-            {types.length > 1 && (
-              <button type="button" disabled={disabled} className="text-red-400 hover:text-red-600 text-lg" onClick={() => setTypes(types.filter((_, k) => k !== i))}>×</button>
-            )}
-          </div>
-        ))}
-        {types.length < 2 && (
-          <button type="button" disabled={disabled} className="text-xs text-brand-600 hover:underline" onClick={() => setTypes([...types, types.includes('QUICK_REPLY') ? 'URL' : 'QUICK_REPLY'])}>
-            + Add second button
-          </button>
-        )}
+        <div className="flex items-center gap-2 text-xs">
+          <span className="text-gray-500">Buttons per card</span>
+          {[1, 2].map(n => (
+            <button key={n} type="button" disabled={disabled}
+              onClick={() => setTypes(n === 1 ? types.slice(0, 1) : [...types, types.includes('URL') ? 'QUICK_REPLY' : 'URL'].slice(0, 2) as CarouselButtonType[])}
+              className={`px-2.5 py-1 rounded-lg border ${types.length === n ? 'border-brand-500 bg-brand-50 text-brand-700 font-semibold' : 'border-gray-200 text-gray-500'}`}>
+              {n}
+            </button>
+          ))}
+        </div>
       </div>
 
       {cards.map((c, i) => {
@@ -208,13 +207,32 @@ export default function CarouselCardsEditor({ cards, onCards, format, onFormat, 
             {c.buttons.map((b, j) => (
               <div key={j} className="space-y-1.5">
                 <div className="flex gap-2 items-center">
-                  <span className="text-[11px] text-gray-400 w-24 flex-shrink-0">{BUTTON_LABEL[b.type]}</span>
+                  <select className="select text-xs w-40 flex-shrink-0" value={b.type} disabled={disabled}
+                    onChange={e => setTypes(types.map((x, k) => k === j ? e.target.value as CarouselButtonType : x))}>
+                    {(Object.keys(BUTTON_LABEL) as CarouselButtonType[])
+                      .filter(opt => opt !== 'PHONE_NUMBER' || b.type === 'PHONE_NUMBER' || !types.includes('PHONE_NUMBER'))
+                      .map(opt => <option key={opt} value={opt}>{BUTTON_LABEL[opt]}</option>)}
+                  </select>
                   <Input className="flex-1" placeholder="Button text" value={b.text} disabled={disabled}
                     onChange={e => patchButton(c.uid, j, { text: e.target.value.slice(0, 25) })} />
                   <span className="text-[11px] text-gray-400 w-10 text-right">{b.text.length}/25</span>
                 </div>
                 {b.type === 'URL' && (
-                  <Input placeholder="https://..." value={b.url || ''} disabled={disabled} onChange={e => patchButton(c.uid, j, { url: e.target.value })} />
+                  <>
+                    <Input placeholder="https://yoursite.com/page  (or …/product/{{1}} for a per-recipient value)" value={b.url || ''} disabled={disabled}
+                      onChange={e => patchButton(c.uid, j, { url: e.target.value })} />
+                    {/\{\{\s*1\s*\}\}$/.test((b.url || '').trim()) && (
+                      <Input placeholder="Example value for {{1}} — e.g. blue-elf (Meta review only)" value={b.example || ''} disabled={disabled}
+                        onChange={e => patchButton(c.uid, j, { example: e.target.value })} />
+                    )}
+                  </>
+                )}
+                {b.type === 'SURVEY_FORM' && (
+                  <select className="select text-xs" value={b.survey_form_id ?? ''} disabled={disabled}
+                    onChange={e => patchButton(c.uid, j, { survey_form_id: Number(e.target.value) || undefined })}>
+                    <option value="">Select a survey form…</option>
+                    {surveyForms.map(sf => <option key={sf.id} value={sf.id} disabled={!sf.is_active}>{sf.name}{sf.is_active ? '' : ' (inactive)'}</option>)}
+                  </select>
                 )}
                 {b.type === 'PHONE_NUMBER' && (
                   <div className="flex gap-2">

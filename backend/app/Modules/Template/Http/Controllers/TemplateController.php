@@ -765,9 +765,12 @@ class TemplateController extends Controller
             'carousel_cards.*.uid'     => ['required', 'string', 'regex:/^[A-Za-z0-9_-]{4,40}$/', 'distinct'],
             'carousel_cards.*.body'    => ['nullable', 'string', 'max:160'],   // optional, but all cards or none (see validateCarousel)
             'carousel_cards.*.buttons' => ['required', 'array', 'min:1', 'max:2'],
-            'carousel_cards.*.buttons.*.type' => ['required', 'in:QUICK_REPLY,URL,PHONE_NUMBER'],
+            'carousel_cards.*.buttons.*.type' => ['required', 'in:QUICK_REPLY,URL,PHONE_NUMBER,SURVEY_FORM'],
             'carousel_cards.*.buttons.*.text' => ['required', 'string', 'max:25'],
-            'carousel_cards.*.buttons.*.url'  => ['nullable', 'required_if:carousel_cards.*.buttons.*.type,URL', 'url'],
+            // A website link may end in one {{1}} (a per-recipient value); validateCarousel checks the shape.
+            'carousel_cards.*.buttons.*.url'  => ['nullable', 'required_if:carousel_cards.*.buttons.*.type,URL', 'string', 'max:2000'],
+            'carousel_cards.*.buttons.*.example' => ['nullable', 'string', 'max:2000'],
+            'carousel_cards.*.buttons.*.survey_form_id' => ['nullable', 'required_if:carousel_cards.*.buttons.*.type,SURVEY_FORM', 'integer'],
             'carousel_cards.*.buttons.*.phone_number' => ['nullable', 'required_if:carousel_cards.*.buttons.*.type,PHONE_NUMBER', 'string', 'max:25', 'regex:/^\+[\d\s\-()]{7,24}$/'],
 
             // ── AUTHENTICATION-only fields ──────────────────────────────
@@ -941,14 +944,31 @@ class TemplateController extends Controller
                 }
                 $seen[$k] = true;
                 if ($b['type'] === 'URL') {
-                    $host = strtolower((string) parse_url((string) $b['url'], PHP_URL_HOST));
+                    $url  = trim((string) $b['url']);
+                    $vars = preg_match_all('/\{\{\s*\d+\s*\}\}/', $url);
+                    if ($vars > 1 || ($vars === 1 && !preg_match('/\{\{1\}\}$/', $url))) {
+                        $fail('carousel_cards', "Card {$n}: a website link can have one variable, {{1}}, and only at the very end.");
+                    }
+                    $plain = preg_replace('/\{\{1\}\}$/', '', $url);
+                    if (!preg_match('#^https?://\S+$#i', $plain) || strlen($url) > 2000) {
+                        $fail('carousel_cards', "Card {$n}: enter a full website link starting with https:// (no spaces).");
+                    }
+                    if ($vars === 1 && trim((string) ($b['example'] ?? '')) === '') {
+                        $fail('carousel_cards', "Card {$n}: add an example value for the {{1}} in the website link.");
+                    }
+                    $host = strtolower((string) parse_url($plain, PHP_URL_HOST));
                     if (preg_match('/(^|\.)(wa\.me|whatsapp\.com)$/', $host)) {
                         $fail('carousel_cards', "Card {$n}: a website button cannot link to WhatsApp.");
                     }
                 }
+                if ($b['type'] === 'SURVEY_FORM'
+                    && !\App\Models\SurveyForm::where('id', $b['survey_form_id'])->where('company_id', auth()->user()->company_id)->exists()) {
+                    $fail('carousel_cards', "Card {$n}: pick a valid survey form for the survey button.");
+                }
             }
             // Meta: every card must have the same buttons, in the same order (labels and links may differ).
-            $thisShape = implode(',', array_column($card['buttons'], 'type'));
+            // (a survey button is a quick reply as far as Meta is concerned)
+            $thisShape = implode(',', array_map(fn ($b) => $b['type'] === 'SURVEY_FORM' ? 'QUICK_REPLY' : $b['type'], $card['buttons']));
             if ($shape !== null && $thisShape !== $shape) {
                 $fail('carousel_cards', "Card {$n}: every card must use the same button types in the same order as card 1.");
             }
@@ -1248,6 +1268,8 @@ class TemplateController extends Controller
                 'type'         => $type,
                 'text'         => $isPhone ? ($b['label'] ?? $b['text'] ?? 'Call') : $b['text'],
                 'url'          => $type === 'URL' ? ($b['url'] ?? null) : null,
+                // A link ending in {{1}} needs a sample value for Meta's review.
+                'example'      => $type === 'URL' && !empty($b['example']) && preg_match('/\{\{\s*1\s*\}\}/', (string) ($b['url'] ?? '')) ? [$b['example']] : null,
                 'phone_number' => $isPhone && $phoneNumber ? '+' . preg_replace('/\D+/', '', $phoneNumber) : null,
             ], fn($v) => !is_null($v));
         })->toArray(); // media / survey_form_id fields intentionally dropped here

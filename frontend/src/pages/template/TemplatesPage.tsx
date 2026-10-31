@@ -512,6 +512,8 @@ export default function TemplatesPage() {
               type: b.type,
               text: b.text.trim(),
               url: b.type === 'URL' ? b.url?.trim() : undefined,
+              example: b.type === 'URL' && /\{\{\s*1\s*\}\}$/.test((b.url || '').trim()) ? b.example?.trim() : undefined,
+              survey_form_id: b.type === 'SURVEY_FORM' ? b.survey_form_id : undefined,
               phone_number: b.type === 'PHONE_NUMBER' ? joinPhone(b.phone_cc, b.phone_local) : undefined,
             })),
           }))
@@ -1067,6 +1069,7 @@ export default function TemplatesPage() {
                 onFormat={f => set('carousel_media_format', f)}
                 media={cardMedia}
                 onMedia={setOneCardMedia}
+                surveyForms={surveyForms}
                 disabled={isLocked}
               />
             )}
