@@ -130,8 +130,19 @@ class OpenWaMessageService
      */
     public function sendMediaFromUrl(string $sessionId, string $apiKey, string $chatId, string $mediaType, string $url, array $extra = []): Response
     {
-        $file = $this->fetchMedia($url, $mediaType);
         unset($extra['url']);
+        try {
+            $file = $this->fetchMedia($url, $mediaType);
+        } catch (\RuntimeException $e) {
+            // We could not get the file ourselves (e.g. it sits behind something only the gateway can pass). A normal
+            // public link can still be handed to the gateway, which downloads it itself — better than failing outright.
+            $abs = trim($url);
+            if (preg_match('#^https?://#i', $abs) && !str_contains($e->getMessage(), 'web page') && !str_contains($e->getMessage(), 'set to ')) {
+                Log::warning("OpenWaMessageService: could not fetch media here ({$e->getMessage()}) — letting the gateway fetch {$abs}");
+                return $this->sendMedia($sessionId, $apiKey, $chatId, $mediaType, array_merge($extra, ['url' => $abs]));
+            }
+            throw $e;
+        }
 
         return $this->sendMedia($sessionId, $apiKey, $chatId, $mediaType, array_merge($extra, [
             'base64'   => $file['base64'],
@@ -140,26 +151,49 @@ class OpenWaMessageService
         ]));
     }
 
+    /**
+     * A file we host ourselves ("/storage/…" under any domain — including an old one the app has since moved away from)
+     * is read straight from the public disk. Going out over HTTP to our own public address is what broke media sends
+     * after a domain change, and fails whenever the server cannot reach itself by its public name.
+     */
+    private function readOwnStorageFile(string $url): ?string
+    {
+        $path = (string) parse_url(trim($url), PHP_URL_PATH);
+        if (!preg_match('#^/storage/(.+)$#', $path, $m)) return null;
+
+        $relative = rawurldecode($m[1]);
+        if (str_contains($relative, '..') || str_contains($relative, "\0")) return null;
+
+        $disk = \Illuminate\Support\Facades\Storage::disk('public');
+        return $disk->exists($relative) ? $disk->get($relative) : null;
+    }
+
     private function fetchMedia(string $url, string $mediaType): array
     {
         $url = trim($url);
-        if (str_starts_with($url, '/')) {
+        $local = $this->readOwnStorageFile($url);
+        if ($local === null && str_starts_with($url, '/')) {
             $url = rtrim((string) config('app.url'), '/') . $url; // relative storage link -> absolute
         }
-        if (!preg_match('#^https?://#i', $url)) {
+        if ($local === null && !preg_match('#^https?://#i', $url)) {
             throw new \RuntimeException('Media link must be a full http(s) URL.');
         }
 
-        try {
-            $res = Http::timeout(40)->withHeaders(['User-Agent' => 'Mozilla/5.0 (compatible; WaSender/1.0)'])->get($url);
-        } catch (\Throwable $e) {
-            throw new \RuntimeException('Could not download the media file — the link is not reachable from the server (' . $e->getMessage() . ').');
-        }
-        if (!$res->successful()) {
-            throw new \RuntimeException("Could not download the media file — the link returned HTTP {$res->status()}. It must be a public direct file link.");
+        if ($local !== null) {
+            $res  = null;
+            $body = $local;
+        } else {
+            try {
+                $res = Http::timeout(40)->withHeaders(['User-Agent' => 'Mozilla/5.0 (compatible; WaSender/1.0)'])->get($url);
+            } catch (\Throwable $e) {
+                throw new \RuntimeException('Could not download the media file — the link is not reachable from the server (' . $e->getMessage() . ').');
+            }
+            if (!$res->successful()) {
+                throw new \RuntimeException("Could not download the media file — the link returned HTTP {$res->status()}. It must be a public direct file link.");
+            }
+            $body = $res->body();
         }
 
-        $body = $res->body();
         if ($body === '') {
             throw new \RuntimeException('The media link returned an empty file.');
         }
@@ -167,7 +201,7 @@ class OpenWaMessageService
             throw new \RuntimeException('The media file is larger than 16 MB, which WhatsApp does not accept.');
         }
 
-        $mime = strtolower(trim(explode(';', (string) $res->header('Content-Type'))[0]));
+        $mime = $res ? strtolower(trim(explode(';', (string) $res->header('Content-Type'))[0])) : '';
         if ($mime === '' || $mime === 'application/octet-stream') {
             $mime = (new \finfo(FILEINFO_MIME_TYPE))->buffer($body) ?: 'application/octet-stream';
         }
