@@ -66,12 +66,15 @@ const statusIcon: Record<string,string> = {
 // backend's LOCKED_STATUSES so the UI can disable Edit before the user even tries.
 const LOCKED_STATUSES = ['pending', 'pending_deletion', 'disabled']
 
+// Pre-filled in the footer of every new template (the user can edit or clear it). 57 characters, under Meta's 60 limit.
+const DEFAULT_FOOTER = 'Finding our Message irrelevant? Reply STOP to Unsubscribe'
+
 const DEFAULT_FORM = {
   name: '', category: 'MARKETING', language: 'en',
   header_format: 'TEXT' as 'TEXT'|'IMAGE'|'VIDEO'|'DOCUMENT',
   header: '',       // text header content — only used when header_format === 'TEXT'
   header_example: '', // sample value for the single {{1}} variable allowed in a text header
-  body: '', footer: '',
+  body: '', footer: DEFAULT_FOOTER,
   buttons: [] as { type: string; text: string; url?: string; phone_number?: string; phone_cc?: string; phone_local?: string; survey_form_id?: number; example?: string }[],
   message_send_ttl_seconds: null as number | null, // MARKETING only; null = Meta's standard 12 hours
   // CAROUSEL (MARKETING only): a body plus 2–10 swipeable cards, each with its own media, text and buttons
@@ -210,7 +213,7 @@ export default function TemplatesPage() {
       header_format: f.header_format === 'DOCUMENT' ? 'TEXT' : f.header_format,
       // a limited-time offer needs exactly one "Copy offer code" button
       buttons: f.buttons.some(b => b.type === 'COPY_CODE') ? f.buttons : [{ type: 'COPY_CODE', text: 'Copy offer code', example: '' }, ...f.buttons].slice(0, 3),
-    } : {}),
+    } : { footer: f.footer || DEFAULT_FOOTER }),
   }))
   const chooseTemplateType = (t: 'standard' | 'carousel') => {
     if (t === 'carousel') {
@@ -220,7 +223,7 @@ export default function TemplatesPage() {
       }))
       setHeaderSampleFile(null); setHeaderSampleUrl(''); setHeaderLibraryUrl('')
     } else {
-      set('template_type', 'standard')
+      setForm(f => ({ ...f, template_type: 'standard', footer: f.footer || DEFAULT_FOOTER }))
     }
   }
 
