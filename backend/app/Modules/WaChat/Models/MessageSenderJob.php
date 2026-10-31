@@ -17,13 +17,14 @@ class MessageSenderJob extends Model
         'company_id', 'created_by', 'campaign_name', 'session_id',
         'type', 'status', 'total', 'sent', 'failed',
         'scheduled_at', 'started_at', 'completed_at',
-        'delay_ms', 'unique_signature', 'log', 'message_payload',
+        'delay_ms', 'unique_signature', 'log', 'message_payload', 'sending_options',
         'lead_created_from', 'lead_created_to',
     ];
 
     protected $casts = [
         'log'              => 'array',
         'message_payload'  => 'array',
+        'sending_options'  => 'array',
         'unique_signature' => 'boolean',
         'scheduled_at'     => 'datetime',
         'started_at'       => 'datetime',

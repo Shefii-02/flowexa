@@ -4,6 +4,8 @@ namespace App\Modules\WaChat\Http\Controllers;
 
 use App\Http\Controllers\Controller;
 use App\Models\Company;
+use App\Models\FlowBuilder;
+use App\Models\FlowNode;
 use App\Models\Listing;
 use App\Modules\WaChat\Models\AiKnowledgeBase;
 use App\Modules\WaChat\Models\AiKnowledgeChunk;
@@ -219,5 +221,86 @@ class KnowledgeBaseController extends Controller
         GenerateKnowledgeEmbeddings::dispatchSync($kb->id);
 
         return response()->json($kb->fresh());
+    }
+
+    /**
+     * Turns every active Flow Builder's menu tree into one knowledge base document per flow, so the AI agent
+     * knows what the bot menus say (replies, options, buttons, links) and can answer the same way. Walks each
+     * flow node by node under its menu path; only customer-facing text is included (never API URLs or headers).
+     * Re-running replaces the previous version of each flow's document, and documents for flows that no longer
+     * exist or are inactive are removed.
+     */
+    public function syncFromFlowBuilder(): JsonResponse
+    {
+        $companyId = Auth::user()->company_id;
+
+        $flows = FlowBuilder::where('company_id', $companyId)->where('is_active', true)->orderBy('id')->get();
+        if ($flows->isEmpty()) {
+            return response()->json(['message' => 'No active flow builders to sync yet.'], 422);
+        }
+
+        $kbNames = AiKnowledgeBase::where('company_id', $companyId)->pluck('name', 'id');
+        $synced  = [];
+
+        foreach ($flows as $flow) {
+            $nodes = FlowNode::where('company_id', $companyId)->where('flow_builder_id', $flow->id)
+                ->where('is_active', true)->orderBy('sort_order')->get()->groupBy('parent_id');
+
+            $sections = [];
+            $walk = function (?int $parentId, array $path) use (&$walk, &$sections, $nodes, $kbNames) {
+                foreach ($nodes->get($parentId, collect()) as $node) {
+                    $here  = [...$path, trim((string) $node->title) ?: 'Option'];
+                    $lines = ['Menu: ' . implode(' > ', $here)];
+
+                    $texts = collect((array) $node->multi_messages)
+                        ->map(fn ($b) => is_array($b) ? trim((string) ($b['content'] ?? $b['text'] ?? $b['caption'] ?? '')) : '')
+                        ->filter();
+                    if ($node->message)             $lines[] = trim($node->message);
+                    foreach ($texts as $t)          $lines[] = $t;
+                    if ($node->option_description)  $lines[] = 'About this option: ' . trim($node->option_description);
+                    if ($node->media_caption)       $lines[] = trim($node->media_caption);
+                    if ($node->location_name || $node->location_address) {
+                        $lines[] = 'Location: ' . trim($node->location_name . ' ' . $node->location_address);
+                    }
+                    foreach ((array) $node->action_buttons as $btn) {
+                        if (!is_array($btn)) continue;
+                        $label = trim((string) ($btn['title'] ?? $btn['text'] ?? $btn['label'] ?? ''));
+                        $url   = trim((string) ($btn['url'] ?? $btn['phone_number'] ?? $btn['phone'] ?? ''));
+                        if ($label !== '' || $url !== '') $lines[] = 'Button: ' . trim($label . ($url !== '' ? " ({$url})" : ''));
+                    }
+                    $kbs = collect((array) $node->ai_kb_ids)->map(fn ($id) => $kbNames[$id] ?? null)->filter();
+                    if ($kbs->isNotEmpty()) $lines[] = 'Answered from knowledge base: ' . $kbs->implode(', ');
+
+                    if (count($lines) > 1) $sections[] = implode("\n", $lines);
+                    $walk($node->id, $here);
+                }
+            };
+            $walk(null, []);
+
+            if ($sections === []) continue;
+
+            $name = 'Flow Builder: ' . $flow->name;
+            $kb = AiKnowledgeBase::updateOrCreate(
+                ['company_id' => $companyId, 'name' => $name],
+                [
+                    'description'   => 'Auto-generated from your Flow Builder menus — re-sync after changing the flow.',
+                    'document_type' => 'text',
+                    'raw_content'   => ($flow->description ? "{$flow->description}\n\n" : '') . implode("\n\n---\n\n", $sections),
+                    'status'        => 'pending',
+                ]
+            );
+            GenerateKnowledgeEmbeddings::dispatchSync($kb->id);
+            $synced[] = $kb->id;
+        }
+
+        if ($synced === []) {
+            return response()->json(['message' => 'The active flow builders have no node content to sync yet.'], 422);
+        }
+
+        // drop documents of flows that were deleted / switched off or emptied
+        AiKnowledgeBase::where('company_id', $companyId)->where('name', 'like', 'Flow Builder: %')
+            ->whereNotIn('id', $synced)->get()->each(fn ($kb) => $kb->delete());
+
+        return response()->json(['synced' => count($synced), 'knowledge_bases' => AiKnowledgeBase::whereIn('id', $synced)->get()]);
     }
 }

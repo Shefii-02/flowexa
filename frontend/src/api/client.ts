@@ -174,7 +174,9 @@ api.interceptors.response.use(
     if (isOutage(error) && !original?._skipPreCheck && !isWrite) reportOutage(error)
 
     // ── 403 → surface an Access Denied screen (not just a toast) ──────────────
-    if (error.response?.status === 403) {
+    // A request marked `_quiet403` (a dashboard widget the person's role may not include) fails on its own
+    // instead of replacing the whole page.
+    if (error.response?.status === 403 && !(error.config as any)?._quiet403) {
       const data = error.response.data as
         | { message?: string; required_permission?: string | string[]; code?: string }
         | undefined

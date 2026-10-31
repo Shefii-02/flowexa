@@ -284,14 +284,16 @@ export const leadSourceApi = {
 }
 
 // ── Analytics ─────────────────────────────────────────────────────────────────
+/** `quiet`: a 403 only fails that call (a dashboard widget) rather than showing the full-page Access Denied screen. */
+const quietCfg = (quiet?: boolean) => (quiet ? ({ _quiet403: true } as any) : undefined)
 export const analyticsApi = {
-  overview: () => api.get('/analytics/overview'),
-  campaigns: () => api.get('/analytics/campaigns'),
-  flows: () => api.get('/analytics/flows'),
-  staff: () => api.get('/analytics/staff'),
-  wallet: () => api.get('/analytics/wallet'),
-  leads: () => api.get('/analytics/leads'),
-  messages: () => api.get('/analytics/messages'),
+  overview: (quiet?: boolean) => api.get('/analytics/overview', quietCfg(quiet)),
+  campaigns: (quiet?: boolean) => api.get('/analytics/campaigns', quietCfg(quiet)),
+  flows: (quiet?: boolean) => api.get('/analytics/flows', quietCfg(quiet)),
+  staff: (quiet?: boolean) => api.get('/analytics/staff', quietCfg(quiet)),
+  wallet: (quiet?: boolean) => api.get('/analytics/wallet', quietCfg(quiet)),
+  leads: (quiet?: boolean) => api.get('/analytics/leads', quietCfg(quiet)),
+  messages: (quiet?: boolean) => api.get('/analytics/messages', quietCfg(quiet)),
 }
 
 // ── Settings ──────────────────────────────────────────────────────────────────
@@ -740,4 +742,37 @@ export const demoApi = {
   list: (params: Record<string, unknown>) => api.get('/superadmin/demo-requests', { params }),
   update: (id: number, d: Record<string, unknown>) => api.put(`/superadmin/demo-requests/${id}`, d),
   remove: (id: number) => api.delete(`/superadmin/demo-requests/${id}`),
+}
+
+// ── Support tickets ───────────────────────────────────────────────────────────
+const blobGet = (url: string) => api.get(url, { responseType: 'blob' })
+const multipart = { headers: { 'Content-Type': 'multipart/form-data' } }
+
+/** Company side: raise tickets to the platform team and follow them. */
+export const supportApi = {
+  meta: () => api.get('/support-tickets/meta'),
+  list: (params?: Record<string, unknown>) => api.get('/support-tickets', { params }),
+  show: (id: number) => api.get(`/support-tickets/${id}`),
+  create: (d: FormData) => api.post('/support-tickets', d, multipart),
+  reply: (id: number, d: FormData) => api.post(`/support-tickets/${id}/reply`, d, multipart),
+  close: (id: number) => api.post(`/support-tickets/${id}/close`),
+  reopen: (id: number) => api.post(`/support-tickets/${id}/reopen`),
+  rate: (id: number, rating: number, feedback?: string) => api.post(`/support-tickets/${id}/rate`, { rating, feedback }),
+  download: (id: number, attId: number) => blobGet(`/support-tickets/${id}/attachments/${attId}`),
+}
+
+/** Platform side (superadmin + platform staff): the support desk. */
+export const supportAdminApi = {
+  meta: () => api.get('/superadmin/support/meta'),
+  stats: () => api.get('/superadmin/support/stats'),
+  list: (params?: Record<string, unknown>) => api.get('/superadmin/support/tickets', { params }),
+  show: (id: number) => api.get(`/superadmin/support/tickets/${id}`),
+  reply: (id: number, d: FormData) => api.post(`/superadmin/support/tickets/${id}/reply`, d, multipart),
+  update: (id: number, d: Record<string, unknown>) => api.patch(`/superadmin/support/tickets/${id}`, d),
+  remove: (id: number) => api.delete(`/superadmin/support/tickets/${id}`),
+  download: (id: number, attId: number) => blobGet(`/superadmin/support/tickets/${id}/attachments/${attId}`),
+  departments: () => api.get('/superadmin/support/departments'),
+  createDepartment: (d: Record<string, unknown>) => api.post('/superadmin/support/departments', d),
+  updateDepartment: (id: number, d: Record<string, unknown>) => api.put(`/superadmin/support/departments/${id}`, d),
+  removeDepartment: (id: number) => api.delete(`/superadmin/support/departments/${id}`),
 }

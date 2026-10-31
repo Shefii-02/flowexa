@@ -86,6 +86,9 @@ import ErrorLogsPage from '@/pages/superadmin/ErrorLogsPage'
 import SystemLogPage from '@/pages/superadmin/SystemLogPage'
 import AiTestPage from '@/pages/superadmin/AiTestPage'
 import DemoRequestsPage from '@/pages/superadmin/DemoRequestsPage'
+import SupportDeskPage from '@/pages/superadmin/SupportDeskPage'
+import SenderLimitsPage from '@/pages/superadmin/SenderLimitsPage'
+import SupportTicketsPage from '@/pages/support/SupportTicketsPage'
 import FailedJobsPage from '@/pages/superadmin/FailedJobsPage'
 import IndustryTemplatesPage from '@/pages/superadmin/IndustryTemplatesPage'
 import AgentPlaybookTemplatesPage from '@/pages/superadmin/AgentPlaybookTemplatesPage'
@@ -468,6 +471,15 @@ export default function App() {
                 path="superadmin/ai-test"
                 element={<SuperAdminRoute><AiTestPage /></SuperAdminRoute>}
               />
+              <Route
+                path="superadmin/sender-limits"
+                element={<SuperAdminRoute><SenderLimitsPage /></SuperAdminRoute>}
+              />
+              <Route
+                path="superadmin/support"
+                element={<SuperAdminRoute><SupportDeskPage /></SuperAdminRoute>}
+              />
+              <Route path="support" element={<SupportTicketsPage />} />
               <Route
                 path="superadmin/demo-requests"
                 element={<SuperAdminRoute><DemoRequestsPage /></SuperAdminRoute>}

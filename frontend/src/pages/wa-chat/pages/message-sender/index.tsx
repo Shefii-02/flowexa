@@ -18,6 +18,7 @@ import { useUser } from '@/hooks/useAuth'
 import api from '@/api/client'
 import toast from 'react-hot-toast'
 import FormattedTextarea from './FormattedTextarea'
+import SendingOptionsCard, { SendingOpts, SenderLimits, FALLBACK_LIMITS, defaultOpts, sendingOptionsError, toSendingOptionsPayload, estimateMinutes } from './SendingOptionsCard'
 import MediaPickerModal from '@/components/MediaPickerModal'
 import { useMediaGate } from '@/hooks/useMediaGate'
 import { MEDIA_RULES, ruleForBlockType } from '@/utils/mediaRules'
@@ -412,8 +413,20 @@ export function MessageSender() {
 
   // --- Sending options ---
   const [session, setSession] = useState('')
-  // Fixed pace: 1 message per minute (no custom timing).
+  // Used only by the old in-browser fallback loop. Server campaigns use the sending options below.
   const delaySeconds = 60
+
+  // Delivery speed + anti-block variation. Defaults (2–3 a minute, 5-minute cap) and the allowed ranges come
+  // from the limits the superadmin manages.
+  const [senderLimits, setSenderLimits] = useState<SenderLimits>(FALLBACK_LIMITS)
+  const [sendingOpts, setSendingOpts] = useState<SendingOpts>(() => defaultOpts(FALLBACK_LIMITS))
+  useEffect(() => {
+    api.get('/message-sender/limits').then(r => {
+      const l: SenderLimits = { ...FALLBACK_LIMITS, ...(r.data?.data ?? {}) }
+      setSenderLimits(l)
+      setSendingOpts(prev => ({ ...defaultOpts(l), variants: prev.variants, shareNumbers: prev.shareNumbers.some(n => n.trim()) ? prev.shareNumbers : defaultOpts(l).shareNumbers }))
+    }).catch(() => { /* keep the built-in defaults; the server re-checks everything */ })
+  }, [])
 
   // --- Test send: a standalone drawer, independent of the main composer below — its own type
   // (text/image/video/audio), content and number, sent after confirming the selected session is
@@ -1407,6 +1420,7 @@ export function MessageSender() {
         total: sendable.length,
         delay_ms: delaySeconds * 1000,
         unique_signature: uniqueSignature,
+        sending_options: toSendingOptionsPayload(sendingOpts),
         scheduled_at: scheduledAtValue || undefined,
         log: sendable.map(r => ({ recipient_name: r.name, phone: r.phone, status: 'pending' })),
         message_payload: toMessagePayload(templateText, extraPayload, sendable),
@@ -1459,6 +1473,9 @@ export function MessageSender() {
     if (!built) return
     const { templateText, extraPayload } = built
 
+    const optionsProblem = sendingOptionsError(sendingOpts, senderLimits)
+    if (optionsProblem) { toast.error(optionsProblem); return }
+
     // ITEM 4 — Check if schedule is set and in the future
     if (scheduledAt) {
       const target = new Date(scheduledAt).getTime()
@@ -1475,7 +1492,7 @@ export function MessageSender() {
 
     // Immediate send
     executeSend(selectedRecipients, templateText, session, delaySeconds, uniqueSignature, extraPayload, campaignName, company)
-  }, [session, selectedRecipients, buildOutgoingMessage, delaySeconds, uniqueSignature, scheduledAt, campaignName, company, executeSend])
+  }, [session, selectedRecipients, buildOutgoingMessage, delaySeconds, uniqueSignature, scheduledAt, campaignName, company, executeSend, sendingOpts, senderLimits])
 
   const confirmSchedule = async () => {
     setPendingSchedule(false)
@@ -2599,10 +2616,8 @@ export function MessageSender() {
                   {activeSessions.map(s => <option key={s.id} value={s.id}>{s.name} ({(s as any).phone ?? 'no phone'})</option>)}
                 </select>
               </div>
-              <div className="flex items-center justify-between rounded-lg bg-gray-50 border border-gray-100 px-3 py-2 text-xs">
-                <span className="font-medium text-gray-600">Delay between messages</span>
-                <span className="text-brand-600 font-medium">60s · 1 message / min</span>
-              </div>
+              <SendingOptionsCard value={sendingOpts} onChange={setSendingOpts} limits={senderLimits}
+                recipientCount={selectedRecipients.length} textOnly={composerTab === 'text'} disabled={isRunning || isPaused || isScheduled} />
 
               {/* ITEM 4 — Schedule picker */}
               <div>
@@ -2624,7 +2639,7 @@ export function MessageSender() {
                   const inPast = start <= Date.now()
                   const count = selectedRecipients.length
                   // run time = (n-1) gaps of the chosen delay between messages
-                  const runMs = Math.max(count - 1, 0) * delaySeconds * 1000
+                  const runMs = estimateMinutes(count, sendingOpts) * 60 * 1000
                   const fmt = (t: number) => new Date(t).toLocaleString('en-IN', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
                   const tz = Intl.DateTimeFormat().resolvedOptions().timeZone
                   return inPast ? (
@@ -2637,7 +2652,7 @@ export function MessageSender() {
                       <div className="text-sm font-medium text-purple-900">{fmt(start)}</div>
                       <div className="text-xs text-purple-600">Starts in {formatCountdown(Math.floor((start - Date.now()) / 1000))} · {tz}</div>
                       <div className="text-xs text-purple-600 border-t border-purple-100 pt-1">
-                        {count} recipient{count !== 1 ? 's' : ''} · {delaySeconds}s between messages
+                        {count} recipient{count !== 1 ? 's' : ''} · {sendingOpts.perMinMin}–{sendingOpts.perMinMax} per minute (max {sendingOpts.cap5} / 5 min)
                         {count > 1 && <> · ends about {fmt(start + runMs)}</>}
                       </div>
                     </div>

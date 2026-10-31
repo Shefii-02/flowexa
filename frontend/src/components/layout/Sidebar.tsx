@@ -234,6 +234,7 @@ export const Sidebar = () => {
   const canViewContacts = usePermission('contacts.view')
   const canViewLabels = usePermission('labels.view')
   const canViewBList = usePermission('blacklist.view')
+  const canViewSupport = usePermission('support_tickets.view')
   const canViewLeads = usePermission('leads.view')
   const canViewStaff = usePermission('staff.view')
   const canManageStaff = usePermission('staff.manage')
@@ -647,6 +648,7 @@ export const Sidebar = () => {
             {/* } */}
             <FlatLink to="/wallet" icon="👛" label="Wallet" />
             <FlatLink to="/plan-purchase" icon="💳" label="Plans & Billing" />
+            {canViewSupport && <FlatLink to="/support" icon="🎧" label="Support" />}
             <FlatLink to="/setup-guide" icon="🧭" label="Setup Guide" />
           </>
         )}
@@ -656,6 +658,8 @@ export const Sidebar = () => {
           <>
             <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider px-2 pt-3 pb-1">SuperAdmin</p>
             <FlatLink to="/superadmin" icon="📊" label="Dashboard" end />
+            <FlatLink to="/superadmin/support" icon="🎧" label="Support Desk" />
+            <FlatLink to="/superadmin/sender-limits" icon="🚦" label="Sender Speed Limits" />
             <FlatLink to="/superadmin/demo-requests" icon="📅" label="Demo Requests" />
             <FlatLink to="/superadmin/companies" icon="🏢" label="Companies" />
             <FlatLink to="/superadmin/plans" icon="📦" label="Plans" />

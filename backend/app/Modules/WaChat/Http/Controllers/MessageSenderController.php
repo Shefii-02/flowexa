@@ -40,6 +40,12 @@ class MessageSenderController extends Controller
         return response()->json(['data' => $jobs]);
     }
 
+    /** The platform's speed limits and defaults, so the sender page can show valid ranges. */
+    public function limits(): JsonResponse
+    {
+        return response()->json(['data' => \App\Modules\WaChat\Support\SenderLimits::get()]);
+    }
+
     public function store(Request $request): JsonResponse
     {
         // Rejects a session_id that doesn't belong to one of this company's current sessions —
@@ -59,6 +65,7 @@ class MessageSenderController extends Controller
             'total'           => 'required|integer|min:1',
             'delay_ms'        => 'integer|min:0',
             'unique_signature'=> 'boolean',
+            'sending_options' => 'nullable|array',
             'scheduled_at'    => 'nullable|date|after:now',
             'log'             => 'nullable|array',
             'message_payload' => 'nullable|array',
@@ -67,6 +74,9 @@ class MessageSenderController extends Controller
         ], [
             'session_id.exists' => 'That session no longer exists — pick a currently active one.',
         ]);
+
+        // Speed and message variation, checked against the limits the superadmin set (defaults: 2–3 a minute).
+        $data['sending_options'] = \App\Modules\WaChat\Support\SenderLimits::normalize($request->input('sending_options'));
 
         // Store plain digit numbers ("+91 98…" -> "9198…"): the gateway rejects a "+" in the chat id
         // with a 400. Whatever client created the campaign, the saved recipients are clean.
@@ -432,6 +442,7 @@ class MessageSenderController extends Controller
             'failed'           => 0,
             'delay_ms'         => $job->delay_ms,
             'unique_signature' => $job->unique_signature,
+            'sending_options'  => $job->sending_options,
             'message_payload'  => $payload,
             'log'              => array_map(fn ($r) => ['recipient_name' => $r['name'], 'phone' => $r['phone'], 'status' => 'pending'], $recipients),
             'started_at'       => now(),

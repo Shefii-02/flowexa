@@ -264,6 +264,29 @@ Route::prefix('v1')->group(function () {
                 Route::patch('prebuilt-templates/{id}',  [PrebuiltTemplateController::class, 'update'])->name('prebuilt-templates.update');
                 Route::delete('prebuilt-templates/{id}', [PrebuiltTemplateController::class, 'destroy'])->name('prebuilt-templates.destroy');
 
+                // Support desk: tickets raised by companies
+                $sa = \App\Modules\Support\Http\Controllers\SupportTicketAdminController::class;
+                Route::prefix('support')->name('support.')->group(function () use ($sa) {
+                    Route::middleware('permission:support_admin.view')->group(function () use ($sa) {
+                        Route::get('meta',                 [$sa, 'meta']);
+                        Route::get('stats',                [$sa, 'stats']);
+                        Route::get('tickets',              [$sa, 'index']);
+                        Route::get('tickets/{id}',         [$sa, 'show'])->whereNumber('id');
+                        Route::get('tickets/{id}/attachments/{attachmentId}', [$sa, 'attachment']);
+                        Route::get('departments',          [$sa, 'departments']);
+                    });
+                    Route::middleware('permission:support_admin.reply')->group(function () use ($sa) {
+                        Route::post('tickets/{id}/reply',  [$sa, 'reply']);
+                        Route::patch('tickets/{id}',       [$sa, 'update']);
+                    });
+                    Route::middleware('permission:support_admin.manage')->group(function () use ($sa) {
+                        Route::delete('tickets/{id}',      [$sa, 'destroy']);
+                        Route::post('departments',         [$sa, 'storeDepartment']);
+                        Route::put('departments/{id}',     [$sa, 'updateDepartment']);
+                        Route::delete('departments/{id}',  [$sa, 'destroyDepartment']);
+                    });
+                });
+
                 // Exit impersonation
                 Route::post('exit-impersonation', [SuperAdminController::class, 'exitImpersonation'])->name('exit-impersonation');
             });
@@ -275,6 +298,8 @@ Route::prefix('v1')->group(function () {
                 Route::post('staff',                      [SuperadminStaffController::class, 'store']);
                 Route::delete('staff/{id}',               [SuperadminStaffController::class, 'destroy']);
                 Route::put('permissions/{roleId}',        [SuperAdminController::class, 'updatePermissions']);
+                Route::get('message-sender-limits', [\App\Modules\WaChat\Http\Controllers\SenderLimitsAdminController::class, 'show']);
+                Route::put('message-sender-limits', [\App\Modules\WaChat\Http\Controllers\SenderLimitsAdminController::class, 'update']);
             });
         });
 
@@ -381,6 +406,23 @@ Route::prefix('v1')->group(function () {
         });
 
 
+
+        // ── Support tickets (company → platform) ─────────────────────────────────
+        Route::prefix('support-tickets')->name('support-tickets.')->middleware(['jwt.auth', 'company.active'])->group(function () {
+            Route::middleware('permission:support_tickets.view')->group(function () {
+                Route::get('meta',  [\App\Modules\Support\Http\Controllers\SupportTicketController::class, 'meta']);
+                Route::get('/',     [\App\Modules\Support\Http\Controllers\SupportTicketController::class, 'index']);
+                Route::get('/{id}', [\App\Modules\Support\Http\Controllers\SupportTicketController::class, 'show'])->whereNumber('id');
+                Route::get('/{id}/attachments/{attachmentId}', [\App\Modules\Support\Http\Controllers\SupportTicketController::class, 'attachment']);
+            });
+            Route::middleware('permission:support_tickets.create')->group(function () {
+                Route::post('/',             [\App\Modules\Support\Http\Controllers\SupportTicketController::class, 'store']);
+                Route::post('/{id}/reply',   [\App\Modules\Support\Http\Controllers\SupportTicketController::class, 'reply']);
+                Route::post('/{id}/close',   [\App\Modules\Support\Http\Controllers\SupportTicketController::class, 'close']);
+                Route::post('/{id}/reopen',  [\App\Modules\Support\Http\Controllers\SupportTicketController::class, 'reopen']);
+                Route::post('/{id}/rate',    [\App\Modules\Support\Http\Controllers\SupportTicketController::class, 'rate']);
+            });
+        });
 
         // 'company.active'
         Route::prefix('analytics')->name('analytics.')->middleware(['jwt.auth',])->group(function () {
@@ -1464,6 +1506,7 @@ Route::prefix('v1')->middleware(['jwt.auth'])->group(function () {
         Route::get('/',              [MessageSenderController::class, 'index']);
         Route::post('/',             [MessageSenderController::class, 'store']);
         Route::get('/stats',         [MessageSenderController::class, 'stats']);
+        Route::get('/limits',        [MessageSenderController::class, 'limits']);
         Route::post('/test-send',    [MessageSenderController::class, 'testSend']);
         Route::post('/jobs',         [MessageSenderController::class, 'recordCompleted']);
         Route::get('/{id}',          [MessageSenderController::class, 'show']);
@@ -1609,6 +1652,7 @@ Route::prefix('v1')->middleware(['jwt.auth'])->group(function () {
             Route::post('/upload',           [KnowledgeBaseController::class, 'upload']);
             Route::post('/sync-catalog',         [KnowledgeBaseController::class, 'syncFromCatalog']);
             Route::post('/sync-company-details', [KnowledgeBaseController::class, 'syncFromCompanyDetails']);
+            Route::post('/sync-flow-builder',    [KnowledgeBaseController::class, 'syncFromFlowBuilder']);
             Route::patch('/{id}',            [KnowledgeBaseController::class, 'update']);
             Route::delete('/{id}',           [KnowledgeBaseController::class, 'destroy']);
             Route::post('/{id}/reprocess',   [KnowledgeBaseController::class, 'reprocess']);

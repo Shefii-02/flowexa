@@ -8,6 +8,8 @@ use App\Modules\WaChat\Models\WahaMessageLog;
 use App\Modules\WaChat\Models\WahaSession;
 use App\Modules\WaChat\Services\OpenWaMessageService;
 use App\Modules\WaChat\Services\WaChatTokenService;
+use App\Modules\WaChat\Support\MessageVariator;
+use App\Modules\WaChat\Support\SendPacer;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -26,6 +28,10 @@ class ProcessMessageSenderJob implements ShouldQueue
     // lets a send failure escape as an exception (each recipient's try/catch swallows it), so
     // this headroom exists purely to absorb lock-wait releases, not real retries.
     private const MAX_ATTEMPTS = 3; // sends per recipient (first try + auto-fix/backoff retries)
+
+    /** Text-rotation for the campaign being processed (null = send the text exactly as written) and the current message's position in the list. */
+    private ?MessageVariator $variator = null;
+    private int $seq = 0;
 
     public int $tries   = 100;
     public int $timeout = 3600;
@@ -131,6 +137,11 @@ class ProcessMessageSenderJob implements ShouldQueue
         $consecutiveTimeouts = 0; // gateway-hung circuit breaker (see below)
         $delayMs    = max((int)($job->delay_ms ?? 1000), 500);
         $msgType    = $payload['type'] ?? 'text';
+        // New campaigns carry sending options: a random 2–3 messages a minute inside a rolling 5-minute cap, and
+        // optionally rotated texts / shared numbers / growing dot lines. Older ones keep their fixed delay.
+        $options       = $job->sending_options ?? [];
+        $pacer         = !empty($options['pacing']) ? SendPacer::make($options['pacing']) : null;
+        $this->variator = MessageVariator::fromOptions($options['variation'] ?? null, (int) $job->id);
 
         Log::info("ProcessMessageSenderJob #{$job->id}: starting", [
             'company_id'      => $job->company_id,
@@ -148,6 +159,7 @@ class ProcessMessageSenderJob implements ShouldQueue
                 break;
             }
 
+            $this->seq = $index;
             $phone   = $recipient['phone'] ?? '';
             $name    = $recipient['name']  ?? '';
             // The gateway rejects ids like "+9180…@c.us" (400) — a plain number must be digits only.
@@ -288,7 +300,11 @@ class ProcessMessageSenderJob implements ShouldQueue
             }
 
             if ($index < count($recipients) - 1) {
-                usleep($delayMs * 1000);
+                if ($pacer) {
+                    $this->restFor($job, $pacer->delayAfterSend());
+                } else {
+                    usleep($delayMs * 1000);
+                }
             }
         }
 
@@ -302,6 +318,17 @@ class ProcessMessageSenderJob implements ShouldQueue
             'sent'         => $job->sent,
             'failed'       => $job->failed,
         ]);
+    }
+
+    // Waits between messages in short slices so Pause / Stop take effect within a few seconds even when the
+    // pacer asks for a long rest (up to the end of a 5-minute window).
+    private function restFor(MessageSenderJob $job, float $seconds): void
+    {
+        $until = microtime(true) + $seconds;
+        while (($left = $until - microtime(true)) > 0) {
+            usleep((int) (min($left, 5.0) * 1_000_000));
+            if (in_array(MessageSenderJob::whereKey($job->id)->value('status'), ['stopped', 'paused'], true)) return;
+        }
     }
 
     // Decides what kind of failure a gateway response is, so the loop knows whether a retry or an
@@ -395,6 +422,7 @@ class ProcessMessageSenderJob implements ShouldQueue
         bool $uniqueSig,
         ?Company $company,
     ): Response {
+        if ($this->variator) $text = $this->variator->compose($text, $this->seq);
         $message = $this->personalizeMessage($text, $recipient, $company);
         if ($uniqueSig) $message .= $this->buildSignature($recipient['phone'] ?? '');
         return $wa->sendText($sessionId, $apiKey, $chatId, $message);
@@ -419,7 +447,9 @@ class ProcessMessageSenderJob implements ShouldQueue
             $type = $block['type'] ?? 'text';
 
             if ($type === 'text') {
-                $text = $this->personalizeMessage($block['text'] ?? '', $recipient, $company);
+                $raw  = $block['text'] ?? '';
+                if ($this->variator && $i === 0) $raw = $this->variator->compose($raw, $this->seq, false);
+                $text = $this->personalizeMessage($raw, $recipient, $company);
                 if ($uniqueSig && $i === 0) $text .= $this->buildSignature($recipient['phone'] ?? '');
                 $last = $wa->sendText($sessionId, $apiKey, $chatId, $text);
             } else {

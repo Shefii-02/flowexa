@@ -136,6 +136,21 @@ export default function KnowledgeBasePage() {
     }
   }
 
+  const [syncingFlow, setSyncingFlow] = useState(false)
+
+  const syncFromFlowBuilder = async () => {
+    setSyncingFlow(true)
+    try {
+      const { data } = await api.post('/wa-agent/knowledge-base/sync-flow-builder')
+      toast.success(`${data.synced} flow builder${data.synced === 1 ? '' : 's'} synced into the knowledge base.`)
+      load()
+    } catch (e: unknown) {
+      toast.error((e as { response?: { data?: { message?: string } } })?.response?.data?.message ?? 'Sync failed.')
+    } finally {
+      setSyncingFlow(false)
+    }
+  }
+
   const deleteKb = async (id: number) => {
     if (!confirm('Delete this knowledge base? This will remove all chunks.')) return
     await api.delete(`/wa-agent/knowledge-base/${id}`)
@@ -228,6 +243,14 @@ export default function KnowledgeBasePage() {
             className="px-3 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg text-sm hover:bg-gray-50 disabled:opacity-50"
           >
             {syncingCompany ? 'Syncing…' : '🔄 Sync Company Details'}
+          </button>
+          <button
+            onClick={syncFromFlowBuilder}
+            disabled={syncingFlow}
+            title="Turns your Flow Builder menus (messages, options, buttons, linked knowledge) into knowledge base documents"
+            className="px-3 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg text-sm hover:bg-gray-50 disabled:opacity-50"
+          >
+            {syncingFlow ? 'Syncing…' : '🔄 Sync Flow Builder'}
           </button>
           <button
             onClick={() => openModal('text')}

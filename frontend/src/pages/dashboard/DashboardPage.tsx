@@ -125,20 +125,22 @@ export default function DashboardPage() {
   const [loading,   setLoading]   = useState(true)
 
   useEffect(() => {
-    Promise.all([
-      analyticsApi.overview(),
-      analyticsApi.campaigns(),
-      analyticsApi.staff(),
-      analyticsApi.leads(),
-      analyticsApi.messages(),
-      analyticsApi.wallet(),
+    // Each widget loads on its own: a role without (say) billing or staff-analytics access loses only that
+    // widget, not the whole dashboard.
+    Promise.allSettled([
+      analyticsApi.overview(true),
+      analyticsApi.campaigns(true),
+      analyticsApi.staff(true),
+      analyticsApi.leads(true),
+      analyticsApi.messages(true),
+      analyticsApi.wallet(true),
     ]).then(([ov, cam, st, ld, msg, wal]) => {
-      setOverview(ov.data)
-      setCampaigns(cam.data)
-      setStaff(st.data)
-      setLeads(ld.data)
-      setMessages(msg.data)
-      setWallet(wal.data)
+      if (ov.status  === 'fulfilled') setOverview(ov.value.data)
+      if (cam.status === 'fulfilled') setCampaigns(cam.value.data)
+      if (st.status  === 'fulfilled') setStaff(st.value.data)
+      if (ld.status  === 'fulfilled') setLeads(ld.value.data)
+      if (msg.status === 'fulfilled') setMessages(msg.value.data)
+      if (wal.status === 'fulfilled') setWallet(wal.value.data)
     }).finally(() => setLoading(false))
   }, [])
 
