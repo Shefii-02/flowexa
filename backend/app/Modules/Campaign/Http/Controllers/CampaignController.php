@@ -65,10 +65,6 @@ class CampaignController extends Controller
         $template = WaTemplate::where('id', $d['template_id'])->where('company_id', $user->company_id)->firstOrFail();
         $number   = WaPhoneNumber::where('id', $d['wa_phone_number_id'])->where('company_id', $user->company_id)->firstOrFail();
 
-        if ($template->template_type === 'carousel') {
-            return $deny("Carousel templates can't be sent yet.");
-        }
-
         if (strtolower($template->status) !== 'approved') {
             return $deny("Template is \"{$template->status}\" — only approved templates can be sent.");
         }

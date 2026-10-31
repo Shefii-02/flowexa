@@ -39,6 +39,11 @@ class TemplateMessagePayload
             ];
         }
 
+        // Carousel: one entry per card (same count and order as the approved template), each with its media.
+        if ($template->template_type === 'carousel') {
+            $components[] = self::carousel($template, array_slice($variables, $placeholders));
+        }
+
         // A COPY_CODE ("Copy offer code") button needs the actual code at send time.
         foreach (array_values($template->buttons ?? []) as $i => $btn) {
             if (($btn['type'] ?? null) === 'COPY_CODE') {
@@ -51,6 +56,43 @@ class TemplateMessagePayload
             }
         }
 
+        return self::wrap($phone, $template, $components);
+    }
+
+    /**
+     * The `carousel` component. Card media goes by link (the stored sample copy). A website button whose link
+     * ends in {{1}} takes its value from the variables left after the body's, in card/button order, and falls
+     * back to the example value saved on the template.
+     */
+    private static function carousel(WaTemplate $template, array $urlValues): array
+    {
+        $format = strtolower((string) ($template->carousel_media_format ?: 'IMAGE'));
+        $cards  = [];
+        $next   = 0;
+
+        foreach (array_values($template->carousel_cards ?? []) as $i => $card) {
+            $components = [[
+                'type'       => 'header',
+                'parameters' => [['type' => $format, $format => ['link' => $template->carousel_media[$card['uid']]['url'] ?? '']]],
+            ]];
+
+            foreach (array_values($card['buttons'] ?? []) as $j => $btn) {
+                if (($btn['type'] ?? null) === 'URL' && preg_match('/\{\{\s*1\s*\}\}\s*$/', (string) ($btn['url'] ?? ''))) {
+                    $value = trim((string) ($urlValues[$next++] ?? '')) ?: (string) ($btn['example'] ?? '');
+                    $components[] = [
+                        'type' => 'button', 'sub_type' => 'url', 'index' => (string) $j,
+                        'parameters' => [['type' => 'text', 'text' => $value]],
+                    ];
+                }
+            }
+            $cards[] = ['card_index' => $i, 'components' => $components];
+        }
+
+        return ['type' => 'carousel', 'cards' => $cards];
+    }
+
+    private static function wrap(string $phone, WaTemplate $template, array $components): array
+    {
         return [
             'messaging_product' => 'whatsapp',
             'to'                => $phone,
