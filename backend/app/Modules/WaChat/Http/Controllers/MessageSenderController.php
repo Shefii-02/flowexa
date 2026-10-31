@@ -228,7 +228,9 @@ class MessageSenderController extends Controller
             // keep the raw text in the log and show a readable message instead.
             if (is_string($msg) && preg_match('/static\.whatsapp\.net|Evaluation failed|must include an id property/i', $msg)) {
                 Log::error('[wa-web] library error during test send', ['session' => $data['session_id'], 'type' => $data['type'], 'error' => $msg]);
-                $msg = 'WhatsApp Web hit an internal error while sending. Check the number is on WhatsApp and try again; if media keeps failing, the gateway needs its media-send patch applied.';
+                // The raw text is what tells the gateway's owner what to fix, so it stays in the message (trimmed) rather than
+                // being replaced by advice that points at a cause nobody has verified.
+                $msg = 'WhatsApp Web could not send this (' . trim(mb_substr(preg_replace('/\s+/', ' ', $msg), 0, 180)) . '). Check the number is on WhatsApp and try again.';
             }
             return response()->json(['message' => $msg], 422);
         }

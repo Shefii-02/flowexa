@@ -17,5 +17,14 @@ class AppServiceProvider extends ServiceProvider
         }
 
         Company::observe(CompanyObserver::class);
+
+        // Instagram conversion events (instagram_manage_events): a new lead / a won deal. The job checks the account's
+        // opt-in itself, so for everyone else this is a cheap no-op.
+        \App\Models\Lead::created(fn ($lead) => \App\Modules\Instagram\Jobs\SendInstagramConversionEvent::dispatch('lead', $lead->id));
+        \App\Models\CrmDeal::updated(function ($deal) {
+            if ($deal->wasChanged('status') && $deal->status === 'won') {
+                \App\Modules\Instagram\Jobs\SendInstagramConversionEvent::dispatch('purchase', $deal->id);
+            }
+        });
     }
 }

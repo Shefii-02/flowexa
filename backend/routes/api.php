@@ -1229,6 +1229,7 @@ Route::prefix('v1')->group(function () {
         Route::prefix('/instagram')->name('instagram.')->middleware(['company.active', 'permission:instagram.view'])->group(function () {
             Route::get('accounts',                 [\App\Modules\Instagram\Http\Controllers\InstagramAccountController::class, 'index']);
             Route::get('accounts/{id}/media',      [\App\Modules\Instagram\Http\Controllers\InstagramAccountController::class, 'media']);
+            Route::get('accounts/{id}/conversion-events', [\App\Modules\Instagram\Http\Controllers\InstagramAccountController::class, 'conversionEvents']);
             Route::get('accounts/{id}/insights',   [\App\Modules\Instagram\Http\Controllers\InstagramCommentController::class, 'insights']);
             Route::get('accounts/{id}/media/{mediaId}/comments', [\App\Modules\Instagram\Http\Controllers\InstagramCommentController::class, 'index']);
             Route::get('automations',              [\App\Modules\Instagram\Http\Controllers\InstagramAutomationController::class, 'index']);

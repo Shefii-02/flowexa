@@ -4,10 +4,10 @@ import { Link } from 'react-router-dom'
 import { Button, Input, Textarea, Badge, EmptyState, Modal, ConfirmModal } from '@/components/ui'
 import { fmt, getError } from '@/utils'
 import toast from 'react-hot-toast'
-import { instagramApi, type IgAccount, type IgMedia, type IgPage } from './api/instagram'
+import { instagramApi, type IgAccount, type IgConversionLog, type IgMedia, type IgPage } from './api/instagram'
 
 const META_APP_ID = import.meta.env.VITE_META_APP_ID as string | undefined
-const FB_SCOPES = 'pages_show_list,pages_read_engagement,pages_messaging,instagram_basic,instagram_manage_messages,instagram_manage_comments,instagram_manage_insights'
+const FB_SCOPES = 'pages_show_list,pages_read_engagement,pages_messaging,instagram_basic,instagram_manage_messages,instagram_manage_comments,instagram_manage_insights,instagram_manage_events'
 
 // Loads Facebook's JS SDK once (needed for the one-click "Continue with Facebook" login).
 let fbReady: Promise<any> | null = null
@@ -26,6 +26,82 @@ function loadFb(appId: string): Promise<any> {
 // Meta must reach Laravel directly: use the configured API host (e.g. https://api.teamzo.io/api/v1), not the SPA origin.
 const API_BASE = ((import.meta.env.VITE_API_URL as string | undefined) || '/api/v1').replace(/\/$/, '')
 const webhookUrl = `${/^https?:\/\//.test(API_BASE) ? API_BASE : window.location.origin + API_BASE}/instagram/webhook`.replace(/^http:/, 'https:')
+
+
+const EVENT_CHOICES: { key: string; label: string; help: string }[] = [
+  { key: 'lead', label: 'Lead', help: 'sent as “LeadSubmitted” when a contact from this Instagram account becomes a lead in the CRM' },
+  { key: 'purchase', label: 'Purchase', help: 'sent when the contact’s deal is marked won, with the deal value and currency' },
+]
+
+/** “Send conversion events to Meta” — opt-in per account (instagram_manage_events), with a log of everything sent. */
+function ConversionEventsPanel({ account, onChange }: { account: IgAccount; onChange: (d: Record<string, unknown>) => void }) {
+  const on = !!account.send_conversion_events
+  const chosen = account.conversion_events ?? EVENT_CHOICES.map(e => e.key)
+  const [log, setLog] = useState<IgConversionLog | null>(null)
+
+  useEffect(() => {
+    if (!on) { setLog(null); return }
+    instagramApi.conversionEvents(account.id).then(r => setLog(r.data)).catch(() => setLog(null))
+  }, [on, account.id])
+
+  const toggleEvent = (key: string, checked: boolean) =>
+    onChange({ conversion_events: checked ? [...new Set([...chosen, key])] : chosen.filter(k => k !== key) })
+
+  return (
+    <div className="mt-4 pt-4 border-t border-gray-100 space-y-3">
+      <label className="flex items-start gap-2 text-sm">
+        <input type="checkbox" className="mt-0.5" checked={on} onChange={e => onChange({ send_conversion_events: e.target.checked, ...(e.target.checked && !account.conversion_events ? { conversion_events: chosen } : {}) })} />
+        <span>
+          <span className="font-medium">Send conversion events to Meta</span>
+          <span className="block text-xs text-gray-500">
+            Tells Meta when a conversation from this account becomes a lead or a sale, so your Click-to-Instagram-Direct ads can optimise for real results and show true cost per lead.
+            Uses the <code>instagram_manage_events</code> permission. You choose the events and can turn this off at any time.
+          </span>
+        </span>
+      </label>
+
+      {on && (
+        <>
+          <div className="pl-6 space-y-1">
+            {EVENT_CHOICES.map(e => (
+              <label key={e.key} className="flex items-start gap-2 text-xs text-gray-600">
+                <input type="checkbox" className="mt-0.5" checked={chosen.includes(e.key)} onChange={ev => toggleEvent(e.key, ev.target.checked)} />
+                <span><b className="text-gray-800">{e.label}</b> — {e.help}</span>
+              </label>
+            ))}
+          </div>
+
+          <div className="pl-6">
+            <p className="text-xs font-semibold text-gray-500 mb-1">
+              Reported to Meta {log?.dataset_id && <span className="font-normal text-gray-400">· dataset {log.dataset_id}</span>}
+            </p>
+            {!log || log.events.length === 0 ? (
+              <p className="text-xs text-gray-400">Nothing yet — events appear here as leads are created and deals are won.</p>
+            ) : (
+              <>
+                <p className="text-xs text-gray-500 mb-1">
+                  {log.totals.map(t => `${t.c} ${t.event_name}${t.v ? ` (${fmt.number(Number(t.v))})` : ''}`).join(' · ') || 'No events sent yet'}
+                  {log.failed > 0 && <span className="text-red-500"> · {log.failed} failed</span>}
+                </p>
+                <div className="max-h-36 overflow-y-auto border border-gray-100 rounded-lg divide-y divide-gray-50">
+                  {log.events.map(ev => (
+                    <div key={ev.id} className="flex items-center gap-2 px-2 py-1 text-xs">
+                      <Badge variant={ev.status === 'sent' ? 'green' : 'red'}>{ev.status}</Badge>
+                      <span className="font-medium text-gray-700">{ev.event_name}</span>
+                      {ev.value && <span className="text-gray-500">{ev.currency} {fmt.number(Number(ev.value))}</span>}
+                      <span className="ml-auto text-gray-400">{new Date(ev.event_time).toLocaleString()}</span>
+                      {ev.error && <span className="text-red-500 truncate max-w-[40%]" title={ev.error}>{ev.error}</span>}
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
 
 export default function InstagramAccountsPage() {
   const [accounts, setAccounts] = useState<IgAccount[]>([])
@@ -195,6 +271,8 @@ export default function InstagramAccountsPage() {
                   </>
                 )}
               </div>
+
+              <ConversionEventsPanel account={a} onChange={d => patch(a, d)} />
             </div>
           ))}
         </div>

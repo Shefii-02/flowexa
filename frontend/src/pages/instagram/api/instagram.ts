@@ -8,6 +8,7 @@ export const instagramApi = {
   updateAccount: (id: number, d: Record<string, unknown>) => api.put(`/instagram/accounts/${id}`, d),
   disconnect: (id: number) => api.delete(`/instagram/accounts/${id}`),
   syncAccount: (id: number) => api.post(`/instagram/accounts/${id}/sync`),
+  conversionEvents: (id: number) => api.get<IgConversionLog>(`/instagram/accounts/${id}/conversion-events`),
   accountMedia: (id: number) => api.get(`/instagram/accounts/${id}/media`),
   importListings: (id: number, mediaIds?: string[]) =>
     api.post(`/instagram/accounts/${id}/import-listings`, mediaIds ? { media_ids: mediaIds } : {}),
@@ -51,6 +52,8 @@ export interface IgAccount {
   ai_persona: string | null
   mirror_customer_style: boolean
   is_active: boolean
+  send_conversion_events?: boolean
+  conversion_events?: string[] | null
   automations_count?: number
   conversations_count?: number
   last_synced_at: string | null
@@ -131,4 +134,12 @@ export interface IgMessage {
   status: string | null
   error: string | null
   created_at: string
+}
+
+/** What this account has reported to Meta (instagram_manage_events): totals plus the latest events and their outcome. */
+export interface IgConversionLog {
+  dataset_id: string | null
+  failed: number
+  totals: { event_name: string; c: number; v: string | null }[]
+  events: { id: number; event_name: string; status: 'sent' | 'failed'; value: string | null; currency: string | null; error: string | null; event_time: string }[]
 }

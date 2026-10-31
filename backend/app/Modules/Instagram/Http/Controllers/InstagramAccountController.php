@@ -116,9 +116,25 @@ class InstagramAccountController extends Controller
             'is_active'             => ['sometimes', 'boolean'],
             'access_token'          => ['sometimes', 'string'],
             'page_id'               => ['sometimes', 'nullable', 'string', 'max:40'],
+            'send_conversion_events' => ['sometimes', 'boolean'],
+            'conversion_events'     => ['sometimes', 'array'],
+            'conversion_events.*'   => ['in:lead,purchase'],
         ]);
         $account->update($d);
         return response()->json(['account' => $account->fresh()]);
+    }
+
+    /** What has been reported to Meta for this account: totals by type and the latest events with their outcome. */
+    public function conversionEvents(int $id): JsonResponse
+    {
+        $account = $this->find($id);
+        $q = \App\Models\InstagramConversionEvent::where('instagram_account_id', $account->id);
+        return response()->json([
+            'dataset_id' => $account->conversion_dataset_id,
+            'totals'     => (clone $q)->where('status', 'sent')->selectRaw('event_name, count(*) c, sum(value) v')->groupBy('event_name')->get(),
+            'failed'     => (clone $q)->where('status', 'failed')->count(),
+            'events'     => (clone $q)->latest('id')->limit(20)->get(['id', 'event_name', 'status', 'value', 'currency', 'error', 'event_time']),
+        ]);
     }
 
     public function destroy(int $id): JsonResponse

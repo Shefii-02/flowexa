@@ -109,6 +109,8 @@ return [
     'instagram' => [
         // Graph API version for the Instagram Messaging + comments API.
         'graph_version'        => env('INSTAGRAM_GRAPH_VERSION', 'v21.0'),
+        // Conversions API for business messaging (instagram_manage_events) — dataset + events endpoints.
+        'events_graph_version' => env('INSTAGRAM_EVENTS_GRAPH_VERSION', 'v23.0'),
         // Verify token for the Instagram webhook subscription (comments + messages).
         'webhook_verify_token' => env('INSTAGRAM_WEBHOOK_VERIFY_TOKEN'),
         // App secret for X-Hub-Signature-256 validation (falls back to the meta_ads one).
