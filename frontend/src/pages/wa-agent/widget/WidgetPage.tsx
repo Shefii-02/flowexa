@@ -39,7 +39,7 @@ type Draft = {
 
 const emptyDraft = (): Draft => ({
   name: 'Website chat', is_active: true, live_chat_enabled: false, live_wait_seconds: '90', ai_fallback_enabled: true, live_max_per_staff: '5', agent_name: 'Assistant',
-  greeting: 'Hi! 👋 How can I help you today?', primary_color: '#4f46e5', position: 'right', bottom_offset: '100', center_top: '20', center_bottom: '20', side_offset: '20',
+  greeting: 'Hi! 👋 How can I help you today?', primary_color: '#4f46e5', position: 'right', bottom_offset: '20', center_top: '20', center_bottom: '20', side_offset: '20',
   launcher_text: 'Chat with us', allowed_origins: '', notify_emails: '', notify_whatsapp: '', wa_session_id: '', flow_builder_id: '',
 })
 
@@ -85,7 +85,7 @@ export default function WidgetPage() {
     agent_name: w.agent_name, greeting: w.greeting,
     primary_color: w.branding?.primary_color ?? '#4f46e5',
     position: w.branding?.position ?? 'right',
-    bottom_offset: String(w.branding?.bottom_offset ?? 100),
+    bottom_offset: String(w.branding?.bottom_offset ?? 20),
     center_top: String(w.branding?.center_top ?? w.branding?.center_gap ?? 20),
     center_bottom: String(w.branding?.center_bottom ?? w.branding?.center_gap ?? 20),
     side_offset: String(w.branding?.side_offset ?? 20),

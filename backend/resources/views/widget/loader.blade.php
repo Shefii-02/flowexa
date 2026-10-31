@@ -35,7 +35,7 @@
   var root = h("div", { id: "wgt-root-" + KEY });
   var shadow = root.attachShadow ? root.attachShadow({ mode: "open" }) : root;
 
-  var GAP_BOTTOM = 100, GAP_TOP = 20, GAP_CENTER_BOTTOM = 20, GAP_SIDE = 20;   // px defaults; override via branding.bottom_offset / branding.center_gap
+  var GAP_BOTTOM = 20, GAP_TOP = 20, GAP_CENTER_BOTTOM = 20, GAP_SIDE = 20;   // px defaults; override via branding.bottom_offset / branding.center_gap
   function styleBlock() {
     var center = vpos === "center";
     var launcherV = center ? "top: calc(50% - 25px);" : "bottom: " + GAP_BOTTOM + "px;";
