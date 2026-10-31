@@ -53,6 +53,9 @@ class TemplateService
             'name'                => $data['name'],
             'wa_template_id'      => $data['wa_template_id'] ?? null,
             'category'            => $data['category'],
+            'template_type'       => $data['template_type'] ?? 'standard',
+            'carousel_media_format' => $data['carousel_media_format'] ?? null,
+            'carousel_cards'      => $data['carousel_cards'] ?? null,
             'language'            => $data['language'] ?? 'en',
             'body'                => $data['body'],
             'body_examples'       => $data['body_examples'] ?? null,
@@ -106,6 +109,32 @@ class TemplateService
         }
         if (array_key_exists('buttons', $data)) {
             $template->buttons = $data['buttons'];
+        }
+        if (array_key_exists('template_type', $data)) {
+            $template->template_type = $data['template_type'] ?: 'standard';
+        }
+        if (array_key_exists('carousel_media_format', $data)) {
+            // Image <-> video: the old samples no longer fit the new type, so drop them (and their files).
+            if ($template->carousel_media_format && $data['carousel_media_format'] !== $template->carousel_media_format) {
+                foreach ($template->carousel_media ?? [] as $m) {
+                    if (!empty($m['path'])) \Illuminate\Support\Facades\Storage::disk('public')->delete($m['path']);
+                }
+                $template->carousel_media = null;
+            }
+            $template->carousel_media_format = $data['carousel_media_format'];
+        }
+        if (array_key_exists('carousel_cards', $data)) {
+            $template->carousel_cards = $data['carousel_cards'];
+            // Drop the sample media of cards that were removed (and the files behind them).
+            $keep  = collect($data['carousel_cards'] ?? [])->pluck('uid')->all();
+            $media = $template->carousel_media ?? [];
+            foreach ($media as $uid => $m) {
+                if (!in_array($uid, $keep, true)) {
+                    if (!empty($m['path'])) \Illuminate\Support\Facades\Storage::disk('public')->delete($m['path']);
+                    unset($media[$uid]);
+                }
+            }
+            $template->carousel_media = $media ?: null;
         }
         if (array_key_exists('auth_apps', $data)) {
             $template->auth_apps = $data['auth_apps'];
@@ -285,6 +314,38 @@ class TemplateService
             'footer'           => $footer['text'] ?? null,
             'buttons'          => $btns ? $this->buttonsFromMeta($btns['buttons'] ?? []) : null,
         ];
+
+        // Carousel: cards live in a CAROUSEL component; keep a card's uploaded sample when the card count is unchanged.
+        $carousel = $components->firstWhere('type', 'CAROUSEL');
+        if ($carousel && !empty($carousel['cards'])) {
+            $oldCards = $existing?->template_type === 'carousel' ? ($existing->carousel_cards ?? []) : [];
+            $oldMedia = $existing?->carousel_media ?? [];
+            $sameCount = count($oldCards) === count($carousel['cards']);
+            $cards = []; $media = []; $mediaFormat = null;
+            foreach ($carousel['cards'] as $i => $c) {
+                $cc   = collect($c['components'] ?? []);
+                $ch   = $cc->firstWhere('type', 'HEADER');
+                $cb   = $cc->firstWhere('type', 'BODY');
+                $cbt  = $cc->firstWhere('type', 'BUTTONS');
+                $uid  = $sameCount ? ($oldCards[$i]['uid'] ?? \Illuminate\Support\Str::random(12)) : \Illuminate\Support\Str::random(12);
+                $cards[] = ['uid' => $uid, 'body' => $cb['text'] ?? '', 'buttons' => $cbt ? $this->buttonsFromMeta($cbt['buttons'] ?? []) : []];
+                $mediaFormat ??= strtoupper($ch['format'] ?? 'IMAGE');
+                $metaUrl = $ch['example']['header_handle'][0] ?? null;
+                if ($sameCount && !empty($oldMedia[$uid]['path'])) {
+                    $media[$uid] = $oldMedia[$uid];          // our own stored copy outlives Meta's expiring CDN link
+                } elseif ($metaUrl) {
+                    $media[$uid] = ['handle' => null, 'path' => null, 'url' => $metaUrl];
+                }
+            }
+            $attrs['template_type']        = 'carousel';
+            $attrs['carousel_media_format'] = $mediaFormat;
+            $attrs['carousel_cards']       = $cards;
+            $attrs['carousel_media']       = $media ?: null;
+            $attrs['buttons']              = null;
+        } else {
+            $attrs['template_type']  = 'standard';
+            $attrs['carousel_cards'] = null;
+        }
 
         if (!empty($meta['category']))  $attrs['category'] = $meta['category'];
         if (!empty($meta['language']))  $attrs['language'] = $meta['language'];

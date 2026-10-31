@@ -440,6 +440,16 @@ export const templateApi = {
     return api.post(`/templates/${id}/upload-header-media`, { ...source, ...(headerFormat ? { header_format: headerFormat } : {}) }, { timeout: 180_000 })
   },
   deleteHeaderMedia: (id: number) => api.delete(`/templates/${id}/delete-header-media`),
+  // Carousel card sample (card addressed by its uid) — a File, or { media_url } from the Media Library
+  uploadCarouselCardMedia: (id: number, uid: string, source: File | { media_url: string }, format?: string) => {
+    if (source instanceof File) {
+      const fd = new FormData(); fd.append('file', source)
+      if (format) fd.append('format', format)
+      return api.post(`/templates/${id}/carousel-cards/${uid}/upload-media`, fd, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 180_000 })
+    }
+    return api.post(`/templates/${id}/carousel-cards/${uid}/upload-media`, { ...source, ...(format ? { format } : {}) }, { timeout: 180_000 })
+  },
+  deleteCarouselCardMedia: (id: number, uid: string) => api.delete(`/templates/${id}/carousel-cards/${uid}/delete-media`),
   uploadFooterMedia: (id: number, file: File) => {
     const fd = new FormData(); fd.append('file', file)
     return api.post(`/templates/${id}/upload-footer-media`, fd, { headers: { 'Content-Type': 'multipart/form-data' } })

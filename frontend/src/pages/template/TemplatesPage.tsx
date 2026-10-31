@@ -10,6 +10,7 @@ import { useMediaGate } from '@/hooks/useMediaGate'
 import { MEDIA_RULES, MediaRuleKey } from '@/utils/mediaRules'
 import MediaPickerModal from '@/components/MediaPickerModal'
 import WaText from '@/components/shared/WaText'
+import CarouselCardsEditor, { CarouselPreview, CarouselCard, CardMedia, CarouselMediaFormat, newCard, carouselIssues, newCardUid } from './CarouselCardsEditor'
 
 const CATEGORIES = ['MARKETING', 'UTILITY', 'AUTHENTICATION']
 const LANGUAGES  = [
@@ -73,6 +74,10 @@ const DEFAULT_FORM = {
   body: '', footer: '',
   buttons: [] as { type: string; text: string; url?: string; phone_number?: string; phone_cc?: string; phone_local?: string; survey_form_id?: number; example?: string }[],
   message_send_ttl_seconds: null as number | null, // MARKETING only; null = Meta's standard 12 hours
+  // CAROUSEL (MARKETING only): a body plus 2–10 swipeable cards, each with its own media, text and buttons
+  template_type: 'standard' as 'standard' | 'carousel',
+  carousel_media_format: 'IMAGE' as CarouselMediaFormat,
+  carousel_cards: [] as CarouselCard[],
   // AUTHENTICATION-only — code delivery setup. Meta generates body/footer copy itself;
   // these just configure how the OTP is delivered and what flags are set.
   auth_delivery_method: 'copy_code' as 'copy_code'|'one_tap'|'zero_tap',
@@ -187,6 +192,23 @@ export default function TemplatesPage() {
   const [headerLibraryUrl, setHeaderLibraryUrl] = useState('')
   const [showLibraryPicker, setShowLibraryPicker] = useState(false)
 
+  // Carousel card sample media, keyed by card uid (files are uploaded to Meta after the draft is saved)
+  const [cardMedia, setCardMedia] = useState<Record<string, CardMedia>>({})
+  const setOneCardMedia = (uid: string, m: CardMedia | null) =>
+    setCardMedia(prev => { const next = { ...prev }; if (m) next[uid] = m; else delete next[uid]; return next })
+  const isCarousel = form.template_type === 'carousel' && form.category === 'MARKETING'
+  const chooseTemplateType = (t: 'standard' | 'carousel') => {
+    if (t === 'carousel') {
+      setForm(f => ({
+        ...f, template_type: 'carousel', header_format: 'TEXT', header: '', header_example: '', footer: '', buttons: [],
+        carousel_cards: f.carousel_cards.length ? f.carousel_cards : [newCard(), newCard()],
+      }))
+      setHeaderSampleFile(null); setHeaderSampleUrl(''); setHeaderLibraryUrl('')
+    } else {
+      set('template_type', 'standard')
+    }
+  }
+
   // body editor helpers — textarea ref lets the toolbar wrap the current selection / insert at the caret
   const bodyRef = useRef<HTMLTextAreaElement>(null)
   const [showEmoji, setShowEmoji] = useState(false)
@@ -256,6 +278,7 @@ export default function TemplatesPage() {
     setHeaderSampleUrl('')
     setHeaderLibraryUrl('')
     setBodyExamples({})
+    setCardMedia({})
   }
 
   const openCreate = () => { setEditTpl(null); resetForm(); setShowCreate(true) }
@@ -271,6 +294,13 @@ export default function TemplatesPage() {
       body: t.body || '', footer: t.footer || '',
       buttons: (t.buttons || []).map((b: any) => b.type === 'PHONE_NUMBER' ? { ...b, ...splitPhone(b.phone_number) } : b),
       message_send_ttl_seconds: t.message_send_ttl_seconds ?? null,
+      template_type: t.template_type === 'carousel' ? 'carousel' : 'standard',
+      carousel_media_format: t.carousel_media_format === 'VIDEO' ? 'VIDEO' : 'IMAGE',
+      carousel_cards: (Array.isArray(t.carousel_cards) ? t.carousel_cards : []).map((c: any) => ({
+        uid: c.uid || newCardUid(),
+        body: c.body || '',
+        buttons: (c.buttons || []).map((b: any) => b.type === 'PHONE_NUMBER' ? { ...b, ...splitPhone(b.phone_number) } : b),
+      })),
       auth_delivery_method: t.auth_delivery_method || 'copy_code',
       auth_add_expiry: t.auth_add_expiry ?? true,
       auth_add_security_recommendation: t.auth_add_security_recommendation ?? true,
@@ -286,6 +316,9 @@ export default function TemplatesPage() {
       t.body_examples.forEach((v: string, i: number) => { savedExamples[i + 1] = v })
     }
     setBodyExamples(savedExamples)
+    const storedMedia: Record<string, CardMedia> = {}
+    Object.entries(t.carousel_media || {}).forEach(([uid, m]: [string, any]) => { if (m?.url) storedMedia[uid] = { previewUrl: m.url } })
+    setCardMedia(storedMedia)
     setShowCreate(true)
   }
 
@@ -374,6 +407,10 @@ export default function TemplatesPage() {
       }
     } else {
       if (!form.body.trim())  { toast.error('Body text required'); return }
+      if (isCarousel) {
+        const problem = carouselIssues(form.carousel_cards, form.carousel_media_format, cardMedia)[0]
+        if (problem) { toast.error(problem); return }
+      }
       // Meta content rules — checked here first, then again on the server, before anything is sent to Meta
       const contentIssue = bodyIssues(form.body)[0]
         || (form.header_format === 'TEXT' ? headerIssues(form.header)[0] : undefined)
@@ -460,6 +497,27 @@ export default function TemplatesPage() {
         })),
       }
 
+      if (!isAuth) {
+        payload.template_type = isCarousel ? 'carousel' : 'standard'
+        if (isCarousel) {
+          payload.header_format = 'TEXT'
+          payload.header = undefined
+          payload.footer = ''
+          payload.buttons = []
+          payload.carousel_media_format = form.carousel_media_format
+          payload.carousel_cards = form.carousel_cards.map(c => ({
+            uid: c.uid,
+            body: c.body.trim(),
+            buttons: c.buttons.map(b => ({
+              type: b.type,
+              text: b.text.trim(),
+              url: b.type === 'URL' ? b.url?.trim() : undefined,
+              phone_number: b.type === 'PHONE_NUMBER' ? joinPhone(b.phone_cc, b.phone_local) : undefined,
+            })),
+          }))
+        }
+      }
+
       // A template that already went to Meta (rejected / error) is re-pushed by update() itself, so
       // its NEW header sample must be uploaded BEFORE that call — otherwise Meta receives the edit
       // without the image (and the upload is then refused, the template being pending by then).
@@ -471,7 +529,21 @@ export default function TemplatesPage() {
         finally { setUploadingSample(false) }
       }
 
+      // Carousel cards: each card's picked file / library item goes to Meta against this template id.
+      const uploadCardSamples = async (id: number) => {
+        if (!isCarousel) return
+        setUploadingSample(true)
+        try {
+          for (const c of form.carousel_cards) {
+            const m = cardMedia[c.uid]
+            if (m?.file) await templateApi.uploadCarouselCardMedia(id, c.uid, m.file, form.carousel_media_format)
+            else if (m?.libraryUrl) await templateApi.uploadCarouselCardMedia(id, c.uid, { media_url: m.libraryUrl }, form.carousel_media_format)
+          }
+        } finally { setUploadingSample(false) }
+      }
+
       if (isResubmit && needsSampleUpload) await uploadSample(editTpl.id)
+      if (isResubmit) await uploadCardSamples(editTpl.id)
 
       // Step 1 — create (as draft) or update the text/structure fields, get a template id
       let templateId = 0
@@ -488,6 +560,7 @@ export default function TemplatesPage() {
       // Editing without touching the file field leaves the existing header_handle as-is.
       // (N/A for AUTHENTICATION — it never has a header.)
       if (!isResubmit && needsSampleUpload) await uploadSample(templateId)
+      if (!isResubmit) await uploadCardSamples(templateId)
 
       // Step 3 — push to Meta. Only for a brand-new or still-draft template: editing one that was
       // already submitted has just been re-pushed by update(), and a second submit() would be refused
@@ -652,7 +725,9 @@ export default function TemplatesPage() {
                     </td>
                     <td><Badge variant="blue">{t.category}</Badge></td>
                     <td className="text-xs text-gray-500">
-                      {HEADER_FORMATS.find(h => h.value === (t.header_format?.toUpperCase() || 'TEXT'))?.label || '📝 Text'}
+                      {t.template_type === 'carousel'
+                        ? `🎠 Carousel (${(t.carousel_cards || []).length})`
+                        : HEADER_FORMATS.find(h => h.value === (t.header_format?.toUpperCase() || 'TEXT'))?.label || '📝 Text'}
                     </td>
                     <td className="text-xs text-gray-500">{LANGUAGES.find(l => l.code === t.language)?.label || t.language}</td>
                     <td>
@@ -748,7 +823,7 @@ export default function TemplatesPage() {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="label">Category *</label>
-                <select className="select" value={form.category} onChange={e => set('category', e.target.value)}
+                <select className="select" value={form.category} onChange={e => { set('category', e.target.value); if (e.target.value !== 'MARKETING') set('template_type', 'standard') }}
                   disabled={!!editTpl?.wa_template_id && ['approved', 'paused'].includes(editTpl?.status)}
                   title={editTpl?.wa_template_id && ['approved', 'paused'].includes(editTpl?.status) ? "Meta doesn't let you change the category of a live template" : undefined}>
                   {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
@@ -769,8 +844,31 @@ export default function TemplatesPage() {
               </div>
             </div>
 
+            {/* Template type — carousel is a Marketing-only layout */}
+            {form.category === 'MARKETING' && (
+              <div>
+                <label className="label">Template type</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {([
+                    { v: 'standard', label: '💬 Standard', desc: 'One message: optional header, body, footer and buttons' },
+                    { v: 'carousel', label: '🎠 Carousel', desc: '2–10 swipeable cards, each with media, text and buttons' },
+                  ] as const).map(o => (
+                    <button key={o.v} type="button"
+                      disabled={!!editTpl?.wa_template_id}
+                      title={editTpl?.wa_template_id ? "A template's type can't be changed once it exists on Meta" : undefined}
+                      onClick={() => chooseTemplateType(o.v)}
+                      className={`p-2.5 rounded-xl border text-left transition-all disabled:opacity-60 ${form.template_type === o.v ? 'border-brand-500 bg-brand-50' : 'border-gray-200 hover:border-gray-300'}`}>
+                      <div className="text-sm font-semibold">{o.label}</div>
+                      <div className="text-xs text-gray-400 mt-0.5 leading-tight">{o.desc}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Header format selector */}
             {form.category !== 'AUTHENTICATION' && (<>
+            {!isCarousel && (<>
             <div>
               <label className="label">Header type</label>
               <div className="grid grid-cols-2 gap-2">
@@ -872,6 +970,8 @@ export default function TemplatesPage() {
               </div>
             )}
 
+            </>)}
+
             <div>
               <label className="label">
                 Body text *
@@ -959,6 +1059,19 @@ export default function TemplatesPage() {
               </div>
             )}
 
+            {isCarousel && (
+              <CarouselCardsEditor
+                cards={form.carousel_cards}
+                onCards={cards => set('carousel_cards', cards)}
+                format={form.carousel_media_format}
+                onFormat={f => set('carousel_media_format', f)}
+                media={cardMedia}
+                onMedia={setOneCardMedia}
+                disabled={isLocked}
+              />
+            )}
+
+            {!isCarousel && (<>
             <Input
               label={`Footer (optional) — ${form.footer.length}/60`}
               placeholder="Reply STOP to unsubscribe"
@@ -967,6 +1080,10 @@ export default function TemplatesPage() {
             />
             {footerIssues(form.footer).map(m => <p key={m} className="text-xs text-red-500 -mt-2">⚠️ {m}</p>)}
 
+            </>)}
+
+            {!isCarousel && (
+            <>
             {/* Buttons — text/url/phone only, matching what Meta actually accepts */}
             <div>
               <div className="flex items-center justify-between mb-2">
@@ -1073,6 +1190,8 @@ export default function TemplatesPage() {
                 ))}
               </div>
             </div>
+            </>
+            )}
             </>)}
 
             {/* AUTHENTICATION — code delivery setup, replaces header/body/footer/buttons entirely */}
@@ -1240,6 +1359,8 @@ export default function TemplatesPage() {
                     {form.auth_delivery_method === 'zero_tap' ? '⚡ Auto-filled' : form.auth_delivery_method === 'one_tap' ? '👆 Autofill' : '📋 Copy Code'}
                   </div>
                 </div>
+              ) : isCarousel ? (
+                <CarouselPreview cards={form.carousel_cards} format={form.carousel_media_format} media={cardMedia} />
               ) : form.buttons.length > 0 && (
                 <div className="mt-1 space-y-1">
                   {form.buttons.map((btn, i) => (

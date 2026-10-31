@@ -15,7 +15,12 @@ class CreateCampaignRequest extends FormRequest
         return [
             'name'                => ['required', 'string', 'max:150'],
             'description'         => ['nullable', 'string', 'max:500'],
-            'template_id'         => ['required', 'integer', 'exists:wa_templates,id'],
+            'template_id'         => ['required', 'integer', 'exists:wa_templates,id', function ($attr, $value, $fail) {
+                // Carousel templates can be created and approved, but campaign sending for them isn't built yet.
+                if (\App\Models\WaTemplate::where('id', $value)->where('template_type', 'carousel')->exists()) {
+                    $fail('Carousel templates can\'t be used in campaigns yet.');
+                }
+            }],
             'wa_phone_number_id'  => ['nullable', 'integer', 'exists:wa_phone_numbers,id'],
             'template_variables'  => ['nullable', 'array'],
             'target_type'         => ['required', 'in:csv,labels,all'],

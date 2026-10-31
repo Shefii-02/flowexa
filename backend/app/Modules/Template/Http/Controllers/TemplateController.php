@@ -124,6 +124,11 @@ class TemplateController extends Controller
 
         if ($wasSubmitted) {
             $company = auth()->user()->company;
+            if ($template->template_type === 'carousel' && ($err = $this->ensureCarouselHandles($template, $company))) {
+                WaTemplate::where('id', $id)->update(\Illuminate\Support\Arr::except($before, ['id', 'created_at', 'updated_at']));
+                return response()->json(['message' => $err], 422);
+            }
+            $template = $template->fresh();
             $this->submitToMeta($template, $company, $this->mergedPayloadForSubmit($template), isUpdate: true);
 
             if ($wasLive) {
@@ -171,6 +176,13 @@ class TemplateController extends Controller
             $template = $template->fresh();
         }
 
+        if ($template->template_type === 'carousel') {
+            if ($err = $this->ensureCarouselHandles($template, $company)) {
+                return response()->json(['message' => $err], 422);
+            }
+            $template = $template->fresh();
+        }
+
         // A rejected/errored template that already exists on Meta must be EDITED there — a create
         // call would only hit "name already exists" (2388024) and leave it rejected forever.
         try {
@@ -211,6 +223,10 @@ class TemplateController extends Controller
             'header_handle'  => $template->header_handle,
             'footer'         => $template->footer,
             'buttons'        => $template->buttons,
+            'template_type'  => $template->template_type,
+            'carousel_cards' => $template->carousel_cards,
+            'carousel_media' => $template->carousel_media,
+            'carousel_media_format' => $template->carousel_media_format,
             'message_send_ttl_seconds' => $template->message_send_ttl_seconds,
             'auth_delivery_method'             => $template->auth_delivery_method,
             'auth_add_expiry'                  => $template->auth_add_expiry,
@@ -304,6 +320,137 @@ class TemplateController extends Controller
         $this->templates->clearHeaderMedia($id, auth()->user()->company_id);
 
         return response()->json(['message' => 'Header media removed.']);
+    }
+
+    // ── Carousel card media ─────────────────────────────────────────────
+    // Each card has one sample image/video, stored under carousel_media[uid] so it survives card edits.
+    public function uploadCarouselCardMedia(int $id, string $uid, Request $request): JsonResponse
+    {
+        $template = $this->findTemplate($id);
+        $company  = auth()->user()->company;
+
+        if (!preg_match('/^[A-Za-z0-9_-]{4,40}$/', $uid)) {
+            return response()->json(['message' => 'Invalid card.'], 422);
+        }
+        if (in_array($template->status, self::LOCKED_STATUSES, true)) {
+            return response()->json(['message' => 'This template is under review (or disabled) at Meta, so its cards cannot be changed right now.'], 422);
+        }
+
+        $request->validate([
+            'file'      => ['required_without:media_url', 'file', 'max:16384'],
+            'media_url' => ['required_without:file', 'string', 'max:2000'],
+            'format'    => ['nullable', 'in:IMAGE,VIDEO,image,video'],
+        ]);
+        // The form may be switching IMAGE <-> VIDEO in the same save, so the caller states the intended type.
+        $format = strtoupper((string) $request->input('format', $template->carousel_media_format ?: 'IMAGE'));
+
+        $file = $request->file('file');
+        if (!$file) {
+            $item = \App\Modules\WaChat\Models\MediaLibrary::where('company_id', $company->id)
+                ->where('url', $request->input('media_url'))->first();
+            if (!$item || !Storage::disk($item->disk ?: 'public')->exists($item->path)) {
+                return response()->json(['message' => 'That file was not found in your Media Library.'], 422);
+            }
+            $disk = Storage::disk($item->disk ?: 'public');
+            $file = new \Illuminate\Http\UploadedFile($disk->path($item->path), $item->original_name ?: basename($item->path), $item->mime_type ?: $disk->mimeType($item->path), null, true);
+            if ($file->getSize() > 16384 * 1024) {
+                return response()->json(['message' => 'That file is larger than 16 MB.'], 422);
+            }
+        }
+
+        if ($rule = \App\Support\Meta\MediaRules::forHeaderFormat($format)) {
+            if ($err = \App\Support\Meta\MediaRules::validate($file, $rule)) {
+                return response()->json(['message' => $err], 422);
+            }
+        }
+
+        $meta = MetaMediaUploader::upload($file, $company, 'template-headers');
+        if (isset($meta['error'])) {
+            return response()->json(['message' => $meta['error']], 422);
+        }
+
+        $media = $template->carousel_media ?? [];
+        if (($template->carousel_media_format ?: $format) !== $format) {
+            // Switching the whole carousel between image and video: the other cards' samples no longer fit.
+            foreach ($media as $k => $m) {
+                if ($k !== $uid && !empty($m['path'])) Storage::disk('public')->delete($m['path']);
+            }
+            $media = [];
+        }
+        if (!empty($media[$uid]['path'])) {
+            Storage::disk('public')->delete($media[$uid]['path']);
+        }
+        $media[$uid] = ['handle' => $meta['handle'], 'path' => $meta['path'], 'url' => $meta['url']];
+        $template->update(['carousel_media' => $media, 'carousel_media_format' => $format]);
+
+        return response()->json(['uid' => $uid, 'url' => $meta['url'], 'format' => $format]);
+    }
+
+    public function deleteCarouselCardMedia(int $id, string $uid): JsonResponse
+    {
+        $template = $this->findTemplate($id);
+        $media = $template->carousel_media ?? [];
+        if (!empty($media[$uid]['path'])) {
+            Storage::disk('public')->delete($media[$uid]['path']);
+        }
+        unset($media[$uid]);
+        $template->update(['carousel_media' => $media ?: null]);
+
+        return response()->json(['message' => 'Card media removed.']);
+    }
+
+    /**
+     * Every carousel card needs a fresh Meta upload handle. Handles are short-lived and never copied
+     * (duplicates) or returned by Meta (synced templates), so re-upload from the stored file / sample URL.
+     * Returns a user-facing error, or null when every card is ready.
+     */
+    private function ensureCarouselHandles(WaTemplate $template, $company): ?string
+    {
+        $media = $template->carousel_media ?? [];
+        foreach (array_values($template->carousel_cards ?? []) as $i => $card) {
+            $uid = $card['uid'];
+            if (!empty($media[$uid]['handle'])) continue;
+
+            $n    = $i + 1;
+            $path = $media[$uid]['path'] ?? null;
+            $url  = $media[$uid]['url'] ?? null;
+            $tmp  = null;
+            if ($path && Storage::disk('public')->exists($path)) {
+                $abs  = Storage::disk('public')->path($path);
+                $mime = Storage::disk('public')->mimeType($path) ?: null;
+                $name = basename($abs);
+            } elseif ($url && preg_match('#^https?://#i', $url)) {
+                try {
+                    $res = Http::timeout(30)->get($url);
+                } catch (\Throwable $e) {
+                    return "Card {$n}: could not fetch its sample — upload a new one.";
+                }
+                if (!$res->successful() || $res->body() === '') {
+                    return "Card {$n}: its sample is no longer available (Meta links expire) — upload a new one.";
+                }
+                $tmp  = tempnam(sys_get_temp_dir(), 'tplcar_');
+                file_put_contents($tmp, $res->body());
+                $abs  = $tmp;
+                $mime = trim(explode(';', (string) $res->header('Content-Type'))[0]) ?: null;
+                $name = basename((string) parse_url($url, PHP_URL_PATH)) ?: 'card';
+            } else {
+                return "Card {$n} needs a sample " . strtolower((string) $template->carousel_media_format) . ' before it can be submitted.';
+            }
+
+            try {
+                $up = MetaMediaUploader::upload(new \Illuminate\Http\UploadedFile($abs, $name, $mime, null, true), $company, 'template-headers');
+            } finally {
+                if ($tmp) @unlink($tmp);
+            }
+            if (isset($up['error'])) {
+                return "Card {$n}: " . $up['error'];
+            }
+            if ($path) Storage::disk('public')->delete($path);
+            $media[$uid] = ['handle' => $up['handle'], 'path' => $up['path'], 'url' => $up['url']];
+        }
+        $template->update(['carousel_media' => $media ?: null]);
+
+        return null;
     }
 
     // ── Footer media — stored for reference only, never sent to Meta ──────
@@ -449,6 +596,10 @@ class TemplateController extends Controller
             'header_sample_path' => $copiedHeaderPath,
             'header_sample_url'  => $copiedHeaderPath ? Storage::disk('public')->url($copiedHeaderPath) : null,
             'footer'             => $source->footer,
+            'template_type'      => $source->template_type,
+            'carousel_media_format' => $source->carousel_media_format,
+            'carousel_cards'     => $source->carousel_cards,
+            'carousel_media'     => $this->copyCarouselMedia($source->carousel_media),
             // Per-button media is intentionally not copied — it's reference-only on our
             // side and cheap for the user to re-attach if they still want it.
             'buttons'            => collect($source->buttons ?? [])
@@ -465,6 +616,25 @@ class TemplateController extends Controller
         ]);
 
         return response()->json(['template' => $duplicate->fresh()], 201);
+    }
+
+    /** Copy each card's stored sample file so the duplicate survives the original being edited; handles are not copied. */
+    private function copyCarouselMedia(?array $media): ?array
+    {
+        if (!$media) return null;
+        $out = [];
+        foreach ($media as $uid => $m) {
+            $path = $m['path'] ?? null;
+            if ($path && Storage::disk('public')->exists($path)) {
+                $ext  = pathinfo($path, PATHINFO_EXTENSION);
+                $copy = 'template-headers/' . uniqid('dup_') . ($ext ? ".{$ext}" : '');
+                Storage::disk('public')->copy($path, $copy);
+                $out[$uid] = ['handle' => null, 'path' => $copy, 'url' => Storage::disk('public')->url($copy)];
+            } elseif (!empty($m['url'])) {
+                $out[$uid] = ['handle' => null, 'path' => null, 'url' => $m['url']];
+            }
+        }
+        return $out ?: null;
     }
 
     // True when a media header can be (re)uploaded to Meta from what we hold: a local sample file,
@@ -588,6 +758,18 @@ class TemplateController extends Controller
             // Marketing message validity period: 12h–7d. Null = Meta's standard 12 hours.
             'message_send_ttl_seconds' => ['nullable', 'integer', Rule::in([43200, 86400, 172800, 259200, 345600, 604800])],
 
+            // ── CAROUSEL templates (MARKETING only): a body plus 2–10 swipeable cards ──
+            'template_type'            => ['nullable', 'in:standard,carousel'],
+            'carousel_media_format'    => ['nullable', 'in:IMAGE,VIDEO'],
+            'carousel_cards'           => ['nullable', 'array', 'max:10'],
+            'carousel_cards.*.uid'     => ['required', 'string', 'regex:/^[A-Za-z0-9_-]{4,40}$/', 'distinct'],
+            'carousel_cards.*.body'    => ['required', 'string', 'max:160'],
+            'carousel_cards.*.buttons' => ['required', 'array', 'min:1', 'max:2'],
+            'carousel_cards.*.buttons.*.type' => ['required', 'in:QUICK_REPLY,URL,PHONE_NUMBER'],
+            'carousel_cards.*.buttons.*.text' => ['required', 'string', 'max:25'],
+            'carousel_cards.*.buttons.*.url'  => ['nullable', 'required_if:carousel_cards.*.buttons.*.type,URL', 'url'],
+            'carousel_cards.*.buttons.*.phone_number' => ['nullable', 'required_if:carousel_cards.*.buttons.*.type,PHONE_NUMBER', 'string', 'max:25', 'regex:/^\+[\d\s\-()]{7,24}$/'],
+
             // ── AUTHENTICATION-only fields ──────────────────────────────
             'auth_delivery_method'             => [$isAuth ? 'required' : 'nullable', 'in:copy_code,one_tap,zero_tap'],
             'auth_add_expiry'                  => ['nullable', 'boolean'],
@@ -612,6 +794,21 @@ class TemplateController extends Controller
         }
 
         $d['header_format'] = $isAuth ? 'TEXT' : ($d['header_format'] ?? 'TEXT');
+
+        $isCarousel = !$isAuth && ($d['template_type'] ?? 'standard') === 'carousel';
+        $d['template_type'] = $isCarousel ? 'carousel' : 'standard';
+        if ($isCarousel) {
+            $this->validateCarousel($d);
+            // A carousel's media, footer and buttons all live on the cards — Meta refuses them at the top level.
+            $d['header_format'] = 'TEXT';
+            $d['header'] = null;
+            $d['header_example'] = null;
+            $d['footer'] = null;
+            $d['buttons'] = null;
+        } else {
+            $d['carousel_media_format'] = null;
+            $d['carousel_cards'] = null;
+        }
 
         if (!$isAuth) {
             // Meta rejects a body whose sample values don't match its {{n}} placeholders one-for-one.
@@ -699,6 +896,73 @@ class TemplateController extends Controller
         }
 
         return $d;
+    }
+
+    /** Meta's carousel rules, checked before anything is sent so a template is never submitted just to be refused. */
+    private function validateCarousel(array &$d): void
+    {
+        $fail = fn (string $field, string $msg) => throw ValidationException::withMessages([$field => $msg]);
+
+        if (strtoupper((string) ($d['category'] ?? '')) !== 'MARKETING') {
+            $fail('template_type', 'Carousel templates are only available in the Marketing category.');
+        }
+        if (empty($d['carousel_media_format'])) {
+            $fail('carousel_media_format', 'Choose Image or Video for the carousel cards.');
+        }
+        $cards = array_values($d['carousel_cards'] ?? []);
+        if (count($cards) < 2 || count($cards) > 10) {
+            $fail('carousel_cards', 'A carousel needs between 2 and 10 cards.');
+        }
+
+        $shape = null;
+        foreach ($cards as $i => $card) {
+            $n = $i + 1;
+            if (preg_match('/\{\{/', $card['body'])) {
+                $fail('carousel_cards', "Card {$n}: variables aren't supported in card text yet.");
+            }
+            if (preg_match('/\n{3,}/', preg_replace('/\r\n?/', "\n", $card['body']))) {
+                $fail('carousel_cards', "Card {$n}: the text cannot have more than two line breaks in a row.");
+            }
+            $seen = [];
+            foreach ($card['buttons'] as $b) {
+                if (preg_match('/[\r\n]|\{\{/', $b['text'])) {
+                    $fail('carousel_cards', "Card {$n}: button text cannot contain line breaks or variables.");
+                }
+                $k = mb_strtolower(trim($b['text']));
+                if (isset($seen[$k])) {
+                    $fail('carousel_cards', "Card {$n}: \"{$b['text']}\" is used by two buttons — each needs its own text.");
+                }
+                $seen[$k] = true;
+                if ($b['type'] === 'URL') {
+                    $host = strtolower((string) parse_url((string) $b['url'], PHP_URL_HOST));
+                    if (preg_match('/(^|\.)(wa\.me|whatsapp\.com)$/', $host)) {
+                        $fail('carousel_cards', "Card {$n}: a website button cannot link to WhatsApp.");
+                    }
+                }
+            }
+            // Meta: every card must have the same buttons, in the same order (labels and links may differ).
+            $thisShape = implode(',', array_column($card['buttons'], 'type'));
+            if ($shape !== null && $thisShape !== $shape) {
+                $fail('carousel_cards', "Card {$n}: every card must use the same button types in the same order as card 1.");
+            }
+            $shape ??= $thisShape;
+            if (substr_count($thisShape, 'PHONE_NUMBER') > 1) {
+                $fail('carousel_cards', "Card {$n}: only one call button is allowed per card.");
+            }
+        }
+        $d['carousel_cards'] = $cards;
+    }
+
+    /** Message naming the first carousel card that has no sample media at Meta yet, or null when all are ready. */
+    private function carouselMediaProblem(WaTemplate $template): ?string
+    {
+        if ($template->template_type !== 'carousel') return null;
+        foreach (array_values($template->carousel_cards ?? []) as $i => $card) {
+            if (empty($template->carousel_media[$card['uid']]['handle'])) {
+                return 'Card ' . ($i + 1) . ' needs a sample ' . strtolower((string) $template->carousel_media_format) . ' before it can be submitted.';
+            }
+        }
+        return null;
     }
 
     // ── Push a create or update to Meta, mirror status/errors back locally ─
@@ -892,6 +1156,10 @@ class TemplateController extends Controller
             return $this->buildAuthComponents($d);
         }
 
+        if (($d['template_type'] ?? 'standard') === 'carousel') {
+            return $this->buildCarouselComponents($d);
+        }
+
         $components = [];
         $headerFormat = $d['header_format'] ?? 'TEXT';
 
@@ -920,34 +1188,64 @@ class TemplateController extends Controller
         }
 
         if (!empty($d['buttons'])) {
-            $buttons = collect($d['buttons'])->map(function ($b) {
-                $type    = $b['type'] ?? 'QUICK_REPLY';
-                // A SURVEY_FORM button is a plain quick-reply as far as Meta is concerned —
-                // the survey link lives only in our DB and is resolved from the tap webhook.
-                if ($type === 'SURVEY_FORM') {
-                    $type = 'QUICK_REPLY';
-                }
-                if ($type === 'COPY_CODE') {
-                    return ['type' => 'COPY_CODE', 'example' => (string) ($b['example'] ?? '')];
-                }
-                $isPhone = $type === 'PHONE_NUMBER';
-
-                // Frontend may send the number under a dedicated `phone_number` field, or
-                // (legacy behavior) under `text` itself — support both so nothing breaks.
-                $phoneNumber = $b['phone_number'] ?? ($isPhone ? ($b['text'] ?? null) : null);
-
-                return array_filter([
-                    'type'         => $type,
-                    'text'         => $isPhone ? ($b['label'] ?? $b['text'] ?? 'Call') : $b['text'],
-                    'url'          => $type === 'URL' ? ($b['url'] ?? null) : null,
-                    'phone_number' => $isPhone && $phoneNumber ? '+' . preg_replace('/\D+/', '', $phoneNumber) : null,
-                ], fn($v) => !is_null($v));
-            })->toArray(); // media / survey_form_id fields intentionally dropped here
-
-            $components[] = ['type' => 'BUTTONS', 'buttons' => $buttons];
+            $components[] = ['type' => 'BUTTONS', 'buttons' => $this->mapButtonsForMeta($d['buttons'])];
         }
 
         return $components;
+    }
+
+    // BODY + CAROUSEL: each card is HEADER (image/video sample) + BODY + BUTTONS.
+    private function buildCarouselComponents(array $d): array
+    {
+        $body = ['type' => 'BODY', 'text' => $d['body']];
+        if (!empty($d['body_examples'])) {
+            $body['example'] = ['body_text' => [array_values($d['body_examples'])]];
+        }
+
+        $format = strtoupper((string) ($d['carousel_media_format'] ?? 'IMAGE'));
+        $cards = collect($d['carousel_cards'] ?? [])->map(fn ($card) => [
+            'components' => [
+                [
+                    'type'    => 'HEADER',
+                    'format'  => $format,
+                    'example' => ['header_handle' => [$d['carousel_media'][$card['uid']]['handle'] ?? '']],
+                ],
+                ['type' => 'BODY', 'text' => $card['body']],
+                ['type' => 'BUTTONS', 'buttons' => $this->mapButtonsForMeta($card['buttons'] ?? [])],
+            ],
+        ])->values()->all();
+
+        return [$body, ['type' => 'CAROUSEL', 'cards' => $cards]];
+    }
+
+    /** Our button shape -> Meta's. Local-only fields (survey_form_id, media) are dropped. */
+    private function mapButtonsForMeta(array $list): array
+    {
+        $buttons = collect($list)->map(function ($b) {
+            $type    = $b['type'] ?? 'QUICK_REPLY';
+            // A SURVEY_FORM button is a plain quick-reply as far as Meta is concerned —
+            // the survey link lives only in our DB and is resolved from the tap webhook.
+            if ($type === 'SURVEY_FORM') {
+                $type = 'QUICK_REPLY';
+            }
+            if ($type === 'COPY_CODE') {
+                return ['type' => 'COPY_CODE', 'example' => (string) ($b['example'] ?? '')];
+            }
+            $isPhone = $type === 'PHONE_NUMBER';
+
+            // Frontend may send the number under a dedicated `phone_number` field, or
+            // (legacy behavior) under `text` itself — support both so nothing breaks.
+            $phoneNumber = $b['phone_number'] ?? ($isPhone ? ($b['text'] ?? null) : null);
+
+            return array_filter([
+                'type'         => $type,
+                'text'         => $isPhone ? ($b['label'] ?? $b['text'] ?? 'Call') : $b['text'],
+                'url'          => $type === 'URL' ? ($b['url'] ?? null) : null,
+                'phone_number' => $isPhone && $phoneNumber ? '+' . preg_replace('/\D+/', '', $phoneNumber) : null,
+            ], fn($v) => !is_null($v));
+        })->toArray(); // media / survey_form_id fields intentionally dropped here
+
+        return $buttons;
     }
 
     // ── AUTHENTICATION-specific component shape ─────────────────────────

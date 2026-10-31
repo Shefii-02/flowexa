@@ -952,6 +952,10 @@ Route::prefix('v1')->group(function () {
                     Route::post('/{id}/upload-header-media',   [TemplateController::class, 'uploadHeaderMedia'])->name('upload-header-media');
                     Route::delete('/{id}/delete-header-media', [TemplateController::class, 'deleteHeaderMedia'])->name('delete-header-media');
 
+                    // Carousel card sample media (card addressed by its uid)
+                    Route::post('/{id}/carousel-cards/{uid}/upload-media',   [TemplateController::class, 'uploadCarouselCardMedia'])->name('upload-carousel-media');
+                    Route::delete('/{id}/carousel-cards/{uid}/delete-media', [TemplateController::class, 'deleteCarouselCardMedia'])->name('delete-carousel-media');
+
                     // Footer media — stored locally only, never sent to Meta (see migration note)
                     Route::post('/{id}/upload-footer-media',   [TemplateController::class, 'uploadFooterMedia'])->name('upload-footer-media');
                     Route::delete('/{id}/delete-footer-media', [TemplateController::class, 'deleteFooterMedia'])->name('delete-footer-media');
