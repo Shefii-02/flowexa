@@ -24,7 +24,11 @@ type Draft = {
   agent_name: string
   greeting: string
   primary_color: string
-  position: 'right' | 'left'
+  position: 'right' | 'left' | 'right-center' | 'left-center'
+  bottom_offset: string
+  center_top: string
+  center_bottom: string
+  side_offset: string
   launcher_text: string
   allowed_origins: string
   notify_emails: string
@@ -35,7 +39,7 @@ type Draft = {
 
 const emptyDraft = (): Draft => ({
   name: 'Website chat', is_active: true, live_chat_enabled: false, live_wait_seconds: '90', ai_fallback_enabled: true, live_max_per_staff: '5', agent_name: 'Assistant',
-  greeting: 'Hi! 👋 How can I help you today?', primary_color: '#4f46e5', position: 'right',
+  greeting: 'Hi! 👋 How can I help you today?', primary_color: '#4f46e5', position: 'right', bottom_offset: '100', center_top: '20', center_bottom: '20', side_offset: '20',
   launcher_text: 'Chat with us', allowed_origins: '', notify_emails: '', notify_whatsapp: '', wa_session_id: '', flow_builder_id: '',
 })
 
@@ -81,6 +85,10 @@ export default function WidgetPage() {
     agent_name: w.agent_name, greeting: w.greeting,
     primary_color: w.branding?.primary_color ?? '#4f46e5',
     position: w.branding?.position ?? 'right',
+    bottom_offset: String(w.branding?.bottom_offset ?? 100),
+    center_top: String(w.branding?.center_top ?? w.branding?.center_gap ?? 20),
+    center_bottom: String(w.branding?.center_bottom ?? w.branding?.center_gap ?? 20),
+    side_offset: String(w.branding?.side_offset ?? 20),
     launcher_text: w.branding?.launcher_text ?? 'Chat with us',
     allowed_origins: (w.allowed_origins ?? []).join('\n'),
     notify_emails: (w.notify_emails ?? []).join(', '),
@@ -102,7 +110,7 @@ export default function WidgetPage() {
         live_max_per_staff: Number(editor.live_max_per_staff) || 5,
         agent_name: editor.agent_name,
         greeting: editor.greeting,
-        branding: { primary_color: editor.primary_color, position: editor.position, launcher_text: editor.launcher_text },
+        branding: { primary_color: editor.primary_color, position: editor.position, bottom_offset: Number(editor.bottom_offset) || 0, center_top: Number(editor.center_top) || 0, center_bottom: Number(editor.center_bottom) || 0, side_offset: Number(editor.side_offset) || 0, launcher_text: editor.launcher_text },
         allowed_origins: editor.allowed_origins.split(/[\s,]+/).map(s => s.trim()).filter(Boolean),
         notify_emails: editor.notify_emails.split(/[\s,]+/).map(s => s.trim()).filter(Boolean),
         notify_whatsapp: editor.notify_whatsapp.split(/[\s,]+/).map(s => s.trim()).filter(Boolean),
@@ -209,10 +217,33 @@ export default function WidgetPage() {
               </div>
               <div>
                 <label className="label">Position</label>
-                <select className="select" value={editor.position} onChange={e => setEditor({ ...editor, position: e.target.value as 'right' | 'left' })}>
+                <select className="select" value={editor.position} onChange={e => setEditor({ ...editor, position: e.target.value as Draft['position'] })}>
                   <option value="right">Bottom right</option>
                   <option value="left">Bottom left</option>
+                  <option value="right-center">Right center</option>
+                  <option value="left-center">Left center</option>
                 </select>
+              </div>
+              {editor.position.endsWith('center') ? (
+                <>
+                  <div>
+                    <label className="label">Top gap (px)</label>
+                    <input className="input" type="number" min={0} max={500} value={editor.center_top} onChange={e => setEditor({ ...editor, center_top: e.target.value })} />
+                  </div>
+                  <div>
+                    <label className="label">Bottom gap (px)</label>
+                    <input className="input" type="number" min={0} max={500} value={editor.center_bottom} onChange={e => setEditor({ ...editor, center_bottom: e.target.value })} />
+                  </div>
+                </>
+              ) : (
+                <div>
+                  <label className="label">Gap from bottom (px)</label>
+                  <input className="input" type="number" min={0} max={1000} value={editor.bottom_offset} onChange={e => setEditor({ ...editor, bottom_offset: e.target.value })} />
+                </div>
+              )}
+              <div>
+                <label className="label">Side gap (px)</label>
+                <input className="input" type="number" min={0} max={500} value={editor.side_offset} onChange={e => setEditor({ ...editor, side_offset: e.target.value })} />
               </div>
             </div>
             <Textarea label="Allowed website domains (one per line, blank = any)" rows={2}

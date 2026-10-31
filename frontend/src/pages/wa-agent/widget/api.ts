@@ -8,7 +8,7 @@ export interface ChatWidget {
   industry_template: string | null
   agent_name: string
   greeting: string
-  branding: { primary_color?: string; position?: 'right' | 'left'; launcher_text?: string } | null
+  branding: { primary_color?: string; position?: 'right' | 'left' | 'right-center' | 'left-center'; launcher_text?: string; bottom_offset?: number; center_gap?: number; center_top?: number; center_bottom?: number; side_offset?: number } | null
   allowed_origins: string[] | null
   notify_emails: string[] | null
   notify_whatsapp: string[] | null
