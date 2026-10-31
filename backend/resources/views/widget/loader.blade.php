@@ -30,15 +30,20 @@
     });
   }
 
-  var color = "#4f46e5", pos = "right";
+  var color = "#4f46e5", pos = "right", vpos = "bottom";   // vpos: "bottom" or "center"
 
   var root = h("div", { id: "wgt-root-" + KEY });
   var shadow = root.attachShadow ? root.attachShadow({ mode: "open" }) : root;
 
+  var GAP_BOTTOM = 100, GAP_CENTER_TOP_BOTTOM = 20;   // px
   function styleBlock() {
+    var center = vpos === "center";
+    var launcherV = center ? "top: calc(50% - 25px);" : "bottom: " + GAP_BOTTOM + "px;";
+    var panelV = center ? "top: " + GAP_CENTER_TOP_BOTTOM + "px; bottom: " + GAP_CENTER_TOP_BOTTOM + "px; margin: auto 0;" : "bottom: " + (GAP_BOTTOM + 64) + "px;";
+    var panelMax = center ? "calc(100vh - " + (GAP_CENTER_TOP_BOTTOM * 2) + "px)" : "calc(100vh - " + (GAP_BOTTOM + 100) + "px)";
     return `
       :host, * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-      .launcher { position: fixed; ${pos}: 20px; bottom: 20px; z-index: 2147483000;
+      .launcher { position: fixed; ${pos}: 20px; ${launcherV} z-index: 2147483000;
         background: ${color}; color: #fff; border: none; border-radius: 999px; cursor: pointer;
         padding: 14px 18px; font-size: 15px; font-weight: 600; box-shadow: 0 8px 30px rgba(0,0,0,.22); display: flex; align-items: center; gap: 8px; }
       .launcher { position: fixed; }
@@ -47,8 +52,8 @@
       .launcher.ping { animation: wping 1.2s ease-in-out 3; }
       @keyframes wping { 50% { transform: scale(1.08); } }
       .launcher svg { width: 20px; height: 20px; }
-      .panel { position: fixed; ${pos}: 20px; bottom: 84px; z-index: 2147483000; width: 370px; max-width: calc(100vw - 32px);
-        height: 540px; max-height: calc(100vh - 120px); background: #fff; border-radius: 16px; overflow: hidden;
+      .panel { position: fixed; ${pos}: 20px; ${panelV} z-index: 2147483000; width: 370px; max-width: calc(100vw - 32px);
+        height: 540px; max-height: ${panelMax}; background: #fff; border-radius: 16px; overflow: hidden;
         box-shadow: 0 20px 60px rgba(0,0,0,.28); display: flex; flex-direction: column; opacity: 0; transform: translateY(12px);
         transition: opacity .18s, transform .18s; pointer-events: none; }
       .panel.show { opacity: 1; transform: none; pointer-events: auto; }
@@ -534,7 +539,9 @@
       cfg = d || cfg;
       cfg.branding = cfg.branding || {};
       if (cfg.branding.primary_color) color = cfg.branding.primary_color;
-      if (cfg.branding.position === "left") pos = "left";
+      var bp = String(cfg.branding.position || "");   // right | left | right-center | left-center
+      if (bp.indexOf("left") === 0) pos = "left";
+      if (bp.indexOf("center") > -1) vpos = "center";
       build();
       booted = true;
       if (localStorage.getItem(LS)) resumeLive();   // reconnect on every page, panel closed or not
