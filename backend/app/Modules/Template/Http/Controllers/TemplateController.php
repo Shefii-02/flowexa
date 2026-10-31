@@ -763,7 +763,7 @@ class TemplateController extends Controller
             'carousel_media_format'    => ['nullable', 'in:IMAGE,VIDEO'],
             'carousel_cards'           => ['nullable', 'array', 'max:10'],
             'carousel_cards.*.uid'     => ['required', 'string', 'regex:/^[A-Za-z0-9_-]{4,40}$/', 'distinct'],
-            'carousel_cards.*.body'    => ['required', 'string', 'max:160'],
+            'carousel_cards.*.body'    => ['nullable', 'string', 'max:160'],   // optional, but all cards or none (see validateCarousel)
             'carousel_cards.*.buttons' => ['required', 'array', 'min:1', 'max:2'],
             'carousel_cards.*.buttons.*.type' => ['required', 'in:QUICK_REPLY,URL,PHONE_NUMBER'],
             'carousel_cards.*.buttons.*.text' => ['required', 'string', 'max:25'],
@@ -914,9 +914,16 @@ class TemplateController extends Controller
             $fail('carousel_cards', 'A carousel needs between 2 and 10 cards.');
         }
 
+        // Meta: if any card has text, every card must have it, so the cards render at the same height.
+        $withText = count(array_filter($cards, fn ($c) => trim((string) ($c['body'] ?? '')) !== ''));
+        if ($withText > 0 && $withText < count($cards)) {
+            $fail('carousel_cards', 'If one card has text, every card needs text — or clear it on all cards.');
+        }
+
         $shape = null;
         foreach ($cards as $i => $card) {
             $n = $i + 1;
+            $cards[$i]['body'] = $card['body'] = trim((string) ($card['body'] ?? ''));
             if (preg_match('/\{\{/', $card['body'])) {
                 $fail('carousel_cards', "Card {$n}: variables aren't supported in card text yet.");
             }
@@ -1210,7 +1217,7 @@ class TemplateController extends Controller
                     'format'  => $format,
                     'example' => ['header_handle' => [$d['carousel_media'][$card['uid']]['handle'] ?? '']],
                 ],
-                ['type' => 'BODY', 'text' => $card['body']],
+                ...(trim((string) ($card['body'] ?? '')) !== '' ? [['type' => 'BODY', 'text' => $card['body']]] : []),
                 ['type' => 'BUTTONS', 'buttons' => $this->mapButtonsForMeta($card['buttons'] ?? [])],
             ],
         ])->values()->all();

@@ -35,11 +35,12 @@ export function carouselIssues(
 ): string[] {
   const out: string[] = []
   if (cards.length < MIN_CARDS) out.push(`Add at least ${MIN_CARDS} cards`)
+  const withText = cards.filter(c => c.body.trim()).length
+  if (withText > 0 && withText < cards.length) out.push('If one card has text, every card needs text (or clear it on all)')
   cards.forEach((c, i) => {
     const n = i + 1
     const m = media[c.uid]
     if (!m?.file && !m?.libraryUrl && !m?.previewUrl) out.push(`Card ${n}: add a sample ${format.toLowerCase()}`)
-    if (!c.body.trim()) out.push(`Card ${n}: text is required`)
     if (/\{\{/.test(c.body)) out.push(`Card ${n}: variables aren't supported in card text yet`)
     const seen = new Set<string>()
     c.buttons.forEach((b, j) => {
@@ -194,12 +195,12 @@ export default function CarouselCardsEditor({ cards, onCards, format, onFormat, 
                   className="ml-2 px-2.5 py-1.5 bg-indigo-50 border border-indigo-200 text-indigo-700 rounded-lg text-xs hover:bg-indigo-100 font-medium">
                   🗂️ Media Library
                 </button>
-                <p className="text-[11px] text-gray-400">{MEDIA_RULES[ruleKey].hint}. Same shape on every card works best (e.g. all square).</p>
+                <p className="text-[11px] text-gray-400">{MEDIA_RULES[ruleKey].hint}. Meta crops media to a wide ratio automatically.</p>
               </div>
             </div>
 
             <div>
-              <textarea className="textarea text-sm" rows={2} disabled={disabled} placeholder="Card text — e.g. Summer sale: 30% off all plans"
+              <textarea className="textarea text-sm" rows={2} disabled={disabled} placeholder="Card text (optional, but all cards or none) — e.g. Summer sale: 30% off"
                 value={c.body} onChange={e => patchCard(c.uid, { body: e.target.value.replace(/\r\n?/g, '\n').slice(0, CARD_BODY_MAX) })} />
               <p className={`text-[11px] text-right ${c.body.length >= CARD_BODY_MAX ? 'text-red-500' : 'text-gray-400'}`}>{c.body.length}/{CARD_BODY_MAX}</p>
             </div>
