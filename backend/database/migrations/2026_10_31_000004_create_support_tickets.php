@@ -22,7 +22,7 @@ return new class extends Migration
 
     public function up(): void
     {
-        Schema::create('support_departments', function (Blueprint $t) {
+        if (!Schema::hasTable('support_departments')) Schema::create('support_departments', function (Blueprint $t) {
             $t->id();
             $t->string('name', 100);
             $t->string('description', 255)->nullable();
@@ -32,7 +32,7 @@ return new class extends Migration
             $t->timestamps();
         });
 
-        Schema::create('support_tickets', function (Blueprint $t) {
+        if (!Schema::hasTable('support_tickets')) Schema::create('support_tickets', function (Blueprint $t) {
             $t->id();
             $t->string('ticket_no', 20)->nullable()->unique();
             $t->foreignId('company_id')->constrained()->cascadeOnDelete();
@@ -59,7 +59,7 @@ return new class extends Migration
             $t->index('assigned_to');
         });
 
-        Schema::create('support_ticket_messages', function (Blueprint $t) {
+        if (!Schema::hasTable('support_ticket_messages')) Schema::create('support_ticket_messages', function (Blueprint $t) {
             $t->id();
             $t->foreignId('ticket_id')->constrained('support_tickets')->cascadeOnDelete();
             $t->foreignId('user_id')->nullable()->constrained('users')->nullOnDelete();
@@ -71,7 +71,7 @@ return new class extends Migration
             $t->index(['ticket_id', 'created_at']);
         });
 
-        Schema::create('support_ticket_attachments', function (Blueprint $t) {
+        if (!Schema::hasTable('support_ticket_attachments')) Schema::create('support_ticket_attachments', function (Blueprint $t) {
             $t->id();
             $t->foreignId('ticket_id')->constrained('support_tickets')->cascadeOnDelete();
             $t->foreignId('message_id')->constrained('support_ticket_messages')->cascadeOnDelete();
@@ -83,7 +83,7 @@ return new class extends Migration
         });
 
         $now = now();
-        foreach ([
+        if (DB::table('support_departments')->count() === 0) foreach ([
             ['Technical Support',      'Something is not working in the portal or app'],
             ['WhatsApp / Meta API',    'Number connection, templates, webhooks, Meta errors'],
             ['Billing & Payments',     'Wallet, invoices, plan or payment issues'],
@@ -109,6 +109,8 @@ return new class extends Migration
             'viewer'           => ['support_tickets.view'],
         ];
         foreach (Role::whereIn('name', array_keys($grants))->get() as $role) {
+            // MySQL compares names case-insensitively, so a custom role called "Admin" is returned too — only the exact system names get defaults
+            if (!isset($grants[$role->name])) continue;
             $keys = array_values(array_unique(array_merge($role->permissions ?? [], $grants[$role->name])));
             $role->permissionRelations()->syncWithoutDetaching(array_map(fn ($k) => $ids[$k], $grants[$role->name]));
             $role->update(['permissions' => $keys]);
