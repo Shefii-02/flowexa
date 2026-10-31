@@ -372,6 +372,15 @@ class WebhookService
             $this->broadcastInboxMessage($inboxMessage);
         }
 
+        // Meta's exact billing for this message (comes with the sent / delivered status) — kept per campaign number.
+        if ($dto->pricingCategory !== null || $dto->billable !== null) {
+            \App\Models\CampaignContact::where('wa_message_id', $dto->waMessageId)->update([
+                'billable'         => $dto->billable,
+                'pricing_category' => $dto->pricingCategory,
+                'pricing_model'    => $dto->pricingModel,
+            ]);
+        }
+
         if (in_array($dto->status, ['delivered', 'read', 'failed'])) {
             $cc = \App\Models\CampaignContact::where('wa_message_id', $dto->waMessageId)->first();
             if ($cc) {

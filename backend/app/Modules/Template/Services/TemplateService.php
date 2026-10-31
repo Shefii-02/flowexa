@@ -56,6 +56,9 @@ class TemplateService
             'template_type'       => $data['template_type'] ?? 'standard',
             'carousel_media_format' => $data['carousel_media_format'] ?? null,
             'carousel_cards'      => $data['carousel_cards'] ?? null,
+            'lto_text'            => $data['lto_text'] ?? null,
+            'lto_has_expiration'  => $data['lto_has_expiration'] ?? true,
+            'lto_expiry_hours'    => $data['lto_expiry_hours'] ?? 72,
             'language'            => $data['language'] ?? 'en',
             'body'                => $data['body'],
             'body_examples'       => $data['body_examples'] ?? null,
@@ -109,6 +112,12 @@ class TemplateService
         }
         if (array_key_exists('buttons', $data)) {
             $template->buttons = $data['buttons'];
+        }
+        foreach (['lto_text', 'lto_expiry_hours'] as $k) {
+            if (array_key_exists($k, $data)) $template->{$k} = $data[$k];
+        }
+        if (array_key_exists('lto_has_expiration', $data)) {
+            $template->lto_has_expiration = (bool) $data['lto_has_expiration'];
         }
         if (array_key_exists('template_type', $data)) {
             $template->template_type = $data['template_type'] ?: 'standard';
@@ -346,6 +355,10 @@ class TemplateService
             $attrs['template_type']  = 'standard';
             $attrs['carousel_cards'] = null;
         }
+
+        $lto = $components->firstWhere('type', 'LIMITED_TIME_OFFER');
+        $attrs['lto_text'] = $lto['limited_time_offer']['text'] ?? null;
+        if ($lto) $attrs['lto_has_expiration'] = (bool) ($lto['limited_time_offer']['has_expiration'] ?? false);
 
         if (!empty($meta['category']))  $attrs['category'] = $meta['category'];
         if (!empty($meta['language']))  $attrs['language'] = $meta['language'];

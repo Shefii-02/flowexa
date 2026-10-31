@@ -16,6 +16,7 @@ class CampaignContact extends Model
     protected $fillable = [
         'campaign_id', 'contact_id', 'phone', 'status',
         'attempts', 'wa_message_id', 'failed_reason', 'error_type', 'resent_at', 'retry_after', 'scheduled_for', 'sent_at', 'delivered_at', 'read_at',
+        'billable', 'pricing_category', 'pricing_model',
     ];
 
     protected $casts = [
@@ -25,6 +26,7 @@ class CampaignContact extends Model
         'scheduled_for'=> 'datetime',
         'delivered_at' => 'datetime',
         'read_at'      => 'datetime',
+        'billable'     => 'boolean',
     ];
 
     public function campaign(): BelongsTo { return $this->belongsTo(Campaign::class); }

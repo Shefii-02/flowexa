@@ -75,6 +75,11 @@ const DEFAULT_FORM = {
   buttons: [] as { type: string; text: string; url?: string; phone_number?: string; phone_cc?: string; phone_local?: string; survey_form_id?: number; example?: string }[],
   message_send_ttl_seconds: null as number | null, // MARKETING only; null = Meta's standard 12 hours
   // CAROUSEL (MARKETING only): a body plus 2–10 swipeable cards, each with its own media, text and buttons
+  // Limited-time offer (MARKETING, standard): a short label + countdown shown above the body
+  lto_enabled: false,
+  lto_text: '',
+  lto_has_expiration: true,
+  lto_expiry_hours: '72',
   template_type: 'standard' as 'standard' | 'carousel',
   carousel_media_format: 'IMAGE' as CarouselMediaFormat,
   carousel_cards: [] as CarouselCard[],
@@ -197,6 +202,16 @@ export default function TemplatesPage() {
   const setOneCardMedia = (uid: string, m: CardMedia | null) =>
     setCardMedia(prev => { const next = { ...prev }; if (m) next[uid] = m; else delete next[uid]; return next })
   const isCarousel = form.template_type === 'carousel' && form.category === 'MARKETING'
+  const isLto = form.lto_enabled && form.category === 'MARKETING' && !isCarousel
+  const toggleLto = (on: boolean) => setForm(f => ({
+    ...f, lto_enabled: on,
+    ...(on ? {
+      footer: '',
+      header_format: f.header_format === 'DOCUMENT' ? 'TEXT' : f.header_format,
+      // a limited-time offer needs exactly one "Copy offer code" button
+      buttons: f.buttons.some(b => b.type === 'COPY_CODE') ? f.buttons : [{ type: 'COPY_CODE', text: 'Copy offer code', example: '' }, ...f.buttons].slice(0, 3),
+    } : {}),
+  }))
   const chooseTemplateType = (t: 'standard' | 'carousel') => {
     if (t === 'carousel') {
       setForm(f => ({
@@ -295,6 +310,10 @@ export default function TemplatesPage() {
       buttons: (t.buttons || []).map((b: any) => b.type === 'PHONE_NUMBER' ? { ...b, ...splitPhone(b.phone_number) } : b),
       message_send_ttl_seconds: t.message_send_ttl_seconds ?? null,
       template_type: t.template_type === 'carousel' ? 'carousel' : 'standard',
+      lto_enabled: !!t.lto_text,
+      lto_text: t.lto_text || '',
+      lto_has_expiration: t.lto_has_expiration ?? true,
+      lto_expiry_hours: String(t.lto_expiry_hours ?? 72),
       carousel_media_format: t.carousel_media_format === 'VIDEO' ? 'VIDEO' : 'IMAGE',
       carousel_cards: (Array.isArray(t.carousel_cards) ? t.carousel_cards : []).map((c: any) => ({
         uid: c.uid || newCardUid(),
@@ -407,6 +426,14 @@ export default function TemplatesPage() {
       }
     } else {
       if (!form.body.trim())  { toast.error('Body text required'); return }
+      if (isLto) {
+        if (!form.lto_text.trim()) { toast.error('Enter the offer label (e.g. “Expiring offer!”)'); return }
+        if (form.body.length > 600) { toast.error('With a limited-time offer the body can have at most 600 characters'); return }
+        if (form.header_format === 'DOCUMENT' || (form.header_format === 'TEXT' && form.header.trim())) { toast.error('A limited-time offer can only have an image or video header (or none)'); return }
+        if (form.buttons.filter(b => b.type === 'COPY_CODE').length !== 1) { toast.error('A limited-time offer needs one “Copy offer code” button'); return }
+        const hrs = Number(form.lto_expiry_hours)
+        if (form.lto_has_expiration && (!Number.isInteger(hrs) || hrs < 1 || hrs > 720)) { toast.error('Offer validity must be between 1 and 720 hours'); return }
+      }
       if (isCarousel) {
         const problem = carouselIssues(form.carousel_cards, form.carousel_media_format, cardMedia)[0]
         if (problem) { toast.error(problem); return }
@@ -499,6 +526,10 @@ export default function TemplatesPage() {
 
       if (!isAuth) {
         payload.template_type = isCarousel ? 'carousel' : 'standard'
+        payload.lto_text = isLto ? form.lto_text.trim() : undefined
+        payload.lto_has_expiration = isLto ? form.lto_has_expiration : undefined
+        payload.lto_expiry_hours = isLto ? Number(form.lto_expiry_hours) || 72 : undefined
+        if (isLto) payload.footer = ''
         if (isCarousel) {
           payload.header_format = 'TEXT'
           payload.header = undefined
@@ -874,7 +905,7 @@ export default function TemplatesPage() {
             <div>
               <label className="label">Header type</label>
               <div className="grid grid-cols-2 gap-2">
-                {HEADER_FORMATS.map(h => (
+                {HEADER_FORMATS.filter(h => !isLto || h.value !== 'DOCUMENT').map(h => (
                   <button
                     key={h.value}
                     type="button"
@@ -1045,6 +1076,40 @@ export default function TemplatesPage() {
               </div>
             )}
 
+            {form.category === 'MARKETING' && !isCarousel && (
+              <div className="border border-gray-200 rounded-xl p-3 space-y-3">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={form.lto_enabled} onChange={e => toggleLto(e.target.checked)} />
+                  <span className="text-sm font-semibold">⏳ Limited-time offer</span>
+                  <span className="text-xs text-gray-400">expiry countdown + offer code above the message</span>
+                </label>
+                {form.lto_enabled && (
+                  <>
+                    <Input label={`Offer label * — ${form.lto_text.length}/16`} placeholder="Expiring offer!" value={form.lto_text}
+                      onChange={e => set('lto_text', e.target.value.slice(0, 16))} />
+                    <label className="flex items-center gap-2 text-sm">
+                      <input type="checkbox" checked={form.lto_has_expiration} onChange={e => set('lto_has_expiration', e.target.checked)} />
+                      Show the expiry countdown
+                    </label>
+                    {form.lto_has_expiration && (
+                      <div>
+                        <label className="label">Offer valid for (hours after sending)</label>
+                        <input className="input w-32" type="number" min={1} max={720} value={form.lto_expiry_hours}
+                          onChange={e => set('lto_expiry_hours', e.target.value)} />
+                        <p className="text-[11px] text-gray-400 mt-1">Set per message when it is sent. Meta shows the countdown and turns it red in the last hour.</p>
+                      </div>
+                    )}
+                    <ul className="text-[11px] text-gray-500 list-disc pl-4 space-y-0.5">
+                      <li>Header: image or video only (or none). No footer.</li>
+                      <li>Body up to 600 characters.</li>
+                      <li>Needs one “Copy offer code” button (added for you); a website button is optional.</li>
+                      <li>Not shown on WhatsApp Web / desktop — those users see a “not supported” note.</li>
+                    </ul>
+                  </>
+                )}
+              </div>
+            )}
+
             {form.category === 'MARKETING' && (
               <div>
                 <label className="label">Message validity period</label>
@@ -1074,7 +1139,7 @@ export default function TemplatesPage() {
               />
             )}
 
-            {!isCarousel && (<>
+            {!isCarousel && !isLto && (<>
             <Input
               label={`Footer (optional) — ${form.footer.length}/60`}
               placeholder="Reply STOP to unsubscribe"
@@ -1346,6 +1411,12 @@ export default function TemplatesPage() {
                       <p className="font-bold text-sm text-gray-900 mb-2">{previewHeader}</p>
                     )}
 
+                    {isLto && (
+                      <div className="mb-2 rounded-lg bg-gray-50 border border-gray-100 p-2.5 text-center">
+                        <p className="text-xs font-semibold text-gray-700">⏳ {form.lto_text || 'Expiring offer!'}</p>
+                        {form.lto_has_expiration && <p className="text-[11px] text-gray-400 mt-0.5">Offer ends in {Number(form.lto_expiry_hours) || 72}h</p>}
+                      </div>
+                    )}
                     <p className="text-sm text-gray-800 leading-relaxed"><WaText text={previewBody || 'Your message body will appear here...'} /></p>
                     {form.footer && (
                       <p className="text-xs text-gray-400 mt-2 pt-2 border-t border-gray-100">{form.footer}</p>

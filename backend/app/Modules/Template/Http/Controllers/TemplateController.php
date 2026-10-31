@@ -224,6 +224,8 @@ class TemplateController extends Controller
             'footer'         => $template->footer,
             'buttons'        => $template->buttons,
             'template_type'  => $template->template_type,
+            'lto_text'       => $template->lto_text,
+            'lto_has_expiration' => $template->lto_has_expiration,
             'carousel_cards' => $template->carousel_cards,
             'carousel_media' => $template->carousel_media,
             'carousel_media_format' => $template->carousel_media_format,
@@ -600,6 +602,9 @@ class TemplateController extends Controller
             'carousel_media_format' => $source->carousel_media_format,
             'carousel_cards'     => $source->carousel_cards,
             'carousel_media'     => $this->copyCarouselMedia($source->carousel_media),
+            'lto_text'           => $source->lto_text,
+            'lto_has_expiration' => $source->lto_has_expiration,
+            'lto_expiry_hours'   => $source->lto_expiry_hours,
             // Per-button media is intentionally not copied — it's reference-only on our
             // side and cheap for the user to re-attach if they still want it.
             'buttons'            => collect($source->buttons ?? [])
@@ -758,6 +763,11 @@ class TemplateController extends Controller
             // Marketing message validity period: 12h–7d. Null = Meta's standard 12 hours.
             'message_send_ttl_seconds' => ['nullable', 'integer', Rule::in([43200, 86400, 172800, 259200, 345600, 604800])],
 
+            // ── Limited-time offer (MARKETING only): a short label + countdown above the body ──
+            'lto_text'           => ['nullable', 'string', 'max:16'],
+            'lto_has_expiration' => ['nullable', 'boolean'],
+            'lto_expiry_hours'   => ['nullable', 'integer', 'min:1', 'max:720'],
+
             // ── CAROUSEL templates (MARKETING only): a body plus 2–10 swipeable cards ──
             'template_type'            => ['nullable', 'in:standard,carousel'],
             'carousel_media_format'    => ['nullable', 'in:IMAGE,VIDEO'],
@@ -799,6 +809,14 @@ class TemplateController extends Controller
         $d['header_format'] = $isAuth ? 'TEXT' : ($d['header_format'] ?? 'TEXT');
 
         $isCarousel = !$isAuth && ($d['template_type'] ?? 'standard') === 'carousel';
+
+        $d['lto_text'] = trim((string) ($d['lto_text'] ?? '')) ?: null;
+        if ($d['lto_text'] !== null) {
+            $this->validateLimitedTimeOffer($d, $isAuth || $isCarousel);
+        } else {
+            $d['lto_has_expiration'] = true;
+            $d['lto_expiry_hours']   = $d['lto_expiry_hours'] ?? 72;
+        }
         $d['template_type'] = $isCarousel ? 'carousel' : 'standard';
         if ($isCarousel) {
             $this->validateCarousel($d);
@@ -899,6 +917,31 @@ class TemplateController extends Controller
         }
 
         return $d;
+    }
+
+    /** Meta's limited-time-offer rules, checked before anything is sent. */
+    private function validateLimitedTimeOffer(array &$d, bool $incompatible): void
+    {
+        $fail = fn (string $field, string $msg) => throw ValidationException::withMessages([$field => $msg]);
+
+        if ($incompatible || strtoupper((string) ($d['category'] ?? '')) !== 'MARKETING') {
+            $fail('lto_text', 'A limited-time offer is only available on standard Marketing templates.');
+        }
+        if (mb_strlen((string) ($d['body'] ?? '')) > 600) {
+            $fail('body', 'With a limited-time offer the body can have at most 600 characters.');
+        }
+        if (trim((string) ($d['footer'] ?? '')) !== '') {
+            $fail('footer', 'A limited-time offer template cannot have a footer.');
+        }
+        if (($d['header_format'] ?? 'TEXT') === 'DOCUMENT' || (($d['header_format'] ?? 'TEXT') === 'TEXT' && trim((string) ($d['header'] ?? '')) !== '')) {
+            $fail('header_format', 'A limited-time offer can only have an image or video header (or none).');
+        }
+        $copy = collect($d['buttons'] ?? [])->where('type', 'COPY_CODE')->count();
+        if ($copy !== 1) {
+            $fail('buttons', 'A limited-time offer needs one "Copy offer code" button.');
+        }
+        $d['lto_has_expiration'] = (bool) ($d['lto_has_expiration'] ?? true);
+        $d['lto_expiry_hours']   = (int) ($d['lto_expiry_hours'] ?? 72);
     }
 
     /** Meta's carousel rules, checked before anything is sent so a template is never submitted just to be refused. */
@@ -1201,6 +1244,14 @@ class TemplateController extends Controller
                 'type'    => 'HEADER',
                 'format'  => $headerFormat,
                 'example' => ['header_handle' => [$d['header_handle']]],
+            ];
+        }
+
+        // Limited-time offer sits between the header and the body.
+        if (!empty($d['lto_text'])) {
+            $components[] = [
+                'type' => 'LIMITED_TIME_OFFER',
+                'limited_time_offer' => ['text' => $d['lto_text'], 'has_expiration' => (bool) ($d['lto_has_expiration'] ?? true)],
             ];
         }
 

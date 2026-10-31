@@ -39,6 +39,16 @@ class TemplateMessagePayload
             ];
         }
 
+        // Limited-time offer: the code expires `lto_expiry_hours` after this message is sent (Unix time, ms).
+        if ($template->lto_text && $template->lto_has_expiration) {
+            $components[] = [
+                'type'       => 'limited_time_offer',
+                'parameters' => [['type' => 'limited_time_offer', 'limited_time_offer' => [
+                    'expiration_time_ms' => (int) now()->addHours(max(1, (int) ($template->lto_expiry_hours ?: 72)))->valueOf(),
+                ]]],
+            ];
+        }
+
         // Carousel: one entry per card (same count and order as the approved template), each with its media.
         if ($template->template_type === 'carousel') {
             $components[] = self::carousel($template, array_slice($variables, $placeholders));

@@ -991,6 +991,47 @@ export default function CampaignsPage() {
               </div>
             </div>
 
+            {stats.billing && (
+              <div className="bg-gray-50 rounded-xl p-4 space-y-3">
+                <p className="text-xs font-semibold text-gray-500">💳 Billing (from Meta)</p>
+                <div className="grid grid-cols-3 gap-3 text-center">
+                  <div><p className="text-lg font-bold text-gray-900">{fmt.number(stats.billing.billable)}</p><p className="text-[11px] text-gray-500">Billable messages</p></div>
+                  <div><p className="text-lg font-bold text-gray-900">{fmt.number(stats.billing.free)}</p><p className="text-[11px] text-gray-500">Free messages</p></div>
+                  <div>
+                    <p className="text-lg font-bold text-gray-900">
+                      {stats.billing.meta_charge != null ? stats.billing.meta_charge.toFixed(2)
+                        : stats.billing.billing_mode === 'wallet' ? fmt.number(stats.billing.wallet_debited) : '—'}
+                    </p>
+                    <p className="text-[11px] text-gray-500">
+                      {stats.billing.meta_charge != null ? 'Charged by Meta' : stats.billing.billing_mode === 'wallet' ? 'Wallet debited' : 'Charge'}
+                    </p>
+                  </div>
+                </div>
+                {stats.billing.by_category?.length > 0 && (
+                  <table className="w-full text-xs">
+                    <thead><tr className="text-gray-400 text-left"><th className="font-medium pb-1">Category</th><th className="font-medium pb-1 text-right">Messages</th><th className="font-medium pb-1 text-right">Rate</th><th className="font-medium pb-1 text-right">Amount</th></tr></thead>
+                    <tbody>
+                      {stats.billing.by_category.map((c: any) => (
+                        <tr key={c.category} className="border-t border-gray-100">
+                          <td className="py-1 capitalize text-gray-700">{String(c.category).replace(/_/g, ' ')}</td>
+                          <td className="py-1 text-right">{fmt.number(c.messages)}</td>
+                          <td className="py-1 text-right">{c.rate != null ? c.rate.toFixed(4) : '—'}</td>
+                          <td className="py-1 text-right font-semibold">{c.amount != null ? c.amount.toFixed(2) : '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+                <p className="text-[11px] text-gray-400">
+                  {stats.billing.messages_reported < (stats.delivered || 0)
+                    ? `Meta has reported pricing for ${fmt.number(stats.billing.messages_reported)} of ${fmt.number(stats.sent)} messages so far. `
+                    : ''}
+                  {stats.billing.cost_note}
+                  {stats.billing.window ? ` (${stats.billing.window.start} → ${stats.billing.window.end})` : ''}
+                </p>
+              </div>
+            )}
+
             {/* Every number: status, tries, sent/delivered/read times, failure reasons, filters and retry */}
             <div>
               <p className="text-xs font-semibold text-gray-500 mb-2">Numbers</p>

@@ -88,6 +88,7 @@ class CampaignService
                 $r = $this->campaignRepository->replyTotals($campaign->id, $companyId);
                 return ['responded' => $r['responded'], 'responses' => $r['responses'], 'response_rate' => $sent ? round($r['responded'] / $sent * 100, 1) : 0];
             })(),
+            'billing'        => app(\App\Modules\Campaign\Services\CampaignBillingService::class)->summary($campaign, \App\Models\Company::findOrFail($companyId)),
             'leads_received' => $leadsByStage->sum(),
             'leads_by_stage' => $leadsByStage,
         ];
