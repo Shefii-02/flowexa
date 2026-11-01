@@ -10,9 +10,9 @@ export type ResourceUsage = {
   key: string; label: string; kind: 'total' | 'monthly'; used: number; limit: number | null
   remaining: number | null; exceeded: boolean; percent: number | null
 }
-type State = { loaded: boolean; resources: Record<string, ResourceUsage>; plan: { id: number; name: string } | null }
+type State = { loaded: boolean; failed: boolean; resources: Record<string, ResourceUsage>; plan: { id: number; name: string } | null }
 
-let state: State = { loaded: false, resources: {}, plan: null }
+let state: State = { loaded: false, failed: false, resources: {}, plan: null }
 let inflight: Promise<void> | null = null
 const listeners = new Set<() => void>()
 const emit = () => listeners.forEach(l => l())
@@ -20,8 +20,8 @@ const emit = () => listeners.forEach(l => l())
 export function refreshPlanUsage(): Promise<void> {
   if (inflight) return inflight
   inflight = api.get('/plan/usage', { _quiet403: true } as any)
-    .then(({ data }) => { state = { loaded: true, resources: data.resources || {}, plan: data.plan || null }; emit() })
-    .catch(() => { if (!state.loaded) { state = { ...state, loaded: true }; emit() } })   // never block the UI on a failed read; the server still enforces
+    .then(({ data }) => { state = { loaded: true, failed: false, resources: data.resources || {}, plan: data.plan || null }; emit() })
+    .catch(() => { if (!state.loaded) { state = { ...state, loaded: true, failed: true }; emit() } })   // never block the UI on a failed read; the server still enforces
     .finally(() => { inflight = null })
   return inflight
 }
@@ -50,20 +50,20 @@ export function usePlanUsage(): State {
 }
 
 export type LimitInfo = {
-  loaded: boolean; used: number; limit: number | null; remaining: number | null
+  loaded: boolean; failed: boolean; used: number; limit: number | null; remaining: number | null
   unlimited: boolean; exceeded: boolean; percent: number | null; label: string
   /** Call before opening a create form. Returns false (and shows the "Limit exceeded" dialog) when `adding` more would not fit. */
   guard: (adding?: number) => boolean
 }
 
 export function useLimit(key: string): LimitInfo {
-  const { loaded, resources } = usePlanUsage()
+  const { loaded, failed, resources } = usePlanUsage()
   const r = resources[key]
   const limit = r ? r.limit : null
   const used = r ? r.used : 0
   const label = r?.label || key.replace(/_/g, ' ')
   return {
-    loaded, used, limit, remaining: r ? r.remaining : null, unlimited: !r || limit === null, exceeded: !!r?.exceeded,
+    loaded, failed, used, limit, remaining: r ? r.remaining : null, unlimited: !r || limit === null, exceeded: !!r?.exceeded,
     percent: r ? r.percent : null, label,
     guard: (adding = 1) => {
       if (!r || limit === null || used + adding <= limit) return true

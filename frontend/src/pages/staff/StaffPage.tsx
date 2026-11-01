@@ -139,7 +139,7 @@ export default function StaffPage() {
     <div className="space-y-5">
       <div className="flex items-center justify-between">
         <div><h1 className="page-title">Staff</h1><p className="page-sub">{total} team members</p></div>
-        {canCreate && <div className="flex items-center gap-2"><LimitBadge resource="users" /><Button onClick={() => planLim.guard() && openCreate()}>+ Add staff</Button></div>}
+        <div className="flex items-center gap-2"><LimitBadge resource="users" />{canCreate && <Button onClick={() => planLim.guard() && openCreate()}>+ Add staff</Button>}</div>
       </div>
 
       <div className="card">
