@@ -52,6 +52,13 @@ api.interceptors.request.use(async (config) => {
       }
     }
   }
+  // A FormData body must go out as multipart. The instance default is `Content-Type: application/json`, and axios v1
+  // honours that by serialising the FormData to JSON — turning every File into `{}` (the server then sees no upload,
+  // e.g. "The selfie field must be an image"). Dropping the header lets the browser add the multipart boundary itself.
+  if (typeof FormData !== 'undefined' && config.data instanceof FormData) {
+    config.headers.delete?.('Content-Type')
+    delete (config.headers as any)['Content-Type']
+  }
   if (token) config.headers.Authorization = `Bearer ${token}`
   config.headers['X-Device-Id'] = getDeviceId()
   config.headers['X-Device-Name'] = getDeviceName()
@@ -124,9 +131,24 @@ const markSessionExpired = (message: string) => {
 }
 
 api.interceptors.response.use(
-  (res) => res,
+  (res) => {
+    // Any successful create / update / delete may change what the plan has used — tell the usage badges to refresh.
+    const m = String(res.config?.method ?? 'get').toLowerCase()
+    if (m !== 'get' && m !== 'head' && m !== 'options' && !/\/auth\/|\/plan\/usage/.test(res.config?.url || '')) {
+      window.dispatchEvent(new Event('plan-usage-stale'))
+    }
+    return res
+  },
   async (error: AxiosError<{ message: string; error_code?: string }>) => {
     const original = error.config as typeof error.config & { _retry?: boolean; _skipPreCheck?: boolean }
+
+    // The server refused a create because the plan limit is reached. That is not a permissions problem, so it must not
+    // become the full-page "Access Denied" screen — show the "Limit exceeded" dialog and refresh the usage numbers.
+    if (error.response?.status === 403 && error.response.data?.error_code === 'plan_limit_reached') {
+      window.dispatchEvent(new CustomEvent('plan-limit', { detail: error.response.data }))
+      window.dispatchEvent(new Event('plan-usage-stale'))
+      return Promise.reject(error)
+    }
 
     if (error.response?.status === 401 && !original?._retry) {
       const errCode = error.response.data?.error_code

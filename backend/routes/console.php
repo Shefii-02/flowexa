@@ -25,6 +25,7 @@ Schedule::command('wa-cloud:run-automations')->everyFifteenMinutes()->withoutOve
 Schedule::command('wa-chat:check-health')->everyFiveMinutes()->withoutOverlapping();
 
 // Subscriptions — expire trials + lapsed paid plans past their grace window
+Schedule::command('accounts:post-reversals')->dailyAt('00:10')->withoutOverlapping();
 Schedule::command('subscriptions:sweep')->dailyAt('00:30')->withoutOverlapping();
 
 // Lead Assignment

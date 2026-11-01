@@ -56,14 +56,14 @@ class PlanPurchaseService
         }
 
         $blockers = [];
-        foreach (\App\Http\Middleware\PlanLimitMiddleware::LIMITS as $resource => [$table, $fk, $column]) {
-            $max = $target->$column;
-            if ($max === null) continue; // unlimited on the target plan
+        foreach (\App\Support\PlanLimits::REGISTRY as $resource => [$label, , , $kind]) {
+            if ($kind !== 'total') continue;                       // monthly caps reset on their own — they never block a switch
+            $max = \App\Support\PlanLimits::limit($target, $resource);
+            if ($max === null) continue;                           // unlimited on the target plan
 
-            $used = DB::table($table)->where($fk, $companyId)->count();
+            $used = \App\Support\PlanLimits::used($companyId, $resource);   // soft-deleted rows do not count
             if ($used > $max) {
-                $label = str_replace('_', ' ', $resource);
-                $blockers[] = "You have {$used} {$label}; {$target->name} allows {$max}. Remove " . ($used - $max) . " before switching.";
+                $blockers[] = "You have {$used} " . strtolower($label) . "; {$target->name} allows {$max}. Remove " . ($used - $max) . " before switching.";
             }
         }
 

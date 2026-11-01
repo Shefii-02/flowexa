@@ -1,5 +1,7 @@
 // // src/pages/templates/TemplatesPage.tsx
 // src/pages/templates/TemplatesPage.tsx
+import { useLimit } from '@/lib/planUsage'
+import LimitBadge from '@/components/plan/LimitBadge'
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { templateApi, surveyFormApi } from '@/api'
 import { Button, Input, Modal, ConfirmModal, Badge, EmptyState, Pagination } from '@/components/ui'
@@ -168,6 +170,7 @@ function splitPhone(full?: string): { phone_cc: string; phone_local: string } {
 const joinPhone = (cc?: string, local?: string) => `+${(cc || '').replace(/\D/g, '')}${(local || '').replace(/\D/g, '')}`
 
 export default function TemplatesPage() {
+  const planLim = useLimit('templates')
   const [templates,  setTemplates]  = useState<any[]>([])
   const [total,      setTotal]      = useState(0)
   const [page,       setPage]       = useState(1)
@@ -709,7 +712,7 @@ export default function TemplatesPage() {
             🔄 Sync from Meta
           </Button>
           <SeedSamplesButton seed={templateApi.seedSamples} onDone={load} />
-          <Button onClick={openCreate}>+ New template</Button>
+          <div className="flex items-center gap-2"><LimitBadge resource="templates" /><Button onClick={() => planLim.guard() && openCreate()}>+ New template</Button></div>
         </div>
       </div>
 
@@ -734,7 +737,7 @@ export default function TemplatesPage() {
           <div className="p-8 text-center text-gray-400">Loading...</div>
         ) : templates.length === 0 ? (
           <EmptyState icon="📄" title="No templates" desc="Create your first WA template and submit it to Meta for approval"
-            action={<Button onClick={openCreate}>Create template</Button>} />
+            action={<Button onClick={() => planLim.guard() && openCreate()}>Create template</Button>} />
         ) : (
           <div className="table-wrapper">
             <table className="table">

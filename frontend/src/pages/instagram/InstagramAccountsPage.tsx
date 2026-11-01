@@ -1,4 +1,6 @@
 // Connect an Instagram business account and control the DM AI agent.
+import { useLimit } from '@/lib/planUsage'
+import LimitBadge from '@/components/plan/LimitBadge'
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Button, Input, Textarea, Badge, EmptyState, Modal, ConfirmModal } from '@/components/ui'
@@ -104,6 +106,7 @@ function ConversionEventsPanel({ account, onChange }: { account: IgAccount; onCh
 }
 
 export default function InstagramAccountsPage() {
+  const planLim = useLimit('instagram_accounts')
   const [accounts, setAccounts] = useState<IgAccount[]>([])
   const [loading, setLoading] = useState(true)
   const [connectOpen, setConnectOpen] = useState(false)
@@ -212,7 +215,7 @@ export default function InstagramAccountsPage() {
           <h1 className="page-title">Instagram Accounts</h1>
           <p className="page-sub">Connect a business account, then set up the comment bot and DM AI agent</p>
         </div>
-        <Button onClick={() => setConnectOpen(true)}>+ Connect account</Button>
+        <div className="flex items-center gap-2"><LimitBadge resource="instagram_accounts" /><Button onClick={() => planLim.guard() && setConnectOpen(true)}>+ Connect account</Button></div>
       </div>
 
       {loading ? (
@@ -220,7 +223,7 @@ export default function InstagramAccountsPage() {
       ) : accounts.length === 0 ? (
         <EmptyState icon="📸" title="No Instagram account connected"
           desc="Connect an Instagram Business account linked to a Facebook Page"
-          action={<Button onClick={() => setConnectOpen(true)}>Connect account</Button>} />
+          action={<Button onClick={() => planLim.guard() && setConnectOpen(true)}>Connect account</Button>} />
       ) : (
         <div className="grid gap-4">
           {accounts.map(a => (

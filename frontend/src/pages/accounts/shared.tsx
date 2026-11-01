@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import React, { useState } from 'react'
+import { usePermission } from '@/store'
 
 export const inr = (n: number | string | null | undefined) =>
   new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(Number(n) || 0)
@@ -66,3 +67,44 @@ export function RangePicker({ range, onChange }: { range: { from: string; to: st
     </div>
   )
 }
+
+/** Small shared pieces used by the finance-workflow tabs. */
+export function Stat({ label, value, sub, tone = '' }: { label: string; value: React.ReactNode; sub?: React.ReactNode; tone?: string }) {
+  return (
+    <div className="card"><div className="card-body py-3">
+      <p className="text-xs text-gray-500">{label}</p>
+      <p className={`text-lg font-semibold ${tone}`}>{value}</p>
+      {sub && <p className="text-xs text-gray-400">{sub}</p>}
+    </div></div>
+  )
+}
+
+const STATUS_TONE: Record<string, string> = {
+  draft: 'bg-gray-100 text-gray-700', sent: 'bg-blue-100 text-blue-700', accepted: 'bg-green-100 text-green-700', rejected: 'bg-red-100 text-red-700',
+  expired: 'bg-amber-100 text-amber-700', invoiced: 'bg-purple-100 text-purple-700', open: 'bg-blue-100 text-blue-700', partial: 'bg-amber-100 text-amber-700',
+  overdue: 'bg-red-100 text-red-700', paid: 'bg-green-100 text-green-700', posted: 'bg-blue-100 text-blue-700', closed: 'bg-gray-200 text-gray-700',
+  active: 'bg-green-100 text-green-700', disposed: 'bg-gray-200 text-gray-600', left: 'bg-gray-200 text-gray-600',
+  ok: 'bg-green-100 text-green-700', near: 'bg-amber-100 text-amber-700', over: 'bg-red-100 text-red-700', hold: 'bg-red-100 text-red-700', no_limit: 'bg-gray-100 text-gray-500',
+}
+export function StatusPill({ status, label }: { status: string; label?: string }) {
+  return <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium capitalize ${STATUS_TONE[status] || 'bg-gray-100 text-gray-700'}`}>{label || status.replace('_', ' ')}</span>
+}
+
+export function SubTabs({ tabs, value, onChange }: { tabs: [string, string][]; value: string; onChange: (k: string) => void }) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      {tabs.map(([k, l]) => (
+        <button key={k} onClick={() => onChange(k)} className={`px-3 py-1.5 rounded-lg text-sm border ${value === k ? 'bg-brand-50 border-brand-300 text-brand-700 font-medium' : 'text-gray-600 hover:bg-gray-50'}`}>{l}</button>
+      ))}
+    </div>
+  )
+}
+
+/** First error message (Laravel validation puts field errors under `errors`). */
+export const errorField = (e: any): string | null => { const k = Object.keys(e?.response?.data?.errors || {})[0]; return k || null }
+
+export const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+export const monthLabel = (period: string) => { const [y, m] = period.split('-'); return `${MONTHS[Number(m) - 1]} ${y}` }
+
+/** Staff only see actions they may perform: everything that changes books needs `accounts.manage` (read-only staff just view). */
+export const useCanManage = (): boolean => usePermission('accounts.manage')

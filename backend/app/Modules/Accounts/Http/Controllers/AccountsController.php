@@ -4,10 +4,13 @@ namespace App\Modules\Accounts\Http\Controllers;
 
 use App\Http\Controllers\Controller;
 use App\Modules\Accounts\Models\AccEntry;
+use App\Modules\Accounts\Models\AccFiscalYear;
 use App\Modules\Accounts\Models\AccItem;
 use App\Modules\Accounts\Models\AccLedger;
 use App\Modules\Accounts\Models\AccVoucher;
 use App\Modules\Accounts\Support\AccountsService;
+use App\Modules\Accounts\Support\ChartOfAccounts;
+use App\Modules\Accounts\Support\PaymentService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -16,7 +19,7 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class AccountsController extends Controller
 {
-    public function __construct(private readonly AccountsService $svc) {}
+    public function __construct(private readonly AccountsService $svc, private readonly PaymentService $payments) {}
 
     private function cid(): int { return (int) auth()->user()->company_id; }
 
@@ -46,10 +49,17 @@ class AccountsController extends Controller
             'invoice_prefix' => ['nullable', 'string', 'max:10'],
             'fy_start_month' => ['nullable', 'integer', 'between:1,12'],
             'gst_registered' => ['nullable', 'boolean'],
+            'petty_cash_limit' => ['nullable', 'numeric', 'min:0'], 'quotation_validity_days' => ['nullable', 'integer', 'between:1,365'],
         ]);
         if (!empty($d['gstin'])) { $d['gstin'] = strtoupper($d['gstin']); $d['state_code'] ??= substr($d['gstin'], 0, 2); }
         if (!empty($d['pan'])) { $d['pan'] = strtoupper($d['pan']); }
         $s = $this->svc->settings($this->cid());
+        if (isset($d['fy_start_month']) && (int) $d['fy_start_month'] !== (int) $s->fy_start_month) {
+            if (AccFiscalYear::where('company_id', $this->cid())->where('status', 'closed')->exists()) {
+                return response()->json(['message' => 'The financial year start cannot change once a year has been closed.'], 422);
+            }
+            AccFiscalYear::where('company_id', $this->cid())->delete(); // open years are regenerated on the new calendar
+        }
         $s->update(array_filter($d, fn ($v) => $v !== null) + ['gstin' => $d['gstin'] ?? null, 'pan' => $d['pan'] ?? null]);
         return response()->json(['message' => 'Saved.', 'settings' => $s->fresh()]);
     }
@@ -64,7 +74,7 @@ class AccountsController extends Controller
             ->when($r->group, fn ($q, $g) => $q->whereIn('group', explode(',', $g)))
             ->when($r->nature, fn ($q, $n) => $q->where('nature', $n))
             ->when($r->search, fn ($q, $s) => $q->where('name', 'like', "%{$s}%"))
-            ->orderBy('nature')->orderBy('name')->get()
+            ->orderByRaw('code IS NULL')->orderBy('code')->orderBy('name')->get()
             ->map(fn ($l) => $l->toArray() + ['balance' => $bal[$l->id]['balance'] ?? 0]);
         return response()->json(['ledgers' => $rows]);
     }
@@ -74,7 +84,9 @@ class AccountsController extends Controller
         return [
             'name'            => ['required', 'string', 'max:150', Rule::unique('acc_ledgers', 'name')->where('company_id', $this->cid())->ignore($id)],
             'nature'          => ['required', Rule::in(['asset', 'liability', 'income', 'expense', 'equity'])],
-            'group'           => ['required', Rule::in(['cash', 'bank', 'debtor', 'creditor', 'sales', 'purchase', 'direct_income', 'indirect_income', 'direct_expense', 'indirect_expense', 'gst_output', 'gst_input', 'tds', 'capital', 'fixed_asset', 'loan', 'other'])],
+            'group'           => ['required', Rule::in(AccountsService::GROUPS)],
+            'code'            => ['nullable', 'digits_between:4,8', Rule::unique('acc_ledgers', 'code')->where('company_id', $this->cid())->ignore($id)],
+            'credit_limit'    => ['nullable', 'numeric', 'min:0'], 'credit_days' => ['nullable', 'integer', 'between:0,365'], 'credit_hold' => ['nullable', 'boolean'],
             'opening_balance' => ['nullable', 'numeric', 'min:0'],
             'opening_type'    => ['nullable', Rule::in(['dr', 'cr'])],
             'gstin'           => ['nullable', 'string', 'regex:/^\d{2}[A-Z]{5}\d{4}[A-Z][A-Z\d]Z[A-Z\d]$/i'],
@@ -90,6 +102,7 @@ class AccountsController extends Controller
     {
         $d = $r->validate($this->ledgerRules());
         $d = $this->normalizeLedger($d);
+        $d['code'] ??= ChartOfAccounts::nextCode($this->cid(), $d['nature'], $d['group']);
         $l = AccLedger::create($d + ['company_id' => $this->cid()]);
         return response()->json(['message' => 'Ledger created.', 'ledger' => $l], 201);
     }
@@ -98,6 +111,7 @@ class AccountsController extends Controller
     {
         $l = AccLedger::where('company_id', $this->cid())->findOrFail($id);
         $d = $this->normalizeLedger($r->validate($this->ledgerRules($id)));
+        if (!array_key_exists('code', $d) || $d['code'] === null) { unset($d['code']); } // never blank out an account code
         if ($l->system_key) { unset($d['nature'], $d['group']); } // the engine posts to these — their type is fixed
         $l->update($d);
         return response()->json(['message' => 'Ledger updated.', 'ledger' => $l->fresh()]);
@@ -170,6 +184,7 @@ class AccountsController extends Controller
         $q = AccVoucher::with(['party:id,name', 'ledger:id,name', 'account:id,name'])
             ->where('company_id', $cid)->whereBetween('date', [$from, $to])
             ->when($r->type, fn ($q, $t) => $q->whereIn('type', explode(',', $t)))
+            ->when($r->sub_type, fn ($q, $t) => $q->whereIn('sub_type', explode(',', $t)))
             ->when($r->party, fn ($q, $p) => $q->where('party_ledger_id', $p))
             ->when($r->search, fn ($q, $s) => $q->where(fn ($w) => $w->where('number', 'like', "%{$s}%")->orWhere('reference_no', 'like', "%{$s}%")->orWhere('narration', 'like', "%{$s}%")));
         $totals = (clone $q)->where('is_cancelled', false)->selectRaw('type, SUM(total) t')->groupBy('type')->pluck('t', 'type');
@@ -180,6 +195,11 @@ class AccountsController extends Controller
     public function showVoucher(int $id): JsonResponse
     {
         $v = AccVoucher::with(['items', 'entries.ledger:id,name', 'party', 'ledger:id,name', 'account:id,name'])->where('company_id', $this->cid())->findOrFail($id);
+        $alloc = \App\Modules\Accounts\Models\AccAllocation::where('company_id', $this->cid())
+            ->where(fn ($q) => $q->where('payment_voucher_id', $id)->orWhere('invoice_voucher_id', $id))->get();
+        $nums = AccVoucher::whereIn('id', $alloc->pluck('payment_voucher_id')->merge($alloc->pluck('invoice_voucher_id')))->pluck('number', 'id');
+        $v->setAttribute('allocations', $alloc->map(fn ($a) => $a->toArray() + ['payment_number' => $nums[$a->payment_voucher_id] ?? null, 'invoice_number' => $nums[$a->invoice_voucher_id] ?? null]));
+        if (PaymentService::isDocument($v)) { $v->setAttribute('outstanding', $this->payments->outstandingOf($v)); }
         return response()->json(['voucher' => $v, 'company' => $this->svc->settings($this->cid())]);
     }
 
@@ -193,6 +213,10 @@ class AccountsController extends Controller
             'amount' => ['nullable', 'numeric', 'min:0'], 'gst_rate' => ['nullable', 'numeric', 'between:0,40'],
             'description' => ['nullable', 'string', 'max:255'], 'hsn' => ['nullable', 'string', 'max:10'],
             'reference_no' => ['nullable', 'string', 'max:60'], 'narration' => ['nullable', 'string', 'max:1000'],
+            'sub_type' => ['nullable', Rule::in(AccountsService::JOURNAL_SUBTYPES)], 'due_date' => ['nullable', 'date'],
+            'reverse_on' => ['nullable', 'date'], 'credit_override' => ['nullable', 'boolean'],
+            'is_advance' => ['nullable', 'boolean'], 'auto_allocate' => ['nullable', 'boolean'],
+            'allocations' => ['nullable', 'array', 'max:200'], 'allocations.*.voucher_id' => ['required_with:allocations', 'integer'], 'allocations.*.amount' => ['required_with:allocations', 'numeric', 'min:0'],
             'tds_section' => ['nullable', 'string', 'max:10'], 'tds_rate' => ['nullable', 'numeric', 'between:0,30'],
             'items' => ['nullable', 'array', 'max:100'],
             'items.*.item_id' => ['nullable', 'integer'], 'items.*.description' => ['nullable', 'string', 'max:255'], 'items.*.hsn' => ['nullable', 'string', 'max:10'],
@@ -204,27 +228,25 @@ class AccountsController extends Controller
 
     public function storeVoucher(Request $r): JsonResponse
     {
-        $v = $this->svc->saveVoucher($this->cid(), auth()->id(), $r->validate($this->voucherRules()));
+        $v = $this->payments->save($this->cid(), auth()->id(), $r->validate($this->voucherRules()));
         return response()->json(['message' => "{$v->number} saved.", 'voucher' => $v], 201);
     }
 
     public function updateVoucher(Request $r, int $id): JsonResponse
     {
         $existing = AccVoucher::where('company_id', $this->cid())->findOrFail($id);
+        if ($existing->source_type) { return response()->json(['message' => 'This entry was generated by the system (' . $existing->source_type . ') and cannot be edited here.'], 422); }
         $d = $r->validate($this->voucherRules());
         $d['type'] = $existing->type; // a voucher's type is fixed once created
-        $v = $this->svc->saveVoucher($this->cid(), auth()->id(), $d, $existing);
+        $v = $this->payments->save($this->cid(), auth()->id(), $d, $existing);
         return response()->json(['message' => "{$v->number} updated.", 'voucher' => $v]);
     }
 
     public function destroyVoucher(int $id): JsonResponse
     {
         $v = AccVoucher::where('company_id', $this->cid())->findOrFail($id);
-        DB::transaction(function () use ($v) {
-            AccEntry::where('voucher_id', $v->id)->delete();
-            $v->items()->delete();
-            $v->delete();
-        });
+        if ($v->source_type) { return response()->json(['message' => 'This entry was generated by the system (' . $v->source_type . ') — undo it from its own screen.'], 422); }
+        $this->payments->delete($this->cid(), $v);
         return response()->json(['message' => 'Voucher deleted.']);
     }
 
@@ -239,7 +261,12 @@ class AccountsController extends Controller
     {
         $this->svc->seedDefaults($this->cid());
         [$from, $to] = $this->range($r);
-        return response()->json($this->svc->dashboard($this->cid(), $from, $to));
+        $cid = $this->cid();
+        $rcv = $this->payments->documents($cid, 'receivable', ['status' => 'open']); $pay = $this->payments->documents($cid, 'payable', ['status' => 'open']);
+        return response()->json($this->svc->dashboard($cid, $from, $to) + [
+            'overdue_receivable' => $rcv['total_overdue'], 'overdue_payable' => $pay['total_overdue'],
+            'open_invoices' => $rcv['count_open'], 'open_bills' => $pay['count_open'],
+        ]);
     }
 
     public function report(Request $r, string $name)
@@ -253,6 +280,9 @@ class AccountsController extends Controller
             'balance-sheet' => $this->svc->balanceSheet($cid, $to),
             'tds'           => $this->svc->tdsSummary($cid, $from, $to),
             'stock'         => $this->svc->stockSummary($cid, $to),
+            'comparison'    => $this->svc->comparison($cid, $from, $to, $r->query('compare_from'), $r->query('compare_to')),
+            'ageing-receivable' => $this->payments->ageing($cid, 'receivable', $to),
+            'ageing-payable'    => $this->payments->ageing($cid, 'payable', $to),
             'receivables'   => $this->svc->outstanding($cid, 'receivable'),
             'payables'      => $this->svc->outstanding($cid, 'payable'),
             'ledger'        => $this->svc->ledgerStatement($cid, (int) $r->query('ledger_id'), $from, $to),

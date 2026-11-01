@@ -1,5 +1,6 @@
 import StickyNotes from '@/components/sticky/StickyNotes'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
+import PlanLimitModal from '@/components/plan/PlanLimitModal'
 import { Toaster } from 'react-hot-toast'
 import { useEffect } from 'react'
 import { useAppDispatch, useAppSelector } from '@/store'
@@ -92,6 +93,7 @@ export const DashboardLayout = () => {
             ) : (
               <Outlet />
             )}
+            <PlanLimitModal />
           </ErrorBoundary>
         </main>
       </div>

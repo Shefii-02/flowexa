@@ -1,4 +1,6 @@
 // src/pages/contacts/ContactsPage.tsx
+import { useLimit } from '@/lib/planUsage'
+import LimitBadge from '@/components/plan/LimitBadge'
 import { useEffect, useState, useCallback } from 'react'
 import { useAppDispatch, useAppSelector } from '@/store'
 import { fetchContactsThunk, fetchLabelsThunk } from '@/store/slices'
@@ -452,6 +454,7 @@ console.log( contact)
 
 // ── Main ContactsPage ─────────────────────────────────────────────────────
 export default function ContactsPage() {
+  const planLim = useLimit('contacts')
   const dispatch = useAppDispatch()
   const { list, total, loading } = useAppSelector(s => s.contacts)
   const { list: labels }         = useAppSelector(s => s.labels)
@@ -636,8 +639,9 @@ export default function ContactsPage() {
         <div className="flex gap-2 flex-wrap">
           <LabelManager labels={labels} onRefresh={loadLabels} />
           <Button variant="secondary" onClick={handleExport}>↓ Export</Button>
-          <Button variant="secondary" onClick={() => setShowImport(true)}>↑ Import</Button>
-          <Button onClick={openCreate}>+ Add contact</Button>
+          <LimitBadge resource="contacts" />
+          <Button variant="secondary" onClick={() => planLim.guard() && setShowImport(true)}>↑ Import</Button>
+          <Button onClick={() => planLim.guard() && openCreate()}>+ Add contact</Button>
         </div>
       </div>
 
@@ -673,7 +677,7 @@ export default function ContactsPage() {
 
         {loading ? <TableSkeleton rows={8} cols={6} /> : list.length === 0 ? (
           <EmptyState icon="👥" title="No contacts" desc="Import a CSV or add contacts manually"
-            action={<Button onClick={() => setShowImport(true)}>Import CSV</Button>} />
+            action={<Button onClick={() => planLim.guard() && setShowImport(true)}>Import CSV</Button>} />
         ) : (
           <div className="table-wrapper">
             <table className="table">

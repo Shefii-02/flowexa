@@ -1,4 +1,6 @@
 // src/pages/leads/LeadsPage.tsx
+import { useLimit } from '@/lib/planUsage'
+import LimitBadge from '@/components/plan/LimitBadge'
 import { useEffect, useState, useCallback } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { DndContext, useDraggable, useDroppable, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
@@ -14,6 +16,7 @@ import type { Lead, LeadStage } from '@/types'
 const STAGES: LeadStage[] = ['new', 'contacted', 'follow_up', 'enrolled', 'lost']
 
 export default function LeadsPage() {
+  const planLim = useLimit('leads')
   const dispatch   = useAppDispatch()
   const navigate   = useNavigate()
   const { list, total, analytics, loading } = useAppSelector((s) => s.leads)
@@ -277,9 +280,10 @@ export default function LeadsPage() {
             <button onClick={() => setView('kanban')} className={`px-3 py-1.5 text-xs ${view==='kanban'?'bg-gray-100 font-medium':''}`}>Kanban</button>
           </div>
           <Button variant="secondary" loading={exporting} onClick={handleExport}>↓ Export</Button>
-          <Button variant="secondary" onClick={() => setShowImport(true)}>↑ Import CSV</Button>
+          <LimitBadge resource="leads" />
+          <Button variant="secondary" onClick={() => planLim.guard() && setShowImport(true)}>↑ Import CSV</Button>
           <Button variant="secondary" onClick={() => setShowReassign(true)}>⇄ Switch leads</Button>
-          <Button onClick={() => setShowCreate(true)}>+ Add lead</Button>
+          <Button onClick={() => planLim.guard() && setShowCreate(true)}>+ Add lead</Button>
         </div>
       </div>
 

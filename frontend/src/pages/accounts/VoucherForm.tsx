@@ -1,9 +1,12 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { accountsApi } from '@/api'
 import { Button, Input, Select, Modal } from '@/components/ui'
 import { getError } from '@/utils'
 import toast from 'react-hot-toast'
 import { inr, today, GST_RATES, GST_STATES, TDS_SECTIONS, VOUCHER_TYPES } from './shared'
+
+const SETTLES: Record<string, 'receivable' | 'payable'> = { receipt: 'receivable', credit_note: 'receivable', payment: 'payable', debit_note: 'payable' }
+const JOURNAL_KINDS: [string, string][] = [['general', 'General'], ['adjusting', 'Adjusting entry'], ['revenue', 'Revenue transaction'], ['expense', 'Expense transaction'], ['asset', 'Asset transaction'], ['liability', 'Liability transaction'], ['equity', 'Equity transaction']]
 
 /** Vouchers entered as line items with GST, and the ones whose party is a customer. */
 const ITEM_BASED = ['sales', 'purchase', 'credit_note', 'debit_note']
@@ -13,7 +16,8 @@ const blankEntry = () => ({ ledger_id: '', debit: '', credit: '' })
 
 export function blankVoucher(type: string) {
   return { type, date: today(), party_ledger_id: '', ledger_id: '', account_ledger_id: '', place_of_supply: '', amount: '', gst_rate: 0,
-           description: '', tds_section: '', tds_rate: 0, reference_no: '', narration: '', items: [blankItem()], entries: [blankEntry(), blankEntry()] }
+           description: '', tds_section: '', tds_rate: 0, reference_no: '', narration: '', items: [blankItem()], entries: [blankEntry(), blankEntry()],
+           due_date: '', is_advance: false, alloc: {} as Record<string, number | string>, origAlloc: {} as Record<string, number>, sub_type: 'general', reverse_on: '', credit_override: false }
 }
 
 /** Convert a voucher loaded from the API into the form shape (used for Edit). */
@@ -22,7 +26,9 @@ export function voucherToForm(v: any) {
     party_ledger_id: v.party_ledger_id || '', ledger_id: v.ledger_id || '', account_ledger_id: v.account_ledger_id || '',
     place_of_supply: v.place_of_supply || '', reference_no: v.reference_no || '', narration: v.narration || '',
     amount: ['receipt', 'payment', 'contra'].includes(v.type) ? v.total : v.taxable,
-    tds_section: v.tds_section || '', tds_rate: v.tds_rate || 0,
+    tds_section: v.tds_section || '', tds_rate: v.tds_rate || 0, due_date: v.due_date ? String(v.due_date).slice(0, 10) : '', is_advance: !!v.is_advance,
+    sub_type: v.sub_type || 'general', reverse_on: v.reverse_on ? String(v.reverse_on).slice(0, 10) : '',
+    ...(() => { const m: Record<string, number> = {}; (v.allocations || []).filter((a: any) => a.payment_voucher_id === v.id && !a.journal_voucher_id).forEach((a: any) => { m[a.invoice_voucher_id] = a.amount }); return { alloc: { ...m }, origAlloc: m } })(),
     gst_rate: v.items?.[0]?.gst_rate ?? 0, description: v.items?.[0]?.description || '',
     items: v.items?.length ? v.items.map((i: any) => ({ item_id: i.item_id || '', description: i.description, hsn: i.hsn || '', qty: i.qty, rate: i.rate, gst_rate: i.gst_rate })) : [blankItem()],
     entries: v.type === 'journal' ? v.entries.map((e: any) => ({ ledger_id: e.ledger_id, debit: e.debit || '', credit: e.credit || '' })) : [blankEntry(), blankEntry()] }
@@ -51,6 +57,17 @@ export default function VoucherForm({ form, setForm, ledgers, items: catalog = [
     return { inter, taxable, tax, total: taxable + tax, tds }
   }, [form, ledgers, company, t])
 
+  // open invoices/bills of the chosen party, for allocating a receipt / payment / credit or debit note
+  const kind = SETTLES[t]
+  const [docs, setDocs] = useState<any[]>([])
+  useEffect(() => {
+    if (!form || !kind || !form.party_ledger_id || form.is_advance) { setDocs([]); return }
+    let live = true
+    accountsApi.paymentDocs(kind, { party: form.party_ledger_id, status: 'all' })
+      .then(r => { if (live) setDocs(r.data.rows.filter((d: any) => d.outstanding > 0.004 || (form.origAlloc || {})[d.voucher_id] > 0)) }).catch(() => {})
+    return () => { live = false }
+  }, [form?.party_ledger_id, form?.type, form?.is_advance, form?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
   if (!form) return null
   const meta = VOUCHER_TYPES[t]
   const gstRow = (
@@ -71,15 +88,36 @@ export default function VoucherForm({ form, setForm, ledgers, items: catalog = [
   const setItem = (i: number, k: string, v: any) => set('items', form.items.map((x: any, j: number) => j === i ? { ...x, [k]: v } : x))
   const setEntry = (i: number, k: string, v: any) => set('entries', form.entries.map((x: any, j: number) => j === i ? { ...x, [k]: v } : x))
 
-  const save = async () => {
+  /** What this document can allocate: the receipt/payment amount, or the note's total. */
+  const target = t === 'receipt' || t === 'payment' ? Number(form.amount) || 0 : (calc?.total || 0)
+  const allocated = Object.values(form.alloc || {}).reduce((a: number, b: any) => a + (Number(b) || 0), 0)
+  const room = (d: any) => d.outstanding + ((form.origAlloc || {})[d.voucher_id] || 0)   // an edit may re-use what it already settled
+  const setAlloc = (id: number, v: string) => set('alloc', { ...form.alloc, [id]: v })
+  const autoAlloc = () => {   // oldest due first
+    let left = target; const m: Record<string, number> = {}
+    for (const d of [...docs].sort((a, b) => String(a.due_date).localeCompare(String(b.due_date)))) { if (left <= 0.004) break; const take = Math.min(left, room(d)); m[d.voucher_id] = Math.round(take * 100) / 100; left -= take }
+    set('alloc', m)
+  }
+
+  const save = async (override = false) => {
     setSaving(true)
     try {
       const body: any = { ...form, amount: Number(form.amount) || 0,
         party_ledger_id: form.party_ledger_id || null, ledger_id: form.ledger_id || null, account_ledger_id: form.account_ledger_id || null,
-        place_of_supply: form.place_of_supply || null, tds_section: form.tds_section || null, tds_rate: Number(form.tds_rate) || 0 }
+        place_of_supply: form.place_of_supply || null, tds_section: form.tds_section || null, tds_rate: Number(form.tds_rate) || 0,
+        due_date: form.due_date || null, credit_override: override || undefined,
+        sub_type: t === 'journal' ? form.sub_type : undefined, reverse_on: t === 'journal' && form.sub_type === 'adjusting' && form.reverse_on ? form.reverse_on : null }
+      if (kind) {
+        body.is_advance = ['receipt', 'payment'].includes(t) && !!form.is_advance
+        body.allocations = body.is_advance ? [] : Object.entries(form.alloc || {}).filter(([, a]) => Number(a) > 0).map(([id, a]) => ({ voucher_id: Number(id), amount: Number(a) }))
+      }
       form.id ? await accountsApi.updateVoucher(form.id, body) : await accountsApi.createVoucher(body)
       toast.success('Saved.'); onSaved()
-    } catch (e) { toast.error(getError(e)) } finally { setSaving(false) }
+    } catch (e: any) {
+      // the server refuses a sale that breaches the customer's credit limit; the user may knowingly override it
+      if (e?.response?.data?.errors?.credit_limit && !override && window.confirm(`${getError(e)}\n\nSave this invoice anyway?`)) { setSaving(false); return save(true) }
+      toast.error(getError(e))
+    } finally { setSaving(false) }
   }
 
   const jDr = form.entries.reduce((s: number, e: any) => s + (Number(e.debit) || 0), 0)
@@ -87,7 +125,7 @@ export default function VoucherForm({ form, setForm, ledgers, items: catalog = [
 
   return (
     <Modal open onClose={onClose} title={`${form.id ? 'Edit' : 'New'} ${meta.label}${form.number ? ` — ${form.number}` : ''}`} size="lg"
-      footer={<><Button variant="secondary" onClick={onClose}>Cancel</Button><Button onClick={save} loading={saving}>Save</Button></>}>
+      footer={<><Button variant="secondary" onClick={onClose}>Cancel</Button><Button onClick={() => save()} loading={saving}>Save</Button></>}>
       <div className="grid sm:grid-cols-2 gap-4">
         <Input label="Date" type="date" value={form.date} onChange={e => set('date', e.target.value)} />
         <Input label={t === 'purchase' ? 'Supplier bill no.' : t === 'receipt' || t === 'payment' ? 'Cheque / UTR / ref' : 'Reference'} value={form.reference_no} onChange={e => set('reference_no', e.target.value)} />
@@ -101,9 +139,13 @@ export default function VoucherForm({ form, setForm, ledgers, items: catalog = [
             options={[{ value: '', label: 'Same as party state' }, ...GST_STATES.map(([c, n]) => ({ value: c, label: `${c} — ${n}` }))]} />
         )}
 
+        {['sales', 'purchase'].includes(t) && (
+          <Input label="Due date (blank = party's credit terms)" type="date" value={form.due_date} onChange={e => set('due_date', e.target.value)} />
+        )}
+
         {t === 'expense' && (
           <>
-            <Select label="Expense head" value={form.ledger_id} onChange={e => set('ledger_id', e.target.value)} options={opt(by('indirect_expense', 'direct_expense', 'purchase', 'fixed_asset'))} />
+            <Select label="Expense head" value={form.ledger_id} onChange={e => set('ledger_id', e.target.value)} options={opt(by('indirect_expense', 'non_operating_expense', 'direct_expense', 'purchase'))} />
             <Select label="Paid from" value={form.account_ledger_id} onChange={e => set('account_ledger_id', e.target.value)} options={opt([...cashBank, ...by('creditor')])} />
             <Input label="Description" value={form.description} onChange={e => set('description', e.target.value)} />
             <Input label="Amount (before GST)" type="number" min="0" value={form.amount} onChange={e => set('amount', e.target.value)} />
@@ -121,7 +163,7 @@ export default function VoucherForm({ form, setForm, ledgers, items: catalog = [
         )}
         {t === 'income' && (
           <>
-            <Select label="Income head" value={form.ledger_id} onChange={e => set('ledger_id', e.target.value)} options={opt(by('indirect_income', 'direct_income', 'sales'))} />
+            <Select label="Income head" value={form.ledger_id} onChange={e => set('ledger_id', e.target.value)} options={opt(by('indirect_income', 'non_operating_income', 'direct_income', 'sales'))} />
             <Select label="Received in" value={form.account_ledger_id} onChange={e => set('account_ledger_id', e.target.value)} options={opt([...cashBank, ...by('debtor')])} />
             <Input label="Description" value={form.description} onChange={e => set('description', e.target.value)} />
             <Input label="Amount (before GST)" type="number" min="0" value={form.amount} onChange={e => set('amount', e.target.value)} />
@@ -132,6 +174,10 @@ export default function VoucherForm({ form, setForm, ledgers, items: catalog = [
           <>
             <Select label={t === 'receipt' ? 'Received in' : 'Paid from'} value={form.account_ledger_id} onChange={e => set('account_ledger_id', e.target.value)} options={opt(cashBank)} />
             <Input label="Amount" type="number" min="0" value={form.amount} onChange={e => set('amount', e.target.value)} />
+            <label className="flex items-center gap-2 text-sm sm:col-span-2">
+              <input type="checkbox" checked={!!form.is_advance} disabled={Object.keys(form.origAlloc || {}).length > 0} onChange={e => set('is_advance', e.target.checked)} />
+              {t === 'receipt' ? 'Advance received — no invoice yet (held as Customer Advance until applied to an invoice)' : 'Advance paid — no bill yet (held as Advance to Supplier until applied to a bill)'}
+            </label>
           </>
         )}
         {t === 'contra' && (
@@ -166,6 +212,12 @@ export default function VoucherForm({ form, setForm, ledgers, items: catalog = [
         )}
 
         {t === 'journal' && (
+          <>
+            <Select label="Journal category" value={form.sub_type} onChange={e => set('sub_type', e.target.value)} options={JOURNAL_KINDS.map(([v, l]) => ({ value: v, label: l }))} />
+            {form.sub_type === 'adjusting' && <Input label="Auto-reverse on (optional)" type="date" value={form.reverse_on} onChange={e => set('reverse_on', e.target.value)} />}
+          </>
+        )}
+        {t === 'journal' && (
           <div className="sm:col-span-2 space-y-2">
             <label className="label">Lines</label>
             {form.entries.map((e: any, i: number) => (
@@ -180,6 +232,30 @@ export default function VoucherForm({ form, setForm, ledgers, items: catalog = [
             <div className="flex justify-between text-sm">
               <button className="text-xs text-blue-600 hover:underline" onClick={() => set('entries', [...form.entries, blankEntry()])}>+ Add line</button>
               <span className={Math.abs(jDr - jCr) < 0.01 ? 'text-green-600' : 'text-red-500'}>Dr {inr(jDr)} · Cr {inr(jCr)}</span>
+            </div>
+          </div>
+        )}
+
+        {kind && form.party_ledger_id && !form.is_advance && (
+          <div className="sm:col-span-2 border rounded-lg p-3 space-y-2">
+            <div className="flex items-center justify-between">
+              <label className="label !mb-0">Settle {kind === 'receivable' ? 'invoices' : 'bills'}</label>
+              <button className="text-xs text-blue-600 hover:underline" onClick={autoAlloc}>Auto — oldest due first</button>
+            </div>
+            {docs.length === 0 ? <p className="text-xs text-gray-400">No open {kind === 'receivable' ? 'invoices' : 'bills'} for this party. The amount stays on their account.</p> : (
+              <table className="table text-sm"><thead><tr><th>Document</th><th>Due</th><th className="text-right">Outstanding</th><th className="text-right w-32">Settle</th></tr></thead><tbody>
+                {docs.map(d => (
+                  <tr key={d.voucher_id}>
+                    <td>{d.number}</td><td className={d.days_overdue > 0 ? 'text-red-600' : ''}>{d.due_date}{d.days_overdue > 0 ? ` (${d.days_overdue}d late)` : ''}</td>
+                    <td className="text-right">{inr(room(d))}</td>
+                    <td className="text-right"><input className="input !py-1 text-right" type="number" min="0" max={room(d)} value={form.alloc?.[d.voucher_id] ?? ''} onChange={e => setAlloc(d.voucher_id, e.target.value)} /></td>
+                  </tr>
+                ))}
+              </tbody></table>
+            )}
+            <div className="flex justify-between text-xs">
+              <span className={allocated > target + 0.005 ? 'text-red-500' : 'text-gray-500'}>Allocated {inr(allocated)} of {inr(target)}</span>
+              <span className="text-gray-500">{target - allocated > 0.005 ? `${inr(target - allocated)} stays on account` : ''}</span>
             </div>
           </div>
         )}

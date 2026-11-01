@@ -1,4 +1,6 @@
 // src/pages/meta-ads/AdAccountPage.tsx
+import { useLimit } from '@/lib/planUsage'
+import LimitBadge from '@/components/plan/LimitBadge'
 import { useEffect, useState } from 'react'
 
 import { Button, Input, Modal, Badge, EmptyState, ConfirmModal } from '@/components/ui'
@@ -7,6 +9,7 @@ import toast from 'react-hot-toast'
 import { metaAdsApi } from '../api/meta-ads'
 
 export default function AdAccountPage() {
+  const planLim = useLimit('meta_ads_accounts')
   const [accounts, setAccounts] = useState<any[]>([])
   const [loading,  setLoading]  = useState(true)
   const [showModal,setShowModal]= useState(false)
@@ -52,7 +55,7 @@ export default function AdAccountPage() {
     <div className="space-y-5">
       <div className="flex items-center justify-between">
         <div><h1 className="page-title">Meta Ad Accounts</h1><p className="page-sub">Each company connects their own Meta ad account</p></div>
-        <Button onClick={() => setShowModal(true)}>+ Connect account</Button>
+        <div className="flex items-center gap-2"><LimitBadge resource="meta_ads_accounts" /><Button onClick={() => planLim.guard() && setShowModal(true)}>+ Connect account</Button></div>
       </div>
 
       {/* Billing clarification banner */}
@@ -64,7 +67,7 @@ export default function AdAccountPage() {
       : accounts.length === 0 ? (
         <EmptyState icon="📊" title="No ad accounts connected"
           desc="Connect your Meta ad account to start creating and managing Facebook & Instagram ads"
-          action={<Button onClick={() => setShowModal(true)}>Connect account</Button>} />
+          action={<Button onClick={() => planLim.guard() && setShowModal(true)}>Connect account</Button>} />
       ) : (
         <div className="grid gap-4">
           {accounts.map((a: any) => (

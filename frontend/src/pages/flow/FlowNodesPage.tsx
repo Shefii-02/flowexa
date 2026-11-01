@@ -14,6 +14,8 @@
 // ✅ Tree starts fully expanded by default (collapsed state starts empty)
 // ✅ All previous features retained
 
+import { useLimit } from '@/lib/planUsage'
+import LimitBadge from '@/components/plan/LimitBadge'
 import {
   useEffect, useState, useCallback, useMemo, useRef, DragEvent,
 } from 'react'
@@ -276,6 +278,7 @@ function FlowTestPreview({ nodes, startId, nonce, onRestart, builderName, onClos
 // MAIN
 // ─────────────────────────────────────────────────────────────────────────────
 export default function FlowNodesPage() {
+  const planLim = useLimit('flow_nodes')
   const { builderId: builderParam } = useParams(); const builderId = Number(builderParam)
   const [builder, setBuilder] = useState<any>(null); const [nodes, setNodes] = useState<FlowNode[]>([]); const [loading, setLoading] = useState(true)
   // Starts empty — tree is fully expanded by default.
@@ -636,7 +639,7 @@ export default function FlowNodesPage() {
           </div>
           <div className="flex items-center gap-1 flex-shrink-0">
             <button onClick={() => { setPreviewStartId(n.id); setPreviewNonce(x => x + 1); setShowTestPreview(true) }} className="text-xs text-gray-400 hover:bg-gray-50 px-1.5 py-1 rounded-lg" title="Preview from this node">👁</button>
-            <button onClick={() => openCreate(n.id)} className="text-xs text-brand-600 hover:bg-brand-50 px-2 py-1 rounded-lg whitespace-nowrap">+Child</button>
+            <button onClick={() => planLim.guard() && openCreate(n.id)} className="text-xs text-brand-600 hover:bg-brand-50 px-2 py-1 rounded-lg whitespace-nowrap">+Child</button>
             <button onClick={() => openEdit(n)} className="text-xs text-blue-600 hover:bg-blue-50 px-2 py-1 rounded-lg">Edit</button>
             <button onClick={() => handleToggle(n)} disabled={togglingIds.has(n.id)} className="text-xs text-gray-500 hover:bg-gray-100 px-2 py-1 rounded-lg disabled:opacity-40 disabled:cursor-wait">{togglingIds.has(n.id) ? '…' : (n.is_active ? 'Off' : 'On')}</button>
             <button onClick={() => setDelN(n)} className="text-xs text-red-500 hover:bg-red-50 px-2 py-1 rounded-lg">Del</button>
@@ -702,7 +705,7 @@ export default function FlowNodesPage() {
           </>)}
           {selCount === 0 && <button onClick={() => setSelected(new Set(nodes.map(n => n.id)))} className="text-xs text-gray-500 px-2 py-1.5 rounded-xl border border-gray-200 hover:bg-gray-50">Select all</button>}
           <Button variant="secondary" onClick={() => { setShowTestPreview(true); setPreviewStartId(null); setPreviewNonce(x => x + 1) }}>👁 Test flow</Button>
-          <Button onClick={() => openCreate(null)}>+ Root node</Button>
+          <div className="flex items-center gap-2"><LimitBadge resource="flow_nodes" /><Button onClick={() => planLim.guard() && openCreate(null)}>+ Root node</Button></div>
         </div>
       </div>
       <div className="flex gap-3 text-[11px] text-gray-400 mt-2 flex-wrap">
@@ -720,7 +723,7 @@ export default function FlowNodesPage() {
     {/* Tree */}
     <div className="flex-1 overflow-y-auto p-4">
       {loading ? <div className="text-center py-20 text-gray-400">Loading…</div>
-        : nodes.length === 0 ? <EmptyState icon="🌿" title="No nodes" desc="Add a root node" action={<Button onClick={() => openCreate(null)}>Add root node</Button>} />
+        : nodes.length === 0 ? <EmptyState icon="🌿" title="No nodes" desc="Add a root node" action={<Button onClick={() => planLim.guard() && openCreate(null)}>Add root node</Button>} />
           : <div onDragOver={e => { if (dragEnabled && dragging !== null) { e.preventDefault(); setDropZone('root') } }} onDrop={e => handleDrop(e, 'root')} onDragLeave={() => setDropZone(null)}>
             {roots.map(n => renderNode(n))}
             {dragEnabled && <div className={`h-10 rounded-xl border-2 border-dashed mt-3 flex items-center justify-center text-xs transition-all ${dropZone === 'root' ? 'border-brand-500 bg-brand-50 text-brand-600 border-solid' : 'border-gray-200 text-gray-300'}`}>

@@ -147,6 +147,8 @@ class ContactRepository implements ContactRepositoryInterface
 
     /** Labels chosen in the import form (already limited to this company's own labels). */
     private array $importLabelIds = [];
+    private ?int $importRoom = null;       // new contacts the plan still has room for during an import (null = unlimited)
+    private int $importLimitHit = 0;       // new contacts skipped because the plan limit was reached
 
     // ─── CSV Import ───────────────────────────────────────────────────────────
     public function import(int $companyId, ImportContactDTO $dto): ImportResultDTO
@@ -198,6 +200,14 @@ class ContactRepository implements ContactRepositoryInterface
         $batch  = [];
         $phones = [];
         $row    = 0;
+
+        // Plan cap: a CSV may carry more NEW contacts than the plan has room for. Import what fits and say so, instead of
+        // silently going past the limit (updating an existing contact never uses a slot).
+        $this->importRoom = null;
+        if (($ctx = \App\Support\PlanLimits::context(auth()->user())) && $ctx[0] === $companyId) {
+            $this->importRoom = \App\Support\PlanLimits::remaining($companyId, $ctx[1], 'contacts');
+        }
+        $this->importLimitHit = 0;
 
         while (($line = fgetcsv($handle)) !== false) {
             $row++;
@@ -253,6 +263,10 @@ class ContactRepository implements ContactRepositoryInterface
 
         fclose($handle);
         Storage::delete($dto->filePath);
+
+        if ($this->importLimitHit > 0) {
+            array_unshift($result->errors, "Limit exceeded: your plan's contact limit was reached, so {$this->importLimitHit} new contact(s) were not imported. Upgrade your plan to add more.");
+        }
 
         if ($unknownLabels) {
             // informational only (not counted as failed rows): these names don't exist, so nothing was attached
@@ -321,8 +335,14 @@ class ContactRepository implements ContactRepositoryInterface
                 continue;
             }
 
+            if ($this->importRoom !== null && $this->importRoom <= 0) {
+                $this->importLimitHit++;
+                continue;
+            }
+
             try {
                 $contact = Contact::create($row);
+                if ($this->importRoom !== null) { $this->importRoom--; }
                 if ($labelIds) {
                     $contact->labels()->sync($labelIds);
                 }

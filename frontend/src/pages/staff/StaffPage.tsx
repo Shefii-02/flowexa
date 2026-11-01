@@ -1,4 +1,6 @@
 // src/pages/staff/StaffPage.tsx
+import { useLimit } from '@/lib/planUsage'
+import LimitBadge from '@/components/plan/LimitBadge'
 import { useEffect, useMemo, useState } from 'react'
 import { useAppDispatch, useAppSelector, usePermission } from '@/store'
 import { fetchStaffThunk } from '@/store/slices'
@@ -15,6 +17,7 @@ import toast from 'react-hot-toast'
 interface Role { id: number; name: string; label: string }
 
 export default function StaffPage() {
+  const planLim = useLimit('users')
   const dispatch   = useAppDispatch()
   const { list, total, loading } = useAppSelector((s) => s.staff)
   // Backend only defines 'staff.manage' (no create/edit/delete split).
@@ -136,7 +139,7 @@ export default function StaffPage() {
     <div className="space-y-5">
       <div className="flex items-center justify-between">
         <div><h1 className="page-title">Staff</h1><p className="page-sub">{total} team members</p></div>
-        {canCreate && <Button onClick={openCreate}>+ Add staff</Button>}
+        {canCreate && <div className="flex items-center gap-2"><LimitBadge resource="users" /><Button onClick={() => planLim.guard() && openCreate()}>+ Add staff</Button></div>}
       </div>
 
       <div className="card">
@@ -145,7 +148,7 @@ export default function StaffPage() {
         </div>
 
         {loading ? <TableSkeleton rows={6} cols={5} /> : list.length === 0 ? (
-          <EmptyState icon="👤" title="No staff yet" desc="Add your first team member" action={canCreate ? <Button onClick={openCreate}>Add staff</Button> : undefined} />
+          <EmptyState icon="👤" title="No staff yet" desc="Add your first team member" action={canCreate ? <Button onClick={() => planLim.guard() && openCreate()}>Add staff</Button> : undefined} />
         ) : (
           <div className="table-wrapper">
             <table className="table">

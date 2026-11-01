@@ -29,6 +29,8 @@ export default function DashboardTab() {
             <StatCard label="Bank balance" value={inr(d.bank)} icon="🏦" />
             <StatCard label="To receive" value={inr(d.receivable)} sub="From customers" icon="📥" color="text-blue-600" />
             <StatCard label="To pay" value={inr(d.payable)} sub="To suppliers" icon="📤" color="text-orange-600" />
+            <StatCard label="Overdue from customers" value={inr(d.overdue_receivable)} sub={`${d.open_invoices} open invoices`} icon="⏰" color={d.overdue_receivable ? 'text-red-600' : 'text-gray-900'} />
+            <StatCard label="Overdue to suppliers" value={inr(d.overdue_payable)} sub={`${d.open_bills} open bills`} icon="⌛" color={d.overdue_payable ? 'text-red-600' : 'text-gray-900'} />
           </div>
 
           <div className="grid lg:grid-cols-3 gap-4">

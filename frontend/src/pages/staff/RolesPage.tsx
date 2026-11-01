@@ -1,3 +1,5 @@
+import { useLimit } from '@/lib/planUsage'
+import LimitBadge from '@/components/plan/LimitBadge'
 import { useEffect, useState, useCallback } from 'react'
 import { roleApi, staffAccessApi } from '@/api'
 import AccessSectionPicker, { type AccessSection } from './AccessSectionPicker'
@@ -402,6 +404,7 @@ const RoleModal = ({
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function RolesPage() {
+  const planLim = useLimit('roles')
   const [roles, setRoles] = useState<Role[]>([])
   const [groups, setGroups] = useState<PermissionGroup[]>([])
   const [loading, setLoading] = useState(true)
@@ -472,12 +475,12 @@ export default function RolesPage() {
             Define what each role can view and manage.
           </p>
         </div>
-        <button
-          onClick={() => setEditTarget(null)}
+        <div className="flex items-center gap-3"><LimitBadge resource="roles" /><button
+          onClick={() => planLim.guard() && setEditTarget(null)}
           className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700"
         >
           + New role
-        </button>
+        </button></div>
       </div>
 
       {loading ? (

@@ -1,3 +1,5 @@
+import { useLimit } from '@/lib/planUsage'
+import LimitBadge from '@/components/plan/LimitBadge'
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Trans, useTranslation } from 'react-i18next';
@@ -60,6 +62,7 @@ function restrictionTitle(restriction: AccountRestriction, t: TFunction): string
 }
 
 export function Sessions() {
+  const planLim = useLimit('wa_sessions')
   const { t } = useTranslation();
   useDocumentTitle(t('sessions.title'));
   const toast = useToast();
@@ -521,10 +524,10 @@ export function Sessions() {
         subtitle={t('sessions.subtitle')}
         actions={
           canWrite && (
-            <button className="btn-primary" onClick={() => setShowCreateModal(true)}>
+            <span className="inline-flex items-center gap-3"><LimitBadge resource="wa_sessions" /><button className="btn-primary" onClick={() => planLim.guard() && setShowCreateModal(true)}>
               <Plus size={18} />
               {t('sessions.newSession')}
-            </button>
+            </button></span>
           )
         }
       />

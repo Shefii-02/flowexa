@@ -1,4 +1,6 @@
 // Website Chat Widget — configure the branded AI chat, grab the one-line embed, watch leads land.
+import { useLimit } from '@/lib/planUsage'
+import LimitBadge from '@/components/plan/LimitBadge'
 import { useEffect, useState } from 'react'
 import { Button, Input, Textarea, Badge, EmptyState, Modal, ConfirmModal } from '@/components/ui'
 import { getError } from '@/utils'
@@ -44,6 +46,7 @@ const emptyDraft = (): Draft => ({
 })
 
 export default function WidgetPage() {
+  const planLim = useLimit('website_widgets')
   const [widgets, setWidgets] = useState<ChatWidget[]>([])
   const [sessions, setSessions] = useState<WaSession[]>([])
   const [loading, setLoading] = useState(true)
@@ -139,7 +142,7 @@ export default function WidgetPage() {
           <h1 className="page-title">Website Chat Widget</h1>
           <p className="page-sub">One line of code. Visitors chat, the AI qualifies the lead, your team gets alerted.</p>
         </div>
-        <Button onClick={() => setEditor(emptyDraft())}>+ New widget</Button>
+        <div className="flex items-center gap-2"><LimitBadge resource="website_widgets" /><Button onClick={() => planLim.guard() && setEditor(emptyDraft())}>+ New widget</Button></div>
       </div>
 
       <PermissionGate permission="widget_chat.handle">
@@ -159,7 +162,7 @@ export default function WidgetPage() {
       ) : widgets.length === 0 ? (
         <EmptyState icon="💬" title="No widget yet"
           desc="Create one, paste the snippet on your site, and start capturing leads"
-          action={<Button onClick={() => setEditor(emptyDraft())}>Create widget</Button>} />
+          action={<Button onClick={() => planLim.guard() && setEditor(emptyDraft())}>Create widget</Button>} />
       ) : (
         <div className="grid gap-4">
           {widgets.map(w => (

@@ -10,6 +10,7 @@ use App\Modules\Auth\Http\Controllers\CompanyController;
 use App\Modules\Auth\Http\Controllers\PushNotificationController;
 use App\Modules\Blacklist\Http\Controllers\BlacklistController;
 use App\Modules\Accounts\Http\Controllers\AccountsController;
+use App\Modules\Accounts\Http\Controllers\FinanceController;
 use App\Modules\ShortLink\Http\Controllers\ShortLinkController;
 use App\Modules\Campaign\Http\Controllers\CampaignContactController;
 use App\Modules\Campaign\Http\Controllers\CampaignController;
@@ -453,7 +454,7 @@ Route::prefix('v1')->group(function () {
             });
 
             Route::post('/', [CampaignController::class, 'store'])
-                ->middleware('permission:campaigns.manage')->name('store');
+                ->middleware(['permission:campaigns.manage', 'plan.limit:campaigns'])->name('store');
 
             Route::put('/{campaign}', [CampaignController::class, 'update'])
                 ->middleware('permission:campaigns.manage')->name('update');
@@ -671,7 +672,7 @@ Route::prefix('v1')->group(function () {
             // none of those keys exist in the PermissionsSeeder catalogue, so every one of these
             // was unusable by any role (owner included) purely due to the key mismatch. Consolidated
             // onto the real catalogue key, leads.manage, matching how "Sales Agent" is actually seeded.
-            Route::post('/import', [LeadController::class, 'import'])->middleware('permission:leads.manage');
+            Route::post('/import', [LeadController::class, 'import'])->middleware(['permission:leads.manage', 'plan.monthly_limit:leads']);
             Route::get('/export',  [LeadController::class, 'export'])->middleware('permission:leads.view_all');
 
             // Leads → Summary (Basic) + Report (Advanced). Declared before /{lead}.
@@ -737,6 +738,9 @@ Route::prefix('v1')->group(function () {
             Route::post('/availability/toggle', [LeadAssignmentController::class, 'toggleAvailability'])->name('toggle');
         });
 
+        // ── Plan usage: what the company has used vs what its plan allows (drives the limit badges in the UI) ──
+        Route::get('plan/usage', [\App\Http\Controllers\PlanUsageController::class, 'show']);
+
         // ── Accounts: double-entry books, vouchers, GST, reports ────────────────
         Route::prefix('accounts')->middleware(['company.active'])->group(function () {
             $read   = 'permission:accounts.read,accounts.manage';
@@ -763,6 +767,74 @@ Route::prefix('v1')->group(function () {
             Route::post('items',           [AccountsController::class, 'storeItem'])->middleware($manage);
             Route::put('items/{id}',       [AccountsController::class, 'updateItem'])->middleware($manage);
             Route::delete('items/{id}',    [AccountsController::class, 'destroyItem'])->middleware($manage);
+
+            // Fiscal years: closed strictly in order; closing locks the books
+            Route::get('fiscal-years',                  [FinanceController::class, 'fiscalYears'])->middleware($read);
+            Route::get('fiscal-years/{id}/preview',     [FinanceController::class, 'fiscalYearPreview'])->middleware($read);
+            Route::post('fiscal-years/{id}/close',      [FinanceController::class, 'closeFiscalYear'])->middleware($manage);
+            Route::post('fiscal-years/{id}/reopen',     [FinanceController::class, 'reopenFiscalYear'])->middleware($manage);
+
+            // Sales workflow: quotation → invoice, with customer credit control
+            Route::get('quotations',                    [FinanceController::class, 'quotations'])->middleware($read);
+            Route::get('quotations/{id}',               [FinanceController::class, 'showQuotation'])->middleware($read);
+            Route::post('quotations',                   [FinanceController::class, 'storeQuotation'])->middleware($manage);
+            Route::put('quotations/{id}',               [FinanceController::class, 'updateQuotation'])->middleware($manage);
+            Route::post('quotations/{id}/status',       [FinanceController::class, 'quotationStatus'])->middleware($manage);
+            Route::post('quotations/{id}/convert',      [FinanceController::class, 'convertQuotation'])->middleware($manage);
+            Route::post('quotations/{id}/duplicate',    [FinanceController::class, 'duplicateQuotation'])->middleware($manage);
+            Route::delete('quotations/{id}',            [FinanceController::class, 'destroyQuotation'])->middleware($manage);
+            Route::get('credit',                        [FinanceController::class, 'credit'])->middleware($read);
+
+            // Payments hub: invoice-level receivable / payable tracking
+            Route::get('payments/report',               [FinanceController::class, 'paymentReport'])->middleware($read);
+            Route::get('payments/{kind}',               [FinanceController::class, 'documents'])->middleware($read)->where('kind', 'receivable|payable');
+            Route::get('payments/{kind}/ageing',        [FinanceController::class, 'ageing'])->middleware($read)->where('kind', 'receivable|payable');
+            Route::get('payments/{kind}/advances',      [FinanceController::class, 'advances'])->middleware($read)->where('kind', 'receivable|payable');
+            Route::post('payments/apply-advance',       [FinanceController::class, 'applyAdvance'])->middleware($manage);
+            Route::delete('payments/allocations/{id}',  [FinanceController::class, 'unapplyAdvance'])->middleware($manage);
+
+            // Adjusting entries (accruals, prepaids, deferrals) and the fixed-asset register
+            Route::get('adjusting',                     [FinanceController::class, 'adjustingEntries'])->middleware($read);
+            Route::post('adjusting',                    [FinanceController::class, 'storeAdjusting'])->middleware($manage);
+            Route::delete('adjusting/{id}/reversal',    [FinanceController::class, 'cancelReversal'])->middleware($manage);
+            Route::get('assets',                        [FinanceController::class, 'assets'])->middleware($read);
+            Route::post('assets',                       [FinanceController::class, 'storeAsset'])->middleware($manage);
+            Route::get('assets/depreciation/preview',   [FinanceController::class, 'depreciationPreview'])->middleware($read);
+            Route::post('assets/depreciation',          [FinanceController::class, 'runDepreciation'])->middleware($manage);
+            Route::delete('assets/depreciation/{period}', [FinanceController::class, 'undoDepreciation'])->middleware($manage);
+            Route::put('assets/{id}',                   [FinanceController::class, 'updateAsset'])->middleware($manage);
+            Route::delete('assets/{id}',                [FinanceController::class, 'destroyAsset'])->middleware($manage);
+            Route::post('assets/{id}/dispose',          [FinanceController::class, 'disposeAsset'])->middleware($manage);
+
+            // Sample data: load for a demo, remove cleanly afterwards
+            Route::get('demo',                          [FinanceController::class, 'demoStatus'])->middleware($read);
+            Route::post('demo',                         [FinanceController::class, 'loadDemo'])->middleware($manage);
+            Route::delete('demo',                       [FinanceController::class, 'removeDemo'])->middleware($manage);
+
+            // Petty cash (imprest float)
+            Route::get('petty-cash',                    [FinanceController::class, 'pettyCash'])->middleware($read);
+            Route::post('petty-cash/top-up',            [FinanceController::class, 'pettyTopUp'])->middleware($manage);
+            Route::post('petty-cash/spend',             [FinanceController::class, 'pettySpend'])->middleware($manage);
+
+            // Payroll — salaries are sensitive, so it has its own permission
+            Route::middleware('permission:accounts.payroll')->prefix('payroll')->group(function () {
+                Route::get('employees',                 [FinanceController::class, 'employees']);
+                Route::post('employees',                [FinanceController::class, 'storeEmployee']);
+                Route::put('employees/{id}',            [FinanceController::class, 'updateEmployee']);
+                Route::delete('employees/{id}',         [FinanceController::class, 'destroyEmployee']);
+                Route::get('employees/{id}/settlement', [FinanceController::class, 'settlementQuote']);
+                Route::post('employees/{id}/settle',    [FinanceController::class, 'settleEmployee']);
+                Route::get('runs',                      [FinanceController::class, 'payrollRuns']);
+                Route::post('runs',                     [FinanceController::class, 'storePayrollRun']);
+                Route::get('runs/{id}',                 [FinanceController::class, 'showPayrollRun']);
+                Route::put('runs/{id}/lines/{line}',    [FinanceController::class, 'updatePayrollLine']);
+                Route::post('runs/{id}/refresh',        [FinanceController::class, 'refreshPayrollRun']);
+                Route::post('runs/{id}/post',           [FinanceController::class, 'postPayrollRun']);
+                Route::post('runs/{id}/unpost',         [FinanceController::class, 'unpostPayrollRun']);
+                Route::post('runs/{id}/pay',            [FinanceController::class, 'payPayrollRun']);
+                Route::post('runs/{id}/unpay',          [FinanceController::class, 'unpayPayrollRun']);
+                Route::delete('runs/{id}',              [FinanceController::class, 'destroyPayrollRun']);
+            });
         });
 
         Route::prefix('blacklist')->name('blacklist.')->group(function () {
@@ -816,7 +888,7 @@ Route::prefix('v1')->group(function () {
             // exist in the PermissionsSeeder catalogue, so these were unusable by any role
             // (owner included). Consolidated onto the real catalogue key, contacts.manage.
             Route::post('/import', [ContactController::class, 'import'])
-                ->middleware('permission:contacts.manage')
+                ->middleware(['permission:contacts.manage', 'plan.limit:contacts'])
                 ->name('import');
 
             Route::post('/', [ContactController::class, 'store'])
@@ -1024,7 +1096,7 @@ Route::prefix('v1')->group(function () {
 
         // Flow Nodes (nested under builder)
         Route::get('flow-builders/{bid}/nodes',            [FlowNodeController::class, 'index'])->middleware('permission:flow_builder.view');
-        Route::post('flow-builders/{bid}/nodes',            [FlowNodeController::class, 'store'])->middleware('permission:flow_builder.manage');
+        Route::post('flow-builders/{bid}/nodes',            [FlowNodeController::class, 'store'])->middleware(['permission:flow_builder.manage', 'plan.limit:flow_nodes']);
         Route::put('flow-builders/{bid}/nodes/{id}',       [FlowNodeController::class, 'update'])->middleware('permission:flow_builder.manage');
         Route::delete('flow-builders/{bid}/nodes/{id}',       [FlowNodeController::class, 'destroy'])->middleware('permission:flow_builder.manage');
         Route::post('flow-builders/{bid}/nodes/{id}/toggle', [FlowNodeController::class, 'toggle'])->middleware('permission:flow_builder.manage');

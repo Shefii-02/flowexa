@@ -2,71 +2,26 @@
 
 namespace App\Http\Middleware;
 
-use App\Models\Company;
+use App\Support\PlanLimits;
 use Closure;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 
 /**
- * PlanLimitMiddleware
  * Usage in routes: middleware('plan.limit:contacts')
- * Checks current company usage against plan limits before allowing create actions.
+ * Refuses a create when the company has already reached its plan's cap for that resource (see PlanLimits).
  */
 class PlanLimitMiddleware
 {
-    // Map resource names → [table, company_fk, plan_limit_column]
-    public const LIMITS = [
-        'users'              => ['users',              'company_id', 'max_users'],
-        'templates'          => ['wa_templates',        'company_id', 'max_templates'],
-        'phone_numbers'      => ['wa_phone_numbers',    'company_id', 'max_phone_numbers'],
-        'wa_sessions'        => ['openwa_sessions',     'company_id', 'max_wa_sessions'],
-        'campaigns'          => ['campaigns',           'company_id', 'max_campaigns'],
-        'contacts'           => ['contacts',            'company_id', 'max_contacts'],
-        'labels'             => ['contact_labels',      'company_id', 'max_labels'],
-        'flow_nodes'         => ['flow_nodes',           'company_id', 'max_flow_nodes'],
-        'roles'              => ['roles',               'company_id', 'max_roles'],
-        'lead_categories'    => ['lead_categories',      'company_id', 'max_lead_categories'],
-        'instagram_accounts' => ['instagram_accounts',   'company_id', 'max_instagram_accounts'],
-        'meta_ads_accounts'  => ['meta_ad_accounts',     'company_id', 'max_meta_ads_accounts'],
-        'website_widgets'    => ['chat_widgets',         'company_id', 'max_website_widgets'],
-    ];
+    /** Kept for callers that read the map; the single definition lives in PlanLimits::REGISTRY. */
+    public const LIMITS = [];
 
     public function handle(Request $request, Closure $next, string $resource): mixed
     {
-        $user    = auth()->user();
+        $ctx = PlanLimits::context(auth()->user());
+        if (!$ctx || !isset(PlanLimits::REGISTRY[$resource])) { return $next($request); }
+        [$companyId, $plan] = $ctx;
 
-        if (!$user || $user->isSuperAdmin()) {
-            return $next($request);
-        }
-
-        $company = $user->company;
-        if (!$company) return $next($request);
-
-        $plan = $company->plan;
-        if (!$plan) return $next($request);
-
-        $limitKey = self::LIMITS[$resource] ?? null;
-        if (!$limitKey) return $next($request);
-
-        [$table, $fk, $planColumn] = $limitKey;
-        $max = $plan->$planColumn;
-
-        // null = unlimited
-        if ($max === null) return $next($request);
-
-        $current = DB::table($table)->where($fk, $company->id)->count();
-
-        if ($current >= $max) {
-            $label = str_replace('_', ' ', $resource);
-            return response()->json([
-                'message'    => "Your plan allows {$max} {$label}. Upgrade your plan to add more.",
-                'error_code' => 'plan_limit_reached',
-                'resource'   => $resource,
-                'current'    => $current,
-                'limit'      => $max,
-            ], 403);
-        }
-
-        return $next($request);
+        $violation = PlanLimits::violation($companyId, $plan, $resource);
+        return $violation ? response()->json($violation, 403) : $next($request);
     }
 }

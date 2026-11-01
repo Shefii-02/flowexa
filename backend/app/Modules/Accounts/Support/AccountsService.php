@@ -5,6 +5,7 @@ namespace App\Modules\Accounts\Support;
 use App\Modules\Accounts\Models\AccEntry;
 use App\Modules\Accounts\Models\AccItem;
 use App\Modules\Accounts\Models\AccLedger;
+use App\Modules\Accounts\Models\AccQuotation;
 use App\Modules\Accounts\Models\AccSetting;
 use App\Modules\Accounts\Models\AccVoucher;
 use Carbon\Carbon;
@@ -17,62 +18,29 @@ use Illuminate\Validation\ValidationException;
  */
 class AccountsService
 {
+    public const GROUPS = ['cash', 'bank', 'debtor', 'creditor', 'sales', 'purchase', 'direct_income', 'indirect_income', 'non_operating_income', 'direct_expense',
+        'indirect_expense', 'non_operating_expense', 'gst_output', 'gst_input', 'tds', 'capital', 'retained', 'fixed_asset', 'intangible', 'accum_depreciation',
+        'inventory', 'prepaid', 'accrued', 'deferred_revenue', 'payroll', 'provision', 'eos_provision', 'loan', 'long_term_loan', 'other'];
+    public const JOURNAL_SUBTYPES = ['general', 'revenue', 'expense', 'asset', 'liability', 'equity', 'adjusting'];
     public const TYPES = ['sales', 'purchase', 'receipt', 'payment', 'expense', 'income', 'journal', 'contra', 'credit_note', 'debit_note'];
     private const PREFIX = ['sales' => null, 'purchase' => 'PUR', 'receipt' => 'RCT', 'payment' => 'PAY', 'expense' => 'EXP', 'income' => 'INC', 'journal' => 'JV', 'contra' => 'CNT', 'credit_note' => 'CN', 'debit_note' => 'DN'];
-
-    // [name, nature, group, system_key]
-    private const DEFAULT_LEDGERS = [
-        ['Cash in Hand', 'asset', 'cash', 'cash'],
-        ['Bank Account', 'asset', 'bank', 'bank'],
-        ['Sales', 'income', 'sales', 'sales'],
-        ['Other Income', 'income', 'indirect_income', 'other_income'],
-        ['Purchases', 'expense', 'purchase', 'purchase'],
-        ['Office Rent', 'expense', 'indirect_expense', null],
-        ['Salaries & Wages', 'expense', 'indirect_expense', null],
-        ['Electricity & Water', 'expense', 'indirect_expense', null],
-        ['Internet & Phone', 'expense', 'indirect_expense', null],
-        ['Travel & Conveyance', 'expense', 'indirect_expense', null],
-        ['Marketing & Advertising', 'expense', 'indirect_expense', null],
-        ['Office Supplies & Stationery', 'expense', 'indirect_expense', null],
-        ['Repairs & Maintenance', 'expense', 'indirect_expense', null],
-        ['Professional & Legal Fees', 'expense', 'indirect_expense', null],
-        ['Software & Subscriptions', 'expense', 'indirect_expense', null],
-        ['Bank Charges', 'expense', 'indirect_expense', null],
-        ['Miscellaneous Expenses', 'expense', 'indirect_expense', null],
-        ['TDS Payable', 'liability', 'tds', 'tds_payable'],
-        ['Output CGST', 'liability', 'gst_output', 'out_cgst'],
-        ['Output SGST', 'liability', 'gst_output', 'out_sgst'],
-        ['Output IGST', 'liability', 'gst_output', 'out_igst'],
-        ['Input CGST', 'asset', 'gst_input', 'in_cgst'],
-        ['Input SGST', 'asset', 'gst_input', 'in_sgst'],
-        ['Input IGST', 'asset', 'gst_input', 'in_igst'],
-        ['Capital Account', 'equity', 'capital', 'capital'],
-        ['Drawings', 'equity', 'capital', null],
-    ];
 
     public function settings(int $cid): AccSetting
     {
         return AccSetting::firstOrCreate(['company_id' => $cid]);
     }
 
-    /** First visit: create the standard chart of accounts for this company. */
+    /** Make sure the company has the standard chart of accounts (idempotent, cheap once up to date). */
     public function seedDefaults(int $cid): void
     {
-        if (AccLedger::where('company_id', $cid)->exists()) { return; }
-        $this->settings($cid);
-        foreach (self::DEFAULT_LEDGERS as [$name, $nature, $group, $key]) {
-            AccLedger::create(['company_id' => $cid, 'name' => $name, 'nature' => $nature, 'group' => $group, 'system_key' => $key]);
-        }
+        ChartOfAccounts::ensure($cid);
     }
 
-    private function sys(int $cid, string $key): int
+    /** Id of the ledger the engine posts to for $key, recreating it if it was removed. */
+    public function sys(int $cid, string $key): int
     {
         $id = AccLedger::where('company_id', $cid)->where('system_key', $key)->value('id');
-        if (!$id) { // a seeded ledger was removed from an older chart — recreate it
-            foreach (self::DEFAULT_LEDGERS as [$name, $nature, $group, $k]) {
-                if ($k === $key) { return AccLedger::create(['company_id' => $cid, 'name' => $name, 'nature' => $nature, 'group' => $group, 'system_key' => $k])->id; }
-            }
-        }
+        if (!$id && ($d = ChartOfAccounts::def($key))) { return ChartOfAccounts::ensureLedger($cid, $d); }
         return (int) $id;
     }
 
@@ -91,6 +59,8 @@ class AccountsService
         $type = $d['type'];
         $set  = $this->settings($cid);
         $this->seedDefaults($cid);
+        $this->assertOpen($cid, $d['date']);
+        if ($existing) { $this->assertOpen($cid, $existing->date); }
 
         return DB::transaction(function () use ($cid, $userId, $d, $existing, $type, $set) {
             $party   = !empty($d['party_ledger_id']) ? $this->ledgerOf($cid, (int) $d['party_ledger_id']) : null;
@@ -132,6 +102,9 @@ class AccountsService
 
                 if ($type === 'sales') {
                     if (!$party) { $this->fail('party_ledger_id', 'Select the customer.'); }
+                    if ($this->assertCredit($cid, $party, $total, $existing, !empty($d['credit_override']))) {
+                        $d['narration'] = trim(($d['narration'] ?? '') . ' [Credit limit overridden]');
+                    }
                     $rows[] = [$party->id, $total, 0];
                     $rows[] = [$ledger?->id ?? $this->sys($cid, 'sales'), 0, $taxable];
                     $this->taxRows($cid, $rows, 'out', $cgst, $sgst, $igst, true);
@@ -168,9 +141,13 @@ class AccountsService
                 $total = round((float) ($d['amount'] ?? 0), 2);
                 if ($total <= 0) { $this->fail('amount', 'Enter an amount greater than zero.'); }
                 if (!$party || !$account) { $this->fail('party_ledger_id', 'Select the party and the cash/bank account.'); }
+                // An advance is money moved before there is a bill: it sits in Customer Advances / Advances to Suppliers, not on the party's account.
+                $adv = !empty($d['is_advance']);
+                $d['is_advance'] = $adv;
+                $side = $adv ? $this->sys($cid, $type === 'receipt' ? 'deferred_revenue' : 'supplier_advances') : $party->id;
                 $rows = $type === 'receipt'
-                    ? [[$account->id, $total, 0], [$party->id, 0, $total]]
-                    : [[$party->id, $total, 0], [$account->id, 0, $total]];
+                    ? [[$account->id, $total, 0], [$side, 0, $total]]
+                    : [[$side, $total, 0], [$account->id, 0, $total]];
                 $taxable = $total; $tax = 0.0;
             } elseif ($type === 'contra') {
                 $total = round((float) ($d['amount'] ?? 0), 2);
@@ -191,6 +168,12 @@ class AccountsService
                 $total = round($dr, 2); $taxable = $total; $tax = 0.0;
             }
 
+            if (!$existing && empty($d['due_date']) && $party && in_array($type, ['sales', 'purchase', 'expense'], true)) {
+                $d['due_date'] = Carbon::parse($d['date'])->addDays((int) $party->credit_days)->toDateString(); // customer/supplier payment terms
+            }
+
+            $this->assertPettyCash($cid, $rows, $d['date'], $existing);
+
             $attrs = [
                 'company_id' => $cid, 'type' => $type, 'date' => $d['date'],
                 'party_ledger_id' => $party?->id, 'ledger_id' => $ledger?->id, 'account_ledger_id' => $account?->id,
@@ -199,6 +182,11 @@ class AccountsService
                 'tds_section' => ($tdsAmount ?? 0) > 0 ? ($d['tds_section'] ?? null) : null, 'tds_rate' => ($tdsAmount ?? 0) > 0 ? $tdsRate : 0, 'tds_amount' => $tdsAmount ?? 0,
                 'reference_no' => $d['reference_no'] ?? null, 'narration' => $d['narration'] ?? null,
             ];
+
+            // Optional bookkeeping fields: only touched when the caller supplies them (so an edit never wipes a voucher's origin).
+            foreach (['sub_type', 'due_date', 'is_advance', 'source_type', 'source_id', 'reverse_on', 'reverses_voucher_id'] as $k) {
+                if (array_key_exists($k, $d)) { $attrs[$k] = $d[$k]; }
+            }
 
             if ($existing) {
                 $existing->update($attrs);
@@ -216,6 +204,102 @@ class AccountsService
                                   'debit' => $de, 'credit' => $ce, 'narration' => $d['narration'] ?? null]);
             }
             return $voucher->load(['items', 'party:id,name,gstin', 'ledger:id,name', 'account:id,name']);
+        });
+    }
+
+    /**
+     * Price document lines: GST split (CGST+SGST within the state, IGST across), rounding per line. Shared by quotations;
+     * mirrors the maths in saveVoucher so a converted quotation yields exactly the same invoice.
+     * @return array{items: array, taxable: float, cgst: float, sgst: float, igst: float, total: float, inter: bool, pos: ?string}
+     */
+    public function priceLines(int $cid, ?AccLedger $party, ?string $pos, array $lines): array
+    {
+        $set = $this->settings($cid);
+        $counter = $pos ?: ($party->state_code ?? null);
+        $inter = $counter && $set->state_code && $counter !== $set->state_code;
+        $items = []; $taxable = $cgst = $sgst = $igst = 0.0;
+        foreach ($lines as $ln) {
+            $amt = round((float) ($ln['qty'] ?? 1) * (float) ($ln['rate'] ?? 0), 2);
+            if ($amt <= 0) { continue; }
+            $gr  = $set->gst_registered ? (float) ($ln['gst_rate'] ?? 0) : 0.0;
+            $tax = round($amt * $gr / 100, 2);
+            $c = $s = $i = 0.0;
+            if ($inter) { $i = $tax; } else { $c = round($tax / 2, 2); $s = round($tax - $c, 2); }
+            $itemId = !empty($ln['item_id']) && AccItem::where('company_id', $cid)->whereKey($ln['item_id'])->exists() ? (int) $ln['item_id'] : null;
+            $items[] = ['item_id' => $itemId, 'description' => (string) ($ln['description'] ?? '—'), 'hsn' => $ln['hsn'] ?? null, 'qty' => (float) ($ln['qty'] ?? 1),
+                        'rate' => (float) ($ln['rate'] ?? 0), 'amount' => $amt, 'gst_rate' => $gr, 'cgst' => $c, 'sgst' => $s, 'igst' => $i];
+            $taxable += $amt; $cgst += $c; $sgst += $s; $igst += $i;
+        }
+        return ['items' => $items, 'taxable' => round($taxable, 2), 'cgst' => round($cgst, 2), 'sgst' => round($sgst, 2), 'igst' => round($igst, 2),
+                'total' => round($taxable + $cgst + $sgst + $igst, 2), 'inter' => (bool) $inter, 'pos' => $counter];
+    }
+
+    /** Signed balance (debit positive) of one ledger, optionally ignoring a voucher's own postings. */
+    public function ledgerBalance(int $cid, int $ledgerId, ?int $exceptVoucherId = null, ?string $asOf = null): float
+    {
+        $l = AccLedger::where('company_id', $cid)->find($ledgerId);
+        if (!$l) { return 0.0; }
+        $e = DB::table('acc_entries')->where('company_id', $cid)->where('ledger_id', $ledgerId)
+            ->when($exceptVoucherId, fn ($q) => $q->where('voucher_id', '!=', $exceptVoucherId))
+            ->when($asOf, fn ($q) => $q->where('date', '<=', $asOf))
+            ->selectRaw('COALESCE(SUM(debit),0) dr, COALESCE(SUM(credit),0) cr')->first();
+        return round(($l->opening_type === 'cr' ? -1 : 1) * (float) $l->opening_balance + (float) $e->dr - (float) $e->cr, 2);
+    }
+
+    /**
+     * Customer credit control for a new/changed sales invoice. Returns true when the user knowingly overrode a breach.
+     * A customer on hold, or one whose outstanding + this invoice would pass their limit, is refused unless overridden.
+     */
+    public function assertCredit(int $cid, AccLedger $party, float $total, ?AccVoucher $existing, bool $override): bool
+    {
+        if ($existing && $total <= (float) $existing->total + 0.004) { return false; } // not asking for more credit
+        $breach = null;
+        if ($party->credit_hold) {
+            $breach = "{$party->name} is on credit hold — no new invoices until the hold is lifted.";
+        } elseif ((float) $party->credit_limit > 0) {
+            $out = $this->ledgerBalance($cid, $party->id, $existing?->id);
+            if ($out + $total > (float) $party->credit_limit + 0.004) {
+                $breach = sprintf('Credit limit exceeded for %s: limit %s, already owing %s, this invoice %s.', $party->name,
+                    number_format((float) $party->credit_limit, 2), number_format(max($out, 0), 2), number_format($total, 2));
+            }
+        }
+        if (!$breach) { return false; }
+        if ($override) { return true; }
+        $this->fail('credit_limit', $breach);
+    }
+
+    /** Petty cash is an imprest float: money cannot be paid out of it beyond what it holds on that date. */
+    private function assertPettyCash(int $cid, array $rows, string $date, ?AccVoucher $existing): void
+    {
+        $petty = AccLedger::where('company_id', $cid)->where('system_key', 'petty_cash')->value('id');
+        if (!$petty) { return; }
+        $net = 0.0;
+        foreach ($rows as [$lid, $de, $ce]) { if ((int) $lid === (int) $petty) { $net += $ce - $de; } }
+        if ($net <= 0.004) { return; }
+        $have = $this->ledgerBalance($cid, $petty, $existing?->id, $date);
+        if ($net > $have + 0.004) { $this->fail('account_ledger_id', 'Petty cash only holds ' . number_format(max($have, 0), 2) . ' on that date — top it up first.'); }
+    }
+
+    /** Refuse to post, change or remove anything dated inside a closed period. */
+    public function assertOpen(int $cid, $date): void
+    {
+        $lock = $this->settings($cid)->locked_until;
+        if ($lock && Carbon::parse($date)->startOfDay()->lte($lock)) {
+            $this->fail('date', 'The books are closed up to ' . $lock->format('d M Y') . '. Reopen the fiscal year to post in that period.');
+        }
+    }
+
+    /** Remove a voucher and its postings. */
+    public function deleteVoucher(int $cid, AccVoucher $v): void
+    {
+        $this->assertOpen($cid, $v->date);
+        if (AccVoucher::where('company_id', $cid)->where('reverses_voucher_id', $v->id)->exists()) { $this->fail('voucher', "{$v->number} has been reversed — cancel the reversal first."); }
+        DB::transaction(function () use ($v) {
+            // an invoice raised from a quotation reopens that quotation when it is deleted
+            AccQuotation::where('converted_voucher_id', $v->id)->update(['status' => 'accepted', 'converted_voucher_id' => null]);
+            AccEntry::where('voucher_id', $v->id)->delete();
+            $v->items()->delete();
+            $v->delete();
         });
     }
 
@@ -242,11 +326,12 @@ class AccountsService
 
     // ─── Balances & reports ───────────────────────────────────────────────────
     /** Signed closing balance (debit positive) for every ledger as on $asOf, from the first entry. */
-    public function balances(int $cid, ?string $asOf = null, ?string $from = null): array
+    public function balances(int $cid, ?string $asOf = null, ?string $from = null, bool $excludeClosing = false): array
     {
         $q = DB::table('acc_entries')->where('company_id', $cid)
             ->when($asOf, fn ($q) => $q->where('date', '<=', $asOf))
             ->when($from, fn ($q) => $q->where('date', '>=', $from))
+            ->when($excludeClosing, fn ($q) => $q->whereNotIn('voucher_id', $this->closingVoucherIds($cid)))
             ->selectRaw('ledger_id, SUM(debit) dr, SUM(credit) cr')->groupBy('ledger_id')->get()->keyBy('ledger_id');
         $out = [];
         foreach (AccLedger::where('company_id', $cid)->get() as $l) {
@@ -270,35 +355,99 @@ class AccountsService
         return ['as_on' => $asOf, 'rows' => $rows, 'total_debit' => round($td, 2), 'total_credit' => round($tc, 2)];
     }
 
+    /** Year-end closing journals move profit into retained earnings; P&L views must not see them or the closed year would read nil. */
+    private function closingVoucherIds(int $cid)
+    {
+        return DB::table('acc_vouchers')->where('company_id', $cid)->where('sub_type', 'closing')->select('id');
+    }
+
+    /**
+     * Profit & loss in the PDF's order:
+     *   Gross Profit     = Revenue − Cost of Goods Sold
+     *   Operating Profit = Gross Profit + Other Income − Operating Expenses
+     *   Net Profit       = Operating Profit ± Non-Operating items (interest, disposal gains/losses …)
+     */
     public function profitLoss(int $cid, string $from, string $to): array
     {
         $income = []; $expense = [];
-        foreach ($this->balances($cid, $to, $from) as $b) {
+        foreach ($this->balances($cid, $to, $from, true) as $b) {
             $l = $b['ledger'];
-            if ($l->nature === 'income') { $v = $b['cr'] - $b['dr']; if (abs($v) > 0.004) { $income[] = ['name' => $l->name, 'group' => $l->group, 'amount' => round($v, 2)]; } }
-            if ($l->nature === 'expense') { $v = $b['dr'] - $b['cr']; if (abs($v) > 0.004) { $expense[] = ['name' => $l->name, 'group' => $l->group, 'amount' => round($v, 2)]; } }
+            if ($l->nature === 'income') { $v = $b['cr'] - $b['dr']; if (abs($v) > 0.004) { $income[] = ['ledger_id' => $l->id, 'name' => $l->name, 'code' => $l->code, 'group' => $l->group, 'section' => self::plSection($l->group, 'income'), 'amount' => round($v, 2)]; } }
+            if ($l->nature === 'expense') { $v = $b['dr'] - $b['cr']; if (abs($v) > 0.004) { $expense[] = ['ledger_id' => $l->id, 'name' => $l->name, 'code' => $l->code, 'group' => $l->group, 'section' => self::plSection($l->group, 'expense'), 'amount' => round($v, 2)]; } }
         }
-        $ti = array_sum(array_column($income, 'amount')); $te = array_sum(array_column($expense, 'amount'));
-        $direct = array_sum(array_map(fn ($r) => in_array($r['group'], ['purchase', 'direct_expense'], true) ? $r['amount'] : 0, $expense));
-        $sales  = array_sum(array_map(fn ($r) => in_array($r['group'], ['sales', 'direct_income'], true) ? $r['amount'] : 0, $income));
+        $sum = fn (array $rows, string $sec) => round(array_sum(array_map(fn ($r) => $r['section'] === $sec ? $r['amount'] : 0, $rows)), 2);
+        $revenue = $sum($income, 'revenue'); $other = $sum($income, 'other_income'); $nonInc = $sum($income, 'non_operating');
+        $cogs = $sum($expense, 'cogs'); $opex = $sum($expense, 'operating'); $nonExp = $sum($expense, 'non_operating');
+        $gross = round($revenue - $cogs, 2);
+        $operating = round($gross + $other - $opex, 2);
+        $ti = round(array_sum(array_column($income, 'amount')), 2); $te = round(array_sum(array_column($expense, 'amount')), 2);
         return ['from' => $from, 'to' => $to, 'income' => $income, 'expense' => $expense,
-                'total_income' => round($ti, 2), 'total_expense' => round($te, 2), 'gross_profit' => round($sales - $direct, 2), 'net_profit' => round($ti - $te, 2)];
+                'revenue' => $revenue, 'cogs' => $cogs, 'other_income' => $other, 'operating_expenses' => $opex,
+                'non_operating_income' => $nonInc, 'non_operating_expense' => $nonExp,
+                'total_income' => $ti, 'total_expense' => $te,
+                'gross_profit' => $gross, 'operating_profit' => $operating, 'non_operating_net' => round($nonInc - $nonExp, 2),
+                'net_profit' => round($operating + $nonInc - $nonExp, 2)];
     }
 
+    private static function plSection(string $group, string $nature): string
+    {
+        if ($nature === 'income') {
+            return match ($group) { 'sales', 'direct_income' => 'revenue', 'non_operating_income' => 'non_operating', default => 'other_income' };
+        }
+        return match ($group) { 'purchase', 'direct_expense' => 'cogs', 'non_operating_expense' => 'non_operating', default => 'operating' };
+    }
+
+    private static function bsSection(AccLedger $l): string
+    {
+        return match ($l->nature) {
+            'asset'     => in_array($l->group, ['fixed_asset', 'intangible', 'accum_depreciation'], true) ? 'fixed_asset' : 'current_asset',
+            'liability' => in_array($l->group, ['long_term_loan', 'eos_provision'], true) ? 'long_term_liability' : 'current_liability',
+            default     => 'equity',
+        };
+    }
+
+    /** Assets = Liabilities + Equity. `balanced` is false only if the books themselves are inconsistent (opening balances). */
     public function balanceSheet(int $cid, string $asOf): array
     {
         $assets = []; $liab = []; $profit = 0.0;
         foreach ($this->balances($cid, $asOf) as $b) {
             $l = $b['ledger']; $v = $b['balance'];
             if (abs($v) < 0.005) { continue; }
-            if ($l->nature === 'income')  { $profit += -$v; continue; }
-            if ($l->nature === 'expense') { $profit += -$v; continue; }
-            if ($l->nature === 'asset') { $assets[] = ['name' => $l->name, 'group' => $l->group, 'amount' => round($v, 2)]; }
-            else { $liab[] = ['name' => $l->name, 'group' => $l->group, 'amount' => round(-$v, 2)]; }
+            if (in_array($l->nature, ['income', 'expense'], true)) { $profit += -$v; continue; }
+            $row = ['name' => $l->name, 'code' => $l->code, 'group' => $l->group, 'section' => self::bsSection($l)];
+            if ($l->nature === 'asset') { $assets[] = $row + ['amount' => round($v, 2)]; }
+            else { $liab[] = $row + ['amount' => round(-$v, 2)]; }
         }
-        if (abs($profit) >= 0.005) { $liab[] = ['name' => $profit >= 0 ? 'Net Profit (retained)' : 'Net Loss (retained)', 'group' => 'profit', 'amount' => round($profit, 2)]; }
-        return ['as_on' => $asOf, 'assets' => $assets, 'liabilities' => $liab,
-                'total_assets' => round(array_sum(array_column($assets, 'amount')), 2), 'total_liabilities' => round(array_sum(array_column($liab, 'amount')), 2)];
+        if (abs($profit) >= 0.005) { $liab[] = ['name' => $profit >= 0 ? 'Profit for the period (not yet closed)' : 'Loss for the period (not yet closed)', 'code' => null, 'group' => 'profit', 'section' => 'equity', 'amount' => round($profit, 2)]; }
+        $sec = fn (array $rows) => array_reduce($rows, function ($c, $r) { $c[$r['section']] = round(($c[$r['section']] ?? 0) + $r['amount'], 2); return $c; }, []);
+        $ta = round(array_sum(array_column($assets, 'amount')), 2); $tl = round(array_sum(array_column($liab, 'amount')), 2);
+        return ['as_on' => $asOf, 'assets' => $assets, 'liabilities' => $liab, 'subtotals' => $sec($assets) + $sec($liab),
+                'total_assets' => $ta, 'total_liabilities' => $tl, 'balanced' => abs($ta - $tl) < 0.01, 'difference' => round($ta - $tl, 2)];
+    }
+
+    /** Profit & loss for two periods side by side (default: this period vs the same dates a year earlier). */
+    public function comparison(int $cid, string $from, string $to, ?string $pFrom = null, ?string $pTo = null): array
+    {
+        $pFrom ??= Carbon::parse($from)->subYear()->toDateString();
+        $pTo   ??= Carbon::parse($to)->subYear()->toDateString();
+        $cur = $this->profitLoss($cid, $from, $to); $prev = $this->profitLoss($cid, $pFrom, $pTo);
+        $merge = function (string $key) use ($cur, $prev) {
+            $rows = [];
+            foreach ([['current', $cur[$key]], ['previous', $prev[$key]]] as [$col, $list]) {
+                foreach ($list as $r) {
+                    $rows[$r['ledger_id']] ??= ['ledger_id' => $r['ledger_id'], 'code' => $r['code'], 'name' => $r['name'], 'section' => $r['section'], 'current' => 0.0, 'previous' => 0.0];
+                    $rows[$r['ledger_id']][$col] = $r['amount'];
+                }
+            }
+            return array_values(array_map(fn ($r) => $r + ['change' => round($r['current'] - $r['previous'], 2),
+                'change_pct' => abs($r['previous']) > 0.004 ? round(($r['current'] - $r['previous']) / abs($r['previous']) * 100, 1) : null], $rows));
+        };
+        $totals = [];
+        foreach (['revenue', 'cogs', 'gross_profit', 'other_income', 'operating_expenses', 'operating_profit', 'non_operating_net', 'net_profit'] as $k) {
+            $totals[$k] = ['current' => $cur[$k], 'previous' => $prev[$k], 'change' => round($cur[$k] - $prev[$k], 2),
+                           'change_pct' => abs($prev[$k]) > 0.004 ? round(($cur[$k] - $prev[$k]) / abs($prev[$k]) * 100, 1) : null];
+        }
+        return ['current' => ['from' => $from, 'to' => $to], 'previous' => ['from' => $pFrom, 'to' => $pTo], 'income' => $merge('income'), 'expense' => $merge('expense'), 'totals' => $totals];
     }
 
     public function ledgerStatement(int $cid, int $ledgerId, string $from, string $to): array
@@ -415,6 +564,26 @@ class AccountsService
         return ['kind' => $kind, 'rows' => $rows, 'total' => round(array_sum(array_column($rows, 'amount')), 2)];
     }
 
+    /** Every customer's credit position: limit, owing, headroom and status. Overdue is added by the receivables ageing. */
+    public function creditOverview(int $cid): array
+    {
+        $rows = [];
+        foreach ($this->balances($cid) as $b) {
+            $l = $b['ledger'];
+            if ($l->group !== 'debtor' || !$l->is_active) { continue; }
+            $owing = max(0.0, $b['balance']); $limit = (float) $l->credit_limit;
+            $use = $limit > 0 ? round($owing / $limit * 100, 1) : null;
+            $status = $l->credit_hold ? 'hold' : ($limit <= 0 ? 'no_limit' : ($owing > $limit ? 'over' : ($use >= 80 ? 'near' : 'ok')));
+            $rows[] = ['ledger_id' => $l->id, 'name' => $l->name, 'phone' => $l->phone, 'credit_limit' => $limit, 'credit_days' => $l->credit_days,
+                       'credit_hold' => $l->credit_hold, 'owing' => round($owing, 2), 'available' => $limit > 0 ? round(max(0, $limit - $owing), 2) : null,
+                       'utilisation' => $use, 'status' => $status];
+        }
+        $rank = ['over' => 0, 'hold' => 1, 'near' => 2, 'ok' => 3, 'no_limit' => 4];
+        usort($rows, fn ($a, $b) => [$rank[$a['status']], -$a['owing']] <=> [$rank[$b['status']], -$b['owing']]);
+        return ['rows' => $rows, 'over' => count(array_filter($rows, fn ($r) => $r['status'] === 'over')), 'on_hold' => count(array_filter($rows, fn ($r) => $r['status'] === 'hold')),
+                'total_owing' => round(array_sum(array_column($rows, 'owing')), 2)];
+    }
+
     public function dashboard(int $cid, string $from, string $to): array
     {
         $pl  = $this->profitLoss($cid, $from, $to);
@@ -424,14 +593,17 @@ class AccountsService
             if ($b['ledger']->group === 'cash') { $cash += $b['balance']; }
             if ($b['ledger']->group === 'bank') { $bankAmt += $b['balance']; }
         }
-        $months = DB::table('acc_entries as e')->join('acc_ledgers as l', 'l.id', '=', 'e.ledger_id')
+        $rowsM = DB::table('acc_entries as e')->join('acc_ledgers as l', 'l.id', '=', 'e.ledger_id')
             ->where('e.company_id', $cid)->whereBetween('e.date', [$from, $to])->whereIn('l.nature', ['income', 'expense'])
-            ->selectRaw("DATE_FORMAT(e.date, '%Y-%m') m, l.nature, SUM(e.credit - e.debit) v")->groupBy('m', 'l.nature')->orderBy('m')->get();
+            ->whereNotIn('e.voucher_id', $this->closingVoucherIds($cid))
+            ->selectRaw('e.date d, l.nature, SUM(e.credit - e.debit) v')->groupBy('e.date', 'l.nature')->get();
         $chart = [];
-        foreach ($months as $r) {
-            $chart[$r->m] ??= ['month' => $r->m, 'income' => 0, 'expense' => 0];
-            $chart[$r->m][$r->nature] = round($r->nature === 'expense' ? -$r->v : $r->v, 2);
+        foreach ($rowsM as $r) { // grouped in PHP so it runs on MySQL and SQLite alike
+            $m = substr((string) $r->d, 0, 7);
+            $chart[$m] ??= ['month' => $m, 'income' => 0, 'expense' => 0];
+            $chart[$m][$r->nature] = round($chart[$m][$r->nature] + ($r->nature === 'expense' ? -$r->v : $r->v), 2);
         }
+        ksort($chart);
         $topExpense = collect($pl['expense'])->sortByDesc('amount')->take(6)->values();
         return [
             'from' => $from, 'to' => $to,

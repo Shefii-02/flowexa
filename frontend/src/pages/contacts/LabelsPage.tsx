@@ -1,4 +1,6 @@
 // src/pages/contacts/LabelsPage.tsx
+import { useLimit } from '@/lib/planUsage'
+import LimitBadge from '@/components/plan/LimitBadge'
 import { useEffect, useState, useCallback } from 'react'
 import { useAppDispatch, useAppSelector } from '@/store'
 import { fetchLabelsThunk } from '@/store/slices'
@@ -348,6 +350,7 @@ function ContactOffcanvas({ label, onClose, onSaved }: {
 
 // ─── Main LabelsPage ──────────────────────────────────────────────────────────
 export default function LabelsPage() {
+  const planLim = useLimit('labels')
   const dispatch         = useAppDispatch()
   const { list: labels } = useAppSelector(s => s.labels)
 
@@ -401,13 +404,13 @@ export default function LabelsPage() {
           <h1 className="page-title">Labels</h1>
           <p className="page-sub">{labels.length} labels — segment contacts for campaigns</p>
         </div>
-        <Button onClick={openCreate}>+ New label</Button>
+        <div className="flex items-center gap-2"><LimitBadge resource="labels" /><Button onClick={() => planLim.guard() && openCreate()}>+ New label</Button></div>
       </div>
 
       {labels.length === 0 ? (
         <EmptyState icon="🏷️" title="No labels yet"
           desc="Create labels to segment contacts and run targeted campaigns"
-          action={<Button onClick={openCreate}>Create first label</Button>} />
+          action={<Button onClick={() => planLim.guard() && openCreate()}>Create first label</Button>} />
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {labels.map(l => (

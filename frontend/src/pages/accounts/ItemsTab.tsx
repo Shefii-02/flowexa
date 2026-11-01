@@ -3,12 +3,13 @@ import { accountsApi } from '@/api'
 import { Button, Input, Select, Modal, ConfirmModal, Badge, EmptyState, TableSkeleton } from '@/components/ui'
 import { getError } from '@/utils'
 import toast from 'react-hot-toast'
-import { GST_RATES, inr } from './shared'
+import { GST_RATES, inr, useCanManage } from './shared'
 
 const EMPTY = { name: '', sku: '', hsn: '', unit: 'NOS', gst_rate: 18, sale_rate: '', purchase_rate: '', track_stock: true, opening_qty: '', opening_value: '', reorder_level: '' }
 
 /** Products and services. Stock-tracked items show the quantity and value on hand (weighted-average cost). */
 export default function ItemsTab() {
+  const canManage = useCanManage()
   const [rows, setRows] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -42,7 +43,7 @@ export default function ItemsTab() {
       <div className="card-header gap-3 flex-wrap">
         <input className="input max-w-[220px]" placeholder="Search items…" value={search} onChange={e => setSearch(e.target.value)} />
         <span className="text-sm text-gray-500">Stock value: <b>{inr(totalValue)}</b></span>
-        <div className="ml-auto"><Button onClick={() => setForm({ ...EMPTY })}>+ New item</Button></div>
+        {canManage && <div className="ml-auto"><Button onClick={() => setForm({ ...EMPTY })}>+ New item</Button></div>}
       </div>
       {loading ? <TableSkeleton rows={5} cols={6} /> : rows.length === 0 ? <EmptyState icon="📦" title="No items yet" desc="Add products or services to pick them on invoices and bills." /> : (
         <div className="table-wrapper"><table className="table">
@@ -54,10 +55,10 @@ export default function ItemsTab() {
               <td className="text-right">{inr(r.sale_rate)}</td>
               <td className="text-right">{r.track_stock ? <>{r.stock_qty ?? 0} {r.unit} {r.low && <Badge variant="red">Low</Badge>}</> : <span className="text-gray-400">Service</span>}</td>
               <td className="text-right">{r.track_stock ? inr(r.stock_value) : '—'}</td>
-              <td className="text-right whitespace-nowrap">
+              <td className="text-right whitespace-nowrap">{canManage && <>
                 <button className="text-xs text-gray-600 hover:underline mr-2" onClick={() => setForm({ ...r, sku: r.sku || '', hsn: r.hsn || '', sale_rate: r.sale_rate || '', purchase_rate: r.purchase_rate || '', opening_qty: r.opening_qty || '', opening_value: r.opening_value || '', reorder_level: r.reorder_level ?? '' })}>Edit</button>
                 <button className="text-xs text-red-500 hover:underline" onClick={() => setDel(r)}>Delete</button>
-              </td>
+              </>}</td>
             </tr>))}</tbody>
         </table></div>
       )}

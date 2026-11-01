@@ -1,4 +1,6 @@
 // src/pages/campaigns/CampaignsPage.tsx
+import { useLimit } from '@/lib/planUsage'
+import LimitBadge from '@/components/plan/LimitBadge'
 import { useEffect, useState, useCallback } from 'react'
 import { useAppDispatch, useAppSelector } from '@/store'
 import { fetchCampaignsThunk } from '@/store/slices'
@@ -9,6 +11,7 @@ import toast from 'react-hot-toast'
 import type { Campaign } from '@/types'
 
 export default function CampaignsPage() {
+  const planLim = useLimit('campaigns')
   const dispatch = useAppDispatch()
   const { list, total, loading } = useAppSelector((s) => s.campaigns)
 
@@ -81,7 +84,7 @@ export default function CampaignsPage() {
     <div className="space-y-5">
       <div className="flex items-center justify-between">
         <div><h1 className="page-title">Campaigns</h1><p className="page-sub">{total} campaigns</p></div>
-        <Button onClick={() => setShowCreate(true)}>+ New campaign</Button>
+        <div className="flex items-center gap-2"><LimitBadge resource="campaigns" /><Button onClick={() => planLim.guard() && setShowCreate(true)}>+ New campaign</Button></div>
       </div>
 
       <div className="card">
@@ -96,7 +99,7 @@ export default function CampaignsPage() {
 
         {loading ? <TableSkeleton rows={6} cols={6} /> : list.length === 0 ? (
           <EmptyState icon="📢" title="No campaigns yet" desc="Create your first WhatsApp campaign"
-            action={<Button onClick={() => setShowCreate(true)}>Create campaign</Button>} />
+            action={<Button onClick={() => planLim.guard() && setShowCreate(true)}>Create campaign</Button>} />
         ) : (
           <div className="table-wrapper">
             <table className="table">

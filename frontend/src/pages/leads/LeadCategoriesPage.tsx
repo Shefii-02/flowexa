@@ -1,3 +1,5 @@
+import { useLimit } from '@/lib/planUsage'
+import LimitBadge from '@/components/plan/LimitBadge'
 import { useState, useEffect, useCallback } from 'react'
 import { api } from '@/api/client'
 import toast from 'react-hot-toast'
@@ -46,6 +48,7 @@ type FormState = { name: string; color: string; description: string; is_active: 
 const emptyForm: FormState = { name: '', color: '#1D9E75', description: '', is_active: true }
 
 export default function LeadCategoriesPage() {
+  const planLim = useLimit('lead_categories')
   const [categories, setCategories] = useState<LeadCategory[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
@@ -163,8 +166,9 @@ export default function LeadCategoriesPage() {
           >
             🔄 Sync from flows
           </button>
+          <LimitBadge resource="lead_categories" />
           <button
-            onClick={openCreate}
+            onClick={() => planLim.guard() && openCreate()}
             className="flex items-center gap-1.5 text-sm px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors font-medium"
           >
             + New Category

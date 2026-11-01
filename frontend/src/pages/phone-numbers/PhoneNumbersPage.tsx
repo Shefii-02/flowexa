@@ -1,4 +1,6 @@
 // src/pages/phone-numbers/PhoneNumbersPage.tsx
+import { useLimit } from '@/lib/planUsage'
+import LimitBadge from '@/components/plan/LimitBadge'
 import { useEffect, useState } from 'react'
 import { phoneApi } from '@/api'
 import { Button, Input, Modal, Badge, EmptyState, ConfirmModal } from '@/components/ui'
@@ -11,6 +13,7 @@ interface PhoneNumber {
 }
 
 export default function PhoneNumbersPage() {
+  const planLim = useLimit('phone_numbers')
   const [list,      setList]      = useState<PhoneNumber[]>([])
   const [loading,   setLoading]   = useState(true)
   const [showModal, setShowModal] = useState(false)
@@ -61,7 +64,7 @@ export default function PhoneNumbersPage() {
     <div className="space-y-5">
       <div className="flex items-center justify-between">
         <div><h1 className="page-title">WhatsApp Phone Numbers</h1><p className="page-sub">Manage connected WA numbers · Plan limit: {list.length} added</p></div>
-        <Button onClick={openCreate}>+ Add number</Button>
+        <div className="flex items-center gap-2"><LimitBadge resource="phone_numbers" /><Button onClick={() => planLim.guard() && openCreate()}>+ Add number</Button></div>
       </div>
 
       <div className="bg-blue-50 border border-blue-200 rounded-xl px-5 py-3 text-sm text-blue-700">
@@ -72,7 +75,7 @@ export default function PhoneNumbersPage() {
         <div className="card p-8 text-center text-gray-400">Loading...</div>
       ) : list.length === 0 ? (
         <EmptyState icon="📱" title="No phone numbers yet" desc="Add your WhatsApp Business phone number to start sending messages"
-          action={<Button onClick={openCreate}>Add phone number</Button>} />
+          action={<Button onClick={() => planLim.guard() && openCreate()}>Add phone number</Button>} />
       ) : (
         <div className="grid gap-4">
           {list.map(n => (
