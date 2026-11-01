@@ -9,6 +9,7 @@ use App\Modules\WaChat\Models\WaOtpService;
 use App\Modules\WaChat\Models\WaOtpCode;
 use App\Modules\WaChat\Models\WaOtpLog;
 use App\Modules\WaChat\Services\OpenWaMessageService;
+use App\Modules\WaChat\Support\OtpDeliveryFailure;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
@@ -134,36 +135,54 @@ class WaOtpPublicController extends Controller
         return (string) (optional($service->company)->wa_chat_token ?? '');
     }
 
+    /** Why the last dispatchText/dispatchFile call failed (set on failure, shown to the API caller). */
+    private ?string $deliveryFailure = null;
+
     private function dispatchText(WaOtpService $service, string $phone, string $message, ?string $sessionId = null): bool
     {
-        $sid    = $sessionId ?: ($service->session_id ?: 'default');
-        $chatId = preg_replace('/[^0-9]/', '', $phone) . '@c.us';
-
-        try {
-            return app(OpenWaMessageService::class)
-                ->sendText($sid, $this->apiKey($service), $chatId, $message)
-                ->successful();
-        } catch (\Throwable) {
-            return false;
-        }
+        return $this->deliver($service, $sessionId, fn (string $sid) => app(OpenWaMessageService::class)
+            ->sendText($sid, $this->apiKey($service), $this->chatId($phone), $message));
     }
 
     private function dispatchFile(WaOtpService $service, string $phone, string $fileUrl, string $filename, string $caption, ?string $sessionId = null): bool
     {
-        $sid    = $sessionId ?: ($service->session_id ?: 'default');
-        $chatId = preg_replace('/[^0-9]/', '', $phone) . '@c.us';
+        return $this->deliver($service, $sessionId, fn (string $sid) => app(OpenWaMessageService::class)
+            ->sendMedia($sid, $this->apiKey($service), $this->chatId($phone), 'document', array_filter([
+                'url'      => $fileUrl,
+                'filename' => $filename,
+                'caption'  => $caption ?: null,
+            ], fn ($v) => $v !== null)));
+    }
 
-        try {
-            return app(OpenWaMessageService::class)
-                ->sendMedia($sid, $this->apiKey($service), $chatId, 'document', array_filter([
-                    'url'      => $fileUrl,
-                    'filename' => $filename,
-                    'caption'  => $caption ?: null,
-                ], fn ($v) => $v !== null))
-                ->successful();
-        } catch (\Throwable) {
+    private function chatId(string $phone): string
+    {
+        return preg_replace('/[^0-9]/', '', $phone) . '@c.us';
+    }
+
+    /**
+     * Hand a message to the gateway and record, rather than swallow, why it failed. A missing session used to fall back to the
+     * literal id "default", which the gateway has never had, so such a service could never deliver and nothing said why.
+     */
+    private function deliver(WaOtpService $service, ?string $sessionId, \Closure $send): bool
+    {
+        $this->deliveryFailure = null;
+        $sid = $sessionId ?: $service->session_id;
+        if (!$sid) {
+            $this->deliveryFailure = OtpDeliveryFailure::NO_SESSION;
+            \Log::warning('OTP delivery skipped: no WhatsApp session configured', ['service_id' => $service->id, 'company_id' => $service->company_id]);
             return false;
         }
+
+        try {
+            $response = $send($sid);
+            if ($response->successful()) { return true; }
+            $this->deliveryFailure = OtpDeliveryFailure::fromStatus($response->status(), $response->json('message'));
+            \Log::warning('OTP delivery refused by gateway', ['service_id' => $service->id, 'session_id' => $sid, 'status' => $response->status()]);
+        } catch (\Throwable $e) {
+            $this->deliveryFailure = OtpDeliveryFailure::UNREACHABLE;
+            \Log::error('OTP delivery failed: ' . $e->getMessage(), ['service_id' => $service->id, 'session_id' => $sid]);
+        }
+        return false;
     }
 
     private function logAction(WaOtpService $service, string $phone, string $action, Request $request, int $responseMs, ?WaApiConfig $config = null): void
@@ -229,7 +248,7 @@ class WaOtpPublicController extends Controller
         if (!$sent) {
             $code->update(['status' => 'failed']);
             $this->logAction($service, $phone, 'failed', $request, (int)((microtime(true) - $start) * 1000), $config);
-            return response()->json(['error' => 'Failed to send OTP. Check delivery channel settings.'], 500);
+            return response()->json(['error' => 'Failed to send OTP. Check delivery channel settings.', 'reason' => $this->deliveryFailure], 500);
         }
 
         $this->logAction($service, $phone, 'sent', $request, (int)((microtime(true) - $start) * 1000), $config);
@@ -327,7 +346,7 @@ class WaOtpPublicController extends Controller
         if (!$sent) {
             $code->update(['status' => 'failed']);
             $this->logAction($service, $phone, 'failed', $request, (int)((microtime(true) - $start) * 1000), $config);
-            return response()->json(['error' => 'Failed to resend OTP. Check delivery channel settings.'], 500);
+            return response()->json(['error' => 'Failed to resend OTP. Check delivery channel settings.', 'reason' => $this->deliveryFailure], 500);
         }
 
         $this->logAction($service, $phone, 'resend', $request, (int)((microtime(true) - $start) * 1000), $config);
@@ -369,7 +388,7 @@ class WaOtpPublicController extends Controller
 
         return $sent
             ? response()->json(['success' => true, 'phone' => $phone, 'ms' => $ms])
-            : response()->json(['error' => 'Delivery failed. Check channel settings.'], 422);
+            : response()->json(['error' => 'Delivery failed. Check channel settings.', 'reason' => $this->deliveryFailure], 422);
     }
 
     // ── Public Invoice Share ───────────────────────────────────────────────────
@@ -405,6 +424,6 @@ class WaOtpPublicController extends Controller
 
         return $sent
             ? response()->json(['success' => true, 'phone' => $phone, 'ms' => $ms])
-            : response()->json(['error' => 'Delivery failed. Check channel settings.'], 422);
+            : response()->json(['error' => 'Delivery failed. Check channel settings.', 'reason' => $this->deliveryFailure], 422);
     }
 }

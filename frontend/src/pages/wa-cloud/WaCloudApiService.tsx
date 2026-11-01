@@ -1,3 +1,4 @@
+import { API_ROOT } from '@/lib/apiBase'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Copy, Loader2, RefreshCw, Shield, Activity, Send, CheckCircle, XCircle, Book, Download, AlertTriangle } from 'lucide-react'
@@ -186,8 +187,7 @@ export default function WaCloudApiService() {
 
   if (isLoading) return <div style={{ display: 'flex', justifyContent: 'center', padding: 60 }}><Loader2 className="animate-spin" size={32} /></div>
 
-  const origin = window.location.origin.replace(':3000', ':8000').replace(':5173', ':8000')
-  const baseUrl = `${origin}/api/v1/wa-cloud`
+  const baseUrl = `${API_ROOT}/wa-cloud`
   const token = service?.api_token ?? '<your-api-token>'
 
   const credBanner = !hasCreds && (

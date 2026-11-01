@@ -10,9 +10,13 @@ export type ResourceUsage = {
   key: string; label: string; kind: 'total' | 'monthly'; used: number; limit: number | null
   remaining: number | null; exceeded: boolean; percent: number | null
 }
-type State = { loaded: boolean; failed: boolean; resources: Record<string, ResourceUsage>; plan: { id: number; name: string } | null }
+export type PlanFeatures = { google_sheets: boolean; google_drive: boolean; calendar: boolean; email_integration: boolean }
+type State = {
+  loaded: boolean; failed: boolean; resources: Record<string, ResourceUsage>; plan: { id: number; name: string } | null
+  features: PlanFeatures | null; perItem: { campaign_contacts: number | null; messages_included: number | null } | null
+}
 
-let state: State = { loaded: false, failed: false, resources: {}, plan: null }
+let state: State = { loaded: false, failed: false, resources: {}, plan: null, features: null, perItem: null }
 let inflight: Promise<void> | null = null
 const listeners = new Set<() => void>()
 const emit = () => listeners.forEach(l => l())
@@ -20,7 +24,7 @@ const emit = () => listeners.forEach(l => l())
 export function refreshPlanUsage(): Promise<void> {
   if (inflight) return inflight
   inflight = api.get('/plan/usage', { _quiet403: true } as any)
-    .then(({ data }) => { state = { loaded: true, failed: false, resources: data.resources || {}, plan: data.plan || null }; emit() })
+    .then(({ data }) => { state = { loaded: true, failed: false, resources: data.resources || {}, plan: data.plan || null, features: data.features || null, perItem: data.per_item || null }; emit() })
     .catch(() => { if (!state.loaded) { state = { ...state, loaded: true, failed: true }; emit() } })   // never block the UI on a failed read; the server still enforces
     .finally(() => { inflight = null })
   return inflight
@@ -78,4 +82,10 @@ export function useLimit(key: string): LimitInfo {
       return false
     },
   }
+}
+
+/** Is an integration included in the plan? True while unknown (the server still enforces it). */
+export function useFeature(key: keyof PlanFeatures): { loaded: boolean; enabled: boolean } {
+  const { loaded, features } = usePlanUsage()
+  return { loaded, enabled: !features || features[key] !== false }
 }

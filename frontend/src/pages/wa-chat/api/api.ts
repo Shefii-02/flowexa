@@ -722,7 +722,17 @@ async function request<T>(endpoint: string, options: RequestInit = {}): Promise<
     ...options.headers,
   };
 
-  const response = await fetch(url, { ...options, headers });
+  // Without a deadline a stalled gateway leaves the caller waiting forever — in the chat composer that locks the input on
+  // "sending" with no message and no error. JSON calls get 60s, uploads (which legitimately take longer) 5 minutes.
+  let response: Response;
+  try {
+    response = await fetch(url, { signal: AbortSignal.timeout(isFormData ? 300_000 : 60_000), ...options, headers });
+  } catch (err) {
+    if (err instanceof DOMException && (err.name === 'TimeoutError' || err.name === 'AbortError')) {
+      throw new Error('The WhatsApp gateway took too long to respond. Check the session is connected, then try again.');
+    }
+    throw err;
+  }
 
   if (!response.ok) {
     return handleErrorResponse<T>(response);

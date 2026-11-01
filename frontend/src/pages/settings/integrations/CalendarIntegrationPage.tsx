@@ -1,6 +1,7 @@
 // Calendar — the same Google connection as Sheets/Drive also carries the Calendar scope, so
 // appointments booked at CRM → Calendar best-effort mirror into the connected Google Calendar
 // (with Meet links). Booking itself lives at CRM → Calendar; this page is just the connection.
+import FeatureNotice from '@/components/plan/FeatureNotice'
 import { Link } from 'react-router-dom'
 import { Button } from '@/components/ui'
 import { useGoogleIntegration, GoogleConnectionBar } from './shared'
@@ -10,6 +11,7 @@ export default function CalendarIntegrationPage() {
 
   return (
     <div className="space-y-5 max-w-2xl">
+      <FeatureNotice feature="calendar" name="Calendar" />
       <div>
         <h1 className="page-title">📅 Calendar</h1>
         <p className="page-sub">Appointments and followups sync to your Google Calendar when connected</p>

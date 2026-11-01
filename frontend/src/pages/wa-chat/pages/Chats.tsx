@@ -688,8 +688,16 @@ export function Chats() {
   // 4. Message history is fetched by useChatMessages (React Query). The active-chat side effects
   // (mark-as-read + clear sidebar unread badge) live in a small effect below.
 
+  // Messages that never reached the gateway (temporary id) can't be reacted to / deleted — it has no record of them.
+  const isUnsentMessage = (m: ChatMessageView) =>
+    m.status === 'pending' || m.status === 'failed' || (String(m.id).startsWith('temp_') && !m.waMessageId);
+
   const handleReactMessage = async (msg: ChatMessageView, emoji: string) => {
     if (!selectedSessionId || !activeChat) return;
+    if (isUnsentMessage(msg)) {
+      showWarningToast(t('chats.errors.send'), 'This message has not been sent yet.');
+      return;
+    }
 
     const msgId = msg.waMessageId || msg.id;
     const currentReactions = msg.metadata?.reactions || {};
@@ -736,6 +744,10 @@ export function Chats() {
 
   const handleDeleteMessage = async (msg: ChatMessageView) => {
     if (!selectedSessionId || !activeChat) return;
+    if (isUnsentMessage(msg)) {
+      showWarningToast(t('chats.errors.send'), 'This message has not been sent yet.');
+      return;
+    }
     const msgId = msg.waMessageId || msg.id;
 
     if (!window.confirm(t('chats.deleteConfirm'))) return;

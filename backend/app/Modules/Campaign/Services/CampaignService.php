@@ -318,6 +318,11 @@ class CampaignService
 
         $total  = $contacts->count();
 
+        // Plan cap on how many contacts one campaign may reach
+        if ($v = \App\Support\PlanLimits::campaignAudienceViolation($company->plan, $total)) {
+            throw new \Illuminate\Http\Exceptions\HttpResponseException(response()->json($v, 403));
+        }
+
         $walletMode = $this->walletService->usesWallet($company);
         $wallet     = $walletMode ? $this->walletService->getWallet($companyId) : null;
 

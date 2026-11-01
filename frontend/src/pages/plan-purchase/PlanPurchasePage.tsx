@@ -1,4 +1,5 @@
 // src/pages/plan-purchase/PlanPurchasePage.tsx
+import PlanUsagePanel from '@/components/plan/PlanUsagePanel'
 import { useEffect, useState } from 'react'
 import { planApi } from '@/api'
 import { Button, Badge, Spinner, StatCard } from '@/components/ui'
@@ -141,6 +142,7 @@ export default function PlanPurchasePage() {
   return (
     <div className="space-y-6">
       <div><h1 className="page-title">Plans & Billing</h1><p className="page-sub">Manage your subscription plan</p></div>
+      <PlanUsagePanel />
 
       {/* Current plan banner */}
       {current && (

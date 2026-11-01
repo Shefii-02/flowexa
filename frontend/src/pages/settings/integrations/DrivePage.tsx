@@ -1,5 +1,6 @@
 // Drive — full file manager over the connected Google account's own Drive (browse, upload,
 // rename, delete) — also where listing photos/videos come from in the Catalog page.
+import FeatureNotice from '@/components/plan/FeatureNotice'
 import { useEffect, useRef, useState } from 'react'
 import { Button, Input, Modal, ConfirmModal } from '@/components/ui'
 import { fmt, getError } from '@/utils'
@@ -42,6 +43,7 @@ export default function DrivePage() {
 
   return (
     <div className="space-y-5 ">
+      <FeatureNotice feature="google_drive" name="Google Drive" />
       <div>
         <h1 className="page-title">🗂️ Drive</h1>
         <p className="page-sub">Browse, upload and manage every file and folder in your connected Google account</p>

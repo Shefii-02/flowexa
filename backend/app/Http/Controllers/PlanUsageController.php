@@ -21,6 +21,7 @@ class PlanUsageController extends Controller
             'plan' => $plan ? ['id' => $plan->id, 'name' => $plan->name] : null,
             'unlimited' => !$plan,
             'resources' => PlanLimits::usage((int) $company->id, $plan),
+            'per_item' => $plan ? ['campaign_contacts' => $plan->max_campaign_contacts, 'messages_included' => $plan->messages_limit] : null,
             'features' => $plan ? [
                 'google_sheets' => (bool) $plan->google_sheets_enabled, 'google_drive' => (bool) $plan->google_drive_enabled,
                 'calendar' => (bool) $plan->calendar_enabled, 'email_integration' => (bool) $plan->email_integration_enabled,

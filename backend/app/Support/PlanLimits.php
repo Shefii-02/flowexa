@@ -102,6 +102,15 @@ class PlanLimits
         return ['message' => $message, 'error_code' => 'plan_limit_reached', 'resource' => $key, 'current' => $used, 'limit' => $max, 'remaining' => $left, 'adding' => $adding];
     }
 
+    /** Per-campaign cap (plans.max_campaign_contacts): null when the audience fits, otherwise the error payload. */
+    public static function campaignAudienceViolation(?object $plan, int $audience): ?array
+    {
+        $max = $plan->max_campaign_contacts ?? null;
+        if ($max === null || $audience <= (int) $max) { return null; }
+        return ['message' => "Limit exceeded: your plan allows {$max} contacts per campaign and this campaign has {$audience}. Narrow the audience or upgrade your plan.",
+                'error_code' => 'plan_limit_reached', 'resource' => 'campaign_contacts', 'current' => $audience, 'limit' => (int) $max, 'remaining' => 0, 'adding' => $audience];
+    }
+
     /** For controllers that add rows themselves (bulk imports): throws a ready-made 403 JSON response. */
     public static function assertCanAdd(int $companyId, ?object $plan, string $key, int $adding = 1): void
     {

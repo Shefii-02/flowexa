@@ -1,3 +1,5 @@
+import { useOtpSessions } from '../hooks/useOtpSessions';
+import { API_ROOT } from '@/lib/apiBase'
 import { useState } from 'react';
 import { Copy, Loader2, RefreshCw, Shield, Activity, Send, CheckCircle, XCircle, Book, Download } from 'lucide-react';
 import { api } from '@/api/client';
@@ -46,13 +48,9 @@ function useOtpLogs(filters: LogFilters) {
   });
 }
 
-type WaSession = { id: string; display_name: string | null; connected: boolean };
-
 function useApiSessions() {
-  return useQuery<WaSession[]>({
-    queryKey: ['otp-wa-sessions'],
-    queryFn: () => api.get('/otp-service/sessions').then(r => r.data?.data ?? []),
-  });
+  const { sessions, isLoading } = useOtpSessions();
+  return { data: sessions, isLoading };
 }
 
 type ApiConfigLite = {
@@ -293,12 +291,11 @@ export default function WaOtpServicePage() {
 
   if (isLoading) return <div style={{ display: 'flex', justifyContent: 'center', padding: 60 }}><Loader2 className="animate-spin" size={32} /></div>;
 
-  const origin = window.location.origin.replace(':3000', ':8000').replace(':5173', ':8000');
   // The WA Chat token identifies the company and lives in the API path.
   const waChatToken = currentUser?.company?.wa_chat_token
     ?? sessionStorage.getItem('openwa_api_key')
     ?? '{wa-chat-token}';
-  const baseUrl = `${origin}/api/v1/${waChatToken}`;
+  const baseUrl = `${API_ROOT}/${waChatToken}`;
   const token = service?.api_token ?? '<your-api-token>';
 
   return (

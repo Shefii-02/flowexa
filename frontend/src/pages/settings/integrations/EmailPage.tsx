@@ -1,4 +1,5 @@
 // Email (SMTP) — per-company outbound mail for alerts, notifications & announcements.
+import FeatureNotice from '@/components/plan/FeatureNotice'
 import { useEffect, useState } from 'react'
 import { Button, Input, Textarea, Badge, Modal, ConfirmModal } from '@/components/ui'
 import { getError } from '@/utils'
@@ -25,6 +26,7 @@ const emptyEmailForm = () => ({
 export default function EmailPage() {
   return (
     <div className="space-y-5 max-w-2xl">
+      <FeatureNotice feature="email_integration" name="Email integration" />
       <div>
         <h1 className="page-title">✉️ Email</h1>
         <p className="page-sub">Connect your own mailbox so customer alerts, notifications and announcements go out as your business</p>

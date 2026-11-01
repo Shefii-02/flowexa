@@ -1,3 +1,4 @@
+import { useOtpSessions } from '../hooks/useOtpSessions';
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Loader2, FileText, Plus, Trash2, X, BarChart3 } from 'lucide-react';
@@ -108,10 +109,7 @@ export function ApiConfigManager({ kind }: { kind: ConfigKind }) {
     queryFn: () => api.get('/otp-service/prebuilt-templates', { params: { type: cfg.templateType } }).then(r => r.data?.data ?? []),
   });
 
-  const { data: sessions = [] } = useQuery<GwSession[]>({
-    queryKey: ['otp-wa-sessions'],
-    queryFn: () => api.get('/otp-service/sessions').then(r => r.data?.data ?? []),
-  });
+  const { sessions, gatewayError, refetch: refetchSessions } = useOtpSessions();
   // Connected sessions first, then the rest.
   const sortedSessions = [...sessions].sort((a, b) => Number(b.connected) - Number(a.connected));
 
@@ -257,11 +255,20 @@ export function ApiConfigManager({ kind }: { kind: ConfigKind }) {
           <option value={form.session_id}>{form.session_id} (not found)</option>
         )}
       </select>
-      {sessions.length === 0 && (
+      {gatewayError ? (
+        <div style={{ fontSize: 11, color: '#b91c1c', marginTop: 4 }}>
+          ⚠️ Could not load sessions: {gatewayError}{' '}
+          <button type="button" onClick={() => void refetchSessions()} style={{ color: '#2563eb', background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: 11, textDecoration: 'underline' }}>Retry</button>
+        </div>
+      ) : sessions.length === 0 ? (
         <div style={{ fontSize: 11, color: '#b45309', marginTop: 4 }}>
           No WhatsApp Chat sessions found — add one on the Sessions page first.
         </div>
-      )}
+      ) : !sessions.some(s => s.connected) ? (
+        <div style={{ fontSize: 11, color: '#b45309', marginTop: 4 }}>
+          None of your sessions is connected right now — messages can only be sent through a connected session.
+        </div>
+      ) : null}
     </label>
   );
 

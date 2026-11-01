@@ -1,4 +1,5 @@
 // Google Sheets — push captured leads to a Sheet in the company's own Drive, on a schedule.
+import FeatureNotice from '@/components/plan/FeatureNotice'
 import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Button, Input, Modal } from '@/components/ui'
@@ -93,6 +94,7 @@ export default function GoogleSheetsPage() {
 
   return (
     <div className="space-y-5 max-w-3xl">
+      <FeatureNotice feature="google_sheets" name="Google Sheets" />
       <div>
         <h1 className="page-title">📊 Google Sheets</h1>
         <p className="page-sub">Push captured leads to your own Google Sheets, automatically</p>

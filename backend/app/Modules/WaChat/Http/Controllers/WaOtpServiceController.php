@@ -216,13 +216,27 @@ class WaOtpServiceController extends Controller
         $base    = rtrim((string) config('services.open_wa.base_url'), '/');
 
         $rows = [];
-        try {
-            $res = Http::withHeaders(['X-API-Key' => $apiKey])->timeout(10)->get("{$base}/sessions");
-            if ($res->successful()) {
-                $rows = $res->json('data', $res->json() ?? []);
+        $host = parse_url($base, PHP_URL_HOST) ?: $base;
+        // Say WHY the list is empty. A failed gateway call used to be swallowed, so "Laravel cannot reach the gateway" (e.g.
+        // WA_CHAT_API_ORIGIN still pointing at localhost in production) looked exactly like "this company has no sessions".
+        $gatewayError = null;
+        if ($apiKey === '') {
+            $gatewayError = 'This company has no WhatsApp Chat key yet. Connect WhatsApp Chat first.';
+        } else {
+            try {
+                $res = Http::withHeaders(['X-API-Key' => $apiKey])->timeout(10)->get("{$base}/sessions");
+                if ($res->successful()) {
+                    $rows = $res->json('data', $res->json() ?? []);
+                } else {
+                    $gatewayError = in_array($res->status(), [401, 403], true)
+                        ? "The WhatsApp gateway rejected this company's key. Reconnect WhatsApp Chat in the dashboard."
+                        : "The WhatsApp gateway ({$host}) answered HTTP {$res->status()} when listing sessions.";
+                    \Log::warning('OTP sessions: gateway refused session list', ['host' => $host, 'status' => $res->status()]);
+                }
+            } catch (\Throwable $e) {
+                $gatewayError = "The server could not reach the WhatsApp gateway at {$host}. Check WA_CHAT_API_ORIGIN in the backend .env.";
+                \Log::error('OTP sessions: gateway unreachable: ' . $e->getMessage(), ['host' => $host]);
             }
-        } catch (\Throwable) {
-            $rows = [];
         }
 
         $connected = ['ready', 'connected', 'working', 'authenticated'];
@@ -267,7 +281,7 @@ class WaOtpServiceController extends Controller
             ->filter()
             ->values();
 
-        return response()->json(['data' => $sessions]);
+        return response()->json(['data' => $sessions, 'gateway_error' => $gatewayError]);
     }
 
     /**

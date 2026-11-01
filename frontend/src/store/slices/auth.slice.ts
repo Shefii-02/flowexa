@@ -7,7 +7,7 @@ import { WA_CHAT_API_KEY_STORAGE } from '@/pages/wa-chat/api/client'
 // ── WA Chat session bootstrap ─────────────────────────────────────────────────
 // Maps Project A's user role to the WA Chat RBAC role so RequireWaAdmin gates
 // correctly (API Keys page) without a separate WA login flow.
-function resolveWaChatRole(user: User | null): 'admin' | 'operator' | 'viewer' {
+export function resolveWaChatRole(user: User | null): 'admin' | 'operator' | 'viewer' {
   const name = user?.role?.name
   if (name === 'superadmin' || name === 'owner' || name === 'admin') return 'admin'
   if (name === 'team_lead' || name === 'counsellor') return 'operator'

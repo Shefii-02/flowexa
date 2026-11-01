@@ -318,6 +318,10 @@ function ChatThread({
           const reactions = msg.metadata?.reactions || {};
           const hasReactions = Object.keys(reactions).length > 0;
           const isRevoked = msg.type === 'revoked';
+          // A message that was never accepted by the gateway only exists in this browser (temporary `temp_…` id, status
+          // pending/failed). Reacting to, replying to or deleting it fails with "Message … not found" because the gateway has
+          // no such message, so none of those actions are offered until it has really been sent.
+          const isUnsent = msg.status === 'pending' || msg.status === 'failed' || (String(msg.id).startsWith('temp_') && !msg.waMessageId);
           const isMasked = msg.type === 'masked';
 
           return (
@@ -401,7 +405,7 @@ function ChatThread({
                 </div>
 
                 {/* Message actions menu (hover) */}
-                {!isRevoked && (
+                {!isRevoked && !isUnsent && (
                   <div className="message-actions-menu">
                     <button
                       type="button"

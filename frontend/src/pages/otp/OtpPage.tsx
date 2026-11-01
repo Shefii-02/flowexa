@@ -1,4 +1,5 @@
 // src/pages/otp/OtpPage.tsx
+import { API_ROOT } from '@/lib/apiBase'
 import { useAppSelector } from '@/store'
 
 export default function OtpPage() {
@@ -28,7 +29,7 @@ export default function OtpPage() {
           <div>
             <p className="label mb-2">Send OTP</p>
             <pre className="bg-gray-900 text-green-400 text-xs p-4 rounded-lg overflow-x-auto">{`curl -X POST \\
-  ${window.location.origin}/api/v1/otp/send \\
+  ${API_ROOT}/otp/send \\
   -H 'X-App-Id: ${company?.app_id || 'WA_APP_XXXX'}' \\
   -H 'X-Private-Token: your_private_token' \\
   -H 'Content-Type: application/json' \\
@@ -41,7 +42,7 @@ export default function OtpPage() {
           <div>
             <p className="label mb-2">Verify OTP</p>
             <pre className="bg-gray-900 text-green-400 text-xs p-4 rounded-lg overflow-x-auto">{`curl -X POST \\
-  ${window.location.origin}/api/v1/otp/verify \\
+  ${API_ROOT}/otp/verify \\
   -H 'X-App-Id: ${company?.app_id || 'WA_APP_XXXX'}' \\
   -H 'X-Private-Token: your_private_token' \\
   -H 'Content-Type: application/json' \\

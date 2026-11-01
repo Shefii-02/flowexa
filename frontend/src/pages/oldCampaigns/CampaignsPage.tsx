@@ -1,4 +1,5 @@
 // src/pages/campaigns/CampaignsPage.tsx
+import CampaignCapNote from '@/components/plan/CampaignCapNote'
 import { useLimit } from '@/lib/planUsage'
 import LimitBadge from '@/components/plan/LimitBadge'
 import { useEffect, useState, useCallback } from 'react'
@@ -84,7 +85,7 @@ export default function CampaignsPage() {
     <div className="space-y-5">
       <div className="flex items-center justify-between">
         <div><h1 className="page-title">Campaigns</h1><p className="page-sub">{total} campaigns</p></div>
-        <div className="flex items-center gap-2"><LimitBadge resource="campaigns" /><Button onClick={() => planLim.guard() && setShowCreate(true)}>+ New campaign</Button></div>
+        <div className="flex items-center gap-2"><LimitBadge resource="campaigns" /><CampaignCapNote /><Button onClick={() => planLim.guard() && setShowCreate(true)}>+ New campaign</Button></div>
       </div>
 
       <div className="card">

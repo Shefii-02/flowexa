@@ -113,4 +113,13 @@ class PlanLimitsTest extends TestCase
         $u->company = (object) ['id' => 7, 'plan' => (object) ['max_roles' => 1]];
         $this->assertSame([7, $u->company->plan], PlanLimits::context($u));
     }
+
+    public function test_campaign_audience_cap(): void
+    {
+        $this->assertNull(PlanLimits::campaignAudienceViolation((object) ['max_campaign_contacts' => null], 99999), 'unlimited');
+        $this->assertNull(PlanLimits::campaignAudienceViolation((object) ['max_campaign_contacts' => 500], 500), 'exactly at the cap is fine');
+        $v = PlanLimits::campaignAudienceViolation((object) ['max_campaign_contacts' => 500], 501);
+        $this->assertSame('plan_limit_reached', $v['error_code']);
+        $this->assertStringContainsString('500 contacts per campaign', $v['message']);
+    }
 }
