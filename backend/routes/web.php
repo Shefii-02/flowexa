@@ -49,3 +49,6 @@ Route::prefix('backend/logs')->middleware(\App\Http\Middleware\LogViewerKey::cla
     Route::get('/entries', [\App\Http\Controllers\Admin\LogViewerController::class, 'entries']);
     Route::post('/clear',  [\App\Http\Controllers\Admin\LogViewerController::class, 'clear']);
 });
+
+// Tracked DM button links (Instagram AutoDM) — public; click counts feed the dashboard + follow-up conditions.
+Route::get('/r/{token}', \App\Modules\Instagram\Http\Controllers\InstagramLinkRedirectController::class)->where('token', '[A-Za-z0-9]{12}');

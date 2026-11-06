@@ -17,7 +17,7 @@ class Plan extends Model
         'max_flow_nodes', 'max_campaign_contacts', 'throttle_per_minute',
         'is_custom', 'custom_for_company_id',
         'max_leads_per_month', 'max_lead_categories', 'max_roles',
-        'max_instagram_accounts', 'max_meta_ads_accounts', 'max_website_widgets',
+        'max_instagram_accounts', 'max_instagram_automations', 'max_instagram_dms_monthly', 'max_meta_ads_accounts', 'max_website_widgets',
         'google_sheets_enabled', 'google_drive_enabled', 'calendar_enabled', 'email_integration_enabled',
     ];
 
@@ -41,6 +41,8 @@ class Plan extends Model
         'max_lead_categories'      => 'integer',
         'max_roles'                => 'integer',
         'max_instagram_accounts'   => 'integer',
+        'max_instagram_automations' => 'integer',
+        'max_instagram_dms_monthly' => 'integer',
         'max_meta_ads_accounts'    => 'integer',
         'max_website_widgets'      => 'integer',
         'google_sheets_enabled'      => 'boolean',

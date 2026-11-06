@@ -43,13 +43,19 @@ class InstagramAutomation extends Model
     /** Whether the comment/message text satisfies this rule's keyword match. */
     public function matches(string $text): bool
     {
+        return static::keywordsMatch($this->keywords ?? [], (string) $this->match_type, $text);
+    }
+
+    /** Shared keyword matcher (also used by flow triggers). `exact` | `all` | anything else = any. */
+    public static function keywordsMatch(array $keywords, string $matchType, string $text): bool
+    {
         $haystack = mb_strtolower(trim($text));
-        $needles  = array_filter(array_map(fn ($k) => mb_strtolower(trim((string) $k)), $this->keywords ?? []));
+        $needles  = array_filter(array_map(fn ($k) => mb_strtolower(trim((string) $k)), $keywords));
         if (!$needles) {
             return false;
         }
 
-        return match ($this->match_type) {
+        return match ($matchType) {
             'exact' => in_array($haystack, $needles, true),
             'all'   => collect($needles)->every(fn ($n) => str_contains($haystack, $n)),
             default => collect($needles)->contains(fn ($n) => str_contains($haystack, $n)),

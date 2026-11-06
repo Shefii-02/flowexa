@@ -93,6 +93,20 @@ class InstagramConversationService
         }
     }
 
+    /**
+     * Record a message the business sent outside this app (an agent typing in the Instagram app —
+     * it reaches us as an `is_echo` webhook) so the portal inbox shows the whole conversation.
+     * Messages we sent ourselves are already stored under the same mid, so those are skipped.
+     */
+    public function recordEcho(InstagramAccount $account, string $participantId, string $text, ?string $igMessageId, array $attachments = []): ?InstagramMessage
+    {
+        $convo = $this->thread($account, $participantId);
+        if ($igMessageId && $convo->messages()->where('ig_message_id', $igMessageId)->exists()) {
+            return null;
+        }
+        return $this->storeOutbound($convo, $text, 'staff_app', $igMessageId, 'sent', null, $attachments ?: null);
+    }
+
     public function storeOutbound(
         InstagramConversation $convo,
         string $text,
@@ -100,6 +114,7 @@ class InstagramConversationService
         ?string $igMessageId,
         string $status,
         ?string $error,
+        ?array $attachments = null,
     ): InstagramMessage {
         $msg = InstagramMessage::create([
             'instagram_conversation_id' => $convo->id,
@@ -107,6 +122,7 @@ class InstagramConversationService
             'direction'     => 'out',
             'source'        => $source,
             'text'          => $text,
+            'attachments'   => $attachments ?: null,
             'status'        => $status,
             'error'         => $error,
             'sent_at'       => $status === 'sent' ? now() : null,

@@ -102,6 +102,11 @@ import LeadAdsPage from '@/pages/meta-ads/leads/LeadAdsPage'
 import CreativeStudioPage from '@/pages/meta-ads/creatives/CreativeStudioPage'
 import InstagramAccountsPage from '@/pages/instagram/InstagramAccountsPage'
 import InstagramAutomationsPage from '@/pages/instagram/InstagramAutomationsPage'
+import InstagramAutoDmPage from '@/pages/instagram/InstagramAutoDmPage'
+import InstagramReviewDemoPage from '@/pages/instagram/InstagramReviewDemoPage'
+import InstagramDeletionStatusPage from '@/pages/instagram/InstagramDeletionStatusPage'
+import InstagramFlowsPage from '@/pages/instagram/InstagramFlowsPage'
+import InstagramFlowBuilderPage from '@/pages/instagram/InstagramFlowBuilderPage'
 import InstagramInboxPage from '@/pages/instagram/InstagramInboxPage'
 import InstagramCommentsPage from '@/pages/instagram/InstagramCommentsPage'
 import InstagramInsightsPage from '@/pages/instagram/InstagramInsightsPage'
@@ -224,6 +229,7 @@ export default function App() {
           <Routes>
             {/* Public routes */}
             <Route path="/" element={<HomePage />} />
+            <Route path="/instagram/deletion-status" element={<InstagramDeletionStatusPage />} />
             <Route path="/privacy-policy" element={<PrivacyPolicyPage />} />
             <Route path="/login" element={<LoginPage />} />
             <Route path="/register" element={<RegisterPage />} />
@@ -397,7 +403,11 @@ export default function App() {
 
               <Route path="instagram" element={<Navigate to="/instagram/accounts" replace />} />
               <Route path="instagram/accounts" element={<InstagramAccountsPage />} />
+              <Route path="instagram/autodm" element={<InstagramAutoDmPage />} />
+              <Route path="instagram/review-demo" element={<InstagramReviewDemoPage />} />
               <Route path="instagram/automations" element={<InstagramAutomationsPage />} />
+              <Route path="instagram/flows" element={<InstagramFlowsPage />} />
+              <Route path="instagram/flows/:id" element={<InstagramFlowBuilderPage />} />
               <Route path="instagram/inbox" element={<InstagramInboxPage />} />
               <Route path="instagram/comments" element={<InstagramCommentsPage />} />
               <Route path="instagram/insights" element={<InstagramInsightsPage />} />

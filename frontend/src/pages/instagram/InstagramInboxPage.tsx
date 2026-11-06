@@ -3,10 +3,12 @@ import { useEffect, useRef, useState } from 'react'
 import { Badge, EmptyState } from '@/components/ui'
 import { getError } from '@/utils'
 import toast from 'react-hot-toast'
-import { instagramApi, type IgConversation, type IgMessage } from './api/instagram'
+import { instagramApi, type IgConversation, type IgFlowRun, type IgMessage } from './api/instagram'
 
 const SOURCE_LABEL: Record<string, { label: string; cls: string }> = {
   automation: { label: 'Automation', cls: 'text-amber-600' },
+  flow: { label: 'Flow', cls: 'text-sky-600' },
+  staff_app: { label: 'Sent from Instagram app', cls: 'text-gray-500' },
   ai: { label: 'AI agent', cls: 'text-purple-600' },
   manual: { label: 'You', cls: 'text-gray-500' },
   inbound: { label: '', cls: '' },
@@ -18,21 +20,39 @@ export default function InstagramInboxPage() {
   const [messages, setMessages] = useState<IgMessage[]>([])
   const [active, setActive] = useState<IgConversation | null>(null)
   const [withinWindow, setWithinWindow] = useState(true)
+  const [flowRuns, setFlowRuns] = useState<(IgFlowRun & { flow?: { name: string } })[]>([])
+  const [needsAgentOnly, setNeedsAgentOnly] = useState(false)
   const [statusFilter, setStatusFilter] = useState('open')
   const [text, setText] = useState('')
   const [sending, setSending] = useState(false)
   const [loading, setLoading] = useState(true)
   const feedRef = useRef<HTMLDivElement>(null)
 
-  const loadThreads = async () => {
-    setLoading(true)
+  const loadThreads = async (quiet = false) => {
+    if (!quiet) setLoading(true)
     try {
-      const r = await instagramApi.conversations(statusFilter ? { status: statusFilter } : {})
+      const r = await instagramApi.conversations({ ...(statusFilter ? { status: statusFilter } : {}), ...(needsAgentOnly ? { needs_agent: 1 } : {}) })
       setThreads(r.data.data ?? r.data ?? [])
-    } catch (e) { toast.error(getError(e)) }
-    finally { setLoading(false) }
+    } catch (e) { if (!quiet) toast.error(getError(e)) }
+    finally { if (!quiet) setLoading(false) }
   }
-  useEffect(() => { void loadThreads() }, [statusFilter])
+  useEffect(() => { void loadThreads() }, [statusFilter, needsAgentOnly]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Flow replies, button taps and messages sent from the Instagram app arrive via webhooks — poll so they show up live.
+  useEffect(() => {
+    const t = setInterval(() => {
+      if (document.hidden) return
+      void loadThreads(true)
+      if (activeId) {
+        instagramApi.conversation(activeId).then(r => {
+          setMessages(r.data.messages ?? [])
+          setActive(r.data.conversation)
+          setFlowRuns(r.data.flow_runs ?? [])
+        }).catch(() => {})
+      }
+    }, 8000)
+    return () => clearInterval(t)
+  }, [activeId, statusFilter, needsAgentOnly]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const openThread = async (id: number) => {
     setActiveId(id)
@@ -41,6 +61,7 @@ export default function InstagramInboxPage() {
       setActive(r.data.conversation)
       setMessages(r.data.messages ?? [])
       setWithinWindow(r.data.within_window)
+      setFlowRuns(r.data.flow_runs ?? [])
       setThreads(list => list.map(t => t.id === id ? { ...t, unread_count: 0 } : t))
     } catch (e) { toast.error(getError(e)) }
   }
@@ -80,6 +101,9 @@ export default function InstagramInboxPage() {
           <option value="snoozed">Snoozed</option>
           <option value="closed">Closed</option>
         </select>
+        <label className="flex items-center gap-1.5 text-xs whitespace-nowrap">
+          <input type="checkbox" checked={needsAgentOnly} onChange={e => setNeedsAgentOnly(e.target.checked)} /> Needs agent
+        </label>
       </div>
 
       <div className="grid grid-cols-[320px_1fr] gap-4 h-[calc(100vh-220px)]">
@@ -95,6 +119,7 @@ export default function InstagramInboxPage() {
               <div className="flex items-center gap-2">
                 <span className="font-medium text-sm text-gray-900 flex-1 truncate">@{t.participant_username || t.participant_id}</span>
                 {t.unread_count > 0 && <span className="bg-brand-600 text-white text-xs rounded-full px-1.5">{t.unread_count}</span>}
+                {t.needs_agent && <span title="A flow handed this to a human" className="text-red-500 text-xs">🙋</span>}
                 {t.ai_enabled && <span title="AI agent active" className="text-purple-500 text-xs">🤖</span>}
               </div>
               <p className="text-xs text-gray-400 truncate mt-0.5">{t.last_message_preview}</p>
@@ -113,8 +138,22 @@ export default function InstagramInboxPage() {
               <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-3">
                 <div className="flex-1">
                   <p className="font-semibold text-sm">@{active.participant_username || active.participant_id}</p>
-                  <p className="text-xs text-gray-400">{active.account?.username ? `via @${active.account.username}` : ''}</p>
+                  <p className="text-xs text-gray-400">
+                    {active.account?.username ? `via @${active.account.username}` : ''}
+                    {active.follows_business != null && ` · ${active.follows_business ? 'follows you ✅' : 'not following ➖'}`}
+                    {flowRuns[0] && ` · flow “${flowRuns[0].flow?.name ?? ''}”: ${flowRuns[0].status}`}
+                  </p>
+                  {(active.tags?.length ?? 0) > 0 && (
+                    <div className="flex gap-1 mt-1 flex-wrap">
+                      {active.tags!.map(tag => <span key={tag} className="bg-gray-100 text-gray-600 rounded px-1.5 text-[10px]">{tag}</span>)}
+                    </div>
+                  )}
                 </div>
+                {active.needs_agent && (
+                  <button onClick={() => setStatus({ needs_agent: false })} className="text-xs text-red-600 border border-red-200 rounded px-2 py-0.5">
+                    🙋 Needs agent — mark handled
+                  </button>
+                )}
                 <label className="flex items-center gap-1.5 text-xs">
                   <input type="checkbox" checked={active.ai_enabled} onChange={e => setStatus({ ai_enabled: e.target.checked })} />
                   AI agent
@@ -132,6 +171,14 @@ export default function InstagramInboxPage() {
                     <div className={`rounded-2xl px-3 py-2 text-sm ${m.direction === 'out' ? 'bg-brand-600 text-white' : 'bg-gray-100 text-gray-800'}`}>
                       {m.text}
                     </div>
+                    {Array.isArray(m.attachments) ? null : m.attachments?.buttons?.map(b => (
+                      <div key={b.title} className="mt-1 text-center text-xs border border-brand-200 text-brand-700 rounded-lg py-1 bg-white">{b.title}{b.type === 'url' ? ' ↗' : ''}</div>
+                    ))}
+                    {Array.isArray(m.attachments) ? null : m.attachments?.quick_replies?.length ? (
+                      <div className="mt-1 flex gap-1 flex-wrap justify-end">
+                        {m.attachments.quick_replies.map(q => <span key={q} className="text-[10px] border border-gray-300 rounded-full px-2 py-0.5 bg-white text-gray-600">{q}</span>)}
+                      </div>
+                    ) : null}
                     <p className={`text-[10px] mt-0.5 ${m.direction === 'out' ? 'text-right' : ''} text-gray-400`}>
                       {m.direction === 'out' && SOURCE_LABEL[m.source]?.label && (
                         <span className={SOURCE_LABEL[m.source].cls}>{SOURCE_LABEL[m.source].label} · </span>

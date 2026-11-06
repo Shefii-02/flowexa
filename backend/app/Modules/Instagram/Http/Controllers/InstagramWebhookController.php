@@ -9,7 +9,8 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
 /**
- * The Instagram webhook: `comments` (keyword bot) and `messages` (DM inbox + AI agent). The heavy
+ * The Instagram webhook: `comments` (keyword bot + flows), `messages` (DM inbox + AI agent + echoes) and
+ * `messaging_postbacks` (flow button taps). The heavy
  * lifting runs in {@see ProcessInstagramEvent} so Meta always gets a fast 200.
  */
 class InstagramWebhookController extends Controller
@@ -58,52 +59,77 @@ class InstagramWebhookController extends Controller
 
                 if ($field === 'comments') {
                     ProcessInstagramEvent::dispatch('comment', $account->id, $value);
-                } elseif ($field === 'messages') {
-                    $msg = $this->normalizeMessage($value, $igUserId);
-                    if ($msg) ProcessInstagramEvent::dispatch('message', $account->id, $msg);
+                } elseif ($field === 'live_comments') {
+                    ProcessInstagramEvent::dispatch('comment', $account->id, $value + ['_live' => true]);
+                } elseif ($field === 'messages' || $field === 'messaging_postbacks') {
+                    $this->dispatchMessaging($account->id, $value, $igUserId);
                 }
             }
 
-            // Messenger-style `messaging` array (some app configs deliver DMs here).
+            // Messenger-style `messaging` array (the usual shape for DMs, postbacks and echoes).
             foreach ($entry['messaging'] ?? [] as $m) {
-                $msg = $this->normalizeMessaging($m, $igUserId);
-                if ($msg) ProcessInstagramEvent::dispatch('message', $account->id, $msg);
+                $this->dispatchMessaging($account->id, $m, $igUserId);
             }
         }
 
         return response('OK', 200);
     }
 
-    /** `changes[field=messages].value` → normalized message payload, or null if it's an echo/own. */
-    private function normalizeMessage(array $value, ?string $igUserId): ?array
+    /**
+     * One messaging event → the right job: a button tap (`postback` / quick-reply payload), an echo of
+     * a message the business sent (e.g. an agent typing in the Instagram app), or a customer DM.
+     */
+    private function dispatchMessaging(int $accountId, array $m, ?string $igUserId): void
     {
-        $senderId = $value['sender']['id'] ?? ($value['from']['id'] ?? null);
-        if (!$senderId || $senderId === $igUserId) {
-            return null; // our own echo
-        }
-        return [
-            'sender_id'   => $senderId,
-            'username'    => $value['sender']['username'] ?? ($value['from']['username'] ?? null),
-            'mid'         => $value['message']['mid'] ?? ($value['mid'] ?? null),
-            'text'        => $value['message']['text'] ?? ($value['text'] ?? ''),
-            'attachments' => $value['message']['attachments'] ?? [],
-        ];
-    }
+        $senderId    = $m['sender']['id'] ?? ($m['from']['id'] ?? null);
+        $recipientId = $m['recipient']['id'] ?? ($m['to']['id'] ?? null);
+        $message     = $m['message'] ?? [];
 
-    /** `entry[].messaging[]` (Messenger shape) → normalized message payload. */
-    private function normalizeMessaging(array $m, ?string $igUserId): ?array
-    {
-        $senderId = $m['sender']['id'] ?? null;
-        if (!$senderId || $senderId === $igUserId || !empty($m['message']['is_echo'])) {
-            return null;
+        // Echo: the business is the sender; the customer is the recipient.
+        if (!empty($message['is_echo']) || ($senderId && $senderId === $igUserId)) {
+            if ($recipientId && $recipientId !== $igUserId) {
+                // Delayed so our own API sends (stored with the same mid) win the race and aren't duplicated.
+                ProcessInstagramEvent::dispatch('echo', $accountId, [
+                    'participant_id' => $recipientId,
+                    'mid'            => $message['mid'] ?? ($m['mid'] ?? null),
+                    'text'           => $message['text'] ?? ($m['text'] ?? ''),
+                    'attachments'    => $message['attachments'] ?? [],
+                ])->delay(now()->addSeconds(6));
+            }
+            return;
         }
-        return [
-            'sender_id'   => $senderId,
-            'username'    => null,
-            'mid'         => $m['message']['mid'] ?? null,
-            'text'        => $m['message']['text'] ?? '',
-            'attachments' => $m['message']['attachments'] ?? [],
-        ];
+        if (!$senderId) {
+            return;
+        }
+
+        $postbackPayload = $m['postback']['payload'] ?? ($message['quick_reply']['payload'] ?? null);
+        if ($postbackPayload) {
+            ProcessInstagramEvent::dispatch('postback', $accountId, [
+                'sender_id' => $senderId,
+                'username'  => $m['sender']['username'] ?? null,
+                'mid'       => $m['postback']['mid'] ?? ($message['mid'] ?? null),
+                'payload'   => $postbackPayload,
+                'title'     => $m['postback']['title'] ?? ($message['text'] ?? ''),
+            ]);
+            return;
+        }
+
+        // ig.me/?ref= links and ads: treat the referral ref as the typed keyword.
+        $referral = $m['referral']['ref'] ?? ($m['postback']['referral']['ref'] ?? null);
+        if ($referral && !$message) {
+            $message = ['text' => (string) $referral, 'mid' => $m['referral']['mid'] ?? null];
+        }
+
+        if ($message || isset($m['text'])) {
+            ProcessInstagramEvent::dispatch('message', $accountId, [
+                'story_reply' => !empty($message['reply_to']['story']),
+                'sender_id'   => $senderId,
+                'username'    => $m['sender']['username'] ?? ($m['from']['username'] ?? null),
+                'mid'         => $message['mid'] ?? ($m['mid'] ?? null),
+                'text'        => $message['text'] ?? ($m['text'] ?? ''),
+                'attachments' => $message['attachments'] ?? [],
+            ]);
+        }
     }
 
     private function signatureValid(Request $request): bool

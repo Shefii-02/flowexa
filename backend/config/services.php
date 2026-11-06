@@ -112,9 +112,17 @@ return [
         // Conversions API for business messaging (instagram_manage_events) — dataset + events endpoints.
         'events_graph_version' => env('INSTAGRAM_EVENTS_GRAPH_VERSION', 'v23.0'),
         // Verify token for the Instagram webhook subscription (comments + messages).
-        'webhook_verify_token' => env('INSTAGRAM_WEBHOOK_VERIFY_TOKEN'),
+        'webhook_verify_token' => env('IG_WEBHOOK_VERIFY_TOKEN', env('INSTAGRAM_WEBHOOK_VERIFY_TOKEN')),
         // App secret for X-Hub-Signature-256 validation (falls back to the meta_ads one).
-        'app_secret'           => env('INSTAGRAM_APP_SECRET', env('META_ADS_APP_SECRET')),
+        'app_secret'           => env('IG_APP_SECRET', env('INSTAGRAM_APP_SECRET', env('META_ADS_APP_SECRET'))),
+
+        // "Instagram API with Instagram Login" (Business Login) — the AutoDM connect flow.
+        'app_id'               => env('IG_APP_ID', '3017013418646493'),
+        'redirect_uri'         => env('IG_REDIRECT_URI', 'https://teamzo.io/instagram/accounts'),
+        'ig_graph_version'     => env('IG_GRAPH_VERSION', 'v25.0'),
+        'dm_hourly_cap'        => (int) env('IG_DM_HOURLY_CAP', 190),
+        'scopes'               => 'instagram_business_basic,instagram_business_manage_messages,instagram_business_manage_comments',
+        'subscribed_fields'    => 'comments,live_comments,messages,messaging_postbacks,messaging_seen,messaging_referral,message_reactions,message_edit',
     ],
 
 ];

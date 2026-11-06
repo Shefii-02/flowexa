@@ -1300,11 +1300,23 @@ Route::prefix('v1')->group(function () {
         // ── Instagram: connected account, keyword auto-DM bot, DM inbox + AI agent ──
         Route::prefix('/instagram')->name('instagram.')->middleware(['company.active', 'permission:instagram.view'])->group(function () {
             Route::get('accounts',                 [\App\Modules\Instagram\Http\Controllers\InstagramAccountController::class, 'index']);
+            Route::get('connect-url',              [\App\Modules\Instagram\Http\Controllers\InstagramConnectController::class, 'connectUrl'])->middleware('permission:instagram.manage');
+            Route::post('callback',                [\App\Modules\Instagram\Http\Controllers\InstagramConnectController::class, 'callback'])->middleware('permission:instagram.manage');
+            Route::post('accounts/<built-in function id>/disconnect',[\App\Modules\Instagram\Http\Controllers\InstagramConnectController::class, 'disconnect'])->middleware('permission:instagram.manage');
             Route::get('accounts/{id}/media',      [\App\Modules\Instagram\Http\Controllers\InstagramAccountController::class, 'media']);
             Route::get('accounts/{id}/conversion-events', [\App\Modules\Instagram\Http\Controllers\InstagramAccountController::class, 'conversionEvents']);
             Route::get('accounts/{id}/insights',   [\App\Modules\Instagram\Http\Controllers\InstagramCommentController::class, 'insights']);
             Route::get('accounts/{id}/media/{mediaId}/comments', [\App\Modules\Instagram\Http\Controllers\InstagramCommentController::class, 'index']);
             Route::get('automations',              [\App\Modules\Instagram\Http\Controllers\InstagramAutomationController::class, 'index']);
+            Route::get('autodm',                   [\App\Modules\Instagram\Http\Controllers\InstagramAutoDmController::class, 'index']);
+            Route::get('autodm/stats',             [\App\Modules\Instagram\Http\Controllers\InstagramAutoDmController::class, 'stats']);
+            Route::get('autodm/export',            [\App\Modules\Instagram\Http\Controllers\InstagramAutoDmController::class, 'export']);
+            Route::get('autodm/link-sources',      [\App\Modules\Instagram\Http\Controllers\InstagramAutoDmController::class, 'linkSources']);
+            Route::get('autodm/<built-in function id>',              [\App\Modules\Instagram\Http\Controllers\InstagramAutoDmController::class, 'show'])->whereNumber('id');
+            Route::get('autodm/<built-in function id>/runs',         [\App\Modules\Instagram\Http\Controllers\InstagramAutoDmController::class, 'runs']);
+            Route::get('flows',                    [\App\Modules\Instagram\Http\Controllers\InstagramFlowController::class, 'index']);
+            Route::get('flows/{id}',               [\App\Modules\Instagram\Http\Controllers\InstagramFlowController::class, 'show']);
+            Route::get('flows/{id}/runs',          [\App\Modules\Instagram\Http\Controllers\InstagramFlowController::class, 'runs']);
             Route::get('conversations',            [\App\Modules\Instagram\Http\Controllers\InstagramInboxController::class, 'index']);
             Route::get('conversations/{id}',       [\App\Modules\Instagram\Http\Controllers\InstagramInboxController::class, 'show']);
 
@@ -1321,6 +1333,15 @@ Route::prefix('v1')->group(function () {
                 Route::post('accounts/{id}/comments/{commentId}/hide',    [\App\Modules\Instagram\Http\Controllers\InstagramCommentController::class, 'hide']);
                 Route::delete('accounts/{id}/comments/{commentId}',       [\App\Modules\Instagram\Http\Controllers\InstagramCommentController::class, 'destroy']);
 
+                Route::post('autodm',                  [\App\Modules\Instagram\Http\Controllers\InstagramAutoDmController::class, 'store']);
+                Route::put('autodm/{id}',              [\App\Modules\Instagram\Http\Controllers\InstagramAutoDmController::class, 'update']);
+                Route::post('autodm/{id}/toggle',      [\App\Modules\Instagram\Http\Controllers\InstagramAutoDmController::class, 'toggle']);
+                Route::post('autodm/{id}/duplicate',   [\App\Modules\Instagram\Http\Controllers\InstagramAutoDmController::class, 'duplicate']);
+                Route::delete('autodm/{id}',           [\App\Modules\Instagram\Http\Controllers\InstagramAutoDmController::class, 'destroy']);
+                Route::post('flows',                   [\App\Modules\Instagram\Http\Controllers\InstagramFlowController::class, 'store']);
+                Route::put('flows/{id}',               [\App\Modules\Instagram\Http\Controllers\InstagramFlowController::class, 'update']);
+                Route::post('flows/{id}/toggle',       [\App\Modules\Instagram\Http\Controllers\InstagramFlowController::class, 'toggle']);
+                Route::delete('flows/{id}',            [\App\Modules\Instagram\Http\Controllers\InstagramFlowController::class, 'destroy']);
                 Route::post('automations',             [\App\Modules\Instagram\Http\Controllers\InstagramAutomationController::class, 'store']);
                 Route::put('automations/{id}',         [\App\Modules\Instagram\Http\Controllers\InstagramAutomationController::class, 'update']);
                 Route::post('automations/{id}/toggle', [\App\Modules\Instagram\Http\Controllers\InstagramAutomationController::class, 'toggle']);
@@ -1399,6 +1420,11 @@ Route::prefix('v1')->group(function () {
     // Public webhook (Meta lead ads + ad review). GET = subscription verification handshake.
     Route::get('/meta-ads/webhook', [MetaWebhookController::class, 'verify']);
     Route::post('/meta-ads/webhook', [MetaWebhookController::class, 'handle']);
+
+    // Meta compliance callbacks (verified by signed_request) + public deletion status.
+    Route::post('/instagram/deauthorize',   [\App\Modules\Instagram\Http\Controllers\InstagramConnectController::class, 'deauthorize']);
+    Route::post('/instagram/data-deletion', [\App\Modules\Instagram\Http\Controllers\InstagramConnectController::class, 'dataDeletion']);
+    Route::get('/instagram/deletion-status',[\App\Modules\Instagram\Http\Controllers\InstagramConnectController::class, 'deletionStatus']);
 
     // Public webhook — Instagram comments + DMs.
     Route::get('/instagram/webhook',  [\App\Modules\Instagram\Http\Controllers\InstagramWebhookController::class, 'verify']);

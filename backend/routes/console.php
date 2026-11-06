@@ -36,3 +36,6 @@ Schedule::command('leads:process-unassigned')->everyFiveMinutes()->withoutOverla
 Schedule::command('leads:process-handoffs')->everyFiveMinutes();
 Schedule::command('leads:update-performance')->dailyAt('01:00');
 Schedule::command('leads:reset-daily-counts')->dailyAt('00:00');
+
+// Instagram Login long-lived tokens (60 days) — refresh those expiring within 10 days.
+Schedule::command('instagram:refresh-tokens')->dailyAt('03:00')->withoutOverlapping();

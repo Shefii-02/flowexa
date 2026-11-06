@@ -2,7 +2,7 @@
 import { useLimit } from '@/lib/planUsage'
 import LimitBadge from '@/components/plan/LimitBadge'
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { Button, Input, Textarea, Badge, EmptyState, Modal, ConfirmModal } from '@/components/ui'
 import { fmt, getError } from '@/utils'
 import toast from 'react-hot-toast'
@@ -123,6 +123,29 @@ export default function InstagramAccountsPage() {
   const [discovering, setDiscovering] = useState(false)
   const [pages, setPages] = useState<IgPage[] | null>(null)
 
+  // "Instagram API with Instagram Login": Instagram sends the user back here with ?code&state.
+  const [params, setParams] = useSearchParams()
+  const navigate = useNavigate()
+  const [igBusy, setIgBusy] = useState(false)
+  const startIgLogin = async () => {
+    if (!planLim.guard()) return
+    setIgBusy(true)
+    try { window.location.href = (await instagramApi.igConnectUrl()).data.url }
+    catch (e) { toast.error(getError(e)); setIgBusy(false) }
+  }
+  useEffect(() => {
+    const code = params.get('code'), state = params.get('state'), err = params.get('error_description')
+    if (err) { toast.error(err); setParams({}, { replace: true }); return }
+    if (!code || !state) return
+    setParams({}, { replace: true })
+    setIgBusy(true)
+    instagramApi.igCallback(code, state)
+      .then(r => { toast.success(r.data.message); navigate('/instagram/autodm') })
+      .catch(e => toast.error(getError(e)))
+      .finally(() => setIgBusy(false))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const load = async () => {
     setLoading(true)
     try { setAccounts((await instagramApi.accounts()).data.accounts ?? []) }
@@ -215,7 +238,7 @@ export default function InstagramAccountsPage() {
           <h1 className="page-title">Instagram Accounts</h1>
           <p className="page-sub">Connect a business account, then set up the comment bot and DM AI agent</p>
         </div>
-        <div className="flex items-center gap-2"><LimitBadge resource="instagram_accounts" /><Button onClick={() => planLim.guard() && setConnectOpen(true)}>+ Connect account</Button></div>
+        <div className="flex items-center gap-2"><LimitBadge resource="instagram_accounts" /><Button loading={igBusy} onClick={startIgLogin}>Connect with Instagram</Button><Button variant="secondary" onClick={() => planLim.guard() && setConnectOpen(true)}>+ Facebook Page token</Button></div>
       </div>
 
       {loading ? (

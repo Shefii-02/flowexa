@@ -22,10 +22,10 @@ class MetaGraphClient
     /** Meta error codes that mean "back off and retry" rather than "this request is wrong". */
     private const RETRYABLE_CODES = [1, 2, 4, 17, 32, 341, 613];
 
-    public function __construct(?string $version = null)
+    public function __construct(?string $version = null, string $host = 'graph.facebook.com')
     {
         $version = $version ?: config('services.meta_ads.graph_version', 'v21.0');
-        $this->baseUrl = rtrim("https://graph.facebook.com/{$version}", '/');
+        $this->baseUrl = rtrim("https://{$host}/{$version}", '/');
     }
 
     public function get(string $path, string $token, array $params = []): array
@@ -92,6 +92,14 @@ class MetaGraphClient
         $response = Http::withHeaders($headers)
             ->timeout(30)
             ->{$method}($url, $payload);
+
+        // Sanitised audit trail (App Review): method, path and outcome only — never tokens, query strings or bodies.
+        if (str_contains($url, 'graph.instagram.com')) {
+            Log::channel(config('logging.channels.instagram_api') ? 'instagram_api' : null)->info('instagram.api', [
+                'method' => strtoupper($method), 'path' => parse_url($url, PHP_URL_PATH), 'status' => $response->status(),
+                'error_code' => $response->json('error.code'), 'fbtrace_id' => $response->json('error.fbtrace_id'),
+            ]);
+        }
 
         if ($response->successful()) {
             return $response->json() ?? [];

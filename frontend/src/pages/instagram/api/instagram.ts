@@ -33,6 +33,33 @@ export const instagramApi = {
     api.post(`/instagram/automations/${id}/test`, { text, media_id: mediaId }),
   deleteAutomation: (id: number) => api.delete(`/instagram/automations/${id}`),
 
+  // Flows (node-based automations)
+  flows: (accountId?: number) => api.get<{ flows: IgFlowSummary[] }>('/instagram/flows', { params: accountId ? { account_id: accountId } : {} }),
+  flow: (id: number) => api.get<{ flow: IgFlow; errors: string[] }>(`/instagram/flows/${id}`),
+  createFlow: (d: Record<string, unknown>) => api.post<{ flow: IgFlow; errors: string[] }>('/instagram/flows', d),
+  saveFlow: (id: number, d: Record<string, unknown>) => api.put<{ flow: IgFlow; errors: string[] }>(`/instagram/flows/${id}`, d),
+  toggleFlow: (id: number) => api.post<{ flow: IgFlow }>(`/instagram/flows/${id}/toggle`),
+  deleteFlow: (id: number) => api.delete(`/instagram/flows/${id}`),
+  flowRuns: (id: number) => api.get<{ runs: IgFlowRun[] }>(`/instagram/flows/${id}/runs`),
+
+  // Instagram Login (OAuth) connect
+  igConnectUrl: () => api.get<{ url: string }>('/instagram/connect-url'),
+  igCallback: (code: string, state: string) => api.post<{ message: string; account: IgAccount }>('/instagram/callback', { code, state }),
+  igDisconnect: (id: number) => api.post(`/instagram/accounts/${id}/disconnect`),
+
+  // AutoDM wizard automations
+  autodm: (accountId?: number) => api.get<{ automations: AutoDm[] }>('/instagram/autodm', { params: accountId ? { account_id: accountId } : {} }),
+  autodmCreate: (d: { instagram_account_id: number; name: string; wizard: AutoDmWizard; draft?: boolean }) => api.post<{ automation: AutoDm }>('/instagram/autodm', d),
+  autodmUpdate: (id: number, d: { name: string; wizard: AutoDmWizard; draft?: boolean }) => api.put<{ automation: AutoDm }>(`/instagram/autodm/${id}`, d),
+  autodmToggle: (id: number) => api.post<{ automation: AutoDm }>(`/instagram/autodm/${id}/toggle`),
+  autodmDuplicate: (id: number) => api.post(`/instagram/autodm/${id}/duplicate`),
+  autodmDelete: (id: number) => api.delete(`/instagram/autodm/${id}`),
+  autodmRuns: (id: number) => api.get<{ runs: AutoDmRun[] }>(`/instagram/autodm/${id}/runs`),
+  autodmStats: (range: string) => api.get<AutoDmStats>('/instagram/autodm/stats', { params: { range } }),
+  autodmExport: () => api.get('/instagram/autodm/export', { responseType: 'blob' }),
+  autodmLinkSources: () => api.get<{ sources: { key: string; label: string; items: { label: string; url: string }[] }[] }>('/instagram/autodm/link-sources'),
+  deletionStatus: (code: string) => api.get<{ status: string; created_at: string; completed_at: string | null }>('/instagram/deletion-status', { params: { code } }),
+
   // DM inbox
   conversations: (p?: Record<string, unknown>) => api.get('/instagram/conversations', { params: p }),
   conversation: (id: number) => api.get(`/instagram/conversations/${id}`),
@@ -41,6 +68,9 @@ export const instagramApi = {
 }
 
 export interface IgAccount {
+  status?: 'active' | 'token_expired' | 'disconnected'
+  auth_type?: 'page' | 'instagram_login'
+  token_expires_at?: string | null
   id: number
   ig_user_id: string
   username: string | null
@@ -96,6 +126,9 @@ export interface IgConversation {
   participant_username: string | null
   status: 'open' | 'snoozed' | 'closed'
   ai_enabled: boolean
+  needs_agent?: boolean
+  tags?: string[] | null
+  follows_business?: boolean | null
   unread_count: number
   last_message_preview: string | null
   last_message_at: string | null
@@ -129,8 +162,9 @@ export interface IgComment {
 export interface IgMessage {
   id: number
   direction: 'in' | 'out'
-  source: 'inbound' | 'manual' | 'automation' | 'ai'
+  source: 'inbound' | 'manual' | 'automation' | 'ai' | 'flow' | 'staff_app'
   text: string | null
+  attachments?: { buttons?: { title: string; type: string; url?: string | null }[]; quick_replies?: string[]; image_url?: string | null } | unknown[] | null
   status: string | null
   error: string | null
   created_at: string
@@ -142,4 +176,96 @@ export interface IgConversionLog {
   failed: number
   totals: { event_name: string; c: number; v: string | null }[]
   events: { id: number; event_name: string; status: 'sent' | 'failed'; value: string | null; currency: string | null; error: string | null; event_time: string }[]
+}
+
+export type IgNodeType =
+  | 'trigger_comment' | 'trigger_dm' | 'public_reply' | 'private_reply' | 'send_dm' | 'wait_reply'
+  | 'condition_follow' | 'condition_check' | 'collect_input' | 'delay' | 'crm_action' | 'http_request' | 'human_handover'
+
+export interface IgFlowNode {
+  id: string
+  type: IgNodeType
+  position: { x: number; y: number }
+  data: Record<string, any>
+}
+
+export interface IgFlowEdge {
+  id: string
+  source: string
+  target: string
+  sourceHandle?: string | null
+}
+
+export interface IgFlowSummary {
+  id: number
+  instagram_account_id: number
+  name: string
+  trigger_type: 'comment' | 'dm'
+  is_active: boolean
+  priority: number
+  triggered_count: number
+  last_triggered_at: string | null
+  runs_count?: number
+  waiting_runs_count?: number
+}
+
+export interface IgFlow extends IgFlowSummary {
+  nodes: IgFlowNode[]
+  edges: IgFlowEdge[]
+}
+
+export interface IgFlowRun {
+  id: number
+  igsid: string
+  status: 'running' | 'waiting' | 'done' | 'failed'
+  current_node: string | null
+  wait_kind: string | null
+  error: string | null
+  created_at: string
+  finished_at: string | null
+  conversation?: { participant_username: string | null; follows_business: boolean | null } | null
+}
+
+export type AutoDmTrigger = 'post_comment' | 'dm' | 'story_reply' | 'live_comment'
+export interface AutoDmButton { title: string; url: string }
+export interface AutoDmMessage {
+  text: string
+  buttons: AutoDmButton[]
+  attachment?: { type: 'image' | 'video' | 'audio'; url: string }
+  card?: { title: string; subtitle: string; image_url: string }
+}
+export interface AutoDmFollowup extends AutoDmMessage {
+  condition: 'after_delay' | 'link_not_clicked' | 'no_response'
+  delay_amount: number
+  delay_unit: 'minutes' | 'hours'
+}
+export interface AutoDmWizard {
+  trigger_type: AutoDmTrigger
+  media_scope: 'specific' | 'any' | 'next'
+  media_ids: string[]
+  keyword_mode: 'specific' | 'any'
+  include_keywords: string[]
+  exclude_keywords: string[]
+  comment_reply_enabled: boolean
+  comment_replies: string[]
+  follow_gate: { enabled: boolean; opening: string; visit_label: string; confirm_label: string; retry_message: string; fail_action: 'send' | 'stop' }
+  email_gate: { enabled: boolean; opening: string; retry_message: string; fail_action: 'send' | 'stop' }
+  starter_message: { text: string; button: string }
+  primary_message: AutoDmMessage & { kind: 'text' | 'media' | 'card' | 'voice' }
+  followups: AutoDmFollowup[]
+  send_email?: { enabled: boolean; subject: string; body: string }
+  media_preview?: { thumbnail_url?: string | null; caption?: string | null }
+}
+export interface AutoDm {
+  id: number; instagram_account_id: number; name: string; status: 'draft' | 'enabled' | 'paused'
+  wizard: AutoDmWizard; dms_sent: number; leads: number; new_followers: number; clicks: number; runs?: number; updated_at: string
+}
+export interface AutoDmRun {
+  id: number; status: string; error: string | null; started_at: string; finished_at: string | null
+  username: string | null; email: string | null; lead_id: number | null; clicked: boolean; followed: boolean; follow_attempts: number
+  messages: { direction: string; text: string | null; status: string | null; error: string | null; created_at: string }[]
+}
+export interface AutoDmStats {
+  dms_sent: { total: number; series: number[] }; leads: { total: number; series: number[] }
+  followers: { total: number; series: number[] }; clicks: number
 }

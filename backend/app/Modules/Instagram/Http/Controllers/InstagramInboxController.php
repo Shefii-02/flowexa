@@ -20,6 +20,7 @@ class InstagramInboxController extends Controller
             ->when($allowed !== null, fn ($q) => $q->whereIn('instagram_account_id', $allowed))
             ->when($request->account_id, fn ($q, $id) => $q->where('instagram_account_id', $id))
             ->when($request->status, fn ($q, $s) => $q->where('status', $s))
+            ->when($request->boolean('needs_agent'), fn ($q) => $q->where('needs_agent', true))
             ->with('account:id,username')
             ->orderByDesc('last_message_at')
             ->paginate(30);
@@ -33,6 +34,9 @@ class InstagramInboxController extends Controller
         return response()->json([
             'conversation' => $convo->load('account:id,username,ai_enabled'),
             'messages'     => $convo->messages()->get(),
+            'flow_runs'    => \App\Models\InstagramFlowRun::where('instagram_conversation_id', $convo->id)
+                ->with('flow:id,name')->latest('id')->limit(5)
+                ->get(['id', 'instagram_flow_id', 'status', 'current_node', 'wait_kind', 'error', 'created_at']),
             'within_window' => $convo->withinMessagingWindow(),
         ]);
     }
@@ -56,6 +60,7 @@ class InstagramInboxController extends Controller
         $d = $request->validate([
             'status'     => ['sometimes', Rule::in(['open', 'snoozed', 'closed'])],
             'ai_enabled' => ['sometimes', 'boolean'],
+            'needs_agent' => ['sometimes', 'boolean'],
         ]);
         $convo = $this->find($id);
         $convo->update($d);

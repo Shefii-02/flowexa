@@ -505,6 +505,8 @@ export const Sidebar = () => {
               onToggle={() => toggle('instagram')}
             >
               <SubLink to="/instagram/accounts" icon="🔗" label="Accounts" />
+              <SubLink to="/instagram/autodm" icon="🚀" label="AutoDM" />
+              <SubLink to="/instagram/flows" icon="🧩" label="Flows" />
               <SubLink to="/instagram/automations" icon="⚡" label="Auto-DM Rules" />
               <SubLink to="/instagram/inbox" icon="💬" label="DM Inbox" />
               <SubLink to="/instagram/comments" icon="🗨️" label="Comments" />
