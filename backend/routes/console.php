@@ -39,3 +39,9 @@ Schedule::command('leads:reset-daily-counts')->dailyAt('00:00');
 
 // Instagram Login long-lived tokens (60 days) — refresh those expiring within 10 days.
 Schedule::command('instagram:refresh-tokens')->dailyAt('03:00')->withoutOverlapping();
+
+// Keep 30 days of Instagram webhook deliveries for the Activity view.
+Schedule::call(fn () => \Illuminate\Support\Facades\DB::table('instagram_webhook_events')->where('created_at', '<', now()->subDays(30))->delete())->dailyAt('03:30')->name('instagram:prune-webhook-events');
+
+// AutoDMs held back by the hourly DM cap are sent oldest-first as soon as the window frees up.
+Schedule::command('instagram:drain-queue')->everyMinute()->withoutOverlapping();

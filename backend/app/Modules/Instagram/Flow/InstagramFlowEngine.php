@@ -344,8 +344,14 @@ class InstagramFlowEngine
         };
         $run->forceFill(['status' => 'waiting', 'wait_kind' => $kind, 'wait_token' => $token, 'wait_expires_at' => $expires])->save();
 
-        if ($kind === 'delay' || $kind === 'throttle') {
-            RunInstagramFlowRun::dispatch($run->id, $token, $kind === 'delay' ? 'resume' : 'retry')->delay($expires);
+        if ($kind === 'throttle') {
+            // FIFO queue: keep the original queue time across re-parks. The scheduled drainer
+            // (instagram:drain-queue) resumes runs oldest-first; no per-run timers, so order is preserved.
+            if (!$run->queued_at) {
+                $run->forceFill(['queued_at' => now()])->save();
+            }
+        } elseif ($kind === 'delay') {
+            RunInstagramFlowRun::dispatch($run->id, $token, 'resume')->delay($expires);
         } elseif ($timeoutMinutes || $run->flow->hasEdge((string) $run->current_node, 'timeout')) {
             RunInstagramFlowRun::dispatch($run->id, $token, 'timeout')->delay($expires);
         }
@@ -426,7 +432,7 @@ class InstagramFlowEngine
         $waits = (bool) array_filter($btnObjs, fn ($b) => $b['type'] === 'postback') || $qrObjs;
         $stored = array_filter(['buttons' => $storedButtons, 'quick_replies' => array_column($quick, 'title'), 'image_url' => $d['image_url'] ?? null]);
 
-        if ($err = $this->throttled($account)) {
+        if ($err = $this->throttled($account, $run)) {
             return ['wait' => 'throttle', 'seconds' => $err];
         }
 
@@ -441,13 +447,13 @@ class InstagramFlowEngine
         $messageId = null;
         if (!empty($d['image_url']) && !$useComment) {
             $this->client->sendMessage($account, $recipient, InstagramClient::imageMessage($d['image_url']));
-            RateLimiter::hit($this->rateKey($account), 3600);
+            $this->recordSend($account);
             $this->bump($run, 'dms_sent');
         }
         // Media attachment (image / video / audio) and generic-template card.
-        if (!empty($d['attachment']['url']) && in_array($d['attachment']['type'] ?? '', ['image', 'video', 'audio'], true)) {
+        if (!empty($d['attachment']['url']) && in_array($d['attachment']['type'] ?? '', ['image', 'video', 'audio', 'file'], true) && str_starts_with((string) $d['attachment']['url'], 'https://')) {
             $res = $this->client->sendMessage($account, $recipient, ['attachment' => ['type' => $d['attachment']['type'], 'payload' => ['url' => $d['attachment']['url']]]]);
-            RateLimiter::hit($this->rateKey($account), 3600);
+            $this->recordSend($account);
             $this->bump($run, 'dms_sent');
             $this->conversations->storeOutbound($convo, '[' . $d['attachment']['type'] . ']', 'flow', $res['message_id'] ?? null, 'sent', null, ['image_url' => $d['attachment']['url']]);
             if ($useComment) { $run->setCtx('private_reply_sent', true); $run->save(); }
@@ -464,7 +470,7 @@ class InstagramFlowEngine
                     'buttons' => array_slice($btnObjs, 0, 3) ?: null,
                 ])],
             ]]]);
-            RateLimiter::hit($this->rateKey($account), 3600);
+            $this->recordSend($account);
             $this->bump($run, 'dms_sent');
             $this->conversations->storeOutbound($convo, (string) ($card['title'] ?? 'Card'), 'flow', $res['message_id'] ?? null, 'sent', null, $stored ?: null);
             if ($useComment) { $run->setCtx('private_reply_sent', true); $run->save(); }
@@ -473,7 +479,7 @@ class InstagramFlowEngine
         if ($text !== '' || $btnObjs || $qrObjs) {
             $res = $this->deliver($account, $recipient, $text, $btnObjs, $qrObjs);
             $messageId = $res['message_id'] ?? null;
-            RateLimiter::hit($this->rateKey($account), 3600);
+            $this->recordSend($account);
             $this->bump($run, 'dms_sent');
             $this->conversations->storeOutbound($convo, $text, 'flow', $messageId, 'sent', null, $stored ?: null);
         }
@@ -601,12 +607,12 @@ class InstagramFlowEngine
         }
 
         $this->guardWindow($convo);
-        if ($wait = $this->throttled($account)) {
+        if ($wait = $this->throttled($account, $run)) {
             return ['wait' => 'throttle', 'seconds' => $wait];
         }
         $text = $this->fill($prompt, $run);
         $res = $this->client->sendMessage($account, ['id' => $run->igsid], ['text' => $text]);
-        RateLimiter::hit($this->rateKey($account), 3600);
+        $this->recordSend($account);
         $this->conversations->storeOutbound($convo, $text, 'flow', $res['message_id'] ?? null, 'sent', null);
         $run->setCtx('collect_pending', $node['id']);
         $run->save();
@@ -755,22 +761,90 @@ class InstagramFlowEngine
         return "ig-dm:{$account->id}";
     }
 
-    /** Seconds to back off when the hourly automated-DM budget is spent, else null. */
-    private function throttled(InstagramAccount $account): ?int
+    /** Count one automated DM against the hourly window (Meta) and the plan's monthly allowance. */
+    private function recordSend(InstagramAccount $account): void
     {
-        // Plan: monthly automated-DM allowance. Counted per company per month; over it the run stops (no point retrying).
+        RateLimiter::hit($this->rateKey($account), 3600);
         try { $cap = $account->company?->plan?->max_instagram_dms_monthly; } catch (\Throwable) { $cap = null; }
         if ($cap !== null) {
             $key = "ig-dm-month:{$account->company_id}:" . now()->format('Ym');
-            $used = (int) \Illuminate\Support\Facades\Cache::get($key, 0);
-            if ($used >= $cap) {
-                throw new \RuntimeException("Monthly Instagram DM limit ({$cap}) reached for your plan.");
-            }
-            \Illuminate\Support\Facades\Cache::put($key, $used + 1, now()->endOfMonth()->addDay());
+            \Illuminate\Support\Facades\Cache::add($key, 0, now()->endOfMonth()->addDay());
+            \Illuminate\Support\Facades\Cache::increment($key);
         }
-        return RateLimiter::tooManyAttempts($this->rateKey($account), (int) config('services.instagram.dm_hourly_cap', self::HOURLY_DM_LIMIT))
+    }
+
+    private function hourlyCap(): int
+    {
+        return (int) config('services.instagram.dm_hourly_cap', self::HOURLY_DM_LIMIT);
+    }
+
+    /** Seconds until the hourly window frees up, or null when there is budget. */
+    private function windowFull(InstagramAccount $account): ?int
+    {
+        return RateLimiter::tooManyAttempts($this->rateKey($account), $this->hourlyCap())
             ? max(30, RateLimiter::availableIn($this->rateKey($account)))
             : null;
+    }
+
+    /**
+     * Whether this send must wait (seconds) — hourly budget spent, or older runs are already queued for
+     * this account (first come, first served; the drainer resumes those with `from_queue` set).
+     * The plan's monthly allowance is a hard stop: waiting wouldn't help.
+     */
+    private function throttled(InstagramAccount $account, ?InstagramFlowRun $run = null): ?int
+    {
+        try { $cap = $account->company?->plan?->max_instagram_dms_monthly; } catch (\Throwable) { $cap = null; }
+        if ($cap !== null
+            && (int) \Illuminate\Support\Facades\Cache::get("ig-dm-month:{$account->company_id}:" . now()->format('Ym'), 0) >= $cap) {
+            throw new \RuntimeException("Monthly Instagram DM limit ({$cap}) reached for your plan.");
+        }
+        if ($wait = $this->windowFull($account)) {
+            return $wait;
+        }
+        if ($run && !$run->ctx('from_queue') && $this->hasBacklog($account, $run->id)) {
+            return 30;
+        }
+        return null;
+    }
+
+    private function hasBacklog(InstagramAccount $account, ?int $exceptRunId = null): bool
+    {
+        return InstagramFlowRun::where('instagram_account_id', $account->id)
+            ->where('status', 'waiting')->where('wait_kind', 'throttle')
+            ->when($exceptRunId, fn ($q) => $q->where('id', '!=', $exceptRunId))->exists();
+    }
+
+    /**
+     * Send what the hourly cap held back, oldest first. Stops at the first run that parks again
+     * (budget gone) so later arrivals never overtake earlier ones. Comment runs older than Instagram's
+     * 7-day private-reply limit are closed as expired. Returns how many runs were resumed.
+     */
+    public function drainQueue(InstagramAccount $account, int $max = 200): int
+    {
+        $resumed = 0;
+        $runs = InstagramFlowRun::where('instagram_account_id', $account->id)
+            ->where('status', 'waiting')->where('wait_kind', 'throttle')
+            ->orderBy('queued_at')->orderBy('id')->limit($max)->get();
+
+        foreach ($runs as $run) {
+            if ($run->comment_id && !$run->ctx('private_reply_sent') && $run->created_at?->lt(now()->subDays(7))) {
+                $this->finish($run, 'failed', 'Expired in the queue: Instagram only allows a private reply within 7 days of the comment.');
+                continue;
+            }
+            if ($this->windowFull($account)) {
+                break;
+            }
+            $run->setCtx('from_queue', true);
+            $run->save();
+            $this->resumeWaiting($run, $run->wait_token, ['throttle'], null);
+            $resumed++;
+
+            $fresh = $run->fresh();
+            if ($fresh && $fresh->status === 'waiting' && $fresh->wait_kind === 'throttle') {
+                break;   // parked again: budget is gone
+            }
+        }
+        return $resumed;
     }
 
     /** {{username}} / {{name}} / {{any_collected_field}} substitution. */

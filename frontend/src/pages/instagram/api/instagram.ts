@@ -58,6 +58,8 @@ export const instagramApi = {
   autodmStats: (range: string) => api.get<AutoDmStats>('/instagram/autodm/stats', { params: { range } }),
   autodmExport: () => api.get('/instagram/autodm/export', { responseType: 'blob' }),
   autodmLinkSources: () => api.get<{ sources: { key: string; label: string; items: { label: string; url: string }[] }[] }>('/instagram/autodm/link-sources'),
+  webhookEvents: (p: { page?: number; status?: string; kind?: string }) => api.get<WebhookPage>('/instagram/webhook-events', { params: p }),
+  monitor: (range: string) => api.get<MonitorData>('/instagram/monitor', { params: { range } }),
   deletionStatus: (code: string) => api.get<{ status: string; created_at: string; completed_at: string | null }>('/instagram/deletion-status', { params: { code } }),
 
   // DM inbox
@@ -231,7 +233,7 @@ export interface AutoDmButton { title: string; url: string }
 export interface AutoDmMessage {
   text: string
   buttons: AutoDmButton[]
-  attachment?: { type: 'image' | 'video' | 'audio'; url: string }
+  attachment?: { type: 'image' | 'video' | 'audio' | 'file'; url: string }
   card?: { title: string; subtitle: string; image_url: string }
 }
 export interface AutoDmFollowup extends AutoDmMessage {
@@ -268,4 +270,26 @@ export interface AutoDmRun {
 export interface AutoDmStats {
   dms_sent: { total: number; series: number[] }; leads: { total: number; series: number[] }
   followers: { total: number; series: number[] }; clicks: number
+}
+
+export interface WebhookEvent {
+  id: number; kind: string; field: string | null; status: 'queued' | 'processed' | 'ignored' | 'failed'
+  note: string | null; created_at: string; processed_at: string | null; username: string | null
+  summary: string; from: string | null; payload: unknown
+}
+export interface WebhookPage { data: WebhookEvent[]; current_page: number; last_page: number; total: number }
+
+export interface MonitorAccount {
+  account_id: number; username: string | null; status: string
+  hourly_cap: number; used: number; remaining: number; resets_in_seconds: number
+  queued: number; oldest_queued_at: string | null
+  next_up: { position: number; run_id: number; username: string | null; text: string; queued_at: string | null; kind: 'comment' | 'dm'; expires_at: string | null }[]
+}
+export interface MonitorData {
+  accounts: MonitorAccount[]
+  monthly: { cap: number | null; used: number }
+  hourly: { hour: string; count: number }[]
+  runs: { total: number; completed: number; failed: number; waiting: number; clicked: number; followed: number; leads: number; completion_rate: number | null }
+  failure_reasons: { error: string; n: number }[]
+  webhooks: Record<string, number>
 }

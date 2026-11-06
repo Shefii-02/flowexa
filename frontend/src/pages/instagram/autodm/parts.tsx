@@ -17,7 +17,7 @@ export const emptyWizard = (trigger: AutoDmTrigger): AutoDmWizard => ({
   comment_reply_enabled: false, comment_replies: ['', '', ''],
   follow_gate: { enabled: false, opening: 'Follow us first, then tap "I\'m following" 👇', visit_label: 'Visit Profile', confirm_label: 'I\'m following ✅', retry_message: 'Hmm, I can\'t see the follow yet. Follow and tap again 🙏', fail_action: 'send' },
   email_gate: { enabled: false, opening: 'What\'s your email? Reply here 📩', retry_message: 'That doesn\'t look like a valid email. Please try again.', fail_action: 'send' },
-  starter_message: { text: 'Hey! Tap below and I\'ll send it over 👇', button: 'Send me the link' },
+  starter_message: { text: 'ഹായ്! ഇവിടെ വന്നതിന് ഒരുപാട് നന്ദി 😊\n\nതാഴെയുള്ള ബട്ടൺ ടാപ്പ് ചെയ്യൂ, PDF ഉടൻ അയച്ചുതരാം ✨', button: 'PDF അയക്കൂ' },
   primary_message: { kind: 'text', text: '', buttons: [] },
   followups: [],
 })

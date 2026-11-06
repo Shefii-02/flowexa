@@ -18,6 +18,7 @@ class InstagramFlowRun extends Model
         'wait_token'      => 'integer',
         'wait_expires_at' => 'datetime',
         'finished_at'     => 'datetime',
+        'queued_at'       => 'datetime',
     ];
 
     public function flow(): BelongsTo { return $this->belongsTo(InstagramFlow::class, 'instagram_flow_id'); }

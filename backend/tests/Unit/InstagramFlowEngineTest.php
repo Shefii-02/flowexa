@@ -65,7 +65,7 @@ class InstagramFlowEngineTest extends TestCase
             $t->id(); $t->unsignedBigInteger('company_id'); $t->unsignedBigInteger('instagram_account_id'); $t->unsignedBigInteger('instagram_flow_id');
             $t->unsignedBigInteger('instagram_conversation_id')->nullable(); $t->string('igsid'); $t->string('comment_id')->nullable(); $t->string('status')->default('running');
             $t->string('current_node')->nullable(); $t->string('wait_kind')->nullable(); $t->unsignedInteger('wait_token')->default(0); $t->timestamp('wait_expires_at')->nullable();
-            $t->json('context')->nullable(); $t->text('error')->nullable(); $t->timestamp('finished_at')->nullable(); $t->timestamps();
+            $t->json('context')->nullable(); $t->text('error')->nullable(); $t->timestamp('finished_at')->nullable(); $t->timestamp('queued_at')->nullable(); $t->timestamps();
         });
 
         $this->client = Mockery::mock(InstagramClient::class)->makePartial();
@@ -259,6 +259,50 @@ class InstagramFlowEngineTest extends TestCase
         $this->assertCount(0, $this->sent);
         $run = InstagramFlowRun::first();
         $this->assertSame(['waiting', 'throttle'], [$run->status, $run->wait_kind]);
-        Queue::assertPushed(\App\Modules\Instagram\Jobs\RunInstagramFlowRun::class);
+        $this->assertNotNull($run->queued_at);   // queued for the drainer, not a per-run timer
+    }
+
+    public function test_queued_comments_are_sent_oldest_first_and_new_ones_cannot_jump_the_queue(): void
+    {
+        config(['services.instagram.dm_hourly_cap' => 2]);
+        $a = $this->account();
+        $this->priceFlow($a);
+        $this->assertSame(1, 1);
+
+        // 2 comments use the budget, #3-#5 are held back in arrival order.
+        foreach (['C1', 'C2', 'C3', 'C4', 'C5'] as $i => $id) {
+            $this->engine->handleComment($a, ['id' => $id, 'text' => 'price', 'from' => ['id' => "U$i", 'username' => "u$i"]]);
+            $this->travel(1)->seconds();
+        }
+        $this->assertCount(2, $this->sent);
+        $queued = InstagramFlowRun::where('wait_kind', 'throttle')->orderBy('queued_at')->orderBy('id')->pluck('comment_id')->all();
+        $this->assertSame(['C3', 'C4', 'C5'], $queued);
+
+        // Window frees up for 2 DMs: a brand-new comment arriving now must queue behind them.
+        RateLimiter::clear("ig-dm:{$a->id}");
+        $this->engine->handleComment($a, ['id' => 'C6', 'text' => 'price', 'from' => ['id' => 'U6', 'username' => 'u6']]);
+        $this->assertCount(2, $this->sent, 'C6 must not overtake the queue');
+
+        $resumed = $this->engine->drainQueue($a);
+        $this->assertSame(2, $resumed);
+        $this->assertCount(4, $this->sent);
+        $stillQueued = InstagramFlowRun::where('wait_kind', 'throttle')->orderBy('queued_at')->orderBy('id')->pluck('comment_id')->all();
+        $this->assertSame(['C5', 'C6'], $stillQueued);   // C3 and C4 went first
+    }
+
+    public function test_comment_runs_expire_in_the_queue_after_seven_days(): void
+    {
+        config(['services.instagram.dm_hourly_cap' => 1]);
+        $a = $this->account();
+        $this->priceFlow($a);
+        $this->engine->handleComment($a, ['id' => 'C1', 'text' => 'price', 'from' => ['id' => 'U1']]);
+        $this->engine->handleComment($a, ['id' => 'C2', 'text' => 'price', 'from' => ['id' => 'U2']]);
+        InstagramFlowRun::where('comment_id', 'C2')->update(['created_at' => now()->subDays(8)]);
+        RateLimiter::clear("ig-dm:{$a->id}");
+
+        $this->engine->drainQueue($a);
+        $run = InstagramFlowRun::where('comment_id', 'C2')->first();
+        $this->assertSame('failed', $run->status);
+        $this->assertStringContainsString('7 days', $run->error);
     }
 }

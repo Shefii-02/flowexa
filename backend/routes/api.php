@@ -1308,6 +1308,8 @@ Route::prefix('v1')->group(function () {
             Route::get('accounts/{id}/insights',   [\App\Modules\Instagram\Http\Controllers\InstagramCommentController::class, 'insights']);
             Route::get('accounts/{id}/media/{mediaId}/comments', [\App\Modules\Instagram\Http\Controllers\InstagramCommentController::class, 'index']);
             Route::get('automations',              [\App\Modules\Instagram\Http\Controllers\InstagramAutomationController::class, 'index']);
+            Route::get('monitor',                  [\App\Modules\Instagram\Http\Controllers\InstagramMonitorController::class, 'index']);
+            Route::get('webhook-events',           [\App\Modules\Instagram\Http\Controllers\InstagramActivityController::class, 'index']);
             Route::get('autodm',                   [\App\Modules\Instagram\Http\Controllers\InstagramAutoDmController::class, 'index']);
             Route::get('autodm/stats',             [\App\Modules\Instagram\Http\Controllers\InstagramAutoDmController::class, 'stats']);
             Route::get('autodm/export',            [\App\Modules\Instagram\Http\Controllers\InstagramAutoDmController::class, 'export']);

@@ -26,6 +26,9 @@ class ProcessInstagramEvent implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
+    /** Short human note for the Activity view. */
+    public ?string $outcome = null;
+
     public int $tries = 3;
     public int $backoff = 20;
 
@@ -47,15 +50,43 @@ class ProcessInstagramEvent implements ShouldQueue
         InstagramAiAgent $ai,
         InstagramFlowEngine $flows,
     ): void {
+        $evt = $this->payload['_evt'] ?? null;
+        try {
+            $this->process($automations, $conversations, $ai, $flows);
+            $this->mark($evt, 'processed', $this->outcome);
+        } catch (\Throwable $e) {
+            $this->mark($evt, 'failed', mb_substr($e->getMessage(), 0, 250));
+            throw $e;
+        }
+    }
+
+    private function mark(?int $id, string $status, ?string $note): void
+    {
+        if ($id) {
+            \Illuminate\Support\Facades\DB::table('instagram_webhook_events')->where('id', $id)
+                ->update(['status' => $status, 'note' => $note, 'processed_at' => now(), 'updated_at' => now()]);
+        }
+    }
+
+    private function process(
+        InstagramAutomationEngine $automations,
+        InstagramConversationService $conversations,
+        InstagramAiAgent $ai,
+        InstagramFlowEngine $flows,
+    ): void {
         $account = InstagramAccount::find($this->accountId);
         if (!$account || !$account->is_active) {
+            $this->mark($this->payload['_evt'] ?? null, 'ignored', 'Account missing or inactive');
             return;
         }
 
         try {
             if ($this->kind === 'comment') {
-                if (!$flows->handleComment($account, $this->payload)) {
+                if ($flows->handleComment($account, $this->payload)) {
+                    $this->outcome = 'Matched an AutoDM flow (or already handled)';
+                } else {
                     $automations->handleComment($account, $this->payload);
+                    $this->outcome = 'No AutoDM matched this comment (keyword/post/own comment)';
                 }
                 return;
             }
@@ -78,6 +109,7 @@ class ProcessInstagramEvent implements ShouldQueue
                 $text = (string) ($p['title'] ?? '');
                 $convo = $conversations->recordInbound($account, (string) $p['sender_id'], $text, $p['mid'] ?? null, [], $p['username'] ?? null);
                 if ($flows->handlePostback($account, (string) $p['sender_id'], (string) $p['payload'])) {
+                    $this->outcome = 'Button tap resumed a flow';
                     return;
                 }
                 // Not one of ours (a plain quick reply) — treat it like the typed text.
@@ -95,6 +127,7 @@ class ProcessInstagramEvent implements ShouldQueue
             // A flow waiting on this person's reply, or a DM-keyword flow, takes precedence over everything else.
             $flows->noteReply($account, (string) $p['sender_id'], $text);
             if ($flows->handleReply($account, $convo, $text) || $flows->handleDm($account, $convo, $text, !empty($p['story_reply']))) {
+                $this->outcome = 'Handled by an AutoDM flow';
                 return;
             }
             // A thread a flow handed to a human stays with the human.
@@ -116,6 +149,7 @@ class ProcessInstagramEvent implements ShouldQueue
                 }
             }
 
+            $this->outcome = 'Passed to the AI agent / inbox';
             $ai->handle($account, $convo->fresh());
         } catch (\Throwable $e) {
             if (!empty($this->payload['mid'])) {

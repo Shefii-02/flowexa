@@ -5,6 +5,7 @@ import { getError } from '@/utils'
 import { instagramApi, type AutoDm, type AutoDmFollowup, type AutoDmMessage, type AutoDmWizard, type IgAccount, type IgMedia } from '../api/instagram'
 import { Avatar, CountInput, DEFAULT_COMMENT_REPLIES, DM_VARIABLES, InfoTip, KeywordInput, REPLY_TIPS, Segmented, Toggle, emptyWizard, needsStarter, triggerMeta } from './parts'
 import type { AutoDmTrigger } from '../api/instagram'
+import MediaPickerModal from '@/components/MediaPickerModal'
 
 type Step = 1 | 2 | 3 | 'starter' | 'review'
 const pill = 'rounded-full px-5 py-2 text-sm font-medium'
@@ -64,6 +65,7 @@ export default function AutoDmWizard({ account, trigger, existing, onClose, onSa
     if (s === 3) {
       const p = w.primary_message
       if (!p.text.trim() && !p.attachment?.url && !p.card?.title) return 'Write the primary DM.'
+      if (p.attachment?.url && !/^https:\/\//i.test(p.attachment.url)) return 'The attachment link must be a public https:// URL.'
       if (p.buttons.some(b => !b.title.trim() || !/^https?:\/\//i.test(b.url))) return 'Every button needs a label and a valid https:// link.'
       if (w.followups.some(f => !f.text.trim())) return 'Every follow-up needs a message.'
     }
@@ -313,25 +315,45 @@ function MessageEditor({ m, kind, onKind, onChange, lockKind }: {
   const insert = (t: string) => { onChange({ text: (m.text + ' ' + t).trim().slice(0, 1000) }); setMenu(false) }
   const setBtn = (i: number, p: Partial<{ title: string; url: string }>) => onChange({ buttons: m.buttons.map((b, j) => (j === i ? { ...b, ...p } : b)) })
   const attType = kind === 'voice' ? 'audio' : (m.attachment?.type ?? 'image')
+  const [picker, setPicker] = useState<null | 'attachment' | 'card'>(null)
+  const pickAccept = picker === 'card' ? 'image' : ({ image: 'image', video: 'video', audio: 'audio', file: 'document' } as const)[attType as 'image']
 
   return (
     <div className="space-y-3">
       {!lockKind && (
         <select value={kind} onChange={e => onKind(e.target.value as 'text')} className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm">
-          <option value="text">Text + Button</option><option value="media">Image / Video</option><option value="card">Card</option><option value="voice">Voice message</option>
+          <option value="text">Text + Button</option><option value="media">Image / Video / Audio / File</option><option value="card">Card</option><option value="voice">Voice message</option>
         </select>)}
       {(kind === 'media' || kind === 'voice') && (
-        <div className="flex gap-2">
-          {kind === 'media' && <select value={attType} onChange={e => onChange({ attachment: { type: e.target.value as 'image' | 'video', url: m.attachment?.url ?? '' } })}
-            className="rounded-xl border border-gray-200 px-2 text-sm"><option value="image">Image</option><option value="video">Video</option></select>}
-          <input value={m.attachment?.url ?? ''} onChange={e => onChange({ attachment: { type: attType as 'image', url: e.target.value } })}
-            placeholder="Public https:// URL of the file" className="flex-1 rounded-xl border border-gray-200 px-3 py-2 text-sm" />
+        <div className="space-y-2 rounded-xl border border-dashed border-gray-300 p-3">
+          {kind === 'media' && (
+            <select value={attType} aria-label="Attachment type"
+              onChange={e => onChange({ attachment: { type: e.target.value as 'image', url: '' } })}
+              className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm">
+              <option value="image">Image</option><option value="video">Video</option><option value="audio">Audio</option><option value="file">File / Document</option>
+            </select>)}
+          {m.attachment?.url && <AttachmentPreview type={attType} url={m.attachment.url} />}
+          <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={() => setPicker('attachment')} className="rounded-xl border border-gray-300 px-3 py-2 text-sm">
+              {m.attachment?.url ? 'Change' : 'Choose from Media Library / Upload'}</button>
+            {m.attachment?.url && <button type="button" onClick={() => onChange({ attachment: undefined })} className="rounded-xl px-3 py-2 text-sm text-red-600">Remove</button>}
+          </div>
+          <div>
+            <p className="mb-1 text-xs text-gray-500">Or use a custom URL (must be a public https:// link)</p>
+            <input value={m.attachment?.url ?? ''} onChange={e => onChange({ attachment: { type: attType as 'image', url: e.target.value.trim() } })}
+              placeholder="https://…" aria-invalid={!!m.attachment?.url && !/^https:\/\//i.test(m.attachment.url)}
+              className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm" />
+            {!!m.attachment?.url && !/^https:\/\//i.test(m.attachment.url) && <p className="mt-1 text-xs text-red-600">Instagram only accepts public https:// links.</p>}
+          </div>
         </div>)}
       {kind === 'card' && (<div className="space-y-2">
         <CountInput max={80} placeholder="Card title" value={m.card?.title ?? ''} onChange={v => onChange({ card: { subtitle: '', image_url: '', ...m.card, title: v } })} />
         <CountInput max={80} placeholder="Subtitle" value={m.card?.subtitle ?? ''} onChange={v => onChange({ card: { title: '', image_url: '', ...m.card, subtitle: v } })} />
-        <input value={m.card?.image_url ?? ''} onChange={e => onChange({ card: { title: '', subtitle: '', ...m.card, image_url: e.target.value } })}
-          placeholder="Image URL (https://)" className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm" />
+        <div className="flex gap-2">
+          <input value={m.card?.image_url ?? ''} onChange={e => onChange({ card: { title: '', subtitle: '', ...m.card, image_url: e.target.value.trim() } })}
+            placeholder="Image URL (https://) or choose from library" className="min-w-0 flex-1 rounded-xl border border-gray-200 px-3 py-2 text-sm" />
+          <button type="button" onClick={() => setPicker('card')} className="shrink-0 rounded-xl border border-gray-300 px-3 py-2 text-sm">Library / Upload</button>
+        </div>
       </div>)}
       {kind !== 'voice' && kind !== 'card' && (
         <div className="relative rounded-xl border border-dashed border-gray-300 p-3">
@@ -351,6 +373,13 @@ function MessageEditor({ m, kind, onKind, onChange, lockKind }: {
         </div>))}
       {kind !== 'voice' && m.buttons.length < 3 && (
         <button type="button" onClick={() => onChange({ buttons: [...m.buttons, { title: '', url: '' }] })} className="text-sm text-blue-600">+ Add another button</button>)}
+      <MediaPickerModal open={!!picker} onClose={() => setPicker(null)} accept={pickAccept}
+        title={picker === 'card' ? 'Pick a card image' : 'Pick a file from the Media Library'}
+        onSelect={url => {
+          if (picker === 'card') onChange({ card: { title: '', subtitle: '', ...m.card, image_url: url } })
+          else onChange({ attachment: { type: attType as 'image', url } })
+          setPicker(null)
+        }} />
     </div>
   )
 }
@@ -379,8 +408,16 @@ function StarterStep({ w, set }: { w: AutoDmWizard; set: (p: Partial<AutoDmWizar
       <h3 className="font-semibold text-gray-900">Conversation starter</h3>
       <p className="text-sm text-gray-600">Using variables and follow-up DMs require you to use a conversation starter DM.</p>
       <div className="space-y-3 rounded-xl border border-dashed border-gray-300 p-3">
-        <CountInput multiline max={640} value={w.starter_message.text} onChange={v => set({ starter_message: { ...w.starter_message, text: v } })} />
-        <Field label="Button label"><CountInput max={20} value={w.starter_message.button} onChange={v => set({ starter_message: { ...w.starter_message, button: v } })} /></Field>
+        <Field label="Message (text only)"><CountInput multiline max={640} value={w.starter_message.text} onChange={v => set({ starter_message: { ...w.starter_message, text: v } })} /></Field>
+        <Field label="Button text"><CountInput max={20} value={w.starter_message.button} onChange={v => set({ starter_message: { ...w.starter_message, button: v } })} /></Field>
+      </div>
+      <div className="rounded-xl bg-gray-50 p-3">
+        <p className="mb-2 text-xs font-medium text-gray-500">What they will see</p>
+        <div className="max-w-xs rounded-2xl bg-gray-100 p-3 text-sm text-gray-800">
+          <p className="whitespace-pre-wrap">{w.starter_message.text || '—'}</p>
+          <div className="mt-2 rounded-lg bg-white py-1.5 text-center text-xs font-medium text-blue-600 shadow-sm">{w.starter_message.button || 'Button'}</div>
+        </div>
+        <p className="mt-2 text-xs text-gray-500">When they tap the button, their tap shows in the chat as “{w.starter_message.button || 'Button'}” and your next message is sent.</p>
       </div>
       <button type="button" onClick={() => setOpen(!open)} className="text-sm text-gray-700">{open ? '▾' : '▸'} Why should I send a conversation starter DM?</button>
       {open && <div className="rounded-xl bg-amber-50 p-3 text-sm text-amber-900">Instagram lets a business send only <b>one</b> private reply to a comment, and further messages only after the person replies or taps a button. The tap on this button opens the 24-hour messaging window that your follow/email steps, variables and follow-ups need.</div>}
@@ -435,4 +472,11 @@ function ReviewStep({ w, set, account, name, setName }: { w: AutoDmWizard; set: 
       </div>
     </>
   )
+}
+
+function AttachmentPreview({ type, url }: { type: string; url: string }) {
+  if (type === 'image') return <img src={url} alt="Selected" className="max-h-40 rounded-lg object-contain" />
+  if (type === 'video') return <video src={url} controls className="max-h-40 rounded-lg" />
+  if (type === 'audio') return <audio src={url} controls className="w-full" />
+  return <a href={url} target="_blank" rel="noreferrer" className="block truncate rounded-lg bg-gray-50 px-3 py-2 text-xs text-blue-600">📎 {url.split('/').pop()}</a>
 }

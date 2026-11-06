@@ -4,7 +4,7 @@ import { Link } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { ConfirmModal } from '@/components/ui'
 import { getError } from '@/utils'
-import { instagramApi, type AutoDm, type AutoDmRun, type AutoDmStats, type IgAccount } from './api/instagram'
+import { instagramApi, type AutoDm, type AutoDmRun, type AutoDmStats, type IgAccount, type WebhookEvent, type MonitorData } from './api/instagram'
 import AutoDmWizard from './autodm/AutoDmWizard'
 import { Avatar, Sparkline, TRIGGERS, triggerMeta } from './autodm/parts'
 import type { AutoDmTrigger } from './api/instagram'
@@ -18,7 +18,7 @@ export default function InstagramAutoDmPage() {
   const [stats, setStats] = useState<AutoDmStats | null>(null)
   const [range, setRange] = useState('30d')
   const [loading, setLoading] = useState(true)
-  const [tab, setTab] = useState<'automations' | 'settings'>('automations')
+  const [tab, setTab] = useState<'automations' | 'monitor' | 'activity' | 'settings'>('automations')
   const [accountId, setAccountId] = useState<number | null>(null)
   const [picker, setPicker] = useState(false)
   const [wizard, setWizard] = useState<{ trigger: AutoDmTrigger; existing?: AutoDm | null } | null>(null)
@@ -86,9 +86,9 @@ export default function InstagramAutoDmPage() {
     <div className="space-y-5">
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex gap-1 rounded-full bg-gray-100 p-1">
-          {(['automations', 'settings'] as const).map(t => (
+          {(['automations', 'monitor', 'activity', 'settings'] as const).map(t => (
             <button key={t} onClick={() => setTab(t)} className={`rounded-full px-4 py-1.5 text-sm capitalize ${tab === t ? 'bg-white font-medium shadow' : 'text-gray-500'}`}>
-              {t === 'automations' ? `Automations (${list.filter(a => a.status !== 'draft').length})` : 'Settings'}</button>))}
+              {t === 'automations' ? `Automations (${list.filter(a => a.status !== 'draft').length})` : t === 'activity' ? 'Activity' : t === 'monitor' ? 'Monitor' : 'Settings'}</button>))}
         </div>
         <div className="flex-1" />
         <a href="mailto:support@teamzo.io?subject=AutoDM%20issue" className="rounded-full border border-gray-300 px-4 py-2 text-sm">Report an issue</a>
@@ -100,7 +100,7 @@ export default function InstagramAutoDmPage() {
       {limit && <div role="alert" className="flex items-center gap-2 rounded-xl border border-violet-300 bg-violet-50 p-3 text-sm text-violet-900">{limit}
         <Link to="/billing" className="font-semibold underline">Upgrade plan</Link><button className="ml-auto" onClick={() => setLimit(null)} aria-label="Dismiss">×</button></div>}
 
-      {tab === 'settings' ? (
+      {tab === 'monitor' ? <MonitorTab /> : tab === 'activity' ? <ActivityTab /> : tab === 'settings' ? (
         <div className="rounded-2xl border border-gray-200 bg-white p-5">
           <h2 className="mb-3 font-semibold text-gray-900">Instagram accounts</h2>
           <div className="divide-y divide-gray-100">
@@ -234,4 +234,154 @@ function RunsDrawer({ a, onClose }: { a: AutoDm; onClose: () => void }) {
             <li key={i} className="text-xs text-gray-700"><span className="text-gray-400">{new Date(m.created_at).toLocaleTimeString()} </span>{m.text}{m.status === 'failed' && <span className="text-red-600"> — {m.error}</span>}</li>))}</ol>
         </div>))}</div>
     </aside></div>)
+}
+
+const STATUS_STYLE: Record<string, string> = {
+  processed: 'bg-green-100 text-green-700', queued: 'bg-blue-100 text-blue-700',
+  ignored: 'bg-gray-100 text-gray-600', failed: 'bg-red-100 text-red-700',
+}
+const KIND_LABEL: Record<string, string> = {
+  comment: 'Comment', live_comment: 'Live comment', message: 'DM', story_reply: 'Story reply',
+  postback: 'Button tap', echo: 'Sent by you', referral: 'Referral link', other: 'Other',
+}
+
+/** Webhook deliveries Instagram sent us, with what happened to each. Auto-refreshes while open. */
+function ActivityTab() {
+  const [rows, setRows] = useState<WebhookEvent[]>([])
+  const [page, setPage] = useState(1)
+  const [last, setLast] = useState(1)
+  const [status, setStatus] = useState('')
+  const [open, setOpen] = useState<number | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  const load = useCallback(async () => {
+    try {
+      const r = await instagramApi.webhookEvents({ page, status: status || undefined })
+      setRows(r.data.data); setLast(r.data.last_page)
+    } catch (e) { toast.error(getError(e)) } finally { setLoading(false) }
+  }, [page, status])
+  useEffect(() => { void load(); const t = setInterval(() => void load(), 10000); return () => clearInterval(t) }, [load])
+
+  return (
+    <div className="rounded-2xl border border-gray-200 bg-white">
+      <div className="flex flex-wrap items-center gap-2 border-b border-gray-100 p-3">
+        <p className="flex-1 text-sm text-gray-600">Every event Instagram sent us (refreshes every 10s).</p>
+        <select value={status} onChange={e => { setStatus(e.target.value); setPage(1) }} aria-label="Filter by status" className="rounded-xl border border-gray-200 px-2 py-1.5 text-sm">
+          <option value="">All statuses</option><option value="processed">Processed</option><option value="ignored">Ignored</option><option value="failed">Failed</option><option value="queued">Queued</option>
+        </select>
+        <button onClick={() => void load()} className="rounded-xl border border-gray-200 px-3 py-1.5 text-sm">Refresh</button>
+      </div>
+      {loading ? <p className="p-6 text-sm text-gray-400">Loading…</p> : rows.length === 0 ? (
+        <p className="p-6 text-center text-sm text-gray-400">No events yet. Comment on a post or DM the account to see it here.</p>
+      ) : (
+        <ul className="divide-y divide-gray-50">
+          {rows.map(r => (
+            <li key={r.id} className="p-3 text-sm">
+              <button className="flex w-full items-start gap-3 text-left" onClick={() => setOpen(open === r.id ? null : r.id)} aria-expanded={open === r.id}>
+                <span className="w-32 shrink-0 text-xs text-gray-400">{new Date(r.created_at).toLocaleString()}</span>
+                <span className="w-24 shrink-0 font-medium text-gray-800">{KIND_LABEL[r.kind] ?? r.kind}</span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-gray-700">{r.from ? `${r.from}: ` : ''}{r.summary || <i className="text-gray-400">no text</i>}</span>
+                  {r.note && <span className="block truncate text-xs text-gray-500">{r.note}</span>}
+                </span>
+                <span className="hidden shrink-0 text-xs text-gray-400 sm:inline">{r.username ? `@${r.username}` : ''}</span>
+                <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs capitalize ${STATUS_STYLE[r.status] ?? ''}`}>{r.status}</span>
+              </button>
+              {open === r.id && <pre className="mt-2 max-h-64 overflow-auto rounded-lg bg-gray-50 p-3 text-xs text-gray-700">{JSON.stringify(r.payload, null, 2)}</pre>}
+            </li>))}
+        </ul>)}
+      {last > 1 && (
+        <div className="flex items-center justify-center gap-3 border-t border-gray-100 p-3 text-sm">
+          <button disabled={page <= 1} onClick={() => setPage(p => p - 1)} className="rounded-full border border-gray-300 px-3 py-1 disabled:opacity-40">Prev</button>
+          <span className="text-gray-500">{page} / {last}</span>
+          <button disabled={page >= last} onClick={() => setPage(p => p + 1)} className="rounded-full border border-gray-300 px-3 py-1 disabled:opacity-40">Next</button>
+        </div>)}
+    </div>
+  )
+}
+
+const fmtWait = (sec: number) => (sec >= 3600 ? `${Math.floor(sec / 3600)}h ${Math.floor((sec % 3600) / 60)}m` : sec >= 60 ? `${Math.floor(sec / 60)}m ${sec % 60}s` : `${sec}s`)
+
+function Bar({ value, max, tone }: { value: number; max: number; tone: string }) {
+  const pct = max > 0 ? Math.min(100, Math.round((value / max) * 100)) : 0
+  return <div className="h-2 w-full overflow-hidden rounded-full bg-gray-100" role="progressbar" aria-valuenow={value} aria-valuemax={max}><div className={`h-full ${tone}`} style={{ width: `${pct}%` }} /></div>
+}
+
+/** Live DM budget + FIFO queue per account, delivery analytics. Auto-refreshes every 15s. */
+function MonitorTab() {
+  const [range, setRange] = useState('7d')
+  const [d, setD] = useState<MonitorData | null>(null)
+  const [tick, setTick] = useState(0)
+  const load = useCallback(async () => {
+    try { setD((await instagramApi.monitor(range)).data) } catch (e) { toast.error(getError(e)) }
+  }, [range])
+  useEffect(() => { void load(); const t = setInterval(() => void load(), 15000); return () => clearInterval(t) }, [load])
+  useEffect(() => { const t = setInterval(() => setTick(x => x + 1), 1000); return () => clearInterval(t) }, [])
+  if (!d) return <p className="p-6 text-sm text-gray-400">Loading…</p>
+
+  const maxHour = Math.max(1, ...d.hourly.map(h => h.count))
+  const r = d.runs
+  return (
+    <div className="space-y-4">
+      {d.accounts.map(a => {
+        const full = a.remaining === 0
+        const left = Math.max(0, a.resets_in_seconds - (tick % 15))
+        return (
+          <section key={a.account_id} className="rounded-2xl border border-gray-200 bg-white p-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="font-semibold text-gray-900">@{a.username}</h3>
+              <span className={`rounded-full px-2 py-0.5 text-xs ${full ? 'bg-amber-100 text-amber-800' : 'bg-green-100 text-green-700'}`}>{full ? 'Hourly limit reached' : 'Sending normally'}</span>
+              {a.queued > 0 && <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs text-blue-700">{a.queued} waiting in queue</span>}
+            </div>
+            <div className="mt-3 grid gap-4 sm:grid-cols-2">
+              <div>
+                <p className="mb-1 flex justify-between text-xs text-gray-500"><span>DMs this hour</span><span>{a.used} / {a.hourly_cap}</span></p>
+                <Bar value={a.used} max={a.hourly_cap} tone={full ? 'bg-amber-500' : 'bg-green-500'} />
+                <p className="mt-1 text-xs text-gray-500">{a.used > 0 ? `Window resets in ${fmtWait(left)}` : 'No DMs sent in the current hour'}</p>
+              </div>
+              {d.monthly.cap !== null && <div>
+                <p className="mb-1 flex justify-between text-xs text-gray-500"><span>Plan DMs this month</span><span>{d.monthly.used} / {d.monthly.cap}</span></p>
+                <Bar value={d.monthly.used} max={d.monthly.cap} tone="bg-violet-500" />
+                <p className="mt-1 text-xs text-gray-500">At the limit, new AutoDMs stop until next month or an upgrade.</p>
+              </div>}
+            </div>
+            {a.queued > 0 && (
+              <div className="mt-4">
+                <p className="mb-1 text-sm font-medium text-gray-800">Queue — sent oldest first when the limit frees up</p>
+                <ol className="divide-y divide-gray-50 rounded-xl border border-gray-100 text-sm">
+                  {a.next_up.map(q => (
+                    <li key={q.run_id} className="flex items-center gap-3 p-2">
+                      <span className="w-6 text-center text-xs font-semibold text-gray-400">#{q.position}</span>
+                      <span className="min-w-0 flex-1"><span className="block truncate text-gray-800">@{q.username ?? 'unknown'} · <span className="text-gray-500">{q.text || '—'}</span></span>
+                        <span className="text-xs text-gray-400">{q.kind === 'comment' ? 'comment' : 'DM'} · queued {q.queued_at ? new Date(q.queued_at).toLocaleTimeString() : ''}</span></span>
+                      {q.expires_at && <span className="shrink-0 text-xs text-gray-400" title="Instagram allows a private reply only within 7 days of the comment">expires {new Date(q.expires_at).toLocaleDateString()}</span>}
+                    </li>))}
+                </ol>
+                {a.queued > a.next_up.length && <p className="mt-1 text-xs text-gray-400">…and {a.queued - a.next_up.length} more</p>}
+              </div>)}
+          </section>)
+      })}
+
+      <section className="rounded-2xl border border-gray-200 bg-white p-4">
+        <div className="mb-3 flex items-center gap-2"><h3 className="flex-1 font-semibold text-gray-900">Analytics</h3>
+          {['7d', '30d', '90d'].map(x => <button key={x} onClick={() => setRange(x)} className={`rounded-full px-3 py-1 text-sm ${range === x ? 'bg-black text-white' : 'border border-gray-200'}`}>{x}</button>)}</div>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {[['Runs', r.total], ['Completed', r.completed], ['Failed', r.failed], ['Waiting', r.waiting], ['Link clicks (runs)', r.clicked], ['Followers gained', r.followed], ['Leads', r.leads], ['Completion', r.completion_rate === null ? '–' : `${r.completion_rate}%`]].map(([k, v]) => (
+            <div key={String(k)} className="rounded-xl bg-gray-50 p-3"><p className="text-xs text-gray-500">{k}</p><p className="text-xl font-semibold text-gray-900">{v}</p></div>))}
+        </div>
+        <p className="mb-1 mt-4 text-xs font-medium text-gray-500">DMs sent per hour (last 24h)</p>
+        <div className="flex h-24 items-end gap-0.5" role="img" aria-label="DMs sent per hour over the last 24 hours">
+          {d.hourly.map(h => <div key={h.hour} title={`${h.hour.slice(11)} — ${h.count}`} className="flex-1 rounded-t bg-gray-800" style={{ height: `${Math.max(2, (h.count / maxHour) * 100)}%`, opacity: h.count ? 1 : 0.15 }} />)}
+        </div>
+        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+          <div><p className="mb-1 text-xs font-medium text-gray-500">Why runs failed</p>
+            {d.failure_reasons.length === 0 ? <p className="text-sm text-gray-400">No failures 🎉</p> : (
+              <ul className="space-y-1 text-sm">{d.failure_reasons.map(f => <li key={f.error} className="flex gap-2"><span className="w-8 shrink-0 font-semibold text-red-600">{f.n}×</span><span className="text-gray-700">{f.error}</span></li>)}</ul>)}</div>
+          <div><p className="mb-1 text-xs font-medium text-gray-500">Instagram webhooks received</p>
+            <ul className="space-y-1 text-sm">{Object.entries(d.webhooks).map(([k, v]) => <li key={k} className="flex justify-between"><span className="capitalize text-gray-700">{k}</span><span className="font-medium">{v}</span></li>)}
+              {Object.keys(d.webhooks).length === 0 && <li className="text-gray-400">None yet</li>}</ul></div>
+        </div>
+      </section>
+    </div>
+  )
 }

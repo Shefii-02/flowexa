@@ -144,6 +144,9 @@ class WizardCompiler
         $p = $w['primary_message'] ?? [];
         if (trim((string) ($p['text'] ?? '')) === '' && empty($p['attachment']['url']) && empty($p['card'])) $e[] = 'Write the primary DM.';
         if (mb_strlen((string) ($p['text'] ?? '')) > 1000) $e[] = 'The primary DM is limited to 1000 characters.';
+        if (!empty($p['attachment']['url']) && !str_starts_with((string) $p['attachment']['url'], 'https://')) {
+            $e[] = 'The attachment link must be a public https:// URL.';
+        }
         foreach (array_merge([$p], $w['followups'] ?? []) as $m) {
             if (count($m['buttons'] ?? []) > 3) { $e[] = 'A DM can have at most 3 buttons.'; break; }
             foreach ($m['buttons'] ?? [] as $b) {
