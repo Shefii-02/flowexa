@@ -45,7 +45,15 @@ class InstagramConnectController extends Controller
         $companyId = auth()->user()->company_id;
         $existing  = InstagramAccount::withTrashed()->where('ig_user_id', $p['ig_user_id'])->first();
         if ($existing && $existing->company_id !== $companyId) {
-            return response()->json(['message' => 'That Instagram account is already connected to another workspace.'], 409);
+            // Removed (soft-deleted) or disconnected in the other workspace: it no longer owns the account, so
+            // clear the leftover row (ig_user_id is unique) and let this workspace claim it. FK cascades drop its
+            // old conversations/flows. An actively connected account stays protected.
+            if ($existing->trashed() || $existing->status === 'disconnected' || !$existing->is_active) {
+                $existing->forceDelete();
+                $existing = null;
+            } else {
+                return response()->json(['message' => 'That Instagram account is already connected to another workspace. Disconnect it there first.'], 409);
+            }
         }
         if (!$existing || $existing->trashed()) {
             $limit = auth()->user()->company?->plan?->max_instagram_accounts;
