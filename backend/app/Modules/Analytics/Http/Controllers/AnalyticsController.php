@@ -38,6 +38,8 @@ class AnalyticsController extends Controller
         );
     }
 
+
+
     // GET /v1/analytics/staff
     public function staff(): JsonResponse
     {
