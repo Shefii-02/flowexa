@@ -488,7 +488,8 @@ class InstagramFlowEngine
         foreach ($buttons as $i => $b) {
             $title = mb_substr($b['title'], 0, 20);
             if (($b['type'] ?? 'postback') === 'url' && !empty($b['url'])) {
-                $url = str_replace('{{profile_url}}', 'https://instagram.com/' . ltrim((string) $run->ctx('username'), '@'), $b['url']);
+                // {{profile_url}} is the BUSINESS profile (the account being followed), not the commenter's own.
+                $url = str_replace('{{profile_url}}', 'https://www.instagram.com/' . ltrim((string) $account->username, '@') . '/', $b['url']);
                 $btnObjs[] = ['type' => 'web_url', 'title' => $title, 'url' => ($b['track'] ?? true) ? $this->trackedUrl($run, $url) : $url];
             } else {
                 $btnObjs[] = ['type' => 'postback', 'title' => $title, 'payload' => $this->payload($run, $i)];

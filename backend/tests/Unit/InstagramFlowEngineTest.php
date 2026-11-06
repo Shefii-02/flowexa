@@ -438,4 +438,26 @@ class InstagramFlowEngineTest extends TestCase
         $this->assertSame('sent', $msg->status);
         $this->assertTrue($sent['human_agent']);
     }
+
+    public function test_visit_profile_button_opens_the_business_profile_not_the_commenters(): void
+    {
+        $a = $this->account();   // @brand
+        InstagramFlow::create([
+            'company_id' => 1, 'instagram_account_id' => $a->id, 'name' => 'Follow', 'trigger_type' => 'dm', 'is_active' => true,
+            'nodes' => [
+                ['id' => 'n1', 'type' => 'trigger_dm', 'data' => ['keywords' => ['hi']]],
+                ['id' => 'n2', 'type' => 'send_dm', 'data' => ['text' => 'Follow us', 'buttons' => [
+                    ['type' => 'url', 'title' => 'Visit Profile', 'url' => '{{profile_url}}', 'track' => false],
+                    ['type' => 'postback', 'title' => 'I am following'],
+                ]]],
+            ],
+            'edges' => [['source' => 'n1', 'target' => 'n2']],
+        ]);
+        $convo = $this->conversations->recordInbound($a, 'U1', 'hi', null, [], 'customer_name');
+        $this->engine->handleDm($a, $convo, 'hi');
+
+        $buttons = $this->sent[0]['message']['attachment']['payload']['buttons'];
+        $this->assertSame('https://www.instagram.com/brand/', $buttons[0]['url']);
+        $this->assertStringNotContainsString('customer_name', $buttons[0]['url']);
+    }
 }
