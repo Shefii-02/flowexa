@@ -122,9 +122,9 @@ class InstagramConversationService
         ?string $error,
         ?array $attachments = null,
     ): InstagramMessage {
-        $msg = InstagramMessage::create([
+        $row = [
             'instagram_conversation_id' => $convo->id,
-            'ig_message_id' => $igMessageId,
+            'ig_message_id' => $igMessageId !== null ? mb_substr($igMessageId, 0, 255) : null,
             'direction'     => 'out',
             'source'        => $source,
             'text'          => $text,
@@ -132,7 +132,15 @@ class InstagramConversationService
             'status'        => $status,
             'error'         => $error,
             'sent_at'       => $status === 'sent' ? now() : null,
-        ]);
+        ];
+        try {
+            $msg = InstagramMessage::create($row);
+        } catch (\Illuminate\Database\QueryException $e) {
+            // The DM already went out; a bookkeeping failure (e.g. an id that doesn't fit the column) must
+            // not turn into a failed run or a resend. Keep the record, drop the id.
+            \Illuminate\Support\Facades\Log::warning('Instagram message copy could not be stored with its id: ' . $e->getMessage());
+            $msg = InstagramMessage::create(['ig_message_id' => null] + $row);
+        }
 
         if ($status === 'sent') {
             $convo->update([
