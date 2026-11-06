@@ -77,13 +77,19 @@ class InstagramConversationService
     {
         $account = $convo->account;
 
-        if (!$humanAgent && !$convo->withinMessagingWindow()) {
+        // Inside the 24h window a normal message is enough. Past it, only a staff reply may use the
+        // HUMAN_AGENT tag (up to 7 days) — and only once Meta has approved that feature for the app.
+        $withinWindow = $convo->withinMessagingWindow();
+        $useTag = $humanAgent && !$withinWindow && config('services.instagram.human_agent_enabled');
+        if (!$withinWindow && !$useTag) {
             Log::info('InstagramConversationService: outside 24h window, not sending', ['conversation' => $convo->id]);
-            return $this->storeOutbound($convo, $text, $source, null, 'failed', 'Outside the 24-hour messaging window');
+            return $this->storeOutbound($convo, $text, $source, null, 'failed', $humanAgent
+                ? 'Outside the 24-hour messaging window. Replies after 24 hours need Meta\'s "Human Agent" approval, which isn\'t enabled for this app yet.'
+                : 'Outside the 24-hour messaging window');
         }
 
         try {
-            $res = $this->client->sendDm($account, $convo->participant_id, $text, $humanAgent);
+            $res = $this->client->sendDm($account, $convo->participant_id, $text, $useTag);
             $msg = $this->storeOutbound($convo, $text, $source, $res['message_id'] ?? null, 'sent', null);
             $convo->update(['status' => 'open']);
             return $msg;

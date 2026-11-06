@@ -31,7 +31,7 @@ class WizardCompiler
             'keywords'            => ($w['keyword_mode'] ?? 'specific') === 'any' ? [] : array_values($w['include_keywords'] ?? []),
             'exclude_keywords'    => array_values($w['exclude_keywords'] ?? []),
             'match_type'          => 'any',
-            'reply_once_per_user' => true,
+            'dedupe'              => in_array($w['repeat_policy'] ?? '', ['once_per_post', 'once_per_24h', 'once_per_flow', 'always'], true) ? $w['repeat_policy'] : 'once_per_post',
         ]), 'next']];
 
         if ($isComment && !empty($w['comment_reply_enabled'])) {

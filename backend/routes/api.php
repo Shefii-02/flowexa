@@ -1302,7 +1302,7 @@ Route::prefix('v1')->group(function () {
             Route::get('accounts',                 [\App\Modules\Instagram\Http\Controllers\InstagramAccountController::class, 'index']);
             Route::get('connect-url',              [\App\Modules\Instagram\Http\Controllers\InstagramConnectController::class, 'connectUrl'])->middleware('permission:instagram.manage');
             Route::post('callback',                [\App\Modules\Instagram\Http\Controllers\InstagramConnectController::class, 'callback'])->middleware('permission:instagram.manage');
-            Route::post('accounts/<built-in function id>/disconnect',[\App\Modules\Instagram\Http\Controllers\InstagramConnectController::class, 'disconnect'])->middleware('permission:instagram.manage');
+            Route::post('accounts/{id}/disconnect',[\App\Modules\Instagram\Http\Controllers\InstagramConnectController::class, 'disconnect'])->middleware('permission:instagram.manage');
             Route::get('accounts/{id}/media',      [\App\Modules\Instagram\Http\Controllers\InstagramAccountController::class, 'media']);
             Route::get('accounts/{id}/conversion-events', [\App\Modules\Instagram\Http\Controllers\InstagramAccountController::class, 'conversionEvents']);
             Route::get('accounts/{id}/insights',   [\App\Modules\Instagram\Http\Controllers\InstagramCommentController::class, 'insights']);
@@ -1314,8 +1314,8 @@ Route::prefix('v1')->group(function () {
             Route::get('autodm/stats',             [\App\Modules\Instagram\Http\Controllers\InstagramAutoDmController::class, 'stats']);
             Route::get('autodm/export',            [\App\Modules\Instagram\Http\Controllers\InstagramAutoDmController::class, 'export']);
             Route::get('autodm/link-sources',      [\App\Modules\Instagram\Http\Controllers\InstagramAutoDmController::class, 'linkSources']);
-            Route::get('autodm/<built-in function id>',              [\App\Modules\Instagram\Http\Controllers\InstagramAutoDmController::class, 'show'])->whereNumber('id');
-            Route::get('autodm/<built-in function id>/runs',         [\App\Modules\Instagram\Http\Controllers\InstagramAutoDmController::class, 'runs']);
+            Route::get('autodm/{id}',              [\App\Modules\Instagram\Http\Controllers\InstagramAutoDmController::class, 'show'])->whereNumber('id');
+            Route::get('autodm/{id}/runs',         [\App\Modules\Instagram\Http\Controllers\InstagramAutoDmController::class, 'runs']);
             Route::get('flows',                    [\App\Modules\Instagram\Http\Controllers\InstagramFlowController::class, 'index']);
             Route::get('flows/{id}',               [\App\Modules\Instagram\Http\Controllers\InstagramFlowController::class, 'show']);
             Route::get('flows/{id}/runs',          [\App\Modules\Instagram\Http\Controllers\InstagramFlowController::class, 'runs']);

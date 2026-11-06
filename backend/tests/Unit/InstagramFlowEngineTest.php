@@ -24,6 +24,8 @@ class InstagramFlowEngineTest extends TestCase
     /** @var array<int,array> every message handed to Graph */
     private array $sent = [];
     private bool $userFollows = false;
+    /** @var string[] comment ids Instagram reports as deleted */
+    private array $deletedComments = [];
 
     protected function setUp(): void
     {
@@ -70,9 +72,15 @@ class InstagramFlowEngineTest extends TestCase
 
         $this->client = Mockery::mock(InstagramClient::class)->makePartial();
         $this->client->shouldReceive('replyToComment')->andReturn([]);
-        $this->client->shouldReceive('sendMessage')->andReturnUsing(function ($acc, $recipient, $message) {
-            $this->sent[] = ['recipient' => $recipient, 'message' => $message];
+        $this->client->shouldReceive('sendMessage')->andReturnUsing(function ($acc, $recipient, $message, $humanAgent = false) {
+            $this->sent[] = ['recipient' => $recipient, 'message' => $message, 'human_agent' => $humanAgent];
             return ['message_id' => 'm' . count($this->sent)];
+        });
+        $this->client->shouldReceive('getComment')->andReturnUsing(function ($acc, $id) {
+            if (in_array($id, $this->deletedComments, true)) {
+                throw new \App\Modules\MetaAds\Services\MetaApiException('Object with ID does not exist', 100, 33, null, 400);
+            }
+            return ['id' => $id, 'media' => ['id' => 'M1', 'timestamp' => now()->subDay()->toIso8601String()]];
         });
         $this->client->shouldReceive('userProfile')->andReturnUsing(fn () => ['is_user_follow_business' => $this->userFollows]);
 
@@ -304,5 +312,130 @@ class InstagramFlowEngineTest extends TestCase
         $run = InstagramFlowRun::where('comment_id', 'C2')->first();
         $this->assertSame('failed', $run->status);
         $this->assertStringContainsString('7 days', $run->error);
+    }
+
+    private function commentFlow(InstagramAccount $a, string $dedupe): void
+    {
+        InstagramFlow::create([
+            'company_id' => 1, 'instagram_account_id' => $a->id, 'name' => 'Dedupe', 'trigger_type' => 'comment', 'is_active' => true,
+            'nodes' => [
+                ['id' => 'n1', 'type' => 'trigger_comment', 'data' => ['keywords' => ['link'], 'dedupe' => $dedupe]],
+                ['id' => 'n2', 'type' => 'public_reply', 'data' => ['texts' => ['Sent!']]],
+                ['id' => 'n3', 'type' => 'private_reply', 'data' => ['text' => 'Here you go']],
+            ],
+            'edges' => [['source' => 'n1', 'target' => 'n2'], ['source' => 'n2', 'target' => 'n3']],
+        ]);
+    }
+
+    private function comment(InstagramAccount $a, string $id, string $media = 'M1', string $user = 'U1'): void
+    {
+        $this->engine->handleComment($a, ['id' => $id, 'text' => 'link', 'from' => ['id' => $user, 'username' => 'bob'], 'media' => ['id' => $media]]);
+    }
+
+    public function test_same_person_commenting_again_on_the_same_post_is_answered_only_once(): void
+    {
+        $a = $this->account();
+        $this->commentFlow($a, 'once_per_post');
+        $this->comment($a, 'C1'); $this->comment($a, 'C2'); $this->comment($a, 'C3');
+        $this->assertSame(1, InstagramFlowRun::count());
+        $this->assertCount(1, $this->sent);   // one DM, not three
+        $this->assertSame(2, \App\Models\InstagramCommentEvent::where('action', 'skipped_duplicate')->count());
+        $this->assertStringContainsString('already answered', (string) $this->engine->lastNote);
+    }
+
+    public function test_once_per_post_still_answers_the_same_person_on_a_different_post(): void
+    {
+        $a = $this->account();
+        $this->commentFlow($a, 'once_per_post');
+        $this->comment($a, 'C1', 'M1'); $this->comment($a, 'C2', 'M2');
+        $this->assertSame(2, InstagramFlowRun::count());
+    }
+
+    public function test_once_per_24h_allows_a_repeat_the_next_day_and_always_allows_every_comment(): void
+    {
+        $a = $this->account();
+        $this->commentFlow($a, 'once_per_24h');
+        $this->comment($a, 'C1');
+        InstagramFlowRun::query()->update(['created_at' => now()->subDays(2)]);
+        $this->comment($a, 'C2');
+        $this->assertSame(2, InstagramFlowRun::count());
+        $this->comment($a, 'C3');   // within 24h of C2 → skipped
+        $this->assertSame(2, InstagramFlowRun::count());
+
+        InstagramFlow::query()->delete();
+        $this->commentFlow($a, 'always');
+        $this->comment($a, 'C4'); $this->comment($a, 'C5');
+        $this->assertSame(4, InstagramFlowRun::count());
+    }
+
+    public function test_a_claim_in_progress_blocks_a_concurrent_duplicate(): void
+    {
+        $a = $this->account();
+        $this->commentFlow($a, 'once_per_post');
+        $flowId = InstagramFlow::value('id');
+        $lock = \Illuminate\Support\Facades\Cache::lock("ig-claim:{$flowId}:U1:M1", 30);
+        $this->assertTrue($lock->get());                 // worker A is mid-way
+        $this->comment($a, 'C1');                        // worker B must not start a second run
+        $this->assertSame(0, InstagramFlowRun::count());
+        $lock->release();
+    }
+
+    public function test_deleting_and_reposting_the_comment_sends_the_dm_again(): void
+    {
+        $a = $this->account();
+        $this->commentFlow($a, 'once_per_post');
+        $this->comment($a, 'C1');
+        $this->assertCount(1, $this->sent);
+
+        $this->comment($a, 'C2');                      // still there → just a repeat
+        $this->assertCount(1, $this->sent);
+
+        $this->deletedComments = ['C1'];               // they deleted C1 (DM never arrived) and posted again
+        $this->comment($a, 'C3');
+        $this->assertCount(2, $this->sent);
+        $this->assertSame(2, InstagramFlowRun::count());
+        $this->assertStringContainsString('deleted and re-posted', (string) $this->engine->lastNote);
+    }
+
+    public function test_a_run_that_never_delivered_does_not_block_a_retry(): void
+    {
+        $a = $this->account();
+        $this->commentFlow($a, 'once_per_post');
+        $this->comment($a, 'C1');
+        InstagramFlowRun::query()->update(['status' => 'failed', 'context' => json_encode(['media_id' => 'M1'])]);   // DM never went out
+        $this->comment($a, 'C2');
+        $this->assertSame(2, InstagramFlowRun::count());
+    }
+
+    private function staffReply(bool $inWindow, bool $approved): array
+    {
+        config(['services.instagram.human_agent_enabled' => $approved]);
+        $a = $this->account();
+        $convo = $this->conversations->thread($a, 'U1', 'bob');
+        $convo->update(['last_inbound_at' => $inWindow ? now()->subHour() : now()->subDays(3)]);
+        $msg = $this->conversations->send($convo->fresh(), 'Hello from staff', 'manual', humanAgent: true);
+        return [$msg, end($this->sent) ?: null];
+    }
+
+    public function test_staff_reply_inside_24h_is_a_plain_message_without_the_human_agent_tag(): void
+    {
+        [$msg, $sent] = $this->staffReply(inWindow: true, approved: false);
+        $this->assertSame('sent', $msg->status);
+        $this->assertFalse($sent['human_agent']);
+    }
+
+    public function test_staff_reply_after_24h_is_blocked_with_a_clear_message_until_meta_approves_human_agent(): void
+    {
+        [$msg, $sent] = $this->staffReply(inWindow: false, approved: false);
+        $this->assertSame('failed', $msg->status);
+        $this->assertStringContainsString('Human Agent', $msg->error);
+        $this->assertNull($sent);   // nothing was sent to Meta
+    }
+
+    public function test_staff_reply_after_24h_uses_the_tag_once_the_feature_is_approved(): void
+    {
+        [$msg, $sent] = $this->staffReply(inWindow: false, approved: true);
+        $this->assertSame('sent', $msg->status);
+        $this->assertTrue($sent['human_agent']);
     }
 }

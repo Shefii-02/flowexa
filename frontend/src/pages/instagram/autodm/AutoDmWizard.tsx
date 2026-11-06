@@ -208,6 +208,23 @@ function WhatStep({ w, set, isComment, showExclude, setShowExclude }: {
         <KeywordInput values={w.exclude_keywords} onChange={v => set({ exclude_keywords: v })} placeholder="Excluded keyword" /></div>)}
 
       {isComment && (
+        <div className="rounded-xl border border-gray-200 p-4">
+          <div className="mb-1 flex items-center justify-between text-sm font-medium text-gray-800">
+            If the same person comments again
+            <InfoTip tip="Stops duplicate replies and DMs when someone comments several times. If the earlier comment was deleted (for example because the DM never arrived) and they post again, we send again." label="About repeat comments" />
+          </div>
+          <select value={w.repeat_policy ?? 'once_per_post'} onChange={e => set({ repeat_policy: e.target.value as AutoDmWizard['repeat_policy'] })}
+            className="w-full rounded-xl border border-gray-200 px-3 py-2 text-sm">
+            <option value="once_per_post">Reply once per post (recommended)</option>
+            <option value="once_per_24h">Reply again after 24 hours</option>
+            <option value="once_per_flow">Reply only once, ever</option>
+            <option value="always">Reply to every comment</option>
+          </select>
+          <p className="mt-1 text-xs text-gray-500">Deleted the comment because the DM didn’t arrive? Posting it again sends the DM again.</p>
+        </div>
+      )}
+
+      {isComment && (
         <div className="space-y-3 rounded-xl border border-gray-200 p-4">
           <label className="flex items-center gap-2 text-sm text-gray-800">
             <input type="checkbox" checked={w.comment_reply_enabled} onChange={e => {

@@ -29,6 +29,9 @@ use Illuminate\Support\Facades\RateLimiter;
 class InstagramFlowEngine
 {
     private const MAX_STEPS = 40;
+
+    /** Why the last handled event was skipped/started — shown in the Activity view. */
+    public ?string $lastNote = null;
     /** Meta allows roughly 200 automated DMs per hour per account. */
     public const HOURLY_DM_LIMIT = 200;   // fallback; services.instagram.dm_hourly_cap wins
 
@@ -79,15 +82,26 @@ class InstagramFlowEngine
             'comment_text' => mb_substr($text, 0, 1000), 'action' => 'flow',
         ]);
 
-        if (($flow->triggerNode()['data']['reply_once_per_user'] ?? true)
-            && $flow->runs()->where('igsid', $fromId)->exists()) {
+        // One claim per (flow, person, post): two webhook jobs for the same person can run on different
+        // workers at once, so the "already replied?" check + start must not interleave.
+        $lock = \Illuminate\Support\Facades\Cache::lock("ig-claim:{$flow->id}:{$fromId}:" . ($mediaId ?? 'none'), 30);
+        if (!$lock->get()) {
             $event->update(['action' => 'skipped_duplicate']);
+            $this->lastNote = 'Skipped: another comment from this person on this post is being handled';
             return true;
         }
-
-        $this->start($flow, $account, (string) $fromId, $username, [
-            'comment_id' => $commentId, 'media_id' => $mediaId, 'trigger_text' => $text,
-        ]);
+        try {
+            if ($this->isRepeat($account, $flow, (string) $fromId, $mediaId)) {
+                $event->update(['action' => 'skipped_duplicate']);
+                $this->lastNote = 'Skipped: this person was already answered (' . $this->dedupePolicy($flow) . ')';
+                return true;
+            }
+            $this->start($flow, $account, (string) $fromId, $username, [
+                'comment_id' => $commentId, 'media_id' => $mediaId, 'trigger_text' => $text,
+            ]);
+        } finally {
+            $lock->release();
+        }
         return true;
     }
 
@@ -179,6 +193,62 @@ class InstagramFlowEngine
             $flow->update(['nodes' => $nodes]);
         }
         return $flow;
+    }
+
+    /**
+     * once_per_post (default for wizard flows): the same person is answered once per post.
+     * once_per_24h: same, but they can trigger it again after 24 hours.
+     * once_per_flow: once ever per flow (older flows' `reply_once_per_user`). always: every comment.
+     */
+    private function dedupePolicy(InstagramFlow $flow): string
+    {
+        $d = $flow->triggerNode()['data'] ?? [];
+        return $d['dedupe'] ?? (($d['reply_once_per_user'] ?? true) ? 'once_per_flow' : 'always');
+    }
+
+    private function isRepeat(InstagramAccount $account, InstagramFlow $flow, string $igsid, ?string $mediaId): bool
+    {
+        $policy = $this->dedupePolicy($flow);
+        if ($policy === 'always') {
+            return false;
+        }
+        $q = $flow->runs()->where('igsid', $igsid)
+            // A run that failed before sending anything must not lock the person out for good.
+            ->where(fn ($q) => $q->where('status', '!=', 'failed')->orWhere('context->private_reply_sent', true));
+        if ($policy !== 'once_per_flow' && $mediaId !== null) {
+            $q->where('context->media_id', $mediaId);
+            if ($policy === 'once_per_24h') {
+                $q->where('created_at', '>=', now()->subDay());
+            }
+        }
+        $prior = $q->latest('id')->first();
+        if (!$prior) {
+            return false;
+        }
+
+        // "I didn't get the DM, so I deleted my comment and posted it again": if the comment that started
+        // the earlier run no longer exists, treat the new comment as a fresh request and send again.
+        if ($prior->comment_id && $this->commentGone($account, $prior->comment_id)) {
+            if ($prior->status === 'waiting') {
+                $this->finish($prior, 'failed', 'Superseded: the comment was deleted and posted again.');   // stale buttons/timers go inert
+            }
+            $this->lastNote = 'Resent: the earlier comment was deleted and re-posted';
+            return false;
+        }
+        return true;
+    }
+
+    /** True only when Instagram says the comment does not exist; any other error counts as "still there". */
+    private function commentGone(InstagramAccount $account, string $commentId): bool
+    {
+        try {
+            $this->client->getComment($account, $commentId);
+            return false;
+        } catch (MetaApiException $e) {
+            return $e->metaCode === 100 || $e->httpStatus === 404 || str_contains(mb_strtolower($e->getMessage()), 'does not exist');
+        } catch (\Throwable) {
+            return false;
+        }
     }
 
     /** Remember what a person typed while a run is parked on a delay — drives the "no response" follow-up condition. */

@@ -46,7 +46,7 @@ class InstagramInboxController extends Controller
         $text = (string) $request->validate(['text' => ['required', 'string', 'max:900']])['text'];
         $convo = $this->find($id);
 
-        // A human reply carries the HUMAN_AGENT tag → allowed for up to 7 days.
+        // Staff reply: plain message inside 24h; HUMAN_AGENT tag (7 days) only when Meta has approved it.
         $msg = $this->conversations->send($convo, $text, 'manual', humanAgent: true);
 
         if ($msg && $msg->status === 'failed') {

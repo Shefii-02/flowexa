@@ -14,6 +14,7 @@ export const emptyWizard = (trigger: AutoDmTrigger): AutoDmWizard => ({
   trigger_type: trigger,
   media_scope: 'specific', media_ids: [],
   keyword_mode: 'specific', include_keywords: [], exclude_keywords: [],
+  repeat_policy: 'once_per_post',
   comment_reply_enabled: false, comment_replies: ['', '', ''],
   follow_gate: { enabled: false, opening: 'Follow us first, then tap "I\'m following" 👇', visit_label: 'Visit Profile', confirm_label: 'I\'m following ✅', retry_message: 'Hmm, I can\'t see the follow yet. Follow and tap again 🙏', fail_action: 'send' },
   email_gate: { enabled: false, opening: 'What\'s your email? Reply here 📩', retry_message: 'That doesn\'t look like a valid email. Please try again.', fail_action: 'send' },

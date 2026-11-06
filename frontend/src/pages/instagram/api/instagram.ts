@@ -248,6 +248,7 @@ export interface AutoDmWizard {
   keyword_mode: 'specific' | 'any'
   include_keywords: string[]
   exclude_keywords: string[]
+  repeat_policy?: 'once_per_post' | 'once_per_24h' | 'once_per_flow' | 'always'
   comment_reply_enabled: boolean
   comment_replies: string[]
   follow_gate: { enabled: boolean; opening: string; visit_label: string; confirm_label: string; retry_message: string; fail_action: 'send' | 'stop' }

@@ -120,6 +120,9 @@ return [
         'app_id'               => env('IG_APP_ID', '3017013418646493'),
         'redirect_uri'         => env('IG_REDIRECT_URI', 'https://teamzo.io/instagram/accounts'),
         'ig_graph_version'     => env('IG_GRAPH_VERSION', 'v25.0'),
+        // Set true only after Meta approves the "Human Agent" feature for the app (App Review). Until then,
+        // replies outside the 24-hour window are blocked instead of being sent with the HUMAN_AGENT tag.
+        'human_agent_enabled'  => (bool) env('IG_HUMAN_AGENT_ENABLED', false),
         'dm_hourly_cap'        => (int) env('IG_DM_HOURLY_CAP', 190),
         'scopes'               => 'instagram_business_basic,instagram_business_manage_messages,instagram_business_manage_comments',
         'subscribed_fields'    => 'comments,live_comments,messages,messaging_postbacks,messaging_seen,messaging_referral,message_reactions,message_edit',

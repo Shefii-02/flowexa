@@ -83,7 +83,7 @@ class ProcessInstagramEvent implements ShouldQueue
         try {
             if ($this->kind === 'comment') {
                 if ($flows->handleComment($account, $this->payload)) {
-                    $this->outcome = 'Matched an AutoDM flow (or already handled)';
+                    $this->outcome = $flows->lastNote ?? 'Matched an AutoDM flow (or already handled)';
                 } else {
                     $automations->handleComment($account, $this->payload);
                     $this->outcome = 'No AutoDM matched this comment (keyword/post/own comment)';
