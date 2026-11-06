@@ -30,7 +30,13 @@ class InstagramWebhookController extends Controller
     public function handle(Request $request): mixed
     {
         if (!$this->signatureValid($request)) {
-            Log::warning('InstagramWebhookController: bad signature');
+            // Context only (no secrets/bodies): tells Meta's retries apart from scanners hitting the URL.
+            Log::warning('InstagramWebhookController: bad signature', [
+                'has_signature' => $request->hasHeader('X-Hub-Signature-256'),
+                'bytes'         => strlen($request->getContent()),
+                'ua'            => mb_substr((string) $request->userAgent(), 0, 60),
+                'ip'            => $request->ip(),
+            ]);
             return response('invalid signature', 403);
         }
 
@@ -175,15 +181,24 @@ class InstagramWebhookController extends Controller
 
     private function signatureValid(Request $request): bool
     {
-        $secret = config('services.instagram.app_secret');
-        if (!$secret) {
+        $secrets = array_values(array_unique(array_filter(array_merge(
+            [config('services.instagram.app_secret')],
+            (array) config('services.instagram.app_secrets', []),
+        ))));
+        if (!$secrets) {
             // No secret = can't verify. Only tolerated outside production (local testing).
             return !app()->environment('production');
         }
-        $header = $request->header('X-Hub-Signature-256', '');
+        $header = (string) $request->header('X-Hub-Signature-256', '');
         if (!str_starts_with($header, 'sha256=')) {
             return false;
         }
-        return hash_equals('sha256=' . hash_hmac('sha256', $request->getContent(), $secret), $header);
+        $body = $request->getContent();
+        foreach ($secrets as $secret) {
+            if (hash_equals('sha256=' . hash_hmac('sha256', $body, (string) $secret), $header)) {
+                return true;
+            }
+        }
+        return false;
     }
 }

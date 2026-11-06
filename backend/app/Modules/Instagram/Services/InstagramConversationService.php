@@ -48,15 +48,22 @@ class InstagramConversationService
             return $convo;
         }
 
-        InstagramMessage::create([
+        $row = [
             'instagram_conversation_id' => $convo->id,
-            'ig_message_id' => $igMessageId,
+            'ig_message_id' => $igMessageId !== null ? mb_substr($igMessageId, 0, 255) : null,
             'direction'     => 'in',
             'source'        => 'inbound',
             'text'          => $text,
             'attachments'   => $attachments ?: null,
             'sent_at'       => now(),
-        ]);
+        ];
+        try {
+            InstagramMessage::create($row);
+        } catch (\Illuminate\Database\QueryException $e) {
+            // A bookkeeping problem (e.g. an id that doesn't fit) must not drop the customer's message or the automation.
+            \Illuminate\Support\Facades\Log::warning('Instagram inbound message stored without its id: ' . $e->getMessage());
+            InstagramMessage::create(['ig_message_id' => null] + $row);
+        }
 
         $convo->forceFill([
             'last_message_preview' => mb_substr($text ?: '[attachment]', 0, 140),

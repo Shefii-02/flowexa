@@ -84,4 +84,17 @@ class InstagramWebhookStoreTest extends TestCase
         $this->assertSame('echo', DB::table('instagram_webhook_events')->value('kind'));
         Queue::assertPushed(ProcessInstagramEvent::class, fn ($j) => $j->kind === 'echo');
     }
+
+    #[Test]
+    public function a_delivery_signed_with_the_other_app_secret_is_accepted(): void
+    {
+        config(['services.instagram.app_secrets' => ['sek', 'meta-app-secret']]);
+        $body = ['entry' => [['id' => 'IG1', 'changes' => [['field' => 'comments', 'value' => ['id' => 'c9', 'text' => 'x', 'from' => ['id' => 'U1']]]]]]];
+        $raw = json_encode($body);
+        $this->call('POST', '/api/v1/instagram/webhook', [], [], [], [
+            'CONTENT_TYPE' => 'application/json',
+            'HTTP_X_HUB_SIGNATURE_256' => 'sha256=' . hash_hmac('sha256', $raw, 'meta-app-secret'),
+        ], $raw)->assertOk();
+        $this->assertSame(1, DB::table('instagram_webhook_events')->count());
+    }
 }

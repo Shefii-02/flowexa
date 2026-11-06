@@ -116,6 +116,12 @@ return [
         // App secret for X-Hub-Signature-256 validation (falls back to the meta_ads one).
         'app_secret'           => env('IG_APP_SECRET', env('INSTAGRAM_APP_SECRET', env('META_ADS_APP_SECRET'))),
 
+        // Every app secret a webhook may legitimately be signed with: the Instagram app's secret (Instagram Login
+        // deliveries) and the main Meta app's secret (Page/Facebook-routed deliveries). Both are ours.
+        'app_secrets'          => array_values(array_unique(array_filter([
+            env('IG_APP_SECRET'), env('INSTAGRAM_APP_SECRET'), env('META_ADS_APP_SECRET'), env('META_APP_SECRET'),
+        ]))),
+
         // "Instagram API with Instagram Login" (Business Login) — the AutoDM connect flow.
         'app_id'               => env('IG_APP_ID', '3017013418646493'),
         'redirect_uri'         => env('IG_REDIRECT_URI', 'https://teamzo.io/instagram/accounts'),
