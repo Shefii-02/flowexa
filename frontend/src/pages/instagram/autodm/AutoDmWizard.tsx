@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
 import { getError } from '@/utils'
 import { instagramApi, type AutoDm, type AutoDmFollowup, type AutoDmMessage, type AutoDmWizard, type IgAccount, type IgMedia } from '../api/instagram'
-import { Avatar, CountInput, DM_VARIABLES, KeywordInput, Segmented, Toggle, emptyWizard, needsStarter, triggerMeta } from './parts'
+import { Avatar, CountInput, DEFAULT_COMMENT_REPLIES, DM_VARIABLES, InfoTip, KeywordInput, REPLY_TIPS, Segmented, Toggle, emptyWizard, needsStarter, triggerMeta } from './parts'
 import type { AutoDmTrigger } from '../api/instagram'
 
 type Step = 1 | 2 | 3 | 'starter' | 'review'
@@ -30,6 +30,28 @@ export default function AutoDmWizard({ account, trigger, existing, onClose, onSa
   const order: Step[] = useMemo(() => [...(hasWhere ? [1 as Step] : []), 2, 3, ...(starter ? ['starter' as Step] : []), 'review'], [hasWhere, starter])
   const [step, setStep] = useState<Step>(hasWhere ? 1 : 2)
   const idx = order.indexOf(step)
+
+  // ── confirm before leaving ──
+  const [confirmLeave, setConfirmLeave] = useState(false)
+  const askLeave = () => setConfirmLeave(true)
+  const closeRef = useRef(onClose)
+  closeRef.current = onClose
+  useEffect(() => {
+    // Browser back: keep the user on the page and ask first.
+    window.history.pushState({ autodmWizard: true }, '')
+    const onPop = () => { window.history.pushState({ autodmWizard: true }, ''); setConfirmLeave(true) }
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setConfirmLeave(true) }
+    const onUnload = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = '' }
+    window.addEventListener('popstate', onPop)
+    window.addEventListener('keydown', onKey)
+    window.addEventListener('beforeunload', onUnload)
+    return () => {
+      window.removeEventListener('popstate', onPop)
+      window.removeEventListener('keydown', onKey)
+      window.removeEventListener('beforeunload', onUnload)
+    }
+  }, [])
+  const leave = () => { setConfirmLeave(false); closeRef.current() }
   const set = (patch: Partial<AutoDmWizard>) => setW(p => ({ ...p, ...patch }))
 
   // ── validation per step ──
@@ -63,7 +85,7 @@ export default function AutoDmWizard({ account, trigger, existing, onClose, onSa
     void saveDraft()
     setStep(order[idx + 1])
   }
-  const back = () => (idx > 0 ? setStep(order[idx - 1]) : onClose())
+  const back = () => (idx > 0 ? setStep(order[idx - 1]) : askLeave())
 
   const launch = async () => {
     setSaving(true)
@@ -76,7 +98,7 @@ export default function AutoDmWizard({ account, trigger, existing, onClose, onSa
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-0 sm:p-4" role="dialog" aria-modal>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-0 sm:p-4" role="dialog" aria-modal onMouseDown={e => { if (e.target === e.currentTarget) askLeave() }}>
       <div className="flex max-h-full w-full max-w-2xl flex-col overflow-hidden bg-white sm:rounded-2xl">
         <header className="flex items-center gap-3 border-b border-gray-100 px-5 py-4">
           <span className={`flex h-10 w-10 items-center justify-center rounded-full text-lg ${meta.tone}`}>{meta.icon}</span>
@@ -85,7 +107,7 @@ export default function AutoDmWizard({ account, trigger, existing, onClose, onSa
             <p className="text-xs text-gray-500">{step === 'review' ? 'Launch AutoDM' : `Step ${Math.min(idx + 1, hasWhere ? 3 : 2)} of ${hasWhere ? 3 : 2}`}</p>
           </div>
           <div className="flex items-center gap-2"><Avatar account={account} size={26} /><span className="hidden text-sm text-gray-600 sm:inline">@{account.username}</span></div>
-          <button onClick={onClose} aria-label="Close" className="ml-1 text-xl text-gray-400 hover:text-gray-700">×</button>
+          <button onClick={askLeave} aria-label="Close" className="ml-1 text-xl text-gray-400 hover:text-gray-700">×</button>
         </header>
 
         <div className="flex-1 overflow-y-auto px-5 py-5 space-y-5">
@@ -103,6 +125,19 @@ export default function AutoDmWizard({ account, trigger, existing, onClose, onSa
             : <button onClick={next} className={`${pill} bg-black text-white`}>Next</button>}
         </footer>
       </div>
+
+      {confirmLeave && (
+        <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/40 p-4" onMouseDown={e => e.stopPropagation()}>
+          <div role="alertdialog" aria-labelledby="leave-title" className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-xl">
+            <h4 id="leave-title" className="font-semibold text-gray-900">Leave this process?</h4>
+            <p className="mt-1 text-sm text-gray-600">Steps you have already completed are saved as a draft. Changes on this step will be lost.</p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button autoFocus onClick={() => setConfirmLeave(false)} className={`${pill} border border-gray-300 bg-white text-gray-800`}>No, stay</button>
+              <button onClick={leave} className={`${pill} bg-black text-white`}>Yes, leave</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -173,13 +208,21 @@ function WhatStep({ w, set, isComment, showExclude, setShowExclude }: {
       {isComment && (
         <div className="space-y-3 rounded-xl border border-gray-200 p-4">
           <label className="flex items-center gap-2 text-sm text-gray-800">
-            <input type="checkbox" checked={w.comment_reply_enabled} onChange={e => set({ comment_reply_enabled: e.target.checked })} />
+            <input type="checkbox" checked={w.comment_reply_enabled} onChange={e => {
+              const on = e.target.checked
+              // Pre-fill any empty reply with a sensible default the user can edit.
+              set({ comment_reply_enabled: on, comment_replies: on ? w.comment_replies.map((r, i) => r.trim() ? r : DEFAULT_COMMENT_REPLIES[i]) : w.comment_replies })
+            }} />
             Would you like to reply to the comments as well?
           </label>
           {w.comment_reply_enabled && (<>
             {w.comment_replies.map((r, i) => (
-              <CountInput key={i} value={r} max={140} placeholder={`Reply ${i + 1} — picked at random`}
-                onChange={v => set({ comment_replies: w.comment_replies.map((x, j) => (j === i ? v : x)) })} />))}
+              <div key={i}>
+                <div className="mb-1 flex items-center justify-between text-xs font-medium text-gray-600">Reply {i + 1}<InfoTip tip={REPLY_TIPS[i]} label={`About reply ${i + 1}`} /></div>
+                <CountInput value={r} max={140} placeholder={DEFAULT_COMMENT_REPLIES[i]}
+                  onChange={v => set({ comment_replies: w.comment_replies.map((x, j) => (j === i ? v : x)) })} />
+                <p className="mt-1 rounded-lg bg-gray-50 px-2 py-1 text-[11px] text-gray-500">Preview: <span className="text-gray-700">@you · {r.trim() || DEFAULT_COMMENT_REPLIES[i]}</span></p>
+              </div>))}
             <p className="rounded-lg bg-amber-50 p-3 text-xs text-amber-800">Repeating the same public reply can look like spam to Instagram. We send one of your 3 replies at random to reduce that risk.</p>
           </>)}
         </div>

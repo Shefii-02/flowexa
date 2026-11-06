@@ -122,3 +122,27 @@ export const DM_VARIABLES = [
   { token: '{{email}}', label: 'Email' },
   { token: '{{follower_count}}', label: 'Their follower count on Instagram' },
 ]
+
+/** Small ⓘ that shows its tip on hover/focus and toggles on tap (touch-friendly). */
+export function InfoTip({ tip, label = 'More info' }: { tip: string; label?: string }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <span className="relative inline-flex">
+      <button type="button" aria-label={label} title={tip} onClick={() => setOpen(o => !o)} onBlur={() => setOpen(false)}
+        className="flex h-5 w-5 items-center justify-center rounded-full border border-gray-300 text-[11px] text-gray-500 hover:bg-gray-50">i</button>
+      {open && <span role="tooltip" className="absolute right-0 top-6 z-20 w-56 rounded-lg bg-gray-900 p-2 text-xs leading-snug text-white shadow-lg">{tip}</span>}
+    </span>
+  )
+}
+
+/** Ready-made public replies used to pre-fill the three comment-reply boxes. */
+export const DEFAULT_COMMENT_REPLIES = [
+  'Check your DMs! 📩 I just sent it over.',
+  'Done ✅ Sent you a message — have a look!',
+  'Just DM\'d you 🙌 Let me know if it doesn\'t arrive.',
+]
+export const REPLY_TIPS = [
+  'Reply 1 of 3. We post one of your three replies at random under each matching comment.',
+  'Reply 2 of 3. Using different wording helps avoid Instagram treating repeated comments as spam.',
+  'Reply 3 of 3. Keep it short (max 140 characters). Example: “Just DM\'d you 🙌”.',
+]
