@@ -67,6 +67,9 @@ export const instagramApi = {
   // DM inbox
   conversations: (p?: Record<string, unknown>) => api.get('/instagram/conversations', { params: p }),
 
+  setupStatus: (id: number) => api.get<SetupStatus>(`/instagram/accounts/${id}/setup-status`),
+  resubscribe: (id: number) => api.post<SetupStatus>(`/instagram/accounts/${id}/resubscribe`),
+
   // Facebook Messenger (Pages)
   messengerDiscover: (userAccessToken: string) => api.post<{ pages: MessengerPage[] }>('/instagram/messenger/pages/discover', { user_access_token: userAccessToken }),
   messengerConnect: (pageId: string, pageToken: string) => api.post<{ message: string; account: IgAccount }>('/instagram/messenger/pages', { page_id: pageId, page_token: pageToken }),
@@ -303,3 +306,11 @@ export interface MonitorData {
 }
 
 export interface MessengerPage { page_id: string; name: string | null; page_token: string | null; fans: number | null; picture: string | null; connected: boolean }
+
+export interface SetupStatus {
+  account: { id: number; channel: Channel; username: string | null; name: string | null; profile_picture_url: string | null; followers_count: number; status: string; auth_type: string }
+  token_valid: boolean; token_expires_at: string | null; auto_refresh: boolean
+  permissions: { required: string[]; granted: string[]; missing: string[] }
+  webhook: { subscribed: boolean; missing_fields: string[] }
+  webhook_events_7d: number; last_event_at: string | null; error: string | null
+}

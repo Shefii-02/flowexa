@@ -6,6 +6,7 @@ import { ConfirmModal } from '@/components/ui'
 import { getError } from '@/utils'
 import { instagramApi, type AutoDm, type AutoDmRun, type AutoDmStats, type IgAccount, type WebhookEvent, type MonitorData } from './api/instagram'
 import AutoDmWizard from './autodm/AutoDmWizard'
+import { ConnectMethodDialog } from './ConnectDialogs'
 import { Avatar, Sparkline, handleOf, triggerMeta, triggersFor } from './autodm/parts'
 import type { AutoDmTrigger, Channel } from './api/instagram'
 
@@ -31,6 +32,7 @@ export default function InstagramAutoDmPage({ channel = 'instagram' }: { channel
   const [runsFor, setRunsFor] = useState<AutoDm | null>(null)
   const [limit, setLimit] = useState<string | null>(null)
   const [connecting, setConnecting] = useState(false)
+  const [methodOpen, setMethodOpen] = useState(false)
 
   const load = useCallback(async () => {
     try {
@@ -74,9 +76,11 @@ export default function InstagramAutoDmPage({ channel = 'instagram' }: { channel
     <div className="mx-auto max-w-2xl px-4 py-12 text-center">
       <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">{isFb ? 'Turn Page comments and messages into conversations' : 'Turn engagement into conversion with AutoDMs'}</h1>
       <p className="mt-3 text-gray-600">{isFb ? 'Reply to comments on your Facebook Page and to Messenger messages automatically — capture leads and follow up inside Teamzo.' : 'Reply to comments, DMs, story replies and Live comments automatically — capture leads and follow up inside Teamzo.'}</p>
-      <button onClick={connect} disabled={connecting} className="mt-6 rounded-full px-6 py-3 text-sm font-semibold text-white disabled:opacity-60"
-        style={{ background: isFb ? 'linear-gradient(45deg,#0084ff,#a334fa)' : 'linear-gradient(45deg,#f9ce34,#ee2a7b,#6228d7)' }}>{connecting ? 'Redirecting…' : isFb ? 'Connect Facebook Page' : 'Connect Instagram Account'}</button>
+      <button onClick={() => setMethodOpen(true)} className="mt-6 rounded-full px-6 py-3 text-sm font-semibold text-white disabled:opacity-60"
+        style={{ background: isFb ? 'linear-gradient(45deg,#0084ff,#a334fa)' : 'linear-gradient(45deg,#f9ce34,#ee2a7b,#6228d7)' }}>{isFb ? 'Connect Facebook Page' : 'Connect Instagram Account'}</button>
       <p className="mt-4 inline-flex items-center gap-1 rounded-full border border-gray-200 px-3 py-1 text-xs text-gray-500">✔ Meta Tech Provider</p>
+      {methodOpen && <ConnectMethodDialog channel={channel} busy={connecting} onClose={() => setMethodOpen(false)} onLogin={connect}
+        onToken={isFb ? undefined : () => navigate('/instagram/accounts')} />}
     </div>
   )
 

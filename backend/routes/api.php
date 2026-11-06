@@ -1300,6 +1300,8 @@ Route::prefix('v1')->group(function () {
         // ── Instagram: connected account, keyword auto-DM bot, DM inbox + AI agent ──
         Route::prefix('/instagram')->name('instagram.')->middleware(['company.active', 'permission:instagram.view'])->group(function () {
             Route::get('accounts',                 [\App\Modules\Instagram\Http\Controllers\InstagramAccountController::class, 'index']);
+            Route::get('accounts/{id}/setup-status', [\App\Modules\Instagram\Http\Controllers\InstagramSetupController::class, 'status'])->whereNumber('id');
+            Route::post('accounts/{id}/resubscribe', [\App\Modules\Instagram\Http\Controllers\InstagramSetupController::class, 'resubscribe'])->whereNumber('id')->middleware('permission:instagram.manage');
             Route::get('connect-url',              [\App\Modules\Instagram\Http\Controllers\InstagramConnectController::class, 'connectUrl'])->middleware('permission:instagram.manage');
             Route::post('callback',                [\App\Modules\Instagram\Http\Controllers\InstagramConnectController::class, 'callback'])->middleware('permission:instagram.manage');
             Route::post('accounts/{id}/disconnect',[\App\Modules\Instagram\Http\Controllers\InstagramConnectController::class, 'disconnect'])->middleware('permission:instagram.manage');

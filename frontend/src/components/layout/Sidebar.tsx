@@ -255,7 +255,7 @@ export const Sidebar = () => {
 
   // ── Accordion state ───────────────────────────────────────────────────────────
   // Only ONE top-level accordion open at a time
-  type AccordionId = 'wa-chat' | 'wa-cloud' | 'wa-agent' | 'meta-ads' | 'instagram' | 'integrations' | null
+  type AccordionId = 'wa-chat' | 'wa-cloud' | 'wa-agent' | 'meta-ads' | 'instagram' | 'messenger' | 'integrations' | null
 
   const detectOpen = (path: string): AccordionId => {
     if (path.startsWith('/wa-chat')) return 'wa-chat'
@@ -263,6 +263,7 @@ export const Sidebar = () => {
     if (path.startsWith('/wa-agent')) return 'wa-agent'
     if (path.startsWith('/meta-ads')) return 'meta-ads'
     if (path.startsWith('/instagram')) return 'instagram'
+    if (path.startsWith('/messenger')) return 'messenger'
     if (path.startsWith('/settings/integrations')) return 'integrations'
     return null
   }
@@ -511,6 +512,19 @@ export const Sidebar = () => {
               <SubLink to="/instagram/inbox" icon="💬" label="DM Inbox" />
               <SubLink to="/instagram/comments" icon="🗨️" label="Comments" />
               <SubLink to="/instagram/insights" icon="📊" label="Insights" />
+            </Accordion>
+            {/* ── Facebook Messenger accordion ── */}
+            <Accordion
+              icon="💬"
+              label="Messenger"
+              basePaths={['/messenger']}
+              isOpen={openAccordion === 'messenger'}
+              onToggle={() => toggle('messenger')}
+            >
+              <SubLink to="/messenger/pages" icon="🔗" label="Pages" />
+              <SubLink to="/messenger/autodm" icon="🚀" label="AutoDM" />
+              <SubLink to="/messenger/flows" icon="🧩" label="Flows" />
+              <SubLink to="/messenger/inbox" icon="📥" label="Inbox" />
             </Accordion>
             <FlatLink to="/catalog" icon="📦" label="Catalog" />
  {/* Catalog is a top-level item now (📦 Catalog under CRM) */}

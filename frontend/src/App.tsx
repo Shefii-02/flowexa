@@ -102,6 +102,7 @@ import LeadAdsPage from '@/pages/meta-ads/leads/LeadAdsPage'
 import CreativeStudioPage from '@/pages/meta-ads/creatives/CreativeStudioPage'
 import InstagramAccountsPage from '@/pages/instagram/InstagramAccountsPage'
 import InstagramAutomationsPage from '@/pages/instagram/InstagramAutomationsPage'
+import MessengerPagesPage from '@/pages/messenger/MessengerPagesPage'
 import InstagramAutoDmPage from '@/pages/instagram/InstagramAutoDmPage'
 import InstagramReviewDemoPage from '@/pages/instagram/InstagramReviewDemoPage'
 import InstagramDeletionStatusPage from '@/pages/instagram/InstagramDeletionStatusPage'
@@ -404,6 +405,12 @@ export default function App() {
               <Route path="instagram" element={<Navigate to="/instagram/accounts" replace />} />
               <Route path="instagram/accounts" element={<InstagramAccountsPage />} />
               <Route path="instagram/autodm" element={<InstagramAutoDmPage />} />
+              <Route path="messenger" element={<Navigate to="/messenger/pages" replace />} />
+              <Route path="messenger/pages" element={<MessengerPagesPage />} />
+              <Route path="messenger/autodm" element={<InstagramAutoDmPage channel="facebook" />} />
+              <Route path="messenger/flows" element={<InstagramFlowsPage channel="facebook" />} />
+              <Route path="messenger/flows/:id" element={<InstagramFlowBuilderPage />} />
+              <Route path="messenger/inbox" element={<InstagramInboxPage channel="facebook" />} />
               <Route path="instagram/review-demo" element={<InstagramReviewDemoPage />} />
               <Route path="instagram/automations" element={<InstagramAutomationsPage />} />
               <Route path="instagram/flows" element={<InstagramFlowsPage />} />

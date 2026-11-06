@@ -6,6 +6,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { Button, Input, Textarea, Badge, EmptyState, Modal, ConfirmModal } from '@/components/ui'
 import { fmt, getError } from '@/utils'
 import toast from 'react-hot-toast'
+import { ConnectMethodDialog, SetupChecklistDialog } from './ConnectDialogs'
 import { instagramApi, type IgAccount, type IgConversionLog, type IgMedia, type IgPage } from './api/instagram'
 
 const META_APP_ID = import.meta.env.VITE_META_APP_ID as string | undefined
@@ -14,6 +15,7 @@ const FB_SCOPES = 'pages_show_list,pages_read_engagement,pages_messaging,instagr
 // Loads Facebook's JS SDK once (needed for the one-click "Continue with Facebook" login).
 let fbReady: Promise<any> | null = null
 function loadFb(appId: string): Promise<any> {
+  if ((window as any).FB) return Promise.resolve((window as any).FB)   // already loaded by another screen
   fbReady ??= new Promise((resolve, reject) => {
     const w = window as any
     w.fbAsyncInit = () => { w.FB.init({ appId, cookie: true, xfbml: false, version: 'v21.0' }); resolve(w.FB) }
@@ -127,6 +129,8 @@ export default function InstagramAccountsPage() {
   const [params, setParams] = useSearchParams()
   const navigate = useNavigate()
   const [igBusy, setIgBusy] = useState(false)
+  const [methodOpen, setMethodOpen] = useState(false)
+  const [setupFor, setSetupFor] = useState<number | null>(null)   // account id whose setup checklist is showing
   const startIgLogin = async () => {
     if (!planLim.guard()) return
     setIgBusy(true)
@@ -140,7 +144,7 @@ export default function InstagramAccountsPage() {
     setParams({}, { replace: true })
     setIgBusy(true)
     instagramApi.igCallback(code, state)
-      .then(r => { toast.success(r.data.message); navigate('/instagram/autodm') })
+      .then(r => { toast.success(r.data.message); setMethodOpen(false); setSetupFor(r.data.account.id); void load() })
       .catch(e => toast.error(getError(e)))
       .finally(() => setIgBusy(false))
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -162,6 +166,7 @@ export default function InstagramAccountsPage() {
       toast.success(r.data.message ?? 'Connected.')
       closeConnect()
       void load()
+      if (r.data.account?.id) setSetupFor(r.data.account.id)
     } catch (e) { toast.error(getError(e)) }
     finally { setSaving(false) }
   }
@@ -209,6 +214,7 @@ export default function InstagramAccountsPage() {
       })
       toast.success(r.data.message ?? `Connected @${p.ig_username}.`)
       closeConnect(); void load()
+      if (r.data.account?.id) setSetupFor(r.data.account.id)
     } catch (e) { toast.error(getError(e)) }
     finally { setSaving(false) }
   }
@@ -238,7 +244,7 @@ export default function InstagramAccountsPage() {
           <h1 className="page-title">Instagram Accounts</h1>
           <p className="page-sub">Connect a business account, then set up the comment bot and DM AI agent</p>
         </div>
-        <div className="flex items-center gap-2"><LimitBadge resource="instagram_accounts" /><Button loading={igBusy} onClick={startIgLogin}>Connect with Instagram</Button><Button variant="secondary" onClick={() => planLim.guard() && setConnectOpen(true)}>+ Facebook Page token</Button></div>
+        <div className="flex items-center gap-2"><LimitBadge resource="instagram_accounts" /><Button onClick={() => planLim.guard() && setMethodOpen(true)}>Connect Instagram Account</Button></div>
       </div>
 
       {loading ? (
@@ -247,8 +253,7 @@ export default function InstagramAccountsPage() {
         <EmptyState icon="📸" title="No Instagram account connected"
           desc="Connect your Instagram professional account to automate comment replies and DMs"
           action={<div className="flex flex-col items-center gap-2">
-            <Button loading={igBusy} onClick={startIgLogin}>Connect Instagram Account</Button>
-            <button className="text-xs text-gray-500 underline" onClick={() => planLim.guard() && setConnectOpen(true)}>Use a Facebook Page token instead</button>
+            <Button onClick={() => planLim.guard() && setMethodOpen(true)}>Connect Instagram Account</Button>
           </div>} />
       ) : (
         <div className="grid gap-4">
@@ -306,6 +311,10 @@ export default function InstagramAccountsPage() {
           ))}
         </div>
       )}
+
+      {methodOpen && <ConnectMethodDialog channel="instagram" busy={igBusy} onClose={() => setMethodOpen(false)}
+        onLogin={startIgLogin} onToken={() => { setMethodOpen(false); setConnectOpen(true) }} />}
+      {setupFor !== null && <SetupChecklistDialog accountId={setupFor} channel="instagram" onClose={() => setSetupFor(null)} />}
 
       {/* Connect modal */}
       <Modal open={connectOpen} onClose={closeConnect} title="Connect Instagram account" size="lg"

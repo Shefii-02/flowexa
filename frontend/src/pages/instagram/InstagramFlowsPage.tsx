@@ -7,8 +7,9 @@ import toast from 'react-hot-toast'
 import { instagramApi, type IgAccount, type IgFlowSummary } from './api/instagram'
 import FlowSampleDrawer, { SAMPLE_FLOW } from './FlowSampleDrawer'
 
-export default function InstagramFlowsPage() {
+export default function InstagramFlowsPage({ channel = 'instagram' }: { channel?: 'instagram' | 'facebook' }) {
   const navigate = useNavigate()
+  const base = channel === 'facebook' ? '/messenger' : '/instagram'
   const [accounts, setAccounts] = useState<IgAccount[]>([])
   const [accountId, setAccountId] = useState<number | null>(null)
   const [flows, setFlows] = useState<IgFlowSummary[]>([])
@@ -22,11 +23,11 @@ export default function InstagramFlowsPage() {
   const load = async (accId?: number) => {
     setLoading(true)
     try {
-      const accs: IgAccount[] = (await instagramApi.accounts()).data.accounts ?? []
+      const accs: IgAccount[] = (await instagramApi.accounts(channel)).data.accounts ?? []
       setAccounts(accs)
       const active = accId ?? accountId ?? accs[0]?.id ?? null
       setAccountId(active)
-      if (active) setFlows((await instagramApi.flows(active)).data.flows ?? [])
+      if (active) setFlows((await instagramApi.flows(active, channel)).data.flows ?? [])
     } catch (e) { toast.error(getError(e)) }
     finally { setLoading(false) }
   }
@@ -36,7 +37,7 @@ export default function InstagramFlowsPage() {
     if (!accountId || !name.trim()) return
     try {
       const r = await instagramApi.createFlow({ instagram_account_id: accountId, name: name.trim() })
-      navigate(`/instagram/flows/${r.data.flow.id}`)
+      navigate(`${base}/flows/${r.data.flow.id}`)
     } catch (e) { toast.error(getError(e)) }
   }
 
@@ -46,7 +47,7 @@ export default function InstagramFlowsPage() {
     try {
       const r = await instagramApi.createFlow({ instagram_account_id: accountId, name: 'Sample: comment → price list', ...SAMPLE_FLOW })
       toast.success('Sample flow created (switched off). Review it, then turn it on.')
-      navigate(`/instagram/flows/${r.data.flow.id}`)
+      navigate(`${base}/flows/${r.data.flow.id}`)
     } catch (e) { toast.error(getError(e)) } finally { setSampleBusy(false) }
   }
 
@@ -97,7 +98,7 @@ export default function InstagramFlowsPage() {
             <div key={f.id} className="card p-4 flex items-center gap-3">
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
-                  <button onClick={() => navigate(`/instagram/flows/${f.id}`)} className="font-medium text-gray-900 hover:underline truncate">{f.name}</button>
+                  <button onClick={() => navigate(`${base}/flows/${f.id}`)} className="font-medium text-gray-900 hover:underline truncate">{f.name}</button>
                   <Badge variant={f.is_active ? 'green' : 'gray'}>{f.is_active ? 'On' : 'Off'}</Badge>
                   <Badge variant="blue">{f.trigger_type === 'comment' ? 'Comment' : 'DM keyword'}</Badge>
                 </div>
@@ -107,7 +108,7 @@ export default function InstagramFlowsPage() {
               </div>
               <div className="flex gap-3 text-xs whitespace-nowrap">
                 <button onClick={() => toggle(f)} className="text-gray-500 hover:underline">{f.is_active ? 'Turn off' : 'Turn on'}</button>
-                <button onClick={() => navigate(`/instagram/flows/${f.id}`)} className="text-brand-600 hover:underline">Open builder</button>
+                <button onClick={() => navigate(`${base}/flows/${f.id}`)} className="text-brand-600 hover:underline">Open builder</button>
                 <button onClick={() => setDeleteId(f.id)} className="text-red-500 hover:underline">Delete</button>
               </div>
             </div>

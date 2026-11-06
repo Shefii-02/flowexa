@@ -127,7 +127,7 @@ function Builder() {
   }
 
   useEffect(() => {
-    instagramApi.flow(+id!).then(r => apply(r.data.flow, r.data.errors)).catch(e => { toast.error(getError(e)); navigate('/instagram/flows') })
+    instagramApi.flow(+id!).then(r => apply(r.data.flow, r.data.errors)).catch(e => { toast.error(getError(e)); navigate(window.location.pathname.startsWith('/messenger') ? '/messenger/flows' : '/instagram/flows') })
   }, [id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const onConnect = useCallback((c: Connection) => {
@@ -203,7 +203,7 @@ function Builder() {
   return (
     <div className="flex flex-col h-[calc(100vh-110px)] gap-3">
       <div className="flex items-center gap-3">
-        <button onClick={() => navigate('/instagram/flows')} className="text-sm text-gray-500 hover:underline">← Flows</button>
+        <button onClick={() => navigate(window.location.pathname.startsWith('/messenger') ? '/messenger/flows' : '/instagram/flows')} className="text-sm text-gray-500 hover:underline">← Flows</button>
         <input className="input max-w-xs font-medium" value={name} onChange={e => { setName(e.target.value); setDirty(true) }} />
         <Badge variant={flow.is_active ? 'green' : 'gray'}>{flow.is_active ? 'Live' : 'Draft'}</Badge>
         {dirty && <span className="text-xs text-amber-600">Unsaved changes</span>}

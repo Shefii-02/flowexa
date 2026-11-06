@@ -14,7 +14,7 @@ const SOURCE_LABEL: Record<string, { label: string; cls: string }> = {
   inbound: { label: '', cls: '' },
 }
 
-export default function InstagramInboxPage() {
+export default function InstagramInboxPage({ channel = 'instagram' }: { channel?: 'instagram' | 'facebook' }) {
   const [threads, setThreads] = useState<IgConversation[]>([])
   const [activeId, setActiveId] = useState<number | null>(null)
   const [messages, setMessages] = useState<IgMessage[]>([])
@@ -31,7 +31,7 @@ export default function InstagramInboxPage() {
   const loadThreads = async (quiet = false) => {
     if (!quiet) setLoading(true)
     try {
-      const r = await instagramApi.conversations({ ...(statusFilter ? { status: statusFilter } : {}), ...(needsAgentOnly ? { needs_agent: 1 } : {}) })
+      const r = await instagramApi.conversations({ channel, ...(statusFilter ? { status: statusFilter } : {}), ...(needsAgentOnly ? { needs_agent: 1 } : {}) })
       setThreads(r.data.data ?? r.data ?? [])
     } catch (e) { if (!quiet) toast.error(getError(e)) }
     finally { if (!quiet) setLoading(false) }
