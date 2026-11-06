@@ -143,7 +143,7 @@ export default function InstagramAutoDmPage() {
               <button onClick={exportCsv} className="rounded-xl border border-gray-200 px-3 py-1.5 text-sm">Export</button>
               <button onClick={() => setPicker(true)} className={`${pillBtn} bg-black text-white`}>+ New</button>
             </div>
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto h-screen max-h-[calc(100vh-300px)]">
               <table className="w-full min-w-[720px] text-sm">
                 <thead><tr className="text-left text-xs uppercase text-gray-400">
                   <th className="p-3 font-medium">Automation</th><th className="p-3 font-medium">New followers</th><th className="p-3 font-medium">Runs</th>
