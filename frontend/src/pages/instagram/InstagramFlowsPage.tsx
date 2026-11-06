@@ -5,6 +5,7 @@ import { Button, Input, Badge, EmptyState, Modal, ConfirmModal } from '@/compone
 import { getError } from '@/utils'
 import toast from 'react-hot-toast'
 import { instagramApi, type IgAccount, type IgFlowSummary } from './api/instagram'
+import FlowSampleDrawer, { SAMPLE_FLOW } from './FlowSampleDrawer'
 
 export default function InstagramFlowsPage() {
   const navigate = useNavigate()
@@ -15,6 +16,8 @@ export default function InstagramFlowsPage() {
   const [creating, setCreating] = useState(false)
   const [name, setName] = useState('')
   const [deleteId, setDeleteId] = useState<number | null>(null)
+  const [sampleOpen, setSampleOpen] = useState(false)
+  const [sampleBusy, setSampleBusy] = useState(false)
 
   const load = async (accId?: number) => {
     setLoading(true)
@@ -35,6 +38,16 @@ export default function InstagramFlowsPage() {
       const r = await instagramApi.createFlow({ instagram_account_id: accountId, name: name.trim() })
       navigate(`/instagram/flows/${r.data.flow.id}`)
     } catch (e) { toast.error(getError(e)) }
+  }
+
+  const createSample = async () => {
+    if (!accountId) return
+    setSampleBusy(true)
+    try {
+      const r = await instagramApi.createFlow({ instagram_account_id: accountId, name: 'Sample: comment → price list', ...SAMPLE_FLOW })
+      toast.success('Sample flow created (switched off). Review it, then turn it on.')
+      navigate(`/instagram/flows/${r.data.flow.id}`)
+    } catch (e) { toast.error(getError(e)) } finally { setSampleBusy(false) }
   }
 
   const toggle = async (f: IgFlowSummary) => {
@@ -67,6 +80,7 @@ export default function InstagramFlowsPage() {
             {accounts.map(a => <option key={a.id} value={a.id}>@{a.username}</option>)}
           </select>
         )}
+        <Button variant="secondary" onClick={() => setSampleOpen(true)}>See sample flow</Button>
         {accountId && <Button onClick={() => { setName(''); setCreating(true) }}>+ New flow</Button>}
       </div>
 
@@ -76,7 +90,7 @@ export default function InstagramFlowsPage() {
         <EmptyState icon="📸" title="Connect an Instagram account first" desc="Flows run on a connected account" />
       ) : flows.length === 0 ? (
         <EmptyState icon="🧩" title="No flows yet" desc={'e.g. comment "price" → public reply → DM with a button → check they follow you → send the price list'}
-          action={<Button onClick={() => setCreating(true)}>Create your first flow</Button>} />
+          action={<div className="flex flex-wrap justify-center gap-2"><Button onClick={() => setCreating(true)}>Create your first flow</Button><Button variant="secondary" onClick={() => setSampleOpen(true)}>See sample flow</Button></div>} />
       ) : (
         <div className="grid gap-3">
           {flows.map(f => (
@@ -108,6 +122,8 @@ export default function InstagramFlowsPage() {
         </div>}>
         <Input label="Flow name *" value={name} onChange={e => setName(e.target.value)} placeholder="Reel → price list (followers only)" />
       </Modal>
+
+      <FlowSampleDrawer open={sampleOpen} onClose={() => setSampleOpen(false)} onCreate={createSample} creating={sampleBusy} canCreate={!!accountId} />
 
       <ConfirmModal open={deleteId !== null} title="Delete flow?" message="People already mid-flow will stop receiving its messages."
         confirmLabel="Delete" onConfirm={remove} onCancel={() => setDeleteId(null)} />

@@ -18,6 +18,7 @@ class InstagramFlowController extends Controller
         $flows = InstagramFlow::where('company_id', auth()->user()->company_id)
             ->when($allowed !== null, fn ($q) => $q->whereIn('instagram_account_id', $allowed))
             ->when($request->account_id, fn ($q, $id) => $q->where('instagram_account_id', $id))
+            ->whereHas('account', fn ($q) => $q->where('channel', $request->query('channel', 'instagram')))
             ->withCount(['runs', 'runs as waiting_runs_count' => fn ($q) => $q->where('status', 'waiting')])
             ->orderByDesc('priority')->orderByDesc('updated_at')
             ->get(['id', 'instagram_account_id', 'name', 'trigger_type', 'is_active', 'priority', 'triggered_count', 'last_triggered_at', 'updated_at']);
@@ -119,6 +120,10 @@ class InstagramFlowController extends Controller
         }
         if (!$flow->nextNodeId($trigger['id'] ?? '')) {
             $errors[] = 'Connect the trigger to a first step.';
+        }
+        // Messenger can't tell whether someone follows/likes the Page, so the follower check isn't available there.
+        if ($flow->account?->channel === 'facebook' && collect($nodes)->contains(fn ($n) => ($n['type'] ?? '') === 'condition_follow')) {
+            $errors[] = 'The "Follows us?" check is not available on Facebook Messenger. Remove it.';
         }
         return array_values(array_unique($errors));
     }

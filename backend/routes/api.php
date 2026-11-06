@@ -1323,6 +1323,9 @@ Route::prefix('v1')->group(function () {
             Route::get('conversations/{id}',       [\App\Modules\Instagram\Http\Controllers\InstagramInboxController::class, 'show']);
 
             Route::middleware('permission:instagram.manage')->group(function () {
+                Route::post('messenger/pages/discover',      [\App\Modules\Instagram\Http\Controllers\MessengerPageController::class, 'discover']);
+                Route::post('messenger/pages',               [\App\Modules\Instagram\Http\Controllers\MessengerPageController::class, 'connect']);
+                Route::post('messenger/pages/{id}/disconnect', [\App\Modules\Instagram\Http\Controllers\MessengerPageController::class, 'disconnect']);
                 Route::post('accounts/discover-pages', [\App\Modules\Instagram\Http\Controllers\InstagramAccountController::class, 'discoverPages']);
                 Route::post('accounts',                [\App\Modules\Instagram\Http\Controllers\InstagramAccountController::class, 'store']);
                 Route::put('accounts/{id}',            [\App\Modules\Instagram\Http\Controllers\InstagramAccountController::class, 'update']);

@@ -16,6 +16,9 @@ class InstagramActivityController extends Controller
             ->leftJoin('instagram_accounts as a', 'a.id', '=', 'e.instagram_account_id')
             ->where('e.company_id', auth()->user()->company_id)
             ->when($allowed !== null, fn ($q) => $q->whereIn('e.instagram_account_id', $allowed))
+            ->when($request->query('channel') === 'facebook',
+                fn ($q) => $q->where('a.channel', 'facebook'),
+                fn ($q) => $q->where(fn ($q) => $q->where('a.channel', 'instagram')->orWhereNull('a.channel')))
             ->when($request->query('status'), fn ($q, $v) => $q->where('e.status', $v))
             ->when($request->query('kind'), fn ($q, $v) => $q->where('e.kind', $v))
             ->when($request->query('account_id'), fn ($q, $v) => $q->where('e.instagram_account_id', $v))

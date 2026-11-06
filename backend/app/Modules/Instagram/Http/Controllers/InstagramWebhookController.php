@@ -40,10 +40,13 @@ class InstagramWebhookController extends Controller
             return response('invalid signature', 403);
         }
 
+        // One callback URL serves both products: object "instagram" and object "page" (Facebook Messenger).
+        $channel = $request->input('object') === 'page' ? 'facebook' : 'instagram';
+
         foreach ($request->input('entry', []) as $entry) {
             $igUserId = $entry['id'] ?? null;
             $account = $igUserId
-                ? InstagramAccount::where('ig_user_id', $igUserId)->where('is_active', true)->first()
+                ? InstagramAccount::where('ig_user_id', $igUserId)->where('channel', $channel)->where('is_active', true)->first()
                 : null;
 
             // This is the ONE webhook URL every company's Instagram accounts push through (Meta's
@@ -65,7 +68,9 @@ class InstagramWebhookController extends Controller
                 $field = $change['field'] ?? null;
                 $value = $change['value'] ?? [];
 
-                if ($field === 'comments' || $field === 'live_comments') {
+                if ($channel === 'facebook' && $field === 'feed') {
+                    $this->dispatchPageComment($account, $igUserId, $value);
+                } elseif ($field === 'comments' || $field === 'live_comments') {
                     $live = $field === 'live_comments';
                     $evt = $this->store($account, $igUserId, $live ? 'live_comment' : 'comment', $field, $value);
                     ProcessInstagramEvent::dispatch('comment', $account->id, $value + ($live ? ['_live' => true] : []) + ['_evt' => $evt]);
@@ -154,6 +159,28 @@ class InstagramWebhookController extends Controller
         } else {
             $this->store($account, $igUserId, 'other', $field, $m, 'ignored', 'Neither a message nor a button tap');
         }
+    }
+
+    /**
+     * Facebook Page `feed` change → the comment shape the engine already understands.
+     * Only new top-level comments on Page posts start automations; edits, likes, reactions and replies are stored as ignored.
+     */
+    private function dispatchPageComment(InstagramAccount $account, ?string $pageId, array $v): void
+    {
+        $isNewComment = ($v['item'] ?? null) === 'comment' && ($v['verb'] ?? null) === 'add';
+        $topLevel = !isset($v['parent_id'], $v['post_id']) || $v['parent_id'] === $v['post_id'];
+        if (!$isNewComment || !$topLevel || empty($v['comment_id'])) {
+            $this->store($account, $pageId, 'other', 'feed', $v, 'ignored', $isNewComment ? 'Reply to a comment (not a top-level comment)' : 'Not a new comment');
+            return;
+        }
+        $evt = $this->store($account, $pageId, 'comment', 'feed', $v);
+        ProcessInstagramEvent::dispatch('comment', $account->id, [
+            'id'    => $v['comment_id'],
+            'text'  => (string) ($v['message'] ?? ''),
+            'from'  => ['id' => $v['from']['id'] ?? null, 'username' => $v['from']['name'] ?? null],
+            'media' => ['id' => $v['post_id'] ?? null],
+            '_evt'  => $evt,
+        ]);
     }
 
     /** Persist the delivery (payloads hold no tokens) and return its id. */

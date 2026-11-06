@@ -844,15 +844,17 @@ class InstagramFlowEngine
         }
     }
 
-    private function hourlyCap(): int
+    private function hourlyCap(?InstagramAccount $account = null): int
     {
-        return (int) config('services.instagram.dm_hourly_cap', self::HOURLY_DM_LIMIT);
+        return $account?->channel === 'facebook'
+            ? (int) config('services.messenger.dm_hourly_cap', 1000)
+            : (int) config('services.instagram.dm_hourly_cap', self::HOURLY_DM_LIMIT);
     }
 
     /** Seconds until the hourly window frees up, or null when there is budget. */
     private function windowFull(InstagramAccount $account): ?int
     {
-        return RateLimiter::tooManyAttempts($this->rateKey($account), $this->hourlyCap())
+        return RateLimiter::tooManyAttempts($this->rateKey($account), $this->hourlyCap($account))
             ? max(30, RateLimiter::availableIn($this->rateKey($account)))
             : null;
     }

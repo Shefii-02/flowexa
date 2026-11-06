@@ -3,8 +3,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
 import { getError } from '@/utils'
 import { instagramApi, type AutoDm, type AutoDmFollowup, type AutoDmMessage, type AutoDmWizard, type IgAccount, type IgMedia } from '../api/instagram'
-import { Avatar, CountInput, DEFAULT_COMMENT_REPLIES, DM_VARIABLES, InfoTip, KeywordInput, REPLY_TIPS, Segmented, Toggle, emptyWizard, needsStarter, triggerMeta } from './parts'
-import type { AutoDmTrigger } from '../api/instagram'
+import { Avatar, CountInput, DEFAULT_COMMENT_REPLIES, DM_VARIABLES, InfoTip, KeywordInput, REPLY_TIPS, Segmented, Toggle, emptyWizard, handleOf, needsStarter, triggerMeta } from './parts'
+import type { AutoDmTrigger, Channel } from '../api/instagram'
 import MediaPickerModal from '@/components/MediaPickerModal'
 
 type Step = 1 | 2 | 3 | 'starter' | 'review'
@@ -13,18 +13,20 @@ const pill = 'rounded-full px-5 py-2 text-sm font-medium'
 interface Props {
   account: IgAccount
   trigger: AutoDmTrigger
+  channel?: Channel
   existing?: AutoDm | null
   onClose: () => void
   onSaved: () => void
 }
 
-export default function AutoDmWizard({ account, trigger, existing, onClose, onSaved }: Props) {
+export default function AutoDmWizard({ account, trigger, channel = 'instagram', existing, onClose, onSaved }: Props) {
   const [w, setW] = useState<AutoDmWizard>(existing?.wizard ?? emptyWizard(trigger))
   const [name, setName] = useState(existing?.name ?? '')
   const [saving, setSaving] = useState(false)
   const [showExclude, setShowExclude] = useState((existing?.wizard.exclude_keywords.length ?? 0) > 0)
   const draftId = useRef<number | null>(existing?.id ?? null)
-  const meta = triggerMeta(w.trigger_type)
+  const meta = triggerMeta(w.trigger_type, channel)
+  const isFb = channel === 'facebook'
   const isComment = w.trigger_type === 'post_comment' || w.trigger_type === 'live_comment'
   const hasWhere = w.trigger_type === 'post_comment'
   const starter = needsStarter(w)
@@ -108,14 +110,14 @@ export default function AutoDmWizard({ account, trigger, existing, onClose, onSa
             <p className="truncate font-semibold text-gray-900">{meta.title}</p>
             <p className="text-xs text-gray-500">{step === 'review' ? 'Launch AutoDM' : `Step ${Math.min(idx + 1, hasWhere ? 3 : 2)} of ${hasWhere ? 3 : 2}`}</p>
           </div>
-          <div className="flex items-center gap-2"><Avatar account={account} size={26} /><span className="hidden text-sm text-gray-600 sm:inline">@{account.username}</span></div>
+          <div className="flex items-center gap-2"><Avatar account={account} size={26} /><span className="hidden text-sm text-gray-600 sm:inline">{handleOf(account, channel)}</span></div>
           <button onClick={askLeave} aria-label="Close" className="ml-1 text-xl text-gray-400 hover:text-gray-700">×</button>
         </header>
 
         <div className="flex-1 overflow-y-auto px-5 py-5 space-y-5">
-          {step === 1 && <WhereStep account={account} w={w} set={set} />}
+          {step === 1 && <WhereStep account={account} w={w} set={set} channel={channel} />}
           {step === 2 && <WhatStep w={w} set={set} isComment={isComment} showExclude={showExclude} setShowExclude={setShowExclude} />}
-          {step === 3 && <SendStep w={w} set={set} isComment={isComment} />}
+          {step === 3 && <SendStep w={w} set={set} isComment={isComment} isFb={isFb} />}
           {step === 'starter' && <StarterStep w={w} set={set} />}
           {step === 'review' && <ReviewStep w={w} set={set} account={account} name={name} setName={setName} />}
         </div>
@@ -145,7 +147,7 @@ export default function AutoDmWizard({ account, trigger, existing, onClose, onSa
 }
 
 // ───────────────────────── Step 1 – Where ─────────────────────────
-function WhereStep({ account, w, set }: { account: IgAccount; w: AutoDmWizard; set: (p: Partial<AutoDmWizard>) => void }) {
+function WhereStep({ account, w, set, channel }: { account: IgAccount; w: AutoDmWizard; set: (p: Partial<AutoDmWizard>) => void; channel: Channel }) {
   const [media, setMedia] = useState<IgMedia[]>([])
   const [loading, setLoading] = useState(true)
   const [shown, setShown] = useState(12)
@@ -166,7 +168,7 @@ function WhereStep({ account, w, set }: { account: IgAccount; w: AutoDmWizard; s
       <h3 className="font-semibold text-gray-900">Where should this run?</h3>
       <Segmented value={w.media_scope} onChange={v => set({ media_scope: v })}
         options={[{ v: 'specific', label: 'Specific Post/Reel' }, { v: 'any', label: 'Any Post/Reel' }, { v: 'next', label: 'Next Post/Reel' }]} />
-      {w.media_scope === 'any' && <p className="text-sm text-gray-500">Runs on every post and reel on @{account.username}.</p>}
+      {w.media_scope === 'any' && <p className="text-sm text-gray-500">Runs on every post on {handleOf(account, channel)}.</p>}
       {w.media_scope === 'next' && <p className="text-sm text-gray-500">Runs on the first post or reel you publish from now on. It locks to that post once it sees a comment.</p>}
       {w.media_scope === 'specific' && (loading ? <p className="text-sm text-gray-400">Loading posts…</p> : (
         <div className="grid grid-cols-3 gap-2">
@@ -251,14 +253,14 @@ function WhatStep({ w, set, isComment, showExclude, setShowExclude }: {
 }
 
 // ───────────────────────── Step 3 – Send ─────────────────────────
-function SendStep({ w, set, isComment }: { w: AutoDmWizard; set: (p: Partial<AutoDmWizard>) => void; isComment: boolean }) {
+function SendStep({ w, set, isComment, isFb }: { w: AutoDmWizard; set: (p: Partial<AutoDmWizard>) => void; isComment: boolean; isFb?: boolean }) {
   const setP = (patch: Partial<AutoDmWizard['primary_message']>) => set({ primary_message: { ...w.primary_message, ...patch } })
   const setFollow = (i: number, patch: Partial<AutoDmFollowup>) => set({ followups: w.followups.map((f, j) => (j === i ? { ...f, ...patch } : f)) })
   return (
     <>
       <h3 className="font-semibold text-gray-900">What should we send?</h3>
       <div className="space-y-3">
-        <div className="rounded-xl border border-gray-200 p-4 space-y-3">
+        {!isFb && <div className="rounded-xl border border-gray-200 p-4 space-y-3">
           <Toggle on={w.follow_gate.enabled} onChange={v => set({ follow_gate: { ...w.follow_gate, enabled: v } })} label="a DM asking to follow you" />
           {w.follow_gate.enabled && <div className="space-y-3">
             <Field label="Opening message"><CountInput multiline max={640} value={w.follow_gate.opening} onChange={v => set({ follow_gate: { ...w.follow_gate, opening: v } })} /></Field>
@@ -269,7 +271,7 @@ function SendStep({ w, set, isComment }: { w: AutoDmWizard; set: (p: Partial<Aut
             <Field label="Follow Check / Retry message"><CountInput multiline max={640} value={w.follow_gate.retry_message} onChange={v => set({ follow_gate: { ...w.follow_gate, retry_message: v } })} /></Field>
             <FailAction label="Retry 3 times, then" value={w.follow_gate.fail_action} onChange={v => set({ follow_gate: { ...w.follow_gate, fail_action: v } })} />
           </div>}
-        </div>
+        </div>}
         <div className="rounded-xl border border-gray-200 p-4 space-y-3">
           <Toggle on={w.email_gate.enabled} onChange={v => set({ email_gate: { ...w.email_gate, enabled: v } })} label="a DM asking to share their email" />
           {w.email_gate.enabled && <div className="space-y-3">

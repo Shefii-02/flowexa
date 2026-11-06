@@ -8,7 +8,20 @@ export const TRIGGERS: { key: AutoDmTrigger; title: string; icon: string; tone: 
   { key: 'story_reply', title: 'Auto-reply to story replies', icon: '📖', tone: 'bg-purple-100 text-purple-700' },
   { key: 'live_comment', title: 'Auto-reply to comments on Insta Live', icon: '🔴', tone: 'bg-red-100 text-red-700' },
 ]
-export const triggerMeta = (k: AutoDmTrigger) => TRIGGERS.find(t => t.key === k) ?? TRIGGERS[0]
+const FB_TITLES: Partial<Record<AutoDmTrigger, string>> = {
+  post_comment: 'Auto-reply to comments on Page posts',
+  dm: 'Auto-reply to Messenger messages',
+}
+/** Messenger has no story replies or Live comments, and different wording. */
+export const triggersFor = (channel: 'instagram' | 'facebook' = 'instagram') =>
+  channel === 'facebook'
+    ? TRIGGERS.filter(t => t.key in FB_TITLES).map(t => ({ ...t, title: FB_TITLES[t.key] as string, icon: t.key === 'dm' ? '💬' : '📝' }))
+    : TRIGGERS
+export const triggerMeta = (k: AutoDmTrigger, channel: 'instagram' | 'facebook' = 'instagram') =>
+  triggersFor(channel).find(t => t.key === k) ?? TRIGGERS.find(t => t.key === k) ?? TRIGGERS[0]
+/** "@brand" for Instagram, the plain Page name for Facebook. */
+export const handleOf = (a?: { username?: string | null } | null, channel: 'instagram' | 'facebook' = 'instagram') =>
+  a?.username ? (channel === 'facebook' ? a.username : `@${a.username}`) : ''
 
 export const emptyWizard = (trigger: AutoDmTrigger): AutoDmWizard => ({
   trigger_type: trigger,

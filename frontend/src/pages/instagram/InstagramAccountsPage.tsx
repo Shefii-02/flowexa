@@ -245,8 +245,11 @@ export default function InstagramAccountsPage() {
         <p className="text-sm text-gray-400">Loading…</p>
       ) : accounts.length === 0 ? (
         <EmptyState icon="📸" title="No Instagram account connected"
-          desc="Connect an Instagram Business account linked to a Facebook Page"
-          action={<Button onClick={() => planLim.guard() && setConnectOpen(true)}>Connect account</Button>} />
+          desc="Connect your Instagram professional account to automate comment replies and DMs"
+          action={<div className="flex flex-col items-center gap-2">
+            <Button loading={igBusy} onClick={startIgLogin}>Connect Instagram Account</Button>
+            <button className="text-xs text-gray-500 underline" onClick={() => planLim.guard() && setConnectOpen(true)}>Use a Facebook Page token instead</button>
+          </div>} />
       ) : (
         <div className="grid gap-4">
           {accounts.map(a => (

@@ -19,6 +19,7 @@ class InstagramInboxController extends Controller
         $threads = InstagramConversation::where('company_id', auth()->user()->company_id)
             ->when($allowed !== null, fn ($q) => $q->whereIn('instagram_account_id', $allowed))
             ->when($request->account_id, fn ($q, $id) => $q->where('instagram_account_id', $id))
+            ->whereHas('account', fn ($q) => $q->where('channel', $request->query('channel', 'instagram')))
             ->when($request->status, fn ($q, $s) => $q->where('status', $s))
             ->when($request->boolean('needs_agent'), fn ($q) => $q->where('needs_agent', true))
             ->with('account:id,username')

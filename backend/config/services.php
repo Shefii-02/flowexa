@@ -97,6 +97,15 @@ return [
         'app_secret'     => env('META_ADS_APP_SECRET'),
     ],
 
+    // Facebook Messenger automation (a Facebook Page connected through the main Meta app).
+    'messenger' => [
+        'app_id'            => env('META_APP_ID', '1008186624886889'),
+        'app_secret'        => env('META_APP_SECRET', env('META_ADS_APP_SECRET')),
+        'subscribed_fields' => 'messages,messaging_postbacks,messaging_referrals,feed',
+        // Messenger has no 200-DMs/hour rule like Instagram; this is only a safety valve.
+        'dm_hourly_cap'     => (int) env('MESSENGER_DM_HOURLY_CAP', 1000),
+    ],
+
     'google' => [
         // OAuth client for the per-company Google Sheets / Drive lead sync.
         // Create at console.cloud.google.com → APIs & Services → Credentials → OAuth client (Web).

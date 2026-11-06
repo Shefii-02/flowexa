@@ -1,18 +1,21 @@
 // Instagram AutoDM: connect → create wizard → KPI dashboard, automations table, settings, run drawer.
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { ConfirmModal } from '@/components/ui'
 import { getError } from '@/utils'
 import { instagramApi, type AutoDm, type AutoDmRun, type AutoDmStats, type IgAccount, type WebhookEvent, type MonitorData } from './api/instagram'
 import AutoDmWizard from './autodm/AutoDmWizard'
-import { Avatar, Sparkline, TRIGGERS, triggerMeta } from './autodm/parts'
-import type { AutoDmTrigger } from './api/instagram'
+import { Avatar, Sparkline, handleOf, triggerMeta, triggersFor } from './autodm/parts'
+import type { AutoDmTrigger, Channel } from './api/instagram'
 
 const dateFmt = (s: string) => new Date(s).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
 const pillBtn = 'rounded-full px-4 py-2 text-sm font-medium'
 
-export default function InstagramAutoDmPage() {
+export default function InstagramAutoDmPage({ channel = 'instagram' }: { channel?: Channel }) {
+  const isFb = channel === 'facebook'
+  const TRIGGERS = triggersFor(channel)
+  const navigate = useNavigate()
   const [accounts, setAccounts] = useState<IgAccount[]>([])
   const [list, setList] = useState<AutoDm[]>([])
   const [stats, setStats] = useState<AutoDmStats | null>(null)
@@ -31,17 +34,18 @@ export default function InstagramAutoDmPage() {
 
   const load = useCallback(async () => {
     try {
-      const [a, l] = await Promise.all([instagramApi.accounts(), instagramApi.autodm()])
+      const [a, l] = await Promise.all([instagramApi.accounts(channel), instagramApi.autodm(undefined, channel)])
       const loginAccounts = (a.data.accounts as IgAccount[]).filter(x => x.auth_type === 'instagram_login' || true)
       setAccounts(loginAccounts); setList(l.data.automations)
       setAccountId(id => id ?? loginAccounts[0]?.id ?? null)
     } catch (e) { toast.error(getError(e)) } finally { setLoading(false) }
-  }, [])
+  }, [channel])
   useEffect(() => { void load() }, [load])
-  useEffect(() => { instagramApi.autodmStats(range).then(r => setStats(r.data)).catch(() => setStats(null)) }, [range, list.length])
+  useEffect(() => { instagramApi.autodmStats(range, channel).then(r => setStats(r.data)).catch(() => setStats(null)) }, [range, list.length])
 
   const account = accounts.find(a => a.id === accountId) ?? accounts[0]
   const connect = async () => {
+    if (isFb) { navigate('/messenger/pages'); return }
     setConnecting(true)
     try { window.location.href = (await instagramApi.igConnectUrl()).data.url }
     catch (e) { toast.error(getError(e)); setConnecting(false) }
@@ -54,7 +58,7 @@ export default function InstagramAutoDmPage() {
     }
   }
   const exportCsv = async () => {
-    const r = await instagramApi.autodmExport()
+    const r = await instagramApi.autodmExport(channel)
     const a = document.createElement('a'); a.href = URL.createObjectURL(r.data as Blob); a.download = 'instagram-autodm.csv'; a.click()
   }
 
@@ -68,15 +72,10 @@ export default function InstagramAutoDmPage() {
   // ── not connected ──
   if (accounts.length === 0) return (
     <div className="mx-auto max-w-2xl px-4 py-12 text-center">
-      <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">Turn engagement into conversion with AutoDMs</h1>
-      <p className="mt-3 text-gray-600">Reply to comments, DMs, story replies and Live comments automatically — capture leads and follow up inside Teamzo.</p>
-      <div className="mt-6 aspect-video overflow-hidden rounded-2xl border border-gray-200 bg-gray-50">
-        {import.meta.env.VITE_AUTODM_INTRO_VIDEO
-          ? <iframe title="AutoDM intro" src={import.meta.env.VITE_AUTODM_INTRO_VIDEO as string} className="h-full w-full" allowFullScreen />
-          : <div className="flex h-full items-center justify-center text-sm text-gray-400">Intro video</div>}
-      </div>
+      <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">{isFb ? 'Turn Page comments and messages into conversations' : 'Turn engagement into conversion with AutoDMs'}</h1>
+      <p className="mt-3 text-gray-600">{isFb ? 'Reply to comments on your Facebook Page and to Messenger messages automatically — capture leads and follow up inside Teamzo.' : 'Reply to comments, DMs, story replies and Live comments automatically — capture leads and follow up inside Teamzo.'}</p>
       <button onClick={connect} disabled={connecting} className="mt-6 rounded-full px-6 py-3 text-sm font-semibold text-white disabled:opacity-60"
-        style={{ background: 'linear-gradient(45deg,#f9ce34,#ee2a7b,#6228d7)' }}>{connecting ? 'Redirecting…' : 'Connect Instagram Account'}</button>
+        style={{ background: isFb ? 'linear-gradient(45deg,#0084ff,#a334fa)' : 'linear-gradient(45deg,#f9ce34,#ee2a7b,#6228d7)' }}>{connecting ? 'Redirecting…' : isFb ? 'Connect Facebook Page' : 'Connect Instagram Account'}</button>
       <p className="mt-4 inline-flex items-center gap-1 rounded-full border border-gray-200 px-3 py-1 text-xs text-gray-500">✔ Meta Tech Provider</p>
     </div>
   )
@@ -100,29 +99,29 @@ export default function InstagramAutoDmPage() {
       {limit && <div role="alert" className="flex items-center gap-2 rounded-xl border border-violet-300 bg-violet-50 p-3 text-sm text-violet-900">{limit}
         <Link to="/billing" className="font-semibold underline">Upgrade plan</Link><button className="ml-auto" onClick={() => setLimit(null)} aria-label="Dismiss">×</button></div>}
 
-      {tab === 'monitor' ? <MonitorTab /> : tab === 'activity' ? <ActivityTab /> : tab === 'settings' ? (
+      {tab === 'monitor' ? <MonitorTab channel={channel} /> : tab === 'activity' ? <ActivityTab channel={channel} /> : tab === 'settings' ? (
         <div className="rounded-2xl border border-gray-200 bg-white p-5">
-          <h2 className="mb-3 font-semibold text-gray-900">Instagram accounts</h2>
+          <h2 className="mb-3 font-semibold text-gray-900">{isFb ? 'Facebook Pages' : 'Instagram accounts'}</h2>
           <div className="divide-y divide-gray-100">
             {accounts.map(a => (
               <div key={a.id} className="flex items-center gap-3 py-3">
-                <Avatar account={a} /><div className="flex-1"><p className="text-sm font-medium">@{a.username}</p>
+                <Avatar account={a} /><div className="flex-1"><p className="text-sm font-medium">{handleOf(a, channel)}</p>
                   <p className="text-xs text-gray-500">{list.filter(x => x.instagram_account_id === a.id).length} Automation(s)</p></div>
                 {a.status && a.status !== 'active' && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-800">{a.status.replace('_', ' ')}</span>}
-                <RowMenu items={[{ label: 'Reconnect', onClick: connect }, { label: 'Disconnect', danger: true, onClick: () => act(() => instagramApi.igDisconnect(a.id), 'Disconnected.') }]} />
+                <RowMenu items={[{ label: 'Reconnect', onClick: connect }, { label: 'Disconnect', danger: true, onClick: () => act(() => isFb ? instagramApi.messengerDisconnect(a.id) : instagramApi.igDisconnect(a.id), 'Disconnected.') }]} />
               </div>))}
           </div>
-          <button onClick={connect} className="mt-3 text-sm font-medium text-blue-600">+ Add Instagram account</button>
+          <button onClick={connect} className="mt-3 text-sm font-medium text-blue-600">{isFb ? '+ Add Facebook Page' : '+ Add Instagram account'}</button>
         </div>
       ) : (<>
         {/* KPI cards */}
         <div className="flex items-center justify-end gap-2 text-sm">
           {['7d', '30d', '90d'].map(r => <button key={r} onClick={() => setRange(r)} className={`rounded-full px-3 py-1 ${range === r ? 'bg-black text-white' : 'border border-gray-200'}`}>{r}</button>)}
         </div>
-        <div className="grid gap-3 sm:grid-cols-3">
+        <div className={`grid gap-3 ${isFb ? 'sm:grid-cols-2' : 'sm:grid-cols-3'}`}>
           <Kpi label="DMs sent" tip="Automated DMs delivered by your AutoDMs." v={stats?.dms_sent} />
           <Kpi label="Leads generated" tip="Contacts whose email or phone was captured and added to CRM." v={stats?.leads} />
-          <Kpi label="Followers gained via AutoDM" tip="People who followed you after a follow-gate DM." v={stats?.followers} />
+          {!isFb && <Kpi label="Followers gained via AutoDM" tip="People who followed you after a follow-gate DM." v={stats?.followers} />}
         </div>
 
         {list.filter(a => a.status !== 'draft' || a.wizard).length === 0 ? (
@@ -136,7 +135,7 @@ export default function InstagramAutoDmPage() {
           <div className="rounded-2xl border border-gray-200 bg-white">
             <div className="flex flex-wrap items-center gap-2 border-b border-gray-100 p-3">
               {accounts.length > 1 && <select value={account?.id} onChange={e => setAccountId(Number(e.target.value))} className="rounded-xl border border-gray-200 px-2 py-1.5 text-sm">
-                {accounts.map(a => <option key={a.id} value={a.id}>@{a.username}</option>)}</select>}
+                {accounts.map(a => <option key={a.id} value={a.id}>{handleOf(a, channel)}</option>)}</select>}
               <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search" aria-label="Search automations" className="min-w-0 flex-1 rounded-xl border border-gray-200 px-3 py-1.5 text-sm" />
               <select value={sort} onChange={e => setSort(e.target.value as 'recent')} aria-label="Sort" className="rounded-xl border border-gray-200 px-2 py-1.5 text-sm">
                 <option value="recent">Recent</option><option value="runs">Most runs</option><option value="name">Name</option></select>
@@ -146,18 +145,18 @@ export default function InstagramAutoDmPage() {
             <div className="overflow-x-auto h-screen max-h-[calc(100vh-300px)]">
               <table className="w-full min-w-[720px] text-sm">
                 <thead><tr className="text-left text-xs uppercase text-gray-400">
-                  <th className="p-3 font-medium">Automation</th><th className="p-3 font-medium">New followers</th><th className="p-3 font-medium">Runs</th>
+                  <th className="p-3 font-medium">Automation</th>{!isFb && <th className="p-3 font-medium">New followers</th>}<th className="p-3 font-medium">Runs</th>
                   <th className="p-3 font-medium">Clicks</th><th className="p-3 font-medium">Status</th><th className="p-3 font-medium">Last modified</th><th /></tr></thead>
                 <tbody className="divide-y divide-gray-50">
-                  {rows.map(a => { const m = triggerMeta(a.wizard.trigger_type); return (
+                  {rows.map(a => { const m = triggerMeta(a.wizard.trigger_type, channel); return (
                     <tr key={a.id}>
                       <td className="p-3"><div className="flex items-center gap-3">
                         {a.wizard.media_preview?.thumbnail_url ? <img src={a.wizard.media_preview.thumbnail_url} alt="" className="h-10 w-10 rounded-lg object-cover" />
                           : <span className={`flex h-10 w-10 items-center justify-center rounded-lg ${m.tone}`}>{m.icon}</span>}
                         <div className="min-w-0"><p className="max-w-[260px] truncate font-medium text-gray-900">{a.name}</p>
                           <p className="max-w-[260px] truncate text-xs text-gray-500">{a.wizard.primary_message.text}</p>
-                          <p className="text-xs text-gray-400">@{account?.username} · <span className={`rounded-full px-1.5 ${m.tone}`}>{m.key.replace('_', ' ')}</span></p></div></div></td>
-                      <td className="p-3">🔥 {a.new_followers}</td><td className="p-3">{a.runs ?? 0}</td><td className="p-3">{a.clicks}</td>
+                          <p className="text-xs text-gray-400">{handleOf(account, channel)} · <span className={`rounded-full px-1.5 ${m.tone}`}>{m.key.replace('_', ' ')}</span></p></div></div></td>
+                      {!isFb && <td className="p-3">🔥 {a.new_followers}</td>}<td className="p-3">{a.runs ?? 0}</td><td className="p-3">{a.clicks}</td>
                       <td className="p-3"><StatusPill s={a.status} /></td><td className="p-3 text-gray-500">{dateFmt(a.updated_at)}</td>
                       <td className="p-3"><RowMenu items={[
                         { label: 'Edit', onClick: () => setWizard({ trigger: a.wizard.trigger_type, existing: a }) },
@@ -174,8 +173,8 @@ export default function InstagramAutoDmPage() {
         )}
       </>)}
 
-      {picker && <TriggerPicker onClose={() => setPicker(false)} onPick={t => { setPicker(false); setWizard({ trigger: t }) }} />}
-      {wizard && account && <AutoDmWizard account={account} trigger={wizard.trigger} existing={wizard.existing}
+      {picker && <TriggerPicker triggers={TRIGGERS} onClose={() => setPicker(false)} onPick={t => { setPicker(false); setWizard({ trigger: t }) }} />}
+      {wizard && account && <AutoDmWizard account={account} channel={channel} trigger={wizard.trigger} existing={wizard.existing}
         onClose={() => { setWizard(null); void load() }} onSaved={() => { setWizard(null); void load() }} />}
       {runsFor && <RunsDrawer a={runsFor} onClose={() => setRunsFor(null)} />}
       <ConfirmModal open={!!del} onCancel={() => setDel(null)} title="Delete automation?" message={`“${del?.name}” and its run history will be removed.`}
@@ -184,15 +183,15 @@ export default function InstagramAutoDmPage() {
   )
 }
 
-function TriggerCard({ t, onClick }: { t: (typeof TRIGGERS)[number]; onClick: () => void }) {
+function TriggerCard({ t, onClick }: { t: ReturnType<typeof triggersFor>[number]; onClick: () => void }) {
   return (<button onClick={onClick} className="flex items-center gap-3 rounded-2xl border border-gray-200 bg-white p-4 text-left transition hover:border-gray-400">
     <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-xl ${t.tone}`}>{t.icon}</span><span className="text-sm font-medium text-gray-800">{t.title}</span></button>)
 }
-function TriggerPicker({ onClose, onPick }: { onClose: () => void; onPick: (t: AutoDmTrigger) => void }) {
+function TriggerPicker({ triggers, onClose, onPick }: { triggers: ReturnType<typeof triggersFor>; onClose: () => void; onPick: (t: AutoDmTrigger) => void }) {
   return (<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
     <div className="w-full max-w-lg space-y-3 rounded-2xl bg-white p-5" onClick={e => e.stopPropagation()}>
       <h3 className="font-semibold">Create a new AutoDM</h3>
-      <div className="grid gap-3 sm:grid-cols-2">{TRIGGERS.map(t => <TriggerCard key={t.key} t={t} onClick={() => onPick(t.key)} />)}</div></div></div>)
+      <div className="grid gap-3 sm:grid-cols-2">{triggers.map(t => <TriggerCard key={t.key} t={t} onClick={() => onPick(t.key)} />)}</div></div></div>)
 }
 function StatusPill({ s }: { s: string }) {
   const c = s === 'enabled' ? 'bg-green-100 text-green-700' : s === 'paused' ? 'bg-gray-100 text-gray-600' : 'bg-amber-100 text-amber-700'
@@ -246,7 +245,7 @@ const KIND_LABEL: Record<string, string> = {
 }
 
 /** Webhook deliveries Instagram sent us, with what happened to each. Auto-refreshes while open. */
-function ActivityTab() {
+function ActivityTab({ channel }: { channel: Channel }) {
   const [rows, setRows] = useState<WebhookEvent[]>([])
   const [page, setPage] = useState(1)
   const [last, setLast] = useState(1)
@@ -256,10 +255,10 @@ function ActivityTab() {
 
   const load = useCallback(async () => {
     try {
-      const r = await instagramApi.webhookEvents({ page, status: status || undefined })
+      const r = await instagramApi.webhookEvents({ page, status: status || undefined, channel })
       setRows(r.data.data); setLast(r.data.last_page)
     } catch (e) { toast.error(getError(e)) } finally { setLoading(false) }
-  }, [page, status])
+  }, [page, status, channel])
   useEffect(() => { void load(); const t = setInterval(() => void load(), 10000); return () => clearInterval(t) }, [load])
 
   return (
@@ -308,13 +307,13 @@ function Bar({ value, max, tone }: { value: number; max: number; tone: string })
 }
 
 /** Live DM budget + FIFO queue per account, delivery analytics. Auto-refreshes every 15s. */
-function MonitorTab() {
+function MonitorTab({ channel }: { channel: Channel }) {
   const [range, setRange] = useState('7d')
   const [d, setD] = useState<MonitorData | null>(null)
   const [tick, setTick] = useState(0)
   const load = useCallback(async () => {
-    try { setD((await instagramApi.monitor(range)).data) } catch (e) { toast.error(getError(e)) }
-  }, [range])
+    try { setD((await instagramApi.monitor(range, channel)).data) } catch (e) { toast.error(getError(e)) }
+  }, [range, channel])
   useEffect(() => { void load(); const t = setInterval(() => void load(), 15000); return () => clearInterval(t) }, [load])
   useEffect(() => { const t = setInterval(() => setTick(x => x + 1), 1000); return () => clearInterval(t) }, [])
   if (!d) return <p className="p-6 text-sm text-gray-400">Loading…</p>
@@ -329,13 +328,13 @@ function MonitorTab() {
         return (
           <section key={a.account_id} className="rounded-2xl border border-gray-200 bg-white p-4">
             <div className="flex flex-wrap items-center gap-2">
-              <h3 className="font-semibold text-gray-900">@{a.username}</h3>
+              <h3 className="font-semibold text-gray-900">{handleOf(a, channel)}</h3>
               <span className={`rounded-full px-2 py-0.5 text-xs ${full ? 'bg-amber-100 text-amber-800' : 'bg-green-100 text-green-700'}`}>{full ? 'Hourly limit reached' : 'Sending normally'}</span>
               {a.queued > 0 && <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs text-blue-700">{a.queued} waiting in queue</span>}
             </div>
             <div className="mt-3 grid gap-4 sm:grid-cols-2">
               <div>
-                <p className="mb-1 flex justify-between text-xs text-gray-500"><span>DMs this hour</span><span>{a.used} / {a.hourly_cap}</span></p>
+                <p className="mb-1 flex justify-between text-xs text-gray-500"><span>{channel === 'facebook' ? 'Messages this hour' : 'DMs this hour'}</span><span>{a.used} / {a.hourly_cap}</span></p>
                 <Bar value={a.used} max={a.hourly_cap} tone={full ? 'bg-amber-500' : 'bg-green-500'} />
                 <p className="mt-1 text-xs text-gray-500">{a.used > 0 ? `Window resets in ${fmtWait(left)}` : 'No DMs sent in the current hour'}</p>
               </div>
@@ -366,7 +365,7 @@ function MonitorTab() {
         <div className="mb-3 flex items-center gap-2"><h3 className="flex-1 font-semibold text-gray-900">Analytics</h3>
           {['7d', '30d', '90d'].map(x => <button key={x} onClick={() => setRange(x)} className={`rounded-full px-3 py-1 text-sm ${range === x ? 'bg-black text-white' : 'border border-gray-200'}`}>{x}</button>)}</div>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          {[['Runs', r.total], ['Completed', r.completed], ['Failed', r.failed], ['Waiting', r.waiting], ['Link clicks (runs)', r.clicked], ['Followers gained', r.followed], ['Leads', r.leads], ['Completion', r.completion_rate === null ? '–' : `${r.completion_rate}%`]].map(([k, v]) => (
+          {[['Runs', r.total], ['Completed', r.completed], ['Failed', r.failed], ['Waiting', r.waiting], ['Link clicks (runs)', r.clicked], ...(channel === 'facebook' ? [] : [['Followers gained', r.followed]]), ['Leads', r.leads], ['Completion', r.completion_rate === null ? '–' : `${r.completion_rate}%`]].map(([k, v]) => (
             <div key={String(k)} className="rounded-xl bg-gray-50 p-3"><p className="text-xs text-gray-500">{k}</p><p className="text-xl font-semibold text-gray-900">{v}</p></div>))}
         </div>
         <p className="mb-1 mt-4 text-xs font-medium text-gray-500">DMs sent per hour (last 24h)</p>

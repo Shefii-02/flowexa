@@ -79,6 +79,11 @@ class InstagramClient
 
     public function accountInfo(InstagramAccount $account): array
     {
+        if ($account->channel === 'facebook') {
+            return $this->graphFor($account)->get($account->ig_user_id, $account->access_token, [
+                'fields' => 'id,name,fan_count,picture{url}',
+            ]);
+        }
         return $this->graphFor($account)->get($account->ig_user_id, $account->access_token, [
             'fields' => 'id,username,name,profile_picture_url,followers_count,follows_count,media_count',
         ]);
@@ -87,6 +92,16 @@ class InstagramClient
     /** Recent media (posts, reels, carousels) for the media picker in automations. */
     public function media(InstagramAccount $account, int $limit = 50): array
     {
+        if ($account->channel === 'facebook') {
+            // Page posts, shaped like Instagram media so the post picker works unchanged.
+            return collect($this->graphFor($account)->getAllPages("/{$account->ig_user_id}/posts", $account->access_token, [
+                'fields' => 'id,message,full_picture,permalink_url,created_time,status_type',
+            ], $limit))->map(fn ($p) => [
+                'id' => $p['id'], 'caption' => $p['message'] ?? null, 'media_type' => ($p['status_type'] ?? '') === 'added_video' ? 'VIDEO' : 'IMAGE',
+                'media_url' => $p['full_picture'] ?? null, 'thumbnail_url' => $p['full_picture'] ?? null,
+                'permalink' => $p['permalink_url'] ?? null, 'timestamp' => $p['created_time'] ?? null,
+            ])->all();
+        }
         return $this->graphFor($account)->getAllPages("/{$account->ig_user_id}/media", $account->access_token, [
             'fields' => 'id,caption,media_type,media_product_type,media_url,thumbnail_url,permalink,timestamp,comments_count,like_count',
         ], $limit);
@@ -94,6 +109,11 @@ class InstagramClient
 
     public function getComment(InstagramAccount $account, string $commentId): array
     {
+        if ($account->channel === 'facebook') {
+            $c = $this->graphFor($account)->get($commentId, $account->access_token, ['fields' => 'id,message,from,created_time,post{id,created_time}']);
+            return ['id' => $c['id'] ?? $commentId, 'text' => $c['message'] ?? '', 'username' => $c['from']['name'] ?? null,
+                    'from' => $c['from'] ?? null, 'media' => ['id' => $c['post']['id'] ?? null, 'timestamp' => $c['post']['created_time'] ?? null]];
+        }
         return $this->graphFor($account)->get($commentId, $account->access_token, [
             'fields' => 'id,text,username,timestamp,from,media{id,media_type,permalink,timestamp}',
         ]);
@@ -110,6 +130,9 @@ class InstagramClient
     /** Public reply under a comment. */
     public function replyToComment(InstagramAccount $account, string $commentId, string $message): array
     {
+        if ($account->channel === 'facebook') {
+            return $this->graphFor($account)->post("/{$commentId}/comments", $account->access_token, ['message' => $message]);
+        }
         return $this->graphFor($account)->post("/{$commentId}/replies", $account->access_token, ['message' => $message]);
     }
 
@@ -179,6 +202,10 @@ class InstagramClient
      */
     public function userProfile(InstagramAccount $account, string $igsid): array
     {
+        if ($account->channel === 'facebook') {
+            // Messenger has no "follows the Page" flag — name and picture only.
+            return $this->graphFor($account)->get("/{$igsid}", $account->access_token, ['fields' => 'name,profile_pic']);
+        }
         return $this->graphFor($account)->get("/{$igsid}", $account->access_token, [
             'fields' => 'name,username,profile_pic,follower_count,is_user_follow_business,is_business_follow_user',
         ]);

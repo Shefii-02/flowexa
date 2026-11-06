@@ -1,9 +1,11 @@
 import api from '@/api/client'
 
+export type Channel = 'instagram' | 'facebook'
+
 export const instagramApi = {
   // Accounts
   discoverPages: (userAccessToken: string) => api.post('/instagram/accounts/discover-pages', { user_access_token: userAccessToken }),
-  accounts: () => api.get('/instagram/accounts'),
+  accounts: (channel: Channel = 'instagram') => api.get('/instagram/accounts', { params: { channel } }),
   connect: (d: Record<string, unknown>) => api.post('/instagram/accounts', d),
   updateAccount: (id: number, d: Record<string, unknown>) => api.put(`/instagram/accounts/${id}`, d),
   disconnect: (id: number) => api.delete(`/instagram/accounts/${id}`),
@@ -34,7 +36,7 @@ export const instagramApi = {
   deleteAutomation: (id: number) => api.delete(`/instagram/automations/${id}`),
 
   // Flows (node-based automations)
-  flows: (accountId?: number) => api.get<{ flows: IgFlowSummary[] }>('/instagram/flows', { params: accountId ? { account_id: accountId } : {} }),
+  flows: (accountId?: number, channel: Channel = 'instagram') => api.get<{ flows: IgFlowSummary[] }>('/instagram/flows', { params: { channel, ...(accountId ? { account_id: accountId } : {}) } }),
   flow: (id: number) => api.get<{ flow: IgFlow; errors: string[] }>(`/instagram/flows/${id}`),
   createFlow: (d: Record<string, unknown>) => api.post<{ flow: IgFlow; errors: string[] }>('/instagram/flows', d),
   saveFlow: (id: number, d: Record<string, unknown>) => api.put<{ flow: IgFlow; errors: string[] }>(`/instagram/flows/${id}`, d),
@@ -48,22 +50,27 @@ export const instagramApi = {
   igDisconnect: (id: number) => api.post(`/instagram/accounts/${id}/disconnect`),
 
   // AutoDM wizard automations
-  autodm: (accountId?: number) => api.get<{ automations: AutoDm[] }>('/instagram/autodm', { params: accountId ? { account_id: accountId } : {} }),
+  autodm: (accountId?: number, channel: Channel = 'instagram') => api.get<{ automations: AutoDm[] }>('/instagram/autodm', { params: { channel, ...(accountId ? { account_id: accountId } : {}) } }),
   autodmCreate: (d: { instagram_account_id: number; name: string; wizard: AutoDmWizard; draft?: boolean }) => api.post<{ automation: AutoDm }>('/instagram/autodm', d),
   autodmUpdate: (id: number, d: { name: string; wizard: AutoDmWizard; draft?: boolean }) => api.put<{ automation: AutoDm }>(`/instagram/autodm/${id}`, d),
   autodmToggle: (id: number) => api.post<{ automation: AutoDm }>(`/instagram/autodm/${id}/toggle`),
   autodmDuplicate: (id: number) => api.post(`/instagram/autodm/${id}/duplicate`),
   autodmDelete: (id: number) => api.delete(`/instagram/autodm/${id}`),
   autodmRuns: (id: number) => api.get<{ runs: AutoDmRun[] }>(`/instagram/autodm/${id}/runs`),
-  autodmStats: (range: string) => api.get<AutoDmStats>('/instagram/autodm/stats', { params: { range } }),
-  autodmExport: () => api.get('/instagram/autodm/export', { responseType: 'blob' }),
+  autodmStats: (range: string, channel: Channel = 'instagram') => api.get<AutoDmStats>('/instagram/autodm/stats', { params: { range, channel } }),
+  autodmExport: (channel: Channel = 'instagram') => api.get('/instagram/autodm/export', { params: { channel }, responseType: 'blob' }),
   autodmLinkSources: () => api.get<{ sources: { key: string; label: string; items: { label: string; url: string }[] }[] }>('/instagram/autodm/link-sources'),
-  webhookEvents: (p: { page?: number; status?: string; kind?: string }) => api.get<WebhookPage>('/instagram/webhook-events', { params: p }),
-  monitor: (range: string) => api.get<MonitorData>('/instagram/monitor', { params: { range } }),
+  webhookEvents: (p: { page?: number; status?: string; kind?: string; channel?: Channel }) => api.get<WebhookPage>('/instagram/webhook-events', { params: p }),
+  monitor: (range: string, channel: Channel = 'instagram') => api.get<MonitorData>('/instagram/monitor', { params: { range, channel } }),
   deletionStatus: (code: string) => api.get<{ status: string; created_at: string; completed_at: string | null }>('/instagram/deletion-status', { params: { code } }),
 
   // DM inbox
   conversations: (p?: Record<string, unknown>) => api.get('/instagram/conversations', { params: p }),
+
+  // Facebook Messenger (Pages)
+  messengerDiscover: (userAccessToken: string) => api.post<{ pages: MessengerPage[] }>('/instagram/messenger/pages/discover', { user_access_token: userAccessToken }),
+  messengerConnect: (pageId: string, pageToken: string) => api.post<{ message: string; account: IgAccount }>('/instagram/messenger/pages', { page_id: pageId, page_token: pageToken }),
+  messengerDisconnect: (id: number) => api.post(`/instagram/messenger/pages/${id}/disconnect`),
   conversation: (id: number) => api.get(`/instagram/conversations/${id}`),
   reply: (id: number, text: string) => api.post(`/instagram/conversations/${id}/reply`, { text }),
   setConversation: (id: number, d: Record<string, unknown>) => api.patch(`/instagram/conversations/${id}`, d),
@@ -294,3 +301,5 @@ export interface MonitorData {
   failure_reasons: { error: string; n: number }[]
   webhooks: Record<string, number>
 }
+
+export interface MessengerPage { page_id: string; name: string | null; page_token: string | null; fans: number | null; picture: string | null; connected: boolean }

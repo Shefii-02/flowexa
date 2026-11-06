@@ -17,6 +17,7 @@ class InstagramAutoDmController extends Controller
     public function index(Request $request): JsonResponse
     {
         $rows = $this->query()->whereNotNull('wizard')
+            ->whereHas('account', fn ($q) => $q->where('channel', $request->query('channel', 'instagram')))
             ->when($request->account_id, fn ($q, $id) => $q->where('instagram_account_id', $id))
             ->withCount('runs')->orderByDesc('updated_at')->get()
             ->map(function ($f) {
@@ -34,14 +35,15 @@ class InstagramAutoDmController extends Controller
     {
         [$account, $wizard, $draft] = $this->input($request);
         $flow = new InstagramFlow(['company_id' => auth()->user()->company_id, 'instagram_account_id' => $account->id]);
+        $wizard = $this->forChannel($account, $wizard);
         return $this->persist($flow, $request->string('name')->toString(), $wizard, $draft, true);
     }
 
     public function update(Request $request, int $id): JsonResponse
     {
         $flow = $this->find($id);
-        [, $wizard, $draft] = $this->input($request, $flow->instagram_account_id);
-        return $this->persist($flow, $request->input('name', $flow->name), $wizard, $draft, false);
+        [$account, $wizard, $draft] = $this->input($request, $flow->instagram_account_id);
+        return $this->persist($flow, $request->input('name', $flow->name), $this->forChannel($account, $wizard), $draft, false);
     }
 
     public function toggle(int $id): JsonResponse
@@ -93,7 +95,7 @@ class InstagramAutoDmController extends Controller
         $days  = ['7d' => 7, '30d' => 30, '90d' => 90][$request->query('range', '30d')] ?? 30;
         $since = now()->subDays($days)->startOfDay();
         $cid   = auth()->user()->company_id;
-        $accountIds = InstagramAccount::where('company_id', $cid)->pluck('id');
+        $accountIds = InstagramAccount::where('company_id', $cid)->where('channel', $request->query('channel', 'instagram'))->pluck('id');
 
         $dms = DB::table('instagram_messages as m')
             ->join('instagram_conversations as c', 'c.id', '=', 'm.instagram_conversation_id')
@@ -117,9 +119,10 @@ class InstagramAutoDmController extends Controller
         ]);
     }
 
-    public function export(): StreamedResponse
+    public function export(Request $request): StreamedResponse
     {
-        $flows = $this->query()->whereNotNull('wizard')->withCount('runs')->get();
+        $flows = $this->query()->whereNotNull('wizard')
+            ->whereHas('account', fn ($q) => $q->where('channel', $request->query('channel', 'instagram')))->withCount('runs')->get();
         return response()->streamDownload(function () use ($flows) {
             $o = fopen('php://output', 'w');
             fputcsv($o, ['Name', 'Trigger', 'Status', 'Runs', 'DMs sent', 'Clicks', 'Leads', 'New followers', 'Last modified']);
@@ -139,6 +142,19 @@ class InstagramAutoDmController extends Controller
     }
 
     // ── internals ──
+
+    /** Messenger has no story replies, Live comments or follower check — normalise the wizard accordingly. */
+    private function forChannel(InstagramAccount $account, array $w): array
+    {
+        if ($account->channel !== 'facebook') {
+            return $w;
+        }
+        if (in_array($w['trigger_type'] ?? '', ['story_reply', 'live_comment'], true)) {
+            abort(response()->json(['message' => 'That trigger is only available on Instagram.'], 422));
+        }
+        $w['follow_gate']['enabled'] = false;
+        return $w;
+    }
 
     private function input(Request $request, ?int $accountId = null): array
     {

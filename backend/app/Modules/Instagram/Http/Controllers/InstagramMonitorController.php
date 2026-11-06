@@ -16,12 +16,12 @@ class InstagramMonitorController extends Controller
         $days  = ['7d' => 7, '30d' => 30, '90d' => 90][$request->query('range', '7d')] ?? 7;
         $since = now()->subDays($days)->startOfDay();
         $allowed = auth()->user()->allowedAccountIds('instagram_account');
-        $accounts = InstagramAccount::where('company_id', $cid)->when($allowed !== null, fn ($q) => $q->whereIn('id', $allowed))->get();
+        $accounts = InstagramAccount::where('company_id', $cid)->where('channel', $request->query('channel', 'instagram'))->when($allowed !== null, fn ($q) => $q->whereIn('id', $allowed))->get();
         $ids = $accounts->pluck('id');
-        $cap = (int) config('services.instagram.dm_hourly_cap', 190);
 
         // ── per-account budget + queue ──
-        $monitor = $accounts->map(function (InstagramAccount $a) use ($cap) {
+        $monitor = $accounts->map(function (InstagramAccount $a) {
+            $cap = $a->channel === 'facebook' ? (int) config('services.messenger.dm_hourly_cap', 1000) : (int) config('services.instagram.dm_hourly_cap', 190);
             $key  = "ig-dm:{$a->id}";
             $used = RateLimiter::attempts($key);
             $queue = InstagramFlowRun::where('instagram_account_id', $a->id)->where('status', 'waiting')->where('wait_kind', 'throttle')

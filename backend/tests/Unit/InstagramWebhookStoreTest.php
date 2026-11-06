@@ -19,7 +19,7 @@ class InstagramWebhookStoreTest extends TestCase
         DB::purge('sqlite');
         Queue::fake();
         Schema::create('instagram_accounts', function ($t) {
-            $t->id(); $t->unsignedBigInteger('company_id'); $t->string('ig_user_id'); $t->string('username')->nullable();
+            $t->id(); $t->unsignedBigInteger('company_id'); $t->string('channel')->default('instagram'); $t->string('ig_user_id'); $t->string('username')->nullable();
             $t->text('access_token'); $t->boolean('is_active')->default(true); $t->timestamps(); $t->softDeletes();
         });
         Schema::create('instagram_webhook_events', function ($t) {
@@ -96,5 +96,60 @@ class InstagramWebhookStoreTest extends TestCase
             'HTTP_X_HUB_SIGNATURE_256' => 'sha256=' . hash_hmac('sha256', $raw, 'meta-app-secret'),
         ], $raw)->assertOk();
         $this->assertSame(1, DB::table('instagram_webhook_events')->count());
+    }
+
+    private function pageHook(array $body)
+    {
+        $raw = json_encode($body + ['object' => 'page']);
+        return $this->call('POST', '/api/v1/instagram/webhook', [], [], [], [
+            'CONTENT_TYPE' => 'application/json', 'HTTP_X_HUB_SIGNATURE_256' => 'sha256=' . hash_hmac('sha256', $raw, 'sek'),
+        ], $raw);
+    }
+
+    #[Test]
+    public function facebook_page_comment_is_normalised_and_scoped_to_the_facebook_channel(): void
+    {
+        InstagramAccount::create(['company_id' => 7, 'channel' => 'facebook', 'ig_user_id' => 'PAGE1', 'username' => 'My Page', 'access_token' => 't', 'is_active' => true]);
+        $this->pageHook(['entry' => [['id' => 'PAGE1', 'changes' => [['field' => 'feed', 'value' => [
+            'item' => 'comment', 'verb' => 'add', 'comment_id' => 'p_c1', 'post_id' => 'p_1', 'parent_id' => 'p_1',
+            'message' => 'price please', 'from' => ['id' => 'U5', 'name' => 'Asha']]]]]]])->assertOk();
+
+        Queue::assertPushed(ProcessInstagramEvent::class, fn ($j) => $j->kind === 'comment'
+            && $j->payload['id'] === 'p_c1' && $j->payload['text'] === 'price please'
+            && $j->payload['from']['id'] === 'U5' && $j->payload['media']['id'] === 'p_1');
+        $this->assertSame('comment', DB::table('instagram_webhook_events')->value('kind'));
+    }
+
+    #[Test]
+    public function facebook_replies_edits_and_likes_do_not_start_automations(): void
+    {
+        InstagramAccount::create(['company_id' => 7, 'channel' => 'facebook', 'ig_user_id' => 'PAGE1', 'username' => 'My Page', 'access_token' => 't', 'is_active' => true]);
+        $this->pageHook(['entry' => [['id' => 'PAGE1', 'changes' => [
+            ['field' => 'feed', 'value' => ['item' => 'comment', 'verb' => 'add', 'comment_id' => 'r1', 'post_id' => 'p_1', 'parent_id' => 'p_c1', 'message' => 'reply', 'from' => ['id' => 'U1']]],
+            ['field' => 'feed', 'value' => ['item' => 'comment', 'verb' => 'edited', 'comment_id' => 'p_c1', 'post_id' => 'p_1', 'parent_id' => 'p_1']],
+            ['field' => 'feed', 'value' => ['item' => 'like', 'verb' => 'add', 'post_id' => 'p_1']],
+        ]]]])->assertOk();
+        Queue::assertNothingPushed();
+        $this->assertSame(3, DB::table('instagram_webhook_events')->where('status', 'ignored')->count());
+    }
+
+    #[Test]
+    public function an_instagram_account_never_receives_page_events_and_vice_versa(): void
+    {
+        // IG1 is an INSTAGRAM account; a page-object event with the same id must not reach it.
+        $this->pageHook(['entry' => [['id' => 'IG1', 'messaging' => [['sender' => ['id' => 'U1'], 'recipient' => ['id' => 'IG1'], 'message' => ['mid' => 'm', 'text' => 'hi']]]]]])->assertOk();
+        Queue::assertNothingPushed();
+        $this->assertSame('ignored', DB::table('instagram_webhook_events')->value('status'));
+    }
+
+    #[Test]
+    public function messenger_text_messages_and_postbacks_reach_the_same_pipeline(): void
+    {
+        InstagramAccount::create(['company_id' => 7, 'channel' => 'facebook', 'ig_user_id' => 'PAGE1', 'username' => 'My Page', 'access_token' => 't', 'is_active' => true]);
+        $this->pageHook(['entry' => [['id' => 'PAGE1', 'messaging' => [
+            ['sender' => ['id' => 'PSID1'], 'recipient' => ['id' => 'PAGE1'], 'message' => ['mid' => 'mm1', 'text' => 'hello']],
+            ['sender' => ['id' => 'PSID2'], 'recipient' => ['id' => 'PAGE1'], 'postback' => ['mid' => 'mm2', 'payload' => 'FLOW:1:2:0', 'title' => 'Send me the link']],
+        ]]]])->assertOk();
+        $this->assertEqualsCanonicalizing(['message', 'postback'], DB::table('instagram_webhook_events')->pluck('kind')->all());
     }
 }
