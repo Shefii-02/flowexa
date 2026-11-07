@@ -20,7 +20,6 @@ class DatabaseSeeder extends Seeder
         $this->call([
             // ── Plans & limits ───────────────────────────────────────────────
             PlansSeeder::class,
-            UpdatePlansWithLimitsSeeder::class, // redundant with PlansSeeder; kept for completeness
             PlanPricingSeeder::class,           // yearly prices, Testing plan, limit add-ons
 
             // ── Roles & permissions ──────────────────────────────────────────

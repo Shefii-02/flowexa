@@ -6,7 +6,7 @@ import { Badge, Button, Input, Modal, Spinner } from '@/components/ui'
 import PricingPdfButton from '@/components/plan/PricingPdfButton'
 import { fmt, getError } from '@/utils'
 
-type Row = { id: number; name: string; slug: string; description: string | null; type: string; price: string | number; price_yearly: string | number | null; billing_cycle: string; config: { resource?: string; amount?: number } | null; is_active: boolean }
+type Row = { id: number; name: string; slug: string; description: string | null; type: string; price: string | number; price_yearly: string | number | null; billing_cycle: string; group?: { title: string; icon: string }; config: { resource?: string; amount?: number } | null; is_active: boolean }
 type Res = { key: string; label: string; kind: string }
 const EMPTY = { name: '', slug: '', description: '', type: 'limit', price: '', price_yearly: '', billing_cycle: 'monthly', resource: '', amount: '', is_active: true }
 
@@ -56,7 +56,7 @@ export default function SuperAdminAddons() {
         <thead><tr><th>Add-on</th><th>Gives</th><th>Monthly</th><th>Yearly</th><th>Status</th><th /></tr></thead>
         <tbody>{rows.map(r => (
           <tr key={r.id}>
-            <td><p className="font-medium">{r.name}</p><p className="text-xs text-gray-400">{r.slug}</p></td>
+            <td><p className="font-medium">{r.name}</p><p className="text-xs text-gray-400">{r.group ? `${r.group.icon} ${r.group.title} · ` : ''}{r.slug}</p></td>
             <td className="text-sm">{r.type === 'limit' ? `+${fmt.number(r.config?.amount ?? 0)} ${label(r.config?.resource)}` : r.type}</td>
             <td>{r.billing_cycle === 'one_time' ? 'One time ' : ''}₹{fmt.number(Number(r.price))}</td>
             <td>{r.billing_cycle === 'one_time' ? '—' : r.price_yearly != null ? `₹${fmt.number(Number(r.price_yearly))}` : <span className="text-xs text-gray-400">₹{fmt.number(Number(r.price) * 12)} (12 × monthly)</span>}</td>

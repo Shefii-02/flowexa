@@ -8,7 +8,8 @@ use Illuminate\Database\Seeder;
 /**
  * Single source of truth for the public subscription plans.
  *
- * Every plan is paid — there are no ₹0 plans. A new company instead gets a
+ * Two paid plans (Starter, Growth) plus the staff-assigned Testing plan (PlanPricingSeeder). Pro was retired.
+ * Every public plan is paid — there are no ₹0 public plans. A new company instead gets a
  * 7-day free trial (Company.status = 'trial' + trial_ends_at) and only picks
  * a paid plan when the trial ends or they upgrade early.
  *
@@ -27,6 +28,7 @@ class PlansSeeder extends Seeder
                 'name'           => 'Starter',
                 'messages_limit' => 8000,
                 'price'          => 499,
+                'price_yearly'   => 4990,
                 'is_active'      => true,
                 'features'       => [
                     'Up to 8,000 messages/month',
@@ -65,6 +67,7 @@ class PlansSeeder extends Seeder
                 'name'           => 'Growth',
                 'messages_limit' => 30000,
                 'price'          => 1499,
+                'price_yearly'   => 14990,
                 'is_active'      => true,
                 'features'       => [
                     'Up to 30,000 messages/month',
@@ -95,44 +98,6 @@ class PlansSeeder extends Seeder
                 'max_instagram_accounts'   => 3,
                 'max_meta_ads_accounts'    => 3,
                 'max_website_widgets'      => 3,
-                'google_sheets_enabled'      => true,
-                'google_drive_enabled'       => true,
-                'calendar_enabled'           => true,
-                'email_integration_enabled'  => true,
-            ],
-            [
-                'name'           => 'Pro',
-                'messages_limit' => 100000,
-                'price'          => 3999,
-                'is_active'      => true,
-                'features'       => [
-                    'Up to 100,000 messages/month',
-                    '5 WhatsApp Cloud numbers',
-                    '10 WA Chat sessions',
-                    'Full API access',
-                    'Custom CRM integration',
-                    'Dedicated account manager',
-                    'Custom branding',
-                ],
-                'duration_type'         => 'monthly',
-                'duration_months'       => 1,
-                'alert_before_days'     => 10,
-                'max_users'             => null,  // null == unlimited
-                'max_templates'         => null,
-                'max_phone_numbers'     => 5,
-                'max_wa_sessions'       => 10,
-                'max_campaigns'         => null,
-                'max_contacts'          => null,
-                'max_labels'            => null,
-                'max_flow_nodes'        => null,
-                'max_campaign_contacts' => null,
-                'throttle_per_minute'   => 500,
-                'max_leads_per_month'      => null,  // null == unlimited
-                'max_lead_categories'      => null,
-                'max_roles'                => null,
-                'max_instagram_accounts'   => null,
-                'max_meta_ads_accounts'    => null,
-                'max_website_widgets'      => null,
                 'google_sheets_enabled'      => true,
                 'google_drive_enabled'       => true,
                 'calendar_enabled'           => true,

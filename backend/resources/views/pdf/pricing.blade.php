@@ -36,9 +36,13 @@
   <h2>What each plan includes</h2>
   <table>
     <tr><th>Feature limit</th>@foreach($plans as $p)<th class="c">{{ $p['name'] }}</th>@endforeach</tr>
-    @foreach($limitRows as $i => $row)
-      <tr><td>{{ $row['label'] }}@if($row['monthly']) <span class="muted">(per month)</span>@endif</td>
-        @foreach($plans as $p)<td class="c">{{ $unl($p['limits'][$row['key']]['value'] ?? null) }}</td>@endforeach</tr>
+    @foreach($groups as $g)
+      <tr><td colspan="{{ count($plans) + 1 }}" style="background:#eef6f3;font-weight:bold">{{ $g['title'] }}</td></tr>
+      @foreach($g['keys'] as $key)
+        @php($row = collect($limitRows)->firstWhere('key', $key))
+        <tr><td>{{ $row['label'] }}@if($row['monthly']) <span class="muted">(per month)</span>@endif</td>
+          @foreach($plans as $p)<td class="c">{{ $unl($p['limits'][$key]['value'] ?? null) }}</td>@endforeach</tr>
+      @endforeach
     @endforeach
   </table>
   <div class="note">“Unlimited” means the plan sets no cap for that item. Limits can be raised individually with add-ons.</div>
@@ -51,7 +55,9 @@
   @else
   <table>
     <tr><th>Add-on</th><th>Adds</th>@if($cycle !== 'yearly')<th class="r">Per month</th>@endif @if($cycle !== 'monthly')<th class="r">Per year</th>@endif<th class="r">One-time</th></tr>
+    @php($lastGroup = null)
     @foreach($addons as $a)
+      @if($a['group'] !== $lastGroup)<tr><td colspan="5" style="background:#eef6f3;font-weight:bold">{{ $a['group'] }}</td></tr>@php($lastGroup = $a['group'])@endif
       <tr><td><b>{{ $a['name'] }}</b>@if($a['description'])<br><span class="muted">{{ $a['description'] }}</span>@endif</td>
         <td>{{ $a['adds'] ?? ucfirst(str_replace('_', ' ', $a['type'])) }}</td>
         @if($cycle !== 'yearly')<td class="r price">{{ $money($a['monthly']) }}</td>@endif

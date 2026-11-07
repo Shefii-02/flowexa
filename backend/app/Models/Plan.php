@@ -21,6 +21,8 @@ class Plan extends Model
         'google_sheets_enabled', 'google_drive_enabled', 'calendar_enabled', 'email_integration_enabled',
     ];
 
+    protected $appends = ['yearly_price', 'sections'];
+
     protected $casts = [
         'features'              => 'array',
         'is_active'             => 'boolean',
@@ -51,6 +53,18 @@ class Plan extends Model
         'calendar_enabled'           => 'boolean',
         'email_integration_enabled'  => 'boolean',
     ];
+
+    /** What a 12-month purchase costs: the price set by the superadmin, else 12 months at 20% off (same rule as PlanPurchaseService). */
+    public function getYearlyPriceAttribute(): float
+    {
+        return $this->price_yearly !== null ? (float) $this->price_yearly : round((float) $this->price * 12 * 0.80, 2);
+    }
+
+    /** Limits grouped by feature, for the plan cards. */
+    public function getSectionsAttribute(): array
+    {
+        return \App\Support\PlanLimits::sectionsFor($this);
+    }
 
     public function companies(): HasMany
     {

@@ -4,10 +4,10 @@ import toast from 'react-hot-toast'
 import { planApi } from '@/api'
 import { Badge, Button } from '@/components/ui'
 import { fmt, getError } from '@/utils'
-import { refreshPlanUsage, usePlanUsage } from '@/lib/planUsage'
+import { refreshPlanUsage, usePlanUsage, type ResourceUsage } from '@/lib/planUsage'
 import { loadRazorpay } from './razorpay'
 
-export type Addon = { id: number; name: string; slug: string; description: string | null; type: 'feature' | 'message_pack' | 'storage' | 'limit'; price: string | number; price_yearly?: string | number | null; billing_cycle: 'monthly' | 'yearly' | 'one_time'; config: { resource?: string; amount?: number; [k: string]: unknown } | null }
+export type Addon = { id: number; name: string; slug: string; description: string | null; type: 'feature' | 'message_pack' | 'storage' | 'limit'; price: string | number; price_yearly?: string | number | null; billing_cycle: 'monthly' | 'yearly' | 'one_time'; group?: { key: string; title: string; icon: string }; config: { resource?: string; amount?: number; [k: string]: unknown } | null }
 export type MyAddon = { id: number; status: string; amount_paid: string | number; starts_at: string; expires_at: string | null; addon: Addon | null }
 
 const CYCLE: Record<string, string> = { monthly: 'per month', yearly: 'per year', one_time: 'one time' }
@@ -27,12 +27,19 @@ export default function AddonsSection({ addons, mine, focus, onChanged }: { addo
   const limitPacks = addons.filter(a => a.type === 'limit' && a.config?.resource)
   const others = addons.filter(a => a.type !== 'limit')
 
-  // one card per resource that has packs; the ones at/over the limit come first
-  const groups = useMemo(() => {
-    const by: Record<string, Addon[]> = {}
-    limitPacks.forEach(a => { (by[a.config!.resource!] ??= []).push(a) })
-    return Object.entries(by).map(([key, packs]) => ({ key, packs: packs.sort((x, y) => Number(x.config?.amount) - Number(y.config?.amount)), usage: resources[key] }))
-      .sort((a, b) => Number(!!b.usage?.exceeded) - Number(!!a.usage?.exceeded) || (b.usage?.percent ?? 0) - (a.usage?.percent ?? 0))
+  // feature sections (WA Chat, CRM & Leads, …) in the server's order; inside each, one card per limit — the ones at/over the limit first
+  const sections = useMemo(() => {
+    const secs: { key: string; title: string; icon: string; cards: { key: string; packs: Addon[]; usage?: ResourceUsage }[] }[] = []
+    limitPacks.forEach(a => {
+      const g = a.group ?? { key: 'other', title: 'Other', icon: '✨' }
+      let sec = secs.find(x => x.key === g.key); if (!sec) { sec = { ...g, cards: [] }; secs.push(sec) }
+      const res = a.config!.resource!
+      let card = sec.cards.find(c => c.key === res); if (!card) { card = { key: res, packs: [], usage: resources[res] }; sec.cards.push(card) }
+      card.packs.push(a)
+    })
+    secs.forEach(sec => { sec.cards.forEach(c => c.packs.sort((x, y) => Number(x.config?.amount) - Number(y.config?.amount)))
+      sec.cards.sort((a, b) => Number(!!b.usage?.exceeded) - Number(!!a.usage?.exceeded) || (b.usage?.percent ?? 0) - (a.usage?.percent ?? 0)) })
+    return secs
   }, [limitPacks, resources])
 
   const buy = async (addon: Addon) => {
@@ -76,12 +83,15 @@ export default function AddonsSection({ addons, mine, focus, onChanged }: { addo
           No add-ons are available right now. If you need more of something, upgrade your plan under <b>All plans</b>.
         </div>)}
 
-      {groups.length > 0 && (
+      {sections.length > 0 && (
         <section className="space-y-3">
           <div><h3 className="font-semibold text-gray-900">Increase a limit</h3>
             <p className="text-sm text-gray-500">Out of staff seats or leads? Add just that one limit — you don’t need to change your plan.</p></div>
+          {sections.map(sec => (
+          <div key={sec.key} className="space-y-3">
+            <h4 className="flex items-center gap-2 border-b border-gray-100 pb-1 text-sm font-semibold text-gray-800"><span>{sec.icon}</span>{sec.title}</h4>
           <div className="grid gap-4 md:grid-cols-2">
-            {groups.map(({ key, packs, usage }) => {
+            {sec.cards.map(({ key, packs, usage }) => {
               const full = !!usage?.exceeded
               const near = !full && (usage?.percent ?? 0) >= 80
               return (
@@ -114,6 +124,7 @@ export default function AddonsSection({ addons, mine, focus, onChanged }: { addo
                 </div>)
             })}
           </div>
+          </div>))}
         </section>)}
 
       {others.length > 0 && (

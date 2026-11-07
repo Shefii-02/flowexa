@@ -61,4 +61,20 @@ class PlanPricingSeederTest extends TestCase
         $this->assertSame(9, (int) Plan::where('name', 'Testing')->value('max_users'));
         $this->assertSame(1, Plan::where('name', 'Testing')->count());
     }
+
+    public function test_every_limit_belongs_to_one_group_and_plans_expose_sections(): void
+    {
+        $all = collect(\App\Support\PlanLimits::GROUPS)->flatMap(fn ($g) => $g[2]);
+        $this->assertEqualsCanonicalizing(array_keys(\App\Support\PlanLimits::REGISTRY), $all->all());
+        $this->assertSame($all->count(), $all->unique()->count());
+
+        $plan = Plan::create(['name' => 'Starter', 'price' => 499, 'max_users' => 5]);
+        $arr = $plan->fresh()->toArray();
+        $this->assertEquals(round(499 * 12 * 0.8, 2), $arr['yearly_price']);
+        $users = collect($arr['sections'])->firstWhere('key', 'team')['items'][0];
+        $this->assertSame(['users', 5], [$users['key'], $users['value']]);
+
+        $this->seed_();
+        $this->assertSame('Staff & roles', Addon::where('slug', 'users-5')->first()->toArray()['group']['title']);
+    }
 }

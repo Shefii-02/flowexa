@@ -24,7 +24,8 @@ class PricingPdfController extends Controller
         $cycle = $d['cycle'] ?? 'both';
 
         $plans = Plan::where('is_active', true)->orderBy('price')->get();
-        $addons = Addon::where('is_active', true)->orderBy('type')->orderBy('name')->get();
+        $addons = Addon::where('is_active', true)->orderBy('type')->orderBy('name')->get()
+            ->sortBy(fn (Addon $a) => array_search($a->group['key'], array_merge(array_keys(PlanLimits::GROUPS), ['other'])))->values();
 
         $html = view('pdf.pricing', [
             'scope' => $scope, 'cycle' => $cycle, 'generatedAt' => now(),
@@ -34,11 +35,12 @@ class PricingPdfController extends Controller
                 'limits' => collect(PlanLimits::REGISTRY)->map(fn ($r, $key) => ['label' => $r[0], 'monthly' => $r[3] === 'monthly', 'value' => $p->{$r[2]} ?? null])->all(),
                 'features' => (array) $p->features,
             ])->all(),
+            'groups' => collect(PlanLimits::GROUPS)->map(fn ($g) => ['title' => $g[0], 'keys' => $g[2]])->values()->all(),
             'limitRows' => collect(PlanLimits::REGISTRY)->map(fn ($r, $key) => ['key' => $key, 'label' => $r[0], 'monthly' => $r[3] === 'monthly', 'col' => $r[2]])->values()->all(),
             'addons' => $addons->map(function (Addon $a) {
                 $cfg = (array) $a->config; $res = $cfg['resource'] ?? null;
                 return [
-                    'name' => $a->name, 'type' => $a->type, 'description' => $a->description,
+                    'group' => $a->group['title'], 'name' => $a->name, 'type' => $a->type, 'description' => $a->description,
                     'adds' => $a->type === 'limit' && $res ? '+' . number_format((int) ($cfg['amount'] ?? 0)) . ' ' . strtolower(PlanLimits::label($res)) : null,
                     'monthly' => $a->billing_cycle === 'one_time' ? null : (float) $a->price,
                     'yearly' => $a->billing_cycle === 'one_time' ? null : $this->svc->addonPrice($a, 'yearly'),

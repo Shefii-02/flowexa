@@ -61,10 +61,12 @@ export default function PlanPurchasePage() {
     planApi.invoices().then(r => setInvoices(r.data.invoices ?? [])).catch(() => {})
   }
 
-  const calcPrice = (base: number, dur: string) => {
+  // 12 months uses the yearly price the superadmin set (the server computes the same number); shorter periods keep the small discounts
+  const calcPrice = (plan: any, dur: string) => {
+    if (dur === 'yearly') return Number(plan.yearly_price ?? plan.price * 12 * 0.8)
     const d = DURATIONS.find(d => d.key === dur)!
-    const months = { monthly: 1, '3month': 3, '6month': 6, yearly: 12 }[dur] ?? 1
-    return base * months * (1 - d.discount / 100)
+    const months = { monthly: 1, '3month': 3, '6month': 6 }[dur] ?? 1
+    return plan.price * months * (1 - d.discount / 100)
   }
 
   const relationTo = (plan: any): 'current' | 'upgrade' | 'downgrade' | 'buy' => {
@@ -213,9 +215,9 @@ export default function PlanPurchasePage() {
       </div>
 
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
         {plans.map(plan => {
-          const price = calcPrice(plan.price, duration)
+          const price = calcPrice(plan, duration)
           const rel = relationTo(plan)
           const isCurrentPlan = rel === 'current'
 
@@ -233,17 +235,23 @@ export default function PlanPurchasePage() {
                 {plan.price > 0 && duration !== 'monthly' && (
                   <p className="text-xs text-green-600 mt-0.5">Save ₹{fmt.number(Math.round(plan.price * ({ '3month': 3, '6month': 6, yearly: 12 }[duration] ?? 1) - price))}</p>
                 )}
+                <p className="text-xs text-gray-400 mt-0.5">₹{fmt.number(Math.round(plan.price))}/month · ₹{fmt.number(Math.round(plan.yearly_price ?? plan.price * 12 * 0.8))}/year</p>
               </div>
 
-              {/* Limits */}
-              <div className="space-y-1 text-xs text-gray-600 mb-4 flex-1">
-                <p>💬 {fmt.number(plan.messages_limit)} messages</p>
-                <p>👤 {plan.max_users ?? 'Unlimited'} users</p>
-                <p>📱 {plan.max_phone_numbers ?? 1} phone number{(plan.max_phone_numbers ?? 1) > 1 ? 's' : ''}</p>
-                <p>📢 {plan.max_campaigns ?? 'Unlimited'} campaigns</p>
-                <p>👥 {plan.max_contacts ? fmt.number(plan.max_contacts) : 'Unlimited'} contacts</p>
-                <p>🌿 {plan.max_flow_nodes ?? 'Unlimited'} flow nodes</p>
-                <p>⚡ {plan.throttle_per_minute} msgs/min</p>
+              {/* Limits, grouped by feature */}
+              <div className="mb-4 flex-1 space-y-3 text-xs text-gray-600">
+                <p>💬 {fmt.number(plan.messages_limit)} messages · ⚡ {plan.throttle_per_minute} msgs/min</p>
+                {(plan.sections ?? []).map((g: any) => (
+                  <div key={g.key}>
+                    <p className="mb-1 font-semibold text-gray-800">{g.icon} {g.title}</p>
+                    <ul className="space-y-0.5 pl-5">
+                      {g.items.map((it: any) => (
+                        <li key={it.key} className="flex justify-between gap-2">
+                          <span>{it.label}{it.monthly ? ' / month' : ''}</span>
+                          <span className="font-medium text-gray-800">{it.value === null ? 'Unlimited' : fmt.number(it.value)}</span>
+                        </li>))}
+                    </ul>
+                  </div>))}
               </div>
 
               {/* Features */}

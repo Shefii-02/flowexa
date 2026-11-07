@@ -33,6 +33,35 @@ class PlanLimits
         'leads'              => ['Leads this month',  'leads',              'max_leads_per_month',    'monthly'],
     ];
 
+    /** Feature groups, in the order customers see them: key => [title, icon, [resource keys]]. Every REGISTRY key belongs to exactly one. */
+    public const GROUPS = [
+        'wa_chat'   => ['WA Chat',               '💬', ['wa_sessions']],
+        'wa_cloud'  => ['WA Cloud',              '☁️', ['phone_numbers', 'templates', 'campaigns', 'flow_nodes']],
+        'social'    => ['Instagram & Messenger', '📸', ['instagram_accounts']],
+        'ads'       => ['Meta Ads',              '📣', ['meta_ads_accounts']],
+        'widgets'   => ['Web widgets',           '🌐', ['website_widgets']],
+        'crm'       => ['CRM & Leads',           '🧲', ['contacts', 'labels', 'lead_categories', 'leads']],
+        'team'      => ['Staff & roles',         '👥', ['users', 'roles']],
+    ];
+
+    public static function groupKeyOf(string $resource): ?string
+    {
+        foreach (self::GROUPS as $g => [, , $keys]) { if (in_array($resource, $keys, true)) { return $g; } }
+        return null;
+    }
+
+    /** A plan's limits arranged by group, ready to show: [{key,title,icon,items:[{key,label,value,monthly}]}]. value null = unlimited. */
+    public static function sectionsFor(\App\Models\Plan $plan): array
+    {
+        $out = [];
+        foreach (self::GROUPS as $g => [$title, $icon, $keys]) {
+            $out[] = ['key' => $g, 'title' => $title, 'icon' => $icon, 'items' => array_map(fn ($k) => [
+                'key' => $k, 'label' => self::REGISTRY[$k][0], 'value' => $plan->{self::REGISTRY[$k][2]}, 'monthly' => self::REGISTRY[$k][3] === 'monthly',
+            ], $keys)];
+        }
+        return $out;
+    }
+
     private static array $hasColumn = [];
     private static array $bonus = [];
 

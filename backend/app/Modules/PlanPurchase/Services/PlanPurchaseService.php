@@ -16,13 +16,13 @@ class PlanPurchaseService
     // ── Public plan list ──────────────────────────────────────────────────────
     public function publicPlans(): \Illuminate\Database\Eloquent\Collection
     {
-        return Plan::where('is_active', true)->where('is_custom', false)->orderBy('price')->get();
+        return Plan::where('is_active', true)->where('is_custom', false)->where('price', '>', 0)->orderBy('price')->get();
     }
 
     // ── Active plans for company ──────────────────────────────────────────────
     public function activePlans(): \Illuminate\Database\Eloquent\Collection
     {
-        return Plan::where('is_active', true)->where('is_custom', false)->orderBy('price')->get();
+        return Plan::where('is_active', true)->where('is_custom', false)->where('price', '>', 0)->orderBy('price')->get();
     }
 
     // ── Current plan for company ──────────────────────────────────────────────
