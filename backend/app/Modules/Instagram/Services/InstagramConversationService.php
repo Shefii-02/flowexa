@@ -80,44 +80,61 @@ class InstagramConversationService
      * Send a DM in a thread and persist it. Respects the 24h messaging window unless $humanAgent.
      * Returns the created message, or null when the window is closed / the send failed.
      */
-    public function send(InstagramConversation $convo, string $text, string $source = 'manual', bool $humanAgent = false): ?InstagramMessage
+    public function send(InstagramConversation $convo, string $text, string $source = 'manual', bool $humanAgent = false, ?string $replyToMid = null): ?InstagramMessage
     {
-        $account = $convo->account;
-
-        // Inside the 24h window a normal message is enough. Past it, only a staff reply may use the
-        // HUMAN_AGENT tag (up to 7 days) — and only once Meta has approved that feature for the app.
-        $withinWindow = $convo->withinMessagingWindow();
-        $useTag = $humanAgent && !$withinWindow && config('services.instagram.human_agent_enabled');
-        if (!$withinWindow && !$useTag) {
-            Log::info('InstagramConversationService: outside 24h window, not sending', ['conversation' => $convo->id]);
-            return $this->storeOutbound($convo, $text, $source, null, 'failed', $humanAgent
-                ? 'Outside the 24-hour messaging window. Replies after 24 hours need Meta\'s "Human Agent" approval, which isn\'t enabled for this app yet.'
-                : 'Outside the 24-hour messaging window');
+        [$allowed, $useTag, $why] = $this->gate($convo, $humanAgent);
+        if (!$allowed) {
+            return $this->storeOutbound($convo, $text, $source, null, 'failed', $why, null, $replyToMid);
         }
 
         try {
-            $res = $this->client->sendDm($account, $convo->participant_id, $text, $useTag);
-            $msg = $this->storeOutbound($convo, $text, $source, $res['message_id'] ?? null, 'sent', null);
+            $message = ['text' => $text] + ($replyToMid ? ['reply_to' => ['mid' => $replyToMid]] : []);
+            $res = $this->client->sendMessage($convo->account, ['id' => $convo->participant_id], $message, $useTag);
+            $msg = $this->storeOutbound($convo, $text, $source, $res['message_id'] ?? null, 'sent', null, null, $replyToMid);
             $convo->update(['status' => 'open']);
             return $msg;
         } catch (\Throwable $e) {
             Log::warning('InstagramConversationService: send failed', ['conversation' => $convo->id, 'error' => $e->getMessage()]);
-            return $this->storeOutbound($convo, $text, $source, null, 'failed', $e->getMessage());
+            return $this->storeOutbound($convo, $text, $source, null, 'failed', $e->getMessage(), null, $replyToMid);
+        }
+    }
+
+    /** Send an image / video / audio (voice message) / file. `$url` must be a public https link. */
+    public function sendMedia(InstagramConversation $convo, string $type, string $url, string $source = 'manual', bool $humanAgent = false, ?string $replyToMid = null): ?InstagramMessage
+    {
+        $att = [['type' => $type, 'url' => $url]];
+        [$allowed, $useTag, $why] = $this->gate($convo, $humanAgent);
+        if (!$allowed) {
+            return $this->storeOutbound($convo, '', $source, null, 'failed', $why, $att, $replyToMid);
+        }
+        try {
+            $message = InstagramClient::attachmentMessage($type, $url) + ($replyToMid ? ['reply_to' => ['mid' => $replyToMid]] : []);
+            $res = $this->client->sendMessage($convo->account, ['id' => $convo->participant_id], $message, $useTag);
+            $msg = $this->storeOutbound($convo, '', $source, $res['message_id'] ?? null, 'sent', null, $att, $replyToMid);
+            $convo->update(['status' => 'open']);
+            return $msg;
+        } catch (\Throwable $e) {
+            Log::warning('InstagramConversationService: media send failed', ['conversation' => $convo->id, 'error' => $e->getMessage()]);
+            return $this->storeOutbound($convo, '', $source, null, 'failed', $e->getMessage(), $att, $replyToMid);
         }
     }
 
     /**
-     * Record a message the business sent outside this app (an agent typing in the Instagram app —
-     * it reaches us as an `is_echo` webhook) so the portal inbox shows the whole conversation.
-     * Messages we sent ourselves are already stored under the same mid, so those are skipped.
+     * Whether a staff message may go out now: inside 24h a normal message is enough; past it, only a staff reply may use
+     * the HUMAN_AGENT tag (7 days), and only once Meta has approved that feature for the app.
+     * @return array{0:bool,1:bool,2:?string} allowed, use tag, reason when blocked
      */
-    public function recordEcho(InstagramAccount $account, string $participantId, string $text, ?string $igMessageId, array $attachments = []): ?InstagramMessage
+    public function gate(InstagramConversation $convo, bool $humanAgent): array
     {
-        $convo = $this->thread($account, $participantId);
-        if ($igMessageId && $convo->messages()->where('ig_message_id', $igMessageId)->exists()) {
-            return null;
+        $within = $convo->withinMessagingWindow();
+        $useTag = $humanAgent && !$within && config('services.instagram.human_agent_enabled');
+        if ($within || $useTag) {
+            return [true, (bool) $useTag, null];
         }
-        return $this->storeOutbound($convo, $text, 'staff_app', $igMessageId, 'sent', null, $attachments ?: null);
+        Log::info('InstagramConversationService: outside 24h window, not sending', ['conversation' => $convo->id]);
+        return [false, false, $humanAgent
+            ? 'Outside the 24-hour messaging window. Replies after 24 hours need Meta\'s "Human Agent" approval, which isn\'t enabled for this app yet.'
+            : 'Outside the 24-hour messaging window'];
     }
 
     public function storeOutbound(
@@ -128,8 +145,10 @@ class InstagramConversationService
         string $status,
         ?string $error,
         ?array $attachments = null,
+        ?string $replyToMid = null,
     ): InstagramMessage {
         $row = [
+            'reply_to_mid'  => $replyToMid !== null ? mb_substr($replyToMid, 0, 255) : null,
             'instagram_conversation_id' => $convo->id,
             'ig_message_id' => $igMessageId !== null ? mb_substr($igMessageId, 0, 255) : null,
             'direction'     => 'out',
@@ -151,10 +170,40 @@ class InstagramConversationService
 
         if ($status === 'sent') {
             $convo->update([
-                'last_message_preview' => mb_substr($text, 0, 140),
+                'last_message_preview' => mb_substr($text !== '' ? $text : self::mediaLabel($attachments), 0, 140),
                 'last_message_at'      => now(),
             ]);
         }
         return $msg;
+    }
+
+    /** Reactions each channel accepts. */
+    public static function reactionsFor(InstagramConversation $convo): array
+    {
+        return $convo->account?->channel === 'facebook' ? ['love', 'like', 'smile', 'wow', 'sad', 'angry', 'dislike'] : ['love'];
+    }
+
+    /** React to a message (or remove the reaction with null). Needs the 24h window like any other message. */
+    public function react(InstagramConversation $convo, InstagramMessage $msg, ?string $reaction): InstagramMessage
+    {
+        if ($reaction !== null && !in_array($reaction, self::reactionsFor($convo), true)) {
+            throw new \InvalidArgumentException('That reaction is not supported on this channel.');
+        }
+        [$allowed, , $why] = $this->gate($convo, false);
+        if (!$allowed) {
+            throw new \RuntimeException($why);
+        }
+        if (!$msg->ig_message_id) {
+            throw new \RuntimeException('This message cannot be reacted to (it has no Instagram message id).');
+        }
+        $this->client->react($convo->account, $convo->participant_id, $msg->ig_message_id, $reaction);
+        $msg->update(['my_reaction' => $reaction]);
+        return $msg;
+    }
+
+    private static function mediaLabel(?array $attachments): string
+    {
+        $type = $attachments[0]['type'] ?? null;
+        return match ($type) { 'image' => '📷 Photo', 'video' => '🎬 Video', 'audio' => '🎤 Voice message', 'file' => '📎 File', default => '' };
     }
 }

@@ -1355,6 +1355,7 @@ Route::prefix('v1')->group(function () {
                 Route::post('automations/{id}/test',   [\App\Modules\Instagram\Http\Controllers\InstagramAutomationController::class, 'test']);
                 Route::delete('automations/{id}',      [\App\Modules\Instagram\Http\Controllers\InstagramAutomationController::class, 'destroy']);
 
+                Route::post('conversations/{id}/messages/{messageId}/react', [\App\Modules\Instagram\Http\Controllers\InstagramInboxController::class, 'react'])->whereNumber(['id', 'messageId']);
                 Route::post('conversations/{id}/reply', [\App\Modules\Instagram\Http\Controllers\InstagramInboxController::class, 'reply']);
                 Route::patch('conversations/{id}',     [\App\Modules\Instagram\Http\Controllers\InstagramInboxController::class, 'updateStatus']);
             });

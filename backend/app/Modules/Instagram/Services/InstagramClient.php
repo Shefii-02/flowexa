@@ -197,6 +197,23 @@ class InstagramClient
     }
 
     /**
+     * React to (or, with null, remove the reaction from) a message. Instagram only supports "love";
+     * Messenger accepts more (love, like, smile, wow, sad, angry, dislike).
+     */
+    public function react(InstagramAccount $account, string $igsid, string $messageId, ?string $reaction): array
+    {
+        $payload = ['recipient' => ['id' => $igsid], 'sender_action' => $reaction ? 'react' : 'unreact',
+                    'payload' => array_filter(['message_id' => $messageId, 'reaction' => $reaction])];
+        return $this->graphFor($account)->post("/{$account->ig_user_id}/messages", $account->access_token, $payload);
+    }
+
+    /** `message` body for an image / video / audio / file attachment (public https URL). */
+    public static function attachmentMessage(string $type, string $url): array
+    {
+        return ['attachment' => ['type' => $type, 'payload' => ['url' => $url]]];
+    }
+
+    /**
      * The user's profile incl. `is_user_follow_business`. Meta only returns this once the user has
      * messaged or tapped a button, so call it after the first interaction.
      */

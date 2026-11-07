@@ -30,6 +30,7 @@ export default function InstagramInsightsPage() {
   const [loading, setLoading] = useState(false)
   const [loadingAccounts, setLoadingAccounts] = useState(true)
   const [chartMetric, setChartMetric] = useState('reach')
+  const [notice, setNotice] = useState<string | null>(null)   // why insights can't be shown (e.g. missing permission)
 
   useEffect(() => {
     instagramApi.accounts()
@@ -44,10 +45,19 @@ export default function InstagramInsightsPage() {
 
   useEffect(() => {
     if (!accountId) return
-    setLoading(true)
+    setLoading(true); setNotice(null)
     instagramApi.accountInsights(accountId)
-      .then((r) => setMetrics(r.data.insights?.data ?? []))
-      .catch((e) => { toast.error(getError(e)); setMetrics([]) })
+      .then((r) => {
+        if (r.data.unavailable) setNotice(r.data.message ?? 'Insights are not available for this connection.')
+        setMetrics(r.data.insights?.data ?? [])
+      })
+      .catch((e) => {
+        const msg = getError(e)
+        // Meta's raw permission error isn't actionable as a red toast — explain it on the page instead.
+        if (/permission/i.test(msg)) setNotice('Insights are not enabled for this connection. Your Meta app needs the "instagram_business_manage_insights" permission. Reconnect the account after it is enabled.')
+        else toast.error(msg)
+        setMetrics([])
+      })
       .finally(() => setLoading(false))
   }, [accountId])
 
@@ -89,6 +99,13 @@ export default function InstagramInsightsPage() {
           </select>
         )}
       </div>
+
+      {notice && (
+        <div role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+          <p className="font-medium">Insights aren’t available yet</p>
+          <p className="mt-0.5">{notice}</p>
+          <p className="mt-1 text-xs text-amber-800">Messages, comments and AutoDM keep working — only this page needs the extra permission.</p>
+        </div>)}
 
       {/* Account snapshot */}
       {account && (

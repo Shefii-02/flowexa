@@ -26,6 +26,8 @@ class InstagramFlowEngineTest extends TestCase
     private bool $userFollows = false;
     /** @var string[] comment ids Instagram reports as deleted */
     private array $deletedComments = [];
+    /** @var array<int,array> reactions sent to Graph */
+    private array $reactions = [];
 
     protected function setUp(): void
     {
@@ -50,7 +52,7 @@ class InstagramFlowEngineTest extends TestCase
         });
         Schema::create('instagram_messages', function ($t) {
             $t->id(); $t->unsignedBigInteger('instagram_conversation_id'); $t->string('ig_message_id')->nullable(); $t->string('direction'); $t->string('source');
-            $t->text('text')->nullable(); $t->json('attachments')->nullable(); $t->string('status')->nullable(); $t->text('error')->nullable(); $t->timestamp('sent_at')->nullable(); $t->timestamps();
+            $t->text('text')->nullable(); $t->json('attachments')->nullable(); $t->string('status')->nullable(); $t->text('error')->nullable(); $t->timestamp('sent_at')->nullable(); $t->string('reply_to_mid')->nullable(); $t->string('my_reaction')->nullable(); $t->timestamps();
         });
         Schema::create('instagram_comment_events', function ($t) {
             $t->id(); $t->unsignedBigInteger('company_id'); $t->unsignedBigInteger('instagram_account_id'); $t->unsignedBigInteger('instagram_automation_id')->nullable();
@@ -82,6 +84,7 @@ class InstagramFlowEngineTest extends TestCase
             }
             return ['id' => $id, 'media' => ['id' => 'M1', 'timestamp' => now()->subDay()->toIso8601String()]];
         });
+        $this->client->shouldReceive('react')->andReturnUsing(function ($acc, $igsid, $mid, $reaction) { $this->reactions[] = [$igsid, $mid, $reaction]; return []; });
         $this->client->shouldReceive('userProfile')->andReturnUsing(fn () => ['is_user_follow_business' => $this->userFollows]);
 
         $this->conversations = new InstagramConversationService($this->client);
@@ -459,5 +462,66 @@ class InstagramFlowEngineTest extends TestCase
         $buttons = $this->sent[0]['message']['attachment']['payload']['buttons'];
         $this->assertSame('https://www.instagram.com/brand/', $buttons[0]['url']);
         $this->assertStringNotContainsString('customer_name', $buttons[0]['url']);
+    }
+
+    private function openThread(bool $inWindow = true): \App\Models\InstagramConversation
+    {
+        $a = $this->account();
+        $convo = $this->conversations->thread($a, 'U1', 'bob');
+        $convo->update(['last_inbound_at' => $inWindow ? now()->subHour() : now()->subDays(3)]);
+        return $convo->fresh();
+    }
+
+    public function test_staff_can_send_an_image_voice_message_or_file_with_a_quoted_reply(): void
+    {
+        $convo = $this->openThread();
+        $msg = $this->conversations->sendMedia($convo, 'audio', 'https://cdn.test/voice.mp3', 'manual', true, 'MID-ORIGINAL');
+        $this->assertSame('sent', $msg->status);
+        $sent = end($this->sent)['message'];
+        $this->assertSame('audio', $sent['attachment']['type']);
+        $this->assertSame('https://cdn.test/voice.mp3', $sent['attachment']['payload']['url']);
+        $this->assertSame(['mid' => 'MID-ORIGINAL'], $sent['reply_to']);
+        $this->assertSame('MID-ORIGINAL', $msg->reply_to_mid);
+        $this->assertSame('🎤 Voice message', $convo->fresh()->last_message_preview);
+    }
+
+    public function test_text_reply_can_quote_a_message(): void
+    {
+        $convo = $this->openThread();
+        $this->conversations->send($convo, 'Sure!', 'manual', true, 'MID-Q');
+        $this->assertSame(['mid' => 'MID-Q'], end($this->sent)['message']['reply_to']);
+    }
+
+    public function test_media_is_blocked_outside_the_24h_window_until_human_agent_is_approved(): void
+    {
+        config(['services.instagram.human_agent_enabled' => false]);
+        $convo = $this->openThread(inWindow: false);
+        $msg = $this->conversations->sendMedia($convo, 'image', 'https://cdn.test/a.jpg', 'manual', true);
+        $this->assertSame('failed', $msg->status);
+        $this->assertCount(0, $this->sent);
+    }
+
+    public function test_reaction_is_sent_stored_and_can_be_removed(): void
+    {
+        $convo = $this->openThread();
+        $in = $this->conversations->recordInbound($convo->account, 'U1', 'hi', 'MID-IN');
+        $m = $convo->messages()->where('ig_message_id', 'MID-IN')->first();
+
+        $this->conversations->react($convo, $m, 'love');
+        $this->assertSame(['U1', 'MID-IN', 'love'], $this->reactions[0]);
+        $this->assertSame('love', $m->fresh()->my_reaction);
+
+        $this->conversations->react($convo, $m->fresh(), null);
+        $this->assertNull($m->fresh()->my_reaction);
+        $this->assertNull($this->reactions[1][2]);
+    }
+
+    public function test_instagram_only_accepts_the_love_reaction(): void
+    {
+        $convo = $this->openThread();
+        $this->conversations->recordInbound($convo->account, 'U1', 'hi', 'MID-IN');
+        $m = $convo->messages()->where('ig_message_id', 'MID-IN')->first();
+        $this->expectException(\InvalidArgumentException::class);
+        $this->conversations->react($convo, $m, 'angry');
     }
 }

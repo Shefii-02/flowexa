@@ -75,7 +75,10 @@ export const instagramApi = {
   messengerConnect: (pageId: string, pageToken: string) => api.post<{ message: string; account: IgAccount }>('/instagram/messenger/pages', { page_id: pageId, page_token: pageToken }),
   messengerDisconnect: (id: number) => api.post(`/instagram/messenger/pages/${id}/disconnect`),
   conversation: (id: number) => api.get(`/instagram/conversations/${id}`),
-  reply: (id: number, text: string) => api.post(`/instagram/conversations/${id}/reply`, { text }),
+  reply: (id: number, d: { text?: string; attachment_type?: AttachmentKind; attachment_url?: string; reply_to_message_id?: number }) =>
+    api.post<{ message: string; sent_message: IgMessage; sent_messages: IgMessage[] }>(`/instagram/conversations/${id}/reply`, d),
+  reactMessage: (conversationId: number, messageId: number, reaction: string | null) =>
+    api.post<{ message: string; sent_message: IgMessage }>(`/instagram/conversations/${conversationId}/messages/${messageId}/react`, { reaction }),
   setConversation: (id: number, d: Record<string, unknown>) => api.patch(`/instagram/conversations/${id}`, d),
 }
 
@@ -171,8 +174,13 @@ export interface IgComment {
   replies?: { data: IgComment[] } | IgComment[]
 }
 
+export type AttachmentKind = 'image' | 'video' | 'audio' | 'file'
+
 export interface IgMessage {
   id: number
+  ig_message_id?: string | null
+  reply_to_mid?: string | null
+  my_reaction?: string | null
   direction: 'in' | 'out'
   source: 'inbound' | 'manual' | 'automation' | 'ai' | 'flow' | 'staff_app'
   text: string | null

@@ -68,6 +68,14 @@ class InstagramCommentController extends Controller
         $account = $this->find($accountId);
         try {
             return response()->json(['insights' => $this->client->accountInsights($account)]);
+        } catch (\App\Modules\MetaAds\Services\MetaApiException $e) {
+            // Meta's "Application does not have permission for this action" etc. — not an error the user can act on
+            // from a raw message. Explain it; the page shows a clear notice instead of a red failure.
+            if ($e->isAuthError() || in_array($e->metaCode, [10, 200, 3], true) || str_contains(mb_strtolower($e->getMessage()), 'permission')) {
+                return response()->json(['insights' => null, 'unavailable' => true, 'reason' => 'permission',
+                    'message' => 'Insights are not enabled for this connection. Your Meta app needs the "instagram_business_manage_insights" permission (and the account must allow it). Reconnect the account after it is enabled.']);
+            }
+            return response()->json(['message' => $e->getMessage()], 422);
         } catch (\Throwable $e) {
             return response()->json(['message' => $e->getMessage()], 422);
         }
