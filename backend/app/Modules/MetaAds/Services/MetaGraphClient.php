@@ -95,10 +95,15 @@ class MetaGraphClient
 
         // Sanitised audit trail (App Review): method, path and outcome only — never tokens, query strings or bodies.
         if (str_contains($url, 'graph.instagram.com')) {
-            Log::channel(config('logging.channels.instagram_api') ? 'instagram_api' : null)->info('instagram.api', [
-                'method' => strtoupper($method), 'path' => parse_url($url, PHP_URL_PATH), 'status' => $response->status(),
-                'error_code' => $response->json('error.code'), 'fbtrace_id' => $response->json('error.fbtrace_id'),
-            ]);
+            // An audit-log problem (e.g. an unwritable log file) must never fail the API call that already succeeded.
+            try {
+                Log::channel(config('logging.channels.instagram_api') ? 'instagram_api' : null)->info('instagram.api', [
+                    'method' => strtoupper($method), 'path' => parse_url($url, PHP_URL_PATH), 'status' => $response->status(),
+                    'error_code' => $response->json('error.code'), 'fbtrace_id' => $response->json('error.fbtrace_id'),
+                ]);
+            } catch (\Throwable) {
+                // ignore
+            }
         }
 
         if ($response->successful()) {

@@ -57,6 +57,8 @@ return [
             'path' => storage_path('logs/instagram-api.log'),
             'level' => 'info',
             'days' => 30,
+            'permission' => 0664,   // group-writable, so web and queue users can both append
+            'locking' => false,
         ],
 
 
