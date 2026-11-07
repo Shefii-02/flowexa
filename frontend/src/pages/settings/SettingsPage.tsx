@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { settingsApi, roleApi, staffApi, deviceApi, stickyApi, type StickySettings } from '@/api'
 import { Button, Input } from '@/components/ui'
 import { getError } from '@/utils'
@@ -13,38 +13,48 @@ import type { Role } from '@/types'
 // ── Tab definitions ───────────────────────────────────────────────────────────
 
 const TABS = [
-  { id: 'company',     label: '🏢 Company' },
-  { id: 'profile',     label: '👤 My Profile' },
-  { id: 'display',     label: '🖥️ Display' },
-  { id: 'staff',       label: '👥 Staff' },
-  { id: 'devices',     label: '📱 Linked Devices' },
-  { id: 'permissions', label: '🛡️ Permissions' },
-  { id: 'push',        label: '🔔 Push' },
-  { id: 'crm-sync',    label: '🔄 CRM Sync' },
+  { id: 'company',     icon: '🏢', label: 'Company',        desc: 'Business name, logo and details' },
+  { id: 'profile',     icon: '👤', label: 'My Profile',     desc: 'Your name, email and password' },
+  { id: 'display',     icon: '🖥️', label: 'Display',        desc: 'Look and floating widgets' },
+  { id: 'staff',       icon: '👥', label: 'Staff',          desc: 'Team members and access' },
+  { id: 'devices',     icon: '📱', label: 'Linked Devices', desc: 'Phones and browsers signed in' },
+  { id: 'permissions', icon: '🛡️', label: 'Permissions',    desc: 'Roles and what each can do' },
+  { id: 'push',        icon: '🔔', label: 'Push',           desc: 'Notification preferences' },
+  { id: 'crm-sync',    icon: '🔄', label: 'CRM Sync',       desc: 'Connect and sync your CRM' },
 ] as const
 
 type TabId = (typeof TABS)[number]['id']
+type TabDef = (typeof TABS)[number]
 
-// ── Tab bar ───────────────────────────────────────────────────────────────────
+// ── Vertical settings menu ────────────────────────────────────────────────────
+// Desktop: a sticky left column. Mobile: the same list as a full-width menu (sections open on tap).
 
-function TabBar({ tabs, active, onChange }: { tabs: readonly (typeof TABS)[number][]; active: TabId; onChange: (t: TabId) => void }) {
+function SettingsNav({ tabs, active, onChange, mobile }: { tabs: readonly TabDef[]; active: TabId | null; onChange: (t: TabId) => void; mobile?: boolean }) {
   return (
-    <div className="flex gap-1 border-b border-gray-200 overflow-hidden">
-      {tabs.map(t => (
-        <button
-          key={t.id}
-          onClick={() => onChange(t.id)}
-          className={[
-            'px-4 py-2.5 text-sm font-medium whitespace-nowrap border-b-2 -mb-px transition-colors',
-            active === t.id
-              ? 'border-indigo-500 text-indigo-600'
-              : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300',
-          ].join(' ')}
-        >
-          {t.label}
-        </button>
-      ))}
-    </div>
+    <nav aria-label="Settings sections" className="flex flex-col gap-1">
+      {tabs.map(t => {
+        const on = active === t.id
+        return (
+          <button
+            key={t.id}
+            onClick={() => onChange(t.id)}
+            aria-current={on ? 'page' : undefined}
+            className={[
+              'flex items-center gap-3 rounded-xl text-left transition-colors',
+              mobile ? 'border border-gray-200 bg-white px-4 py-3.5' : 'px-3 py-2.5',
+              on && !mobile ? 'bg-indigo-50 text-indigo-700' : 'text-gray-700 hover:bg-gray-100',
+            ].join(' ')}
+          >
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gray-100 text-lg" aria-hidden>{t.icon}</span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-sm font-medium">{t.label}</span>
+              {mobile && <span className="block truncate text-xs text-gray-500">{t.desc}</span>}
+            </span>
+            {mobile && <span className="text-gray-400" aria-hidden>›</span>}
+          </button>
+        )
+      })}
+    </nav>
   )
 }
 
@@ -703,16 +713,51 @@ function CrmSyncTab() {
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 
+/** True from the md breakpoint (768px) up. Only one layout is mounted, so a section never loads its data twice. */
+function useIsDesktop() {
+  const query = '(min-width: 768px)'
+  const [yes, setYes] = useState(() => typeof window !== 'undefined' && window.matchMedia(query).matches)
+  useEffect(() => {
+    const m = window.matchMedia(query)
+    const on = () => setYes(m.matches)
+    m.addEventListener('change', on); on()
+    return () => m.removeEventListener('change', on)
+  }, [])
+  return yes
+}
+
 export default function SettingsPage() {
   const isSuper = useIsSuperAdmin()
+  const isDesktop = useIsDesktop()
   // Superadmins have no company: they get profile, display, staff, devices and permissions only.
   const tabs = useMemo(
     () => isSuper ? TABS.filter(t => t.id !== 'company' && t.id !== 'crm-sync') : TABS,
     [isSuper],
   )
 
-  
-  const [tab, setTab] = useState<TabId>(isSuper ? 'profile' : 'company')
+  // The open section lives in the URL (?tab=staff) so refresh, links and the browser back button all work.
+  const [params, setParams] = useSearchParams()
+  const requested = params.get('tab')
+  const picked = tabs.find(t => t.id === requested) ?? null
+  const tab: TabId = picked?.id ?? tabs[0].id          // desktop always shows a section
+  const showMenuOnMobile = !picked                      // mobile: no section chosen → show the menu
+  const current = tabs.find(t => t.id === tab)!
+
+  const open = (id: TabId) => setParams({ tab: id })
+  const backToMenu = () => setParams({})
+
+  const content = (
+    <>
+      {tab === 'company'      && <CompanyTab />}
+      {tab === 'profile'      && <ProfileTab />}
+      {tab === 'display'      && <DisplayTab />}
+      {tab === 'staff'        && <StaffTab />}
+      {tab === 'devices'      && <DevicesTab />}
+      {tab === 'permissions'  && <PermissionsTab />}
+      {tab === 'push'         && <PushTab />}
+      {tab === 'crm-sync'     && <CrmSyncTab />}
+    </>
+  )
 
   return (
     <div className="space-y-6">
@@ -721,18 +766,30 @@ export default function SettingsPage() {
         <p className="page-sub">Company profile, your account and staff</p>
       </div>
 
-      <TabBar tabs={tabs} active={tab} onChange={setTab} />
-
-      <div className="pt-2">
-        {tab === 'company'      && <CompanyTab />}
-        {tab === 'profile'      && <ProfileTab />}
-        {tab === 'display'      && <DisplayTab />}
-        {tab === 'staff'        && <StaffTab />}
-        {tab === 'devices'      && <DevicesTab />}
-        {tab === 'permissions'  && <PermissionsTab />}
-        {tab === 'push'         && <PushTab />}
-        {tab === 'crm-sync'     && <CrmSyncTab />}
-      </div>
+      {isDesktop ? (
+        /* Desktop / tablet: sticky vertical menu + content */
+        <div className="grid grid-cols-[220px_minmax(0,1fr)] gap-8">
+          <aside className="self-start sticky top-4">
+            <SettingsNav tabs={tabs} active={tab} onChange={open} />
+          </aside>
+          <section className="min-w-0">
+            <h2 className="mb-4 flex items-center gap-2 text-lg font-semibold text-gray-900"><span aria-hidden>{current.icon}</span>{current.label}</h2>
+            {content}
+          </section>
+        </div>
+      ) : showMenuOnMobile ? (
+        /* Mobile: the menu first … */
+        <SettingsNav tabs={tabs} active={null} onChange={open} mobile />
+      ) : (
+        /* … then the chosen section with a Back button */
+        <div className="space-y-4">
+          <button onClick={backToMenu} className="inline-flex items-center gap-1 text-sm font-medium text-indigo-600">
+            <span aria-hidden>‹</span> Settings
+          </button>
+          <h2 className="flex items-center gap-2 text-lg font-semibold text-gray-900"><span aria-hidden>{current.icon}</span>{current.label}</h2>
+          <div>{content}</div>
+        </div>
+      )}
     </div>
   )
 }
