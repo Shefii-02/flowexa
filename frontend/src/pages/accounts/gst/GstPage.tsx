@@ -3,11 +3,12 @@ import { accountsApi } from '@/api'
 import { Button, Skeleton } from '@/components/ui'
 import { getError } from '@/utils'
 import toast from 'react-hot-toast'
-import { inr, RangePicker, useRange } from './shared'
+import { inr, RangePicker, useRange } from '../shared'
+import AccountsPageFrame from '../components/AccountsPageFrame'
 
 const PARTS: [string, string][] = [['b2b', 'B2B invoices (GSTR-1)'], ['b2c', 'B2C sales'], ['notes', 'Credit / debit notes'], ['rate', 'Rate-wise'], ['hsn', 'HSN summary'], ['purchases', 'Purchases & ITC']]
 
-export default function GstTab() {
+function GstView() {
   const [range, setRange] = useRange()
   const [part, setPart] = useState('b2b')
   const [d, setD] = useState<any>(null)
@@ -76,5 +77,14 @@ export default function GstTab() {
         </>
       )}
     </div>
+  )
+}
+
+/** /accounts/gst */
+export default function GstPage() {
+  return (
+    <AccountsPageFrame path="gst">
+      <GstView />
+    </AccountsPageFrame>
   )
 }

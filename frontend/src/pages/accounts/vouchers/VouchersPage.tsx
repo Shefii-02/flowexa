@@ -3,11 +3,12 @@ import { accountsApi } from '@/api'
 import { Button, ConfirmModal, EmptyState, Pagination, TableSkeleton } from '@/components/ui'
 import { getError } from '@/utils'
 import toast from 'react-hot-toast'
-import { inr, RangePicker, useRange, VOUCHER_TYPES, useCanManage } from './shared'
+import { inr, RangePicker, useRange, VOUCHER_TYPES, useCanManage } from '../shared'
 import VoucherForm, { blankVoucher, voucherToForm } from './VoucherForm'
-import { printInvoice } from './printInvoice'
+import { printInvoice } from '../printInvoice'
+import AccountsPageFrame from '../components/AccountsPageFrame'
 
-export default function VouchersTab({ initialType = '' }: { initialType?: string }) {
+export function VouchersView({ initialType = '' }: { initialType?: string }) {
   const canManage = useCanManage()
   const [range, setRange] = useRange()
   const [type, setType] = useState(initialType)
@@ -114,5 +115,14 @@ export default function VouchersTab({ initialType = '' }: { initialType?: string
         onSaved={() => { setForm(null); load(); accountsApi.ledgers().then(r => setLedgers(r.data.ledgers)) }} />
       <ConfirmModal open={!!del} title="Delete voucher?" message={`Delete ${del?.number}? Its ledger entries are removed too.`} onConfirm={remove} onCancel={() => setDel(null)} />
     </div>
+  )
+}
+
+/** /accounts/vouchers */
+export default function VouchersPage() {
+  return (
+    <AccountsPageFrame path="vouchers">
+      <VouchersView />
+    </AccountsPageFrame>
   )
 }

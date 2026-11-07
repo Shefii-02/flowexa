@@ -3,14 +3,15 @@ import { accountsApi } from '@/api'
 import { Button, ConfirmModal, EmptyState, Input, Modal, Select, TableSkeleton } from '@/components/ui'
 import { getError } from '@/utils'
 import toast from 'react-hot-toast'
-import { inr, Stat, StatusPill, today, useCanManage } from './shared'
+import { inr, Stat, StatusPill, today, useCanManage } from '../shared'
+import AccountsPageFrame from '../components/AccountsPageFrame'
 
 const CATS: Record<string, string> = { property: '🏢 Property', equipment: '🖥️ Equipment', vehicle: '🚗 Vehicle', intangible: '📜 Intangible' }
 const blank = () => ({ name: '', tag: '', category: 'equipment', purchase_date: today(), cost: '', salvage_value: '', useful_life_months: 60, method: 'sl', wdv_rate: '',
   acquisition: 'purchase', paid_from_ledger_id: '', opening_accumulated: '', depreciated_upto: '', location: '', notes: '' })
 
 /** Fixed-asset register: property, equipment, vehicles, intangibles — with monthly depreciation and disposal. */
-export default function AssetsTab() {
+function AssetsView() {
   const canManage = useCanManage()
   const [d, setD] = useState<any>(null)
   const [ledgers, setLedgers] = useState<any[]>([])
@@ -145,5 +146,14 @@ export default function AssetsTab() {
       )}
       <ConfirmModal open={!!del} title="Delete asset?" message={`Delete ${del?.name}? Its purchase entry is removed too.`} onConfirm={async () => { try { await accountsApi.deleteAsset(del.id); toast.success('Deleted.'); load() } catch (e) { toast.error(getError(e)) } setDel(null) }} onCancel={() => setDel(null)} />
     </div>
+  )
+}
+
+/** /accounts/assets */
+export default function FixedAssetsPage() {
+  return (
+    <AccountsPageFrame path="assets">
+      <AssetsView />
+    </AccountsPageFrame>
   )
 }

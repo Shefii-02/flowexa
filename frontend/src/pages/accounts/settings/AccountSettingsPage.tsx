@@ -3,7 +3,8 @@ import { accountsApi } from '@/api'
 import { Button, Input, Select, Skeleton } from '@/components/ui'
 import { getError } from '@/utils'
 import toast from 'react-hot-toast'
-import { GST_STATES } from './shared'
+import { GST_STATES } from '../shared'
+import AccountsPageFrame from '../components/AccountsPageFrame'
 
 /** Load realistic sample books to explore every feature, then remove them again without touching real entries. */
 function SampleData() {
@@ -35,7 +36,7 @@ function SampleData() {
   )
 }
 
-export default function SettingsTab() {
+function SettingsView() {
   const [f, setF] = useState<any>(null)
   const [saving, setSaving] = useState(false)
   useEffect(() => { accountsApi.settings().then(r => setF(r.data.settings)).catch(e => toast.error(getError(e))) }, [])
@@ -83,5 +84,14 @@ export default function SettingsTab() {
     </div>
     <SampleData />
     </div>
+  )
+}
+
+/** /accounts/settings */
+export default function AccountSettingsPage() {
+  return (
+    <AccountsPageFrame path="settings">
+      <SettingsView />
+    </AccountsPageFrame>
   )
 }

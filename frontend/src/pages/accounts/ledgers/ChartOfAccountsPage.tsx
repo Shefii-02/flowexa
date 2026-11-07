@@ -3,7 +3,8 @@ import { accountsApi } from '@/api'
 import { Button, Input, Select, Modal, ConfirmModal, Badge, EmptyState, TableSkeleton } from '@/components/ui'
 import { getError } from '@/utils'
 import toast from 'react-hot-toast'
-import { inr, GST_STATES, useCanManage } from './shared'
+import { inr, GST_STATES, useCanManage } from '../shared'
+import AccountsPageFrame from '../components/AccountsPageFrame'
 
 const GROUPS: Record<string, { nature: string; label: string }> = {
   debtor: { nature: 'asset', label: 'Customer (receivable)' },
@@ -40,7 +41,7 @@ const GROUPS: Record<string, { nature: string; label: string }> = {
 const EMPTY = { code: '', credit_limit: '', credit_days: '', credit_hold: false, name: '', group: 'indirect_expense', opening_balance: '', opening_type: 'dr', gstin: '', state_code: '', phone: '', email: '', address: '', city: '', pincode: '' }
 const NATURES = ['', 'asset', 'liability', 'income', 'expense', 'equity']
 
-export default function LedgersTab() {
+function LedgersView() {
   const canManage = useCanManage()
   const [rows, setRows] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -139,5 +140,14 @@ export default function LedgersTab() {
       </Modal>
       <ConfirmModal open={!!del} title="Delete ledger?" message={`Delete "${del?.name}"?`} onConfirm={remove} onCancel={() => setDel(null)} />
     </div>
+  )
+}
+
+/** /accounts/ledgers */
+export default function ChartOfAccountsPage() {
+  return (
+    <AccountsPageFrame path="ledgers">
+      <LedgersView />
+    </AccountsPageFrame>
   )
 }

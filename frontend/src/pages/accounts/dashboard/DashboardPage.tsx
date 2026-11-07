@@ -4,9 +4,10 @@ import { accountsApi } from '@/api'
 import { StatCard, Skeleton } from '@/components/ui'
 import { getError } from '@/utils'
 import toast from 'react-hot-toast'
-import { inr, RangePicker, useRange } from './shared'
+import { inr, RangePicker, useRange } from '../shared'
+import AccountsPageFrame from '../components/AccountsPageFrame'
 
-export default function DashboardTab() {
+function DashboardView() {
   const [range, setRange] = useRange()
   const [d, setD] = useState<any>(null)
 
@@ -65,5 +66,14 @@ export default function DashboardTab() {
         </>
       )}
     </div>
+  )
+}
+
+/** /accounts/ */
+export default function AccountsDashboardPage() {
+  return (
+    <AccountsPageFrame path="">
+      <DashboardView />
+    </AccountsPageFrame>
   )
 }

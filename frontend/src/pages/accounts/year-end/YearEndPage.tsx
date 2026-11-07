@@ -3,10 +3,11 @@ import { accountsApi } from '@/api'
 import { Button, Modal, TableSkeleton } from '@/components/ui'
 import { getError } from '@/utils'
 import toast from 'react-hot-toast'
-import { inr, StatusPill, useCanManage } from './shared'
+import { inr, StatusPill, useCanManage } from '../shared'
+import AccountsPageFrame from '../components/AccountsPageFrame'
 
 /** Fiscal years close strictly in order. Closing moves profit to Retained Earnings and locks the books up to the year end. */
-export default function YearEndTab() {
+function YearEndView() {
   const canManage = useCanManage()
   const [d, setD] = useState<any>(null)
   const [prev, setPrev] = useState<any>(null)
@@ -57,5 +58,14 @@ export default function YearEndTab() {
         </Modal>
       )}
     </div>
+  )
+}
+
+/** /accounts/year-end */
+export default function YearEndPage() {
+  return (
+    <AccountsPageFrame path="year-end">
+      <YearEndView />
+    </AccountsPageFrame>
   )
 }

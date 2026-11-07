@@ -124,7 +124,12 @@ import TemplatesPage from '@/pages/template/TemplatesPage'
 import PlanPurchasePage from '@/pages/plan-purchase/PlanPurchasePage'
 import BlacklistPage from '@/pages/blacklist/BlacklistPage'
 import ShortLinksPage from '@/pages/short-links/ShortLinksPage'
-import AccountsPage from '@/pages/accounts/AccountsPage'
+import {
+  AccountsLayout, AccountsDashboardPage, QuotationsPage, InvoicesPage, CustomerCreditPage, VouchersPage,
+  ReceivablePage, ReceivableAgeingPage, PayablePage, PayableAgeingPage, CustomerAdvancesPage, SupplierAdvancesPage, PaymentReportPage,
+  ChartOfAccountsPage, ItemsPage, FixedAssetsPage, AdjustingEntriesPage, PettyCashPage, MonthlyPayrollPage, EmployeesPage,
+  AccountsReportsPage, GstPage, YearEndPage, AccountSettingsPage,
+} from '@/pages/accounts'
 import LabelsPage from './pages/contacts/LabelsPage'
 import FlowBuildersPage from './pages/flow/FlowBuildersPage'
 import FlowNodesPage from '@/pages/flow/FlowNodesPage'
@@ -346,8 +351,44 @@ export default function App() {
               <Route path="crm/blacklist" element={<BlacklistPage />} />
               <Route path="short-links" element={<ShortLinksPage />} />
               <Route path="crm/short-links" element={<Navigate to="/short-links" replace />} />   {/* old URL */}
-              <Route path="accounts" element={<AccountsPage />} />
-              <Route path="accounts/:tab" element={<AccountsPage />} />
+              {/* Accounts — one page per route under /accounts/… (files: src/pages/accounts/<area>/<Page>.tsx) */}
+              <Route path="accounts" element={<AccountsLayout />}>
+                <Route index element={<AccountsDashboardPage />} />
+
+                <Route path="sales/quotations" element={<QuotationsPage />} />
+                <Route path="sales/invoices" element={<InvoicesPage />} />
+                <Route path="sales/credit" element={<CustomerCreditPage />} />
+
+                <Route path="vouchers" element={<VouchersPage />} />
+
+                <Route path="payments/receivable" element={<ReceivablePage />} />
+                <Route path="payments/receivable-ageing" element={<ReceivableAgeingPage />} />
+                <Route path="payments/payable" element={<PayablePage />} />
+                <Route path="payments/payable-ageing" element={<PayableAgeingPage />} />
+                <Route path="payments/customer-advances" element={<CustomerAdvancesPage />} />
+                <Route path="payments/supplier-advances" element={<SupplierAdvancesPage />} />
+                <Route path="payments/report" element={<PaymentReportPage />} />
+
+                <Route path="ledgers" element={<ChartOfAccountsPage />} />
+                <Route path="items" element={<ItemsPage />} />
+                <Route path="assets" element={<FixedAssetsPage />} />
+                <Route path="adjusting" element={<AdjustingEntriesPage />} />
+                <Route path="petty-cash" element={<PettyCashPage />} />
+
+                <Route path="payroll/runs" element={<MonthlyPayrollPage />} />
+                <Route path="payroll/employees" element={<EmployeesPage />} />
+
+                <Route path="reports" element={<AccountsReportsPage />} />
+                <Route path="gst" element={<GstPage />} />
+                <Route path="year-end" element={<YearEndPage />} />
+                <Route path="settings" element={<AccountSettingsPage />} />
+
+                {/* old single-page addresses land on the first page of their group */}
+                <Route path="sales" element={<Navigate to="/accounts/sales/quotations" replace />} />
+                <Route path="payments" element={<Navigate to="/accounts/payments/receivable" replace />} />
+                <Route path="payroll" element={<Navigate to="/accounts/payroll/runs" replace />} />
+                <Route path="*" element={<Navigate to="/accounts" replace />} />
+              </Route>
               <Route path="crm/leads/categories" element={<LeadCategoriesPage />} />
 
               {/* Old CRM / lead URLs (before everything lived under /crm) keep working: /leads/12 → /crm/leads/12 */}

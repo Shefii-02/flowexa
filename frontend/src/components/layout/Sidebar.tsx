@@ -6,6 +6,7 @@ import { logoutThunk } from '@/store/slices'
 import { cn, fmt } from '@/utils'
 import { toast } from 'react-hot-toast'
 import { api } from '@/api/client'
+import { ACCOUNTS_NAV } from '@/pages/accounts/accountsNav'
 
 // ── WA Session picker ─────────────────────────────────────────────────────────
 type WaSessionItem = { id: string; name: string; status?: string }
@@ -217,7 +218,25 @@ export const Sidebar = () => {
 
   // ── Permission hooks (all at top level) ──────────────────────────────────────
   const canViewDash = usePermission('dashboard.view')
-  const canViewAccounts = usePermission('accounts.read') || usePermission('accounts.manage')
+  const canAccManage = usePermission('accounts.manage')
+  const canAccPayroll = usePermission('accounts.payroll')
+  const canViewAccounts = usePermission('accounts.read') || canAccManage
+
+  // Accounts sub-links come from the shared page list; pages with a `group` nest under one heading (Sales ▸ Quotations …).
+  const accountsMenu = (() => {
+    const items = ACCOUNTS_NAV.filter(n => !n.needs || (n.needs === 'payroll' ? canAccPayroll : canAccManage))
+    const done = new Set<string>()
+    return items.map(n => {
+      if (!n.group) return <SubLink key={n.path || 'dashboard'} to={n.path ? `/accounts/${n.path}` : '/accounts'} icon={n.icon} label={n.label} end={!n.path} />
+      if (done.has(n.group)) return null
+      done.add(n.group)
+      return (
+        <NestedAccordion key={n.group} icon={n.groupIcon ?? '📁'} label={n.group} basePaths={[`/accounts/${n.path.split('/')[0]}`]}>
+          {items.filter(x => x.group === n.group).map(x => <SubLink key={x.path} to={`/accounts/${x.path}`} icon={x.icon} label={x.label} />)}
+        </NestedAccordion>
+      )
+    })
+  })()
   const canViewWaChat = usePermission('wa_chat.sessions.view')
   const canViewChats = usePermission('wa_chat.chats.view')
   const canViewMsgSend = usePermission('wa_chat.message_sender.view')
@@ -540,13 +559,7 @@ export const Sidebar = () => {
               <>
                 <SectionHeader label="Accounts" />
                 <NestedAccordion icon="🧮" label="Accounts" basePaths={['/accounts']}>
-                  <SubLink to="/accounts" icon="📊" label="Dashboard" end />
-                  <SubLink to="/accounts/vouchers" icon="🧾" label="Vouchers" />
-                  <SubLink to="/accounts/ledgers" icon="📒" label="Ledgers" />
-                  <SubLink to="/accounts/items" icon="📦" label="Items & Stock" />
-                  <SubLink to="/accounts/reports" icon="📑" label="Reports" />
-                  <SubLink to="/accounts/gst" icon="🏛️" label="GST" />
-                  <SubLink to="/accounts/settings" icon="⚙️" label="Settings" />
+                  {accountsMenu}
                 </NestedAccordion>
               </>
             )}

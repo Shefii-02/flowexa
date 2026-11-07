@@ -3,12 +3,13 @@ import { accountsApi } from '@/api'
 import { Button, EmptyState, Input, Modal, TableSkeleton } from '@/components/ui'
 import { getError } from '@/utils'
 import toast from 'react-hot-toast'
-import { inr, Stat, StatusPill, useCanManage } from './shared'
+import { inr, Stat, StatusPill, useCanManage } from '../shared'
+import AccountsPageFrame from '../components/AccountsPageFrame'
 
 const LABEL: Record<string, string> = { ok: 'Within limit', near: 'Near limit', over: 'Over limit', hold: 'On hold', no_limit: 'No limit set' }
 
 /** Customer credit management: limits, payment terms, holds, and who is over or overdue. */
-export default function CreditTab() {
+function CreditView() {
   const canManage = useCanManage()
   const [d, setD] = useState<any>(null)
   const [edit, setEdit] = useState<any>(null)
@@ -73,5 +74,14 @@ export default function CreditTab() {
         </Modal>
       )}
     </div>
+  )
+}
+
+/** /accounts/sales/credit */
+export default function CustomerCreditPage() {
+  return (
+    <AccountsPageFrame path="sales/credit">
+      <CreditView />
+    </AccountsPageFrame>
   )
 }

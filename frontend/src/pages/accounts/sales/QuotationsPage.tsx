@@ -3,14 +3,15 @@ import { accountsApi } from '@/api'
 import { Button, ConfirmModal, EmptyState, Input, Modal, Select, TableSkeleton } from '@/components/ui'
 import { getError } from '@/utils'
 import toast from 'react-hot-toast'
-import { GST_RATES, GST_STATES, inr, Stat, StatusPill, today, useCanManage } from './shared'
-import { printInvoice } from './printInvoice'
+import { GST_RATES, GST_STATES, inr, Stat, StatusPill, today, useCanManage } from '../shared'
+import { printInvoice } from '../printInvoice'
+import AccountsPageFrame from '../components/AccountsPageFrame'
 
 const blankItem = () => ({ item_id: '', description: '', hsn: '', qty: 1, rate: '', gst_rate: 18 })
 const addDays = (d: string, n: number) => { const x = new Date(d + 'T00:00:00'); x.setDate(x.getDate() + n); return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, '0')}-${String(x.getDate()).padStart(2, '0')}` }
 const STATUSES: [string, string][] = [['', 'All'], ['draft', 'Draft'], ['sent', 'Sent'], ['accepted', 'Accepted'], ['rejected', 'Rejected'], ['expired', 'Expired'], ['invoiced', 'Invoiced']]
 
-export default function QuotationsTab() {
+function QuotationsView() {
   const canManage = useCanManage()
   const [list, setList] = useState<any>({ data: [], total: 0, summary: null })
   const [loading, setLoading] = useState(true)
@@ -189,5 +190,14 @@ export default function QuotationsTab() {
       )}
       <ConfirmModal open={!!del} title="Delete quotation?" message={`Delete ${del?.number}?`} onConfirm={async () => { await act(() => accountsApi.deleteQuotation(del.id), 'Deleted.'); setDel(null) }} onCancel={() => setDel(null)} />
     </div>
+  )
+}
+
+/** /accounts/sales/quotations */
+export default function QuotationsPage() {
+  return (
+    <AccountsPageFrame path="sales/quotations">
+      <QuotationsView />
+    </AccountsPageFrame>
   )
 }

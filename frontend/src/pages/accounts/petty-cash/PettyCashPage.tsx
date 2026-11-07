@@ -3,10 +3,11 @@ import { accountsApi } from '@/api'
 import { Button, EmptyState, Input, Modal, Select, TableSkeleton } from '@/components/ui'
 import { getError } from '@/utils'
 import toast from 'react-hot-toast'
-import { inr, RangePicker, Stat, today, useRange, useCanManage } from './shared'
+import { inr, RangePicker, Stat, today, useRange, useCanManage } from '../shared'
+import AccountsPageFrame from '../components/AccountsPageFrame'
 
 /** Imprest petty cash: a fixed float, topped up from the bank, spent on small expenses, replenished back to the float. */
-export default function PettyCashTab() {
+function PettyCashView() {
   const canManage = useCanManage()
   const [range, setRange] = useRange()
   const [d, setD] = useState<any>(null)
@@ -75,5 +76,14 @@ export default function PettyCashTab() {
         </Modal>
       )}
     </div>
+  )
+}
+
+/** /accounts/petty-cash */
+export default function PettyCashPage() {
+  return (
+    <AccountsPageFrame path="petty-cash">
+      <PettyCashView />
+    </AccountsPageFrame>
   )
 }

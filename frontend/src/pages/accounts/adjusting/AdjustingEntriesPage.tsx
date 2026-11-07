@@ -3,7 +3,8 @@ import { accountsApi } from '@/api'
 import { Button, EmptyState, Input, Modal, Select, TableSkeleton } from '@/components/ui'
 import { getError } from '@/utils'
 import toast from 'react-hot-toast'
-import { inr, RangePicker, StatusPill, today, useRange, useCanManage } from './shared'
+import { inr, RangePicker, StatusPill, today, useRange, useCanManage } from '../shared'
+import AccountsPageFrame from '../components/AccountsPageFrame'
 
 const KINDS: Record<string, { icon: string; title: string; hint: string; needs: 'expense' | 'income' | 'account' | 'both'; reverse?: boolean }> = {
   accrued_expense:    { icon: '🧾', title: 'Accrued expense', hint: 'Expense incurred but the bill has not arrived. Dr Expense / Cr Accrued Expenses.', needs: 'expense', reverse: true },
@@ -14,7 +15,7 @@ const KINDS: Record<string, { icon: string; title: string; hint: string; needs: 
 }
 
 /** Adjusting entries (accruals, prepaids, deferrals) without having to remember which side each one goes on. */
-export default function AdjustingTab() {
+function AdjustingView() {
   const canManage = useCanManage()
   const [range, setRange] = useRange()
   const [d, setD] = useState<any>(null)
@@ -74,5 +75,14 @@ export default function AdjustingTab() {
         </Modal>
       )}
     </div>
+  )
+}
+
+/** /accounts/adjusting */
+export default function AdjustingEntriesPage() {
+  return (
+    <AccountsPageFrame path="adjusting">
+      <AdjustingView />
+    </AccountsPageFrame>
   )
 }

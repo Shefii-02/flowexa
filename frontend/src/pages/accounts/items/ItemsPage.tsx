@@ -3,12 +3,13 @@ import { accountsApi } from '@/api'
 import { Button, Input, Select, Modal, ConfirmModal, Badge, EmptyState, TableSkeleton } from '@/components/ui'
 import { getError } from '@/utils'
 import toast from 'react-hot-toast'
-import { GST_RATES, inr, useCanManage } from './shared'
+import { GST_RATES, inr, useCanManage } from '../shared'
+import AccountsPageFrame from '../components/AccountsPageFrame'
 
 const EMPTY = { name: '', sku: '', hsn: '', unit: 'NOS', gst_rate: 18, sale_rate: '', purchase_rate: '', track_stock: true, opening_qty: '', opening_value: '', reorder_level: '' }
 
 /** Products and services. Stock-tracked items show the quantity and value on hand (weighted-average cost). */
-export default function ItemsTab() {
+function ItemsView() {
   const canManage = useCanManage()
   const [rows, setRows] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -85,5 +86,14 @@ export default function ItemsTab() {
       </Modal>
       <ConfirmModal open={!!del} title="Delete item?" message={`Delete "${del?.name}"?`} onConfirm={remove} onCancel={() => setDel(null)} />
     </div>
+  )
+}
+
+/** /accounts/items */
+export default function ItemsPage() {
+  return (
+    <AccountsPageFrame path="items">
+      <ItemsView />
+    </AccountsPageFrame>
   )
 }

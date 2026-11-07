@@ -3,7 +3,8 @@ import { accountsApi } from '@/api'
 import { Button, Skeleton } from '@/components/ui'
 import { getError } from '@/utils'
 import toast from 'react-hot-toast'
-import { inr, RangePicker, today, useRange, VOUCHER_TYPES, useCanManage } from './shared'
+import { inr, RangePicker, today, useRange, VOUCHER_TYPES, useCanManage } from '../shared'
+import AccountsPageFrame from '../components/AccountsPageFrame'
 
 const REPORTS = [
   ['profit-loss', 'Profit & Loss'], ['comparison', 'Year comparison'], ['balance-sheet', 'Balance Sheet'], ['trial-balance', 'Trial Balance'], ['chart', 'Chart of accounts'],
@@ -11,7 +12,7 @@ const REPORTS = [
   ['day-book', 'Day Book'], ['ledger', 'Ledger Statement'], ['bank-reconciliation', 'Bank Reconciliation'], ['tds', 'TDS'], ['receivables', 'Receivables'], ['payables', 'Payables'],
 ]
 
-export default function ReportsTab() {
+function ReportsView() {
   const canManage = useCanManage()
   const [name, setName] = useState('profit-loss')
   const [range, setRange] = useRange()
@@ -188,5 +189,14 @@ export default function ReportsTab() {
         )}
       </div></div>
     </div>
+  )
+}
+
+/** /accounts/reports */
+export default function AccountsReportsPage() {
+  return (
+    <AccountsPageFrame path="reports">
+      <ReportsView />
+    </AccountsPageFrame>
   )
 }

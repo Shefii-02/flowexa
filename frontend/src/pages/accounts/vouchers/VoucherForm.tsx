@@ -3,7 +3,7 @@ import { accountsApi } from '@/api'
 import { Button, Input, Select, Modal } from '@/components/ui'
 import { getError } from '@/utils'
 import toast from 'react-hot-toast'
-import { inr, today, GST_RATES, GST_STATES, TDS_SECTIONS, VOUCHER_TYPES } from './shared'
+import { inr, today, GST_RATES, GST_STATES, TDS_SECTIONS, VOUCHER_TYPES } from '../shared'
 
 const SETTLES: Record<string, 'receivable' | 'payable'> = { receipt: 'receivable', credit_note: 'receivable', payment: 'payable', debit_note: 'payable' }
 const JOURNAL_KINDS: [string, string][] = [['general', 'General'], ['adjusting', 'Adjusting entry'], ['revenue', 'Revenue transaction'], ['expense', 'Expense transaction'], ['asset', 'Asset transaction'], ['liability', 'Liability transaction'], ['equity', 'Equity transaction']]
