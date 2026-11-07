@@ -149,7 +149,7 @@ class PlansSeeder extends Seeder
         // Retire every other non-custom plan (e.g. the legacy ₹0 "Trial" plan)
         // without deleting it — companies still on it keep working.
         $retired = Plan::where('is_custom', false)
-            ->whereNotIn('name', $keep)
+            ->whereNotIn('name', array_merge($keep, ['Testing']))  // Testing is created by PlanPricingSeeder
             ->where('is_active', true)
             ->update(['is_active' => false]);
 

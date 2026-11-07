@@ -21,6 +21,7 @@ class DatabaseSeeder extends Seeder
             // ── Plans & limits ───────────────────────────────────────────────
             PlansSeeder::class,
             UpdatePlansWithLimitsSeeder::class, // redundant with PlansSeeder; kept for completeness
+            PlanPricingSeeder::class,           // yearly prices, Testing plan, limit add-ons
 
             // ── Roles & permissions ──────────────────────────────────────────
             RolesSeeder::class,
