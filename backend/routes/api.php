@@ -1008,6 +1008,8 @@ Route::prefix('v1')->group(function () {
             Route::post('plans/verify-payment',        [PlanPurchaseController::class, 'verifyPayment'])->name('plans.verify-payment');
             Route::get('plans/history',                [PlanPurchaseController::class, 'history'])->name('plans.history');
             Route::get('addons',                       [PlanPurchaseController::class, 'addons'])->name('addons.index');
+            Route::get('addons/mine',                  [PlanPurchaseController::class, 'myAddons'])->name('addons.mine');
+            Route::get('billing/invoices',             [PlanPurchaseController::class, 'invoices'])->name('billing.invoices');
             Route::post('addons/{addon}/create-order', [PlanPurchaseController::class, 'addonOrder'])->name('addons.order');
             Route::post('addons/verify-payment',       [PlanPurchaseController::class, 'verifyAddonPayment'])->name('addons.verify');
         });

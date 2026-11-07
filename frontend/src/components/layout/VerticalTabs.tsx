@@ -1,10 +1,10 @@
 // Vertical tabs: a left menu on web, a list → detail drill-in on mobile. The open section lives in the URL (?section=…),
 // so refresh, shared links and the browser Back button all work. Only ONE layout is mounted at a time.
-import type { ReactNode } from 'react'
+import { Fragment, type ReactNode } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useIsDesktop } from '@/hooks/useIsDesktop'
 
-export type VTab = { id: string; label: string; icon?: string; desc?: string; badge?: string; hidden?: boolean }
+export type VTab = { id: string; label: string; icon?: string; desc?: string; badge?: string; hidden?: boolean; /** optional small heading shown above the first tab of each group */ group?: string }
 
 export default function VerticalTabs({ tabs, param = 'section', defaultId, backLabel, showTitle = true, footer, children }: {
   tabs: VTab[]
@@ -26,10 +26,13 @@ export default function VerticalTabs({ tabs, param = 'section', defaultId, backL
 
   const nav = (mobile: boolean) => (
     <nav aria-label={backLabel} className="flex flex-col gap-1">
-      {visible.map(t => {
+      {visible.map((t, i) => {
         const on = !mobile && active.id === t.id
+        const caption = t.group && t.group !== visible[i - 1]?.group
         return (
-          <button key={t.id} onClick={() => open(t.id)} aria-current={on ? 'page' : undefined}
+          <Fragment key={t.id}>
+          {caption && <p className="px-2 pb-1 pt-3 text-[10px] font-semibold uppercase tracking-wider text-gray-400 first:pt-0">{t.group}</p>}
+          <button onClick={() => open(t.id)} aria-current={on ? 'page' : undefined}
             className={[
               'flex items-center gap-3 rounded-xl text-left text-sm transition-colors',
               mobile ? 'border border-gray-200 bg-white px-4 py-3.5' : 'px-3 py-2.5',
@@ -42,7 +45,8 @@ export default function VerticalTabs({ tabs, param = 'section', defaultId, backL
             </span>
             {t.badge && <span className="rounded-full bg-amber-100 px-1.5 text-xs text-amber-700" title="Needs attention">{t.badge}</span>}
             {mobile && <span className="text-gray-400" aria-hidden>›</span>}
-          </button>)
+          </button>
+          </Fragment>)
       })}
     </nav>
   )

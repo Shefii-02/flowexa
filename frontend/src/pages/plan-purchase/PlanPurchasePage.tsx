@@ -1,12 +1,16 @@
 // src/pages/plan-purchase/PlanPurchasePage.tsx
 import PlanUsagePanel from '@/components/plan/PlanUsagePanel'
 import { useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { planApi } from '@/api'
 import { Button, Badge, Spinner, StatCard } from '@/components/ui'
 import { fmt, getError, normalizePhone } from '@/utils'
 import toast from 'react-hot-toast'
-
-declare global { interface Window { Razorpay: any } }
+import VerticalTabs, { type VTab } from '@/components/layout/VerticalTabs'
+import { refreshPlanUsage } from '@/lib/planUsage'
+import { loadRazorpay } from './razorpay'
+import AddonsSection, { type Addon, type MyAddon } from './AddonsSection'
+import InvoicesSection, { type Invoice } from './InvoicesSection'
 
 const DURATIONS = [
   { key: 'monthly', label: '1 Month', discount: 0 },
@@ -34,6 +38,10 @@ export default function PlanPurchasePage() {
   const [duration, setDuration] = useState('monthly')
   const [loading, setLoading] = useState(true)
   const [paying, setPaying] = useState<number | null>(null)
+  const [addons, setAddons] = useState<Addon[]>([])
+  const [mine, setMine] = useState<MyAddon[]>([])
+  const [invoices, setInvoices] = useState<Invoice[]>([])
+  const [params] = useSearchParams()
 
   useEffect(() => {
     Promise.all([planApi.list(), planApi.current(), planApi.history()])
@@ -43,7 +51,15 @@ export default function PlanPurchasePage() {
         setHistory(h.data.history)
       })
       .finally(() => setLoading(false))
+    loadExtras()
   }, [])
+
+  // add-ons and receipts are secondary: a failure here must never block the page
+  const loadExtras = () => {
+    planApi.addons().then(r => setAddons(r.data.addons ?? [])).catch(() => {})
+    planApi.myAddons().then(r => setMine(r.data.addons ?? [])).catch(() => {})
+    planApi.invoices().then(r => setInvoices(r.data.invoices ?? [])).catch(() => {})
+  }
 
   const calcPrice = (base: number, dur: string) => {
     const d = DURATIONS.find(d => d.key === dur)!
@@ -78,14 +94,7 @@ export default function PlanPurchasePage() {
 
       const { data } = await planApi.createOrder(plan.id, duration)
 
-      if (!window.Razorpay) {
-        await new Promise<void>((res, rej) => {
-          const s = document.createElement('script')
-          s.src = 'https://checkout.razorpay.com/v1/checkout.js'
-          s.onload = () => res(); s.onerror = () => rej()
-          document.body.appendChild(s)
-        })
-      }
+      await loadRazorpay()
 
       const rzp = new window.Razorpay({
         key: data.razorpay_key,
@@ -128,6 +137,7 @@ export default function PlanPurchasePage() {
             // Refresh
             const [c, h] = await Promise.all([planApi.current(), planApi.history()])
             setCurrent(c.data.current); setHistory(h.data.history)
+            refreshPlanUsage(); loadExtras()
           } catch (e) { toast.error(getError(e)) }
         },
         modal: { ondismiss: () => setPaying(null) },
@@ -139,12 +149,22 @@ export default function PlanPurchasePage() {
   if (loading) return <div className="flex justify-center py-12"><Spinner size="lg" /></div>
 
 
+  const tabs: VTab[] = [
+    { id: 'plan',     icon: '📦', label: 'Purchased plan',    desc: 'Your current plan and what you have used' },
+    { id: 'invoices', icon: '🧾', label: 'Billing & invoices', desc: 'Payments, receipts and plan history' },
+    { id: 'plans',    icon: '🗂️', label: 'All plans',          desc: 'Compare, upgrade or renew' },
+    { id: 'addons',   icon: '➕', label: 'Add-ons',            desc: 'Increase a single limit — staff, leads and more' },
+  ]
+
   return (
     <div className="space-y-6">
-      <div><h1 className="page-title">Plans & Billing</h1><p className="page-sub">Manage your subscription plan</p></div>
-      <PlanUsagePanel />
+      <div><h1 className="page-title">Plans & Billing</h1><p className="page-sub">Your plan, payments and add-ons</p></div>
 
-      {/* Current plan banner */}
+      <VerticalTabs tabs={tabs} defaultId="plan" backLabel="Plans & billing">
+        {(id) => (
+          <>
+            {id === 'plan' && (
+              <>
       {current && (
         <div className="card p-5 border-brand-200 bg-brand-50/30">
           <div className="flex items-center justify-between">
@@ -166,7 +186,15 @@ export default function PlanPurchasePage() {
         </div>
       )}
 
-      {/* Duration picker */}
+                <PlanUsagePanel />
+                {!current && <p className="text-sm text-gray-500">You don’t have an active plan yet. Pick one under <b>All plans</b>.</p>}
+              </>
+            )}
+
+            {id === 'invoices' && <InvoicesSection invoices={invoices} history={history} />}
+
+            {id === 'plans' && (
+              <>
       <div>
         <p className="text-sm font-medium text-gray-700 mb-3">Billing period</p>
         <div className="flex gap-3 flex-wrap">
@@ -184,7 +212,7 @@ export default function PlanPurchasePage() {
         </div>
       </div>
 
-      {/* Plans grid */}
+
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {plans.map(plan => {
           const price = calcPrice(plan.price, duration)
@@ -248,29 +276,13 @@ export default function PlanPurchasePage() {
         })}
       </div>
 
-      {/* Purchase history */}
-      {history.length > 0 && (
-        <div className="card">
-          <div className="card-header"><h3 className="card-title">Purchase history</h3></div>
-          <div className="table-wrapper">
-            <table className="table">
-              <thead><tr><th>Plan</th><th>Duration</th><th>Amount</th><th>Status</th><th>Start</th><th>Expires</th></tr></thead>
-              <tbody>
-                {history.map((h: any) => (
-                  <tr key={h.id}>
-                    <td className="font-medium">{h.plan?.name}</td>
-                    <td className="text-xs text-gray-500 capitalize">{h.duration_type?.replace('month', ' month')}</td>
-                    <td className="font-medium">{h.amount_paid > 0 ? `₹${fmt.number(h.amount_paid)}` : 'Free'}</td>
-                    <td><Badge variant={h.status === 'active' ? 'green' : h.status === 'expired' ? 'red' : 'gray'}>{h.status}</Badge></td>
-                    <td className="text-xs text-gray-400">{fmt.date(h.starts_at)}</td>
-                    <td className="text-xs text-gray-400">{h.expires_at ? fmt.date(h.expires_at) : '∞ Unlimited'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
+              </>
+            )}
+
+            {id === 'addons' && <AddonsSection addons={addons} mine={mine} focus={params.get('resource')} onChanged={loadExtras} />}
+          </>
+        )}
+      </VerticalTabs>
     </div>
   )
 }

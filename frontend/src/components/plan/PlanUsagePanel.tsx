@@ -21,7 +21,7 @@ export default function PlanUsagePanel() {
               <div className="flex justify-between text-xs">
                 <span className="text-gray-700">{r.label}{r.kind === 'monthly' ? ' (this month)' : ''}</span>
                 <span className={r.exceeded ? 'text-red-600 font-semibold' : 'text-gray-500'}>
-                  {r.limit === null ? `${r.used} · unlimited` : r.exceeded ? `${r.used} of ${r.limit} — limit reached` : `${r.used} of ${r.limit} used · ${r.remaining} left`}
+                  {r.limit === null ? `${r.used} · unlimited` : r.exceeded ? `${r.used} of ${r.limit} — limit reached` : `${r.used} of ${r.limit} used · ${r.remaining} left${r.addon_extra ? ` (incl. +${r.addon_extra} add-on)` : ''}`}
                 </span>
               </div>
               <div className="h-1.5 bg-gray-100 rounded-full mt-1 overflow-hidden">

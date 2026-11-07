@@ -34,6 +34,18 @@ class PlanPurchaseController extends Controller
         return response()->json(['addons' => $this->svc->activeAddons()]);
     }
 
+    /** GET addons/mine — what this company has bought, with status and expiry. */
+    public function myAddons(): JsonResponse
+    {
+        return response()->json(['addons' => $this->svc->companyAddons(auth()->user()->company_id)]);
+    }
+
+    /** GET billing/invoices — every completed payment (plans, add-ons, top-ups). */
+    public function invoices(): JsonResponse
+    {
+        return response()->json(['invoices' => $this->svc->invoices(auth()->user()->company_id)]);
+    }
+
     public function previewChange(Request $request): JsonResponse
     {
         $d = $request->validate([
@@ -149,7 +161,14 @@ class PlanPurchaseController extends Controller
 
     public function superAdminCreateAddon(Request $request): JsonResponse
     {
-        $d = $request->validate(['name' => ['required', 'string', 'max:100'], 'slug' => ['required', 'string', 'max:110'], 'description' => ['nullable', 'string'], 'type' => ['required', 'in:feature,message_pack,storage'], 'price' => ['required', 'numeric', 'min:0'], 'billing_cycle' => ['required', 'in:monthly,yearly,one_time'], 'config' => ['nullable', 'array'], 'is_active' => ['nullable', 'boolean']]);
+        $d = $request->validate(['name' => ['required', 'string', 'max:100'], 'slug' => ['required', 'string', 'max:110'], 'description' => ['nullable', 'string'], 'type' => ['required', 'in:feature,message_pack,storage,limit'], 'price' => ['required', 'numeric', 'min:0'], 'billing_cycle' => ['required', 'in:monthly,yearly,one_time'], 'config' => ['nullable', 'array'], 'is_active' => ['nullable', 'boolean']]);
+        // A limit add-on raises one plan limit (e.g. staff users): it must name which one and by how much.
+        if ($d['type'] === 'limit') {
+            $request->validate([
+                'config.resource' => ['required', 'string', \Illuminate\Validation\Rule::in(array_keys(\App\Support\PlanLimits::REGISTRY))],
+                'config.amount'   => ['required', 'integer', 'min:1', 'max:100000'],
+            ]);
+        }
         return response()->json(['addon' => $this->svc->createAddon($d)], 201);
     }
 

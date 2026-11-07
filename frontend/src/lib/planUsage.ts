@@ -9,6 +9,8 @@ import { api } from '@/api/client'
 export type ResourceUsage = {
   key: string; label: string; kind: 'total' | 'monthly'; used: number; limit: number | null
   remaining: number | null; exceeded: boolean; percent: number | null
+  /** The plan's own cap, and how much of `limit` comes from bought add-ons. */
+  plan_limit?: number | null; addon_extra?: number
 }
 export type PlanFeatures = { google_sheets: boolean; google_drive: boolean; calendar: boolean; email_integration: boolean }
 type State = {

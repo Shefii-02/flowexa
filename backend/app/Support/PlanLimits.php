@@ -34,13 +34,14 @@ class PlanLimits
     ];
 
     private static array $hasColumn = [];
+    private static array $bonus = [];
 
     private static function has(string $table, string $column): bool
     {
         return self::$hasColumn["$table.$column"] ??= Schema::hasTable($table) && Schema::hasColumn($table, $column);
     }
 
-    public static function forgetCache(): void { self::$hasColumn = []; }
+    public static function forgetCache(): void { self::$hasColumn = []; self::$bonus = []; }
 
     public static function label(string $key): string { return self::REGISTRY[$key][0] ?? str_replace('_', ' ', $key); }
 
@@ -55,18 +56,56 @@ class PlanLimits
         return (int) $q->count();
     }
 
-    /** The plan's cap for a resource, or null when unlimited / no plan. */
-    public static function limit(?object $plan, string $key): ?int
+    /**
+     * Extra capacity this company bought as "limit" add-ons (addons.type = 'limit', config {resource, amount}):
+     * the sum over its active, unexpired purchases for `$key`.
+     */
+    public static function bonus(int $companyId, string $key): int
+    {
+        // Short-lived memo: one request asks several times, but a queue worker must not keep a stale answer for long.
+        $hit = self::$bonus[$companyId] ?? null;
+        if (!$hit || time() - $hit['t'] > 5) {
+            $hit = self::$bonus[$companyId] = ['t' => time(), 'd' => self::loadBonuses($companyId)];
+        }
+        return (int) ($hit['d'][$key] ?? 0);
+    }
+
+    /** @return array<string,int> resource key => extra units */
+    private static function loadBonuses(int $companyId): array
+    {
+        if (!Schema::hasTable('company_addons') || !Schema::hasTable('addons')) { return []; }
+        $rows = DB::table('company_addons as ca')->join('addons as a', 'a.id', '=', 'ca.addon_id')
+            ->where('ca.company_id', $companyId)->where('ca.status', 'active')->where('a.type', 'limit')
+            ->where(fn ($q) => $q->whereNull('ca.expires_at')->orWhere('ca.expires_at', '>', now()))
+            ->pluck('a.config');
+        $out = [];
+        foreach ($rows as $json) {
+            $c = is_string($json) ? json_decode($json, true) : (array) $json;
+            $res = $c['resource'] ?? null; $amt = (int) ($c['amount'] ?? 0);
+            if ($res && $amt > 0) { $out[$res] = ($out[$res] ?? 0) + $amt; }
+        }
+        return $out;
+    }
+
+    /** The plan's own cap for a resource (no add-ons), or null when unlimited / no plan. */
+    public static function planLimit(?object $plan, string $key): ?int
     {
         if (!$plan) { return null; }
         $v = $plan->{self::REGISTRY[$key][2]} ?? null;
         return $v === null ? null : (int) $v;
     }
 
+    /** The cap that applies: the plan's cap plus any add-on units bought for it (when the company is known). Null = unlimited. */
+    public static function limit(?object $plan, string $key, ?int $companyId = null): ?int
+    {
+        $base = self::planLimit($plan, $key);
+        return ($base === null || $companyId === null) ? $base : $base + self::bonus($companyId, $key);
+    }
+
     /** How many more can be added (null = unlimited). */
     public static function remaining(int $companyId, ?object $plan, string $key): ?int
     {
-        $max = self::limit($plan, $key);
+        $max = self::limit($plan, $key, $companyId);
         return $max === null ? null : max(0, $max - self::used($companyId, $key));
     }
 
@@ -77,8 +116,10 @@ class PlanLimits
         foreach (self::REGISTRY as $key => [$label, $table, , $kind]) {
             if (!Schema::hasTable($table)) { continue; }
             $used = self::used($companyId, $key);
-            $max = self::limit($plan, $key);
+            $max = self::limit($plan, $key, $companyId);
+            $base = self::planLimit($plan, $key);
             $out[$key] = ['key' => $key, 'label' => $label, 'kind' => $kind, 'used' => $used, 'limit' => $max,
+                          'plan_limit' => $base, 'addon_extra' => $max === null || $base === null ? 0 : $max - $base,
                           'remaining' => $max === null ? null : max(0, $max - $used), 'exceeded' => $max !== null && $used >= $max,
                           'percent' => $max === null || $max === 0 ? ($max === 0 ? 100 : null) : min(100, (int) round($used / $max * 100))];
         }
@@ -88,7 +129,7 @@ class PlanLimits
     /** null when `$adding` more would fit, otherwise the error payload shown to the user. */
     public static function violation(int $companyId, ?object $plan, string $key, int $adding = 1): ?array
     {
-        $max = self::limit($plan, $key);
+        $max = self::limit($plan, $key, $companyId);
         if ($max === null) { return null; }
         $used = self::used($companyId, $key);
         if ($used + $adding <= $max) { return null; }
@@ -97,9 +138,20 @@ class PlanLimits
         $per = self::REGISTRY[$key][3] === 'monthly' ? ' per month' : '';
         $left = max(0, $max - $used);
         $message = $adding > 1 && $left > 0
-            ? "Limit exceeded: your plan allows {$max} {$label}{$per} and you have {$used}. You can add {$left} more, not {$adding}. Upgrade your plan to add more."
-            : "Limit exceeded: your plan allows {$max} {$label}{$per} and you have already used {$used}. Upgrade your plan to add more.";
-        return ['message' => $message, 'error_code' => 'plan_limit_reached', 'resource' => $key, 'current' => $used, 'limit' => $max, 'remaining' => $left, 'adding' => $adding];
+            ? "Limit exceeded: your plan allows {$max} {$label}{$per} and you have {$used}. You can add {$left} more, not {$adding}. Upgrade your plan or buy an add-on to add more."
+            : "Limit exceeded: your plan allows {$max} {$label}{$per} and you have already used {$used}. Upgrade your plan or buy an add-on to add more.";
+        return ['message' => $message, 'error_code' => 'plan_limit_reached', 'resource' => $key, 'current' => $used, 'limit' => $max, 'remaining' => $left, 'adding' => $adding, 'addon_available' => self::addonOffered($key)];
+    }
+
+    /** Whether any active "limit" add-on can raise this resource (so the UI can offer "buy more"). */
+    public static function addonOffered(string $key): bool
+    {
+        if (!Schema::hasTable('addons')) { return false; }
+        return DB::table('addons')->where('type', 'limit')->where('is_active', true)->pluck('config')
+            ->contains(function ($j) use ($key) {
+                $c = is_string($j) ? json_decode($j, true) : (array) $j;
+                return ($c['resource'] ?? null) === $key;
+            });
     }
 
     /** Per-campaign cap (plans.max_campaign_contacts): null when the audience fits, otherwise the error payload. */

@@ -1,13 +1,14 @@
 // Step-by-step setup instructions for every integration — WhatsApp, Instagram, Meta Ads, AI keys,
 // and the website chat widget. Pure content; no backend.
-import { useState } from 'react'
+import VerticalTabs, { type VTab } from '@/components/layout/VerticalTabs'
+import { useIsSuperAdmin } from '@/store'
 
 type Section = {
   id: string
   icon: string
   title: string
   intro: string
-  steps: { h: string; body: React.ReactNode }[]
+  steps: { h: string; body: React.ReactNode; adminOnly?: boolean }[]
 }
 
 const SECTIONS: Section[] = [
@@ -71,81 +72,184 @@ const SECTIONS: Section[] = [
   {
     id: 'instagram',
     icon: '📸',
-    title: 'Instagram (DMs & comment bot)',
+    title: 'Instagram — connect your account',
     intro:
-      'Connect an Instagram professional (Business or Creator) account so the AI replies to DMs and the keyword bot works on comments. The account must be linked to a Facebook Page.',
+      'Connect an Instagram Business or Creator account with a normal Instagram login — nothing to copy and paste. Teamzo then checks that everything is ready.',
     steps: [
       {
-        h: '1 · Convert to a professional account',
-        body: <>In the Instagram app → Settings → <b>Account type</b> → switch to Business or Creator, and link it to your Facebook Page.</>,
+        h: '1 · Use a professional account',
+        body: <>In the Instagram app → Settings → <b>Account type</b> → switch to <b>Business</b> or <b>Creator</b>. Personal accounts can’t be connected.</>,
       },
       {
-        h: '2 · Add Instagram to your Meta app',
+        h: '2 · Connect',
         body: (
           <>
-            In the same Meta app you made for WhatsApp, add the <b>Instagram</b> product (or{' '}
-            <b>Instagram Graph API</b>). Under App Review → Permissions, request every one of these
-            — the platform uses all of them:
-            <ul className="list-disc ml-5 mt-1 space-y-0.5">
-              <li><code>instagram_basic</code> — read the account's own profile and media</li>
-              <li><code>instagram_manage_comments</code> — read, reply to, delete and hide comments</li>
-              <li><code>instagram_manage_insights</code> — reach, impressions and engagement analytics</li>
-              <li><code>instagram_manage_messages</code> — send and receive DMs</li>
-              <li><code>pages_show_list</code> — list the Pages the token can manage (the account picker below)</li>
-              <li><code>pages_read_engagement</code> — read each Page's engagement stats in that picker</li>
-              <li><code>pages_manage_metadata</code> — subscribe the Page to webhook events</li>
-              <li><code>pages_messaging</code> — send messages as the Page (private replies, DM fallback)</li>
-            </ul>
-            While the app is in Development mode these all work for the app's own admins/testers
-            without review; submit for App Review only once you need other businesses to connect.
-          </>
-        ),
-      },
-      {
-        h: '3 · Get a User access token',
-        body: (
-          <>
-            Graph API Explorer → select your app → select the same permissions as above → <b>Generate
-            Access Token</b> → log in as the Page's admin. Copy the token — it's short-lived, but
-            that's fine, it's only used once to discover your pages (next step).
-          </>
-        ),
-      },
-      {
-        h: '4 · Connect via the page picker',
-        body: (
-          <>
-            <b>Instagram → Accounts → Connect account → Find my pages</b>. Paste the User token from
-            step 3 and click <b>Find pages</b> — every Facebook Page it can manage is listed, each
-            with its linked Instagram Business Account (if any) already resolved. Click{' '}
-            <b>Connect</b> on the right one; the platform stores that Page's own long-lived access
-            token for you, so no manual ID lookup is needed. (The <b>Enter IDs manually</b> tab is
-            still there as a fallback.) Then in your Meta app → Webhooks, subscribe the Instagram
-            object to <code>comments</code> and <code>messages</code> using the Webhook URL and
-            Verify token shown on the connect screen.
-          </>
-        ),
-      },
-      {
-        h: '5 · Moderate comments',
-        body: (
-          <>
-            <b>Instagram → Comments</b>. Pick a post or reel on the left, and every comment (with its
-            replies) shows on the right — <b>Reply</b> publicly, <b>Hide</b> it from the public thread
-            (reversible), or <b>Delete</b> it outright. This uses{' '}
-            <code>instagram_manage_comments</code> directly against that comment, live.
-          </>
-        ),
-      },
-      {
-        h: '6 · Set up the comment bot',
-        body: (
-          <>
-            <b>Instagram → Auto-DM Rules → New automation</b>. Add trigger keywords (e.g. “price”,
-            “link”), write the DM to auto-send, optionally scope it to specific posts/reels, and turn
-            on “Let the AI agent handle their replies” so follow-up questions are answered
+            Open <b>Instagram → Accounts</b> (or <b>Instagram → AutoDM</b>) → <b>Connect Instagram Account</b> →{' '}
+            <b>Continue with Instagram</b>. Log in, then allow Teamzo to manage messages and comments. You land back in Teamzo
             automatically.
           </>
+        ),
+      },
+      {
+        h: '3 · Read the setup checklist',
+        body: (
+          <>
+            A “Finishing setup” window shows what is ready: the account is connected, the access token is valid (it
+            renews itself before it expires), the permissions were granted, and live updates (webhooks) are subscribed.
+            If live updates show a warning, press <b>Fix</b>. Press <b>Re-check</b> any time.
+          </>
+        ),
+      },
+      {
+        h: '4 · Test it',
+        body: <>Comment on one of your posts from a different account. It should appear under <b>Instagram → AutoDM → Activity</b> within seconds.</>,
+      },
+      {
+        h: '5 · If nothing arrives',
+        body: (
+          <ul className="list-disc ml-5 space-y-1">
+            <li>While the Meta app is in <b>Development mode</b>, only accounts with a role on the app (admin, developer or <b>Instagram Tester</b>) trigger live updates. Add the account as a tester, then accept the invite in Instagram → Settings → Apps and websites → Tester invites.</li>
+            <li>The connection token can expire if you change your Instagram password. <b>Instagram → AutoDM → Settings → Reconnect</b>.</li>
+            <li>An account can be connected to one workspace at a time. Disconnect it in the old workspace first.</li>
+          </ul>
+        ),
+      },
+      {
+        h: '6 · Advanced: connect with an access token',
+        body: (
+          <>
+            If you already have a Facebook Page access token: <b>Connect Instagram Account → Advanced: connect with an access
+            token</b>. Use <b>Find my pages</b> (paste a User token and pick the Page) or <b>Enter IDs manually</b>. This is the
+            older method and needs the Instagram account linked to a Facebook Page.
+          </>
+        ),
+      },
+      {
+        h: '7 · Moderate comments',
+        body: (
+          <>
+            <b>Instagram → Comments</b>. Pick a post or reel on the left, and every comment (with its replies) shows on the
+            right — <b>Reply</b> publicly, <b>Hide</b> it (reversible) or <b>Delete</b> it.
+          </>
+        ),
+      },
+      {
+        h: 'Platform admin only · Meta app settings',
+        adminOnly: true,
+        body: (
+          <ul className="list-disc ml-5 space-y-1">
+            <li>Instagram → <b>API setup with Instagram login → Business login settings</b>: add the <b>OAuth redirect URI</b> <code>https://teamzo.io/instagram/accounts</code>, the <b>deauthorize</b> URL <code>https://api.teamzo.io/api/v1/instagram/deauthorize</code> and the <b>data deletion</b> URL <code>https://api.teamzo.io/api/v1/instagram/data-deletion</code>.</li>
+            <li>Webhooks → Instagram: callback <code>https://api.teamzo.io/api/v1/instagram/webhook</code> with your verify token; subscribe to comments, messages, messaging_postbacks, live_comments and messaging_referral.</li>
+            <li><code>.env</code>: <code>IG_APP_ID</code>, <code>IG_APP_SECRET</code> (the <i>Instagram</i> app secret), <code>IG_WEBHOOK_VERIFY_TOKEN</code>, <code>IG_REDIRECT_URI</code> and <code>META_APP_SECRET</code> (the main Meta app secret, used to verify webhook signatures).</li>
+            <li>Run <code>php artisan instagram:diagnose</code> on the server to check the secrets, and keep Horizon and the Laravel scheduler running (token renewal and the DM queue use them).</li>
+            <li>Insights need the <code>instagram_business_manage_insights</code> permission; staff replies after 24 hours need Meta’s <b>Human Agent</b> approval and <code>IG_HUMAN_AGENT_ENABLED=true</code>.</li>
+          </ul>
+        ),
+      },
+    ],
+  },
+  {
+    id: 'autodm',
+    icon: '🚀',
+    title: 'Instagram AutoDM',
+    intro:
+      'Reply to comments, DMs, story replies and Live comments automatically, capture leads and follow up — within Instagram’s limits.',
+    steps: [
+      {
+        h: '1 · Create an automation',
+        body: <><b>Instagram → AutoDM</b> → click a card or <b>+ New</b>: comments on Posts/Reels, DMs, story replies or comments on Live. A short wizard walks you through it; progress is saved as a draft after each step.</>,
+      },
+      {
+        h: '2 · Where (post comments)',
+        body: <>Choose a <b>specific post or reel</b>, <b>any</b> post, or the <b>next</b> one you publish (it locks to the first post published after you create the automation).</>,
+      },
+      {
+        h: '3 · What triggers it',
+        body: (
+          <ul className="list-disc ml-5 space-y-1">
+            <li>Keywords (2+ characters) or “any comment”, plus optional excluded keywords.</li>
+            <li>Optional public replies — three variants (140 characters each); one is posted at random.</li>
+            <li><b>If the same person comments again</b>: reply once per post (recommended), again after 24 hours, only once ever, or every time. If they delete the comment (for example because the DM didn’t arrive) and post again, the DM is sent again.</li>
+          </ul>
+        ),
+      },
+      {
+        h: '4 · What to send',
+        body: (
+          <ul className="list-disc ml-5 space-y-1">
+            <li>Optional <b>follow gate</b>: a DM asking them to follow you. “Visit Profile” opens your profile; it re-checks up to 3 times, then sends anyway or stops.</li>
+            <li>Optional <b>email gate</b>: asks for their email (3 tries), saves it and creates a CRM lead.</li>
+            <li><b>Primary DM</b>: text with up to 3 buttons (20 characters each), image / video / audio / file (pick from the Media Library, upload, or paste a link), or a card. Variables: <code>{'{{name}}'}</code>, <code>{'{{email}}'}</code>, <code>{'{{follower_count}}'}</code>. Button links are tracked so you can see clicks.</li>
+          </ul>
+        ),
+      },
+      {
+        h: '5 · The conversation starter',
+        body: <>When a comment automation uses gates, variables or follow-ups, Teamzo sends a first DM with one button. Instagram allows only <b>one private reply per comment</b>, and the person’s tap opens the 24-hour chat window the rest needs.</>,
+      },
+      {
+        h: '6 · Follow-ups',
+        body: <>Send another message after a delay (up to 23 hours): after the delay, <b>if the link wasn’t clicked</b>, or <b>if they haven’t responded</b>. Messages are only sent within 24 hours of their last message.</>,
+      },
+      {
+        h: '7 · Limits and the queue',
+        body: <>Instagram allows roughly 200 automated DMs per hour per account (Teamzo stops a little earlier, at 190). Extra DMs are <b>queued, not dropped</b>, and sent oldest-first as the limit frees up. A DM that answers a comment must go out within 7 days of the comment.</>,
+      },
+      {
+        h: '8 · Watch what happens',
+        body: (
+          <ul className="list-disc ml-5 space-y-1">
+            <li><b>Monitor</b> — your DM budget this hour, the waiting queue, runs, completed / failed, link clicks, followers gained, leads and the top failure reasons.</li>
+            <li><b>Activity</b> — every event Instagram sent us and what happened to it (processed, ignored or failed), with the raw payload.</li>
+            <li>The automations table: ⋮ → <b>View runs</b> shows each person’s messages, follow checks, clicks and CRM lead.</li>
+          </ul>
+        ),
+      },
+      {
+        h: '9 · Reply from the inbox',
+        body: <><b>Instagram → DM Inbox</b>: filter by account, attach an image, video, voice message or file (📎), reply to a specific message (↩) or react ❤️. After 24 hours a reply needs Meta’s Human Agent approval, so the box says so instead of failing.</>,
+      },
+      {
+        h: '10 · Flows (advanced)',
+        body: <><b>Instagram → Flows</b> is a canvas builder for custom journeys. <b>See sample flow</b> explains one step by step and creates it for you (switched off until you review it).</>,
+      },
+    ],
+  },
+  {
+    id: 'messenger',
+    icon: '💬',
+    title: 'Facebook Messenger',
+    intro:
+      'The same automations for your Facebook Page: comments on Page posts and Messenger messages.',
+    steps: [
+      {
+        h: '1 · Connect a Page',
+        body: <><b>Messenger → Pages → Continue with Facebook</b>, log in (you must be an admin of the Page), choose the Page and press <b>Connect</b>. A setup checklist confirms the token and the live-update subscription.</>,
+      },
+      {
+        h: '2 · Create automations',
+        body: <><b>Messenger → AutoDM</b> uses the same wizard as Instagram: auto-reply to comments on Page posts and to Messenger messages, buttons, follow-ups, email capture and the monitor/activity tabs.</>,
+      },
+      {
+        h: '3 · What’s different',
+        body: (
+          <ul className="list-disc ml-5 space-y-1">
+            <li>No “follow us” check — Messenger can’t tell whether someone follows a Page.</li>
+            <li>No story replies or Live comments.</li>
+            <li>No 200-per-hour rule; Teamzo keeps a safety cap of 1000 messages an hour. The 24-hour messaging window still applies.</li>
+            <li>The inbox (<b>Messenger → Inbox</b>) offers more reactions than Instagram.</li>
+          </ul>
+        ),
+      },
+      {
+        h: 'Platform admin only · Meta app settings',
+        adminOnly: true,
+        body: (
+          <ul className="list-disc ml-5 space-y-1">
+            <li>Webhooks → <b>Page</b>: same callback URL as Instagram; subscribe to <code>messages</code>, <code>messaging_postbacks</code> and <code>feed</code>.</li>
+            <li>Facebook Login → Settings: <b>Login with the JavaScript SDK = Yes</b> and add <code>https://teamzo.io</code> to the allowed domains.</li>
+            <li>Permissions: <code>pages_messaging</code>, <code>pages_manage_metadata</code>, <code>pages_read_engagement</code>, <code>pages_manage_engagement</code>. Set <code>META_APP_ID</code> and <code>META_APP_SECRET</code> in <code>.env</code>.</li>
+          </ul>
         ),
       },
     ],
@@ -567,6 +671,103 @@ GOOGLE_CLIENT_SECRET=GOCSPX-xxxxxxxx
     ],
   },
   {
+    id: 'crm',
+    icon: '🗂️',
+    title: 'CRM — contacts, deals & tasks',
+    intro: 'Everything that happens after a conversation: who the person is, what they might buy, and what you must do next.',
+    steps: [
+      { h: 'Contacts, labels & blacklist', body: <><b>CRM → Basic CRM</b> keeps your contacts, the labels you tag them with, and a blacklist of numbers you never message.</> },
+      { h: 'Deals pipeline', body: <><b>CRM → Advanced CRM → Deals Pipeline</b> — a board of deals by stage; drag a deal as it progresses.</> },
+      { h: 'Tasks & follow-ups', body: <><b>Tasks</b> are things to do; <b>Follow-ups</b> are reminders to get back to someone. Items you add to your personal <b>To-do list</b> are tasks too, so they show here as well.</> },
+      { h: 'Calendar', body: <><b>CRM → Calendar</b> for meetings and scheduled calls (available when your plan includes Calendar). Connect your Google calendar under <b>Settings → Integrations → Calendar</b>.</> },
+      { h: 'Segments', body: <><b>CRM → Segments</b> — saved smart lists: reusable filters over your contacts, handy for campaigns.</> },
+      { h: 'Short links', body: <><b>Short Links</b> (main menu) — create a short link, optionally choose its code and an expiry date, and see how many people clicked over time.</> },
+    ],
+  },
+  {
+    id: 'leads',
+    icon: '🎯',
+    title: 'Leads & assignment',
+    intro: 'Where leads come from, who gets them, and how fast they must be answered.',
+    steps: [
+      { h: 'Where leads come from', body: <>WhatsApp and website chats, Meta lead ads, surveys, imports, and your AutoDM email gate. Your plan sets how many leads you can add each month.</> },
+      { h: 'Working the list', body: <><b>Leads → All Leads</b>, <b>Lead Categories</b>, <b>Leads by Staff</b> and <b>Lead Logs</b> (every change). <b>Leads Summary</b> and <b>Leads Report</b> show totals and trends.</> },
+      {
+        h: 'Assignment rules',
+        body: (
+          <>
+            <b>Leads → Advanced → Assignment Rules</b> has one section per page: <b>Staff availability</b>, <b>Routing</b> (weighted
+            algorithm or round robin), <b>Algorithm weights</b> (must total 100%), <b>Response SLA &amp; AI handoff</b>,{' '}
+            <b>Notification settings</b>, <b>Duplicate handling</b> and <b>Working hours</b>. One <b>Save Rules</b> button saves all
+            of them. <b>Assignment Queues</b> shows what is waiting for someone to accept.
+          </>
+        ),
+      },
+    ],
+  },
+  {
+    id: 'staff-hr',
+    icon: '👥',
+    title: 'Staff, roles & HR',
+    intro: 'Who can do what, and the day-to-day HR side.',
+    steps: [
+      { h: 'Staff & roles', body: <><b>Staff</b> to add people; <b>Roles</b> to choose what each role can see and do; <b>Staff Access</b> and <b>Account Access</b> to control which connected accounts (such as Instagram accounts) a person can use. Your plan limits how many staff users you can have — buy an add-on to raise just that limit.</> },
+      { h: 'For every employee', body: <><b>HR → My Attendance</b>, <b>My Target</b> and <b>My Payroll</b>.</> },
+      { h: 'For HR admins', body: <><b>HR → Administration</b>: Attendance, Payroll, Sales, Incentives, Leave Requests and Staff Setup (duty time, salary, monthly target).</> },
+      { h: 'Configuration', body: <><b>HR → Configuration</b>: Break Types, Leave Types and Office Details.</> },
+    ],
+  },
+  {
+    id: 'accounts',
+    icon: '🧮',
+    title: 'Accounts — books, GST & payroll',
+    intro: 'Each part of Accounts is its own page under the Accounts menu. This is a sensible order to set it up.',
+    steps: [
+      { h: '1 · Settings', body: <><b>Accounts → Settings</b> — accounting preferences and numbering (needs the manage-accounts permission).</> },
+      { h: '2 · Chart of accounts & items', body: <><b>Chart of accounts</b> holds your ledgers and groups. <b>Items</b> holds products, services and stock.</> },
+      { h: '3 · Sales', body: <><b>Sales</b> has three pages: <b>Quotations</b> → <b>Invoices</b> → <b>Customer credit</b>.</> },
+      { h: '4 · Vouchers', body: <><b>Vouchers</b> — every sales, purchase, receipt, payment and journal entry.</> },
+      { h: '5 · Payments', body: <><b>Payments</b>: <b>Receivable</b> and <b>Payable</b> (invoice by invoice), their <b>ageing</b> pages, <b>Customer</b> and <b>Supplier advances</b>, and the <b>Payment report</b>.</> },
+      { h: '6 · Assets, adjustments & petty cash', body: <><b>Fixed assets</b> (depreciation and disposals), <b>Adjusting entries</b> (period-end, with reversals) and <b>Petty cash</b> (top-ups and spends).</> },
+      { h: '7 · Payroll', body: <><b>Payroll → Monthly payroll</b> (open, review, post, pay) and <b>Employees &amp; settlement</b>. Needs the payroll permission.</> },
+      { h: '8 · Reports, GST & year-end', body: <><b>Reports</b> has a menu of financial statements, customer/supplier reports, books and TDS. <b>GST</b> covers summaries, returns and e-invoice checks. <b>Year-end</b> closes or reopens a financial year.</> },
+    ],
+  },
+  {
+    id: 'plans',
+    icon: '💳',
+    title: 'Plans, add-ons, wallet & support',
+    intro: 'What you’ve bought, what you’ve used, and how to get more.',
+    steps: [
+      { h: 'Plans & Billing', body: <><b>Plans &amp; Billing</b> has four sections: <b>Purchased plan</b> (with usage), <b>Billing &amp; invoices</b> (payments and printable receipts), <b>All plans</b> (compare, upgrade, renew) and <b>Add-ons</b>.</> },
+      { h: 'Add-ons', body: <>Out of staff seats or leads? An add-on raises just that one limit without changing your plan. When you hit a limit, the “Plan limit reached” window offers <b>Add more</b> if one exists.</> },
+      { h: 'Wallet', body: <><b>Wallet</b> is your prepaid message balance; top up with a package whenever you need more messages.</> },
+      { h: 'Support', body: <><b>Support</b> — raise a ticket and follow the reply.</> },
+    ],
+  },
+  {
+    id: 'workspace',
+    icon: '✨',
+    title: 'Your workspace — Ask, notes, to-do & menu',
+    intro: 'Personal tools that follow you around the portal, and how to make the menu fit the way you work.',
+    steps: [
+      { h: 'Ask in portal', body: <>Ask how to do anything — type or speak, in many languages. Open it from the menu (<b>Ask in portal</b>), the floating button, or press <b>Ctrl&nbsp;+&nbsp;/</b>.</> },
+      { h: 'Sticky notes & to-do list', body: <>Each has a page in the menu and a floating button. Notes are private to you; the to-do list shows your own CRM tasks.</> },
+      { h: 'Settings → Display', body: <>Turn the floating buttons on or off, and choose your <b>sidebar menu</b>: <b>Accordion</b> (sections collapse) or <b>Expanded list</b> (every section titled, links always visible), and untick sections you don’t use to hide them from your own menu.</> },
+      { h: 'Settings layout', body: <>Settings, Reports, Assignment Rules and Plans &amp; Billing use a vertical menu on the left. On a phone you pick a section from a list and use “‹ Back”. Each section has its own address, so you can bookmark it.</> },
+    ],
+  },
+  {
+    id: 'email-calendar',
+    icon: '✉️',
+    title: 'Email & Calendar',
+    intro: 'Send email from your own address and connect your calendar.',
+    steps: [
+      { h: 'Email (SMTP)', body: <><b>Settings → Integrations → Email</b>: enter your SMTP host, port, encryption, username, app password and the From name/address; add a test address and save. Automated emails (for example the AutoDM “Send Automated Email”) are then sent from your address.</> },
+      { h: 'Calendar', body: <><b>Settings → Integrations → Calendar</b> connects your Google calendar for the CRM Calendar page. Google Sheets and Drive are covered in the Google section of this guide.</> },
+    ],
+  },
+  {
     id: 'manage',
     icon: '🧰',
     title: 'Other things you can manage',
@@ -587,7 +788,7 @@ GOOGLE_CLIENT_SECRET=GOCSPX-xxxxxxxx
       },
       {
         h: 'Catalog',
-        body: <><b>Catalog</b> (top of the menu) — the items the agent quotes. Set a per-item staff incentive % here; a sale then credits the counsellor automatically (<b>HR → Sales</b>).</>,
+        body: <><b>WA Agent → Catalog</b> — the items the agent quotes. Set a per-item staff incentive % here; a sale then credits the counsellor automatically (<b>HR → Sales</b>).</>,
       },
       {
         h: 'Templates & Campaigns',
@@ -599,11 +800,11 @@ GOOGLE_CLIENT_SECRET=GOCSPX-xxxxxxxx
       },
       {
         h: 'Inbox & Assignment',
-        body: <><b>WA Cloud → Inbox</b> for live conversations (claim / release / reply, contact drawer); <b>Leads → Advanced → Assignment Rules / Queues</b> for how incoming leads are routed to staff.</>,
+        body: <><b>WA Cloud → Inbox</b> for live conversations (claim / release / reply, contact drawer); <b>Leads → Advanced → Assignment Rules / Queues</b> for how incoming leads are routed to staff (see the Leads section above).</>,
       },
       {
         h: 'Staff, roles & HR',
-        body: <><b>Staff</b> and <b>Settings → Roles &amp; permissions</b> for who can do what (only your company’s roles); <b>HR</b> for attendance, payroll, incentives, leave, and per-staff duty time / salary / monthly target.</>,
+        body: <><b>Staff</b> and <b>Roles</b> for who can do what (only your company’s roles); <b>HR</b> for attendance, payroll, incentives, leave, and per-staff duty time / salary / monthly target. Details in the Staff, roles &amp; HR section.</>,
       },
       {
         h: 'Analytics & logs',
@@ -611,51 +812,66 @@ GOOGLE_CLIENT_SECRET=GOCSPX-xxxxxxxx
       },
       {
         h: 'Integrations',
-        body: <><b>Settings → Integrations</b> — connect Google (Sheets lead-sync + Drive media). <b>Settings</b> for company profile, logo and timezone.</>,
+        body: <><b>Settings → Integrations</b> — Google Sheets, Drive, Calendar and Email. <b>Settings</b> for company profile, logo and timezone.</>,
       },
     ],
   },
 ]
 
+/** Sidebar grouping of the guide. Anything not listed falls under "More". */
+const GROUPS: [string, string[]][] = [
+  ['Connect your channels', ['whatsapp', 'instagram', 'autodm', 'messenger', 'meta-ads', 'widget']],
+  ['AI agent', ['ai', 'knowledge-base', 'agent']],
+  ['Customers & team', ['crm', 'leads', 'staff-hr']],
+  ['Money', ['accounts', 'plans']],
+  ['Your workspace', ['workspace', 'email-calendar', 'google', 'manage']],
+]
+const groupOf = (id: string) => GROUPS.find(([, ids]) => ids.includes(id))?.[0] ?? 'More'
+
 export default function SetupGuidePage() {
-  const [active, setActive] = useState(SECTIONS[0].id)
-  const section = SECTIONS.find(s => s.id === active)!
+  const isSuper = useIsSuperAdmin()
+  // keep the guide's own order inside each group
+  const ordered = [...SECTIONS].sort((a, b) => {
+    const ga = GROUPS.findIndex(([g]) => g === groupOf(a.id)), gb = GROUPS.findIndex(([g]) => g === groupOf(b.id))
+    const ia = GROUPS[ga]?.[1].indexOf(a.id) ?? 99, ib = GROUPS[gb]?.[1].indexOf(b.id) ?? 99
+    return (ga < 0 ? 99 : ga) - (gb < 0 ? 99 : gb) || ia - ib
+  })
+  const tabs: VTab[] = ordered.map(s => ({ id: s.id, icon: s.icon, label: s.title, group: groupOf(s.id), desc: s.intro.slice(0, 80) + (s.intro.length > 80 ? '…' : '') }))
 
   return (
     <div className="space-y-5">
       <div>
         <h1 className="page-title">Setup Guide</h1>
-        <p className="page-sub">Everything you need to connect — accounts, tokens, webhooks, embed code</p>
+        <p className="page-sub">Everything you need to connect and use — channels, AI, CRM, accounts, billing and your workspace</p>
       </div>
 
-      <div className="grid grid-cols-[220px_1fr] gap-6">
-        <nav className="space-y-1">
-          {SECTIONS.map(s => (
-            <button key={s.id} onClick={() => setActive(s.id)}
-              className={`w-full text-left px-3 py-2 rounded-lg text-sm flex items-center gap-2 ${active === s.id ? 'bg-brand-50 text-brand-700 font-medium' : 'text-gray-600 hover:bg-gray-50'}`}>
-              <span>{s.icon}</span> {s.title}
-            </button>
-          ))}
-        </nav>
+      <VerticalTabs tabs={tabs} defaultId="whatsapp" backLabel="Setup guide" showTitle={false}>
+        {(id) => {
+          const section = SECTIONS.find(s => s.id === id)!
+          const steps = section.steps.filter(st => !st.adminOnly || isSuper)
+          return (
+            <div className="card p-6 max-w-2xl">
+              <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+                <span>{section.icon}</span> {section.title}
+              </h2>
+              <p className="text-sm text-gray-500 mt-1">{section.intro}</p>
 
-        <div className="card p-6 max-w-2xl">
-          <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-            <span>{section.icon}</span> {section.title}
-          </h2>
-          <p className="text-sm text-gray-500 mt-1">{section.intro}</p>
-
-          <ol className="mt-5 space-y-4">
-            {section.steps.map((st, i) => (
-              <li key={i}>
-                <p className="font-medium text-gray-800 text-sm">{st.h}</p>
-                <div className="text-sm text-gray-600 mt-1 leading-relaxed [&_code]:bg-gray-100 [&_code]:rounded [&_code]:px-1 [&_code]:text-xs">
-                  {st.body}
-                </div>
-              </li>
-            ))}
-          </ol>
-        </div>
-      </div>
+              <ol className="mt-5 space-y-4">
+                {steps.map((st, i) => (
+                  <li key={i}>
+                    <p className="font-medium text-gray-800 text-sm">
+                      {st.h}{st.adminOnly && <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700">Admin</span>}
+                    </p>
+                    <div className="text-sm text-gray-600 mt-1 leading-relaxed [&_code]:bg-gray-100 [&_code]:rounded [&_code]:px-1 [&_code]:text-xs">
+                      {st.body}
+                    </div>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          )
+        }}
+      </VerticalTabs>
     </div>
   )
 }

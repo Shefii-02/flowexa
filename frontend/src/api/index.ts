@@ -581,6 +581,8 @@ export const planApi = {
   createOrder: (planId: number, durationType: string) => api.post('/plans/create-order', { plan_id: planId, duration_type: durationType }),
   verifyPayment: (d: Record<string, unknown>) => api.post('/plans/verify-payment', d),
   addons: () => api.get('/addons'),
+  myAddons: () => api.get('/addons/mine'),
+  invoices: () => api.get('/billing/invoices'),
   addonOrder: (addonId: number) => api.post(`/addons/${addonId}/create-order`),
   verifyAddon: (d: Record<string, unknown>) => api.post('/addons/verify-payment', d),
   // SuperAdmin

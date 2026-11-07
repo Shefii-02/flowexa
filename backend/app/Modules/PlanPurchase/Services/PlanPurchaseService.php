@@ -58,7 +58,7 @@ class PlanPurchaseService
         $blockers = [];
         foreach (\App\Support\PlanLimits::REGISTRY as $resource => [$label, , , $kind]) {
             if ($kind !== 'total') continue;                       // monthly caps reset on their own — they never block a switch
-            $max = \App\Support\PlanLimits::limit($target, $resource);
+            $max = \App\Support\PlanLimits::limit($target, $resource, $companyId);
             if ($max === null) continue;                           // unlimited on the target plan
 
             $used = \App\Support\PlanLimits::used($companyId, $resource);   // soft-deleted rows do not count
@@ -194,6 +194,39 @@ class PlanPurchaseService
     public function activeAddons(): \Illuminate\Database\Eloquent\Collection
     {
         return Addon::active()->get();
+    }
+
+    /** The company's own add-on purchases (newest first). */
+    public function companyAddons(int $companyId): \Illuminate\Database\Eloquent\Collection
+    {
+        return CompanyAddon::where('company_id', $companyId)->with('addon')->latest()->get();
+    }
+
+    /**
+     * Every payment this company completed — plan purchases, add-ons and message top-ups — each described by what it bought.
+     * (These are payment receipts; they carry no tax breakdown.)
+     */
+    public function invoices(int $companyId): array
+    {
+        $orders = PaymentOrder::where('company_id', $companyId)->where('status', 'paid')->latest()->get();
+        $ids    = $orders->pluck('id');
+        $plans  = CompanyPlan::with('plan')->whereIn('payment_order_id', $ids)->get()->keyBy('payment_order_id');
+        $addons = CompanyAddon::with('addon')->whereIn('payment_order_id', $ids)->get()->keyBy('payment_order_id');
+        $names  = ['monthly' => '1 month', '3month' => '3 months', '6month' => '6 months', 'yearly' => '12 months', '12month' => '12 months'];
+
+        return $orders->map(function (PaymentOrder $o) use ($plans, $addons, $names) {
+            $cp = $plans->get($o->id); $ca = $addons->get($o->id);
+            [$kind, $what] = match (true) {
+                (bool) $cp => ['plan', ($cp->plan?->name ?? 'Plan') . ' plan — ' . ($names[$cp->duration_type] ?? $cp->duration_type)],
+                (bool) $ca => ['addon', 'Add-on: ' . ($ca->addon?->name ?? 'Add-on')],
+                default    => ['topup', 'Message top-up' . ($o->messages_credit ? ' (' . number_format((int) $o->messages_credit) . ' messages)' : '')],
+            };
+            return [
+                'id' => $o->id, 'date' => $o->created_at, 'kind' => $kind, 'description' => $what, 'amount' => (float) $o->amount,
+                'razorpay_order_id' => $o->razorpay_order_id, 'razorpay_payment_id' => $o->razorpay_payment_id,
+                'period_start' => ($cp ?? $ca)?->starts_at, 'period_end' => ($cp ?? $ca)?->expires_at,
+            ];
+        })->all();
     }
 
     // ── Create addon order ────────────────────────────────────────────────────
