@@ -133,6 +133,7 @@ return [
 
         // "Instagram API with Instagram Login" (Business Login) — the AutoDM connect flow.
         'app_id'               => env('IG_APP_ID', '3017013418646493'),
+        'ig_app_secret'        => env('IG_APP_SECRET'),   // the Instagram app's own secret (OAuth); distinct from the main Meta app secret
         'redirect_uri'         => env('IG_REDIRECT_URI', 'https://teamzo.io/instagram/accounts'),
         'ig_graph_version'     => env('IG_GRAPH_VERSION', 'v25.0'),
         // Set true only after Meta approves the "Human Agent" feature for the app (App Review). Until then,
