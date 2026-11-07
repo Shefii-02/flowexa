@@ -55,7 +55,7 @@ class PortalKnowledge
             ['path' => '/instagram/inbox', 'title' => 'Instagram DM Inbox', 'about' => 'Reply to Instagram DMs.'],
             ['path' => '/instagram/comments', 'title' => 'Instagram Comments', 'about' => 'Manage and reply to comments.'],
             ['path' => '/instagram/insights', 'title' => 'Instagram Insights', 'about' => 'Account analytics.'],
-            ['path' => '/catalog', 'title' => 'Catalog', 'about' => 'Products/services catalog the AI and chats can share.'],
+            ['path' => '/wa-agent/catalog', 'title' => 'Catalog', 'about' => 'Products/services catalog the AI and chats can share.'],
             ['path' => '/website-widget', 'title' => 'Website Widget', 'about' => 'Embed a chat widget on your website and capture leads.'],
             ['path' => '/contacts', 'title' => 'Contacts', 'about' => 'All contacts: add, import CSV, tag, search and view history.'],
             ['path' => '/labels', 'title' => 'Labels', 'about' => 'Tags to group contacts and chats.'],

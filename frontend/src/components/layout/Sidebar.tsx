@@ -351,7 +351,7 @@ export const Sidebar = () => {
             {/* Dashboard - always visible */}
             {/* {canViewDash &&  */}
             <FlatLink to="/dashboard" icon="📊" label="Dashboard" end />
-        
+
             {/* ── WA Chat accordion ── */}
             {/* {canViewWaChat && ( */}
             <Accordion
@@ -461,9 +461,9 @@ export const Sidebar = () => {
             >
               {/* {canViewKb &&  */}
               <SubLink to="/wa-agent/knowledge-base" icon="📚" label="Knowledge Base" />
-              <SubLink to="/catalog" icon="📦" label="Catalog" />
+              <SubLink to="/wa-agent/catalog" icon="📦" label="Catalog" />
               {/* } */}
-             
+
               {/* {canViewPipes &&  */}
               <SubLink to="/wa-agent/pipelines" icon="🔄" label="Pipelines" />
               {/* } */}
@@ -527,10 +527,14 @@ export const Sidebar = () => {
               <SubLink to="/messenger/inbox" icon="📥" label="Inbox" />
             </Accordion>
 
-                <FlatLink to="/crm/short-links" icon="🔗" label="Short Links" />
-        
- {/* Catalog is a top-level item now (📦 Catalog under CRM) */}
-              <FlatLink to="/website-widget" icon="🌐" label="Website Widget" />
+            <FlatLink to="/short-links" icon="🔗" label="Short Links" />
+
+            {/* Catalog is a top-level item now (📦 Catalog under CRM) */}
+            <FlatLink to="/website-widget" icon="🌐" label="Website Widget" />
+            {/* Personal tools — the same things as the floating buttons, as full pages */}
+            <FlatLink to="/ask" icon="✨" label="Ask in portal" />
+            <FlatLink to="/sticky-notes" icon="📝" label="Sticky notes" />
+            <FlatLink to="/todo" icon="✅" label="To-do list" />
             {/* ── ACCOUNTS ── */}
             {canViewAccounts && (
               <>
@@ -552,7 +556,7 @@ export const Sidebar = () => {
             <NestedAccordion
               icon="🗂️"
               label="CRM"
-              basePaths={['/crm/contacts', '/crm/labels', '/crm/blacklist', '/crm/short-links', '/crm/deals', '/crm/tasks', '/crm/followups', '/crm/calendar', '/crm/segments']}
+              basePaths={['/crm/contacts', '/crm/labels', '/crm/blacklist', '/crm/deals', '/crm/tasks', '/crm/followups', '/crm/calendar', '/crm/segments']}
 
             >
               {/* <NestedAccordion icon="🟢" label="Basic CRM" basePaths={['/contacts', '/labels', '/blacklist']}>
@@ -562,14 +566,14 @@ export const Sidebar = () => {
               </NestedAccordion> */}
 
               {/* <NestedAccordion icon="🔷" label="Advanced CRM" basePaths={['/crm', '/lead-categories']}> */}
-                <SubLink to="/crm/contacts" icon="👥" label="Contacts" />
-                <SubLink to="/crm/labels" icon="🏷️" label="Labels" />
-                <SubLink to="/crm/deals" icon="💼" label="Deals Pipeline" />
-                <SubLink to="/crm/tasks" icon="📋" label="Tasks" />
-                <SubLink to="/crm/followups" icon="🔁" label="Follow-ups" />
-                <SubLink to="/crm/calendar" icon="📅" label="Calendar" />
-                <SubLink to="/crm/segments" icon="🧩" label="Segments" />
-                <SubLink to="/crm/blacklist" icon="🚫" label="Blacklist" />
+              <SubLink to="/crm/contacts" icon="👥" label="Contacts" />
+              <SubLink to="/crm/labels" icon="🏷️" label="Labels" />
+              <SubLink to="/crm/deals" icon="💼" label="Deals Pipeline" />
+              <SubLink to="/crm/tasks" icon="📋" label="Tasks" />
+              <SubLink to="/crm/followups" icon="🔁" label="Follow-ups" />
+              <SubLink to="/crm/calendar" icon="📅" label="Calendar" />
+              <SubLink to="/crm/segments" icon="🧩" label="Segments" />
+              <SubLink to="/crm/blacklist" icon="🚫" label="Blacklist" />
               {/* </NestedAccordion> */}
             </NestedAccordion>
 
@@ -583,7 +587,7 @@ export const Sidebar = () => {
               basePaths={['/crm/leads']}
 
             >
-                {/* Shared by both views — the lead list itself */}
+              {/* Shared by both views — the lead list itself */}
               <SubLink to="/crm/leads" icon="🎯" label="All Leads" end />
               <SubLink to="/crm/leads/categories" icon="📂" label="Lead Categories" />
 
@@ -649,11 +653,9 @@ export const Sidebar = () => {
 
             {/* ── SYSTEM ── */}
             <SectionHeader label="System" />
+
+
             <FlatLink to="/settings/index" icon="⚙️" label="Settings" />
-                {/* Personal tools — the same things as the floating buttons, as full pages */}
-            <FlatLink to="/ask" icon="✨" label="Ask in portal" />
-            <FlatLink to="/sticky-notes" icon="📝" label="Sticky notes" />
-            <FlatLink to="/todo" icon="✅" label="To-do list" />
             <Accordion
               icon="🔌"
               label="Integrations"

@@ -219,7 +219,7 @@ function LegacyTemplateRedirect() {
   return <Navigate to={`/wa-cloud/templates/${id}`} replace />
 }
 
-// /contacts, /labels, /blacklist, /short-links and /leads/* moved under /crm — send old bookmarks and links there.
+// /contacts, /labels, /blacklist and /leads/* moved under /crm — send old bookmarks and links there. (Short links live at /short-links.)
 function LegacyCrmRedirect() {
   const { pathname, search, hash } = useLocation()
   return <Navigate to={`/crm${pathname}${search}${hash}`} replace />
@@ -278,7 +278,7 @@ export default function App() {
                 <Route path="groups" element={<WaGroupsPage />} />
               </Route>
 
-              <Route path="catalog" element={<CatalogPage />} />
+              <Route path="catalog" element={<Navigate to="/wa-agent/catalog" replace />} />   {/* old URL */}
               <Route path="website-widget" element={<WidgetPage />} />
               <Route path="website-widget/chats" element={<WidgetChatsPage />} />
               {/* WA Agent module */}
@@ -289,6 +289,7 @@ export default function App() {
                 <Route path="automation" element={<Navigate to="/wa-agent/automations" replace />} />
                 <Route path="knowledge-base" element={<WaAgentKnowledgeBase />} />
                 <Route path="pipelines" element={<WaAgentPipelines />} />
+                <Route path="catalog" element={<CatalogPage />} />
                 <Route path="ai-agent" element={<WaAgentAiAgent />} />
                 {/* AI Schedule now lives as a section inside each channel's own automation page
                     (WA Chat Automation → AI Schedule tab, WA Cloud Automations, Instagram
@@ -343,13 +344,14 @@ export default function App() {
               <Route path="templates/:id" element={<LegacyTemplateRedirect />} />
               <Route path="plan-purchase" element={<PlanPurchasePage />} />
               <Route path="crm/blacklist" element={<BlacklistPage />} />
-              <Route path="crm/short-links" element={<ShortLinksPage />} />
+              <Route path="short-links" element={<ShortLinksPage />} />
+              <Route path="crm/short-links" element={<Navigate to="/short-links" replace />} />   {/* old URL */}
               <Route path="accounts" element={<AccountsPage />} />
               <Route path="accounts/:tab" element={<AccountsPage />} />
               <Route path="crm/leads/categories" element={<LeadCategoriesPage />} />
 
               {/* Old CRM / lead URLs (before everything lived under /crm) keep working: /leads/12 → /crm/leads/12 */}
-              {['contacts', 'labels', 'blacklist', 'short-links', 'leads'].map(seg => (
+              {['contacts', 'labels', 'blacklist', 'leads'].map(seg => (
                 <Route key={seg} path={`${seg}/*`} element={<LegacyCrmRedirect />} />
               ))}
 
