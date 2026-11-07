@@ -351,12 +351,7 @@ export const Sidebar = () => {
             {/* Dashboard - always visible */}
             {/* {canViewDash &&  */}
             <FlatLink to="/dashboard" icon="📊" label="Dashboard" end />
-            {/* Personal tools — the same things as the floating buttons, as full pages */}
-            <FlatLink to="/ask" icon="✨" label="Ask in portal" />
-            <FlatLink to="/sticky-notes" icon="📝" label="Sticky notes" />
-            <FlatLink to="/todo" icon="✅" label="To-do list" />
-
-
+        
             {/* ── WA Chat accordion ── */}
             {/* {canViewWaChat && ( */}
             <Accordion
@@ -377,7 +372,7 @@ export const Sidebar = () => {
               <SubLink to="/wa-chat/message-sender/history" icon="🕐" label="Campaign History" />
               {/* } */}
               {/* <SubLink to="/wa-chat/plugins" icon="🔌" label="Plugin" /> */}
-              <SubLink to="/wa-chat/webhooks" icon="🔗" label="Webhooks" />
+              {/* <SubLink to="/wa-chat/webhooks" icon="🔗" label="Webhooks" /> */}
               <SubLink to="/wa-chat/webhook-logs" icon="🧾" label="Webhook Logs" />
               {/* {canViewTpls &&  */}
               <SubLink to="/wa-chat/templates" icon="📋" label="Templates" />
@@ -653,6 +648,10 @@ export const Sidebar = () => {
             {/* ── SYSTEM ── */}
             <SectionHeader label="System" />
             <FlatLink to="/settings/index" icon="⚙️" label="Settings" />
+                {/* Personal tools — the same things as the floating buttons, as full pages */}
+            <FlatLink to="/ask" icon="✨" label="Ask in portal" />
+            <FlatLink to="/sticky-notes" icon="📝" label="Sticky notes" />
+            <FlatLink to="/todo" icon="✅" label="To-do list" />
             <Accordion
               icon="🔌"
               label="Integrations"

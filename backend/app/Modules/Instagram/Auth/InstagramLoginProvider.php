@@ -30,7 +30,7 @@ class InstagramLoginProvider implements InstagramAuthProvider
     {
         $code = explode('#', $code)[0]; // Instagram appends "#_" to the code
 
-        $short = Http::asForm()->timeout(30)->post('https://api.instagram.com/oauth/access_token', [
+        $short = Http::asForm()->timeout(30)->withOptions(['allow_redirects' => ['strict' => true, 'max' => 3]])->post('https://api.instagram.com/oauth/access_token', [
             'client_id'     => $this->cfg('app_id'),
             'client_secret' => $this->cfg('app_secret'),
             'grant_type'    => 'authorization_code',
@@ -38,7 +38,7 @@ class InstagramLoginProvider implements InstagramAuthProvider
             'code'          => $code,
         ]);
         if (!$short->successful()) {
-            throw new RuntimeException($this->err($short, 'Instagram rejected the authorization code'));
+            throw new RuntimeException($this->fail('code exchange', 'https://api.instagram.com/oauth/access_token', 'POST', $short, 'Instagram rejected the authorization code'));
         }
         // New responses wrap the token in `data[0]`; older ones are flat.
         $row = $short->json('data.0') ?? $short->json();
@@ -54,7 +54,7 @@ class InstagramLoginProvider implements InstagramAuthProvider
             'access_token'  => $row['access_token'],
         ]);
         if (!$long->successful()) {
-            throw new RuntimeException($this->err($long, 'Could not get a long-lived token'));
+            throw new RuntimeException($this->fail('long-lived token', $this->graph('access_token'), 'GET', $long, 'Could not get a long-lived token'));
         }
         $token   = $long->json('access_token');
         $expires = $long->json('expires_in') ? now()->addSeconds((int) $long->json('expires_in')) : null;
@@ -63,7 +63,7 @@ class InstagramLoginProvider implements InstagramAuthProvider
             'fields' => 'user_id,username,name,profile_picture_url,followers_count,account_type',
         ]);
         if (!$me->successful() || !$me->json('user_id')) {
-            throw new RuntimeException($this->err($me, 'Could not read the Instagram profile'));
+            throw new RuntimeException($this->fail('profile read', $this->graph($this->cfg('ig_graph_version') . '/me'), 'GET', $me, 'Could not read the Instagram profile'));
         }
 
         return [
@@ -103,6 +103,21 @@ class InstagramLoginProvider implements InstagramAuthProvider
     {
         Http::timeout(30)->withToken($account->access_token)
             ->delete($this->graph($this->cfg('ig_graph_version') . '/me/subscribed_apps'));
+    }
+
+    /**
+     * Log which step failed (endpoint path, status, Meta's error — never tokens, secrets or the code) and return
+     * a message that names the step, so "Unsupported request" can be traced to the exact call.
+     */
+    private function fail(string $step, string $url, string $method, $response, string $fallback): string
+    {
+        $msg = $this->err($response, $fallback);
+        \Illuminate\Support\Facades\Log::warning('Instagram OAuth step failed', [
+            'step' => $step, 'method' => $method, 'path' => parse_url($url, PHP_URL_HOST) . parse_url($url, PHP_URL_PATH),
+            'status' => $response->status(), 'error_type' => $response->json('error.type') ?? $response->json('error_type'),
+            'error_code' => $response->json('error.code') ?? $response->json('code'), 'message' => $msg,
+        ]);
+        return "{$msg} (during {$step})";
     }
 
     /** Error text only — never the request (which carries tokens/secrets). */

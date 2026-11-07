@@ -50,4 +50,15 @@ class InstagramAuthTest extends TestCase
         $this->assertSame('LONG', $r['access_token']);
         $this->assertSame(['instagram_business_basic'], $r['scopes']);
     }
+
+    #[Test]
+    public function a_failing_step_is_named_in_the_error(): void
+    {
+        Http::fake([
+            'api.instagram.com/*'               => Http::response(['data' => [['access_token' => 'SHORT', 'user_id' => '1']]]),
+            'graph.instagram.com/access_token*' => Http::response(['error' => ['message' => 'Unsupported request - method type: get', 'code' => 100]], 400),
+        ]);
+        $this->expectExceptionMessageMatches('/Unsupported request.*\(during long-lived token\)/');
+        (new InstagramLoginProvider)->exchangeCode('CODE');
+    }
 }
