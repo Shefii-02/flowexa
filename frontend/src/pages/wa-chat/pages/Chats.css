@@ -265,13 +265,24 @@
   height: 20px;
   min-width: 20px;
   padding: 0 6px;
-  background: var(--primary);
-  color: white;
+  background: #000;
+  color: #fff;
   font-size: 0.75rem;
   font-weight: 700;
   line-height: 1;
   border-radius: 999px;
-  box-shadow: 0 2px 4px rgba(34, 197, 94, 0.3);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.25);
+}
+
+/* Black would vanish into a dark sidebar, so dark themes get a thin light ring. */
+[data-theme='dark'] .chats-page .chat-unread-badge {
+  border: 1px solid rgba(255, 255, 255, 0.35);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) .chats-page .chat-unread-badge {
+    border: 1px solid rgba(255, 255, 255, 0.35);
+  }
 }
 
 .chats-page .chat-kind-badge {
