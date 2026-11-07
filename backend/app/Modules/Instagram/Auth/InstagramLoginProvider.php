@@ -48,13 +48,23 @@ class InstagramLoginProvider implements InstagramAuthProvider
         $scopes = $row['permissions'] ?? [];
         if (is_string($scopes)) $scopes = array_filter(explode(',', $scopes));
 
-        $long = Http::timeout(30)->get($this->graph('access_token'), [
+        // Meta documents the long-lived exchange both with and without a version in the path; try the versioned
+        // form first and fall back to the bare one (or the other way round) if Meta rejects the request.
+        $query = [
             'grant_type'    => 'ig_exchange_token',
             'client_secret' => $this->cfg('app_secret'),
             'access_token'  => $row['access_token'],
-        ]);
+        ];
+        $long = null;
+        foreach ([$this->cfg('ig_graph_version') . '/access_token', 'access_token'] as $path) {
+            $long = Http::timeout(30)->get($this->graph($path), $query);
+            if ($long->successful()) {
+                break;
+            }
+            $this->fail('long-lived token', $this->graph($path), 'GET', $long, 'Could not get a long-lived token');   // log each attempt
+        }
         if (!$long->successful()) {
-            throw new RuntimeException($this->fail('long-lived token', $this->graph('access_token'), 'GET', $long, 'Could not get a long-lived token'));
+            throw new RuntimeException($this->err($long, 'Could not get a long-lived token') . ' (during long-lived token)');
         }
         $token   = $long->json('access_token');
         $expires = $long->json('expires_in') ? now()->addSeconds((int) $long->json('expires_in')) : null;
