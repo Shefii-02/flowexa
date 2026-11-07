@@ -252,41 +252,10 @@ class WahaSessionController extends Controller
         return response()->json(['message' => 'Session created.', 'data' => $session], 201);
     }
 
-    /**
-     * Subscribe the gateway to push EVERY event (calls, message acks/reactions/edits, presence,
-     * group changes, …) back to Laravel's own `v1/waha/webhook` endpoint via the gateway's `'*'`
-     * wildcard — not just the message/status subset this used to hardcode. Without an active
-     * subscription the gateway never calls in, so webhook() above — and everything gated on it,
-     * including automation rules and the AI agent — silently never fires for this session.
-     * Idempotent: a hook already pointing here is left alone if it's already wildcarded, or
-     * upgraded in place (PUT, not a duplicate POST) if it still has the old narrower event list —
-     * safe to call again e.g. on start().
-     */
+    /** Subscribe the gateway to push every event back here — see {@see WahaWebhookRegistrar} (idempotent, repairs http:// hooks). */
     private function ensureAiWebhookRegistered(WahaSession $session): void
     {
-        $target = url('/api/v1/waha/webhook');
-        $base   = "{$this->wahaBase()}/api/sessions/{$session->session_name}/webhooks";
-
-        try {
-            $existing = Http::withHeaders($this->adminHeaders())->get($base);
-
-            if ($existing->successful()) {
-                foreach ((array) $existing->json() as $hook) {
-                    if (($hook['url'] ?? null) === $target) {
-                        if (!in_array('*', (array) ($hook['events'] ?? []), true)) {
-                            Http::withHeaders($this->adminHeaders())
-                                ->put("{$base}/{$hook['id']}", ['events' => ['*']]);
-                        }
-                        return;
-                    }
-                }
-            }
-
-            Http::withHeaders($this->adminHeaders())
-                ->post($base, ['url' => $target, 'events' => ['*']]);
-        } catch (\Throwable $e) {
-            Log::error('WA Chat webhook registration failed: ' . $e->getMessage());
-        }
+        app(\App\Modules\WaChat\Services\WahaWebhookRegistrar::class)->ensure($session);
     }
 
     public function show(int $id): JsonResponse
