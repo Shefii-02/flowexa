@@ -351,6 +351,10 @@ export const Sidebar = () => {
             {/* Dashboard - always visible */}
             {/* {canViewDash &&  */}
             <FlatLink to="/dashboard" icon="📊" label="Dashboard" end />
+            {/* Personal tools — the same things as the floating buttons, as full pages */}
+            <FlatLink to="/ask" icon="✨" label="Ask in portal" />
+            <FlatLink to="/sticky-notes" icon="📝" label="Sticky notes" />
+            <FlatLink to="/todo" icon="✅" label="To-do list" />
 
 
             {/* ── WA Chat accordion ── */}

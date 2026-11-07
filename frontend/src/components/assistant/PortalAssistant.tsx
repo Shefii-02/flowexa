@@ -130,11 +130,12 @@ function TypedMarkdown({ text, animate, onTick, onDone }: { text: string; animat
 const THINKING_STEPS = ['Understanding your question…', 'Searching the portal…', 'Preparing a clear answer…']
 
 // ── Component ──────────────────────────────────────────────────────────────────
-export default function PortalAssistant() {
+export default function PortalAssistant({ mode = 'float' }: { mode?: 'float' | 'page' }) {
   const navigate = useNavigate()
   const location = useLocation()
+  const isPage = mode === 'page'   // full-page version: always open, inline instead of floating
 
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(isPage)
   const [enabled, setEnabled] = useState(true)   // Settings → Floating widgets → Ask in portal
   const [tab, setTab] = useState<'chat' | 'settings'>('chat')
   const [prefs, setPrefs] = useState<Prefs>(() => load(PREFS_KEY, DEFAULT_PREFS))
@@ -174,13 +175,14 @@ export default function PortalAssistant() {
 
   // Ctrl/Cmd + / toggles the assistant, Esc closes it.
   useEffect(() => {
+    if (isPage) return
     const h = (e: KeyboardEvent) => {
       if (enabled && (e.ctrlKey || e.metaKey) && e.key === '/') { e.preventDefault(); setOpen(o => !o) }
       else if (e.key === 'Escape') setOpen(false)
     }
     window.addEventListener('keydown', h)
     return () => window.removeEventListener('keydown', h)
-  }, [enabled])
+  }, [enabled, isPage])
 
   // Per-user show / hide, flipped live from Settings → Floating widgets
   useEffect(() => {
@@ -188,7 +190,7 @@ export default function PortalAssistant() {
     stickyApi.list().then(r => { if (!off) setEnabled(r.data.settings.assistant_enabled !== false) }).catch(() => {})
     const onCfg = (e: Event) => {
       const v = (e as CustomEvent<{ assistant_enabled?: boolean }>).detail?.assistant_enabled
-      if (typeof v === 'boolean') { setEnabled(v); if (!v) setOpen(false) }
+      if (typeof v === 'boolean') { setEnabled(v); if (!v && !isPage) setOpen(false) }
     }
     window.addEventListener('sticky-settings-changed', onCfg)
     return () => { off = true; window.removeEventListener('sticky-settings-changed', onCfg) }
@@ -324,7 +326,7 @@ export default function PortalAssistant() {
 
   const clearChat = () => { stopSpeaking(); setMsgs([]) }
   const copy = (t: string) => navigator.clipboard?.writeText(t).then(() => toast.success('Copied'))
-  const go = (path: string) => { navigate(path); if (window.innerWidth < 768) setOpen(false) }
+  const go = (path: string) => { navigate(path); if (!isPage && window.innerWidth < 768) setOpen(false) }
 
   // "Take me there": open the page, then explain what it is for, right in the chat.
   const takeMeThere = (l: { path: string; title: string; about?: string }) => {
@@ -339,10 +341,10 @@ export default function PortalAssistant() {
   const lastAssistantId = [...msgs].reverse().find(m => m.role === 'assistant')?.id
 
   // ── Render ────────────────────────────────────────────────────────────────
-  if (!enabled) return null
+  if (!isPage && (!enabled || location.pathname === '/ask')) return null   // the page version replaces the floating one on /ask
   return (
     <>
-      {!open && (
+      {!open && !isPage && (
         <button
           onClick={() => setOpen(true)}
           title="Ask in portal (Ctrl + /)"
@@ -354,7 +356,9 @@ export default function PortalAssistant() {
       )}
 
       {open && (
-        <div className="fixed bottom-5 right-5 z-50 w-[min(420px,calc(100vw-2rem))] h-[min(640px,calc(100vh-2.5rem))] flex flex-col bg-white rounded-2xl shadow-2xl border border-gray-200 overflow-hidden">
+        <div className={isPage
+          ? 'w-full h-[calc(100vh-11rem)] min-h-[420px] flex flex-col bg-white rounded-2xl border border-gray-200 overflow-hidden'
+          : 'fixed bottom-5 right-5 z-50 w-[min(420px,calc(100vw-2rem))] h-[min(640px,calc(100vh-2.5rem))] flex flex-col bg-white rounded-2xl shadow-2xl border border-gray-200 overflow-hidden'}>
           {/* Header */}
           <div className="flex items-center gap-2.5 px-4 py-3 bg-gradient-to-r from-brand-600 to-indigo-600 text-white flex-shrink-0">
             <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center"><Sparkles size={16} /></div>
@@ -366,7 +370,7 @@ export default function PortalAssistant() {
               className="p-1.5 rounded-lg hover:bg-white/15">
               {tab === 'chat' ? <Settings2 size={16} /> : <MessageSquare size={16} />}
             </button>
-            <button onClick={() => setOpen(false)} title="Close (Esc)" className="p-1.5 rounded-lg hover:bg-white/15"><X size={16} /></button>
+            {!isPage && <button onClick={() => setOpen(false)} title="Close (Esc)" className="p-1.5 rounded-lg hover:bg-white/15"><X size={16} /></button>}
           </div>
 
           {tab === 'settings' ? (

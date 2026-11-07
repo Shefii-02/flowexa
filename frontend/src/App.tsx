@@ -102,6 +102,9 @@ import LeadAdsPage from '@/pages/meta-ads/leads/LeadAdsPage'
 import CreativeStudioPage from '@/pages/meta-ads/creatives/CreativeStudioPage'
 import InstagramAccountsPage from '@/pages/instagram/InstagramAccountsPage'
 import InstagramAutomationsPage from '@/pages/instagram/InstagramAutomationsPage'
+import AskPortalPage from '@/pages/tools/AskPortalPage'
+import StickyNotesPage from '@/pages/tools/StickyNotesPage'
+import TodoPage from '@/pages/tools/TodoPage'
 import MessengerPagesPage from '@/pages/messenger/MessengerPagesPage'
 import InstagramAutoDmPage from '@/pages/instagram/InstagramAutoDmPage'
 import InstagramReviewDemoPage from '@/pages/instagram/InstagramReviewDemoPage'
@@ -248,6 +251,9 @@ export default function App() {
             >
               {/* Main app */}
               <Route path="dashboard" element={<DashboardRouter />} />
+              <Route path="ask" element={<AskPortalPage />} />
+              <Route path="sticky-notes" element={<StickyNotesPage />} />
+              <Route path="todo" element={<TodoPage />} />
 
               {/* WA Chat module (embedded WAHA dashboard → unichatwa.univexa.in) */}
               <Route path="wa-chat" element={<WaChatShell />}>
