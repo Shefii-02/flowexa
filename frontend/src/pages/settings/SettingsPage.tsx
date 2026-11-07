@@ -5,6 +5,7 @@ import { Button, Input } from '@/components/ui'
 import { getError } from '@/utils'
 import { useCurrentUser, usePermission, useIsSuperAdmin } from '@/store'
 import { SIDEBAR_SECTIONS } from '@/components/layout/sidebarPrefs'
+import { useIsDesktop } from '@/hooks/useIsDesktop'
 import LinkedDevicesModal, { LinkedDevicesPanel, type DeviceService } from '@/components/devices/LinkedDevicesModal'
 import toast from 'react-hot-toast'
 import api from '@/api/client'
@@ -777,19 +778,6 @@ function CrmSyncTab() {
 }
 
 // ── Main page ─────────────────────────────────────────────────────────────────
-
-/** True from the md breakpoint (768px) up. Only one layout is mounted, so a section never loads its data twice. */
-function useIsDesktop() {
-  const query = '(min-width: 768px)'
-  const [yes, setYes] = useState(() => typeof window !== 'undefined' && window.matchMedia(query).matches)
-  useEffect(() => {
-    const m = window.matchMedia(query)
-    const on = () => setYes(m.matches)
-    m.addEventListener('change', on); on()
-    return () => m.removeEventListener('change', on)
-  }, [])
-  return yes
-}
 
 export default function SettingsPage() {
   const isSuper = useIsSuperAdmin()

@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
+import { useIsDesktop } from '@/hooks/useIsDesktop'
 import { accountsApi } from '@/api'
 import { Button, Skeleton } from '@/components/ui'
 import { getError } from '@/utils'
@@ -6,15 +8,51 @@ import toast from 'react-hot-toast'
 import { inr, RangePicker, today, useRange, VOUCHER_TYPES, useCanManage } from '../shared'
 import AccountsPageFrame from '../components/AccountsPageFrame'
 
-const REPORTS = [
-  ['profit-loss', 'Profit & Loss'], ['comparison', 'Year comparison'], ['balance-sheet', 'Balance Sheet'], ['trial-balance', 'Trial Balance'], ['chart', 'Chart of accounts'],
-  ['ageing-receivable', 'Receivables ageing'], ['ageing-payable', 'Payables ageing'],
-  ['day-book', 'Day Book'], ['ledger', 'Ledger Statement'], ['bank-reconciliation', 'Bank Reconciliation'], ['tds', 'TDS'], ['receivables', 'Receivables'], ['payables', 'Payables'],
+/** Reports grouped for the vertical menu. */
+const REPORT_GROUPS: { title: string; items: [string, string][] }[] = [
+  { title: 'Financial statements', items: [['profit-loss', 'Profit & Loss'], ['comparison', 'Year comparison'], ['balance-sheet', 'Balance Sheet'], ['trial-balance', 'Trial Balance'], ['chart', 'Chart of accounts']] },
+  { title: 'Customers & suppliers', items: [['receivables', 'Receivables'], ['ageing-receivable', 'Receivables ageing'], ['payables', 'Payables'], ['ageing-payable', 'Payables ageing']] },
+  { title: 'Books & banking', items: [['day-book', 'Day Book'], ['ledger', 'Ledger Statement'], ['bank-reconciliation', 'Bank Reconciliation']] },
+  { title: 'Tax', items: [['tds', 'TDS']] },
 ]
+const REPORTS: [string, string][] = REPORT_GROUPS.flatMap(g => g.items)
+
+/** Vertical report menu. On mobile it is the full-width first screen; on desktop it is the left column. */
+function ReportsNav({ active, onPick, mobile }: { active: string | null; onPick: (k: string) => void; mobile?: boolean }) {
+  return (
+    <nav aria-label="Reports" className="space-y-4">
+      {REPORT_GROUPS.map(g => (
+        <div key={g.title}>
+          <p className="px-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-gray-400">{g.title}</p>
+          <div className="flex flex-col gap-1">
+            {g.items.map(([k, l]) => {
+              const on = active === k
+              return (
+                <button key={k} onClick={() => onPick(k)} aria-current={on ? 'page' : undefined}
+                  className={[
+                    'flex items-center justify-between rounded-xl text-left text-sm transition-colors',
+                    mobile ? 'border border-gray-200 bg-white px-4 py-3' : 'px-3 py-2',
+                    on && !mobile ? 'bg-brand-50 font-medium text-brand-700' : 'text-gray-700 hover:bg-gray-100',
+                  ].join(' ')}>
+                  <span>{l}</span>{mobile && <span className="text-gray-400" aria-hidden>›</span>}
+                </button>)
+            })}
+          </div>
+        </div>))}
+    </nav>
+  )
+}
 
 function ReportsView() {
   const canManage = useCanManage()
-  const [name, setName] = useState('profit-loss')
+  // The open report lives in the URL (?report=trial-balance): refresh, links and the browser Back button all work.
+  const isDesktop = useIsDesktop()
+  const [urlParams, setUrlParams] = useSearchParams()
+  const chosen = REPORTS.find(([k]) => k === urlParams.get('report'))
+  const name = chosen ? chosen[0] : 'profit-loss'          // desktop always shows a report
+  const showMenuOnMobile = !chosen                          // mobile: nothing chosen yet → show the menu
+  const pick = (k: string) => setUrlParams({ report: k })
+  const backToMenu = () => setUrlParams({})
   const [range, setRange] = useRange()
   const [ledgers, setLedgers] = useState<any[]>([])
   const [ledgerId, setLedgerId] = useState('')
@@ -38,19 +76,15 @@ function ReportsView() {
     if (name === 'chart') { accountsApi.ledgers().then(r => setRaw({ rows: r.data.ledgers, __report: 'chart' })).catch(e => toast.error(getError(e))); return }
     accountsApi.report(forReport, params).then(r => setRaw({ ...r.data, __report: forReport })).catch(e => toast.error(getError(e)))
   }
-  useEffect(load, [name, range, ledgerId]) // eslint-disable-line
+  // On mobile the first screen is the report menu — don't fetch a report nobody has opened yet.
+  useEffect(() => { if (!isDesktop && showMenuOnMobile) return; load() }, [name, range, ledgerId, isDesktop, showMenuOnMobile]) // eslint-disable-line
 
   const Row = ({ l, v, bold }: { l: string; v: number; bold?: boolean }) => (
     <div className={`flex justify-between py-1 text-sm ${bold ? 'font-semibold border-t mt-1 pt-2' : ''}`}><span>{l}</span><span>{inr(v)}</span></div>
   )
 
-  return (
+  const body = (
     <div className="space-y-4">
-      <div className="flex flex-wrap gap-2">
-        {REPORTS.map(([k, l]) => (
-          <button key={k} onClick={() => setName(k)} className={`px-3 py-1.5 rounded-lg text-sm border ${name === k ? 'bg-brand-50 border-brand-300 text-brand-700 font-medium' : 'text-gray-600 hover:bg-gray-50'}`}>{l}</button>
-        ))}
-      </div>
       <div className="flex flex-wrap items-center gap-3">
         <RangePicker range={range} onChange={setRange} />
         {needsLedger && (
@@ -188,6 +222,27 @@ function ReportsView() {
           </>
         )}
       </div></div>
+    </div>
+  )
+
+  const title = REPORTS.find(([k]) => k === name)?.[1] ?? 'Report'
+  if (isDesktop) {
+    return (
+      <div className="grid grid-cols-[220px_minmax(0,1fr)] gap-8">
+        <aside className="self-start sticky top-4"><ReportsNav active={name} onPick={pick} /></aside>
+        <section className="min-w-0">
+          <h2 className="mb-4 text-lg font-semibold text-gray-900">{title}</h2>
+          {body}
+        </section>
+      </div>
+    )
+  }
+  if (showMenuOnMobile) return <ReportsNav active={null} onPick={pick} mobile />
+  return (
+    <div className="space-y-4">
+      <button onClick={backToMenu} className="inline-flex items-center gap-1 text-sm font-medium text-brand-600"><span aria-hidden>‹</span> Reports</button>
+      <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
+      {body}
     </div>
   )
 }

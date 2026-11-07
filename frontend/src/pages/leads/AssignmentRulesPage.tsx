@@ -3,6 +3,7 @@ import { leadAssignmentApi } from '@/api'
 import { getError } from '@/utils'
 import toast from 'react-hot-toast'
 import { StaffAvailabilityPanel } from '@/components/leads/StaffAvailabilityPanel'
+import VerticalTabs, { type VTab } from '@/components/layout/VerticalTabs'
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
 const TIMEZONES = ['Asia/Kolkata', 'UTC', 'America/New_York', 'Europe/London', 'Asia/Dubai', 'Asia/Singapore']
@@ -58,6 +59,18 @@ export default function AssignmentRulesPage() {
   const card = 'bg-white rounded-xl border border-gray-200 p-6 space-y-4'
   const input = 'w-full border border-gray-300 rounded-lg px-3 py-2 text-sm'
 
+  const algo = (rule.strategy ?? 'algorithm') === 'algorithm'
+  const notifying = rule.notification_mode === 'uber' || rule.notification_mode === 'hybrid'
+  const tabs: VTab[] = [
+    { id: 'staff',      icon: '👥', label: 'Staff availability',        desc: 'Who can receive leads right now' },
+    { id: 'routing',    icon: '🧭', label: 'Routing',                   desc: 'How the next lead picks its staff member' },
+    { id: 'weights',    icon: '⚖️', label: 'Algorithm weights',         desc: 'How agents are scored', hidden: !algo, badge: totalWeight === 100 ? undefined : '⚠' },
+    { id: 'sla',        icon: '⏱️', label: 'Response SLA & AI handoff', desc: 'Reply time limits and when AI takes over' },
+    { id: 'notify',     icon: '🔔', label: 'Notification settings',     desc: 'Gaps, timeouts and how many staff to try', hidden: !notifying },
+    { id: 'duplicates', icon: '♻️', label: 'Duplicate handling',        desc: 'What happens when a lead comes in twice' },
+    { id: 'hours',      icon: '🕒', label: 'Working hours',             desc: 'Open days, timezone and holidays' },
+  ]
+
   return (
     <div className="p-6 space-y-6">
       <div>
@@ -65,9 +78,20 @@ export default function AssignmentRulesPage() {
         <p className="text-sm text-gray-500 mt-1">How incoming leads are routed to staff</p>
       </div>
 
-      <StaffAvailabilityPanel />
-
-      {/* Routing strategy */}
+      <VerticalTabs tabs={tabs} defaultId="staff" backLabel="Assignment rules" showTitle={false}
+        footer={(
+          <div className="flex items-center justify-end gap-3">
+            {!weightsOk && <span className="text-xs text-red-500">Algorithm weights must total 100%.</span>}
+            <button onClick={save} disabled={saving || !weightsOk}
+              className="px-8 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium disabled:opacity-50">
+              {saving ? 'Saving…' : 'Save Rules'}
+            </button>
+          </div>
+        )}>
+        {(id) => (
+          <>
+            {id === 'staff' && <StaffAvailabilityPanel />}
+            {id === 'routing' && (
       <section className={card}>
         <h2 className="font-semibold text-gray-800">Routing</h2>
         <p className="text-sm text-gray-500">How the next lead picks its staff member.</p>
@@ -92,10 +116,9 @@ export default function AssignmentRulesPage() {
           Auto-assign new leads
         </label>
       </section>
-
-      {/* Weighted-algorithm weights */}
-      {(rule.strategy ?? 'algorithm') === 'algorithm' && (
-        <section className={card}>
+            )}
+            {id === 'weights' && algo && (
+              <section className={card}>
           <div className="flex items-center justify-between">
             <h2 className="font-semibold text-gray-800">Algorithm weights</h2>
             <span className={`text-sm font-semibold ${totalWeight === 100 ? 'text-green-600' : 'text-red-500'}`}>Total {totalWeight}% {totalWeight === 100 ? '✅' : '⚠ must be 100'}</span>
@@ -107,9 +130,8 @@ export default function AssignmentRulesPage() {
             </div>
           ))}
         </section>
-      )}
-
-      {/* SLA + AI takeover — both tabs */}
+            )}
+            {id === 'sla' && (
       <section className={card}>
         <h2 className="font-semibold text-gray-800">Response SLA &amp; AI handoff</h2>
         <div className="grid grid-cols-2 gap-4">
@@ -122,10 +144,9 @@ export default function AssignmentRulesPage() {
           </label>
         </div>
       </section>
-
-      {/* Notification tuning + duplicate action */}
-      {(rule.notification_mode === 'uber' || rule.notification_mode === 'hybrid') && (
-        <section className={card}>
+            )}
+            {id === 'notify' && notifying && (
+              <section className={card}>
           <h2 className="font-semibold text-gray-800">Notification settings</h2>
           <div className="grid grid-cols-3 gap-4">
             <label className="text-sm text-gray-600">Gap between staff (sec)<input type="number" min={5} className={`mt-1 ${input}`} value={rule.notification_gap_seconds ?? 30} onChange={e => set('notification_gap_seconds', Number(e.target.value))} /></label>
@@ -134,7 +155,8 @@ export default function AssignmentRulesPage() {
           </div>
           <p className="text-xs text-gray-400">When nobody accepts within the max rounds, the AI agent takes over automatically.</p>
         </section>
-      )}
+            )}
+            {id === 'duplicates' && (
       <section className={card}>
         <h2 className="font-semibold text-gray-800">Duplicate lead handling</h2>
         <div className="grid grid-cols-2 gap-4">
@@ -149,8 +171,8 @@ export default function AssignmentRulesPage() {
           </label>
         </div>
       </section>
-
-      {/* Working hours — per day */}
+            )}
+            {id === 'hours' && (
       <section className={card}>
         <h2 className="font-semibold text-gray-800">Working hours <span className="text-xs font-normal text-gray-400">(leads outside these hours go straight to the AI agent)</span></h2>
         <div className="space-y-1.5">
@@ -189,13 +211,10 @@ export default function AssignmentRulesPage() {
           </div>
         </div>
       </section>
-
-      <div className="flex justify-end">
-        <button onClick={save} disabled={saving || !weightsOk}
-          className="px-8 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium disabled:opacity-50">
-          {saving ? 'Saving…' : 'Save Rules'}
-        </button>
-      </div>
+            )}
+          </>
+        )}
+      </VerticalTabs>
     </div>
   )
 }
