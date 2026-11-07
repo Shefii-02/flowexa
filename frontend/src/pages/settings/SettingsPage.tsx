@@ -4,6 +4,7 @@ import { settingsApi, roleApi, staffApi, deviceApi, stickyApi, type StickySettin
 import { Button, Input } from '@/components/ui'
 import { getError } from '@/utils'
 import { useCurrentUser, usePermission, useIsSuperAdmin } from '@/store'
+import { SIDEBAR_SECTIONS } from '@/components/layout/sidebarPrefs'
 import LinkedDevicesModal, { LinkedDevicesPanel, type DeviceService } from '@/components/devices/LinkedDevicesModal'
 import toast from 'react-hot-toast'
 import api from '@/api/client'
@@ -312,7 +313,71 @@ function ProfileTab() {
 function DisplayTab() {
   return (
     <div className="space-y-6">
+      <SidebarMenuCard />
       <FloatingWidgetsCard />
+    </div>
+  )
+}
+
+/** How this user's sidebar looks: collapsible accordions or an always-open list, and which sections to show. */
+function SidebarMenuCard() {
+  const [cfg, setCfg] = useState<{ accordion: boolean; hidden: string[] } | null>(null)
+
+  useEffect(() => {
+    stickyApi.getSettings()
+      .then(r => setCfg({ accordion: r.data.settings.sidebar_accordion !== false, hidden: r.data.settings.sidebar_hidden ?? [] }))
+      .catch(() => {})
+  }, [])
+
+  const save = async (next: { accordion: boolean; hidden: string[] }) => {
+    setCfg(next)
+    const patch = { sidebar_accordion: next.accordion, sidebar_hidden: next.hidden }
+    window.dispatchEvent(new CustomEvent('sticky-settings-changed', { detail: patch }))   // the sidebar updates instantly
+    try { await stickyApi.settings(patch) } catch (e) { toast.error(getError(e)) }
+  }
+
+  if (!cfg) return null
+  const shown = (id: string) => !cfg.hidden.includes(id)
+
+  return (
+    <div className="card">
+      <div className="card-header"><h3 className="card-title">Sidebar menu</h3></div>
+      <div className="card-body space-y-5">
+        <div>
+          <p className="mb-2 text-sm font-medium text-gray-800">Menu style</p>
+          <div className="grid gap-3 sm:grid-cols-2" role="radiogroup" aria-label="Menu style">
+            {([
+              [true,  'Accordion',     'Sections collapse and expand — good when you only use a few at a time.'],
+              [false, 'Expanded list', 'Every section shows its title with its links underneath. Nothing to open.'],
+            ] as const).map(([val, title, desc]) => (
+              <button key={title} type="button" role="radio" aria-checked={cfg.accordion === val} onClick={() => save({ ...cfg, accordion: val })}
+                className={`rounded-xl border p-3 text-left transition-colors ${cfg.accordion === val ? 'border-brand-500 bg-brand-50' : 'border-gray-200 hover:bg-gray-50'}`}>
+                <span className="block text-sm font-medium text-gray-900">{title}</span>
+                <span className="mt-0.5 block text-xs text-gray-500">{desc}</span>
+                <span className="mt-2 block rounded-lg bg-white/70 p-2 text-[11px] text-gray-500" aria-hidden>
+                  {val ? <>▸ Accounts<br />▾ CRM<br /><span className="ml-3 text-gray-400">Contacts · Labels</span></>
+                       : <><b className="text-[9px] tracking-wider text-gray-400">CRM</b><br /><span className="text-gray-500">Contacts · Labels · Deals</span></>}
+                </span>
+              </button>))}
+          </div>
+        </div>
+
+        <div>
+          <div className="mb-2 flex items-center justify-between">
+            <p className="text-sm font-medium text-gray-800">Sections to show</p>
+            {cfg.hidden.length > 0 && <button className="text-xs text-brand-600 hover:underline" onClick={() => save({ ...cfg, hidden: [] })}>Show all</button>}
+          </div>
+          <p className="mb-2 text-xs text-gray-500">Untick a section you don’t use to hide it from your menu. This only changes what you see — your access is not affected.</p>
+          <div className="grid gap-1 sm:grid-cols-2">
+            {SIDEBAR_SECTIONS.map(sec => (
+              <label key={sec.id} className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-gray-700 hover:bg-gray-50">
+                <input type="checkbox" checked={shown(sec.id)}
+                  onChange={e => save({ ...cfg, hidden: e.target.checked ? cfg.hidden.filter(h => h !== sec.id) : [...cfg.hidden, sec.id] })} />
+                <span aria-hidden>{sec.icon}</span>{sec.label}
+              </label>))}
+          </div>
+        </div>
+      </div>
     </div>
   )
 }

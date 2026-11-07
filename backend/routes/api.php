@@ -151,6 +151,7 @@ Route::prefix('v1')->group(function () {
         // ── Personal sticky notes (floating widget on every page) — per USER, never shared ──
         Route::prefix('sticky-notes')->group(function () {
             Route::get('/',          [\App\Http\Controllers\StickyNoteController::class, 'index']);
+            Route::get('/settings',  [\App\Http\Controllers\StickyNoteController::class, 'showSettings']);
             Route::put('/settings',  [\App\Http\Controllers\StickyNoteController::class, 'updateSettings']);
             Route::post('/',         [\App\Http\Controllers\StickyNoteController::class, 'store']);
             Route::put('/{id}',      [\App\Http\Controllers\StickyNoteController::class, 'update']);

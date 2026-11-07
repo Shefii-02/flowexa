@@ -37,7 +37,18 @@ class StickyNoteController extends Controller
             'notes_enabled' => (bool) ($r->notes_enabled ?? true),
             'todo_enabled'  => (bool) ($r->todo_enabled ?? true),
             'assistant_enabled' => (bool) ($r->assistant_enabled ?? true),
+            'sidebar_accordion' => (bool) ($r->sidebar_accordion ?? true),
+            'sidebar_hidden'    => array_values((array) json_decode($r->sidebar_hidden ?? '[]', true)),
         ];
+    }
+
+    /** Menu sections a user may hide from their own sidebar (ids match the Sidebar component). */
+    public const SIDEBAR_SECTIONS = ['wa-chat', 'wa-cloud', 'wa-agent', 'meta-ads', 'instagram', 'messenger', 'accounts', 'crm', 'leads', 'hr', 'integrations'];
+
+    // GET /sticky-notes/settings — just the settings (the sidebar needs these on every page; no notes payload)
+    public function showSettings(): JsonResponse
+    {
+        return response()->json(['settings' => $this->settings()]);
     }
 
     // GET /sticky-notes
@@ -103,7 +114,13 @@ class StickyNoteController extends Controller
             'notes_enabled' => ['sometimes', 'boolean'],
             'todo_enabled'  => ['sometimes', 'boolean'],
             'assistant_enabled' => ['sometimes', 'boolean'],
+            'sidebar_accordion' => ['sometimes', 'boolean'],
+            'sidebar_hidden'    => ['sometimes', 'array', 'max:20'],
+            'sidebar_hidden.*'  => ['string', \Illuminate\Validation\Rule::in(self::SIDEBAR_SECTIONS)],
         ]);
+        if (array_key_exists('sidebar_hidden', $d)) {
+            $d['sidebar_hidden'] = json_encode(array_values(array_unique($d['sidebar_hidden'])));
+        }
         $uid = auth()->id();
         $exists = DB::table('sticky_note_settings')->where('user_id', $uid)->exists();
         $d['updated_at'] = now();

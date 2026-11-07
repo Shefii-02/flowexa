@@ -1,5 +1,5 @@
 // src/components/layout/Sidebar.tsx
-import { useState, useEffect } from 'react'
+import { useState, useEffect, createContext, useContext } from 'react'
 import { NavLink, useNavigate, useLocation } from 'react-router-dom'
 import { useAppDispatch, useAppSelector, useIsSuperAdmin, usePermission } from '@/store'
 import { logoutThunk } from '@/store/slices'
@@ -7,6 +7,7 @@ import { cn, fmt } from '@/utils'
 import { toast } from 'react-hot-toast'
 import { api } from '@/api/client'
 import { ACCOUNTS_NAV } from '@/pages/accounts/accountsNav'
+import { SidebarPrefsContext, useSidebarPrefs } from './sidebarPrefs'
 
 // ── WA Session picker ─────────────────────────────────────────────────────────
 type WaSessionItem = { id: string; name: string; status?: string }
@@ -56,11 +57,29 @@ function WaSessionSelector() {
 }
 
 // ── Section header ─────────────────────────────────────────────────────────────
-function SectionHeader({ label }: { label: string }) {
+// `id` ties the caption to a hideable menu section; `hideWhenFlat` drops it in expanded mode, where the group
+// renders the same caption itself (so a section never shows its title twice).
+function SectionHeader({ label, id, hideWhenFlat }: { label: string; id?: string; hideWhenFlat?: boolean }) {
+  const prefs = useContext(SidebarPrefsContext)
+  if ((id && prefs.hidden.includes(id)) || (hideWhenFlat && !prefs.accordion)) return null
   return (
     <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider px-2 pt-3 pb-1 select-none">
       {label}
     </p>
+  )
+}
+
+/** Expanded (non-accordion) group: the small uppercase caption, then its links — no collapsing. */
+const FlatDepth = createContext(0)
+function FlatGroup({ label, extra, children }: { label: string; extra?: React.ReactNode; children: React.ReactNode }) {
+  const depth = useContext(FlatDepth)
+  return (
+    <div>
+      <p className={cn('text-[10px] font-semibold text-gray-400 uppercase tracking-wider pt-3 pb-1 select-none', depth ? 'px-4' : 'px-2')}>{label}</p>
+      <div className={cn('space-y-0.5', depth ? 'ml-2' : '')}>
+        <FlatDepth.Provider value={depth + 1}>{extra}{children}</FlatDepth.Provider>
+      </div>
+    </div>
   )
 }
 
@@ -108,8 +127,9 @@ function SubLink({ to, icon, label, end }: { to: string; icon: string; label: st
 
 // ── Nested accordion (depth 1 inside top-level accordion) ─────────────────────
 function NestedAccordion({
-  icon, label, basePaths, children, defaultOpen,
+  id, icon, label, basePaths, children, defaultOpen,
 }: {
+  id?: string
   icon: string
   label: string
   basePaths: string[]
@@ -123,6 +143,10 @@ function NestedAccordion({
   useEffect(() => {
     if (isActive) setOpen(true)
   }, [location.pathname, isActive])
+
+  const prefs = useContext(SidebarPrefsContext)
+  if (id && prefs.hidden.includes(id)) return null
+  if (!prefs.accordion) return <FlatGroup label={label}>{children}</FlatGroup>
 
   return (
     <div>
@@ -155,8 +179,9 @@ function NestedAccordion({
 
 // ── Top-level accordion ────────────────────────────────────────────────────────
 function Accordion({
-  icon, label, basePaths, isOpen, onToggle, extra, children,
+  id, icon, label, basePaths, isOpen, onToggle, extra, children,
 }: {
+  id?: string
   icon: string
   label: string
   basePaths: string[]
@@ -167,6 +192,9 @@ function Accordion({
 }) {
   const location = useLocation()
   const isActive = basePaths.some(p => location.pathname.startsWith(p))
+  const prefs = useContext(SidebarPrefsContext)
+  if (id && prefs.hidden.includes(id)) return null
+  if (!prefs.accordion) return <FlatGroup label={label} extra={extra}>{children}</FlatGroup>
 
   return (
     <div>
@@ -208,7 +236,7 @@ function Accordion({
 }
 
 // ── Main Sidebar ──────────────────────────────────────────────────────────────
-export const Sidebar = () => {
+const SidebarInner = () => {
   const dispatch = useAppDispatch()
   const navigate = useNavigate()
   const location = useLocation()
@@ -374,6 +402,7 @@ export const Sidebar = () => {
             {/* ── WA Chat accordion ── */}
             {/* {canViewWaChat && ( */}
             <Accordion
+              id="wa-chat"
               icon="💬"
               label="WA Chat"
               basePaths={['/wa-chat']}
@@ -423,6 +452,7 @@ export const Sidebar = () => {
             {/* ── WA Cloud accordion ── */}
             {/* {canViewWaCloud && ( */}
             <Accordion
+              id="wa-cloud"
               icon="☁️"
               label="WA Cloud"
               basePaths={['/wa-cloud', '/phone-numbers', '/flow']}
@@ -472,6 +502,7 @@ export const Sidebar = () => {
             {/* ── WA Agent accordion ── */}
             {/* {canViewWaAgent && ( */}
             <Accordion
+              id="wa-agent"
               icon="🧠"
               label="WA Agent"
               basePaths={['/wa-agent']}
@@ -500,6 +531,7 @@ export const Sidebar = () => {
             {/* ── Meta Ads accordion ── */}
             {/* {canViewMetaAds && ( */}
             <Accordion
+              id="meta-ads"
               icon="📣"
               label="Meta Ads"
               basePaths={['/meta-ads']}
@@ -518,6 +550,7 @@ export const Sidebar = () => {
 
             {/* ── Instagram accordion ── */}
             <Accordion
+              id="instagram"
               icon="📸"
               label="Instagram"
               basePaths={['/instagram']}
@@ -534,6 +567,7 @@ export const Sidebar = () => {
             </Accordion>
             {/* ── Facebook Messenger accordion ── */}
             <Accordion
+              id="messenger"
               icon="💬"
               label="Messenger"
               basePaths={['/messenger']}
@@ -557,16 +591,17 @@ export const Sidebar = () => {
             {/* ── ACCOUNTS ── */}
             {canViewAccounts && (
               <>
-                <SectionHeader label="Accounts" />
-                <NestedAccordion icon="🧮" label="Accounts" basePaths={['/accounts']}>
+                <SectionHeader label="Accounts" id="accounts" hideWhenFlat />
+                <NestedAccordion id="accounts" icon="🧮" label="Accounts" basePaths={['/accounts']}>
                   {accountsMenu}
                 </NestedAccordion>
               </>
             )}
 
             {/* ── CRM ── */}
-            <SectionHeader label="CRM" />
+            <SectionHeader label="CRM" id="crm" hideWhenFlat />
             <NestedAccordion
+              id="crm"
               icon="🗂️"
               label="CRM"
               basePaths={['/crm/contacts', '/crm/labels', '/crm/blacklist', '/crm/deals', '/crm/tasks', '/crm/followups', '/crm/calendar', '/crm/segments']}
@@ -593,8 +628,9 @@ export const Sidebar = () => {
 
 
             {/* ── LEADS ── */}
-            <SectionHeader label="Leads" />
+            <SectionHeader label="Leads" id="leads" hideWhenFlat />
             <NestedAccordion
+              id="leads"
               icon="🎯"
               label="Leads"
               basePaths={['/crm/leads']}
@@ -628,8 +664,8 @@ export const Sidebar = () => {
             </NestedAccordion>
 
             {/* ── HR ── */}
-            <SectionHeader label="HR" />
-            <NestedAccordion icon="👥" label="HR" basePaths={['/hr']}>
+            <SectionHeader label="HR" id="hr" hideWhenFlat />
+            <NestedAccordion id="hr" icon="👥" label="HR" basePaths={['/hr']}>
               <SubLink to="/hr/attendance" icon="🕒" label="My Attendance" />
               <SubLink to="/hr/target" icon="🎯" label="My Target" />
               <SubLink to="/hr/payroll" icon="💰" label="My Payroll" />
@@ -670,6 +706,7 @@ export const Sidebar = () => {
 
             <FlatLink to="/settings/index" icon="⚙️" label="Settings" />
             <Accordion
+              id="integrations"
               icon="🔌"
               label="Integrations"
               basePaths={['/settings/integrations']}
@@ -743,5 +780,15 @@ export const Sidebar = () => {
         </div>
       </div>
     </aside>
+  )
+}
+
+/** Reads the user's sidebar preferences (accordion on/off, hidden sections) and shares them with the menu. */
+export const Sidebar = () => {
+  const prefs = useSidebarPrefs()
+  return (
+    <SidebarPrefsContext.Provider value={prefs}>
+      <SidebarInner />
+    </SidebarPrefsContext.Provider>
   )
 }
