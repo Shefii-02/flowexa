@@ -154,7 +154,7 @@ import MessageSender from '@/pages/wa-chat/pages/message-sender'
 import WaChatTemplatesPage from '@/pages/wa-chat/pages/WaChatTemplates'
 import WaOtpServicePage from '@/pages/wa-chat/pages/WaOtpService'
 import WaDataExportPage from '@/pages/wa-chat/pages/WaDataExport'
-import WaMediaLibraryPage from '@/pages/wa-chat/pages/WaMediaLibrary'
+import SharedMediaLibraryPage from '@/pages/media-library/MediaLibraryPage'
 import WaAutomationPage from '@/pages/wa-chat/pages/WaAutomation'
 import WaGroupsPage from '@/pages/wa-chat/pages/WaGroups'
 
@@ -279,7 +279,6 @@ export default function App() {
                 <Route path="otp-service" element={<WaOtpServicePage />} />
                 <Route path="api-services" element={<WaOtpServicePage />} />
                 <Route path="export" element={<WaDataExportPage />} />
-                <Route path="media-library" element={<WaMediaLibraryPage />} />
                 <Route path="api-keys" element={<RequireWaAdmin><WaChatApiKeys /></RequireWaAdmin>} />
                 <Route path="automation" element={<WaAutomationPage />} />
                 <Route path="groups" element={<WaGroupsPage />} />
@@ -351,6 +350,8 @@ export default function App() {
               <Route path="templates/:id" element={<LegacyTemplateRedirect />} />
               <Route path="plan-purchase" element={<PlanPurchasePage />} />
               <Route path="crm/blacklist" element={<BlacklistPage />} />
+              <Route path="media-library" element={<SharedMediaLibraryPage />} />   {/* one library for every module */}
+              <Route path="wa-chat/media-library" element={<Navigate to="/media-library" replace />} />   {/* old URL */}
               <Route path="short-links" element={<ShortLinksPage />} />
               <Route path="crm/short-links" element={<Navigate to="/short-links" replace />} />   {/* old URL */}
               {/* Accounts — one page per route under /accounts/… (files: src/pages/accounts/<area>/<Page>.tsx) */}

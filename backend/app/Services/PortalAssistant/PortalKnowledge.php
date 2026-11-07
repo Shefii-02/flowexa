@@ -23,7 +23,7 @@ class PortalKnowledge
             ['path' => '/wa-chat/templates', 'title' => 'Templates', 'about' => 'Reusable message templates for quick replies and campaigns.'],
             ['path' => '/wa-chat/api-services', 'title' => 'API Services', 'admin' => true, 'about' => 'API keys and endpoints to send WhatsApp messages from your own software.'],
             ['path' => '/wa-chat/export', 'title' => 'Data Export', 'admin' => true, 'about' => 'Export contacts/chats/messages to a file.'],
-            ['path' => '/wa-chat/media-library', 'title' => 'Media Library', 'about' => 'Upload and reuse images, videos and documents.'],
+            ['path' => '/media-library', 'title' => 'Media Library', 'about' => 'Upload and reuse images, videos and documents — one library shared by every module.'],
             ['path' => '/wa-chat/automations', 'title' => 'Agent Automations', 'about' => 'Rules that auto-reply or act on incoming WhatsApp messages.'],
             ['path' => '/wa-chat/analytics', 'title' => 'Inbox Analytics', 'about' => 'Response times, volumes and agent performance for the inbox.'],
             ['path' => '/wa-chat/logs', 'title' => 'Audit Log', 'about' => 'Who did what in WhatsApp chat.'],

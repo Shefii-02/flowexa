@@ -429,7 +429,6 @@ const SidebarInner = () => {
               <SubLink to="/wa-chat/api-services" icon="🔑" label="API Services" />
               {/* } */}
               <SubLink to="/wa-chat/export" icon="📤" label="Data Export" />
-              <SubLink to="/wa-chat/media-library" icon="🖼️" label="Media Library" />
               <SubLink to="/wa-chat/automations" icon="⚙️" label="Agent Automations" />
               {/* ── ANALYTICS ── */}
               <SectionHeader label="Analytics" />
@@ -580,6 +579,7 @@ const SidebarInner = () => {
               <SubLink to="/messenger/inbox" icon="📥" label="Inbox" />
             </Accordion>
 
+            <FlatLink to="/media-library" icon="🖼️" label="Media Library" />
             <FlatLink to="/short-links" icon="🔗" label="Short Links" />
 
             {/* Catalog is a top-level item now (📦 Catalog under CRM) */}
