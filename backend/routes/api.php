@@ -741,6 +741,7 @@ Route::prefix('v1')->group(function () {
 
         // ── Plan usage: what the company has used vs what its plan allows (drives the limit badges in the UI) ──
         Route::get('plan/usage', [\App\Http\Controllers\PlanUsageController::class, 'show']);
+        Route::get('plan/notices', [\App\Http\Controllers\PlanUsageController::class, 'notices']);
 
         // ── Accounts: double-entry books, vouchers, GST, reports ────────────────
         Route::prefix('accounts')->middleware(['company.active'])->group(function () {
@@ -1021,7 +1022,11 @@ Route::prefix('v1')->group(function () {
             Route::put('plans/{id}',        [PlanPurchaseController::class, 'superAdminUpdatePlan'])->name('sa.plans.update');
             Route::delete('plans/{id}',     [PlanPurchaseController::class, 'superAdminDeletePlan'])->name('sa.plans.destroy');
             Route::post('plans/assign',     [PlanPurchaseController::class, 'assignCustomPlan'])->name('sa.plans.assign');
+            Route::get('addons/resources',  [PlanPurchaseController::class, 'addonResources'])->name('sa.addons.resources');
             Route::get('addons',            [PlanPurchaseController::class, 'superAdminAddons'])->name('sa.addons.index');
+            Route::get('expiries',                    [\App\Modules\PlanPurchase\Http\Controllers\PlanMonitorController::class, 'expiries'])->name('sa.expiries');
+            Route::post('expiries/{company}/contacted', [\App\Modules\PlanPurchase\Http\Controllers\PlanMonitorController::class, 'contacted'])->whereNumber('company')->name('sa.expiries.contacted');
+            Route::get('pricing/pdf',                 [\App\Modules\PlanPurchase\Http\Controllers\PricingPdfController::class, 'download'])->name('sa.pricing.pdf');
             Route::post('addons',           [PlanPurchaseController::class, 'superAdminCreateAddon'])->name('sa.addons.store');
             Route::put('addons/{id}',       [PlanPurchaseController::class, 'superAdminUpdateAddon'])->name('sa.addons.update');
             Route::get('topup-packages',    [PlanPurchaseController::class, 'topupPackages'])->name('sa.topup.index');

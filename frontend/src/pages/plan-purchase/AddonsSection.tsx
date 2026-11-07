@@ -7,15 +7,20 @@ import { fmt, getError } from '@/utils'
 import { refreshPlanUsage, usePlanUsage } from '@/lib/planUsage'
 import { loadRazorpay } from './razorpay'
 
-export type Addon = { id: number; name: string; slug: string; description: string | null; type: 'feature' | 'message_pack' | 'storage' | 'limit'; price: string | number; billing_cycle: 'monthly' | 'yearly' | 'one_time'; config: { resource?: string; amount?: number; [k: string]: unknown } | null }
+export type Addon = { id: number; name: string; slug: string; description: string | null; type: 'feature' | 'message_pack' | 'storage' | 'limit'; price: string | number; price_yearly?: string | number | null; billing_cycle: 'monthly' | 'yearly' | 'one_time'; config: { resource?: string; amount?: number; [k: string]: unknown } | null }
 export type MyAddon = { id: number; status: string; amount_paid: string | number; starts_at: string; expires_at: string | null; addon: Addon | null }
 
 const CYCLE: Record<string, string> = { monthly: 'per month', yearly: 'per year', one_time: 'one time' }
-const price = (a: Addon) => `₹${fmt.number(Math.round(Number(a.price)))} ${CYCLE[a.billing_cycle] ?? ''}`
+type Cycle = 'monthly' | 'yearly'
+const yearly = (a: Addon) => a.price_yearly != null ? Number(a.price_yearly) : Number(a.price) * 12
+const priceFor = (a: Addon, c: Cycle) => a.billing_cycle === 'one_time' ? `₹${fmt.number(Math.round(Number(a.price)))} one time`
+  : c === 'yearly' ? `₹${fmt.number(Math.round(yearly(a)))} per year` : `₹${fmt.number(Math.round(Number(a.price)))} per month`
+const saving = (a: Addon) => Math.round(Number(a.price) * 12 - yearly(a))
 
 export default function AddonsSection({ addons, mine, focus, onChanged }: { addons: Addon[]; mine: MyAddon[]; focus?: string | null; onChanged: () => void }) {
   const { resources } = usePlanUsage()
   const [paying, setPaying] = useState<number | null>(null)
+  const [cycle, setCycle] = useState<Cycle>('monthly')
   const focusRef = useRef<HTMLDivElement | null>(null)
   useEffect(() => { focusRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }) }, [focus, addons.length])
 
@@ -33,14 +38,14 @@ export default function AddonsSection({ addons, mine, focus, onChanged }: { addo
   const buy = async (addon: Addon) => {
     setPaying(addon.id)
     try {
-      const { data } = await planApi.addonOrder(addon.id)
+      const { data } = await planApi.addonOrder(addon.id, addon.billing_cycle === 'one_time' ? undefined : cycle)
       await loadRazorpay()
       const rzp = new window.Razorpay({
         key: data.razorpay_key, amount: data.amount, currency: 'INR', order_id: data.order_id,
         name: 'Teamzo By Univexa Technologies', description: addon.name, theme: { color: '#1D9E75' },
         handler: async (r: any) => {
           try {
-            await planApi.verifyAddon({ razorpay_order_id: r.razorpay_order_id, razorpay_payment_id: r.razorpay_payment_id, razorpay_signature: r.razorpay_signature, addon_id: addon.id })
+            await planApi.verifyAddon({ razorpay_order_id: r.razorpay_order_id, razorpay_payment_id: r.razorpay_payment_id, razorpay_signature: r.razorpay_signature, addon_id: addon.id, billing_cycle: data.billing_cycle ?? cycle })
             toast.success(`${addon.name} added.`)
             refreshPlanUsage(); onChanged()
           } catch (e) { toast.error(getError(e)) } finally { setPaying(null) }
@@ -52,8 +57,20 @@ export default function AddonsSection({ addons, mine, focus, onChanged }: { addo
   }
 
   const empty = addons.length === 0
+  const maxSaving = Math.max(0, ...addons.filter(a => a.billing_cycle !== 'one_time').map(saving))
   return (
     <div className="space-y-6">
+      {addons.some(a => a.billing_cycle !== 'one_time') && (
+        <div className="flex items-center gap-3">
+          <div className="inline-flex rounded-lg border border-gray-200 p-0.5 text-sm" role="group" aria-label="Billing period">
+            {(['monthly', 'yearly'] as Cycle[]).map(c => (
+              <button key={c} onClick={() => setCycle(c)} aria-pressed={cycle === c}
+                className={`rounded-md px-3 py-1.5 font-medium capitalize ${cycle === c ? 'bg-brand-600 text-white' : 'text-gray-600 hover:bg-gray-50'}`}>{c}</button>))}
+          </div>
+          {maxSaving > 0 && <span className="text-xs text-green-600">Yearly saves up to ₹{fmt.number(maxSaving)}</span>}
+          <span className="text-xs text-gray-400">Add-ons expire on their own date; your plan is not affected.</span>
+        </div>)}
+
       {empty && (
         <div className="rounded-2xl border border-dashed border-gray-300 p-8 text-center text-sm text-gray-500">
           No add-ons are available right now. If you need more of something, upgrade your plan under <b>All plans</b>.
@@ -89,7 +106,7 @@ export default function AddonsSection({ addons, mine, focus, onChanged }: { addo
                       <div key={p.id} className="flex items-center gap-3 rounded-xl border border-gray-200 p-3">
                         <div className="min-w-0 flex-1">
                           <p className="text-sm font-medium text-gray-900">{p.name}</p>
-                          <p className="text-xs text-gray-500">{price(p)}{p.description ? ` · ${p.description}` : ''}</p>
+                          <p className="text-xs text-gray-500">{priceFor(p, cycle)}{p.description ? ` · ${p.description}` : ''}</p>
                         </div>
                         <Button size="sm" loading={paying === p.id} onClick={() => buy(p)}>Add</Button>
                       </div>))}
@@ -107,7 +124,7 @@ export default function AddonsSection({ addons, mine, focus, onChanged }: { addo
               <div key={a.id} className="card flex items-center gap-3 p-4">
                 <div className="min-w-0 flex-1">
                   <p className="font-medium text-gray-900">{a.name}</p>
-                  <p className="text-xs text-gray-500">{price(a)}{a.description ? ` · ${a.description}` : ''}</p>
+                  <p className="text-xs text-gray-500">{priceFor(a, cycle)}{a.description ? ` · ${a.description}` : ''}</p>
                 </div>
                 <Button size="sm" loading={paying === a.id} onClick={() => buy(a)}>Buy</Button>
               </div>))}

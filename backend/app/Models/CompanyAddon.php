@@ -14,7 +14,7 @@ class CompanyAddon extends Model
 {
     protected $fillable = [
         'company_id','addon_id','payment_order_id','amount_paid',
-        'status','starts_at','expires_at',
+        'status','billing_cycle','starts_at','expires_at',
     ];
 
     protected $casts = [

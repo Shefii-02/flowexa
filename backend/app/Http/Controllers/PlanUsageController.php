@@ -28,4 +28,15 @@ class PlanUsageController extends Controller
             ] : null,
         ]);
     }
+
+    /** GET /plan/notices — plan/trial ending, add-ons lapsing, exceeded limits (empty for the platform owner). */
+    public function notices(): JsonResponse
+    {
+        $user = auth()->user();
+        $company = $user?->company;
+        if (!$company || $user->isSuperAdmin()) {
+            return response()->json(['notices' => []]);
+        }
+        return response()->json(['notices' => app(\App\Modules\PlanPurchase\Services\PlanNoticeService::class)->forCompany($company)]);
+    }
 }

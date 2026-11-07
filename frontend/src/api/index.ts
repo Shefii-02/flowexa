@@ -583,7 +583,8 @@ export const planApi = {
   addons: () => api.get('/addons'),
   myAddons: () => api.get('/addons/mine'),
   invoices: () => api.get('/billing/invoices'),
-  addonOrder: (addonId: number) => api.post(`/addons/${addonId}/create-order`),
+  addonOrder: (addonId: number, billingCycle?: 'monthly' | 'yearly') => api.post(`/addons/${addonId}/create-order`, billingCycle ? { billing_cycle: billingCycle } : {}),
+  notices: () => api.get<{ notices: PlanNotice[] }>('/plan/notices'),
   verifyAddon: (d: Record<string, unknown>) => api.post('/addons/verify-payment', d),
   // SuperAdmin
   saPlans: () => api.get('/superadmin/plans'),
@@ -593,6 +594,10 @@ export const planApi = {
   saAssignCustom: (d: Record<string, unknown>) => api.post('/superadmin/plans/assign', d),
   saAddons: () => api.get('/superadmin/addons'),
   saCreateAddon: (d: Record<string, unknown>) => api.post('/superadmin/addons', d),
+  saAddonResources: () => api.get<{ resources: { key: string; label: string; kind: string }[] }>('/superadmin/addons/resources'),
+  saExpiries: (days: number) => api.get<{ days: number; companies: ExpiryRow[] }>('/superadmin/expiries', { params: { days } }),
+  saMarkContacted: (companyId: number, d: { kind: 'plan' | 'trial' | 'addon'; reference_id?: number | null; note?: string }) => api.post(`/superadmin/expiries/${companyId}/contacted`, d),
+  saPricingPdf: (scope: string, cycle: string) => api.get('/superadmin/pricing/pdf', { params: { scope, cycle }, responseType: 'blob' }),
   saUpdateAddon: (id: number, d: Record<string, unknown>) => api.put(`/superadmin/addons/${id}`, d),
   saTopupPackages: () => api.get('/superadmin/topup-packages'),
   saCreateTopup: (d: Record<string, unknown>) => api.post('/superadmin/topup-packages', d),
@@ -837,4 +842,17 @@ export const supportAdminApi = {
   createDepartment: (d: Record<string, unknown>) => api.post('/superadmin/support/departments', d),
   updateDepartment: (id: number, d: Record<string, unknown>) => api.put(`/superadmin/support/departments/${id}`, d),
   removeDepartment: (id: number) => api.delete(`/superadmin/support/departments/${id}`),
+}
+
+export type PlanNotice = {
+  id: string; type: 'plan_expiring' | 'plan_expired' | 'addon_expiring' | 'addon_expired' | 'over_limit'
+  severity: 'info' | 'warning' | 'critical'; title: string; message: string; days_left: number | null
+  cta: { label: string; url: string }
+}
+export type ExpiryRow = {
+  company_id: number; name: string; status: string; email: string | null; phone: string | null
+  owner: { name: string; email: string | null; phone: string | null } | null
+  plan: { kind: 'plan' | 'trial'; name: string | null; ends_at: string | null; days_left: number | null }
+  addons: { id: number; name: string; resource: string | null; amount: number | null; cycle: string; expires_at: string; days_left: number }[]
+  last_followup: { kind: string; note: string | null; contacted_at: string; by: string | null } | null
 }

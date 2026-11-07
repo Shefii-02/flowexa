@@ -11,7 +11,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class Plan extends Model
 {
     protected $fillable = [
-        'name', 'messages_limit', 'price', 'features', 'is_active',
+        'name', 'messages_limit', 'price', 'price_yearly', 'features', 'is_active',
         'duration_type', 'duration_months', 'alert_before_days', 'max_users', 'max_templates',
         'max_phone_numbers', 'max_wa_sessions', 'max_campaigns', 'max_contacts', 'max_labels',
         'max_flow_nodes', 'max_campaign_contacts', 'throttle_per_minute',
@@ -27,6 +27,7 @@ class Plan extends Model
         'is_custom'             => 'boolean',
         'messages_limit'        => 'integer',
         'price'                 => 'decimal:2',
+        'price_yearly'          => 'decimal:2',
         'duration_months'       => 'integer',
         'max_users'             => 'integer',
         'max_templates'         => 'integer',

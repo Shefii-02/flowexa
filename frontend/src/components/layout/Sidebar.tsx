@@ -736,6 +736,8 @@ const SidebarInner = () => {
             <FlatLink to="/superadmin/demo-requests" icon="📅" label="Demo Requests" />
             <FlatLink to="/superadmin/companies" icon="🏢" label="Companies" />
             <FlatLink to="/superadmin/plans" icon="📦" label="Plans" />
+            <FlatLink to="/superadmin/addons" icon="🧩" label="Add-ons" />
+            <FlatLink to="/superadmin/expiries" icon="⏳" label="Plan expiry" />
             <FlatLink to="/superadmin/billing" icon="💰" label="Billing" />
             <FlatLink to="/superadmin/staff" icon="👤" label="Platform Staff" />
             <FlatLink to="/superadmin/permissions" icon="🔑" label="Permissions" />

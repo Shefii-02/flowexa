@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react'
 import { superadminApi } from '@/api'
 import { Button, Modal, Input, Badge, EmptyState, Spinner } from '@/components/ui'
+import PricingPdfButton from '@/components/plan/PricingPdfButton'
 import { fmt, getError } from '@/utils'
 import toast from 'react-hot-toast'
 
@@ -30,6 +31,7 @@ const DEFAULT_FORM = {
   name:                  '',
   messages_limit:        '1000',
   price:                 '499',
+  price_yearly:          '',
   duration_type:         'monthly',
   duration_months:       '1',
   max_users:             '5',
@@ -87,6 +89,7 @@ export default function SuperAdminPlans() {
       name:                  p.name ?? '',
       messages_limit:        String(p.messages_limit ?? 1000),
       price:                 String(p.price ?? 0),
+      price_yearly:          p.price_yearly != null ? String(p.price_yearly) : '',
       duration_type:         p.duration_type ?? 'monthly',
       duration_months:       String(p.duration_months ?? 1),
       max_users:             String(p.max_users ?? ''),
@@ -111,6 +114,7 @@ export default function SuperAdminPlans() {
     name:                  form.name,
     messages_limit:        +form.messages_limit,
     price:                 +form.price,
+    price_yearly:          form.price_yearly ? +form.price_yearly : null,
     duration_type:         form.duration_type,
     duration_months:       form.duration_months ? +form.duration_months : null,
     max_users:             form.max_users             ? +form.max_users             : null,
@@ -149,7 +153,7 @@ export default function SuperAdminPlans() {
     <div className="space-y-5">
       <div className="flex items-center justify-between">
         <div><h1 className="page-title">Plans</h1><p className="page-sub">Manage subscription plans</p></div>
-        <Button onClick={openCreate}>+ New plan</Button>
+        <div className="flex items-center gap-2"><PricingPdfButton /><Button onClick={openCreate}>+ New plan</Button></div>
       </div>
 
       {loading ? (
@@ -167,6 +171,9 @@ export default function SuperAdminPlans() {
               <p className="text-2xl font-bold text-gray-900">
                 ₹{fmt.number(p.price)}
                 <span className="text-sm font-normal text-gray-400">/{p.duration_type ?? 'mo'}</span>
+              </p>
+              <p className="text-xs text-gray-500">
+                {p.price_yearly != null ? `₹${fmt.number(p.price_yearly)}/year (set)` : `₹${fmt.number(Math.round(p.price * 12 * 0.8))}/year (12 months − 20%)`}
               </p>
               <p className="text-sm text-gray-500 mt-1">{fmt.number(p.messages_limit)} messages</p>
 
@@ -243,6 +250,15 @@ export default function SuperAdminPlans() {
             placeholder="2999"
             value={form.price}
             onChange={e => set('price', e.target.value)}
+          />
+          <Input
+            label="Yearly price ₹ (optional)"
+            type="number"
+            min={0}
+            step={1}
+            placeholder="blank = 12 months − 20%"
+            value={form.price_yearly}
+            onChange={e => set('price_yearly', e.target.value)}
           />
           <Input
             label="Duration months"

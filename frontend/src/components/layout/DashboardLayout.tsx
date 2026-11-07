@@ -13,6 +13,7 @@ import PortalAssistant from '@/components/assistant/PortalAssistant'
 import { connectStaffSocket, disconnectStaffSocket } from '@/socket/staffSocket'
 import { ErrorBoundary, AccessDeniedScreen, ConnectionErrorScreen } from '@/components/error'
 import { Spinner } from '@/components/ui'
+import PlanNoticeBanner from '@/components/plan/PlanNoticeBanner'
 import { registerWebPush } from '@/lib/push'
 
 export const DashboardLayout = () => {
@@ -81,6 +82,7 @@ export const DashboardLayout = () => {
 
         {/* Page content */}
         <main className="flex-1 overflow-y-auto p-6">
+          <PlanNoticeBanner />
           <ErrorBoundary resetKey={location.pathname}>
             {sessionExpired ? (
               <div className="min-h-[60vh] flex items-center justify-center">

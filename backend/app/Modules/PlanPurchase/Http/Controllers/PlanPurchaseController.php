@@ -70,12 +70,13 @@ class PlanPurchaseController extends Controller
 
     public function addonOrder(Request $request, int $addon): JsonResponse
     {
-        return response()->json($this->svc->createAddonOrder(auth()->user()->company_id, auth()->id(), $addon));
+        $cycle = $request->validate(['billing_cycle' => ['nullable', 'in:monthly,yearly']])['billing_cycle'] ?? null;
+        return response()->json($this->svc->createAddonOrder(auth()->user()->company_id, auth()->id(), $addon, $cycle));
     }
 
     public function verifyAddonPayment(Request $request): JsonResponse
     {
-        $d  = $request->validate(['razorpay_order_id' => ['required', 'string'], 'razorpay_payment_id' => ['required', 'string'], 'razorpay_signature' => ['required', 'string'], 'addon_id' => ['required', 'integer']]);
+        $d  = $request->validate(['razorpay_order_id' => ['required', 'string'], 'razorpay_payment_id' => ['required', 'string'], 'razorpay_signature' => ['required', 'string'], 'addon_id' => ['required', 'integer'], 'billing_cycle' => ['nullable', 'in:monthly,yearly,one_time']]);
         $ca = $this->svc->verifyAddonPayment(auth()->user()->company_id, $d);
         return response()->json(['message' => 'Addon activated.', 'company_addon' => $ca]);
     }
@@ -101,6 +102,7 @@ class PlanPurchaseController extends Controller
             'messages_limit' => ['required', 'integer'],
             // Paid plans only — every plan already includes a free trial, so no ₹0 plans.
             'price' => ['required', 'numeric', 'min:1'],
+            'price_yearly' => ['nullable', 'numeric', 'min:1'],
             'duration_type' => ['required', 'in:monthly,yearly,3month,6month,12month,custom,unlimited'],
             'duration_months' => ['nullable', 'integer'],
             'alert_before_days' => ['nullable', 'integer', 'min:0', 'max:60'],
@@ -159,9 +161,15 @@ class PlanPurchaseController extends Controller
         return response()->json(['message' => 'Package deleted.']);
     }
 
+    /** GET superadmin/addons/resources — the limits a "limit" add-on can raise (key, label, whether it resets monthly). */
+    public function addonResources(): JsonResponse
+    {
+        return response()->json(['resources' => collect(\App\Support\PlanLimits::REGISTRY)->map(fn ($r, $key) => ['key' => $key, 'label' => $r[0], 'kind' => $r[3]])->values()]);
+    }
+
     public function superAdminCreateAddon(Request $request): JsonResponse
     {
-        $d = $request->validate(['name' => ['required', 'string', 'max:100'], 'slug' => ['required', 'string', 'max:110'], 'description' => ['nullable', 'string'], 'type' => ['required', 'in:feature,message_pack,storage,limit'], 'price' => ['required', 'numeric', 'min:0'], 'billing_cycle' => ['required', 'in:monthly,yearly,one_time'], 'config' => ['nullable', 'array'], 'is_active' => ['nullable', 'boolean']]);
+        $d = $request->validate(['name' => ['required', 'string', 'max:100'], 'slug' => ['required', 'string', 'max:110'], 'description' => ['nullable', 'string'], 'type' => ['required', 'in:feature,message_pack,storage,limit'], 'price' => ['required', 'numeric', 'min:0'], 'price_yearly' => ['nullable', 'numeric', 'min:0'], 'billing_cycle' => ['required', 'in:monthly,yearly,one_time'], 'config' => ['nullable', 'array'], 'is_active' => ['nullable', 'boolean']]);
         // A limit add-on raises one plan limit (e.g. staff users): it must name which one and by how much.
         if ($d['type'] === 'limit') {
             $request->validate([

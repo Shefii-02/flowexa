@@ -15,4 +15,12 @@ return [
     |
     */
     'grace_days' => (int) env('BILLING_GRACE_DAYS', 3),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Add-on expiry warning (days)
+    |--------------------------------------------------------------------------
+    | Plans use their own `alert_before_days`; add-ons warn this many days before they lapse.
+    */
+    'addon_alert_days' => (int) env('BILLING_ADDON_ALERT_DAYS', 7),
 ];

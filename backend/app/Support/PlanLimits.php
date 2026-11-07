@@ -120,6 +120,7 @@ class PlanLimits
             $base = self::planLimit($plan, $key);
             $out[$key] = ['key' => $key, 'label' => $label, 'kind' => $kind, 'used' => $used, 'limit' => $max,
                           'plan_limit' => $base, 'addon_extra' => $max === null || $base === null ? 0 : $max - $base,
+                          'over_by' => $max === null ? 0 : max(0, $used - $max),   // kept, but nothing new can be added until capacity returns
                           'remaining' => $max === null ? null : max(0, $max - $used), 'exceeded' => $max !== null && $used >= $max,
                           'percent' => $max === null || $max === 0 ? ($max === 0 ? 100 : null) : min(100, (int) round($used / $max * 100))];
         }

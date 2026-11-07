@@ -72,7 +72,7 @@ class PlanPurchaseService
             'current_plan' => $current ? ['id' => $current->id, 'name' => $current->name, 'price' => (float) $current->price] : null,
             'target_plan'  => ['id' => $target->id, 'name' => $target->name, 'price' => (float) $target->price],
             'duration_type' => $durationType,
-            'amount'       => round($this->calculatePrice($target->price, $durationType), 2),
+            'amount'       => round($this->calculatePrice($target, $durationType), 2),
             'blockers'     => $blockers,
             'can_proceed'  => count($blockers) === 0,
         ];
@@ -94,7 +94,7 @@ class PlanPurchaseService
         }
 
         // Calculate price based on duration
-        $price = $this->calculatePrice($plan->price, $durationType);
+        $price = $this->calculatePrice($plan, $durationType);
 
         $api   = new \Razorpay\Api\Api(config('services.razorpay.key'), config('services.razorpay.secret'));
         $order = $api->order->create([
@@ -230,26 +230,30 @@ class PlanPurchaseService
     }
 
     // ── Create addon order ────────────────────────────────────────────────────
-    public function createAddonOrder(int $companyId, int $userId, int $addonId): array
+    public function createAddonOrder(int $companyId, int $userId, int $addonId, ?string $cycle = null): array
     {
-        $addon = Addon::findOrFail($addonId);
-        $api   = new \Razorpay\Api\Api(config('services.razorpay.key'), config('services.razorpay.secret'));
-        $order = $api->order->create([
-            'amount'   => (int)($addon->price * 100),
+        $addon  = Addon::findOrFail($addonId);
+        abort_unless($addon->is_active, 422, 'This add-on is not available.');
+        $cycle  = $this->addonCycle($addon, $cycle);
+        $amount = $this->addonPrice($addon, $cycle);
+        $api    = new \Razorpay\Api\Api(config('services.razorpay.key'), config('services.razorpay.secret'));
+        $order  = $api->order->create([
+            'amount'   => (int) round($amount * 100),
             'currency' => 'INR',
             'receipt'  => 'ADDON_' . uniqid(),
+            'notes'    => ['company_id' => $companyId, 'addon_id' => $addonId, 'cycle' => $cycle],
         ]);
 
         PaymentOrder::create([
             'company_id'        => $companyId,
             'user_id'           => $userId,
             'razorpay_order_id' => $order->id,
-            'amount'            => $addon->price,
+            'amount'            => $amount,
             'messages_credit'   => 0,
             'status'            => 'pending',
         ]);
 
-        return ['order_id' => $order->id, 'amount' => (int)($addon->price * 100), 'razorpay_key' => config('services.razorpay.key'), 'addon' => $addon];
+        return ['order_id' => $order->id, 'amount' => (int) round($amount * 100), 'billing_cycle' => $cycle, 'razorpay_key' => config('services.razorpay.key'), 'addon' => $addon];
     }
 
     // ── Verify addon payment ──────────────────────────────────────────────────
@@ -258,11 +262,19 @@ class PlanPurchaseService
         $order = PaymentOrder::where('razorpay_order_id', $data['razorpay_order_id'])->where('company_id', $companyId)->where('status', 'pending')->firstOrFail();
         $expected = hash_hmac('sha256', $data['razorpay_order_id'] . '|' . $data['razorpay_payment_id'], config('services.razorpay.secret'));
         if (!hash_equals($expected, $data['razorpay_signature'])) { $order->update(['status' => 'failed']); throw new \Exception('Signature invalid.'); }
+        $addon = Addon::findOrFail($data['addon_id']);
+        $cycle = $this->addonCycle($addon, $data['billing_cycle'] ?? null);
+        // The amount actually paid must be this add-on's price for this cycle — otherwise a cheap order could be claimed as a
+        // dearer add-on, or a monthly payment as a yearly one.
+        if (abs((float) $order->amount - $this->addonPrice($addon, $cycle)) > 0.01) {
+            $order->update(['status' => 'failed']);
+            \Log::warning('Add-on payment amount mismatch', ['company_id' => $companyId, 'addon_id' => $addon->id, 'cycle' => $cycle, 'paid' => (float) $order->amount, 'order' => $order->razorpay_order_id]);
+            throw new \Exception('The amount paid does not match this add-on. Contact support with your payment reference.');
+        }
         $order->update(['razorpay_payment_id' => $data['razorpay_payment_id'], 'status' => 'paid']);
-        $addon   = Addon::findOrFail($data['addon_id']);
-        $startsAt= now();
-        $expires = $addon->billing_cycle === 'one_time' ? null : $startsAt->copy()->addMonth();
-        return CompanyAddon::create(['company_id' => $companyId,'addon_id' => $addon->id,'payment_order_id' => $order->id,'amount_paid' => $order->amount,'status' => 'active','starts_at' => $startsAt,'expires_at' => $expires]);
+        $startsAt = now();
+        $expires  = match ($cycle) { 'one_time' => null, 'yearly' => $startsAt->copy()->addYear(), default => $startsAt->copy()->addMonth() };
+        return CompanyAddon::create(['company_id' => $companyId,'addon_id' => $addon->id,'payment_order_id' => $order->id,'amount_paid' => $order->amount,'status' => 'active','billing_cycle' => $cycle,'starts_at' => $startsAt,'expires_at' => $expires]);
     }
 
     // ── Superadmin: assign custom plan ────────────────────────────────────────
@@ -295,16 +307,34 @@ class PlanPurchaseService
     public function superAdminAddons(): \Illuminate\Database\Eloquent\Collection { return Addon::get(); }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
-    private function calculatePrice(float $base, string $durationType): float
+    /** Plan price for a duration. A yearly price set by the superadmin wins; otherwise the old 20%-off rule applies. */
+    public function calculatePrice(Plan $plan, string $durationType): float
     {
+        $base = (float) $plan->price;
+        $yearly = $plan->price_yearly !== null ? (float) $plan->price_yearly : $base * 12 * 0.80;
         return match ($durationType) {
             'monthly'  => $base,
             '3month'   => $base * 3 * 0.95,    // 5% off
             '6month'   => $base * 6 * 0.90,    // 10% off
-            'yearly'   => $base * 12 * 0.80,   // 20% off
-            '12month'  => $base * 12 * 0.80,
+            'yearly', '12month' => $yearly,
             default    => $base,
         };
+    }
+
+    /** What an add-on costs for a cycle. One-time add-ons have a single price; yearly falls back to 12 × monthly. */
+    public function addonPrice(Addon $addon, string $cycle): float
+    {
+        if ($addon->billing_cycle === 'one_time') { return (float) $addon->price; }
+        return $cycle === 'yearly'
+            ? (float) ($addon->price_yearly ?? $addon->price * 12)
+            : (float) $addon->price;
+    }
+
+    /** The cycle a purchase actually uses: one-time add-ons ignore the request; everything else is monthly or yearly. */
+    public function addonCycle(Addon $addon, ?string $requested): string
+    {
+        if ($addon->billing_cycle === 'one_time') { return 'one_time'; }
+        return $requested === 'yearly' ? 'yearly' : 'monthly';
     }
 
     private function calculateExpiry(\Carbon\Carbon $start, string $durationType, ?int $months): ?\Carbon\Carbon

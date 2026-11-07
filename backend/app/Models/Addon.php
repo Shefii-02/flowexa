@@ -13,13 +13,14 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class Addon extends Model
 {
     protected $fillable = [
-        'name','slug','description','type','price','billing_cycle','config','is_active',
+        'name','slug','description','type','price','price_yearly','billing_cycle','config','is_active',
     ];
 
     protected $casts = [
         'config'    => 'array',
         'is_active' => 'boolean',
         'price'     => 'decimal:2',
+        'price_yearly' => 'decimal:2',
     ];
 
     public function companyAddons(): HasMany { return $this->hasMany(CompanyAddon::class); }
