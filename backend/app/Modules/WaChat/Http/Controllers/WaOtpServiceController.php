@@ -9,6 +9,8 @@ use App\Modules\WaChat\Models\WaOtpCode;
 use App\Modules\WaChat\Models\WaOtpLog;
 use App\Modules\WaChat\Models\WaOtpService;
 use App\Modules\WaChat\Services\OpenWaMessageService;
+use App\Modules\WaChat\Support\OtpDeliveryFailure;
+use App\Modules\WaChat\Support\OtpSession;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
@@ -24,38 +26,48 @@ class WaOtpServiceController extends Controller
         return (string) (optional($service->company)->wa_chat_token ?? '');
     }
 
+    /** Why the last dispatchText/dispatchFile failed — shown to the person using the dashboard test. */
+    private ?string $deliveryFailure = null;
+
     /** Send a plain-text message via the WA Chat (open-wa) gateway. Returns response time in ms or null on failure. */
     private function dispatchText(WaOtpService $service, string $phone, string $message, ?string $sessionId = null): ?int
     {
-        $sid    = $sessionId ?: ($service->session_id ?: 'default');
-        $chatId = preg_replace('/[^0-9]/', '', $phone) . '@c.us';
-        $start  = microtime(true);
+        return $this->handOff($service, $sessionId, fn (string $sid, string $chatId) => app(OpenWaMessageService::class)
+            ->sendText($sid, $this->apiKey($service), $chatId, $message), $phone);
+    }
 
-        try {
-            $res = app(OpenWaMessageService::class)->sendText($sid, $this->apiKey($service), $chatId, $message);
-            return $res->successful() ? (int) ((microtime(true) - $start) * 1000) : null;
-        } catch (\Throwable) {
+    /** Resolve the session, call the gateway, and record the reason when it can't be delivered. */
+    private function handOff(WaOtpService $service, ?string $sessionId, \Closure $send, string $phone): ?int
+    {
+        $this->deliveryFailure = null;
+        $sid = OtpSession::pick($sessionId, null, $service->session_id);
+        if (!$sid) {
+            $this->deliveryFailure = OtpDeliveryFailure::NO_SESSION;
             return null;
         }
+        $chatId = preg_replace('/[^0-9]/', '', $phone) . '@c.us';
+        $start  = microtime(true);
+        try {
+            $res = $send($sid, $chatId);
+            if ($res->successful()) {
+                return (int) ((microtime(true) - $start) * 1000);
+            }
+            $this->deliveryFailure = OtpDeliveryFailure::fromStatus($res->status(), $res->json('message'));
+        } catch (\Throwable) {
+            $this->deliveryFailure = OtpDeliveryFailure::UNREACHABLE;
+        }
+        return null;
     }
 
     /** Send a document/file via the WA Chat (open-wa) gateway. Returns ms or null on failure. */
     private function dispatchFile(WaOtpService $service, string $phone, string $fileUrl, string $filename, string $caption, ?string $sessionId = null): ?int
     {
-        $sid    = $sessionId ?: ($service->session_id ?: 'default');
-        $chatId = preg_replace('/[^0-9]/', '', $phone) . '@c.us';
-        $start  = microtime(true);
-
-        try {
-            $res = app(OpenWaMessageService::class)->sendMedia($sid, $this->apiKey($service), $chatId, 'document', array_filter([
+        return $this->handOff($service, $sessionId, fn (string $sid, string $chatId) => app(OpenWaMessageService::class)
+            ->sendMedia($sid, $this->apiKey($service), $chatId, 'document', array_filter([
                 'url'      => $fileUrl,
                 'filename' => $filename,
                 'caption'  => $caption ?: null,
-            ], fn ($v) => $v !== null));
-            return $res->successful() ? (int) ((microtime(true) - $start) * 1000) : null;
-        } catch (\Throwable) {
-            return null;
-        }
+            ], fn ($v) => $v !== null)), $phone);
     }
 
     // ── Company-level service settings ────────────────────────────────────────
@@ -402,7 +414,7 @@ class WaOtpServiceController extends Controller
                 ]);
                 return response()->json(['success' => true, 'otp' => $otp, 'phone' => $phone, 'message' => $message, 'ms' => $ms]);
             }
-            return response()->json(['success' => false, 'error' => 'Delivery failed. Check channel settings.'], 422);
+            return response()->json(['success' => false, 'error' => $this->deliveryFailure ?? 'Delivery failed. Check channel settings.', 'reason' => $this->deliveryFailure], 422);
         } catch (\Exception $e) {
             return response()->json(['success' => false, 'error' => $e->getMessage()], 500);
         }
@@ -437,7 +449,7 @@ class WaOtpServiceController extends Controller
             return response()->json(['success' => false, 'error' => 'No message content.'], 422);
         }
 
-        $sessionId = $request->session_id ?: ($config?->session_id ?: ($service?->session_id ?? 'default'));
+        $sessionId = OtpSession::pick($request->session_id, $config?->session_id, $service?->session_id);
         $phone = preg_replace('/[^0-9]/', '', $request->phone);
 
         try {
@@ -456,7 +468,7 @@ class WaOtpServiceController extends Controller
                 ]);
                 return response()->json(['success' => true, 'phone' => $phone, 'message' => $message, 'ms' => $ms]);
             }
-            return response()->json(['success' => false, 'error' => 'Delivery failed. Check channel settings.'], 422);
+            return response()->json(['success' => false, 'error' => $this->deliveryFailure ?? 'Delivery failed. Check channel settings.', 'reason' => $this->deliveryFailure], 422);
         } catch (\Exception $e) {
             return response()->json(['success' => false, 'error' => $e->getMessage()], 500);
         }
@@ -479,7 +491,7 @@ class WaOtpServiceController extends Controller
         $service = WaOtpService::where('company_id', $companyId)->first();
         $config  = $this->resolveConfig($companyId, 'invoice', $request->input('service'));
 
-        $sessionId = $request->session_id ?: ($config?->session_id ?: ($service?->session_id ?? 'default'));
+        $sessionId = OtpSession::pick($request->session_id, $config?->session_id, $service?->session_id);
         $phone    = preg_replace('/[^0-9]/', '', $request->phone);
         $fileUrl  = $request->file_url ?: $config?->file_url;
         $filename = $request->filename ?: ($config?->filename ?? 'document.pdf');
@@ -512,7 +524,7 @@ class WaOtpServiceController extends Controller
                 ]);
                 return response()->json(['success' => true, 'phone' => $phone, 'file_url' => $fileUrl, 'ms' => $ms]);
             }
-            return response()->json(['success' => false, 'error' => 'Delivery failed. Check channel settings.'], 422);
+            return response()->json(['success' => false, 'error' => $this->deliveryFailure ?? 'Delivery failed. Check channel settings.', 'reason' => $this->deliveryFailure], 422);
         } catch (\Exception $e) {
             return response()->json(['success' => false, 'error' => $e->getMessage()], 500);
         }

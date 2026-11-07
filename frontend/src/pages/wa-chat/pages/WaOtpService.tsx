@@ -500,6 +500,10 @@ const data = await res.json();
               <code>reference_id</code> (optional). <code>variables</code> (optional) — an object keyed by the template&apos;s
               placeholder names; each <code>{'{{name}}'}</code> in the message is replaced by its value. The OTP code
               (<code>{'{{code}}'}</code>/<code>{'{{otp}}'}</code>) and <code>{'{{expiry}}'}</code> are filled automatically.
+              <code> session_id</code> (optional) — send through this WhatsApp session instead of the one saved on the config. If neither
+              is set the request fails with <code>reason</code> “No WhatsApp session is selected…”: choose a session on the config under
+              <b> WA Chat → API Services</b>, or pass <code>session_id</code>. It applies to <code>/otp/send</code>, <code>/otp/resend</code>,
+              utility sends and invoice sharing.
             </div>
           </div>
 

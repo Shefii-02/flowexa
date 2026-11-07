@@ -10,6 +10,7 @@ use App\Modules\WaChat\Models\WaOtpCode;
 use App\Modules\WaChat\Models\WaOtpLog;
 use App\Modules\WaChat\Services\OpenWaMessageService;
 use App\Modules\WaChat\Support\OtpDeliveryFailure;
+use App\Modules\WaChat\Support\OtpSession;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
@@ -129,6 +130,13 @@ class WaOtpPublicController extends Controller
         return in_array($pkg, $packages);
     }
 
+    /** Optional `session_id` in the request body: send through that WhatsApp session instead of the one saved on the API service. */
+    private function requestedSession(Request $request): ?string
+    {
+        $request->validate(['session_id' => OtpSession::RULE]);
+        return $request->input('session_id') ?: null;
+    }
+
     /** Per-company X-API-Key for the open-wa gateway. */
     private function apiKey(WaOtpService $service): string
     {
@@ -244,7 +252,7 @@ class WaOtpPublicController extends Controller
 
         $message = $this->otpMessage($service, $config, $otp, $expiryM, $this->requestVariables($request));
 
-        $sent = $this->dispatchText($service, $phone, $message, $config?->session_id);
+        $sent = $this->dispatchText($service, $phone, $message, OtpSession::pick($this->requestedSession($request), $config?->session_id, null));
         if (!$sent) {
             $code->update(['status' => 'failed']);
             $this->logAction($service, $phone, 'failed', $request, (int)((microtime(true) - $start) * 1000), $config);
@@ -342,7 +350,7 @@ class WaOtpPublicController extends Controller
 
         $message = $this->otpMessage($service, $config, $otp, $expiryM, $this->requestVariables($request));
 
-        $sent = $this->dispatchText($service, $phone, $message, $config?->session_id);
+        $sent = $this->dispatchText($service, $phone, $message, OtpSession::pick($this->requestedSession($request), $config?->session_id, null));
         if (!$sent) {
             $code->update(['status' => 'failed']);
             $this->logAction($service, $phone, 'failed', $request, (int)((microtime(true) - $start) * 1000), $config);
@@ -382,7 +390,7 @@ class WaOtpPublicController extends Controller
         ));
 
         $phone = preg_replace('/[^0-9]/', '', $data['phone']);
-        $sent  = $this->dispatchText($service, $phone, $message, $config?->session_id);
+        $sent  = $this->dispatchText($service, $phone, $message, OtpSession::pick($this->requestedSession($request), $config?->session_id, null));
         $ms    = (int)((microtime(true) - $start) * 1000);
         $this->logAction($service, $phone, 'utility', $request, $ms, $config);
 
@@ -418,7 +426,7 @@ class WaOtpPublicController extends Controller
         }
 
         $phone = preg_replace('/[^0-9]/', '', $data['phone']);
-        $sent  = $this->dispatchFile($service, $phone, $fileUrl, $filename, $caption, $config?->session_id);
+        $sent  = $this->dispatchFile($service, $phone, $fileUrl, $filename, $caption, OtpSession::pick($this->requestedSession($request), $config?->session_id, null));
         $ms    = (int)((microtime(true) - $start) * 1000);
         $this->logAction($service, $phone, 'invoice_share', $request, $ms, $config);
 
