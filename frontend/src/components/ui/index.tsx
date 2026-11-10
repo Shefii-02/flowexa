@@ -1,6 +1,7 @@
 // src/components/ui/index.tsx
 import { ReactNode, forwardRef, InputHTMLAttributes, TextareaHTMLAttributes, SelectHTMLAttributes } from 'react'
 import { cn } from '@/utils'
+import { useCloseGuard, CloseConfirm } from './useCloseGuard'
 
 // ── Spinner ───────────────────────────────────────────────────────────────────
 export const Spinner = ({ size = 'sm' }: { size?: 'sm' | 'md' | 'lg' }) => {
@@ -88,11 +89,13 @@ Select.displayName = 'Select'
 // use it; `Drawer` is the same component for call sites written with that name.
 interface DrawerProps { open: boolean; onClose: () => void; title: string; children: ReactNode; size?: 'sm'|'md'|'lg'|'xl'|'default'; footer?: ReactNode }
 const DrawerImpl = ({ open, onClose, title, children, size = 'default', footer }: DrawerProps) => {
+  const guard = useCloseGuard(open, onClose)
   if (!open) return null
   const width = { sm: 'max-w-sm', md: 'max-w-md', lg: 'max-w-lg', xl: 'max-w-2xl', default: 'max-w-[85%]' }[size]
 
   return (
-    <div className="drawer-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
+    <div className="drawer-overlay" onClick={(e) => e.target === e.currentTarget && guard.requestClose()}>
+      {guard.confirming && <CloseConfirm onYes={guard.yes} onNo={guard.no} />}
       <div className={cn('drawer-panel w-full', width)}>
         <div className="drawer-header">
           <h3 className="text-sm font-semibold text-gray-900">{title}</h3>

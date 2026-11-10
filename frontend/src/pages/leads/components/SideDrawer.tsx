@@ -1,4 +1,5 @@
 import { ReactNode, useEffect } from 'react'
+import { useCloseGuard, CloseConfirm } from '@/components/ui/useCloseGuard'
 
 // A right-hand slide-over panel (same look as the chat drawer): dim backdrop, header with ×, scrolling body, optional footer.
 export default function SideDrawer({ open, title, subtitle, onClose, children, footer, width = 'max-w-md' }: {
@@ -11,9 +12,11 @@ export default function SideDrawer({ open, title, subtitle, onClose, children, f
     return () => window.removeEventListener('keydown', h)
   }, [open, onClose])
 
+  const guard = useCloseGuard(open, onClose)
   if (!open) return null
   return (
-    <div className="fixed inset-0 bg-black/30 z-[70] flex justify-end" onClick={onClose} role="dialog" aria-label={title}>
+    <div className="fixed inset-0 bg-black/30 z-[70] flex justify-end" onClick={guard.requestClose} role="dialog" aria-label={title}>
+      {guard.confirming && <CloseConfirm onYes={guard.yes} onNo={guard.no} />}
       <div className={`bg-white w-full ${width} h-full flex flex-col shadow-2xl`} onClick={e => e.stopPropagation()}>
         <div className="px-5 py-4 border-b border-gray-100 flex items-start gap-3">
           <div className="flex-1 min-w-0">
