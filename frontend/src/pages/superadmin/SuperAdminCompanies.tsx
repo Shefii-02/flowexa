@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import { superadminApi } from '@/api'
+import { api } from '@/api/client'
 import {
   Button,
   Modal,
@@ -47,12 +48,7 @@ type Company = {
   wa_connected?: boolean
 }
 
-const BUSINESS_TYPES = [
-  { value: 'generic',       label: 'Other / general business' },
-  { value: 'real_estate',   label: 'Real Estate' },
-  { value: 'health_clinic', label: 'Health Clinic' },
-  { value: 'education',      label: 'Education & Coaching' },
-]
+type BusinessTypeOption = { value: string; label: string }
 
 const emptyForm = {
   company_name: '',
@@ -98,6 +94,7 @@ export default function SuperAdminCompanies() {
   const [plans, setPlans] = useState<any[]>([])
 
   const [form, setForm] = useState(emptyForm)
+  const [businessTypes, setBusinessTypes] = useState<BusinessTypeOption[]>([])
   const [topUpAmount, setTopUpAmount] = useState('1000')
 
   const set = (key: keyof typeof emptyForm, value: string) => {
@@ -145,6 +142,25 @@ export default function SuperAdminCompanies() {
     load()
   }, [load])
 
+  // Business types come from the industry_templates table (active only)
+  useEffect(() => {
+    api
+      .get('/superadmin/industry-templates')
+      .then(({ data }) => {
+        const rows: any[] = Array.isArray(data) ? data : data?.data ?? []
+        const opts = rows
+          .filter((t) => t.is_active)
+          .map((t) => ({ value: t.key, label: t.name }))
+        setBusinessTypes(opts)
+        setForm((f) =>
+          opts.length && !opts.some((o) => o.value === f.business_type)
+            ? { ...f, business_type: opts[0].value }
+            : f
+        )
+      })
+      .catch(() => setBusinessTypes([]))
+  }, [])
+
   // Load plans
   useEffect(() => {
     superadminApi
@@ -162,7 +178,7 @@ export default function SuperAdminCompanies() {
   // ─────────────────────────────────────────────────────────────
 
   const resetForm = () => {
-    setForm({ ...emptyForm })
+    setForm({ ...emptyForm, business_type: businessTypes[0]?.value ?? '' })
     setEditingCompany(null)
   }
 
@@ -944,7 +960,7 @@ export default function SuperAdminCompanies() {
                 value={form.business_type}
                 onChange={(event) => set('business_type', event.target.value)}
               >
-                {BUSINESS_TYPES.map((b) => (
+                {businessTypes.map((b) => (
                   <option key={b.value} value={b.value}>{b.label}</option>
                 ))}
               </select>
