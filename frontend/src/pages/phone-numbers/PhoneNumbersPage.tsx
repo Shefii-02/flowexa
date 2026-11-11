@@ -83,7 +83,7 @@ export default function PhoneNumbersPage() {
         code = res?.authResponse?.code
         if (!code) { setConnecting(false); window.removeEventListener('message', onMessage); return toast.error('WhatsApp signup was cancelled.') }
         void finish()
-      }, { config_id: META_WA_CONFIG_ID, response_type: 'code', override_default_response_type: true, extras: { setup: {}, featureType: '', sessionInfoVersion: '3' } })
+      }, { config_id: META_WA_CONFIG_ID, response_type: 'code', override_default_response_type: true, extras: { setup: {}, sessionInfoVersion: '3', version: 'v4' } })
     } catch (e) { toast.error(getError(e)); setConnecting(false); window.removeEventListener('message', onMessage) }
   }
 

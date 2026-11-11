@@ -49,7 +49,7 @@ class FlowBuilderRequest extends FormRequest
             'description' => [
                 'nullable',
                 'string',
-                'max:255',
+                'max:2000',
             ],
 
             'trigger_type' => [

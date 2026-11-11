@@ -76,6 +76,24 @@ class InstagramConversationService
         return $convo;
     }
 
+    /** Record a DM the business sent from the Instagram app itself (webhook echo), so the inbox shows it. */
+    public function recordEcho(
+        InstagramAccount $account,
+        string $participantId,
+        string $text,
+        ?string $igMessageId = null,
+        array $attachments = [],
+    ): ?InstagramMessage {
+        $convo = $this->thread($account, $participantId);
+
+        // Our own API sends are stored with the same mid; don't duplicate them.
+        if ($igMessageId && $convo->messages()->where('ig_message_id', $igMessageId)->exists()) {
+            return null;
+        }
+
+        return $this->storeOutbound($convo, $text, 'app', $igMessageId, 'sent', null, $attachments ?: null);
+    }
+
     /**
      * Send a DM in a thread and persist it. Respects the 24h messaging window unless $humanAgent.
      * Returns the created message, or null when the window is closed / the send failed.

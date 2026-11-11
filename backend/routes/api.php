@@ -106,6 +106,10 @@ use Illuminate\Support\Facades\Log;
 |--------------------------------------------------------------------------
 */
 
+// {staff} is always a numeric id, so /staff/availability etc. fall through to their own routes
+// instead of being swallowed by /staff/{staff} (which has an int-typed controller argument).
+Route::pattern('staff', '[0-9]+');
+
 Route::prefix('v1')->group(function () {
 
     // ── Public ──────────────────────────────────────────────────────────────

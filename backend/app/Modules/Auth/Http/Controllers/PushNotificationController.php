@@ -18,9 +18,12 @@ class PushNotificationController extends Controller
         ]);
 
         $user  = auth()->user();
+        // fcm_token is globally unique, so key on it alone: when another user signs in on the same
+        // browser/device the token moves to them instead of violating the unique index.
         PushToken::updateOrCreate(
-            ['user_id' => $user->id, 'fcm_token' => $d['fcm_token']],
+            ['fcm_token' => $d['fcm_token']],
             [
+                'user_id'      => $user->id,
                 'company_id'   => $user->company_id,
                 'device_type'  => $d['device_type'] ?? 'android',
                 'device_id'    => $d['device_id'] ?? null,
