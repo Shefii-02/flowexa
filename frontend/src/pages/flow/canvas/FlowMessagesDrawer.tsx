@@ -7,6 +7,7 @@ import { getError } from '@/utils'
 import toast from 'react-hot-toast'
 
 type S = {
+  nosession_action: 'message' | 'welcome' | 'both'; unknown_message: string
   resolved_enabled: boolean; resolved_question: string; resolved_yes_label: string; resolved_no_label: string
   resolved_yes_reply: string; resolved_no_reply: string; issue_received_reply: string; closed_reply: string
   followup_enabled: boolean; followup_after_minutes: number; followup_message: string
@@ -75,7 +76,23 @@ export default function FlowMessagesDrawer({ builderId, open, onClose }: { build
 
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto bg-gray-50 p-4">
           {loading || !s ? <p className="text-sm text-gray-400">Loading…</p> : (<>
-            <Card title="1 · “Was your issue solved?” check" sub="Sent after the customer reaches a terminal node (an answer that ends the path, or a List/Buttons node marked 🔚 Terminal). Customers tap Yes or No.">
+            <Card title="1 · First message / text we don't recognise" sub="A customer with no active chat sends something that is not a greeting (hi, menu…) or one of this flow's keywords, for example “ok” or a random word. Choose what they get. (Mid-chat, an unrecognised message always gets the reply below.)">
+              <div className="space-y-2">
+                {([
+                  ['message', 'Send my reply', 'Only the message below.'],
+                  ['welcome', 'Send the first chatbot message', "The flow's welcome menu, as if they had typed Hi."],
+                  ['both', 'Send my reply, then the first chatbot message', 'The message below, followed by the welcome menu.'],
+                ] as const).map(([v, label, hint]) => (
+                  <label key={v} className={`flex cursor-pointer items-start gap-2 rounded-lg border p-2.5 text-sm ${s.nosession_action === v ? 'border-brand-400 bg-brand-50' : 'border-gray-200'}`}>
+                    <input type="radio" name="nosession_action" className="mt-1" checked={s.nosession_action === v} onChange={() => set('nosession_action', v)} />
+                    <span><span className="font-medium text-gray-900">{label}</span><span className="block text-xs text-gray-500">{hint}</span></span>
+                  </label>
+                ))}
+              </div>
+              {text('unknown_message', 'My reply', 4)}
+            </Card>
+
+            <Card title="2 · “Was your issue solved?” check" sub="Sent after the customer reaches a terminal node (an answer that ends the path, or a List/Buttons node marked 🔚 Terminal). Customers tap Yes or No.">
               <label className="flex cursor-pointer items-center gap-2 text-sm font-medium text-gray-800">
                 <input type="checkbox" checked={s.resolved_enabled} onChange={e => set('resolved_enabled', e.target.checked)} /> Ask this question
               </label>
@@ -101,7 +118,7 @@ export default function FlowMessagesDrawer({ builderId, open, onClose }: { build
               {!s.resolved_enabled && <p className="text-xs text-amber-700">Off: the conversation just ends at the answer; no question is sent and the session stays open until it times out.</p>}
             </Card>
 
-            <Card title="2 · Follow-up when the customer goes quiet" sub="One gentle nudge if the customer stops replying part-way through. It is sent once; replying re-arms it. Checked every 5 minutes.">
+            <Card title="3 · Follow-up when the customer goes quiet" sub="One gentle nudge if the customer stops replying part-way through. It is sent once; replying re-arms it. Checked every 5 minutes.">
               <label className="flex cursor-pointer items-center gap-2 text-sm font-medium text-gray-800">
                 <input type="checkbox" checked={s.followup_enabled} onChange={e => set('followup_enabled', e.target.checked)} /> Send a follow-up
               </label>
@@ -111,7 +128,7 @@ export default function FlowMessagesDrawer({ builderId, open, onClose }: { build
               </>)}
             </Card>
 
-            <Card title="3 · Session timeout" sub="After this long without a message the chat session ends and the customer is told. Typing “Hi” then starts again at the welcome menu.">
+            <Card title="4 · Session timeout" sub="After this long without a message the chat session ends and the customer is told. Typing “Hi” then starts again at the welcome menu.">
               {num('timeout_minutes', 'End the session after no reply for', 5)}
               {text('timeout_message', 'Timeout message', 4)}
               {s.followup_enabled && s.followup_after_minutes >= s.timeout_minutes && <p className="text-xs font-medium text-red-600">The follow-up time must be shorter than the timeout.</p>}

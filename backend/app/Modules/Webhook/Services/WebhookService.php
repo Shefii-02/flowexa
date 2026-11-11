@@ -324,12 +324,20 @@ class WebhookService
             if ($matched) return;
         }
 
-        // 13. Default fallback response
-        $this->sendText(
-            $company,
-            $dto->phone,
-            "Thank you for your message! 😊 Our team will get back to you shortly.\n\nReply *menu* to see our options.\n\n" . self::SHORTCUT_HINT
-        );
+        // 13. Not a greeting, keyword or option. What happens is the flow's choice (Flow messages → first message):
+        //     a custom reply, the flow's first chatbot message (welcome menu), or both. Mid-chat it is always the reply.
+        $m = \App\Modules\Flow\Support\FlowMessages::forBuilder($this->sessionBuilderId($session) ?? $builder?->id);
+        $action = $session ? 'message' : $m['nosession_action'];
+
+        if ($action === 'welcome') {
+            $this->sendWelcomeMenu($company, $dto->phone, $builder?->id);
+            return;
+        }
+        $this->sendText($company, $dto->phone, $m['unknown_message']);
+        if ($action === 'both') {
+            usleep(500000);
+            $this->sendWelcomeMenu($company, $dto->phone, $builder?->id);
+        }
     }
 
     /** Sent when a flow session ran out after an hour of silence (see wa-cloud:expire-flow-sessions). */

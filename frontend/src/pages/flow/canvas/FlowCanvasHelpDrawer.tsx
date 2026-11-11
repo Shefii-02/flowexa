@@ -117,6 +117,7 @@ function Options() {
     <Row name="🔚 Terminal node">Tick this on a List/Buttons node that is <b>meant</b> to end the conversation. Without it, a node with no options is a “dead end” and the bot sends the welcome menu again so the customer is not stuck. With it, the bot asks “Was your issue solved?” instead (you can edit that message under ⚙ Flow messages). Text, Survey and AI nodes never need it.</Row>
 
     <H>Flow messages &amp; timing (⚙ button, top of the page)</H>
+    <Row name="First message / unrecognised text">When a customer with no active chat sends something that is not a greeting or keyword, choose what they get: your own reply, the flow's first chatbot message (welcome menu), or your reply followed by the menu. Greetings such as “hi” or “menu” always open the welcome menu.</Row>
     <Row name="“Was your issue solved?” check">After a customer reaches a terminal node, the bot asks this with Yes / No buttons. Edit the question, the button labels and each reply, or turn the question off. Yes closes the chat. No asks them to type the issue, thanks them, then closes it.</Row>
     <Row name="Follow-up when quiet">Optional. If the customer stops replying part-way through, the bot sends one nudge after the number of minutes you choose (e.g. “Are you still there?”). Replying re-arms it.</Row>
     <Row name="Session timeout">How long the chat may stay silent (default 60 minutes) before it ends, and the message the customer gets. They type “Hi” to start again.</Row>

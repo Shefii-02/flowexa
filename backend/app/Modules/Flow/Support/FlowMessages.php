@@ -12,7 +12,13 @@ use App\Models\FlowBuilder;
  */
 class FlowMessages
 {
+    /** What to do when a customer with no active chat sends something that is not a greeting or keyword. */
+    public const NOSESSION_ACTIONS = ['message', 'welcome', 'both'];
+
     public const DEFAULTS = [
+        // First message / text the flow does not recognise
+        'nosession_action'      => 'message', // message = custom reply · welcome = the flow's first chatbot message · both = reply, then the menu
+        'unknown_message'       => "Thank you for your message! 😊 Our team will get back to you shortly.\n\nReply *menu* to see our options.\n\n• Type *M* or *Menu* for the Main Menu\n• Type *E* to Exit Chat",
         // Terminal node → "was your issue solved?" check
         'resolved_enabled'      => true,
         'resolved_question'     => 'Was your issue solved?',
@@ -49,6 +55,7 @@ class FlowMessages
             if (!array_key_exists($k, $stored) || $stored[$k] === null) continue;
             // A blank text falls back to the default so a flow can never send an empty message.
             if (is_string($default) && trim((string) $stored[$k]) === '') continue;
+            if ($k === 'nosession_action' && !in_array($stored[$k], self::NOSESSION_ACTIONS, true)) continue;
             $out[$k] = is_bool($default) ? (bool) $stored[$k] : (is_int($default) ? (int) $stored[$k] : (string) $stored[$k]);
         }
         return $out;

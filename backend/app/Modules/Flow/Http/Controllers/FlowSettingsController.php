@@ -29,6 +29,8 @@ class FlowSettingsController extends Controller
         $b = $this->builder($id);
 
         $d = $request->validate([
+            'nosession_action'       => ['nullable', 'in:message,welcome,both'],
+            'unknown_message'        => ['nullable', 'string', 'max:1024'],
             'resolved_enabled'       => ['sometimes', 'boolean'],
             'resolved_question'      => ['nullable', 'string', 'max:1024'],
             'resolved_yes_label'     => ['nullable', 'string', 'max:20'],   // WhatsApp reply-button title limit
