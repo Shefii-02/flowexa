@@ -1101,6 +1101,8 @@ Route::prefix('v1')->group(function () {
         Route::post('flow-builders/seed-samples', [\App\Http\Controllers\SampleDataController::class, 'flowBuilders'])->middleware('permission:flow_builder.manage');
         Route::post('flow-builders/import',      [FlowImportExportController::class, 'import'])->middleware('permission:flow_builder.manage');
         Route::get('flow-builders/{id}/export', [FlowImportExportController::class, 'export'])->middleware('permission:flow_builder.view');
+        Route::get('flow-builders/{id}/settings',   [\App\Modules\Flow\Http\Controllers\FlowSettingsController::class, 'show'])->middleware('permission:flow_builder.view');
+        Route::put('flow-builders/{id}/settings',   [\App\Modules\Flow\Http\Controllers\FlowSettingsController::class, 'update'])->middleware('permission:flow_builder.manage');
         Route::get('flow-builders/{id}',            [FlowBuilderController::class, 'show'])->middleware('permission:flow_builder.view');
         Route::put('flow-builders/{id}',            [FlowBuilderController::class, 'update'])->middleware('permission:flow_builder.manage');
         Route::delete('flow-builders/{id}',            [FlowBuilderController::class, 'destroy'])->middleware('permission:flow_builder.manage');

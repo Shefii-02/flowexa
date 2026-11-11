@@ -110,11 +110,17 @@ function Options() {
     <Row name="Upload or URL">Upload a file (images 5 MB, video/audio 16 MB, documents 100 MB) or paste a public link.</Row>
 
     <H>Routing</H>
-    <Row name="Jump to">When the customer reaches this node the bot continues at another node. <b>WELCOME</b> restarts the main menu. Use it for “Back”, “Main menu” and “Start again”.</Row>
+    <Row name="Jump to">When the customer reaches this node the bot continues at another node. Only nodes of <b>this flow</b> are listed. <b>WELCOME</b> restarts the main menu. Use it for “Back”, “Main menu” and “Start again”.</Row>
     <Row name="Lead category">Tags the customer as a lead in this category when they reach the node (created automatically if new). Great for “Pricing” or “Demo request”.</Row>
     <Row name="Sort order">Position among its siblings. Lower number = shown first.</Row>
     <Row name="Active">Off = the bot skips this node. Use it to hide an option without deleting it.</Row>
-    <Row name="🔚 Terminal node">Tick this on a List/Buttons node that is <b>meant</b> to end the conversation. Without it, a node with no options is a “dead end” and the bot sends the welcome menu again so the customer is not stuck. With it, the bot asks “Was your issue resolved?” instead. Text, Survey and AI nodes never need it.</Row>
+    <Row name="🔚 Terminal node">Tick this on a List/Buttons node that is <b>meant</b> to end the conversation. Without it, a node with no options is a “dead end” and the bot sends the welcome menu again so the customer is not stuck. With it, the bot asks “Was your issue solved?” instead (you can edit that message under ⚙ Flow messages). Text, Survey and AI nodes never need it.</Row>
+
+    <H>Flow messages &amp; timing (⚙ button, top of the page)</H>
+    <Row name="“Was your issue solved?” check">After a customer reaches a terminal node, the bot asks this with Yes / No buttons. Edit the question, the button labels and each reply, or turn the question off. Yes closes the chat. No asks them to type the issue, thanks them, then closes it.</Row>
+    <Row name="Follow-up when quiet">Optional. If the customer stops replying part-way through, the bot sends one nudge after the number of minutes you choose (e.g. “Are you still there?”). Replying re-arms it.</Row>
+    <Row name="Session timeout">How long the chat may stay silent (default 60 minutes) before it ends, and the message the customer gets. They type “Hi” to start again.</Row>
+    <Row name="Per flow">These settings belong to the flow you are editing. Blank fields use the default text. Use “Reset to default” on any field to go back.</Row>
 
     <H>Buttons at the bottom</H>
     <Row name="Save">Saves this node and its options. Nothing is saved until you click it.</Row>

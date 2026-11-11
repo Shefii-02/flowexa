@@ -21,7 +21,8 @@ class FlowBuilder extends Model
         'active_from',
         'active_until',
         'total_sessions',
-        'total_leads'
+        'total_leads',
+        'settings',
     ];
 
     protected $casts = [
@@ -31,6 +32,7 @@ class FlowBuilder extends Model
         'active_until' => 'datetime',
          'total_sessions'   => 'integer',
         'total_leads'      => 'integer',
+        'settings'         => 'array',
     ];
 
     public function company(): BelongsTo

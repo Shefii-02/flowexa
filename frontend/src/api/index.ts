@@ -212,6 +212,12 @@ export const flowBuilderApi = {
 
 
 
+// Per-flow bot messages & timings (resolved check, no-response follow-up, session timeout)
+export const flowSettingsApi = {
+  get: (builderId: number) => api.get(`/flow-builders/${builderId}/settings`),
+  update: (builderId: number, d: Record<string, unknown>) => api.put(`/flow-builders/${builderId}/settings`, d),
+}
+
 export const flowNodeApi = {
   list: (builderId: number) => api.get(`/flow-builders/${builderId}/nodes`),
   create: (builderId: number, d: Record<string, unknown>) => api.post(`/flow-builders/${builderId}/nodes`, d),

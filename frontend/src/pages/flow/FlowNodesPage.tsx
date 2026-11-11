@@ -26,6 +26,7 @@ import { getError } from '@/utils'
 import toast from 'react-hot-toast'
 import { FlowPreviewPanel } from './components/FlowPreviewPanel'
 import FlowCanvasHelpDrawer from './canvas/FlowCanvasHelpDrawer'
+import FlowMessagesDrawer from './canvas/FlowMessagesDrawer'
 import { HeaderEditor, OptionsEditor, AiAgentPicker, OptionDraft, optionsFromNode, validateOptions, isChildKind, isActionKind, aiKey } from './components/FlowOptionsEditor'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -299,6 +300,7 @@ export default function FlowNodesPage() {
   const [bulkAction, setBulkAction] = useState<'delete' | 'activate' | 'deactivate' | null>(null); const [bulkLoading, setBulkLoading] = useState(false)
   const [delN, setDelN] = useState<FlowNode | null>(null)
   const [showHelp, setShowHelp] = useState(false)
+  const [showMsgs, setShowMsgs] = useState(false)
   const [showTestPreview, setShowTestPreview] = useState(false); const [previewStartId, setPreviewStartId] = useState<number | null>(null); const [previewNonce, setPreviewNonce] = useState(0)
   const [moving, setMoving] = useState(false) // in-flight guard for drag-and-drop moves
   const [togglingIds, setTogglingIds] = useState<Set<number>>(new Set()) // per-node in-flight guard for activate/deactivate
@@ -692,6 +694,7 @@ export default function FlowNodesPage() {
             {builder?.is_active && <span className="text-xs bg-green-100 text-green-700 border border-green-300 px-2 py-0.5 rounded-full font-semibold">🟢 Active</span>}
             <Link to={`/wa-cloud/flow/builder/${builderId}/canvas`} className="text-xs px-2.5 py-1 rounded-full border border-brand-200 text-brand-700 bg-brand-50 hover:bg-brand-100 font-medium">🎨 Drag &amp; drop canvas</Link>
             <button type="button" onClick={() => setShowHelp(true)} className="text-xs px-2.5 py-1 rounded-full border border-gray-200 text-gray-600 bg-white hover:bg-gray-50 font-medium">❓ Help</button>
+            <button type="button" onClick={() => setShowMsgs(true)} className="text-xs px-2.5 py-1 rounded-full border border-gray-200 text-gray-600 bg-white hover:bg-gray-50 font-medium">⚙ Flow messages</button>
           </div>
           <p className="page-sub">{nodes.length} nodes{selCount > 0 && <span className="ml-2 text-brand-600 font-medium">{selCount} selected</span>}</p>
         </div>
@@ -751,6 +754,7 @@ export default function FlowNodesPage() {
     </>)}
 
     <FlowCanvasHelpDrawer open={showHelp} onClose={() => setShowHelp(false)} initialTab="classic" />
+    <FlowMessagesDrawer builderId={builderId} open={showMsgs} onClose={() => setShowMsgs(false)} />
 
     {/* CREATE/EDIT MODAL */}
     <Modal open={showForm} onClose={() => setShowForm(false)} title={editN ? `Edit — ${editN.title}` : form.parent_id ? 'New child node' : 'New root node'} size="default"

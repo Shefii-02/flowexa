@@ -278,7 +278,11 @@ class WebhookService
             ->where('phone', $dto->phone)
             ->where('expires_at', '>', now())
             ->first();
-        $session?->update(['expires_at' => now()->addMinutes(self::SESSION_IDLE_MINUTES)]);
+        // The customer is active again: extend the session by this flow's timeout and re-arm its follow-up.
+        $session?->update([
+            'expires_at' => now()->addMinutes($this->idleMinutes($this->sessionBuilderId($session) ?? $builder?->id)),
+            'context'    => collect($session->context ?? [])->except('nudged')->all(),
+        ]);
 
         // 8b. "E" / "Exit" → end the chat: drop the flow session and say goodbye. (A free-text "M" or
         // "Menu" is handled by the greeting step below and always reopens the Main Menu.)
@@ -329,9 +333,27 @@ class WebhookService
     }
 
     /** Sent when a flow session ran out after an hour of silence (see wa-cloud:expire-flow-sessions). */
-    public function sendSessionTimeout(Company $company, string $phone): void
+    public function sendSessionTimeout(Company $company, string $phone, ?string $message = null): void
     {
-        $this->sendText($company, $phone, self::SESSION_TIMEOUT_MESSAGE);
+        $this->sendText($company, $phone, $message ?: self::SESSION_TIMEOUT_MESSAGE);
+    }
+
+    /** "Are you still there?" nudge for a customer who went quiet before the session timed out. */
+    public function sendFollowup(Company $company, string $phone, string $message): void
+    {
+        $this->sendText($company, $phone, $message);
+    }
+
+    /** The flow a session belongs to, via the node it is currently on. */
+    public function sessionBuilderId(?FlowSession $session): ?int
+    {
+        return $session?->current_node_id ? FlowNode::whereKey($session->current_node_id)->value('flow_builder_id') : null;
+    }
+
+    /** How long a session of this flow may stay silent before it times out. */
+    private function idleMinutes(?int $builderId): int
+    {
+        return (int) \App\Modules\Flow\Support\FlowMessages::forBuilder($builderId)['timeout_minutes'];
     }
 
     // ─── Handle status update (sent/delivered/read/failed) ────────────────────
@@ -1000,7 +1022,7 @@ class WebhookService
                         'contact_id'      => $contact->id,
                         'current_node_id' => $target->id,
                         'flow_builder_id' => $target->flow_builder_id,
-                        'expires_at'      => now()->addMinutes(self::SESSION_IDLE_MINUTES),
+                        'expires_at'      => now()->addMinutes($this->idleMinutes($target->flow_builder_id)),
                     ]
                 );
 
@@ -1037,7 +1059,7 @@ class WebhookService
                     'last_title'    => $dto->replyTitle,
                     'history'       => [$dto->replyId],
                 ],
-                'expires_at' => now()->addMinutes(self::SESSION_IDLE_MINUTES),
+                'expires_at' => now()->addMinutes($this->idleMinutes($node->flow_builder_id)),
             ]
         );
 
@@ -1392,12 +1414,16 @@ class WebhookService
     private function askIfResolved(Company $company, string $phone): void
     {
         $session = FlowSession::where('company_id', $company->id)->where('phone', $phone)->first();
+        $m = \App\Modules\Flow\Support\FlowMessages::forBuilder($this->sessionBuilderId($session));
+        if (!$m['resolved_enabled']) {
+            return; // this flow does not ask — the conversation simply ends at the answer
+        }
         $session?->update(['context' => array_merge($session->context ?? [], ['awaiting' => 'resolved'])]);
 
         usleep(500000);
-        $this->sendButtonFromArray($company, $phone, 'Was your issue solved?', [
-            ['reply_id' => self::RESOLVED_YES, 'title' => '✅ Yes'],
-            ['reply_id' => self::RESOLVED_NO,  'title' => '❌ No'],
+        $this->sendButtonFromArray($company, $phone, $m['resolved_question'], [
+            ['reply_id' => self::RESOLVED_YES, 'title' => mb_substr($m['resolved_yes_label'], 0, 20)],
+            ['reply_id' => self::RESOLVED_NO,  'title' => mb_substr($m['resolved_no_label'], 0, 20)],
         ]);
     }
 
@@ -1409,6 +1435,7 @@ class WebhookService
             return false;
         }
 
+        $m = \App\Modules\Flow\Support\FlowMessages::forBuilder($this->sessionBuilderId($session));
         $text = strtolower(trim($dto->text ?? ''));
         $reply = $dto->type === 'interactive' ? $dto->replyId : null;
         $isNav = in_array($text, self::EXIT_KEYWORDS, true) || $this->isGreeting($dto->text);
@@ -1419,12 +1446,12 @@ class WebhookService
 
             if ($yes) {
                 $session->delete();
-                $this->sendText($company, $dto->phone, "Glad we could help! 😊\n\nThis conversation is now closed. Type *M* anytime to start again.");
+                $this->sendText($company, $dto->phone, $m['resolved_yes_reply']);
                 return true;
             }
             if ($no) {
                 $session->update(['context' => array_merge($session->context ?? [], ['awaiting' => 'issue'])]);
-                $this->sendText($company, $dto->phone, "Sorry about that. Please type your issue in a message and our team will look into it.");
+                $this->sendText($company, $dto->phone, $m['resolved_no_reply']);
                 return true;
             }
             // Anything else (menu, a node button, …) abandons the check and flows on as normal.
@@ -1435,9 +1462,9 @@ class WebhookService
         if ($awaiting === 'issue' && $dto->type === 'text' && $text !== '' && !$isNav) {
             $session->delete();
             Log::info("Unresolved issue reported: company={$company->id} phone={$dto->phone}");
-            $this->sendText($company, $dto->phone, "Thank you. Our staff will contact you shortly. 🙏");
+            $this->sendText($company, $dto->phone, $m['issue_received_reply']);
             usleep(400000);
-            $this->sendText($company, $dto->phone, "This conversation is now closed. Type *M* anytime to start again.");
+            $this->sendText($company, $dto->phone, $m['closed_reply']);
             return true;
         }
 

@@ -15,6 +15,7 @@ import { flowBuilderApi, flowNodeApi } from '@/api'
 import { Button, ConfirmModal } from '@/components/ui'
 import FlowCanvasNodeEditor from './canvas/FlowCanvasNodeEditor'
 import FlowCanvasHelpDrawer from './canvas/FlowCanvasHelpDrawer'
+import FlowMessagesDrawer from './canvas/FlowMessagesDrawer'
 import { getError } from '@/utils'
 import toast from 'react-hot-toast'
 
@@ -105,6 +106,7 @@ function Canvas() {
   const wrap = useRef<HTMLDivElement>(null)
   // The help drawer opens by itself the first time, then only when asked.
   const [showHelp, setShowHelp] = useState(() => { try { return !localStorage.getItem('wa-canvas-help-seen') } catch { return false } })
+  const [showMsgs, setShowMsgs] = useState(false)
   const closeHelp = () => { setShowHelp(false); try { localStorage.setItem('wa-canvas-help-seen', '1') } catch { /* storage unavailable */ } }
 
   const load = useCallback(async () => {
@@ -234,6 +236,7 @@ function Canvas() {
         <Link to="/wa-cloud/flow-builders" className="text-sm text-gray-400 hover:text-gray-600">← Flows</Link>
         <h1 className="page-title !mb-0">{builderName || 'Flow'} <span className="text-sm font-normal text-gray-400">· canvas</span></h1>
         <div className="ml-auto flex items-center gap-2">
+          <Button variant="secondary" onClick={() => setShowMsgs(true)}>⚙ Flow messages</Button>
           <Button variant="secondary" onClick={() => setShowHelp(true)}>❓ Help</Button>
           <Button variant="secondary" onClick={tidy}>Auto layout</Button>
           <Link to={`/wa-cloud/flow/builder/${builderId}`} className="rounded-xl border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Classic editor</Link>
@@ -295,6 +298,7 @@ function Canvas() {
       </div>
 
       <FlowCanvasHelpDrawer open={showHelp} onClose={closeHelp} />
+      <FlowMessagesDrawer builderId={builderId} open={showMsgs} onClose={() => setShowMsgs(false)} />
 
       <ConfirmModal open={!!delNode} title="Delete node?"
         message={`Delete "${delNode?.title}" and every option under it? This can't be undone.`}
