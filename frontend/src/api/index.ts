@@ -223,6 +223,10 @@ export const flowNodeApi = {
   move: (builderId: number, nodeId: number, payload: { parent_id: number | null; before_id?: number; after_id?: number }) =>
     api.post(`/flow-builders/${builderId}/nodes/${nodeId}/move`, payload),
 
+  // Drag-and-drop canvas: remember where nodes sit
+  savePositions: (builderId: number, positions: { id: number; x: number; y: number }[]) =>
+    api.post(`/flow-builders/${builderId}/nodes/positions`, { positions }),
+
   reorder: (builderId: number, order: { id: number; sort_order: number }[]) =>
     api.post(`/flow-builders/${builderId}/nodes/reorder`, { order }),
 

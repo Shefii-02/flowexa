@@ -171,6 +171,30 @@ class FlowNodeController extends Controller
         MediaAsset::whereIn('id', $assets->pluck('id'))->delete();
     }
 
+    // POST /flow-builders/{bid}/nodes/positions — remember where nodes sit on the drag-and-drop canvas
+    public function savePositions(Request $request, int $bid): JsonResponse
+    {
+        $this->builder($bid);
+
+        $d = $request->validate([
+            'positions'     => ['required', 'array', 'max:500'],
+            'positions.*.id' => ['required', 'integer'],
+            'positions.*.x'  => ['required', 'numeric'],
+            'positions.*.y'  => ['required', 'numeric'],
+        ]);
+
+        DB::transaction(function () use ($d, $bid) {
+            foreach ($d['positions'] as $p) {
+                FlowNode::where('id', $p['id'])
+                    ->where('flow_builder_id', $bid)
+                    ->where('company_id', auth()->user()->company_id)
+                    ->update(['canvas_x' => $p['x'], 'canvas_y' => $p['y']]);
+            }
+        });
+
+        return response()->json(['message' => 'Saved.']);
+    }
+
     // POST /flow-builders/{bid}/nodes — create node
     /**
      * Header / button rules that depend on the node's type, and the room left in a parent for one more option.

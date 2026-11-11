@@ -57,6 +57,8 @@ class FlowNode extends Model
         'footer_text',
         'list_button_label',
         'action_buttons',
+        'canvas_x',
+        'canvas_y',
     ];
 
     // protected $fillable = [
@@ -83,6 +85,8 @@ class FlowNode extends Model
         'action_buttons' => 'array',
         'show_shortcuts' => 'boolean',
         'ai_kb_ids'      => 'array',
+        'canvas_x'       => 'float',
+        'canvas_y'       => 'float',
     ];
 
 

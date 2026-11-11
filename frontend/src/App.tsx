@@ -135,6 +135,7 @@ import {
 import LabelsPage from './pages/contacts/LabelsPage'
 import FlowBuildersPage from './pages/flow/FlowBuildersPage'
 import FlowNodesPage from '@/pages/flow/FlowNodesPage'
+import FlowCanvasPage from '@/pages/flow/FlowCanvasPage'
 import InboxPage from './pages/inbox/InboxPage'
 import SurveyFormsPage from './pages/survey/SurveyFormsPage'
 import TemplateDetailPage from './pages/template/TemplateDetailPage'
@@ -319,6 +320,7 @@ export default function App() {
               <Route path="/wa-cloud/flow-builders" element={<FlowBuildersPage />} />
               <Route path="/flow-builders" element={<Navigate to="/wa-cloud/flow-builders" replace />} />
               <Route path="/wa-cloud/flow/builder/:builderId" element={<FlowNodesPage />} />
+              <Route path="/wa-cloud/flow/builder/:builderId/canvas" element={<FlowCanvasPage />} />
               {/* old bookmarks: /flow?builder=7 and /wa-cloud/flow?builder=7 -> /wa-cloud/flow/builder/7 */}
               <Route path="/wa-cloud/flow" element={<LegacyFlowRedirect />} />
               <Route path="/flow" element={<LegacyFlowRedirect />} />

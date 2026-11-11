@@ -1117,6 +1117,7 @@ Route::prefix('v1')->group(function () {
         Route::post('flow-builders/{bid}/nodes/{id}/deactivate', [FlowNodeController::class, 'deactivate'])->middleware('permission:flow_builder.manage');
         Route::post('flow-builders/{bid}/nodes/{id}/move', [FlowNodeController::class, 'move'])->middleware('permission:flow_builder.manage');
 
+        Route::post('flow-builders/{bid}/nodes/positions',  [FlowNodeController::class, 'savePositions'])->middleware('permission:flow_builder.manage');
         Route::post('flow-builders/{bid}/nodes/reorder',    [FlowNodeController::class, 'reorder'])->middleware('permission:flow_builder.manage');
         Route::get('flow-builders/{builder}/nodes/check-reply-id', [FlowNodeController::class, 'checkReplyId'])->middleware('permission:flow_builder.view');
         Route::post('flow-builders/{builder}/nodes/upload-media', [FlowNodeController::class, 'uploadMedia'])->middleware('permission:flow_builder.manage');
