@@ -1,8 +1,8 @@
 // "How do I use this?" drawer for the flow canvas: creating a flow, building nodes step by step,
 // what every option does, and the mistakes that bite most often.
-import { useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 
-type TabKey = 'start' | 'build' | 'options' | 'classic' | 'tips'
+export type TabKey = 'start' | 'build' | 'options' | 'classic' | 'tips'
 const TABS: { key: TabKey; label: string }[] = [
   { key: 'start', label: 'Create a flow' },
   { key: 'build', label: 'Build nodes' },
@@ -195,13 +195,15 @@ function Tips() {
   </>)
 }
 
-export default function FlowCanvasHelpDrawer({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const [tab, setTab] = useState<TabKey>('start')
+export default function FlowCanvasHelpDrawer({ open, onClose, initialTab = 'start' }: { open: boolean; onClose: () => void; initialTab?: TabKey }) {
+  const [tab, setTab] = useState<TabKey>(initialTab)
+  // Re-open on the tab the caller asked for (the classic page asks for its own).
+  useEffect(() => { if (open) setTab(initialTab) }, [open, initialTab])
   if (!open) return null
   return (
     <>
-      <div className="absolute inset-0 z-30 bg-black/20" onClick={onClose} />
-      <aside className="absolute bottom-0 right-0 top-0 z-40 flex w-[440px] max-w-full flex-col border-l border-gray-200 bg-white shadow-2xl">
+      <div className="fixed inset-0 z-[60] bg-black/20" onClick={onClose} />
+      <aside className="fixed bottom-0 right-0 top-0 z-[70] flex w-[440px] max-w-full flex-col border-l border-gray-200 bg-white shadow-2xl">
         <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
           <div>
             <h2 className="font-bold text-gray-900">How to use the canvas</h2>
