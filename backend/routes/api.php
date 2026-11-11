@@ -493,6 +493,9 @@ Route::prefix('v1')->group(function () {
             Route::get('/{category}', [LeadCategoryController::class, 'show'])->name('show');
             Route::get('/{category}/contacts',            [LeadCategoryController::class, 'contacts'])->name('contacts');
             Route::post('/{category}/contacts',           [LeadCategoryController::class, 'addContacts'])->name('contacts.add');
+            Route::get('/{category}/flow-hits',           [\App\Modules\Lead\Http\Controllers\LeadCategoryFlowController::class, 'index'])->name('flow-hits');
+            Route::post('/{category}/assign-leads',       [\App\Modules\Lead\Http\Controllers\LeadCategoryFlowController::class, 'assign'])->middleware('permission:leads.manage')->name('assign-leads');
+            Route::post('/{category}/flow-hits/convert',  [\App\Modules\Lead\Http\Controllers\LeadCategoryFlowController::class, 'convert'])->name('flow-hits.convert');
             Route::delete('/{category}/contacts/{contact}', [LeadCategoryController::class, 'removeContact'])->name('contacts.remove');
             Route::put('/{category}', [LeadCategoryController::class, 'update'])->name('update');
             Route::delete('/{category}', [LeadCategoryController::class, 'destroy'])->name('destroy');

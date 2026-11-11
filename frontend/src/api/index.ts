@@ -283,6 +283,12 @@ export const leadCategoryApi = {
   removeContact: (id: number, contactId: number) => api.delete(`/lead-categories/${id}/contacts/${contactId}`),
   /** Set (name) or clear (null) ONE lead's category. */
   assign: (lead_id: number, category: string | null) => api.post('/lead-categories/assign', { lead_id, category }),
+  /** Flow clicks: customers who reached the flow nodes tagged with this category (filters: from, to, status, node_id, handler, search). */
+  flowHits: (id: number, p?: Record<string, unknown>) => api.get(`/lead-categories/${id}/flow-hits`, { params: p }),
+  /** Turn customers who clicked but are not a lead yet into leads — { ids } or { all_not_created: true, …filters }. */
+  convertFlowHits: (id: number, d: Record<string, unknown>) => api.post(`/lead-categories/${id}/flow-hits/convert`, d),
+  /** Hand leads of this category to staff (one person, or shared round-robin) — { user_ids, hit_ids | lead_ids | scope, only_unassigned }. */
+  assignLeads: (id: number, d: Record<string, unknown>) => api.post(`/lead-categories/${id}/assign-leads`, d),
 }
 
 // ── Lead Sources ─────────────────────────────────────────────────────────────

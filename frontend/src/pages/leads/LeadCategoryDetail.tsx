@@ -3,6 +3,7 @@ import toast from 'react-hot-toast'
 import { contactApi, leadCategoryApi } from '@/api'
 import { getError } from '@/utils'
 import ContactInfoDrawer from '../inbox/ContactInfoDrawer'
+import LeadCategoryFlowClicks, { AssignWholeCategory } from './LeadCategoryFlowClicks'
 import '../inbox/inbox.css'
 
 // One lead category in detail: the contacts in it (labels, latest lead, campaigns, last chat), add / remove contacts,
@@ -80,6 +81,10 @@ export default function LeadCategoryDetail({ cat, onClose, onChanged }: { cat: C
   const [page, setPage] = useState(1)
   const [adding, setAdding] = useState(false)
   const [openContact, setOpenContact] = useState<any>(null)
+  const [tab, setTab] = useState<'contacts' | 'clicks'>('contacts')
+  const [assignAll, setAssignAll] = useState(false)
+  const [pickedLeads, setPickedLeads] = useState<number[]>([])
+  const [assignPicked, setAssignPicked] = useState(false)
 
   useEffect(() => { const t = setTimeout(() => { setQuery(search.trim()); setPage(1) }, 300); return () => clearTimeout(t) }, [search])
 
@@ -89,6 +94,7 @@ export default function LeadCategoryDetail({ cat, onClose, onChanged }: { cat: C
       .then(r => setData(r.data)).catch(e => toast.error(getError(e))).finally(() => setLoading(false))
   }, [cat.id, query, page])
   useEffect(() => { load() }, [load])
+  useEffect(() => { setPickedLeads([]) }, [query, page])
 
   const remove = async (c: any) => {
     if (!window.confirm(`Take ${c.name || c.phone} out of “${cat.name}”? Their lead stays, without this category.`)) return
@@ -115,12 +121,26 @@ export default function LeadCategoryDetail({ cat, onClose, onChanged }: { cat: C
               ))}
             </div>
           </div>
+          <button onClick={() => setAssignAll(true)} className="px-3 py-2 text-sm rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50">Assign leads…</button>
           <button onClick={() => setAdding(true)} className="px-3 py-2 text-sm rounded-lg bg-brand-500 text-white">+ Add contacts</button>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl leading-none px-1">×</button>
         </div>
 
+        <div className="px-6 pt-2 border-b border-gray-100 flex gap-1">
+          {([['contacts', 'Contacts'], ['clicks', 'Flow clicks']] as const).map(([k, l]) => (
+            <button key={k} onClick={() => setTab(k)} className={`px-3 py-2 text-sm -mb-px border-b-2 ${tab === k ? 'border-brand-500 text-brand-700 font-medium' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>{l}</button>
+          ))}
+        </div>
+
+        {tab === 'clicks' && <LeadCategoryFlowClicks cat={cat} onOpenContact={setOpenContact} onChanged={() => { load(); onChanged() }} />}
+
+        {tab === 'contacts' && (<>
         <div className="px-6 py-3 border-b border-gray-100">
-          <input className="w-full max-w-sm border border-gray-200 rounded-lg px-3 py-2 text-sm" placeholder="Search name or number" value={search} onChange={e => setSearch(e.target.value)} />
+          <div className="flex items-center gap-3">
+            <input className="w-full max-w-sm border border-gray-200 rounded-lg px-3 py-2 text-sm" placeholder="Search name or number" value={search} onChange={e => setSearch(e.target.value)} />
+            <span className="text-xs text-gray-400">{pickedLeads.length} selected</span>
+            <button disabled={!pickedLeads.length} onClick={() => setAssignPicked(true)} className="px-3 py-2 text-xs rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50 disabled:opacity-40">Assign selected to…</button>
+          </div>
         </div>
 
         <div className="flex-1 overflow-auto">
@@ -129,13 +149,18 @@ export default function LeadCategoryDetail({ cat, onClose, onChanged }: { cat: C
           ) : (
             <table className="w-full text-sm">
               <thead><tr className="text-left text-xs text-gray-400 border-b border-gray-100 bg-gray-50/60">
-                <th className="px-6 py-2.5 font-medium">Contact</th><th className="font-medium">Lead</th><th className="font-medium">Labels</th>
+                <th className="w-10 px-6 py-2.5"><input type="checkbox" checked={contacts.some(c => c.lead) && contacts.filter(c => c.lead).every(c => pickedLeads.includes(c.lead.id))}
+                  onChange={e => setPickedLeads(e.target.checked ? contacts.filter(c => c.lead).map(c => c.lead.id) : [])} /></th>
+                <th className="py-2.5 font-medium">Contact</th><th className="font-medium">Lead</th><th className="font-medium">Labels</th>
                 <th className="font-medium">Campaigns</th><th className="font-medium">Last chat</th><th className="px-4" />
               </tr></thead>
               <tbody className="divide-y divide-gray-50">
                 {contacts.map(c => (
                   <tr key={c.id} className="hover:bg-gray-50/60 cursor-pointer" onClick={() => setOpenContact(c)}>
-                    <td className="px-6 py-3">
+                    <td className="px-6 py-3" onClick={e => e.stopPropagation()}>
+                      {c.lead && <input type="checkbox" checked={pickedLeads.includes(c.lead.id)} onChange={() => setPickedLeads(p => p.includes(c.lead.id) ? p.filter(x => x !== c.lead.id) : [...p, c.lead.id])} />}
+                    </td>
+                    <td className="py-3">
                       <div className="font-medium text-gray-900">{c.name || '—'}</div>
                       <div className="text-xs text-gray-400 font-mono">{c.phone}</div>
                     </td>
@@ -178,8 +203,11 @@ export default function LeadCategoryDetail({ cat, onClose, onChanged }: { cat: C
             <button disabled={page >= lastPage} onClick={() => setPage(p => p + 1)} className="px-3 py-1 border border-gray-200 rounded-lg disabled:opacity-40">Next ›</button>
           </div>
         )}
+        </>)}
       </div>
 
+      {assignPicked && <AssignWholeCategory cat={cat} leadIds={pickedLeads} onClose={() => setAssignPicked(false)} onDone={() => { setPickedLeads([]); load(); onChanged() }} />}
+      {assignAll && <AssignWholeCategory cat={cat} onClose={() => setAssignAll(false)} onDone={() => { load(); onChanged() }} />}
       {adding && <AddContactsModal cat={cat} onClose={() => setAdding(false)} onAdded={() => { load(); onChanged() }} />}
 
       {/* the contact's drawer — chat, lead + CRM details, campaigns, labels; the inbox styles are scoped under .wa-inbox */}

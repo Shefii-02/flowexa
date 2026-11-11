@@ -1643,6 +1643,7 @@ class WebhookService
         $existing = $this->leadRepository->findByContact($contact->id, $company->id, $category);
         if ($existing && !in_array($existing->stage, ['enrolled', 'lost'])) {
             Log::info("Lead already active for contact {$contact->id} — skipping auto-create");
+            $this->recordNodeHit($company, $contact, $node, $existing->id, false);
             return;
         }
 
@@ -1656,8 +1657,32 @@ class WebhookService
         try {
             $lead = $this->leadRepository->create($company->id, $dto);
             Log::info("Auto-created lead {$lead->id} for contact {$contact->id} from flow node {$node->id}");
+            $this->recordNodeHit($company, $contact, $node, $lead->id, true);
         } catch (\Exception $e) {
             Log::error("Auto-create lead failed: " . $e->getMessage());
+            $this->recordNodeHit($company, $contact, $node, null, false);
+        }
+    }
+
+    /** Remember that this customer reached a categorised node (analytics only — must never break the chat). */
+    private function recordNodeHit(Company $company, Contact $contact, FlowNode $node, ?int $leadId, bool $createdLead): void
+    {
+        try {
+            \App\Models\FlowNodeHit::create([
+                'company_id'      => $company->id,
+                'flow_builder_id' => $node->flow_builder_id,
+                'flow_node_id'    => $node->id,
+                'contact_id'      => $contact->id,
+                'lead_id'         => $leadId,
+                'created_lead'    => $createdLead,
+                'category'        => mb_substr((string) $node->lead_category, 0, 100),
+                'node_title'      => mb_substr((string) $node->title, 0, 100),
+                'phone'           => $contact->phone,
+                'contact_name'    => $contact->name,
+                'clicked_at'      => now(),
+            ]);
+        } catch (\Throwable $e) {
+            Log::warning("Flow node hit not recorded: " . $e->getMessage());
         }
     }
 
