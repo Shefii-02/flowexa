@@ -307,14 +307,14 @@ class WebhookService
         if ($triggerReason === 'keyword' && $builder) {
             Log::info("Keyword triggered builder {$builder->id} '{$builder->name}' — sending its welcome menu");
             $session?->delete();
-            $this->sendWelcomeMenu($company, $dto->phone, $builder->id);
+            $this->sendWelcomeMenu($company, $dto->phone, $builder->id, $contact);
             return;
         }
 
         // 11. Text greeting OR new conversation → send welcome menu
         if ($dto->type === 'text' && $this->isGreeting($dto->text)) {
             $session?->delete();
-            $this->sendWelcomeMenu($company, $dto->phone, $builder?->id);
+            $this->sendWelcomeMenu($company, $dto->phone, $builder?->id, $contact);
             return;
         }
 
@@ -330,13 +330,13 @@ class WebhookService
         $action = $session ? 'message' : $m['nosession_action'];
 
         if ($action === 'welcome') {
-            $this->sendWelcomeMenu($company, $dto->phone, $builder?->id);
+            $this->sendWelcomeMenu($company, $dto->phone, $builder?->id, $contact);
             return;
         }
         $this->sendText($company, $dto->phone, $m['unknown_message']);
         if ($action === 'both') {
             usleep(500000);
-            $this->sendWelcomeMenu($company, $dto->phone, $builder?->id);
+            $this->sendWelcomeMenu($company, $dto->phone, $builder?->id, $contact);
         }
     }
 
@@ -782,7 +782,16 @@ class WebhookService
         if ($response->flow_node_id) {
             $node = FlowNode::find($response->flow_node_id);
             if ($node && $node->lead_category) {
-                $this->autoCreateLead($company, $contact, $node);
+                $r = $this->autoCreateLead($company, $contact, $node, false);
+                // The click was logged when the survey started; attach the lead to it (or log it now if there was none,
+                // e.g. the survey was started from a template button).
+                $hitId = \App\Models\FlowNodeHit::where('company_id', $company->id)->where('contact_id', $contact->id)
+                    ->where('flow_node_id', $node->id)->whereNull('lead_id')->orderByDesc('id')->value('id');
+                if ($hitId && $r['lead_id']) {
+                    \App\Models\FlowNodeHit::whereKey($hitId)->update(['lead_id' => $r['lead_id'], 'created_lead' => $r['created']]);
+                } elseif (!$hitId) {
+                    $this->recordNodeHit($company, $contact, $node, $r['lead_id'], $r['created']);
+                }
             }
         }
 
@@ -1074,6 +1083,9 @@ class WebhookService
         // ── Special node types short-circuit the normal response-building path ──
         if ($node->type === 'survey' && $node->survey_form_id) {
             Log::info("Survey Starting");
+            if ($node->lead_category) {
+                $this->recordNodeHit($company, $contact, $node, null, false); // the lead follows when the survey is completed
+            }
             $this->startSurvey($company, $contact, $dto->phone, $node);
             return;
         }
@@ -1187,7 +1199,7 @@ class WebhookService
     }
 
     // ─── Send welcome menu (root node) ────────────────────────────────────────
-    private function sendWelcomeMenu(Company $company, string $phone, ?int $builderId): void
+    private function sendWelcomeMenu(Company $company, string $phone, ?int $builderId, ?Contact $contact = null): void
     {
         $query = FlowNode::where('company_id', $company->id)
             ->whereNull('parent_id')
@@ -1206,6 +1218,11 @@ class WebhookService
 
         $root->increment('trigger_count');
         $this->sendNodeResponse($company, $phone, $root);
+
+        // A welcome (first) node can carry a lead category too — count the customer like any other node would.
+        if ($contact && $root->lead_category) {
+            $this->autoCreateLead($company, $contact, $root);
+        }
     }
 
     // ─── Build and send node response ──────────────────────────────────────────
@@ -1637,14 +1654,19 @@ class WebhookService
     }
 
     // ─── Auto-create lead from flow ───────────────────────────────────────────
-    private function autoCreateLead(Company $company, Contact $contact, FlowNode $node): void
+    /**
+     * Reaching a node with a lead category: make the customer a lead in that category unless they already are one,
+     * and (unless $record is false) log the click for the category's "Flow clicks" analytics.
+     * @return array{lead_id: ?int, created: bool}
+     */
+    private function autoCreateLead(Company $company, Contact $contact, FlowNode $node, bool $record = true): array
     {
         $category  = $node->lead_category;
         $existing = $this->leadRepository->findByContact($contact->id, $company->id, $category);
         if ($existing && !in_array($existing->stage, ['enrolled', 'lost'])) {
             Log::info("Lead already active for contact {$contact->id} — skipping auto-create");
-            $this->recordNodeHit($company, $contact, $node, $existing->id, false);
-            return;
+            if ($record) $this->recordNodeHit($company, $contact, $node, $existing->id, false);
+            return ['lead_id' => $existing->id, 'created' => false];
         }
 
         $dto = CreateLeadDTO::fromFlow(
@@ -1657,10 +1679,12 @@ class WebhookService
         try {
             $lead = $this->leadRepository->create($company->id, $dto);
             Log::info("Auto-created lead {$lead->id} for contact {$contact->id} from flow node {$node->id}");
-            $this->recordNodeHit($company, $contact, $node, $lead->id, true);
+            if ($record) $this->recordNodeHit($company, $contact, $node, $lead->id, true);
+            return ['lead_id' => $lead->id, 'created' => true];
         } catch (\Exception $e) {
             Log::error("Auto-create lead failed: " . $e->getMessage());
-            $this->recordNodeHit($company, $contact, $node, null, false);
+            if ($record) $this->recordNodeHit($company, $contact, $node, null, false);
+            return ['lead_id' => null, 'created' => false];
         }
     }
 
