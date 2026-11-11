@@ -19,7 +19,7 @@ import LimitBadge from '@/components/plan/LimitBadge'
 import {
   useEffect, useState, useCallback, useMemo, useRef, DragEvent,
 } from 'react'
-import { useParams } from 'react-router-dom'
+import { useParams, Link } from 'react-router-dom'
 import { flowBuilderApi, flowNodeApi, surveyFormApi } from '@/api'
 import { Button, Modal, ConfirmModal, EmptyState } from '@/components/ui'
 import { getError } from '@/utils'
@@ -688,6 +688,7 @@ export default function FlowNodesPage() {
           <div className="flex items-center gap-2 flex-wrap">
             <h1 className="page-title">{builder?.name || 'Flow nodes'}</h1>
             {builder?.is_active && <span className="text-xs bg-green-100 text-green-700 border border-green-300 px-2 py-0.5 rounded-full font-semibold">🟢 Active</span>}
+            <Link to={`/wa-cloud/flow/builder/${builderId}/canvas`} className="text-xs px-2.5 py-1 rounded-full border border-brand-200 text-brand-700 bg-brand-50 hover:bg-brand-100 font-medium">🎨 Drag &amp; drop canvas</Link>
           </div>
           <p className="page-sub">{nodes.length} nodes{selCount > 0 && <span className="ml-2 text-brand-600 font-medium">{selCount} selected</span>}</p>
         </div>
