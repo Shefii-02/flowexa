@@ -5,7 +5,13 @@ import { useEffect, useState } from 'react'
 import { phoneApi } from '@/api'
 import { Button, Input, Modal, Badge, EmptyState, ConfirmModal } from '@/components/ui'
 import { getError } from '@/utils'
+import { loadFacebookSdk } from '@/lib/facebookSdk'
 import toast from 'react-hot-toast'
+
+const META_APP_ID = import.meta.env.VITE_META_APP_ID as string | undefined
+const META_WA_CONFIG_ID = import.meta.env.VITE_META_WA_CONFIG_ID as string | undefined
+
+type Step = 'choose' | 'quick' | 'advanced'
 
 interface PhoneNumber {
   id: number; label: string; phone_number_id: string; display_number: string | null
@@ -20,6 +26,8 @@ export default function PhoneNumbersPage() {
   const [editItem,  setEditItem]  = useState<PhoneNumber | null>(null)
   const [delItem,   setDelItem]   = useState<PhoneNumber | null>(null)
   const [saving,    setSaving]    = useState(false)
+  const [step,      setStep]      = useState<Step>('choose')
+  const [connecting, setConnecting] = useState(false)
   const [verifying, setVerifying] = useState<number | null>(null)
   const [form, setForm] = useState({ label: '', phone_number_id: '', access_token: '', business_account_id: '', display_number: '' })
   const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }))
@@ -27,8 +35,8 @@ export default function PhoneNumbersPage() {
   const load = () => { setLoading(true); phoneApi.list().then(r => setList(r.data.phone_numbers)).finally(() => setLoading(false)) }
   useEffect(() => { load() }, [])
 
-  const openCreate = () => { setEditItem(null); setForm({ label:'', phone_number_id:'', access_token:'', business_account_id:'', display_number:'' }); setShowModal(true) }
-  const openEdit   = (n: PhoneNumber) => { setEditItem(n); setForm({ label: n.label, phone_number_id: n.phone_number_id, access_token:'', business_account_id:'', display_number: n.display_number || '' }); setShowModal(true) }
+  const openCreate = () => { setEditItem(null); setStep('choose'); setForm({ label:'', phone_number_id:'', access_token:'', business_account_id:'', display_number:'' }); setShowModal(true) }
+  const openEdit   = (n: PhoneNumber) => { setEditItem(n); setStep('advanced'); setForm({ label: n.label, phone_number_id: n.phone_number_id, access_token:'', business_account_id:'', display_number: n.display_number || '' }); setShowModal(true) }
 
   const handleSave = async () => {
     setSaving(true)
@@ -38,6 +46,45 @@ export default function PhoneNumbersPage() {
       setShowModal(false); load()
     } catch (e) { toast.error(getError(e)) }
     finally     { setSaving(false) }
+  }
+
+  // Meta Embedded Signup: the popup reports the chosen number/WABA via postMessage and returns an auth code;
+  // the backend exchanges the code, fills in token / WABA ID / display number and saves the number.
+  const handleQuickConnect = async () => {
+    if (!META_APP_ID || !META_WA_CONFIG_ID) return toast.error('Embedded signup is not configured (VITE_META_APP_ID / VITE_META_WA_CONFIG_ID).')
+    setConnecting(true)
+    let session: { phone_number_id?: string; waba_id?: string } = {}
+    let code: string | undefined
+    let done = false
+    const finish = async () => {
+      if (done || !code || !session.phone_number_id) return
+      done = true
+      window.removeEventListener('message', onMessage)
+      try {
+        const { data } = await phoneApi.embeddedSignup({ code, phone_number_id: session.phone_number_id, waba_id: session.waba_id, label: form.label || undefined })
+        toast.success(data.message || 'WhatsApp connected.')
+        setShowModal(false); load()
+      } catch (e) { toast.error(getError(e)) }
+      finally { setConnecting(false) }
+    }
+    const onMessage = (ev: MessageEvent) => {
+      if (!/facebook\.com$/.test(new URL(ev.origin).hostname)) return
+      try {
+        const msg = typeof ev.data === 'string' ? JSON.parse(ev.data) : ev.data
+        if (msg?.type !== 'WA_EMBEDDED_SIGNUP') return
+        if (msg.event === 'FINISH') { session = { phone_number_id: msg.data?.phone_number_id, waba_id: msg.data?.waba_id }; void finish() }
+        else if (msg.event === 'CANCEL') { setConnecting(false); window.removeEventListener('message', onMessage) }
+      } catch { /* non-JSON message from the popup */ }
+    }
+    window.addEventListener('message', onMessage)
+    try {
+      const FB = await loadFacebookSdk(META_APP_ID)
+      FB.login((res: any) => {
+        code = res?.authResponse?.code
+        if (!code) { setConnecting(false); window.removeEventListener('message', onMessage); return toast.error('WhatsApp signup was cancelled.') }
+        void finish()
+      }, { config_id: META_WA_CONFIG_ID, response_type: 'code', override_default_response_type: true, extras: { setup: {}, featureType: '', sessionInfoVersion: '3' } })
+    } catch (e) { toast.error(getError(e)); setConnecting(false); window.removeEventListener('message', onMessage) }
   }
 
   const handleSetDefault = async (id: number) => {
@@ -105,15 +152,54 @@ export default function PhoneNumbersPage() {
         </div>
       )}
 
-      <Modal open={showModal} onClose={() => setShowModal(false)} title={editItem ? 'Edit phone number' : 'Add WhatsApp phone number'} size="md"
-        footer={<><Button variant="secondary" onClick={() => setShowModal(false)}>Cancel</Button><Button onClick={handleSave} loading={saving}>{editItem ? 'Save' : 'Add'}</Button></>}>
-        <div className="space-y-4">
-          <Input label="Label (e.g. Sales Line)" value={form.label} onChange={e => set('label', e.target.value)} required />
-          <Input label="Phone Number ID (from Meta)" placeholder="1132805489918168" value={form.phone_number_id} onChange={e => set('phone_number_id', e.target.value)} required disabled={!!editItem} />
-          <Input label={editItem ? 'Access Token (leave blank to keep current)' : 'Access Token'} type="password" placeholder="EAAOU8L2..." value={form.access_token} onChange={e => set('access_token', e.target.value)} required={!editItem} />
-          <Input label="Business Account ID (optional)" value={form.business_account_id} onChange={e => set('business_account_id', e.target.value)} />
-          <Input label="Display Number (optional)" placeholder="+91 80865 44828" value={form.display_number} onChange={e => set('display_number', e.target.value)} />
-        </div>
+      <Modal open={showModal} onClose={() => setShowModal(false)} size="md"
+        title={editItem ? 'Edit phone number' : step === 'choose' ? 'Connect WhatsApp' : step === 'quick' ? 'Quick Connect' : 'Advanced connect'}
+        footer={step === 'advanced'
+          ? <><Button variant="secondary" onClick={() => setShowModal(false)}>Cancel</Button><Button onClick={handleSave} loading={saving}>{editItem ? 'Save' : 'Add'}</Button></>
+          : step === 'quick'
+            ? <><Button variant="secondary" onClick={() => setShowModal(false)}>Cancel</Button><Button onClick={handleQuickConnect} loading={connecting}>Connect with Meta →</Button></>
+            : undefined}>
+        {step === 'choose' && (
+          <div className="space-y-4">
+            <p className="text-sm text-gray-500">Choose how you'd like to connect your WhatsApp number.</p>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <button onClick={() => setStep('quick')} className="rounded-xl border border-gray-200 p-4 text-left transition hover:border-brand-400 hover:bg-brand-50/30">
+                <p className="font-semibold text-gray-900">Quick Connect</p>
+                <p className="mb-2 text-xs text-gray-400">~2 minutes</p>
+                <p className="text-sm text-gray-600">Sign in with Facebook and pick or create your WhatsApp Business account. We fill in the Phone Number ID, access token and business account for you.</p>
+              </button>
+              <button onClick={() => setStep('advanced')} className="rounded-xl border border-gray-200 p-4 text-left transition hover:border-brand-400 hover:bg-brand-50/30">
+                <p className="font-semibold text-gray-900">Advanced</p>
+                <p className="mb-2 text-xs text-gray-400">~5 minutes, Meta credentials in hand</p>
+                <p className="text-sm text-gray-600">Enter your Phone Number ID, Access Token, Business Account ID and Display Number from Meta manually.</p>
+              </button>
+            </div>
+          </div>
+        )}
+        {step === 'quick' && (
+          <div className="space-y-4">
+            <button onClick={() => setStep('choose')} className="text-xs text-gray-400 hover:text-gray-600">← Choose a different way to connect</button>
+            <div className="rounded-xl border border-gray-200 bg-gray-50 p-4 text-sm text-gray-600">
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">Good to know</p>
+              <ul className="list-disc space-y-1 pl-5">
+                <li>A Meta popup will walk you through choosing your business portfolio and WhatsApp number.</li>
+                <li>Keep the phone handy — you'll verify the number with a code.</li>
+                <li>On success the number is saved and connected automatically — no manual details needed.</li>
+              </ul>
+            </div>
+            <Input label="Label (optional, e.g. Sales Line)" value={form.label} onChange={e => set('label', e.target.value)} />
+          </div>
+        )}
+        {step === 'advanced' && (
+          <div className="space-y-4">
+            {!editItem && <button onClick={() => setStep('choose')} className="text-xs text-gray-400 hover:text-gray-600">← Choose a different way to connect</button>}
+            <Input label="Label (e.g. Sales Line)" value={form.label} onChange={e => set('label', e.target.value)} required />
+            <Input label="Phone Number ID (from Meta)" placeholder="1132805489918168" value={form.phone_number_id} onChange={e => set('phone_number_id', e.target.value)} required disabled={!!editItem} />
+            <Input label={editItem ? 'Access Token (leave blank to keep current)' : 'Access Token'} type="password" placeholder="EAAOU8L2..." value={form.access_token} onChange={e => set('access_token', e.target.value)} required={!editItem} />
+            <Input label="Business Account ID (optional)" value={form.business_account_id} onChange={e => set('business_account_id', e.target.value)} />
+            <Input label="Display Number (optional)" placeholder="+91 80865 44828" value={form.display_number} onChange={e => set('display_number', e.target.value)} />
+          </div>
+        )}
       </Modal>
 
       <ConfirmModal open={!!delItem} title="Remove phone number?"

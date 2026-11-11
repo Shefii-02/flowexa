@@ -38,6 +38,25 @@ class PhoneNumberController extends Controller
         return response()->json(['message' => 'Phone number added.', 'phone_number' => $num], 201);
     }
 
+    public function embeddedSignup(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'code'            => ['required','string'],
+            'phone_number_id' => ['required','string'],
+            'waba_id'         => ['nullable','string'],
+            'label'           => ['nullable','string','max:80'],
+        ]);
+        try {
+            $num = $this->service->connectEmbedded(auth()->user()->company_id, $data['code'], $data['phone_number_id'], $data['waba_id'] ?? null, $data['label'] ?? null);
+        } catch (\Exception $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+        return response()->json(['message' => 'WhatsApp connected.', 'phone_number' => [
+            'id' => $num->id, 'label' => $num->label, 'phone_number_id' => $num->phone_number_id,
+            'display_number' => $num->display_number, 'business_account_id' => $num->business_account_id,
+        ]]);
+    }
+
     public function update(Request $request, int $id): JsonResponse
     {
         $data = $request->validate([

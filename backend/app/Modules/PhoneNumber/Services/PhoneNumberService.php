@@ -28,6 +28,57 @@ class PhoneNumberService
         return $num;
     }
 
+    /**
+     * Meta Embedded Signup: exchange the popup's code for a token, read the number's details
+     * (display number, verified name) and save it exactly like a manual "Advanced" connect.
+     */
+    public function connectEmbedded(int $companyId, string $code, string $phoneNumberId, ?string $wabaId, ?string $label): WaPhoneNumber
+    {
+        $cfg   = config('services.messenger');
+        $graph = 'https://graph.facebook.com/v21.0';
+
+        $tok = Http::timeout(15)->get("$graph/oauth/access_token", [
+            'client_id' => $cfg['app_id'], 'client_secret' => $cfg['app_secret'], 'code' => $code,
+        ]);
+        $token = $tok->json('access_token');
+        if (!$token) {
+            throw new \Exception($tok->json('error.message') ?? 'Meta did not return an access token.');
+        }
+
+        $info = Http::withToken($token)->timeout(15)
+            ->get("$graph/$phoneNumberId", ['fields' => 'display_phone_number,verified_name'])->json() ?? [];
+
+        if ($wabaId) {
+            // Route this WABA's webhooks to our app, and register the number for Cloud API sending.
+            Http::withToken($token)->timeout(15)->post("$graph/$wabaId/subscribed_apps");
+        }
+        Http::withToken($token)->timeout(15)->post("$graph/$phoneNumberId/register", [
+            'messaging_product' => 'whatsapp', 'pin' => '000000',
+        ]);
+
+        $fields = [
+            'label'               => $label ?: ($info['verified_name'] ?? 'WhatsApp'),
+            'access_token'        => encrypt($token),
+            'business_account_id' => $wabaId,
+            'display_number'      => $info['display_phone_number'] ?? null,
+            'is_active'           => true,
+            'status'              => 'active',
+            'last_verified_at'    => now(),
+            'last_error'          => null,
+        ];
+
+        $existing = WaPhoneNumber::where('company_id', $companyId)->where('phone_number_id', $phoneNumberId)->first();
+        if ($existing) {
+            $existing->update($fields);
+            return $existing->fresh();
+        }
+        return WaPhoneNumber::create($fields + [
+            'company_id'      => $companyId,
+            'phone_number_id' => $phoneNumberId,
+            'is_default'      => WaPhoneNumber::where('company_id', $companyId)->count() === 0,
+        ]);
+    }
+
     public function update(int $id, int $companyId, array $data): WaPhoneNumber
     {
         $num = WaPhoneNumber::where('id', $id)->where('company_id', $companyId)->firstOrFail();

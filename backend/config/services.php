@@ -101,6 +101,8 @@ return [
     'messenger' => [
         'app_id'            => env('META_APP_ID', '1008186624886889'),
         'app_secret'        => env('META_APP_SECRET', env('META_ADS_APP_SECRET')),
+        // WhatsApp Embedded Signup configuration ID (Meta App → WhatsApp → Embedded Signup → Configurations).
+        'wa_config_id'      => env('META_WA_CONFIG_ID'),
         'subscribed_fields' => 'messages,messaging_postbacks,messaging_referrals,feed',
         // Messenger has no 200-DMs/hour rule like Instagram; this is only a safety valve.
         'dm_hourly_cap'     => (int) env('MESSENGER_DM_HOURLY_CAP', 1000),

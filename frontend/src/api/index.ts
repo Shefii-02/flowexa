@@ -403,6 +403,7 @@ export const phoneApi = {
   delete: (id: number) => api.delete(`/phone-numbers/${id}`),
   setDefault: (id: number) => api.post(`/phone-numbers/${id}/set-default`),
   verify: (id: number) => api.post(`/phone-numbers/${id}/verify`),
+  embeddedSignup: (d: { code: string; phone_number_id: string; waba_id?: string; label?: string }) => api.post('/phone-numbers/embedded-signup', d),
 }
 
 export const phoneNumberApi = {
