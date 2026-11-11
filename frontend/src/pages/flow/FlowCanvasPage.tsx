@@ -12,7 +12,8 @@ import {
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { flowBuilderApi, flowNodeApi } from '@/api'
-import { Button, ConfirmModal, Input, Textarea } from '@/components/ui'
+import { Button, ConfirmModal } from '@/components/ui'
+import FlowCanvasNodeEditor from './canvas/FlowCanvasNodeEditor'
 import { getError } from '@/utils'
 import toast from 'react-hot-toast'
 
@@ -32,10 +33,8 @@ const TYPES: Record<string, { label: string; icon: string; color: string; canHav
   survey:         { label: 'Survey',         icon: '📝', color: '#d97706', canHaveChildren: false },
   knowledge_base: { label: 'Knowledge Base', icon: '🧠', color: '#db2777', canHaveChildren: false },
 }
-// Types that can be dragged in from the palette (survey / AI need a form or agent — set those in the classic editor).
-const PALETTE = ['list', 'button', 'text'] as const
-// Types the side panel can switch between without needing extra settings.
-const SWITCHABLE = ['list', 'button', 'text']
+// Types that can be dragged in from the palette (survey / AI nodes get their form or agent in the side panel).
+const PALETTE = ['list', 'button', 'text', 'survey', 'knowledge_base'] as const
 
 const NODE_W = 240, GAP_X = 320, GAP_Y = 150
 
@@ -102,8 +101,6 @@ function Canvas() {
   const [selId, setSelId] = useState<number | null>(null)
   const [selEdge, setSelEdge] = useState<string | null>(null)
   const [delNode, setDelNode] = useState<FlowNode | null>(null)
-  const [saving, setSaving] = useState(false)
-  const [draft, setDraft] = useState<{ title: string; message: string; type: string; redirect: string; active: boolean } | null>(null)
   const wrap = useRef<HTMLDivElement>(null)
 
   const load = useCallback(async () => {
@@ -149,11 +146,6 @@ function Canvas() {
   }, [fnodes, byReply])
 
   const selected = fnodes.find(n => n.id === selId) ?? null
-  useEffect(() => {
-    setDraft(selected ? { title: selected.title, message: selected.message ?? '', type: selected.type, redirect: selected.redirect_to_reply_id ?? '', active: selected.is_active } : null)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selId, selected?.title, selected?.message, selected?.type, selected?.redirect_to_reply_id, selected?.is_active])
-
   const replaceNode = (n: FlowNode) => setFnodes(list => list.map(x => x.id === n.id ? { ...x, ...n } : x))
 
   const persistPositions = useCallback((moved: { id: string; position: { x: number; y: number } }[]) => {
@@ -181,7 +173,7 @@ function Canvas() {
     try {
       const siblings = fnodes.filter(n => n.parent_id === (parent?.id ?? null)).length
       const r = await flowNodeApi.create(builderId, {
-        parent_id: parent?.id ?? null, title, message: type === 'text' ? 'Your reply here' : 'Choose an option', type, reply_id: rid, sort_order: siblings,
+        parent_id: parent?.id ?? null, title, message: type === 'text' ? 'Your reply here' : type === 'list' || type === 'button' ? 'Choose an option' : '', type, reply_id: rid, sort_order: siblings,
         is_active: true,
       })
       const node: FlowNode = r.data.node
@@ -212,18 +204,6 @@ function Canvas() {
     } catch (e) { toast.error(getError(e)) }
   }
 
-  const saveSelected = async () => {
-    if (!selected || !draft) return
-    setSaving(true)
-    try {
-      const r = await flowNodeApi.update(builderId, selected.id, {
-        reply_id: selected.reply_id, title: draft.title.slice(0, 24), message: draft.message,
-        type: draft.type, redirect_to_reply_id: draft.redirect || null, is_active: draft.active,
-      })
-      replaceNode(r.data.node); toast.success('Saved.')
-    } catch (e) { toast.error(getError(e)) } finally { setSaving(false) }
-  }
-
   const doDelete = async () => {
     if (!delNode) return
     const n = delNode; setDelNode(null)
@@ -243,7 +223,6 @@ function Canvas() {
   }
 
   const selEdgeNodeId = selEdge?.startsWith('r-') ? Number(selEdge.slice(2)) : null
-  const others = fnodes.filter(n => n.id !== selId)
 
   return (
     <div className="flex h-[calc(100vh-4rem)] flex-col">
@@ -269,7 +248,7 @@ function Canvas() {
           <p className="pt-2 text-[11px] leading-relaxed text-gray-400">
             Drop on a <b>List</b> or <b>Buttons</b> node to add an option under it, or on empty space for a new top-level node.
             Drag from a node's bottom dot to another node to make it <b>jump</b> there (Back / Main menu).
-            Survey, AI and media settings are in the Classic editor.
+            Click a node to edit everything about it — header, buttons, media, survey, AI.
           </p>
         </aside>
 
@@ -295,36 +274,9 @@ function Canvas() {
           )}
         </div>
 
-        {(selected && draft) && (
-          <aside className="w-80 flex-shrink-0 space-y-3 overflow-y-auto border-l border-gray-100 bg-white p-4">
-            <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Node</p>
-            <Input label="Title (max 24)" maxLength={24} value={draft.title} onChange={e => setDraft({ ...draft, title: e.target.value })} />
-            {SWITCHABLE.includes(selected.type) ? (
-              <div>
-                <label className="label">Type</label>
-                <select className="form-control" value={draft.type} onChange={e => setDraft({ ...draft, type: e.target.value })}>
-                  {SWITCHABLE.map(k => <option key={k} value={k}>{TYPES[k].label}</option>)}
-                </select>
-              </div>
-            ) : <p className="text-xs text-gray-500">Type: <b>{TYPES[selected.type]?.label ?? selected.type}</b> (change it in the Classic editor)</p>}
-            <Textarea label="Message" rows={5} value={draft.message} onChange={e => setDraft({ ...draft, message: e.target.value })} />
-            <div>
-              <label className="label">When tapped, jump to <span className="text-xs text-gray-400">(optional)</span></label>
-              <select className="form-control" value={draft.redirect} onChange={e => setDraft({ ...draft, redirect: e.target.value })}>
-                <option value="">— no jump —</option>
-                <option value="WELCOME">🏠 WELCOME (restart)</option>
-                {others.map(n => <option key={n.id} value={n.reply_id}>{n.title} · {n.reply_id}</option>)}
-              </select>
-            </div>
-            <label className="flex items-center gap-2 text-sm text-gray-700">
-              <input type="checkbox" checked={draft.active} onChange={e => setDraft({ ...draft, active: e.target.checked })} /> Active
-            </label>
-            <p className="font-mono text-[11px] text-gray-400">reply_id: {selected.reply_id}</p>
-            <div className="flex gap-2">
-              <Button onClick={saveSelected} loading={saving}>Save</Button>
-              <Button variant="secondary" onClick={() => setDelNode(selected)}>Delete</Button>
-            </div>
-            <Link to={`/wa-cloud/flow/builder/${builderId}`} className="block text-xs text-brand-600 hover:underline">More settings (media, header, survey, AI…) in Classic editor →</Link>
+        {selected && (
+          <aside className="w-[460px] max-w-[45vw] flex-shrink-0 border-l border-gray-100 bg-white">
+            <FlowCanvasNodeEditor key={selected.id} builderId={builderId} node={selected} allNodes={fnodes} onSaved={load} onDelete={setDelNode} />
           </aside>
         )}
         {selEdgeNodeId && (
