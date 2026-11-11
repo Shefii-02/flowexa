@@ -114,7 +114,7 @@ function Options() {
     <Row name="Lead category">Tags the customer as a lead in this category when they reach the node (created automatically if new). Great for “Pricing” or “Demo request”.</Row>
     <Row name="Sort order">Position among its siblings. Lower number = shown first.</Row>
     <Row name="Active">Off = the bot skips this node. Use it to hide an option without deleting it.</Row>
-    <Row name="🔚 Terminal node">Tick this on a List/Buttons node that is <b>meant</b> to end the conversation. Without it, a node with no options is a “dead end” and the bot sends the welcome menu again so the customer is not stuck. With it, the bot asks “Was your issue solved?” instead (you can edit that message under ⚙ Flow messages). Text, Survey and AI nodes never need it.</Row>
+    <Row name="🔚 Terminal node">Tick this on a List/Buttons node that is <b>meant</b> to end the conversation. See “Dead end vs terminal node” below for the full explanation.</Row>
 
     <H>Flow messages &amp; timing (⚙ button, top of the page)</H>
     <Row name="First message / unrecognised text">When a customer with no active chat sends something that is not a greeting or keyword, choose what they get: your own reply, the flow's first chatbot message (welcome menu), or your reply followed by the menu. Greetings such as “hi” or “menu” always open the welcome menu.</Row>
@@ -122,6 +122,13 @@ function Options() {
     <Row name="Follow-up when quiet">Optional. If the customer stops replying part-way through, the bot sends one nudge after the number of minutes you choose (e.g. “Are you still there?”). Replying re-arms it.</Row>
     <Row name="Session timeout">How long the chat may stay silent (default 60 minutes) before it ends, and the message the customer gets. They type “Hi” to start again.</Row>
     <Row name="Per flow">These settings belong to the flow you are editing. Blank fields use the default text. Use “Reset to default” on any field to go back.</Row>
+
+    <H>Dead end vs terminal node</H>
+    <Row name="⚠️ Dead end">A <b>List or Buttons</b> node that has <b>no options under it</b> and no link / call / copy-code buttons. The customer reaches it and has nothing to tap. The bot treats this as a mistake and sends the welcome menu again so nobody is stuck. The classic editor shows these nodes with a red border and ⚠️.</Row>
+    <Row name="🔚 Terminal (end) node">A node you <b>mark on purpose</b> as the end of the conversation path, using the “Mark as terminal” checkbox. The bot does not resend the menu. It asks “Was your issue solved?” with Yes / No buttons instead (edit the wording under ⚙ Flow messages).</Row>
+    <Row name="How they relate">They are the same setting. <b>Terminal unticked + no options = dead end</b> (warning). <b>Terminal ticked = intended end</b> (no warning). An unticked box on a dead-end node is normal.</Row>
+    <Row name="When do I need it?">Only on a List or Buttons node that should end the chat. If the node has options, you don't need it. Text, Survey and AI nodes are never dead ends, so they never need it.</Row>
+    <Tip>Fix a dead end one of two ways: add options under the node, or tick <b>Terminal node</b>. After saving, the red ⚠️ disappears and a grey 🔚 badge appears on the row.</Tip>
 
     <H>Buttons at the bottom</H>
     <Row name="Save">Saves this node and its options. Nothing is saved until you click it.</Row>
@@ -190,7 +197,7 @@ function Tips() {
     ]} />
 
     <H>Common mistakes</H>
-    <Tip tone="red"><b>Dead end warning:</b> a List/Buttons node with no options. Add options, or tick <b>Terminal node</b> if it is intentionally the end.</Tip>
+    <Tip tone="red"><b>Dead end warning:</b> a List/Buttons node with no options. Add options, or tick <b>Terminal node</b> if it is intentionally the end. Details: <b>Every option → Dead end vs terminal node</b>.</Tip>
     <Tip tone="amber"><b>“Drop on a List or Buttons node”:</b> only Lists and Buttons can have options. Change the parent's type if you need to add under it.</Tip>
     <Tip tone="amber"><b>Limit reached:</b> a List has 10 options max; Buttons 3 in total (reply buttons + link/call/copy-code).</Tip>
     <Tip tone="amber"><b>Reply ID already used:</b> every node in a flow needs a different Reply ID. Change the last word.</Tip>
