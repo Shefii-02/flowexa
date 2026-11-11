@@ -2,11 +2,12 @@
 // what every option does, and the mistakes that bite most often.
 import { useState, type ReactNode } from 'react'
 
-type TabKey = 'start' | 'build' | 'options' | 'tips'
+type TabKey = 'start' | 'build' | 'options' | 'classic' | 'tips'
 const TABS: { key: TabKey; label: string }[] = [
   { key: 'start', label: 'Create a flow' },
   { key: 'build', label: 'Build nodes' },
   { key: 'options', label: 'Every option' },
+  { key: 'classic', label: 'Classic editor' },
   { key: 'tips', label: 'Tips' },
 ]
 
@@ -122,6 +123,53 @@ function Options() {
   </>)
 }
 
+function Classic() {
+  return (<>
+    <P>The <b>Classic editor</b> shows the same flow as an indented list instead of a map. Open it from <b>WA Cloud → Flow Builders → 🌿 Nodes</b>, or with the <b>Classic editor</b> button at the top of the canvas. Both views edit the same nodes.</P>
+
+    <H>Build a flow in the classic editor</H>
+    <Steps items={[
+      <>Click <b>+ Root node</b> (top right). A root node is the first message the customer sees, usually a List.</>,
+      <>Fill in <b>Title</b>, <b>Type</b> and <b>Message</b>, add the <b>Options</b> (rows or buttons) in the form, then click <b>Create node</b>.</>,
+      <>To add something under an existing node, click <b>+Child</b> on its row. The parent is filled in for you.</>,
+      <>Repeat for each menu choice. The list on the page grows as an indented tree.</>,
+      <>Click <b>👁 Test flow</b> to chat with the flow as a customer would.</>,
+    ]} />
+    <Tip>Options you add inside a List or Buttons node's form become child nodes automatically when you save. You do not need to click +Child for those.</Tip>
+
+    <H>Buttons on each row</H>
+    <Row name="👁">Test the flow starting from this node.</Row>
+    <Row name="+Child">Add a node under this one.</Row>
+    <Row name="Edit">Open the full form for this node: title, reply ID, type, header, options, message blocks, jump, lead category, sort order, terminal flag, and a live preview on the right.</Row>
+    <Row name="Off / On">Turn the node off (the bot skips it) or back on, without deleting it. Inactive nodes show an “Inactive” tag.</Row>
+    <Row name="Del">Delete the node <b>and everything under it</b>. You are asked to confirm.</Row>
+    <Row name="▶ / ▼ arrow">Collapse or expand a branch to keep a big flow readable.</Row>
+
+    <H>Reading the badges on a row</H>
+    <Row name="list / button / text / survey / knowledge_base">The node's type. Colours: blue list, purple buttons, green text, amber survey, teal AI.</Row>
+    <Row name="3/10 or 2/3">How many options the List (max 10) or Buttons (max 3 in total) already has. Amber means it is full.</Row>
+    <Row name="🔗 2">The node has 2 link / call / copy-code buttons.</Row>
+    <Row name="↩ target">The node jumps to another node (“Back” / “Main menu”).</Row>
+    <Row name="🎯 category">Reaching this node tags the customer as a lead in that category.</Row>
+    <Row name="🔚 / red ⚠️">Terminal node, or a dead end (a List/Buttons node with no options that is not marked terminal).</Row>
+    <Row name="🔥 number">How many times customers have reached this node.</Row>
+    <Row name="#number">Sort order among siblings.</Row>
+
+    <H>Working on many nodes at once</H>
+    <Steps items={[
+      <>Tick the box on each row, or click <b>Select all</b>.</>,
+      <>Use the buttons that appear in the header: <b>✅ Activate</b>, <b>⏸ Deactivate</b>, <b>🗑 Delete</b> or <b>📋 Duplicate</b>. Click <b>Clear</b> to unselect.</>,
+      <><b>Duplicate</b> opens a drawer where you choose which of the selected nodes to copy, give each a new title and reply ID, and pick where the copy goes. Handy for repeating a branch.</>,
+    ]} />
+    <Tip tone="amber">Bulk <b>Delete</b> also deletes everything under the selected nodes. Check the count in the confirm box first.</Tip>
+
+    <H>Classic or canvas: which to use?</H>
+    <Row name="Use the canvas to">See the whole flow at a glance, drag new nodes in, draw jumps, and rearrange the map.</Row>
+    <Row name="Use the classic editor to">Duplicate branches, bulk activate / deactivate / delete, check usage counts, and test the whole flow in the chat preview.</Row>
+    <P>Switch whenever you like. Changes appear in both after you save.</P>
+  </>)
+}
+
 function Tips() {
   return (<>
     <H>Keep it simple</H>
@@ -143,7 +191,7 @@ function Tips() {
     <Tip tone="amber"><b>Changed something and don't see it:</b> click <b>Save</b> in the node panel. Moving nodes saves by itself, text edits do not.</Tip>
 
     <H>Classic editor</H>
-    <P>You can switch at any time with <b>Classic editor</b> at the top. It shows the same flow as a list, and also has duplicate, bulk actions, search and the full test chat. Edits in either place appear in both.</P>
+    <P>You can switch at any time with <b>Classic editor</b> at the top. See the <b>Classic editor</b> tab for how it works. Edits in either place appear in both.</P>
   </>)
 }
 
@@ -171,6 +219,7 @@ export default function FlowCanvasHelpDrawer({ open, onClose }: { open: boolean;
           {tab === 'start' && <Start />}
           {tab === 'build' && <Build />}
           {tab === 'options' && <Options />}
+          {tab === 'classic' && <Classic />}
           {tab === 'tips' && <Tips />}
         </div>
       </aside>
