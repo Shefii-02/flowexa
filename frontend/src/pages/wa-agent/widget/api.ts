@@ -156,7 +156,7 @@ export interface NodeConversation {
 }
 
 export const nodeChatApi = {
-  inbox: (p: { tab: InboxTab; q?: string; page?: number; per_page?: number }) =>
+  inbox: (p: { tab: InboxTab; q?: string; page?: number; per_page?: number; widget_id?: number }) =>
     nodeApi.get<NodeInboxPage>('/widget-chat/inbox', { params: { ...p, q: p.q || undefined } }),
   me: () => nodeApi.get<{ muted: boolean; handling: number; limit: number }>('/widget-chat/me'),
   setMuted: (muted: boolean) => nodeApi.put<{ muted: boolean }>('/widget-chat/me', { muted }),

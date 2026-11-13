@@ -11,7 +11,7 @@ import { flowBuilderApi } from '@/api'
 import { FlowImportExportModal } from '../../flow/components/FlowImportExportModal'
 import ChatReviewPanel from './ChatReviewPanel'
 import { PermissionGate } from '@/components/ui/PermissionGate'
-import { widgetApi, type ChatWidget, type WidgetConversation, type WidgetMessage } from './api'
+import { widgetApi, type ChatWidget } from './api'
 
 type WaSession = { id: number; session_name: string; status: string }
 
@@ -54,7 +54,6 @@ export default function WidgetPage() {
   const [saving, setSaving] = useState(false)
   const [aiConfigured, setAiConfigured] = useState(true)
   const [deleteId, setDeleteId] = useState<number | null>(null)
-  const [inboxFor, setInboxFor] = useState<ChatWidget | null>(null)
   const [flows, setFlows] = useState<{ id: number; name: string }[]>([])
   const [importOpen, setImportOpen] = useState(false)
 
@@ -178,7 +177,7 @@ export default function WidgetPage() {
                   </p>
                 </div>
                 <div className="flex gap-3 text-xs">
-                  <button onClick={() => setInboxFor(w)} className="text-brand-600 hover:underline">Conversations</button>
+                  <Link to={`/website-widget/chats?widget=${w.id}`} className="text-brand-600 hover:underline">Conversations</Link>
                   <button onClick={() => setEditor(toDraft(w))} className="text-gray-500 hover:underline">Edit</button>
                   <button onClick={() => setDeleteId(w.id)} className="text-red-500 hover:underline">Delete</button>
                 </div>
@@ -342,80 +341,8 @@ export default function WidgetPage() {
         />
       )}
 
-      {inboxFor && <WidgetInbox widget={inboxFor} onClose={() => setInboxFor(null)} />}
-
       <ConfirmModal open={deleteId !== null} title="Delete widget?" message="The embed code will stop working immediately."
         onConfirm={remove} onCancel={() => setDeleteId(null)} />
     </div>
-  )
-}
-
-function WidgetInbox({ widget, onClose }: { widget: ChatWidget; onClose: () => void }) {
-  const [convos, setConvos] = useState<WidgetConversation[]>([])
-  const [active, setActive] = useState<WidgetConversation | null>(null)
-  const [messages, setMessages] = useState<WidgetMessage[]>([])
-  const [filter, setFilter] = useState('')
-
-  useEffect(() => {
-    widgetApi.conversations(widget.id, filter ? { status: filter } : {})
-      .then(r => setConvos(r.data.data ?? r.data ?? []))
-      .catch(e => toast.error(getError(e)))
-  }, [widget.id, filter])
-
-  const open = async (c: WidgetConversation) => {
-    setActive(c)
-    const r = await widgetApi.conversation(widget.id, c.id)
-    setMessages(r.data.messages ?? [])
-    setActive(r.data.conversation)
-  }
-
-  return (
-    <Modal open onClose={onClose} size="xl" title={`${widget.name} — conversations`}>
-      <div className="flex gap-2 mb-3">
-        {['', 'qualified', 'active', 'closed'].map(s => (
-          <button key={s} onClick={() => setFilter(s)}
-            className={`text-xs px-3 py-1 rounded-lg ${filter === s ? 'bg-brand-600 text-white' : 'bg-gray-100 text-gray-600'}`}>
-            {s || 'All'}
-          </button>
-        ))}
-      </div>
-      <div className="grid grid-cols-[240px_1fr] gap-3 h-[440px]">
-        <div className="border border-gray-200 rounded-lg overflow-y-auto">
-          {convos.length === 0 ? <p className="p-3 text-xs text-gray-400">No conversations.</p> : convos.map(c => (
-            <button key={c.id} onClick={() => open(c)}
-              className={`w-full text-left px-3 py-2 border-b border-gray-100 hover:bg-gray-50 ${active?.id === c.id ? 'bg-brand-50' : ''}`}>
-              <div className="flex items-center gap-1.5">
-                <span className="text-sm font-medium flex-1 truncate">{c.visitor_name || c.visitor_phone || 'Visitor'}</span>
-                {c.status === 'qualified' && <Badge variant="green">lead</Badge>}
-              </div>
-              <p className="text-[11px] text-gray-400 truncate">{c.page_url}</p>
-            </button>
-          ))}
-        </div>
-        <div className="border border-gray-200 rounded-lg flex flex-col">
-          {!active ? (
-            <div className="flex-1 flex items-center justify-center text-sm text-gray-400">Select a conversation</div>
-          ) : (
-            <>
-              {active.collected && Object.keys(active.collected).length > 0 && (
-                <div className="p-2 border-b border-gray-100 bg-gray-50 text-xs flex flex-wrap gap-1.5">
-                  {Object.entries(active.collected).map(([k, v]) => (
-                    <span key={k} className="bg-white border border-gray-200 rounded px-1.5 py-0.5">{k}: {String(v)}</span>
-                  ))}
-                  {active.lead && <span className="text-brand-600">→ CRM lead #{active.lead.id}</span>}
-                </div>
-              )}
-              <div className="flex-1 overflow-y-auto p-3 space-y-2">
-                {messages.map(m => (
-                  <div key={m.id} className={`max-w-[80%] rounded-xl px-3 py-2 text-sm ${m.role === 'agent' ? 'bg-gray-100 text-gray-800' : 'bg-brand-600 text-white ml-auto'}`}>
-                    {m.text}
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
-        </div>
-      </div>
-    </Modal>
   )
 }

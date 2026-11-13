@@ -7,12 +7,13 @@ import { nodeChatApi, type InboxTab, type NodeInboxRow } from '../api'
 import { avatarColor, initials, timeAgo } from './util'
 
 const TABS: { key: InboxTab; label: string }[] = [
-  { key: 'unread', label: 'Unread' }, { key: 'read', label: 'Read' }, { key: 'closed', label: 'Closed' }, { key: 'all', label: 'All' },
+  { key: 'all', label: 'All' }, { key: 'unread', label: 'Unread' }, { key: 'read', label: 'Read' }, { key: 'closed', label: 'Closed' },
 ]
 const PER_PAGE = 25
 const FALLBACK_POLL_MS = 30_000 // only while the socket is down
 
 interface Props {
+  widgetId?: number // only this widget's chats
   openIds: number[]
   muted: boolean
   refreshKey: number // bump to force a reload (e.g. after accepting in a pane)
@@ -32,9 +33,8 @@ const badge = (r: NodeInboxRow) => {
   return null
 }
 
-export default function InboxList({ openIds, muted, refreshKey, onOpen, onCounts, onSocket, onForbidden }: Props) {
-  const [tab, setTab] = useState<InboxTab>('unread')
-  const autoPicked = useRef(false)
+export default function InboxList({ widgetId, openIds, muted, refreshKey, onOpen, onCounts, onSocket, onForbidden }: Props) {
+  const [tab, setTab] = useState<InboxTab>('all')   // new chats show up here whatever their state (bot-solved ones are not "unread")
   const [q, setQ] = useState('')
   const [dq, setDq] = useState('')
   const [rows, setRows] = useState<NodeInboxRow[]>([])
@@ -67,23 +67,18 @@ export default function InboxList({ openIds, muted, refreshKey, onOpen, onCounts
     const my = ++req.current
     const upTo = keepPages ? Math.min(pageRef.current, 4) : 1
     try {
-      const pages = await Promise.all(Array.from({ length: upTo }, (_, i) => nodeChatApi.inbox({ tab, q: dq, page: i + 1, per_page: PER_PAGE })))
+      const pages = await Promise.all(Array.from({ length: upTo }, (_, i) => nodeChatApi.inbox({ tab, q: dq, page: i + 1, per_page: PER_PAGE, widget_id: widgetId })))
       if (my !== req.current) return
       const all = pages.flatMap(p => p.data.data)
       const last = pages[pages.length - 1].data
       setRows(all); setCounts(last.counts); onCounts(last.counts); setHasMore(last.has_more); setPage(upTo)
-      // Nothing unread on first open → don't show an empty screen when there are chats; open on All instead.
-      if (!autoPicked.current) {
-        autoPicked.current = true
-        if (tab === 'unread' && !last.counts.unread && last.counts.all) setTab('all')
-      }
-      if (tab === 'unread') alertNew(all)
+      if (tab === 'unread' || tab === 'all') alertNew(all)
     } catch (e: any) {
       if (e?.response?.status === 403) onForbidden()
     } finally { if (my === req.current) setLoading(false) }
-  }, [tab, dq, alertNew, onCounts, onForbidden])
+  }, [tab, dq, widgetId, alertNew, onCounts, onForbidden])
 
-  useEffect(() => { setLoading(true); setRows([]); setPage(1); void reload(false) }, [tab, dq]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { setLoading(true); setRows([]); setPage(1); void reload(false) }, [tab, dq, widgetId]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (refreshKey) void reload(true) }, [refreshKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -107,7 +102,7 @@ export default function InboxList({ openIds, muted, refreshKey, onOpen, onCounts
     if (loadingMore || !hasMore) return
     setLoadingMore(true)
     try {
-      const r = await nodeChatApi.inbox({ tab, q: dq, page: page + 1, per_page: PER_PAGE })
+      const r = await nodeChatApi.inbox({ tab, q: dq, page: page + 1, per_page: PER_PAGE, widget_id: widgetId })
       setRows(prev => { const seen = new Set(prev.map(x => x.id)); return [...prev, ...r.data.data.filter(x => !seen.has(x.id))] })
       setPage(page + 1); setHasMore(r.data.has_more)
     } catch (e) { toast.error(getError(e)) } finally { setLoadingMore(false) }

@@ -1,16 +1,24 @@
 // Website chats workspace — /website-widget/chats. Served by backend-node (REST + socket events); up to 4
 // conversations side by side, each with expand ⤢ and close ✕.
 import { useCallback, useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { getError } from '@/utils'
 import { PermissionGate } from '@/components/ui/PermissionGate'
-import { nodeChatApi, type InboxTab } from '../api'
+import { nodeChatApi, widgetApi, type ChatWidget, type InboxTab } from '../api'
 import InboxList from './InboxList'
 import ChatPane from './ChatPane'
 import { MAX_PANES, loadPanes, savePanes } from './util'
 
 function Workspace() {
+  // ?widget=ID narrows the list to one widget's conversations (the "Conversations" link on the widgets page)
+  const [params, setParams] = useSearchParams()
+  const widgetId = Number(params.get('widget')) || 0
+  const [widgetName, setWidgetName] = useState('')
+  useEffect(() => {
+    if (!widgetId) { setWidgetName(''); return }
+    widgetApi.list().then(r => setWidgetName(((r.data.widgets ?? r.data.data ?? r.data) as ChatWidget[]).find(w => w.id === widgetId)?.name ?? '')).catch(() => {})
+  }, [widgetId])
   const [open, setOpen] = useState<number[]>(loadPanes)
   const [expanded, setExpanded] = useState<number | null>(null)
   const [me, setMe] = useState({ muted: false, handling: 0, limit: 5 })
@@ -52,8 +60,10 @@ function Workspace() {
       <div className="flex items-center gap-3 flex-wrap">
         <Link to="/website-widget" className="icon-btn" title="Back to widgets">←</Link>
         <div className="flex-1 min-w-0">
-          <h1 className="page-title">Website chats</h1>
-          <p className="page-sub">Live conversations from your website widget — open up to {MAX_PANES} side by side.</p>
+          <h1 className="page-title">{widgetId ? `${widgetName || 'Widget'} — conversations` : 'Website chats'}</h1>
+          <p className="page-sub">{widgetId
+            ? <>Only this widget's chats. <button className="underline" onClick={() => setParams({})}>Show all widgets</button></>
+            : <>Live conversations from your website widget — open up to {MAX_PANES} side by side.</>}</p>
         </div>
         <span title={socketUp ? 'Realtime connected' : 'Reconnecting — refreshing every 30 s meanwhile'}
           className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border ${socketUp ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-amber-200 bg-amber-50 text-amber-700'}`}>
@@ -68,7 +78,7 @@ function Workspace() {
 
       <div className="flex-1 min-h-0 flex gap-3">
         <div className={`${mobileList ? 'flex' : 'hidden'} md:flex w-full md:w-[330px] shrink-0 min-h-0`}>
-          <InboxList openIds={open} muted={me.muted} refreshKey={refreshKey} onOpen={openChat} onCounts={setCounts} onSocket={setSocketUp} onForbidden={() => setForbidden(true)} />
+          <InboxList widgetId={widgetId || undefined} openIds={open} muted={me.muted} refreshKey={refreshKey} onOpen={openChat} onCounts={setCounts} onSocket={setSocketUp} onForbidden={() => setForbidden(true)} />
         </div>
         <div className={`${mobileList ? 'hidden' : 'flex'} md:flex flex-1 min-w-0 min-h-0 gap-3 overflow-x-auto`}>
           {shown.length === 0 ? (
