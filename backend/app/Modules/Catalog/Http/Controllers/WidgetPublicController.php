@@ -81,6 +81,15 @@ class WidgetPublicController extends Controller
             $convo = WidgetConversation::where('chat_widget_id', $widget->id)
                 ->where('session_token', $data['session_token'])->first();
         }
+
+        // No chat starts without a name and a mobile number — the bot / AI only talks to someone we can reach.
+        $hasDetails = ($convo && $convo->visitor_name && $convo->visitor_phone) || (!empty($data['name']) && !empty($data['phone']));
+        if (!$hasDetails) {
+            return response()->json([
+                'message' => 'Please share your name and mobile number to start the chat.',
+                'error_code' => 'details_required', 'session_token' => $convo?->session_token,
+            ], 422);
+        }
         if (!$convo) {
             $convo = WidgetConversation::create([
                 'chat_widget_id' => $widget->id,

@@ -277,4 +277,104 @@ class ConversationController extends Controller
 
         return response()->json(['message' => $message->fresh()]);
     }
+
+    // POST /conversations/new — start a chat with a number that has not written to us (or whose 24-hour window has
+    // closed). WhatsApp only allows this with an approved TEMPLATE, so the agent picks the sending number, the
+    // recipient and a template; the thread is created (or reused), assigned to the sender and the template is sent.
+    public function startChat(Request $request, \App\Modules\Wallet\Services\WalletService $wallet): JsonResponse
+    {
+        $d = $request->validate([
+            'wa_phone_number_id' => ['required', 'integer'],
+            'phone'              => ['required', 'string', 'max:30'],
+            'contact_id'         => ['nullable', 'integer'],
+            'template_id'        => ['required', 'integer'],
+            'variables'          => ['nullable', 'array'],
+            'variables.*'        => ['nullable', 'string', 'max:500'],
+        ]);
+
+        $user    = auth()->user();
+        $company = $user->company;
+
+        $allowed = $user->allowedAccountIds('phone_number');
+        $number  = \App\Models\WaPhoneNumber::where('company_id', $company->id)->whereKey($d['wa_phone_number_id'])
+            ->when($allowed !== null, fn ($q) => $q->whereIn('id', $allowed))->first();
+        if (!$number || !$number->is_active || !$number->access_token || !$number->phone_number_id) {
+            return response()->json(['message' => 'That sending number is not available or has no credentials.'], 422);
+        }
+
+        $template = \App\Models\WaTemplate::where('company_id', $company->id)->find($d['template_id']);
+        if (!$template || strtolower((string) $template->status) !== 'approved') {
+            return response()->json(['message' => 'Choose an approved template — WhatsApp only lets you start a chat with one.'], 422);
+        }
+
+        $phone = preg_replace('/\D+/', '', $d['phone']);
+        if (strlen($phone) < 8 || strlen($phone) > 15) {
+            return response()->json(['message' => 'Enter the number with its country code, e.g. 919876543210.'], 422);
+        }
+        if (\Illuminate\Support\Facades\Schema::hasTable('message_blacklist')
+            && DB::table('message_blacklist')->where('company_id', $company->id)->where('phone', $phone)->exists()) {
+            return response()->json(['message' => 'This number is on your blacklist.'], 422);
+        }
+
+        $variables = array_values($d['variables'] ?? []);
+        preg_match_all('/\{\{\s*(\d+)\s*\}\}/', (string) $template->body, $m);
+        $needed = $m[1] ? max(array_map('intval', $m[1])) : 0;
+        if ($needed > count(array_filter($variables, fn ($v) => trim((string) $v) !== ''))) {
+            return response()->json(['message' => "This template needs {$needed} variable value(s)."], 422);
+        }
+
+        $billed = $wallet->usesWallet($company);
+        if ($billed && $wallet->getWallet($company->id)->balance < 1) {
+            return response()->json(['message' => 'Not enough wallet balance to send this message.'], 402);
+        }
+
+        // One thread per customer number: reuse it (and move it to this sending number), otherwise open a new one.
+        $contactId = !empty($d['contact_id'])
+            ? \App\Models\Contact::where('company_id', $company->id)->whereKey($d['contact_id'])->value('id')
+            : \App\Models\Contact::where('company_id', $company->id)->where('phone', $phone)->value('id');
+        $conversation = WaConversation::firstOrNew(['company_id' => $company->id, 'phone' => $phone]);
+        if ($conversation->exists && !$user->hasPermission('inbox.view_all') && $conversation->assigned_to && $conversation->assigned_to !== $user->id) {
+            return response()->json(['message' => 'This number already has a chat assigned to another agent.'], 403);
+        }
+        $conversation->fill([
+            'wa_phone_number_id' => $number->id,
+            'contact_id'         => $conversation->contact_id ?: $contactId,
+            'status'             => 'open',
+            'assigned_to'        => $conversation->assigned_to ?: $user->id,
+        ]);
+        if (!$conversation->exists) { $conversation->unread_count = 0; }
+        $conversation->save();
+
+        // Rendered text for the thread (the customer sees the real template; we show the same words).
+        $rendered = preg_replace_callback('/\{\{\s*(\d+)\s*\}\}/', fn ($mm) => $variables[(int) $mm[1] - 1] ?? $mm[0], (string) $template->body);
+        $message = WaMessage::create([
+            'conversation_id' => $conversation->id,
+            'company_id'      => $company->id,
+            'direction'       => 'outbound',
+            'sender_type'     => 'agent',
+            'sent_by'         => $user->id,
+            'type'            => 'template',
+            'content'         => ['body' => $rendered, 'template' => $template->name],
+            'status'          => 'queued',
+        ]);
+
+        $result = app(\App\Modules\Campaign\Services\CampaignMessageSender::class)
+            ->send($number->decrypted_token, $number->phone_number_id, $phone, $template, $variables);
+
+        if (!$result['ok']) {
+            $reason = $result['reason'] ?? 'Meta rejected the message.';
+            $message->update(['status' => 'failed', 'failure_reason' => $reason]);
+            \App\Models\MessageLog::recordCloudOutbound($company->id, $phone, 'template', $rendered, 'inbox', null, $reason, null, $template->name);
+            broadcast(new WaMessageReceived($message->fresh(['conversation', 'sentBy'])));
+            return response()->json(['message' => $reason, 'conversation' => $conversation->fresh()], 422);
+        }
+
+        $message->update(['wa_message_id' => $result['wa_message_id'], 'status' => 'sent', 'status_updated_at' => now()]);
+        $conversation->update(['last_message_at' => now()]);
+        \App\Models\MessageLog::recordCloudOutbound($company->id, $phone, 'template', $rendered, 'inbox', $result['wa_message_id'], null, null, $template->name);
+        if ($billed) { $wallet->debit($company->id, 1, "Inbox template — {$template->name}", (string) $message->id, 'inbox_template'); }
+        broadcast(new WaMessageReceived($message->fresh(['conversation', 'sentBy'])));
+
+        return response()->json(['conversation' => $conversation->fresh(['waPhoneNumber']), 'message' => $message->fresh()], 201);
+    }
 }

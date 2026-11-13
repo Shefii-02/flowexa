@@ -16,7 +16,7 @@ function Workspace() {
   const [me, setMe] = useState({ muted: false, handling: 0, limit: 5 })
   const [socketUp, setSocketUp] = useState(false)
   const [forbidden, setForbidden] = useState(false)
-  const [counts, setCounts] = useState<Record<InboxTab, number>>({ unread: 0, read: 0, closed: 0 })
+  const [counts, setCounts] = useState<Record<InboxTab, number>>({ all: 0, unread: 0, read: 0, closed: 0 })
   const [refreshKey, setRefreshKey] = useState(0)
   const [mobileList, setMobileList] = useState(true)
 

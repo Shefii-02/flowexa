@@ -511,6 +511,10 @@ export const conversationApi = {
   messages: (id: number, params?: { before_id?: number; limit?: number; peek?: number }) =>
     api.get(`/conversations/${id}/messages`, { params }),
 
+  // POST /conversations/new — start a chat with an approved template (the only way WhatsApp allows a first message).
+  startChat: (d: { wa_phone_number_id: number; phone: string; contact_id?: number | null; template_id: number; variables?: string[] }) =>
+    api.post('/conversations/new', d),
+
   // POST /conversations/{id}/claim — atomic first-come-first-served assignment.
   // Returns 409 if someone else already claimed it (caller should surface that message).
   claim: (id: number) =>

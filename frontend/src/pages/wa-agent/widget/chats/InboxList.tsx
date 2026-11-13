@@ -7,7 +7,7 @@ import { nodeChatApi, type InboxTab, type NodeInboxRow } from '../api'
 import { avatarColor, initials, timeAgo } from './util'
 
 const TABS: { key: InboxTab; label: string }[] = [
-  { key: 'unread', label: 'Unread' }, { key: 'read', label: 'Read' }, { key: 'closed', label: 'Closed' },
+  { key: 'unread', label: 'Unread' }, { key: 'read', label: 'Read' }, { key: 'closed', label: 'Closed' }, { key: 'all', label: 'All' },
 ]
 const PER_PAGE = 25
 const FALLBACK_POLL_MS = 30_000 // only while the socket is down
@@ -34,10 +34,11 @@ const badge = (r: NodeInboxRow) => {
 
 export default function InboxList({ openIds, muted, refreshKey, onOpen, onCounts, onSocket, onForbidden }: Props) {
   const [tab, setTab] = useState<InboxTab>('unread')
+  const autoPicked = useRef(false)
   const [q, setQ] = useState('')
   const [dq, setDq] = useState('')
   const [rows, setRows] = useState<NodeInboxRow[]>([])
-  const [counts, setCounts] = useState<Record<InboxTab, number>>({ unread: 0, read: 0, closed: 0 })
+  const [counts, setCounts] = useState<Record<InboxTab, number>>({ all: 0, unread: 0, read: 0, closed: 0 })
   const [page, setPage] = useState(1)
   const [hasMore, setHasMore] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -71,6 +72,11 @@ export default function InboxList({ openIds, muted, refreshKey, onOpen, onCounts
       const all = pages.flatMap(p => p.data.data)
       const last = pages[pages.length - 1].data
       setRows(all); setCounts(last.counts); onCounts(last.counts); setHasMore(last.has_more); setPage(upTo)
+      // Nothing unread on first open → don't show an empty screen when there are chats; open on All instead.
+      if (!autoPicked.current) {
+        autoPicked.current = true
+        if (tab === 'unread' && !last.counts.unread && last.counts.all) setTab('all')
+      }
       if (tab === 'unread') alertNew(all)
     } catch (e: any) {
       if (e?.response?.status === 403) onForbidden()

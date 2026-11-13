@@ -77,7 +77,7 @@ export interface LiveMessage {
 }
 
 export type CaseStatus = 'open' | 'closed' | 'pending' | 'unread' | 'attended'
-export type InboxTab = 'unread' | 'read' | 'closed'
+export type InboxTab = 'all' | 'unread' | 'read' | 'closed'
 export interface InboxRow extends Omit<LiveChatRow, 'live_status'> {
   live_status: LiveChatRow['live_status'] | 'ended' | null
   status: 'active' | 'qualified' | 'closed'
@@ -110,6 +110,17 @@ export const liveChatApi = {
   markReviewed: (id: number, note?: string) => api.post(`/widgets/live/${id}/review`, { note }),
   analytics: (days = 30) => api.get('/widgets/live/analytics', { params: { days } }),
   end: (id: number) => api.post(`/widgets/live/${id}/end`),
+  // CRM for a chat: the contact, the leads on that number, and the actions (save contact / new lead / link a lead)
+  crm: (id: number) => api.get<ChatCrm>(`/widgets/live/${id}/crm`),
+  saveContact: (id: number) => api.post<ChatCrm>(`/widgets/live/${id}/crm/contact`),
+  leadAction: (id: number, d: { mode: 'new' | 'existing'; lead_id?: number }) => api.post<ChatCrm>(`/widgets/live/${id}/crm/lead`, d),
+}
+
+export interface ChatCrm {
+  visitor: { name: string | null; phone: string | null }
+  contact: { id: number; name: string | null; phone: string; email: string | null; lead_stage: string | null } | null
+  leads: { id: number; stage: string; category: string | null; priority: string | null; source: string | null; origin_label: string | null; assigned_to: string | null; notes: string | null; created_at: string }[]
+  lead_id: number | null
 }
 
 // ── Website live chat served by backend-node (same MySQL tables; realtime over the /staff socket) ──

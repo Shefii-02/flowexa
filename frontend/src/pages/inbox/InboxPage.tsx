@@ -3,7 +3,7 @@
 import { subscribeStaffEvent } from '@/socket/staffSocket'
 import { useEffect, useLayoutEffect, useRef, useState, useCallback } from 'react'
 import {
-  Search, Send, Info, UserPlus, LogOut, MessageSquare,
+  Search, Send, Info, UserPlus, LogOut, MessageSquare, SquarePen,
   Image as ImageIcon, Video, FileText, Mic, MapPin, Check, CheckCheck, Clock, AlertTriangle,
 } from 'lucide-react'
 import { useAppSelector, usePermission } from '@/store'
@@ -11,6 +11,7 @@ import { conversationApi } from '@/api'
 import { getError } from '@/utils'
 import toast from 'react-hot-toast'
 import ContactInfoDrawer from './ContactInfoDrawer'
+import NewChatModal from './NewChatModal'
 import { avatarColor, initials } from './avatar'
 import './inbox.css'
 
@@ -140,6 +141,8 @@ export default function InboxPage() {
   const [filter, setFilter]               = useState<'unread' | 'all' | 'mine' | 'unassigned'>('all')
   const [search, setSearch]               = useState('')
   const [drawerOpen, setDrawerOpen]       = useState(false)
+  const [newChatOpen, setNewChatOpen]     = useState(false)
+  const canStartChat = usePermission('inbox.manage')
   // conversation list paging + server-side search
   const [page, setPage]                   = useState(1)
   const [hasMoreConv, setHasMoreConv]     = useState(false)
@@ -402,9 +405,12 @@ export default function InboxPage() {
       {/* ── conversation list ──────────────────────────────────── */}
       <div className="wa-list">
         <div className="wa-list__head">
-          <div className="wa-search">
-            <Search size={15} color="#667781" />
-            <input placeholder="Search name or number" value={search} onChange={e => setSearch(e.target.value)} />
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <div className="wa-search" style={{ flex: 1 }}>
+              <Search size={15} color="#667781" />
+              <input placeholder="Search name or number" value={search} onChange={e => setSearch(e.target.value)} />
+            </div>
+            {canStartChat && <button className="wa-iconbtn" title="New chat" aria-label="New chat" onClick={() => setNewChatOpen(true)}><SquarePen size={18} /></button>}
           </div>
           <div className="wa-filters">
             {(['unread', 'all', 'mine', 'unassigned'] as const).map(f => (
@@ -468,6 +474,15 @@ export default function InboxPage() {
             </div></>}
         </div>
       </div>
+
+      <NewChatModal open={newChatOpen} onClose={() => setNewChatOpen(false)} onStarted={async id => {
+        // refresh the list so the new thread is in it, then open it
+        setActiveId(null)
+        await conversationApi.list({ page: 1, per_page: PER_PAGE }).then(r => setConversations(prev => {
+          const fresh: any[] = r.data.conversations || []; const seen = new Set(fresh.map(c => c.id)); return [...fresh, ...prev.filter(c => !seen.has(c.id))]
+        })).catch(() => {})
+        openThread(id)
+      }} />
 
       {/* ── chat thread ────────────────────────────────────────── */}
       {!active ? (

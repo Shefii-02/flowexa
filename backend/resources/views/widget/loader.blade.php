@@ -247,8 +247,17 @@
     bodyEl.scrollTop = bodyEl.scrollHeight;
   }
   function greet() {
+    // Name + mobile come FIRST: nobody talks to the bot / AI before we know who they are (prefilled for returning visitors).
+    if (!live.ident && !liveOn()) { askIdentity(); return; }
     addMsg("agent", cfg.greeting);
     addOpts(["Start"]);   // "Chat with a person" only appears after the bot has replied (see send)
+  }
+  function askIdentity(again) {
+    addMsg("agent", again ? "Please confirm your name and mobile number to continue." : "Hi! 👋 Before we start, please share your name and mobile number.");
+    showForm({ cta: "Start chat", submit: function (n, p) {
+      live.ident = true; live.name = n; live.phone = p; removeForm();
+      addMsg("agent", cfg.greeting); addOpts(["Start"]);
+    } });
   }
 
   // ── Live chat with staff ──────────────────────────────────────────────────
@@ -512,6 +521,7 @@
       })
     }).then(function (r) { return r.json(); }).then(function (d) {
       typing(false);
+      if (d.error_code === "details_required") { live.ident = false; sending = false; sendBtn.disabled = false; askIdentity(true); return; }
       if (d.session_token) localStorage.setItem(LS, d.session_token);
       if (d.live_status) { setReply(null); applyLive({ live_status: d.live_status, messages: [] }); return; }
       addMsg("agent", d.reply || "Thanks!");

@@ -7,6 +7,7 @@ import { getError } from '@/utils'
 import { subscribeWidgetChat } from '@/socket/staffSocket'
 import { liveChatApi, nodeChatApi, type LiveMessage, type NodeConversation } from '../api'
 import { avatarColor, initials } from './util'
+import ChatCrmPanel from './ChatCrmPanel'
 
 const MAX_BYTES = 2 * 1024 * 1024 // attachments are capped at 2 MB (also enforced server-side)
 
@@ -179,6 +180,8 @@ export default function ChatPane({ id, expanded, onClose, onToggleExpand, onChan
         <button onClick={onToggleExpand} className="icon-btn" title={expanded ? 'Back to all screens' : 'Expand'}>{expanded ? '⤡' : '⤢'}</button>
         <button onClick={onClose} className="icon-btn hover:!bg-rose-50 hover:!text-rose-600" title="Close screen">✕</button>
       </header>
+
+      <ChatCrmPanel id={id} phone={convo?.visitor_phone} onChanged={onChanged} />
 
       <div ref={scroller} onScroll={onScroll} className="flex-1 min-h-0 overflow-y-auto px-3 py-3 space-y-2 bg-[#f7f8fb]">
         {loading && <div className="space-y-2 animate-pulse">{[60, 40, 70].map((w, i) => <div key={i} className={`h-9 rounded-xl bg-gray-200 ${i % 2 ? 'ml-auto' : ''}`} style={{ width: `${w}%` }} />)}</div>}

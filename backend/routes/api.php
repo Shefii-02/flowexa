@@ -508,6 +508,7 @@ Route::prefix('v1')->group(function () {
             Route::get('conversations/{id}/messages', [ConversationController::class, 'messages']);
         });
         Route::middleware('permission:inbox.manage')->group(function () {
+            Route::post('conversations/new', [ConversationController::class, 'startChat']);
             Route::post('conversations/{id}/claim', [ConversationController::class, 'claim']);
             Route::post('conversations/{id}/release', [ConversationController::class, 'release']);
             Route::post('conversations/{id}/messages', [ConversationController::class, 'send']);
@@ -1304,6 +1305,9 @@ Route::prefix('v1')->group(function () {
             Route::get('/review',         [$c, 'review'])->middleware('permission:widget_chat.review');
             Route::post('/{id}/review',   [$c, 'markReviewed'])->middleware('permission:widget_chat.review');
             Route::post('/{id}/flag',     [$c, 'flag']);
+            Route::get('/{id}/crm',            [$c, 'crm'])->whereNumber('id');
+            Route::post('/{id}/crm/contact',   [$c, 'saveContact'])->whereNumber('id');
+            Route::post('/{id}/crm/lead',      [$c, 'leadAction'])->whereNumber('id');
             Route::put('/me',             [$c, 'setMuted']);
             Route::get('/{id}',           [$c, 'show']);
             Route::post('/{id}/read',     [$c, 'markRead']);

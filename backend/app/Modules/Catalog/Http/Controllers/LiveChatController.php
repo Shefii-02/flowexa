@@ -33,23 +33,27 @@ class LiveChatController extends Controller
             });
 
         $scope = fn ($q, string $tab) => match ($tab) {
+            'all'    => $q,                                    // everything, bot-handled and closed chats included
             'closed' => $q->whereRaw(self::CLOSED),
             'read'   => $q->whereRaw('NOT ' . self::CLOSED)->whereRaw('NOT ' . self::UNREAD),
             default  => $q->whereRaw('NOT ' . self::CLOSED)->whereRaw(self::UNREAD),
         };
 
-        $tab = in_array($request->query('tab'), ['unread', 'read', 'closed'], true) ? $request->query('tab') : 'unread';
+        $tab = in_array($request->query('tab'), ['unread', 'read', 'closed', 'all'], true) ? $request->query('tab') : 'unread';
 
         $rows = $scope($base(), $tab)
             ->with('widget:id,name')
             ->addSelect(['last_text' => \App\Models\WidgetMessage::selectRaw(
                 "CASE WHEN text <> '' THEN text WHEN type = 'image' THEN '📷 Photo' WHEN type = 'audio' THEN '🎤 Voice message' ELSE '📎 File' END")
                 ->whereColumn('widget_conversation_id', 'widget_conversations.id')->latest('id')->limit(1)])
+            ->selectRaw('(' . self::UNREAD . ' AND NOT ' . self::CLOSED . ') AS is_unread')
             ->orderByDesc('last_message_at')->orderByDesc('id')     // latest first; the widget groups the same visitor together
-            ->paginate(100, ['widget_conversations.*']);
+            ->paginate(min(100, max(5, (int) $request->query('per_page', 100))), ['widget_conversations.*']);
 
         return response()->json(array_merge($rows->toArray(), [
+            'has_more' => $rows->hasMorePages(),
             'counts' => [
+                'all'    => $scope($base(), 'all')->count(),
                 'unread' => $scope($base(), 'unread')->count(),
                 'read'   => $scope($base(), 'read')->count(),
                 'closed' => $scope($base(), 'closed')->count(),
@@ -221,6 +225,74 @@ class LiveChatController extends Controller
         $convo->update(['live_status' => 'ended', 'status' => 'closed', 'case_status' => 'closed', 'closed_at' => now()]);
         WidgetMessage::create(['widget_conversation_id' => $convo->id, 'role' => 'system', 'text' => 'This conversation is now closed. Thank you!']);
         return response()->json(['ended' => true]);
+    }
+
+    // ── CRM for this chat: the contact, the leads for the visitor's number, and the actions staff can take ──
+
+    private function digits(?string $phone): string { return preg_replace('/\D+/', '', (string) $phone); }
+
+    /** The visitor's CRM contact: the one this chat is linked to, else whichever contact has the same number. */
+    private function contactFor(WidgetConversation $convo): ?\App\Models\Contact
+    {
+        $companyId = auth()->user()->company_id;
+        if ($convo->contact_id && ($c = \App\Models\Contact::where('company_id', $companyId)->find($convo->contact_id))) { return $c; }
+        $d = $this->digits($convo->visitor_phone);
+        return strlen($d) >= 8 ? \App\Models\Contact::where('company_id', $companyId)->where('phone', $d)->first() : null;
+    }
+
+    /** GET /{id}/crm — contact + every lead on that number, and which one this chat is attached to. */
+    public function crm(int $id): JsonResponse
+    {
+        $convo   = $this->find($id);
+        $contact = $this->contactFor($convo);
+        $leads   = $contact
+            ? \App\Models\Lead::where('company_id', $convo->company_id)->where('contact_id', $contact->id)
+                ->with('assignedTo:id,name')->latest()->limit(20)->get()
+                ->map(fn ($l) => ['id' => $l->id, 'stage' => $l->stage, 'category' => $l->category, 'priority' => $l->priority, 'source' => $l->source,
+                    'origin_label' => $l->origin_label, 'assigned_to' => $l->assignedTo?->name, 'notes' => $l->notes ? mb_substr($l->notes, 0, 160) : null, 'created_at' => $l->created_at])
+            : collect();
+        return response()->json([
+            'visitor'  => ['name' => $convo->visitor_name, 'phone' => $convo->visitor_phone],
+            'contact'  => $contact ? $contact->only(['id', 'name', 'phone', 'email', 'lead_stage']) : null,
+            'leads'    => $leads->values(),
+            'lead_id'  => $convo->lead_id,
+        ]);
+    }
+
+    /** POST /{id}/crm/contact — save the visitor as a contact (or attach the existing one with this number). */
+    public function saveContact(int $id): JsonResponse
+    {
+        $this->ensureContact($this->find($id));
+        return $this->crm($id);
+    }
+
+    private function ensureContact(WidgetConversation $convo): \App\Models\Contact
+    {
+        $d = $this->digits($convo->visitor_phone);
+        abort_if(strlen($d) < 8, 422, 'This visitor has not shared a valid phone number yet.');
+        $contact = \App\Models\Contact::firstOrCreate(['company_id' => $convo->company_id, 'phone' => $d], ['name' => $convo->visitor_name]);
+        if (!$contact->wasRecentlyCreated && !$contact->name && $convo->visitor_name) { $contact->update(['name' => $convo->visitor_name]); }
+        $convo->update(['contact_id' => $contact->id]);
+        return $contact;
+    }
+
+    /** POST /{id}/crm/lead {mode: new|existing, lead_id?} — open a fresh lead for this contact, or attach this chat to one they already have. */
+    public function leadAction(Request $request, int $id): JsonResponse
+    {
+        $data  = $request->validate(['mode' => ['required', 'in:new,existing'], 'lead_id' => ['required_if:mode,existing', 'nullable', 'integer']]);
+        $convo = $this->find($id);
+        $contact = $this->contactFor($convo) ?? $this->ensureContact($convo);
+
+        if ($data['mode'] === 'existing') {
+            $lead = \App\Models\Lead::where('company_id', $convo->company_id)->where('contact_id', $contact->id)->findOrFail($data['lead_id']);
+        } else {
+            $lead = app(\App\Modules\Lead\Repositories\Interfaces\LeadRepositoryInterface::class)->create($convo->company_id, new \App\Modules\Lead\DTOs\CreateLeadDTO(
+                contactId: $contact->id, source: 'website_widget', notes: "Website chat · {$convo->widget?->name}\nStarted by " . auth()->user()->name,
+                originType: 'widget', originId: $convo->chat_widget_id, originLabel: $convo->widget?->name,
+            ));
+        }
+        $convo->update(['contact_id' => $contact->id, 'lead_id' => $lead->id]);
+        return $this->crm($id);
     }
 
     private function find(int $id): WidgetConversation
