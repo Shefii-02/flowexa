@@ -31,7 +31,10 @@ export function SessionStatusIndicator() {
   const boxRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    if (!hasWaChat) return
+    // VITE_SESSION_HEALTH_POLL_SECONDS: 0 (or "false") turns the heartbeat off entirely; unset = 180s.
+    const raw = import.meta.env.VITE_SESSION_HEALTH_POLL_SECONDS
+    const seconds = raw === undefined || raw === '' ? 180 : Number(raw)
+    if (!hasWaChat || !Number.isFinite(seconds) || seconds <= 0) return
     let cancelled = false
 
     const check = async () => {
@@ -42,7 +45,7 @@ export function SessionStatusIndicator() {
     }
 
     check()
-    const id = window.setInterval(check, 180_000)
+    const id = window.setInterval(check, Math.max(30, seconds) * 1000)
     return () => { cancelled = true; window.clearInterval(id) }
   }, [hasWaChat])
 
