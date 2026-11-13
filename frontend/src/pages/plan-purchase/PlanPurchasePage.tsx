@@ -11,6 +11,8 @@ import { refreshPlanUsage } from '@/lib/planUsage'
 import { loadRazorpay } from './razorpay'
 import AddonsSection, { type Addon, type MyAddon } from './AddonsSection'
 import FeaturesSection from './FeaturesSection'
+import WalletPage from '@/pages/wallet/WalletPage'
+import { useBilling } from '@/hooks/useBilling'
 import type { Cycle } from './AddonCart'
 import { useAppDispatch } from '@/store'
 import { fetchMeThunk } from '@/store/slices'
@@ -47,6 +49,7 @@ export default function PlanPurchasePage() {
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [params, setParams] = useSearchParams()
   const dispatch = useAppDispatch()
+  const { usesWallet } = useBilling()
   const [cart, setCart] = useState<number[]>([])
   const [cycle, setCycle] = useState<Cycle>('monthly')
   const [coupon, setCoupon] = useState('')
@@ -189,6 +192,7 @@ export default function PlanPurchasePage() {
   const tabs: VTab[] = [
     { id: 'plan',     icon: '📦', label: 'Purchased plan',    desc: 'Your current plan and what you have used' },
     { id: 'invoices', icon: '🧾', label: 'Billing & invoices', desc: 'Payments, receipts and plan history' },
+    { id: 'wallet',   icon: '👛', label: 'Wallet & credits',  desc: 'Message balance, recharge and transactions', hidden: !usesWallet },
     { id: 'plans',    icon: '🗂️', label: 'All plans',          desc: 'Compare, upgrade or renew' },
     { id: 'features', icon: '✨', label: 'Features',           desc: 'What is active on your account — and what you can add' },
     { id: 'addons',   icon: '➕', label: 'Add-ons & cart',     desc: 'Add features or raise a limit, pay once' },
@@ -229,6 +233,7 @@ export default function PlanPurchasePage() {
               </>
             )}
 
+            {id === 'wallet' && <WalletPage embedded />}
             {id === 'invoices' && <InvoicesSection invoices={invoices} history={history} />}
 
             {id === 'plans' && (

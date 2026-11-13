@@ -24,6 +24,10 @@ class OrderResultResource
                 'messages'  => $dto->messages,
                 'price_inr' => $dto->priceInr,
             ],
+            'discount'     => $dto->discount,
+            'coupon_code'  => $dto->couponCode,
+            'free'         => $dto->free,
+            'new_balance'  => $dto->newBalance,
             'user' => [
                 'name' => $user->name,
                 'email' => $user->email,

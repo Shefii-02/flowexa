@@ -12,7 +12,7 @@ declare global { interface Window { Razorpay: any } }
 interface Package { messages: number; price_inr: number; label: string; popular: boolean }
 interface Tx { id: number; type: 'credit'|'debit'; amount: number; balance_before: number; balance_after: number; description: string; reference_type: string|null; created_at: string }
 
-export default function WalletPage() {
+export default function WalletPage({ embedded = false }: { embedded?: boolean }) {
   const dispatch = useAppDispatch()
   const [wallet,   setWallet]   = useState<any>(null)
   const [packages, setPackages] = useState<Package[]>([])
@@ -21,6 +21,23 @@ export default function WalletPage() {
   const [txPage,   setTxPage]   = useState(1)
   const [loading,  setLoading]  = useState(true)
   const [paying,   setPaying]   = useState(false)
+  const [coupon,   setCoupon]   = useState('')
+  const [applied,  setApplied]  = useState('')
+  const [quotes,   setQuotes]   = useState<Record<number, { final: number; discount: number } | { error: string }>>({})
+
+  // price every package with the coupon so each card shows its own discounted total
+  const applyCoupon = async () => {
+    const code = coupon.trim().toUpperCase()
+    if (!code) { setQuotes({}); setApplied(''); return }
+    const out: Record<number, { final: number; discount: number } | { error: string }> = {}
+    await Promise.all(packages.map(p => walletApi.quote(p.messages, code)
+      .then(r => { out[p.messages] = { final: r.data.final, discount: r.data.discount } })
+      .catch(e => { out[p.messages] = { error: getError(e) } })))
+    setQuotes(out)
+    if (Object.values(out).some(q => !('error' in q))) { setApplied(code); toast.success(`Coupon ${code} applied`) }
+    else { setApplied(''); toast.error((Object.values(out)[0] as { error: string } | undefined)?.error ?? 'Invalid coupon') }
+  }
+  const clearCoupon = () => { setCoupon(''); setApplied(''); setQuotes({}) }
 
   const load = async () => {
     try {
@@ -44,7 +61,15 @@ export default function WalletPage() {
   const handleRecharge = async (pkg: Package) => {
     setPaying(true)
     try {
-      const { data } = await walletApi.createOrder(pkg.messages)
+      const { data } = await walletApi.createOrder(pkg.messages, applied || null)
+
+      // a coupon that covers the whole price credits the wallet with no payment step
+      if (data.free) {
+        toast.success(`${fmt.number(pkg.messages)} messages credited with coupon ${data.coupon_code}!`)
+        if (data.new_balance !== null && data.new_balance !== undefined) dispatch(updateWallet({ ...wallet, balance: data.new_balance }))
+        clearCoupon(); load(); setPaying(false)
+        return
+      }
 
       // Load Razorpay script if not loaded
       if (!window.Razorpay) {
@@ -90,7 +115,8 @@ export default function WalletPage() {
               razorpay_payment_id: response.razorpay_payment_id,
               razorpay_signature:  response.razorpay_signature,
             })
-            toast.success(`₹${pkg.price_inr} paid — ${fmt.number(pkg.messages)} messages credited!`)
+            toast.success(`₹${fmt.number(Math.round(data.amount / 100))} paid — ${fmt.number(pkg.messages)} messages credited!`)
+            clearCoupon(); setPaying(false)
             load()
             // Update Redux wallet balance
             if (verifyRes.data.result?.new_balance !== undefined) {
@@ -108,7 +134,7 @@ export default function WalletPage() {
 
   return (
     <div className="space-y-6">
-      <div><h1 className="page-title">Wallet</h1><p className="page-sub">Message credits and billing</p></div>
+      {!embedded && <div><h1 className="page-title">Wallet</h1><p className="page-sub">Message credits and billing</p></div>}
 
       {/* Stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -127,26 +153,38 @@ export default function WalletPage() {
 
       {/* Packages */}
       <div className="card">
-        <div className="card-header"><h3 className="card-title">Recharge packages</h3></div>
+        <div className="card-header flex flex-wrap items-center justify-between gap-3">
+          <h3 className="card-title">Recharge packages</h3>
+          <div className="flex items-center gap-2">
+            <input className="input w-44 uppercase" placeholder="Coupon code" value={coupon} onChange={e => setCoupon(e.target.value)} onKeyDown={e => e.key === 'Enter' && applyCoupon()} aria-label="Coupon code" />
+            <Button size="sm" variant="secondary" onClick={applyCoupon} disabled={!coupon.trim()}>Apply</Button>
+            {applied && <button className="text-xs text-gray-400 underline" onClick={clearCoupon}>remove {applied}</button>}
+          </div>
+        </div>
         <div className="card-body">
           <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
-            {packages.map((pkg) => (
-              <div key={pkg.messages}
-                className={`relative rounded-xl border-2 p-4 text-center cursor-pointer transition-all hover:border-brand-400 hover:shadow-sm
-                  ${pkg.popular ? 'border-brand-500 bg-brand-50' : 'border-gray-200'}`}
-                onClick={() => handleRecharge(pkg)}
-              >
-                {pkg.popular && (
-                  <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 bg-brand-500 text-white text-xs px-2 py-0.5 rounded-full font-medium">
-                    Popular
-                  </span>
-                )}
-                <p className="text-xl font-bold text-gray-900 mt-1">{fmt.number(pkg.messages)}</p>
-                <p className="text-xs text-gray-500 mb-2">messages</p>
-                <p className="text-lg font-semibold text-brand-600">₹{pkg.price_inr}</p>
-                <Button size="sm" className="w-full justify-center mt-3" loading={paying}>Pay</Button>
-              </div>
-            ))}
+            {packages.map((pkg) => {
+              const q = quotes[pkg.messages]
+              const ok = q && !('error' in q) ? q : null
+              const perK = (ok ? ok.final : pkg.price_inr) / (pkg.messages / 1000)
+              return (
+                <div key={pkg.messages}
+                  className={`relative flex flex-col rounded-xl border-2 p-4 text-center transition-all hover:border-brand-400 hover:shadow-sm
+                    ${pkg.popular ? 'border-brand-500 bg-brand-50' : 'border-gray-200'}`}>
+                  {pkg.popular && (
+                    <span className="absolute -top-2.5 left-1/2 -translate-x-1/2 bg-brand-500 text-white text-xs px-2 py-0.5 rounded-full font-medium">Popular</span>
+                  )}
+                  <p className="text-xl font-bold text-gray-900 mt-1">{fmt.number(pkg.messages)}</p>
+                  <p className="text-xs text-gray-500 mb-2">messages</p>
+                  {ok ? (
+                    <p><span className="text-lg font-semibold text-brand-600">₹{fmt.number(Math.round(ok.final))}</span> <span className="text-xs text-gray-400 line-through">₹{pkg.price_inr}</span></p>
+                  ) : <p className="text-lg font-semibold text-brand-600">₹{pkg.price_inr}</p>}
+                  {ok && <p className="text-xs text-green-600">You save ₹{fmt.number(Math.round(ok.discount))}</p>}
+                  {q && 'error' in q && <p className="text-[11px] text-red-500">{q.error}</p>}
+                  <p className="mt-1 text-[11px] text-gray-400">₹{perK.toFixed(0)} per 1,000</p>
+                  <Button size="sm" className="mt-3 w-full justify-center" loading={paying} onClick={() => handleRecharge(pkg)}>{ok && ok.final <= 0 ? 'Get free' : 'Pay'}</Button>
+                </div>)
+            })}
           </div>
         </div>
       </div>

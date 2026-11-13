@@ -11,6 +11,7 @@ import toast from 'react-hot-toast'
 import api from '@/api/client'
 import { registerWebPush, webPushSupport } from '@/lib/push'
 import type { Role } from '@/types'
+import WorkingHoursPanel from '@/components/leads/WorkingHoursPanel'
 
 // ── Tab definitions ───────────────────────────────────────────────────────────
 
@@ -18,11 +19,11 @@ const TABS = [
   { id: 'company',     icon: '🏢', label: 'Company',        desc: 'Business name, logo and details' },
   { id: 'profile',     icon: '👤', label: 'My Profile',     desc: 'Your name, email and password' },
   { id: 'display',     icon: '🖥️', label: 'Display',        desc: 'Look and floating widgets' },
+  { id: 'hours',       icon: '🕒', label: 'Working Hours',  desc: 'Open days, timezone and holidays' },
   { id: 'staff',       icon: '👥', label: 'Staff',          desc: 'Team members and access' },
   { id: 'devices',     icon: '📱', label: 'Linked Devices', desc: 'Phones and browsers signed in' },
   { id: 'permissions', icon: '🛡️', label: 'Permissions',    desc: 'Roles and what each can do' },
   { id: 'push',        icon: '🔔', label: 'Push',           desc: 'Notification preferences' },
-  { id: 'crm-sync',    icon: '🔄', label: 'CRM Sync',       desc: 'Connect and sync your CRM' },
 ] as const
 
 type TabId = (typeof TABS)[number]['id']
@@ -681,110 +682,14 @@ function PushTab() {
   )
 }
 
-// ── CRM Sync tab ──────────────────────────────────────────────────────────────
-
-function Toggle({ checked, onChange, disabled }: { checked: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      disabled={disabled}
-      onClick={() => onChange(!checked)}
-      className={[
-        'relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors disabled:opacity-40',
-        checked ? 'bg-indigo-600' : 'bg-gray-300',
-      ].join(' ')}
-    >
-      <span className={[
-        'inline-block h-4 w-4 transform rounded-full bg-white transition-transform',
-        checked ? 'translate-x-6' : 'translate-x-1',
-      ].join(' ')} />
-    </button>
-  )
-}
-
-function CrmSyncTab() {
-  const [loading, setLoading] = useState(true)
-  const [waChat, setWaChat] = useState(true)
-  const [waCloud, setWaCloud] = useState(true)
-  const [savingKey, setSavingKey] = useState<string | null>(null)
-
-  useEffect(() => {
-    settingsApi.index().then(r => {
-      const s = r.data.company?.settings || {}
-      setWaChat(s.crm_auto_save_wa_chat ?? true)
-      setWaCloud(s.crm_auto_save_wa_cloud ?? true)
-    }).finally(() => setLoading(false))
-  }, [])
-
-  const save = async (key: 'crm_auto_save_wa_chat' | 'crm_auto_save_wa_cloud', value: boolean, revert: () => void) => {
-    setSavingKey(key)
-    try {
-      await settingsApi.update({ settings: { [key]: value } })
-      toast.success('Saved.')
-    } catch (e) {
-      revert()
-      toast.error(getError(e))
-    } finally {
-      setSavingKey(null)
-    }
-  }
-
-  if (loading) return <div className="text-sm text-gray-400 py-8 text-center">Loading…</div>
-
-  return (
-    <div className="space-y-6">
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-700">
-        When enabled, every incoming message on that channel saves (or updates) its sender as a
-        CRM contact and records the time the message arrived on that contact's profile.
-      </div>
-
-      <div className="card">
-        <div className="card-header"><h3 className="card-title">💬 WA Chat</h3></div>
-        <div className="card-body">
-          <div className="flex items-center justify-between gap-4 py-1">
-            <div>
-              <p className="text-sm font-medium text-gray-900">Save incoming message contacts to CRM</p>
-              <p className="text-xs text-gray-400">Applies to messages received on your open WhatsApp sessions.</p>
-            </div>
-            <Toggle
-              checked={waChat}
-              disabled={savingKey === 'crm_auto_save_wa_chat'}
-              onChange={v => { setWaChat(v); save('crm_auto_save_wa_chat', v, () => setWaChat(!v)) }}
-            />
-          </div>
-        </div>
-      </div>
-
-      <div className="card">
-        <div className="card-header"><h3 className="card-title">☁️ WA Cloud</h3></div>
-        <div className="card-body">
-          <div className="flex items-center justify-between gap-4 py-1">
-            <div>
-              <p className="text-sm font-medium text-gray-900">Save incoming message contacts to CRM</p>
-              <p className="text-xs text-gray-400">Applies to messages received via the WhatsApp Cloud API.</p>
-            </div>
-            <Toggle
-              checked={waCloud}
-              disabled={savingKey === 'crm_auto_save_wa_cloud'}
-              onChange={v => { setWaCloud(v); save('crm_auto_save_wa_cloud', v, () => setWaCloud(!v)) }}
-            />
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-}
-
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function SettingsPage() {
   const isSuper = useIsSuperAdmin()
   const isDesktop = useIsDesktop()
-  // Superadmins have no company: they get profile, display, staff, devices and permissions only.
+  // Superadmins have no company (so no company details or working hours): profile, display, staff, devices, permissions and push only.
   const tabs = useMemo(
-    () => isSuper ? TABS.filter(t => t.id !== 'company' && t.id !== 'crm-sync') : TABS,
+    () => isSuper ? TABS.filter(t => t.id !== 'company' && t.id !== 'hours') : TABS,
     [isSuper],
   )
 
@@ -807,8 +712,8 @@ export default function SettingsPage() {
       {tab === 'staff'        && <StaffTab />}
       {tab === 'devices'      && <DevicesTab />}
       {tab === 'permissions'  && <PermissionsTab />}
+      {tab === 'hours'        && <WorkingHoursPanel />}
       {tab === 'push'         && <PushTab />}
-      {tab === 'crm-sync'     && <CrmSyncTab />}
     </>
   )
 

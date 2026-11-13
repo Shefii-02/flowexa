@@ -76,7 +76,23 @@ class WalletService
             throw WalletException::invalidPackage($dto->messages);
         }
 
+        // Optional coupon — validated up front so a bad code is a clear 422, not a payment-gateway failure.
+        $q = $this->quote($companyId, $dto->messages, $dto->couponCode);
+        $final = $q['final'];
+        $couponFields = ['purpose' => 'topup', 'subtotal' => $package['price'], 'discount' => $q['discount'],
+                         'coupon_id' => $q['coupon']?->id, 'coupon_code' => $q['coupon']?->code];
+
         try {
+            // A coupon that covers the whole price credits the wallet with no payment step.
+            if ($final <= 0) {
+                $order = \App\Models\PaymentOrder::create(['company_id' => $companyId, 'user_id' => $userId, 'razorpay_order_id' => 'FREE_' . uniqid(),
+                    'amount' => 0, 'messages_credit' => $dto->messages, 'status' => 'paid', 'gateway' => 'free', 'paid_at' => now()] + $couponFields);
+                $wallet = $this->getWallet($companyId);
+                $this->walletRepository->credit(wallet: $wallet, amount: $dto->messages, description: "Recharge — {$dto->messages} messages (coupon {$q['coupon']->code})", refId: $order->razorpay_order_id, refType: 'recharge');
+                app(\App\Support\CouponService::class)->redeem($order);
+                return new OrderResultDTO('', 0, 'INR', '', $dto->messages, $package['price'], $q['discount'], $q['coupon']->code, true, (int) $wallet->fresh()->balance);
+            }
+
             $api = new \Razorpay\Api\Api(
                 config('services.razorpay.key'),
                 config('services.razorpay.secret')
@@ -84,30 +100,34 @@ class WalletService
 
             $order = $api->order->create([
                 'receipt'  => 'WAAPI_' . uniqid(),
-                'amount'   => $package['price'] * 100, // in paise
+                'amount'   => (int) round($final * 100), // in paise
                 'currency' => 'INR',
                 'notes'    => [
                     'company_id'      => $companyId,
                     'messages_credit' => $dto->messages,
+                    'coupon'          => $q['coupon']?->code,
                 ],
             ]);
 
             // Persist order record
-            $this->walletRepository->createPaymentOrder(
+            $row = $this->walletRepository->createPaymentOrder(
                 companyId:       $companyId,
                 userId:          $userId,
                 razorpayOrderId: $order->id,
-                amount:          $package['price'],
+                amount:          (int) ceil($final),
                 messagesCredit:  $dto->messages,
             );
+            $row->update(['amount' => $final, 'gateway' => 'razorpay'] + $couponFields);
 
             return new OrderResultDTO(
                 orderId:     $order->id,
-                amountPaise: $package['price'] * 100,
+                amountPaise: (int) round($final * 100),
                 currency:    'INR',
                 razorpayKey: config('services.razorpay.key'),
                 messages:    $dto->messages,
-                priceInr:    $package['price'],
+                priceInr:    (int) ceil($final),
+                discount:    $q['discount'],
+                couponCode:  $q['coupon']?->code,
             );
 
         } catch (\Exception $e) {
@@ -117,6 +137,19 @@ class WalletService
             ]);
             throw WalletException::orderCreationFailed();
         }
+    }
+
+    /** Price of a top-up package after an optional coupon. Invalid code → ValidationException (coupon_code). */
+    public function quote(int $companyId, int $messages, ?string $couponCode): array
+    {
+        $package = self::PACKAGES[$messages] ?? null;
+        if (!$package) { throw WalletException::invalidPackage($messages); }
+        $price = (float) $package['price']; $coupon = null; $discount = 0.0;
+        if (filled($couponCode)) {
+            $r = app(\App\Support\CouponService::class)->evaluate($couponCode, $price, 'topup', $companyId);
+            $coupon = $r['coupon']; $discount = $r['discount'];
+        }
+        return ['subtotal' => $price, 'discount' => $discount, 'final' => round($price - $discount, 2), 'coupon' => $coupon];
     }
 
     // ─── Verify payment + credit wallet ───────────────────────────────────────
@@ -141,7 +174,9 @@ class WalletService
         }
 
         // Mark order paid
-        $this->walletRepository->markOrderPaid($order, $dto->razorpayPaymentId, $dto->razorpaySignature);
+        $order = $this->walletRepository->markOrderPaid($order, $dto->razorpayPaymentId, $dto->razorpaySignature);
+        $order->update(['paid_at' => now()]);
+        app(\App\Support\CouponService::class)->redeem($order);
 
         // Credit wallet
         $wallet = $this->getWallet($companyId);

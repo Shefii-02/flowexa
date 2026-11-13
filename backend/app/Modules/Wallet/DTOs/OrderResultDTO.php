@@ -12,5 +12,9 @@ readonly class OrderResultDTO
         public string $razorpayKey,
         public int    $messages,
         public int    $priceInr,
+        public float  $discount = 0,
+        public ?string $couponCode = null,
+        public bool   $free = false,
+        public ?int   $newBalance = null,
     ) {}
 }

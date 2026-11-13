@@ -48,18 +48,11 @@ import HrBreakTypesPage from '@/pages/hr/HrBreakTypesPage'
 import HrLeaveTypesPage from '@/pages/hr/HrLeaveTypesPage'
 import HrStaffSetupPage from '@/pages/hr/HrStaffSetupPage'
 import HrOfficeDetailsPage from '@/pages/hr/HrOfficeDetailsPage'
+import HrStaffAvailabilityPage from '@/pages/hr/HrStaffAvailabilityPage'
 import AssignmentPage from '@/pages/leads/AssignmentPage'
 import AssignmentRulesPage from '@/pages/leads/AssignmentRulesPage'
 import LeadNotificationPopup from '@/components/leads/LeadNotificationPopup'
 import AiHandoffOfferPopup from '@/components/leads/AiHandoffOfferPopup'
-import WalletPage from '@/pages/wallet/WalletPage'
-import { useBilling } from '@/hooks/useBilling'
-
-/** Own-account companies are billed by Meta directly — they have no wallet page. */
-function WalletRoute() {
-  const { usesWallet } = useBilling()
-  return usesWallet ? <WalletPage /> : <Navigate to="/dashboard" replace />
-}
 import AnalyticsPage from '@/pages/analytics/AnalyticsPage'
 import SettingsPage from '@/pages/settings/SettingsPage'
 import GoogleSheetsPage from '@/pages/settings/integrations/GoogleSheetsPage'
@@ -157,6 +150,7 @@ import MessageSender from '@/pages/wa-chat/pages/message-sender'
 import WaChatTemplatesPage from '@/pages/wa-chat/pages/WaChatTemplates'
 import WaOtpServicePage from '@/pages/wa-chat/pages/WaOtpService'
 import WaDataExportPage from '@/pages/wa-chat/pages/WaDataExport'
+import WaChatSettings from '@/pages/wa-chat/pages/WaChatSettings'
 import SharedMediaLibraryPage from '@/pages/media-library/MediaLibraryPage'
 import WaAutomationPage from '@/pages/wa-chat/pages/WaAutomation'
 import WaGroupsPage from '@/pages/wa-chat/pages/WaGroups'
@@ -282,6 +276,7 @@ export default function App() {
                 <Route path="otp-service" element={<WaOtpServicePage />} />
                 <Route path="api-services" element={<WaOtpServicePage />} />
                 <Route path="export" element={<WaDataExportPage />} />
+                <Route path="settings" element={<WaChatSettings />} />
                 <Route path="api-keys" element={<RequireWaAdmin><WaChatApiKeys /></RequireWaAdmin>} />
                 <Route path="automation" element={<WaAutomationPage />} />
                 <Route path="groups" element={<WaGroupsPage />} />
@@ -335,9 +330,9 @@ export default function App() {
               <Route path="crm/leads/summary" element={<LeadsSummaryPage />} />
               <Route path="crm/leads/report" element={<LeadsReportPage />} />
               <Route path="crm/leads/assignments" element={<AssignmentPage />} />
-              <Route path="crm/leads/staff-availability" element={<Navigate to="/crm/leads/assignment-rules" replace />} />
+              <Route path="crm/leads/staff-availability" element={<Navigate to="/hr/admin/staff-availability" replace />} />
               <Route path="crm/leads/assignment-rules" element={<AssignmentRulesPage />} />
-              <Route path="wallet" element={<WalletRoute />} />
+              <Route path="wallet" element={<Navigate to="/plan-purchase?section=wallet" replace />} />
               <Route path="analytics" element={<AnalyticsPage />} />
               <Route path="settings/index" element={<SettingsPage />} />
               <Route path="settings/integrations" element={<Navigate to="/settings/integrations/google-sheets" replace />} />
@@ -423,6 +418,7 @@ export default function App() {
               <Route path="hr/admin/break-types" element={<HrBreakTypesPage />} />
               <Route path="hr/admin/leave-types" element={<HrLeaveTypesPage />} />
               <Route path="hr/admin/staff-setup" element={<HrStaffSetupPage />} />
+              <Route path="hr/admin/staff-availability" element={<HrStaffAvailabilityPage />} />
               <Route path="hr/admin/office" element={<HrOfficeDetailsPage />} />
 
               {/* WA Cloud routes */}

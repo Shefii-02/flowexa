@@ -3,11 +3,13 @@ import { settingsApi, campaignApi } from '@/api'
 import { Button, Input } from '@/components/ui'
 import { getError } from '@/utils'
 import toast from 'react-hot-toast'
+import CrmSyncPanel from '@/components/settings/CrmSyncPanel'
 
 const TABS = [
   { id: 'credentials', label: '📱 WA Credentials' },
   { id: 'webhooks',    label: '🔗 Webhooks' },
   { id: 'background',  label: '⏳ Background sending' },
+  { id: 'crm',         label: '🔄 CRM sync' },
 ] as const
 
 const APP_NAME = import.meta.env.VITE_APP_NAME || 'Teamzo'
@@ -380,6 +382,7 @@ export default function WaCloudSettingsPage() {
         {tab === 'credentials' && <CredentialsTab />}
         {tab === 'webhooks'    && <WebhooksTab />}
         {tab === 'background'  && <BackgroundTab />}
+        {tab === 'crm'         && <CrmSyncPanel channel="wa_cloud" />}
       </div>
     </div>
   )

@@ -998,6 +998,7 @@ Route::prefix('v1')->group(function () {
                 ->name('settings');
 
             // Razorpay: create order + verify — real money movement, requires manage tier.
+            Route::post('/coupon/quote',   [PaymentController::class, 'quote'])->middleware('permission:wallet.manage')->name('coupon-quote');
             Route::post('/create-order',   [PaymentController::class, 'createOrder'])->middleware('permission:wallet.manage')->name('create-order');
             Route::post('/verify-payment', [PaymentController::class, 'verifyPayment'])->middleware('permission:wallet.manage')->name('verify-payment');
         });
@@ -1020,7 +1021,7 @@ Route::prefix('v1')->group(function () {
             Route::get('addons',                       [PlanPurchaseController::class, 'addons'])->name('addons.index');
             Route::get('addons/mine',                  [PlanPurchaseController::class, 'myAddons'])->name('addons.mine');
             Route::get('billing/invoices',             [PlanPurchaseController::class, 'invoices'])->name('billing.invoices');
-            Route::post('addons/{addon}/create-order', [PlanPurchaseController::class, 'addonOrder'])->name('addons.order');
+            Route::post('addons/{addon}/create-order', [PlanPurchaseController::class, 'addonOrder'])->whereNumber('addon')->name('addons.order');
             Route::post('addons/verify-payment',       [PlanPurchaseController::class, 'verifyAddonPayment'])->name('addons.verify');
             Route::post('addons/cart/quote',           [PlanPurchaseController::class, 'cartQuote'])->name('addons.cart.quote');
             Route::post('addons/cart/create-order',    [PlanPurchaseController::class, 'cartOrder'])->name('addons.cart.order');

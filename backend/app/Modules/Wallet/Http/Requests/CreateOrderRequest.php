@@ -14,6 +14,7 @@ class CreateOrderRequest extends FormRequest
     {
         return [
             'package' => ['required', 'integer', 'in:1000,5000,10000,25000,50000'],
+            'coupon_code' => ['nullable', 'string', 'max:40'],
         ];
     }
 

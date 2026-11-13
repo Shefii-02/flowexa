@@ -449,7 +449,7 @@ const SidebarInner = () => {
       {/* Wallet badge */}
       {!isSuperAdmin && waConfig === 'wallet' && canViewBill && (
         <div
-          onClick={() => navigate('/wallet')}
+          onClick={() => navigate('/plan-purchase?section=wallet')}
           className={cn(
             'mx-3 mt-3 px-3 py-2 rounded-lg flex items-center justify-between cursor-pointer transition-colors flex-shrink-0',
             isLow ? 'bg-red-50 border border-red-200' : 'bg-brand-50 border border-brand-200'
@@ -513,6 +513,7 @@ const SidebarInner = () => {
               <SubLink to="/wa-chat/api-services" icon="🔑" label="API Services" />
               {/* } */}
               <SubLink to="/wa-chat/export" icon="📤" label="Data Export" />
+              <SubLink to="/wa-chat/settings" icon="⚙️" label="Settings" />
               <SubLink to="/wa-chat/automations" icon="⚙️" label="Agent Automations" />
               {/* ── ANALYTICS ── */}
               <SectionHeader label="Analytics" />
@@ -761,6 +762,7 @@ const SidebarInner = () => {
                 <SubLink to="/hr/admin/incentives" icon="🎁" label="Incentives" />
                 <SubLink to="/hr/admin/leave" icon="🌴" label="Leave Requests" />
                 <SubLink to="/hr/admin/staff-setup" icon="⚙️" label="Staff Setup" />
+                <SubLink to="/hr/admin/staff-availability" icon="🟢" label="Staff Availability" />
               </NestedAccordion>
 
               <NestedAccordion icon="🔧" label="Configuration"
@@ -803,7 +805,6 @@ const SidebarInner = () => {
               <SubLink to="/settings/integrations/email" icon="✉️" label="Email" />
             </Accordion>
             {/* } */}
-            <FlatLink to="/wallet" icon="👛" label="Wallet" />
             <FlatLink to="/plan-purchase" icon="💳" label="Plans & Billing" />
             {canViewSupport && <FlatLink to="/support" icon="🎧" label="Support" />}
             <FlatLink to="/setup-guide" icon="🧭" label="Setup Guide" />
@@ -833,7 +834,6 @@ const SidebarInner = () => {
               <SubLink to="/settings/integrations/email" icon="✉️" label="Email" />
             </Accordion>
             {/* } */}
-            <FlatLink to="/wallet" icon="👛" label="Wallet" />
             <FlatLink to="/plan-purchase" icon="💳" label="Plans & Billing" />
             {canViewSupport && <FlatLink to="/support" icon="🎧" label="Support" />}
             <FlatLink to="/setup-guide" icon="🧭" label="Setup Guide" />

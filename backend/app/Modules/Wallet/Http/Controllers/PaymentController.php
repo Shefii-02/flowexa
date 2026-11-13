@@ -40,6 +40,14 @@ class PaymentController extends Controller
         return response()->json(OrderResultResource::toArray($result));
     }
 
+    // POST /wallet/coupon/quote
+    public function quote(Request $request): JsonResponse
+    {
+        $d = $request->validate(['package' => ['required', 'integer', 'in:1000,5000,10000,25000,50000'], 'coupon_code' => ['nullable', 'string', 'max:40']]);
+        $q = $this->walletService->quote(auth()->user()->company_id, (int) $d['package'], $d['coupon_code'] ?? null);
+        return response()->json(['subtotal' => $q['subtotal'], 'discount' => $q['discount'], 'final' => $q['final'], 'coupon' => $q['coupon']?->only(['code', 'name', 'discount_type', 'discount_value'])]);
+    }
+
     // POST /wallet/verify-payment
     public function verifyPayment(VerifyPaymentRequest $request): JsonResponse
     {

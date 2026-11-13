@@ -114,7 +114,8 @@ export const walletApi = {
   transactions: (p?: Record<string, unknown>) => api.get('/wallet/transactions', { params: p }),
   packages: () => api.get('/wallet/packages'),
   updateSettings: (d: Record<string, unknown>) => api.put('/wallet/settings', d),
-  createOrder: (pkg: number) => api.post('/wallet/create-order', { package: pkg }),
+  createOrder: (pkg: number, couponCode?: string | null) => api.post('/wallet/create-order', { package: pkg, coupon_code: couponCode || undefined }),
+  quote: (pkg: number, couponCode: string) => api.post<CouponQuote>('/wallet/coupon/quote', { package: pkg, coupon_code: couponCode }),
   verifyPayment: (d: Record<string, string>) => api.post('/wallet/verify-payment', d),
 }
 

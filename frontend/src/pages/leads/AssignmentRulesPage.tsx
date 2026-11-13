@@ -3,37 +3,24 @@ import { leadAssignmentApi } from '@/api'
 import { getError } from '@/utils'
 import { useAssignMethods } from '@/store'
 import toast from 'react-hot-toast'
-import { StaffAvailabilityPanel } from '@/components/leads/StaffAvailabilityPanel'
 import VerticalTabs, { type VTab } from '@/components/layout/VerticalTabs'
 
-const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
-const TIMEZONES = ['Asia/Kolkata', 'UTC', 'America/New_York', 'Europe/London', 'Asia/Dubai', 'Asia/Singapore']
 
 type Rule = Record<string, any>
-type Hour = { weekday: number; is_open: boolean; start_time: string; end_time: string }
-type Holiday = { id: number; date: string; name: string }
-
-const t = (s: string) => (s ?? '').slice(0, 5)
 
 export default function AssignmentRulesPage() {
   const allowedMethods = useAssignMethods()   // which assignment modes the plan includes
   const can = (m: string) => allowedMethods.includes(m)
   const [rule, setRule] = useState<Rule | null>(null)
-  const [hours, setHours] = useState<Hour[]>([])
-  const [holidays, setHolidays] = useState<Holiday[]>([])
-  const [newHol, setNewHol] = useState({ date: '', name: '' })
   const [saving, setSaving] = useState(false)
 
   const load = useCallback(async () => {
-    const [r, wh] = await Promise.all([leadAssignmentApi.getRule(), leadAssignmentApi.getWorkingHours()])
+    const r = await leadAssignmentApi.getRule()
     setRule(r.data?.data ?? r.data)
-    setHours((wh.data?.hours ?? []).map((h: any) => ({ weekday: h.weekday, is_open: !!h.is_open, start_time: t(h.start_time), end_time: t(h.end_time) })))
-    setHolidays(wh.data?.holidays ?? [])
   }, [])
   useEffect(() => { load() }, [load])
 
   const set = (k: string, v: unknown) => setRule(r => ({ ...r, [k]: v }))
-  const setHour = (wd: number, patch: Partial<Hour>) => setHours(hs => hs.map(h => (h.weekday === wd ? { ...h, ...patch } : h)))
 
   const totalWeight = (rule?.weight_availability ?? 0) + (rule?.weight_max_leads ?? 0) + (rule?.weight_performance ?? 0) + (rule?.weight_workload ?? 0)
   const weightsOk = rule?.strategy !== 'algorithm' || totalWeight === 100
@@ -43,19 +30,11 @@ export default function AssignmentRulesPage() {
     setSaving(true)
     try {
       await leadAssignmentApi.saveRule(rule)
-      await leadAssignmentApi.saveWorkingHours(hours)
       toast.success('Assignment rules saved')
       load()
     } catch (e) { toast.error(getError(e)) }
     finally { setSaving(false) }
   }
-
-  const addHoliday = async () => {
-    if (!newHol.date || !newHol.name.trim()) return
-    try { await leadAssignmentApi.addHoliday(newHol); setNewHol({ date: '', name: '' }); load() }
-    catch (e) { toast.error(getError(e)) }
-  }
-  const removeHoliday = async (id: number) => { await leadAssignmentApi.removeHoliday(id); load() }
 
   if (!rule) return <div className="p-6 text-gray-400">Loading…</div>
 
@@ -65,13 +44,11 @@ export default function AssignmentRulesPage() {
   const algo = (rule.strategy ?? 'algorithm') === 'algorithm'
   const notifying = rule.notification_mode === 'uber' || rule.notification_mode === 'hybrid'
   const tabs: VTab[] = [
-    { id: 'staff',      icon: '👥', label: 'Staff availability',        desc: 'Who can receive leads right now' },
     { id: 'routing',    icon: '🧭', label: 'Routing',                   desc: 'How the next lead picks its staff member' },
     { id: 'weights',    icon: '⚖️', label: 'Algorithm weights',         desc: 'How agents are scored', hidden: !algo, badge: totalWeight === 100 ? undefined : '⚠' },
     { id: 'sla',        icon: '⏱️', label: 'Response SLA & AI handoff', desc: 'Reply time limits and when AI takes over' },
     { id: 'notify',     icon: '🔔', label: 'Notification settings',     desc: 'Gaps, timeouts and how many staff to try', hidden: !notifying },
     { id: 'duplicates', icon: '♻️', label: 'Duplicate handling',        desc: 'What happens when a lead comes in twice' },
-    { id: 'hours',      icon: '🕒', label: 'Working hours',             desc: 'Open days, timezone and holidays' },
   ]
 
   return (
@@ -81,7 +58,7 @@ export default function AssignmentRulesPage() {
         <p className="text-sm text-gray-500 mt-1">How incoming leads are routed to staff</p>
       </div>
 
-      <VerticalTabs tabs={tabs} defaultId="staff" backLabel="Assignment rules" showTitle={false}
+      <VerticalTabs tabs={tabs} defaultId="routing" backLabel="Assignment rules" showTitle={false}
         footer={(
           <div className="flex items-center justify-end gap-3">
             {!weightsOk && <span className="text-xs text-red-500">Algorithm weights must total 100%.</span>}
@@ -93,7 +70,6 @@ export default function AssignmentRulesPage() {
         )}>
         {(id) => (
           <>
-            {id === 'staff' && <StaffAvailabilityPanel />}
             {id === 'routing' && (
       <section className={card}>
         <h2 className="font-semibold text-gray-800">Routing</h2>
@@ -172,46 +148,6 @@ export default function AssignmentRulesPage() {
               <option value="notify_admin">Notify admin</option>
             </select>
           </label>
-        </div>
-      </section>
-            )}
-            {id === 'hours' && (
-      <section className={card}>
-        <h2 className="font-semibold text-gray-800">Working hours <span className="text-xs font-normal text-gray-400">(leads outside these hours go straight to the AI agent)</span></h2>
-        <div className="space-y-1.5">
-          {hours.sort((a, b) => a.weekday - b.weekday).map(h => (
-            <div key={h.weekday} className="flex items-center gap-3 text-sm">
-              <label className="flex items-center gap-2 w-32">
-                <input type="checkbox" checked={h.is_open} onChange={e => setHour(h.weekday, { is_open: e.target.checked })} />
-                {DAYS[h.weekday]}
-              </label>
-              <input type="time" disabled={!h.is_open} value={h.start_time} onChange={e => setHour(h.weekday, { start_time: e.target.value })} className="border border-gray-200 rounded px-2 py-1 disabled:opacity-40" />
-              <span className="text-gray-400">–</span>
-              <input type="time" disabled={!h.is_open} value={h.end_time} onChange={e => setHour(h.weekday, { end_time: e.target.value })} className="border border-gray-200 rounded px-2 py-1 disabled:opacity-40" />
-            </div>
-          ))}
-        </div>
-        <label className="text-sm text-gray-600 block">Timezone
-          <select className={`mt-1 ${input} max-w-xs`} value={rule.timezone ?? 'Asia/Kolkata'} onChange={e => set('timezone', e.target.value)}>
-            {TIMEZONES.map(tz => <option key={tz}>{tz}</option>)}
-          </select>
-        </label>
-
-        <div>
-          <h3 className="text-sm font-medium text-gray-700 mb-1.5">Holidays / closed dates</h3>
-          <div className="flex gap-2 mb-2">
-            <input type="date" value={newHol.date} onChange={e => setNewHol(p => ({ ...p, date: e.target.value }))} className="border border-gray-200 rounded px-2 py-1 text-sm" />
-            <input value={newHol.name} onChange={e => setNewHol(p => ({ ...p, name: e.target.value }))} placeholder="Holiday name" className="border border-gray-200 rounded px-2 py-1 text-sm flex-1" />
-            <button onClick={addHoliday} className="px-3 py-1 bg-indigo-600 text-white rounded text-sm">Add</button>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {holidays.map(h => (
-              <span key={h.id} className="inline-flex items-center gap-1.5 text-xs bg-gray-50 border border-gray-200 rounded-full pl-3 pr-1.5 py-1">
-                {h.date} · {h.name}
-                <button onClick={() => removeHoliday(h.id)} className="text-gray-400 hover:text-red-500">×</button>
-              </span>
-            ))}
-          </div>
         </div>
       </section>
             )}
