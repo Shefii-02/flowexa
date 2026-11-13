@@ -1,7 +1,8 @@
 // src/components/layout/Sidebar.tsx
 import { useState, useEffect, createContext, useContext } from 'react'
 import { NavLink, useNavigate, useLocation } from 'react-router-dom'
-import { useAppDispatch, useAppSelector, useIsSuperAdmin, usePermission } from '@/store'
+import { useAppDispatch, useAppSelector, useIsSuperAdmin, useModule, usePermission } from '@/store'
+import { moduleForPath } from '@/lib/modules'
 import { logoutThunk } from '@/store/slices'
 import { cn, fmt } from '@/utils'
 import { toast } from 'react-hot-toast'
@@ -56,11 +57,22 @@ function WaSessionSelector() {
   )
 }
 
+// A menu entry is shown only when the company's plan or add-ons include the module its URL belongs to.
+// (Pages outside every module — dashboard, staff, settings, billing — are always shown.)
+function useEntitled(path: string | undefined): boolean {
+  const module = path ? moduleForPath(path) : null
+  const has = useModule(module ?? '')
+  return !module || has
+}
+const SECTION_MODULES: Record<string, string> = { accounts: 'finance', crm: 'crm', leads: 'leads', hr: 'hr' }
+
 // ── Section header ─────────────────────────────────────────────────────────────
 // `id` ties the caption to a hideable menu section; `hideWhenFlat` drops it in expanded mode, where the group
 // renders the same caption itself (so a section never shows its title twice).
 function SectionHeader({ label, id, hideWhenFlat }: { label: string; id?: string; hideWhenFlat?: boolean }) {
   const prefs = useContext(SidebarPrefsContext)
+  const has = useModule(id ? SECTION_MODULES[id] ?? '' : '')
+  if (id && SECTION_MODULES[id] && !has) return null
   if ((id && prefs.hidden.includes(id)) || (hideWhenFlat && !prefs.accordion)) return null
   return (
     <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider px-2 pt-3 pb-1 select-none">
@@ -85,6 +97,7 @@ function FlatGroup({ label, extra, children }: { label: string; extra?: React.Re
 
 // ── Flat nav link ──────────────────────────────────────────────────────────────
 function FlatLink({ to, icon, label, end }: { to: string; icon: string; label: string; end?: boolean }) {
+  if (!useEntitled(to)) return null
   return (
     <NavLink
       to={to}
@@ -106,6 +119,7 @@ function FlatLink({ to, icon, label, end }: { to: string; icon: string; label: s
 
 // ── Accordion sub-link ─────────────────────────────────────────────────────────
 function SubLink({ to, icon, label, end }: { to: string; icon: string; label: string; end?: boolean }) {
+  if (!useEntitled(to)) return null
   return (
     <NavLink
       to={to}
@@ -145,6 +159,8 @@ function NestedAccordion({
   }, [location.pathname, isActive])
 
   const prefs = useContext(SidebarPrefsContext)
+  const entitled = useEntitled(basePaths[0])
+  if (!entitled) return null
   if (id && prefs.hidden.includes(id)) return null
   if (!prefs.accordion) return <FlatGroup label={label}>{children}</FlatGroup>
 
@@ -193,6 +209,8 @@ function Accordion({
   const location = useLocation()
   const isActive = basePaths.some(p => location.pathname.startsWith(p))
   const prefs = useContext(SidebarPrefsContext)
+  const entitled = useEntitled(basePaths[0])
+  if (!entitled) return null
   if (id && prefs.hidden.includes(id)) return null
   if (!prefs.accordion) return <FlatGroup label={label} extra={extra}>{children}</FlatGroup>
 
@@ -231,6 +249,72 @@ function Accordion({
           {children}
         </div>
       </div>
+    </div>
+  )
+}
+
+// ── SuperAdmin menu: grouped, each group an accordion (one open at a time is not forced — admins jump between groups) ──
+const SUPERADMIN_NAV: { id: string; icon: string; label: string; items: { to: string; icon: string; label: string }[] }[] = [
+  { id: 'sales', icon: '🎯', label: 'Sales & Companies', items: [
+    { to: '/superadmin/demo-requests', icon: '📅', label: 'Demo Requests (CRM)' },
+    { to: '/superadmin/companies', icon: '🏢', label: 'Companies' },
+    { to: '/superadmin/expiries', icon: '⏳', label: 'Plan expiry' },
+  ] },
+  { id: 'plans', icon: '📦', label: 'Plans & Pricing', items: [
+    { to: '/superadmin/plans', icon: '📦', label: 'Plans' },
+    { to: '/superadmin/addons', icon: '🧩', label: 'Add-ons' },
+    { to: '/superadmin/coupons', icon: '🎟️', label: 'Coupons' },
+    { to: '/superadmin/topup', icon: '💬', label: 'Top-up Packages' },
+  ] },
+  { id: 'revenue', icon: '💰', label: 'Revenue & Billing', items: [
+    { to: '/superadmin/revenue', icon: '📈', label: 'Revenue & Payments' },
+    { to: '/superadmin/billing', icon: '💰', label: 'Billing' },
+    { to: '/superadmin/reports', icon: '📊', label: 'Reports' },
+  ] },
+  { id: 'platform', icon: '🛠️', label: 'Platform', items: [
+    { to: '/superadmin/staff', icon: '👤', label: 'Platform Staff' },
+    { to: '/superadmin/permissions', icon: '🔑', label: 'Permissions' },
+    { to: '/superadmin/mobile-modules', icon: '📱', label: 'Mobile App Tiles' },
+    { to: '/superadmin/sender-limits', icon: '🚦', label: 'Sender Speed Limits' },
+    { to: '/superadmin/prebuilt-templates', icon: '🧩', label: 'Prebuilt Templates' },
+    { to: '/superadmin/industry-templates', icon: '🏭', label: 'Business Types / Industries' },
+    { to: '/superadmin/agent-playbook-templates', icon: '🗒️', label: 'Agent Playbook Templates' },
+  ] },
+  { id: 'ops', icon: '🩺', label: 'Support & Monitoring', items: [
+    { to: '/superadmin/support', icon: '🎧', label: 'Support Desk' },
+    { to: '/superadmin/api-logs', icon: '📈', label: 'API & Activity' },
+    { to: '/superadmin/errors', icon: '🐞', label: 'Error Logs' },
+    { to: '/superadmin/system-log', icon: '📜', label: 'System Log' },
+    { to: '/superadmin/failed-jobs', icon: '🧯', label: 'Failed Jobs' },
+    { to: '/superadmin/ai-test', icon: '🤖', label: 'AI Response Testing' },
+  ] },
+]
+
+function SuperAdminGroup({ group }: { group: (typeof SUPERADMIN_NAV)[number] }) {
+  const { pathname } = useLocation()
+  const active = group.items.some(i => pathname.startsWith(i.to))
+  const [open, setOpen] = useState(() => {
+    try { const v = localStorage.getItem(`sa_nav_${group.id}`); if (v !== null) return v === '1' } catch { /* private mode */ }
+    return active
+  })
+  useEffect(() => { if (active) setOpen(true) }, [active])
+  const toggle = () => setOpen(v => { try { localStorage.setItem(`sa_nav_${group.id}`, v ? '0' : '1') } catch { /* ignore */ } return !v })
+
+  return (
+    <div>
+      <button type="button" onClick={toggle} aria-expanded={open}
+        className={cn('w-full flex items-center justify-between px-2 py-2 rounded-xl text-sm font-medium transition-colors',
+          open || active ? 'bg-brand-50 text-brand-700' : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900')}>
+        <span className="flex items-center gap-2.5"><span className="text-base leading-none">{group.icon}</span><span>{group.label}</span></span>
+        <svg className={cn('w-3.5 h-3.5 text-gray-400 transition-transform', open && 'rotate-90')} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+        </svg>
+      </button>
+      {open && (
+        <div className="ml-4 pl-2 border-l-2 border-brand-200 mt-1 mb-1 space-y-0.5">
+          {group.items.map(i => <SubLink key={i.to} to={i.to} icon={i.icon} label={i.label} />)}
+        </div>
+      )}
     </div>
   )
 }
@@ -704,6 +788,36 @@ const SidebarInner = () => {
             <SectionHeader label="System" />
 
 
+            <FlatLink to="/settings/index" icon="⚙️" label="Settings" />
+            <Accordion
+              id="integrations"
+              icon="🔌"
+              label="Integrations"
+              basePaths={['/settings/integrations']}
+              isOpen={openAccordion === 'integrations'}
+              onToggle={() => toggle('integrations')}
+            >
+              <SubLink to="/settings/integrations/google-sheets" icon="📊" label="Google Sheets" />
+              <SubLink to="/settings/integrations/drive" icon="🗂️" label="Drive" />
+              <SubLink to="/settings/integrations/calendar" icon="📅" label="Calendar" />
+              <SubLink to="/settings/integrations/email" icon="✉️" label="Email" />
+            </Accordion>
+            {/* } */}
+            <FlatLink to="/wallet" icon="👛" label="Wallet" />
+            <FlatLink to="/plan-purchase" icon="💳" label="Plans & Billing" />
+            {canViewSupport && <FlatLink to="/support" icon="🎧" label="Support" />}
+            <FlatLink to="/setup-guide" icon="🧭" label="Setup Guide" />
+          </>
+        )}
+
+        {/* ── SuperAdmin section ── */}
+        {isSuperAdmin && (
+          <>
+            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider px-2 pt-3 pb-1">SuperAdmin</p>
+            <FlatLink to="/superadmin" icon="📊" label="Dashboard" end />
+            {SUPERADMIN_NAV.map(g => (
+              <SuperAdminGroup key={g.id} group={g} />
+            ))}
             <FlatLink to="/settings/index" icon="⚙️" label="Settings" />
             <Accordion
               id="integrations"

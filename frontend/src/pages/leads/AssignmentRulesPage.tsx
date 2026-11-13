@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { leadAssignmentApi } from '@/api'
 import { getError } from '@/utils'
+import { useAssignMethods } from '@/store'
 import toast from 'react-hot-toast'
 import { StaffAvailabilityPanel } from '@/components/leads/StaffAvailabilityPanel'
 import VerticalTabs, { type VTab } from '@/components/layout/VerticalTabs'
@@ -15,6 +16,8 @@ type Holiday = { id: number; date: string; name: string }
 const t = (s: string) => (s ?? '').slice(0, 5)
 
 export default function AssignmentRulesPage() {
+  const allowedMethods = useAssignMethods()   // which assignment modes the plan includes
+  const can = (m: string) => allowedMethods.includes(m)
   const [rule, setRule] = useState<Rule | null>(null)
   const [hours, setHours] = useState<Hour[]>([])
   const [holidays, setHolidays] = useState<Holiday[]>([])
@@ -96,8 +99,8 @@ export default function AssignmentRulesPage() {
         <h2 className="font-semibold text-gray-800">Routing</h2>
         <p className="text-sm text-gray-500">How the next lead picks its staff member.</p>
         {(['algorithm', 'round_robin'] as const).map(s => (
-          <label key={s} className="flex items-start gap-2 text-sm cursor-pointer">
-            <input type="radio" name="strategy" checked={(rule.strategy ?? 'algorithm') === s} onChange={() => set('strategy', s)} className="mt-0.5" />
+          <label key={s} className={`flex items-start gap-2 text-sm ${can(s) ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'}`} title={can(s) ? undefined : 'Not included in your plan'}>
+            <input type="radio" name="strategy" disabled={!can(s)} checked={(rule.strategy ?? 'algorithm') === s} onChange={() => set('strategy', s)} className="mt-0.5" />
             <span>{s === 'algorithm'
               ? 'Weighted algorithm — score every available agent (availability, capacity, performance, workload) and offer it to the top scorer first'
               : 'Simple round robin — offer it to the least-loaded, longest-idle available agent'}</span>
@@ -106,14 +109,14 @@ export default function AssignmentRulesPage() {
         <div>
           <label className="block text-sm text-gray-600 mb-1">Notification mode</label>
           <select className={input} value={rule.notification_mode ?? 'hybrid'} onChange={e => set('notification_mode', e.target.value)}>
-            <option value="uber">Notify one at a time — staff must Accept/Decline; declines and timeouts move to the next agent</option>
-            <option value="hybrid">Hybrid — same notify → Accept/Decline → cascade flow (kept for older saved rules)</option>
-            <option value="auto">Auto-assign — skip the accept/decline step, assign the top pick directly</option>
+            <option value="uber" disabled={!can('uber')}>Notify one at a time — staff must Accept/Decline; declines and timeouts move to the next agent{can('uber') ? '' : ' (not in your plan)'}</option>
+            <option value="hybrid" disabled={!can('uber')}>Hybrid — same notify → Accept/Decline → cascade flow (kept for older saved rules)</option>
+            <option value="auto" disabled={!can('auto')}>Auto-assign — skip the accept/decline step, assign the top pick directly{can('auto') ? '' : ' (not in your plan)'}</option>
           </select>
         </div>
         <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" checked={!!rule.auto_assign_enabled} onChange={e => set('auto_assign_enabled', e.target.checked)} />
-          Auto-assign new leads
+          <input type="checkbox" checked={!!rule.auto_assign_enabled} disabled={!can('algorithm') && !can('round_robin') && !can('uber') && !can('auto')} onChange={e => set('auto_assign_enabled', e.target.checked)} />
+          Auto-assign new leads{!can('algorithm') && !can('round_robin') && !can('uber') && !can('auto') ? ' (not in your plan — leads are assigned manually)' : ''}
         </label>
       </section>
             )}

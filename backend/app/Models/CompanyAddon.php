@@ -24,7 +24,7 @@ class CompanyAddon extends Model
     ];
 
     public function company(): BelongsTo      { return $this->belongsTo(Company::class); }
-    public function addon(): BelongsTo        { return $this->belongsTo(Addon::class); }
+    public function addon(): BelongsTo        { return $this->belongsTo(Addon::class)->withTrashed(); }
     public function paymentOrder(): BelongsTo { return $this->belongsTo(PaymentOrder::class); }
 
     public function isActive(): bool

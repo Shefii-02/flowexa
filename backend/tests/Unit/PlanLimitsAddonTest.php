@@ -17,7 +17,7 @@ class PlanLimitsAddonTest extends TestCase
         DB::purge('sqlite');
         PlanLimits::forgetCache();
         Schema::create('users', function ($t) { $t->id(); $t->unsignedBigInteger('company_id'); $t->timestamps(); $t->softDeletes(); });
-        Schema::create('addons', function ($t) { $t->id(); $t->string('name'); $t->string('type'); $t->json('config')->nullable(); $t->boolean('is_active')->default(true); $t->timestamps(); });
+        Schema::create('addons', function ($t) { $t->id(); $t->string('name'); $t->string('type'); $t->json('config')->nullable(); $t->boolean('is_active')->default(true); $t->timestamps(); $t->softDeletes(); });
         Schema::create('company_addons', function ($t) { $t->id(); $t->unsignedBigInteger('company_id'); $t->unsignedBigInteger('addon_id'); $t->string('status')->default('active'); $t->timestamp('expires_at')->nullable(); $t->timestamps(); });
         foreach (range(1, 3) as $i) DB::table('users')->insert(['company_id' => 1, 'created_at' => now(), 'updated_at' => now()]);
     }

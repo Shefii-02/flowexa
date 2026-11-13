@@ -31,17 +31,21 @@ class PlanLimits
         'meta_ads_accounts'  => ['Meta Ads accounts', 'meta_ad_accounts',   'max_meta_ads_accounts',  'total'],
         'website_widgets'    => ['Website widgets',   'chat_widgets',       'max_website_widgets',    'total'],
         'leads'              => ['Leads this month',  'leads',              'max_leads_per_month',    'monthly'],
+        'campaigns_month'    => ['Campaigns this month', 'campaigns',           'max_campaigns_per_month', 'monthly'],
+        'surveys'            => ['Survey forms',      'survey_forms',       'max_surveys',            'total'],
+        'short_links'        => ['Short links',       'short_links',        'max_short_links',        'total'],
     ];
 
     /** Feature groups, in the order customers see them: key => [title, icon, [resource keys]]. Every REGISTRY key belongs to exactly one. */
     public const GROUPS = [
         'wa_chat'   => ['WA Chat',               '💬', ['wa_sessions']],
-        'wa_cloud'  => ['WA Cloud',              '☁️', ['phone_numbers', 'templates', 'campaigns', 'flow_nodes']],
+        'wa_cloud'  => ['WA Cloud',              '☁️', ['phone_numbers', 'templates', 'campaigns', 'campaigns_month', 'surveys', 'flow_nodes']],
         'social'    => ['Instagram & Messenger', '📸', ['instagram_accounts']],
         'ads'       => ['Meta Ads',              '📣', ['meta_ads_accounts']],
         'widgets'   => ['Web widgets',           '🌐', ['website_widgets']],
         'crm'       => ['CRM & Leads',           '🧲', ['contacts', 'labels', 'lead_categories', 'leads']],
         'team'      => ['Staff & roles',         '👥', ['users', 'roles']],
+        'common'    => ['Common tools',          '🧰', ['short_links']],
     ];
 
     public static function groupKeyOf(string $resource): ?string

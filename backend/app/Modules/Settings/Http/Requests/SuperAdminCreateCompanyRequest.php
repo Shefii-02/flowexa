@@ -26,6 +26,13 @@ class SuperAdminCreateCompanyRequest extends FormRequest
             'status'          => ['nullable', \Illuminate\Validation\Rule::in(['active','trial'])],
             'trial_days'      => ['nullable','integer','min:1','max:365'],
             'max_devices_per_user' => ['nullable','integer','min:1','max:20'],
+            // Billing at creation (active companies only): a coupon, how long they paid for, and how the money came in.
+            'duration_type'   => ['nullable','in:monthly,3month,6month,yearly,12month'],
+            'coupon_code'     => ['nullable','string','max:40'],
+            'payment_method'  => ['nullable','string','max:30'],          // cash | bank_transfer | upi | free …
+            'payment_reference' => ['nullable','string','max:100'],
+            'addon_ids'       => ['nullable','array'],
+            'addon_ids.*'     => ['integer','exists:addons,id'],
         ];
     }
     protected function failedValidation(Validator $v): void

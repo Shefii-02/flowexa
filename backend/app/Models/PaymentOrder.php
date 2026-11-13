@@ -16,7 +16,10 @@ class PaymentOrder extends Model
         'company_id', 'user_id', 'razorpay_order_id',
         'razorpay_payment_id', 'razorpay_signature',
         'amount', 'messages_credit', 'status',
+        'purpose', 'gateway', 'method', 'subtotal', 'discount', 'coupon_id', 'coupon_code', 'meta', 'paid_at',
     ];
+
+    protected $casts = ['meta' => 'array', 'paid_at' => 'datetime', 'amount' => 'decimal:2', 'subtotal' => 'decimal:2', 'discount' => 'decimal:2'];
 
     public function company(): BelongsTo { return $this->belongsTo(Company::class); }
     public function user(): BelongsTo    { return $this->belongsTo(User::class); }

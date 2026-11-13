@@ -18,6 +18,11 @@ readonly class SuperAdminCreateCompanyDTO
         public string $status = 'active',
         public ?int   $trialDays = null,
         public ?int   $maxDevicesPerUser = null,
+        public ?string $durationType = null,
+        public ?string $couponCode = null,
+        public ?string $paymentMethod = null,
+        public ?string $paymentReference = null,
+        public array  $addonIds = [],
     ) {}
 
 
@@ -38,6 +43,11 @@ readonly class SuperAdminCreateCompanyDTO
             status:            $data['status'] ?? 'active',
             trialDays:         isset($data['trial_days']) ? (int) $data['trial_days'] : null,
             maxDevicesPerUser: isset($data['max_devices_per_user']) ? (int) $data['max_devices_per_user'] : null,
+            durationType:      $data['duration_type'] ?? null,
+            couponCode:        $data['coupon_code'] ?? null,
+            paymentMethod:     $data['payment_method'] ?? null,
+            paymentReference:  $data['payment_reference'] ?? null,
+            addonIds:          array_map('intval', $data['addon_ids'] ?? []),
         );
     }
 }

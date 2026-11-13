@@ -42,7 +42,7 @@ class PlanPricingSeeder extends Seeder
         });
 
         // Testing plan: a fixed-length trial-style plan; when it ends the company has to buy a real plan.
-        Plan::firstOrCreate(['name' => 'Testing'], [
+        if (!Plan::withTrashed()->where('name', 'Testing')->exists()) Plan::create(['name' => 'Testing'] + [
             'messages_limit' => 500, 'price' => 0, 'is_active' => true, 'is_custom' => false,
             'features' => ['Try the platform for a fixed period', 'Buy any plan when it ends'],
             'duration_type' => 'custom', 'duration_months' => 1, 'alert_before_days' => 3,
@@ -51,6 +51,7 @@ class PlanPricingSeeder extends Seeder
             'max_leads_per_month' => 50, 'max_lead_categories' => 3, 'max_roles' => 2,
             'max_instagram_accounts' => 1, 'max_meta_ads_accounts' => 1, 'max_website_widgets' => 1,
             'google_sheets_enabled' => false, 'google_drive_enabled' => false, 'calendar_enabled' => true, 'email_integration_enabled' => false,
+            'modules' => ['media_library', 'sticky_notes', 'todo', 'wa_chat', 'wa_cloud', 'crm', 'leads'],
         ]);
 
         $created = 0;

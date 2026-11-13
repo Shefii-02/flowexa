@@ -7,9 +7,12 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Plan extends Model
 {
+    use SoftDeletes;
+
     protected $fillable = [
         'name', 'messages_limit', 'price', 'price_yearly', 'features', 'is_active',
         'duration_type', 'duration_months', 'alert_before_days', 'max_users', 'max_templates',
@@ -19,12 +22,20 @@ class Plan extends Model
         'max_leads_per_month', 'max_lead_categories', 'max_roles',
         'max_instagram_accounts', 'max_instagram_automations', 'max_instagram_dms_monthly', 'max_meta_ads_accounts', 'max_website_widgets',
         'google_sheets_enabled', 'google_drive_enabled', 'calendar_enabled', 'email_integration_enabled',
+        'modules', 'lead_assign_methods', 'max_media_storage_mb', 'max_campaigns_per_month', 'max_surveys', 'max_short_links', 'sort_order', 'is_popular',
     ];
 
     protected $appends = ['yearly_price', 'sections'];
 
     protected $casts = [
         'features'              => 'array',
+        'modules'               => 'array',
+        'lead_assign_methods'   => 'array',
+        'is_popular'            => 'boolean',
+        'max_media_storage_mb'  => 'integer',
+        'max_campaigns_per_month' => 'integer',
+        'max_surveys'           => 'integer',
+        'max_short_links'       => 'integer',
         'is_active'             => 'boolean',
         'is_custom'             => 'boolean',
         'messages_limit'        => 'integer',
@@ -64,6 +75,12 @@ class Plan extends Model
     public function getSectionsAttribute(): array
     {
         return \App\Support\PlanLimits::sectionsFor($this);
+    }
+
+    /** Module keys this plan switches on (see App\Support\Modules). NULL on the row = every module (plans that pre-date toggles). */
+    public function enabledModules(): array
+    {
+        return $this->modules === null ? \App\Support\Modules::keys() : array_values(array_intersect(\App\Support\Modules::keys(), $this->modules));
     }
 
     public function companies(): HasMany

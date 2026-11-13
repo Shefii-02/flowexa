@@ -21,6 +21,7 @@ class DatabaseSeeder extends Seeder
             // ── Plans & limits ───────────────────────────────────────────────
             PlansSeeder::class,
             PlanPricingSeeder::class,           // yearly prices, Testing plan, limit add-ons
+            ModuleAddonsSeeder::class,          // "unlock a feature" add-ons (HR, Finance, Instagram DM …)
 
             // ── Roles & permissions ──────────────────────────────────────────
             RolesSeeder::class,

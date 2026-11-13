@@ -57,8 +57,8 @@ class PlanPurchaseController extends Controller
 
     public function createOrder(Request $request): JsonResponse
     {
-        $d = $request->validate(['plan_id' => ['required', 'integer', 'exists:plans,id'], 'duration_type' => ['required', 'in:monthly,3month,6month,yearly,12month']]);
-        return response()->json($this->svc->createPlanOrder(auth()->user()->company_id, auth()->id(), $d['plan_id'], $d['duration_type']));
+        $d = $request->validate(['plan_id' => ['required', 'integer', 'exists:plans,id'], 'duration_type' => ['required', 'in:monthly,3month,6month,yearly,12month'], 'coupon_code' => ['nullable', 'string', 'max:40']]);
+        return response()->json($this->svc->createPlanOrder(auth()->user()->company_id, auth()->id(), $d['plan_id'], $d['duration_type'], $d['coupon_code'] ?? null));
     }
 
     public function verifyPayment(Request $request): JsonResponse
@@ -70,8 +70,44 @@ class PlanPurchaseController extends Controller
 
     public function addonOrder(Request $request, int $addon): JsonResponse
     {
-        $cycle = $request->validate(['billing_cycle' => ['nullable', 'in:monthly,yearly']])['billing_cycle'] ?? null;
-        return response()->json($this->svc->createAddonOrder(auth()->user()->company_id, auth()->id(), $addon, $cycle));
+        $d = $request->validate(['billing_cycle' => ['nullable', 'in:monthly,yearly'], 'coupon_code' => ['nullable', 'string', 'max:40']]);
+        return response()->json($this->svc->createAddonOrder(auth()->user()->company_id, auth()->id(), $addon, $d['billing_cycle'] ?? null, $d['coupon_code'] ?? null));
+    }
+
+    /** POST addons/cart/quote — price a cart (and a coupon) without creating anything. */
+    public function cartQuote(Request $request): JsonResponse
+    {
+        $d = $request->validate(['addon_ids' => ['required', 'array', 'min:1'], 'addon_ids.*' => ['integer'], 'billing_cycle' => ['nullable', 'in:monthly,yearly'], 'coupon_code' => ['nullable', 'string', 'max:40']]);
+        $q = $this->svc->quoteCart(auth()->user()->company_id, $d['addon_ids'], $d['billing_cycle'] ?? null, $d['coupon_code'] ?? null);
+        return response()->json(['subtotal' => $q['subtotal'], 'discount' => $q['discount'], 'final' => $q['final'], 'coupon' => $q['coupon']?->only(['code', 'name', 'discount_type', 'discount_value']),
+            'lines' => $q['lines']->map(fn ($l) => ['addon_id' => $l['addon']->id, 'name' => $l['addon']->name, 'cycle' => $l['cycle'], 'price' => $l['price']])->values()]);
+    }
+
+    /** POST addons/cart/create-order — one payment for every add-on in the cart. */
+    public function cartOrder(Request $request): JsonResponse
+    {
+        $d = $request->validate(['addon_ids' => ['required', 'array', 'min:1'], 'addon_ids.*' => ['integer'], 'billing_cycle' => ['nullable', 'in:monthly,yearly'], 'coupon_code' => ['nullable', 'string', 'max:40']]);
+        return response()->json($this->svc->createCartOrder(auth()->user()->company_id, auth()->id(), $d['addon_ids'], $d['billing_cycle'] ?? null, $d['coupon_code'] ?? null));
+    }
+
+    public function cartVerify(Request $request): JsonResponse
+    {
+        $d = $request->validate(['razorpay_order_id' => ['required', 'string'], 'razorpay_payment_id' => ['required', 'string'], 'razorpay_signature' => ['required', 'string']]);
+        return response()->json(['message' => 'Add-ons activated.', 'company_addons' => $this->svc->verifyCartPayment(auth()->user()->company_id, $d)]);
+    }
+
+    /** POST plans/coupon/quote — what a coupon takes off a plan purchase. */
+    public function planCouponQuote(Request $request): JsonResponse
+    {
+        $d = $request->validate(['plan_id' => ['required', 'integer', 'exists:plans,id'], 'duration_type' => ['required', 'in:monthly,3month,6month,yearly,12month'], 'coupon_code' => ['nullable', 'string', 'max:40']]);
+        $q = $this->svc->quotePlan(auth()->user()->company_id, $d['plan_id'], $d['duration_type'], $d['coupon_code'] ?? null);
+        return response()->json(['subtotal' => $q['subtotal'], 'discount' => $q['discount'], 'final' => $q['final'], 'coupon' => $q['coupon']?->only(['code', 'name', 'discount_type', 'discount_value'])]);
+    }
+
+    /** GET modules — the module catalog (labels/icons) for the locked-feature page and add-on cards. */
+    public function modules(): JsonResponse
+    {
+        return response()->json(['modules' => \App\Support\Modules::catalog(), 'groups' => \App\Support\Modules::GROUPS, 'entitlements' => \App\Support\Entitlements::forCompany(auth()->user()->company)]);
     }
 
     public function verifyAddonPayment(Request $request): JsonResponse
@@ -95,46 +131,79 @@ class PlanPurchaseController extends Controller
         return response()->json(['packages' => $this->svc->topupPackages()]);
     }
 
-    public function superAdminCreatePlan(Request $request): JsonResponse
+    /** Shared rules for the plan form. $partial: only validate what was sent (updates). */
+    private function planRules(bool $partial): array
     {
-        $d = $request->validate([
-            'name' => ['required', 'string', 'max:50'],
-            'messages_limit' => ['required', 'integer'],
+        $req = $partial ? 'sometimes' : 'required';
+        $int = fn () => ['nullable', 'integer', 'min:0'];
+        return [
+            'name' => [$req, 'string', 'max:50'],
+            'messages_limit' => [$req, 'integer', 'min:0'],
             // Paid plans only — every plan already includes a free trial, so no ₹0 plans.
-            'price' => ['required', 'numeric', 'min:1'],
+            'price' => [$req, 'numeric', 'min:1'],
             'price_yearly' => ['nullable', 'numeric', 'min:1'],
-            'duration_type' => ['required', 'in:monthly,yearly,3month,6month,12month,custom,unlimited'],
+            'duration_type' => [$req, 'in:monthly,yearly,3month,6month,12month,custom,unlimited'],
             'duration_months' => ['nullable', 'integer'],
             'alert_before_days' => ['nullable', 'integer', 'min:0', 'max:60'],
-            'max_users' => ['nullable', 'integer'],
-            'max_templates' => ['nullable', 'integer'],
-            'max_phone_numbers' => ['required', 'integer', 'min:0', 'max:20'],
-            'max_wa_sessions' => ['nullable', 'integer', 'min:0', 'max:20'],
-            'max_campaigns' => ['nullable', 'integer'],
-            'max_contacts' => ['nullable', 'integer'],
-            'max_labels' => ['nullable', 'integer'],
-            'max_flow_nodes' => ['nullable', 'integer'],
-            'max_campaign_contacts' => ['nullable', 'integer'],
-            'throttle_per_minute' => ['required', 'integer', 'min:10', 'max:1000'],
-            'features' => ['nullable', 'array'],
-            'is_active' => ['nullable', 'boolean'],
-        ]);
+            'max_users' => $int(), 'max_roles' => $int(), 'max_templates' => $int(),
+            'max_phone_numbers' => ['nullable', 'integer', 'min:0', 'max:50'],
+            'max_wa_sessions' => ['nullable', 'integer', 'min:0', 'max:50'],
+            'max_campaigns' => $int(), 'max_campaigns_per_month' => $int(), 'max_campaign_contacts' => $int(),
+            'max_surveys' => $int(), 'max_flow_nodes' => $int(),
+            'max_contacts' => $int(), 'max_labels' => $int(),
+            'max_leads_per_month' => $int(), 'max_lead_categories' => $int(),
+            'max_instagram_accounts' => $int(), 'max_instagram_automations' => $int(), 'max_instagram_dms_monthly' => $int(),
+            'max_meta_ads_accounts' => $int(), 'max_website_widgets' => $int(), 'max_short_links' => $int(), 'max_media_storage_mb' => $int(),
+            'throttle_per_minute' => [$req, 'integer', 'min:10', 'max:1000'],
+            'features' => ['nullable', 'array'], 'features.*' => ['string', 'max:150'],
+            'modules' => ['nullable', 'array'], 'modules.*' => ['string', \Illuminate\Validation\Rule::in(\App\Support\Modules::keys())],
+            'lead_assign_methods' => ['nullable', 'array'], 'lead_assign_methods.*' => ['string', \Illuminate\Validation\Rule::in(array_keys(\App\Support\Modules::ASSIGN_METHODS))],
+            'google_sheets_enabled' => ['nullable', 'boolean'], 'google_drive_enabled' => ['nullable', 'boolean'],
+            'calendar_enabled' => ['nullable', 'boolean'], 'email_integration_enabled' => ['nullable', 'boolean'],
+            'is_active' => ['nullable', 'boolean'], 'is_popular' => ['nullable', 'boolean'], 'sort_order' => ['nullable', 'integer'],
+        ];
+    }
+
+    public function superAdminCreatePlan(Request $request): JsonResponse
+    {
+        $d = $request->validate($this->planRules(false));
+        // A brand-new plan lists its modules explicitly (an empty list = none), unlike old plans where NULL meant "all".
+        $d['modules'] = $d['modules'] ?? [];
         return response()->json(['plan' => Plan::create($d)], 201);
     }
 
     public function superAdminUpdatePlan(Request $request, int $id): JsonResponse
     {
         $plan = Plan::findOrFail($id);
-        $plan->update($request->all());
+        $plan->update($request->validate($this->planRules(true)));
+        \App\Support\Entitlements::forget();
         return response()->json(['plan' => $plan->fresh()]);
     }
 
+    /** Soft delete: the plan disappears from every pricing list, but companies already on it keep working until they change plan. */
     public function superAdminDeletePlan(int $id): JsonResponse
     {
-        $plan = Plan::findOrFail($id);
-        if ($plan->companies()->count() > 0) return response()->json(['message' => 'Cannot delete plan with active companies.'], 422);
+        $plan = Plan::withCount('companies')->findOrFail($id);
         $plan->delete();
-        return response()->json(['message' => 'Plan deleted.']);
+        return response()->json(['message' => $plan->companies_count > 0
+            ? "Plan removed from sale. {$plan->companies_count} compan" . ($plan->companies_count === 1 ? 'y keeps' : 'ies keep') . " it until they change plan."
+            : 'Plan deleted.']);
+    }
+
+    public function superAdminRestorePlan(int $id): JsonResponse
+    {
+        $plan = Plan::onlyTrashed()->findOrFail($id);
+        $plan->restore();
+        return response()->json(['plan' => $plan->fresh()]);
+    }
+
+    /** GET superadmin/plans/catalog — modules, assign methods and limit fields the plan form is built from. */
+    public function planCatalog(): JsonResponse
+    {
+        return response()->json([
+            'modules' => \App\Support\Modules::catalog(), 'groups' => \App\Support\Modules::GROUPS,
+            'assign_methods' => collect(\App\Support\Modules::ASSIGN_METHODS)->map(fn ($l, $k) => ['key' => $k, 'label' => $l])->values(),
+        ]);
     }
 
     public function assignCustomPlan(Request $request): JsonResponse
@@ -169,7 +238,7 @@ class PlanPurchaseController extends Controller
 
     public function superAdminCreateAddon(Request $request): JsonResponse
     {
-        $d = $request->validate(['name' => ['required', 'string', 'max:100'], 'slug' => ['required', 'string', 'max:110'], 'description' => ['nullable', 'string'], 'type' => ['required', 'in:feature,message_pack,storage,limit'], 'price' => ['required', 'numeric', 'min:0'], 'price_yearly' => ['nullable', 'numeric', 'min:0'], 'billing_cycle' => ['required', 'in:monthly,yearly,one_time'], 'config' => ['nullable', 'array'], 'is_active' => ['nullable', 'boolean']]);
+        $d = $request->validate(['name' => ['required', 'string', 'max:100'], 'slug' => ['required', 'string', 'max:110'], 'description' => ['nullable', 'string'], 'type' => ['required', 'in:feature,message_pack,storage,limit,module'], 'price' => ['required', 'numeric', 'min:0'], 'price_yearly' => ['nullable', 'numeric', 'min:0'], 'billing_cycle' => ['required', 'in:monthly,yearly,one_time'], 'config' => ['nullable', 'array'], 'is_active' => ['nullable', 'boolean']]);
         // A limit add-on raises one plan limit (e.g. staff users): it must name which one and by how much.
         if ($d['type'] === 'limit') {
             $request->validate([
@@ -177,11 +246,21 @@ class PlanPurchaseController extends Controller
                 'config.amount'   => ['required', 'integer', 'min:1', 'max:100000'],
             ]);
         }
+        if ($d['type'] === 'module') {
+            $request->validate(['config.module' => ['required', 'string', \Illuminate\Validation\Rule::in(\App\Support\Modules::keys())]]);
+        }
         return response()->json(['addon' => $this->svc->createAddon($d)], 201);
     }
 
     public function superAdminUpdateAddon(Request $request, int $id): JsonResponse
     {
         return response()->json(['addon' => $this->svc->updateAddon($id, $request->all())]);
+    }
+
+    /** DELETE superadmin/addons/{id} — retire an add-on; companies that already bought it keep it until it expires. */
+    public function superAdminDeleteAddon(int $id): JsonResponse
+    {
+        \App\Models\Addon::findOrFail($id)->delete();
+        return response()->json(['message' => 'Add-on removed. Companies that already bought it keep it until it expires.']);
     }
 }

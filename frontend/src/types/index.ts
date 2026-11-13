@@ -67,6 +67,7 @@ export interface Company {
   created_at: string
   updated_at: string
   wa_chat_token?: string | null
+  entitlements?: { all: boolean; modules: string[]; from_plan: string[]; from_addons: string[]; locked: { key: string; label: string; icon: string; group: string; description: string }[]; assign_methods: string[] }
 }
 
 export interface User {

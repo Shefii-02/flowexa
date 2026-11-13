@@ -4,6 +4,7 @@ import { demoApi } from '@/api'
 import { Badge, Button, Drawer, Input, Select, Textarea, EmptyState, ConfirmModal, Pagination, TableSkeleton } from '@/components/ui'
 import { getError } from '@/utils'
 import toast from 'react-hot-toast'
+import { useNavigate } from 'react-router-dom'
 
 const STATUSES = [
   { value: 'new',            label: 'New',            variant: 'blue' },
@@ -33,6 +34,8 @@ export default function DemoRequestsPage() {
   const [assigned, setAssigned] = useState('')
   const [search, setSearch]   = useState('')
   const [page, setPage]       = useState(1)
+  const [view, setView]       = useState<'list' | 'board'>(() => { try { return (localStorage.getItem('sa_demo_view') as 'list' | 'board') || 'list' } catch { return 'list' } })
+  const navigate              = useNavigate()
 
   const [sel, setSel]         = useState<any>(null)
   const [form, setForm]       = useState({ status: 'new', assigned_to: '', scheduled_at: '', notes: '' })
@@ -72,13 +75,29 @@ export default function DemoRequestsPage() {
     catch (e) { toast.error(getError(e)) }
   }
 
+  const switchView = (v: 'list' | 'board') => { setView(v); try { localStorage.setItem('sa_demo_view', v) } catch { /* private mode */ } }
+
+  // Pipeline board: move a lead one click at a time, without opening it
+  const move = async (r: any, to: string) => {
+    try { await demoApi.update(r.id, { status: to }); toast.success(`${r.company_name} → ${labelOf(to)}`); load() } catch (e) { toast.error(getError(e)) }
+  }
+
+  // Won lead → company: hand the details to the Companies form so nobody retypes them
+  const convert = (r: any) => {
+    try { sessionStorage.setItem('sa_company_prefill', JSON.stringify({ company_name: r.company_name, owner_name: r.name, owner_email: r.email, owner_phone: r.phone, company_phone: r.phone, demo_request_id: r.id })) } catch { /* ignore */ }
+    navigate('/superadmin/companies?new=1')
+  }
+
   const waLink = (phone: string) => `https://wa.me/${phone.replace(/\D/g, '')}`
 
   return (
     <div className="space-y-5">
       <div>
         <h1 className="text-xl font-bold text-gray-900">Demo Requests</h1>
-        <p className="text-sm text-gray-500">Leads from the public “Book a demo” form.</p>
+        <p className="text-sm text-gray-500">Leads from the public “Book a demo” form — your sales pipeline.</p>
+        <div className="mt-2 inline-flex rounded-lg border border-gray-200 p-0.5 text-sm" role="group" aria-label="View">
+          {(['list', 'board'] as const).map(v => <button key={v} aria-pressed={view === v} onClick={() => switchView(v)} className={`rounded-md px-3 py-1 capitalize ${view === v ? 'bg-brand-600 text-white' : 'text-gray-600 hover:bg-gray-50'}`}>{v}</button>)}
+        </div>
       </div>
 
       {/* Pipeline counts — click to filter */}
@@ -100,7 +119,31 @@ export default function DemoRequestsPage() {
         </div>
       </div>
 
-      <div className="card overflow-x-auto">
+      {view === 'board' && !loading && (
+        <div className="grid gap-3 overflow-x-auto md:grid-cols-3 xl:grid-cols-6">
+          {STATUSES.map((col, ci) => {
+            const items = rows.filter(r => r.status === col.value)
+            return (
+              <div key={col.value} className="min-w-[200px] rounded-xl bg-gray-50 p-2">
+                <p className="mb-2 flex items-center justify-between px-1 text-xs font-semibold text-gray-600">{col.label}<span className="text-gray-400">{items.length}</span></p>
+                <div className="space-y-2">
+                  {items.map(r => (
+                    <div key={r.id} className="card cursor-pointer p-2.5 text-sm hover:shadow-md" onClick={() => open(r)}>
+                      <p className="font-medium text-gray-900">{r.company_name}</p>
+                      <p className="text-xs text-gray-500">{r.name} · {r.phone}</p>
+                      {r.scheduled_at && <p className="mt-1 text-[11px] text-purple-600">📅 {new Date(r.scheduled_at).toLocaleString()}</p>}
+                      <p className="mt-1 text-[11px] text-gray-400">{r.assignee?.name ?? 'Unassigned'}</p>
+                      <div className="mt-2 flex gap-1" onClick={e => e.stopPropagation()}>
+                        {ci > 0 && <button className="rounded border border-gray-200 px-1.5 text-xs text-gray-500 hover:bg-gray-50" title={`Back to ${STATUSES[ci - 1].label}`} onClick={() => move(r, STATUSES[ci - 1].value)}>←</button>}
+                        {ci < STATUSES.length - 1 && <button className="rounded border border-gray-200 px-1.5 text-xs text-gray-500 hover:bg-gray-50" title={`Move to ${STATUSES[ci + 1].label}`} onClick={() => move(r, STATUSES[ci + 1].value)}>→</button>}
+                      </div>
+                    </div>))}
+                </div>
+              </div>)
+          })}
+        </div>)}
+
+      <div className={`card overflow-x-auto ${view === 'board' ? 'hidden' : ''}`}>
         {loading ? <TableSkeleton rows={6} cols={6} /> : rows.length === 0 ? (
           <EmptyState icon="📅" title="No demo requests" desc="Requests from the /register form will appear here." />
         ) : (
@@ -131,7 +174,8 @@ export default function DemoRequestsPage() {
 
       <Drawer open={!!sel} onClose={() => setSel(null)} title={sel?.company_name ?? ''}
         footer={<div className="flex justify-between w-full">
-          <Button variant="danger" size="sm" onClick={() => setDel(sel)}>Delete</Button>
+          <div className="flex gap-2"><Button variant="danger" size="sm" onClick={() => setDel(sel)}>Delete</Button>
+            <Button variant="secondary" size="sm" onClick={() => convert(sel)}>Create company →</Button></div>
           <Button loading={saving} onClick={save}>Save changes</Button>
         </div>}>
         {sel && (

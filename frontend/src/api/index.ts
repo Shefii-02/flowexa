@@ -588,6 +588,11 @@ export const surveyFormApi = {
 }
 
 
+export type ModuleInfo = { key: string; label: string; icon: string; group: string; description: string }
+export type Entitlements = { all: boolean; modules: string[]; from_plan: string[]; from_addons: string[]; locked: ModuleInfo[]; assign_methods: string[] }
+export type CouponQuote = { subtotal: number; discount: number; final: number; coupon: { code: string; name: string; discount_type: string; discount_value: number } | null }
+export type CartQuote = CouponQuote & { lines: { addon_id: number; name: string; cycle: string; price: number }[] }
+
 // ── Plan Purchase ─────────────────────────────────────────────────────────
 export const planApi = {
   list: () => api.get('/plans'),
@@ -595,7 +600,12 @@ export const planApi = {
   current: () => api.get('/plans/current'),
   history: () => api.get('/plans/history'),
   previewChange: (planId: number, durationType: string) => api.post('/plans/preview-change', { plan_id: planId, duration_type: durationType }),
-  createOrder: (planId: number, durationType: string) => api.post('/plans/create-order', { plan_id: planId, duration_type: durationType }),
+  createOrder: (planId: number, durationType: string, couponCode?: string | null) => api.post('/plans/create-order', { plan_id: planId, duration_type: durationType, coupon_code: couponCode || undefined }),
+  planCouponQuote: (planId: number, durationType: string, couponCode: string) => api.post<CouponQuote>('/plans/coupon/quote', { plan_id: planId, duration_type: durationType, coupon_code: couponCode }),
+  modules: () => api.get<{ modules: ModuleInfo[]; groups: Record<string, string>; entitlements: Entitlements }>('/plan/modules'),
+  cartQuote: (addonIds: number[], cycle: 'monthly' | 'yearly', couponCode?: string | null) => api.post<CartQuote>('/addons/cart/quote', { addon_ids: addonIds, billing_cycle: cycle, coupon_code: couponCode || undefined }),
+  cartOrder: (addonIds: number[], cycle: 'monthly' | 'yearly', couponCode?: string | null) => api.post('/addons/cart/create-order', { addon_ids: addonIds, billing_cycle: cycle, coupon_code: couponCode || undefined }),
+  cartVerify: (d: Record<string, unknown>) => api.post('/addons/cart/verify-payment', d),
   verifyPayment: (d: Record<string, unknown>) => api.post('/plans/verify-payment', d),
   addons: () => api.get('/addons'),
   myAddons: () => api.get('/addons/mine'),
@@ -616,6 +626,21 @@ export const planApi = {
   saMarkContacted: (companyId: number, d: { kind: 'plan' | 'trial' | 'addon'; reference_id?: number | null; note?: string }) => api.post(`/superadmin/expiries/${companyId}/contacted`, d),
   saPricingPdf: (scope: string, cycle: string) => api.get('/superadmin/pricing/pdf', { params: { scope, cycle }, responseType: 'blob' }),
   saUpdateAddon: (id: number, d: Record<string, unknown>) => api.put(`/superadmin/addons/${id}`, d),
+  saDeleteAddon: (id: number) => api.delete(`/superadmin/addons/${id}`),
+  saRestorePlan: (id: number) => api.post(`/superadmin/plans/${id}/restore`),
+  saPlanCatalog: () => api.get<{ modules: ModuleInfo[]; groups: Record<string, string>; assign_methods: { key: string; label: string }[] }>('/superadmin/plans/catalog'),
+  // Coupons
+  saCoupons: () => api.get('/superadmin/coupons'),
+  saCreateCoupon: (d: Record<string, unknown>) => api.post('/superadmin/coupons', d),
+  saUpdateCoupon: (id: number, d: Record<string, unknown>) => api.put(`/superadmin/coupons/${id}`, d),
+  saDeleteCoupon: (id: number) => api.delete(`/superadmin/coupons/${id}`),
+  saRestoreCoupon: (id: number) => api.post(`/superadmin/coupons/${id}/restore`),
+  saCouponUsage: (id: number) => api.get(`/superadmin/coupons/${id}/usage`),
+  saCouponAnalytics: () => api.get('/superadmin/coupons/analytics'),
+  // Revenue / payments
+  saRevenue: (months = 12) => api.get('/superadmin/revenue', { params: { months } }),
+  saPayments: (params: Record<string, unknown>) => api.get('/superadmin/payments', { params }),
+  saRecordPayment: (d: Record<string, unknown>) => api.post('/superadmin/payments/manual', d),
   saTopupPackages: () => api.get('/superadmin/topup-packages'),
   saCreateTopup: (d: Record<string, unknown>) => api.post('/superadmin/topup-packages', d),
   saUpdateTopup: (id: number, d: Record<string, unknown>) => api.put(`/superadmin/topup-packages/${id}`, d),

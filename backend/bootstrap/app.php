@@ -77,6 +77,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'plan.limit'      => \App\Http\Middleware\PlanLimitMiddleware::class,
             'plan.monthly_limit' => \App\Http\Middleware\PlanMonthlyLimitMiddleware::class,
             'plan.feature'    => \App\Http\Middleware\PlanFeatureMiddleware::class,
+            'module.gate'     => \App\Http\Middleware\ModuleGate::class,
             'wa_chat.valid'   => \App\Modules\WaChat\Http\Middleware\EnsureWaChatTokenValid::class,
 
             // OTP external API key auth

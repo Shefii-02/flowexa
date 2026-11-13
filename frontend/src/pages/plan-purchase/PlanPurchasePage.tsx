@@ -10,6 +10,10 @@ import VerticalTabs, { type VTab } from '@/components/layout/VerticalTabs'
 import { refreshPlanUsage } from '@/lib/planUsage'
 import { loadRazorpay } from './razorpay'
 import AddonsSection, { type Addon, type MyAddon } from './AddonsSection'
+import FeaturesSection from './FeaturesSection'
+import type { Cycle } from './AddonCart'
+import { useAppDispatch } from '@/store'
+import { fetchMeThunk } from '@/store/slices'
 import InvoicesSection, { type Invoice } from './InvoicesSection'
 
 const DURATIONS = [
@@ -41,7 +45,14 @@ export default function PlanPurchasePage() {
   const [addons, setAddons] = useState<Addon[]>([])
   const [mine, setMine] = useState<MyAddon[]>([])
   const [invoices, setInvoices] = useState<Invoice[]>([])
-  const [params] = useSearchParams()
+  const [params, setParams] = useSearchParams()
+  const dispatch = useAppDispatch()
+  const [cart, setCart] = useState<number[]>([])
+  const [cycle, setCycle] = useState<Cycle>('monthly')
+  const [coupon, setCoupon] = useState('')
+  const [quotes, setQuotes] = useState<Record<number, { final: number; discount: number } | { error: string }>>({})
+  const [couponApplied, setCouponApplied] = useState('')
+  const goTab = (t: string) => setParams(p => { const n = new URLSearchParams(p); n.set('section', t); return n })
 
   useEffect(() => {
     Promise.all([planApi.list(), planApi.current(), planApi.history()])
@@ -69,6 +80,20 @@ export default function PlanPurchasePage() {
     return plan.price * months * (1 - d.discount / 100)
   }
 
+  // price every plan with the coupon so each card shows its own discounted total (a coupon can be limited to certain plans)
+  const applyCoupon = async () => {
+    const code = coupon.trim().toUpperCase()
+    if (!code) { setQuotes({}); setCouponApplied(''); return }
+    const out: Record<number, any> = {}
+    await Promise.all(plans.map(p => planApi.planCouponQuote(p.id, duration, code)
+      .then(r => { out[p.id] = { final: r.data.final, discount: r.data.discount } })
+      .catch(e => { out[p.id] = { error: getError(e) } })))
+    setQuotes(out); setCouponApplied(code)
+    const okCount = Object.values(out).filter((q: any) => !q.error).length
+    if (okCount) toast.success(`Coupon ${code} applied`); else toast.error((Object.values(out)[0] as any)?.error ?? 'Invalid coupon')
+  }
+  useEffect(() => { if (couponApplied) applyCoupon() }, [duration])   // eslint-disable-line react-hooks/exhaustive-deps
+
   const relationTo = (plan: any): 'current' | 'upgrade' | 'downgrade' | 'buy' => {
     if (!current?.plan) return 'buy'
     if (current.plan.id === plan.id) return current.status === 'active' ? 'current' : 'buy'
@@ -94,7 +119,16 @@ export default function PlanPurchasePage() {
         setPaying(null); toast.error(getError(e)); return
       }
 
-      const { data } = await planApi.createOrder(plan.id, duration)
+      const { data } = await planApi.createOrder(plan.id, duration, couponApplied || null)
+
+      // a coupon that covers the whole price activates the plan with no payment step
+      if (data.free) {
+        toast.success(data.message || `Plan activated: ${plan.name}!`)
+        const [c, h] = await Promise.all([planApi.current(), planApi.history()])
+        setCurrent(c.data.current); setHistory(h.data.history)
+        dispatch(fetchMeThunk()); refreshPlanUsage(); loadExtras(); setPaying(null)
+        return
+      }
 
       await loadRazorpay()
 
@@ -136,6 +170,7 @@ export default function PlanPurchasePage() {
               duration_type: duration,
             })
             toast.success(res.data.message || `Plan activated: ${plan.name}!`)
+            dispatch(fetchMeThunk())   // new plan → new sidebar
             // Refresh
             const [c, h] = await Promise.all([planApi.current(), planApi.history()])
             setCurrent(c.data.current); setHistory(h.data.history)
@@ -155,7 +190,8 @@ export default function PlanPurchasePage() {
     { id: 'plan',     icon: '📦', label: 'Purchased plan',    desc: 'Your current plan and what you have used' },
     { id: 'invoices', icon: '🧾', label: 'Billing & invoices', desc: 'Payments, receipts and plan history' },
     { id: 'plans',    icon: '🗂️', label: 'All plans',          desc: 'Compare, upgrade or renew' },
-    { id: 'addons',   icon: '➕', label: 'Add-ons',            desc: 'Increase a single limit — staff, leads and more' },
+    { id: 'features', icon: '✨', label: 'Features',           desc: 'What is active on your account — and what you can add' },
+    { id: 'addons',   icon: '➕', label: 'Add-ons & cart',     desc: 'Add features or raise a limit, pay once' },
   ]
 
   return (
@@ -197,6 +233,12 @@ export default function PlanPurchasePage() {
 
             {id === 'plans' && (
               <>
+      <div className="flex flex-wrap items-end gap-2">
+        <label className="text-sm font-medium text-gray-700">Coupon code
+          <input className="input mt-1 block w-48 uppercase" value={coupon} onChange={e => setCoupon(e.target.value)} onKeyDown={e => e.key === 'Enter' && applyCoupon()} placeholder="Have a coupon?" /></label>
+        <Button variant="secondary" onClick={applyCoupon}>Apply</Button>
+        {couponApplied && <button className="text-xs text-gray-400 underline" onClick={() => { setCoupon(''); setCouponApplied(''); setQuotes({}) }}>remove {couponApplied}</button>}
+      </div>
       <div>
         <p className="text-sm font-medium text-gray-700 mb-3">Billing period</p>
         <div className="flex gap-3 flex-wrap">
@@ -230,11 +272,15 @@ export default function PlanPurchasePage() {
               )}
               <h3 className="font-bold text-gray-900 text-lg">{plan.name}</h3>
               <div className="mt-2 mb-4">
-                <span className="text-3xl font-bold text-gray-900">₹{fmt.number(Math.round(price))}</span>
+                {(() => { const q: any = quotes[plan.id]; return q && !q.error ? (
+                  <><span className="text-3xl font-bold text-gray-900">₹{fmt.number(Math.round(q.final))}</span><span className="ml-2 text-sm text-gray-400 line-through">₹{fmt.number(Math.round(price))}</span></>
+                ) : <span className="text-3xl font-bold text-gray-900">₹{fmt.number(Math.round(price))}</span> })()}
                 <span className="text-sm text-gray-400">/{DURATIONS.find(d => d.key === duration)?.label.toLowerCase()}</span>
                 {plan.price > 0 && duration !== 'monthly' && (
                   <p className="text-xs text-green-600 mt-0.5">Save ₹{fmt.number(Math.round(plan.price * ({ '3month': 3, '6month': 6, yearly: 12 }[duration] ?? 1) - price))}</p>
                 )}
+                {(quotes[plan.id] as any)?.error && <p className="text-xs text-red-500 mt-0.5">{(quotes[plan.id] as any).error}</p>}
+                {quotes[plan.id] && !(quotes[plan.id] as any).error && <p className="text-xs text-green-600 mt-0.5">Coupon saves ₹{fmt.number(Math.round((quotes[plan.id] as any).discount))}</p>}
                 <p className="text-xs text-gray-400 mt-0.5">₹{fmt.number(Math.round(plan.price))}/month · ₹{fmt.number(Math.round(plan.yearly_price ?? plan.price * 12 * 0.8))}/year</p>
               </div>
 
@@ -287,7 +333,8 @@ export default function PlanPurchasePage() {
               </>
             )}
 
-            {id === 'addons' && <AddonsSection addons={addons} mine={mine} focus={params.get('resource')} onChanged={loadExtras} />}
+            {id === 'features' && <FeaturesSection addons={addons} mine={mine} focus={params.get('module')} cart={cart} setCart={setCart} onOpenAddons={() => goTab('addons')} onOpenPlans={() => goTab('plans')} />}
+            {id === 'addons' && <AddonsSection addons={addons} mine={mine} focus={params.get('resource')} cart={cart} setCart={setCart} cycle={cycle} setCycle={setCycle} onChanged={loadExtras} />}
           </>
         )}
       </VerticalTabs>

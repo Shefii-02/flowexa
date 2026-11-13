@@ -66,6 +66,20 @@ export const usePermission = (permission: string): boolean => {
   return user.role.permissions.includes(permission)
 }
 
+/** True when the company's plan (or a purchased add-on) includes this module. Super admins and plan-less trials see everything. */
+export const useModule = (key: string): boolean => {
+  const user = useAppSelector((s) => s.auth.user)
+  if (isSuperAdminRole(user?.role?.name)) return true
+  const e = user?.company?.entitlements
+  return !e || e.all || e.modules.includes(key)
+}
+
+/** Lead-assignment methods the plan allows (manual, round_robin, algorithm, uber, auto). */
+export const useAssignMethods = (): string[] => {
+  const user = useAppSelector((s) => s.auth.user)
+  return user?.company?.entitlements?.assign_methods ?? ['manual', 'round_robin', 'algorithm', 'uber', 'auto']
+}
+
 export const useIsSuperAdmin = (): boolean => {
   const user = useAppSelector((s) => s.auth.user)
   return isSuperAdminRole(user?.role?.name)

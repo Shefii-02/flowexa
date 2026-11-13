@@ -3,7 +3,9 @@ import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import PlanLimitModal from '@/components/plan/PlanLimitModal'
 import { Toaster } from 'react-hot-toast'
 import { useEffect } from 'react'
-import { useAppDispatch, useAppSelector } from '@/store'
+import { moduleForPath } from '@/lib/modules'
+import LockedFeature from '@/components/plan/LockedFeature'
+import { useAppDispatch, useAppSelector, useModule } from '@/store'
 import { toggleSidebar, clearForbidden, clearSessionExpired, clearConnectionError, logoutThunk } from '@/store/slices'
 import { Sidebar } from './Sidebar'
 import { SessionStatusIndicator } from './SessionStatusIndicator'
@@ -93,7 +95,7 @@ export const DashboardLayout = () => {
             ) : forbidden ? (
               <AccessDeniedScreen />
             ) : (
-              <Outlet />
+              <ModuleGuard />
             )}
             <PlanLimitModal />
           </ErrorBoundary>
@@ -111,4 +113,12 @@ export const DashboardLayout = () => {
       <StickyNotes />
     </div>
   )
+}
+
+/** Renders the page, or the "feature not active" screen when the URL belongs to a module this company does not have. */
+function ModuleGuard() {
+  const { pathname } = useLocation()
+  const module = moduleForPath(pathname)
+  const allowed = useModule(module ?? '')
+  return module && !allowed ? <LockedFeature module={module} /> : <Outlet />
 }

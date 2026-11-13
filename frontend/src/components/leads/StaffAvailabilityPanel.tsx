@@ -43,7 +43,7 @@ export function StaffAvailabilityPanel({ compact = false }: { compact?: boolean 
 
   const sorted = [...list].sort((a, b) => {
     const av = a.availability, bv = b.availability
-    if (sort === 'score') return (bv?.performance_score ?? 0) - (av?.performance_score ?? 0)
+    if (sort === 'score') return Number(bv?.performance_score ?? 0) - Number(av?.performance_score ?? 0)
     if (sort === 'workload') return (av?.current_leads_count ?? 0) - (bv?.current_leads_count ?? 0)
     if (sort === 'availability') return (bv?.is_online ? 1 : 0) - (av?.is_online ? 1 : 0)
     return (bv?.today_conversions ?? 0) - (av?.today_conversions ?? 0)
@@ -99,7 +99,7 @@ export function StaffAvailabilityPanel({ compact = false }: { compact?: boolean 
                 </div>
                 <div className="flex justify-between text-[11px] text-gray-500">
                   <span>Today: {av?.today_leads_count ?? 0}L / {av?.today_conversions ?? 0}C</span>
-                  <span className="font-bold text-brand-600">{av?.performance_score?.toFixed(0) ?? 50}/100</span>
+                  <span className="font-bold text-brand-600">{av?.performance_score != null ? Number(av.performance_score).toFixed(0) : 50}/100</span>
                 </div>
               </div>
             )

@@ -23,11 +23,11 @@ class PlanPricingSeederTest extends TestCase
             foreach (['max_users', 'max_templates', 'max_phone_numbers', 'max_wa_sessions', 'max_campaigns', 'max_contacts', 'max_labels', 'max_flow_nodes', 'max_campaign_contacts', 'throttle_per_minute',
                       'max_leads_per_month', 'max_lead_categories', 'max_roles', 'max_instagram_accounts', 'max_instagram_automations', 'max_instagram_dms_monthly', 'max_meta_ads_accounts', 'max_website_widgets'] as $c) { $t->integer($c)->nullable(); }
             foreach (['google_sheets_enabled', 'google_drive_enabled', 'calendar_enabled', 'email_integration_enabled'] as $c) { $t->boolean($c)->default(false); }
-            $t->timestamps();
+            $t->json('modules')->nullable(); $t->timestamps(); $t->softDeletes();
         });
         Schema::create('addons', function ($t) {
             $t->id(); $t->string('name'); $t->string('slug')->unique(); $t->text('description')->nullable(); $t->string('type'); $t->decimal('price', 10, 2);
-            $t->decimal('price_yearly', 10, 2)->nullable(); $t->string('billing_cycle'); $t->text('config')->nullable(); $t->boolean('is_active')->default(true); $t->timestamps();
+            $t->decimal('price_yearly', 10, 2)->nullable(); $t->string('billing_cycle'); $t->text('config')->nullable(); $t->boolean('is_active')->default(true); $t->timestamps(); $t->softDeletes();
         });
     }
 

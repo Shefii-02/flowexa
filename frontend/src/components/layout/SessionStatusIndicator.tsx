@@ -34,7 +34,9 @@ export function SessionStatusIndicator() {
     // VITE_SESSION_HEALTH_POLL_SECONDS: 0 (or "false") turns the heartbeat off entirely; unset = 180s.
     const raw = import.meta.env.VITE_SESSION_HEALTH_POLL_SECONDS
     const seconds = raw === undefined || raw === '' ? 180 : Number(raw)
-    if (!hasWaChat || !Number.isFinite(seconds) || seconds <= 0) return
+    // VITE_SESSION_HEALTH_ENABLED: "false" disables the API call (default true).
+    const enabled = String(import.meta.env.VITE_SESSION_HEALTH_ENABLED ?? 'true').toLowerCase() !== 'false'
+    if (!enabled || !hasWaChat || !Number.isFinite(seconds) || seconds <= 0) return
     let cancelled = false
 
     const check = async () => {

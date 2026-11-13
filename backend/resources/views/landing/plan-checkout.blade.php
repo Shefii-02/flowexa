@@ -91,6 +91,15 @@
           </div>
         </div>
 
+        <div class="form-group" style="margin-top:8px">
+          <label class="form-label">Coupon code</label>
+          <div style="display:flex;gap:8px">
+            <input type="text" id="coupon_code" class="form-control" placeholder="Have a coupon?" style="text-transform:uppercase">
+            <button type="button" id="coupon-btn" class="btn" style="white-space:nowrap">Apply</button>
+          </div>
+          <p id="coupon-msg" style="font-size:12px;margin-top:6px"></p>
+        </div>
+
         <button type="button" id="pay-btn" class="btn btn-primary w-full" style="justify-content:center;padding:16px;font-size:16px;margin-top:8px">
           🔒 Pay ₹<span id="btn-price">{{ number_format($plan->price) }}</span> &amp; Activate Account
         </button>
@@ -187,6 +196,30 @@ const RAZORPAY_KEY = '{{ config("services.razorpay.key") }}';
 const multipliers = { monthly:1, '3month':3*0.95, '6month':6*0.90, yearly:12*0.80 };
 const durLabels   = { monthly:'Monthly', '3month':'Every 3 months (5% off)', '6month':'Every 6 months (10% off)', yearly:'Yearly (20% off)' };
 let currentDur = 'monthly';
+let couponDiscount = 0, appliedCoupon = null;
+const money = n => Math.round(n).toLocaleString('en-IN');
+const grossFor = dur => BASE_PRICE * multipliers[dur];
+function refreshTotals() {
+  const total = Math.max(0, Math.round(grossFor(currentDur) - couponDiscount));
+  document.querySelectorAll('.summary-total').forEach(el => el.textContent = money(total));
+  const b = document.getElementById('btn-price'); if (b) b.textContent = money(total);
+  const row = document.getElementById('discount-row');
+  if (couponDiscount > 0) { row.style.display = 'flex'; document.querySelector('.summary-discount').textContent = '-₹' + money(couponDiscount) + ' (' + appliedCoupon + ')'; }
+}
+async function applyCoupon() {
+  const msg = document.getElementById('coupon-msg'), code = document.getElementById('coupon_code').value.trim();
+  if (!code) { couponDiscount = 0; appliedCoupon = null; msg.textContent = ''; setDur(currentDur, document.querySelector('.dur-tab.active')); return; }
+  try {
+    const res = await fetch('/api/v1/auth/coupons/validate', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      body: JSON.stringify({ plan_id: PLAN_ID, duration_type: currentDur, coupon_code: code, email: document.getElementById('reg_email').value || null }) });
+    const data = await res.json();
+    if (!res.ok) throw new Error((data.errors && data.errors.coupon_code && data.errors.coupon_code[0]) || data.message || 'Invalid coupon');
+    couponDiscount = data.discount; appliedCoupon = data.coupon.code;
+    msg.style.color = '#16a34a'; msg.textContent = '✓ ' + data.coupon.name + ' applied — you save ₹' + money(data.discount);
+  } catch (e) { couponDiscount = 0; appliedCoupon = null; msg.style.color = '#dc2626'; msg.textContent = e.message; }
+  refreshTotals();
+}
+document.getElementById('coupon-btn').addEventListener('click', applyCoupon);
 
 function setDur(dur, el) {
   currentDur = dur;
@@ -209,6 +242,7 @@ function setDur(dur, el) {
   } else {
     discRow.style.display = 'none';
   }
+  if (appliedCoupon) { applyCoupon(); } else { refreshTotals(); }
 }
 
 document.getElementById('pay-btn').addEventListener('click', async function() {
@@ -235,6 +269,7 @@ document.getElementById('pay-btn').addEventListener('click', async function() {
     email:         document.getElementById('reg_email').value,
     phone:         document.getElementById('reg_phone').value,
     password:      document.getElementById('reg_password').value,
+    coupon_code:   appliedCoupon,
     _token:        document.querySelector('[name="_token"]').value,
   };
 
@@ -246,7 +281,8 @@ document.getElementById('pay-btn').addEventListener('click', async function() {
     });
     const data = await res.json();
 
-    if (!data.order_id) throw new Error(data.message || 'Failed to create order.');
+    if (data.free) { window.location.href = data.redirect; return; }
+    if (!data.order_id) throw new Error(data.message || (data.errors && data.errors.coupon_code && data.errors.coupon_code[0]) || 'Failed to create order.');
 
     const rzp = new Razorpay({
       key:         RAZORPAY_KEY,

@@ -25,7 +25,7 @@ class CompanyPlan extends Model
     ];
 
     public function company(): BelongsTo      { return $this->belongsTo(Company::class); }
-    public function plan(): BelongsTo         { return $this->belongsTo(Plan::class); }
+    public function plan(): BelongsTo         { return $this->belongsTo(Plan::class)->withTrashed(); }
     public function paymentOrder(): BelongsTo { return $this->belongsTo(PaymentOrder::class); }
 
     public function isActive(): bool

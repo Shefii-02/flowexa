@@ -290,6 +290,16 @@ class LeadAssignmentController extends Controller
             LeadAssignmentRule::defaultForCompany($company->id)
         );
 
+        // The plan decides which assignment methods may be switched on (Plans → Lead assign methods).
+        $allowed = \App\Support\Entitlements::forCompany($company)['assign_methods'];
+        $wanted = array_filter([$request->input('strategy'), $request->input('notification_mode') === 'hybrid' ? 'uber' : $request->input('notification_mode')]);
+        if ($request->boolean('auto_assign_enabled') === false && $request->has('auto_assign_enabled')) { $wanted = ['manual']; }
+        foreach ($wanted as $m) {
+            if (isset(\App\Support\Modules::ASSIGN_METHODS[$m]) && !in_array($m, $allowed, true)) {
+                return response()->json(['message' => '"' . \App\Support\Modules::ASSIGN_METHODS[$m] . '" assignment is not part of your plan. Upgrade your plan to use it.', 'error_code' => 'plan_feature_disabled', 'feature' => 'assign_' . $m], 403);
+            }
+        }
+
         $rule->update($request->only([
             'auto_assign_enabled', 'strategy',
             'weight_availability', 'weight_max_leads', 'weight_performance', 'weight_workload',

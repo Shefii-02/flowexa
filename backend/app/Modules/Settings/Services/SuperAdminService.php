@@ -77,7 +77,7 @@ class SuperAdminService
                 'industry_template'=> $dto->businessType,
             ]);
 
-            User::create([
+            $owner = User::create([
                 'company_id' => $company->id,
                 'role_id'    => $ownerRole->id,
                 'name'       => $dto->ownerName,
@@ -94,8 +94,42 @@ class SuperAdminService
 
             app(\App\Modules\Auth\Support\CompanyStarterKit::class)->seed($company, $dto->businessType);
 
+            if (!$isTrial) { $this->billNewCompany($company, $dto, $owner); }
+
             return $company->fresh(['plan','wallet']);
         });
+    }
+
+    /**
+     * An active company created by staff is a sale: price the plan (and any coupon), record how it was paid, and open the
+     * subscription so revenue, coupon usage and the plan history all show it.
+     */
+    private function billNewCompany(Company $company, SuperAdminCreateCompanyDTO $dto, User $owner): void
+    {
+        $svc = app(\App\Modules\PlanPurchase\Services\PlanPurchaseService::class);
+        $duration = $dto->durationType ?: 'monthly';
+        $q = $svc->quotePlan($company->id, $dto->planId, $duration, $dto->couponCode);
+        $free = $q['final'] <= 0 || $dto->paymentMethod === 'free';
+
+        $order = \App\Models\PaymentOrder::create([
+            'company_id' => $company->id, 'user_id' => $owner->id, 'razorpay_order_id' => ($free ? 'FREE_' : 'MANUAL_') . uniqid(), 'razorpay_payment_id' => $dto->paymentReference,
+            'amount' => $free ? 0 : $q['final'], 'subtotal' => $q['subtotal'], 'discount' => $q['discount'], 'coupon_id' => $q['coupon']?->id, 'coupon_code' => $q['coupon']?->code,
+            'messages_credit' => 0, 'status' => 'paid', 'purpose' => 'plan', 'gateway' => $free ? 'free' : 'manual', 'method' => $free ? null : ($dto->paymentMethod ?: 'cash'),
+            'meta' => ['plan_id' => $dto->planId, 'duration_type' => $duration, 'recorded_by' => auth()->id(), 'created_with_company' => true], 'paid_at' => now(),
+        ]);
+        $svc->activatePlan($order, $company->id, $dto->planId, $duration);
+        app(\App\Support\CouponService::class)->redeem($order, $dto->ownerEmail);
+
+        // Add-ons chosen at creation are billed as one cart (no coupon: it was spent on the plan).
+        if ($dto->addonIds) {
+            $cart = $svc->quoteCart($company->id, $dto->addonIds, $duration === 'yearly' || $duration === '12month' ? 'yearly' : 'monthly');
+            $ao = \App\Models\PaymentOrder::create([
+                'company_id' => $company->id, 'user_id' => $owner->id, 'razorpay_order_id' => 'MANUAL_' . uniqid(), 'amount' => $cart['final'], 'subtotal' => $cart['subtotal'],
+                'messages_credit' => 0, 'status' => 'paid', 'purpose' => count($dto->addonIds) > 1 ? 'cart' : 'addon', 'gateway' => 'manual', 'method' => $dto->paymentMethod ?: 'cash',
+                'meta' => ['addon_ids' => $dto->addonIds, 'lines' => $cart['lines']->map(fn ($l) => ['addon_id' => $l['addon']->id, 'cycle' => $l['cycle'], 'price' => $l['price']])->all()], 'paid_at' => now(),
+            ]);
+            $svc->activateCart($ao);
+        }
     }
 
     public function updateCompany(Company $company, array $data): Company

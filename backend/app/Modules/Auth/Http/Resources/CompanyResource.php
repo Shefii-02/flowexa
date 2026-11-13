@@ -52,6 +52,8 @@ class CompanyResource extends JsonResource
             'wa_last_verified_at'     => $this->last_verified_at?->toIso8601String(),
             'webhook_verify_token' => $this->wa_webhook_token,
             'wa_config' => $this->wa_config,
+            // Which modules this company may use (plan + purchased add-ons) — the sidebar and route guards read this.
+            'entitlements' => \App\Support\Entitlements::forCompany($this->resource),
             'plan' => $this->whenLoaded('plan', fn() => [
                 'id'             => $this->plan->id,
                 'name'           => $this->plan->name,

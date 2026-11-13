@@ -64,6 +64,10 @@ const emptyForm = {
   initial_balance: '1',
   status: 'active',
   trial_days: '14',
+  duration_type: 'monthly',
+  coupon_code: '',
+  payment_method: 'cash',
+  payment_reference: '',
   max_devices_per_user: '2',
   max_web_devices_per_user: '3',
 }
@@ -94,6 +98,15 @@ export default function SuperAdminCompanies() {
   const [plans, setPlans] = useState<any[]>([])
 
   const [form, setForm] = useState(emptyForm)
+
+  // Arriving from a demo-request lead ("Create company →"): open the form with the lead's details filled in
+  useEffect(() => {
+    if (!new URLSearchParams(window.location.search).has('new')) return
+    try {
+      const raw = sessionStorage.getItem('sa_company_prefill')
+      if (raw) { const { demo_request_id, ...f } = JSON.parse(raw); setForm({ ...emptyForm, ...f }); setShowCreate(true); sessionStorage.removeItem('sa_company_prefill') }
+    } catch { /* ignore a corrupt prefill */ }
+  }, [])
   const [businessTypes, setBusinessTypes] = useState<BusinessTypeOption[]>([])
   const [topUpAmount, setTopUpAmount] = useState('1000')
 
@@ -217,6 +230,10 @@ export default function SuperAdminCompanies() {
       initial_balance: company.wallet?.balance?.toString() ?? '0',
       status: company.status ?? 'active',
       trial_days: '14',
+      duration_type: 'monthly',
+      coupon_code: '',
+      payment_method: 'cash',
+      payment_reference: '',
       max_devices_per_user: company.max_devices_per_user?.toString() ?? '2',
       max_web_devices_per_user: company.max_web_devices_per_user?.toString() ?? '3',
     })
@@ -280,6 +297,12 @@ export default function SuperAdminCompanies() {
         payload.status = form.status
         if (form.status === 'trial') {
           payload.trial_days = Number(form.trial_days) || 14
+        } else {
+          // billed at creation: how long, which coupon, how the money came in (all recorded in Revenue & Payments)
+          payload.duration_type = form.duration_type
+          if (form.coupon_code.trim()) payload.coupon_code = form.coupon_code.trim().toUpperCase()
+          payload.payment_method = form.payment_method
+          if (form.payment_reference.trim()) payload.payment_reference = form.payment_reference.trim()
         }
       }
 
@@ -1014,7 +1037,7 @@ export default function SuperAdminCompanies() {
                 — Select plan —
               </option>
 
-              {plans.map((plan) => (
+              {plans.filter((plan) => !plan.deleted_at || String(plan.id) === form.plan_id).map((plan) => (
 
                 <option
                   key={plan.id}
@@ -1029,6 +1052,29 @@ export default function SuperAdminCompanies() {
 
             </select>
           </div>
+
+          {/* Billing at creation — active companies only */}
+          {!editingCompany && form.status === 'active' && (
+            <div className="space-y-3 rounded-xl border border-gray-200 bg-gray-50 p-3">
+              <p className="text-sm font-medium text-gray-700">Billing <span className="font-normal text-gray-400">— recorded as a payment, so revenue and coupon usage stay accurate</span></p>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="label">Paid for</label>
+                  <select className="select" value={form.duration_type} onChange={(event) => set('duration_type', event.target.value)}>
+                    <option value="monthly">1 month</option><option value="3month">3 months</option><option value="6month">6 months</option><option value="yearly">12 months</option>
+                  </select>
+                </div>
+                <Input label="Coupon code" placeholder="optional" value={form.coupon_code} onChange={(event) => set('coupon_code', event.target.value.toUpperCase())} />
+                <div>
+                  <label className="label">Payment received by</label>
+                  <select className="select" value={form.payment_method} onChange={(event) => set('payment_method', event.target.value)}>
+                    <option value="cash">Cash</option><option value="bank_transfer">Bank transfer</option><option value="upi">UPI</option><option value="cheque">Cheque</option><option value="free">Free / complimentary</option>
+                  </select>
+                </div>
+                <Input label="Reference / UTR" placeholder="optional" value={form.payment_reference} onChange={(event) => set('payment_reference', event.target.value)} />
+              </div>
+            </div>
+          )}
 
           {/* Owner name */}
           <Input

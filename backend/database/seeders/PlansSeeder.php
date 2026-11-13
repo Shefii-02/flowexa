@@ -6,23 +6,21 @@ use App\Models\Plan;
 use Illuminate\Database\Seeder;
 
 /**
- * Single source of truth for the public subscription plans.
+ * Starter plans for a brand-new install ONLY.
  *
- * Two paid plans (Starter, Growth) plus the staff-assigned Testing plan (PlanPricingSeeder). Pro was retired.
- * Every public plan is paid — there are no ₹0 public plans. A new company instead gets a
- * 7-day free trial (Company.status = 'trial' + trial_ends_at) and only picks
- * a paid plan when the trial ends or they upgrade early.
- *
- * Idempotent: matches on `name` and re-applies every attribute on each run,
- * so editing a value here and re-running `db:seed --class=PlansSeeder`
- * updates the existing row in place. Any non-custom plan whose name is not in
- * the list below is deactivated (is_active = false) rather than deleted, so
- * companies still holding a retired plan keep working until they change plan.
+ * Plans are managed from Superadmin → Plans (create, edit, soft-delete). This seeder therefore never edits or retires
+ * anything: it inserts the two example plans when the plans table has no rows at all (soft-deleted ones count), and
+ * does nothing otherwise — so deleting a seeded plan in the UI sticks, and re-running the seeder is harmless.
  */
 class PlansSeeder extends Seeder
 {
     public function run(): void
     {
+        if (Plan::withTrashed()->exists()) {
+            $this->command?->info('Plans already exist — nothing seeded. Manage them in Superadmin → Plans.');
+            return;
+        }
+
         $plans = [
             [
                 'name'           => 'Starter',
@@ -39,6 +37,9 @@ class PlansSeeder extends Seeder
                     'Basic analytics',
                     'Email support',
                 ],
+                'modules'        => ['media_library', 'short_links', 'sticky_notes', 'todo', 'wa_chat', 'wa_cloud', 'crm', 'leads'],
+                'lead_assign_methods' => ['manual', 'round_robin'],
+                'max_media_storage_mb' => 1024, 'max_campaigns_per_month' => 10, 'max_surveys' => 5, 'max_short_links' => 50,
                 'duration_type'         => 'monthly',
                 'duration_months'       => 1,
                 'alert_before_days'     => 7,
@@ -79,6 +80,9 @@ class PlansSeeder extends Seeder
                     'Priority support',
                     'OTP API access',
                 ],
+                'modules'        => ['media_library', 'short_links', 'sticky_notes', 'todo', 'integrations', 'wa_chat', 'wa_cloud', 'ai_agent', 'crm', 'leads', 'social_dm', 'web_widgets'],
+                'lead_assign_methods' => ['manual', 'round_robin', 'algorithm', 'uber', 'auto'],
+                'max_media_storage_mb' => 10240, 'max_campaigns_per_month' => 60, 'max_surveys' => 25, 'max_short_links' => 500,
                 'duration_type'         => 'monthly',
                 'duration_months'       => 1,
                 'alert_before_days'     => 7,
@@ -105,20 +109,10 @@ class PlansSeeder extends Seeder
             ],
         ];
 
-        $keep = [];
         foreach ($plans as $plan) {
-            Plan::updateOrCreate(['name' => $plan['name']], $plan);
-            $keep[] = $plan['name'];
+            Plan::create($plan);
         }
 
-        // Retire every other non-custom plan (e.g. the legacy ₹0 "Trial" plan)
-        // without deleting it — companies still on it keep working.
-        $retired = Plan::where('is_custom', false)
-            ->whereNotIn('name', array_merge($keep, ['Testing']))  // Testing is created by PlanPricingSeeder
-            ->where('is_active', true)
-            ->update(['is_active' => false]);
-
-        $this->command->info('✅ Plans upserted: ' . implode(', ', $keep)
-            . ($retired ? " · {$retired} legacy plan(s) retired" : ''));
+        $this->command?->info('✅ Example plans created: ' . implode(', ', array_column($plans, 'name')));
     }
 }

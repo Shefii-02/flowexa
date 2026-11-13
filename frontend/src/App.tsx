@@ -72,6 +72,8 @@ import MessageLogsPage from '@/pages/message-logs/MessageLogsPage'
 // SuperAdmin pages
 import SuperAdminCompanies from '@/pages/superadmin/SuperAdminCompanies'
 import SuperAdminPlans from '@/pages/superadmin/SuperAdminPlans'
+import SuperAdminCoupons from '@/pages/superadmin/SuperAdminCoupons'
+import SuperAdminRevenue from '@/pages/superadmin/SuperAdminRevenue'
 import SuperAdminAddons from '@/pages/superadmin/SuperAdminAddons'
 import SuperAdminExpiries from '@/pages/superadmin/SuperAdminExpiries'
 import SuperAdminBilling from '@/pages/superadmin/SuperAdminBilling'
@@ -485,6 +487,14 @@ export default function App() {
               <Route
                 path="superadmin/plans"
                 element={<SuperAdminRoute><SuperAdminPlans /></SuperAdminRoute>}
+              />
+              <Route
+                path="superadmin/coupons"
+                element={<SuperAdminRoute><SuperAdminCoupons /></SuperAdminRoute>}
+              />
+              <Route
+                path="superadmin/revenue"
+                element={<SuperAdminRoute><SuperAdminRevenue /></SuperAdminRoute>}
               />
               <Route
                 path="superadmin/addons"

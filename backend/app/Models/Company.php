@@ -72,7 +72,7 @@ class Company extends Model
     // ── Relationships ─────────────────────────────────────────────────────────
     public function plan(): BelongsTo
     {
-        return $this->belongsTo(Plan::class);
+        return $this->belongsTo(Plan::class)->withTrashed();   // a retired plan keeps serving the companies already on it
     }
     public function wallet(): HasOne
     {

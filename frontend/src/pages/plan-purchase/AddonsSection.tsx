@@ -1,31 +1,30 @@
 // Add-ons: buy extra capacity for ONE limit (staff, leads, …) without changing plan, plus other add-ons and what you already bought.
-import { useEffect, useMemo, useRef, useState } from 'react'
-import toast from 'react-hot-toast'
-import { planApi } from '@/api'
+import { useEffect, useMemo, useRef } from 'react'
 import { Badge, Button } from '@/components/ui'
-import { fmt, getError } from '@/utils'
-import { refreshPlanUsage, usePlanUsage, type ResourceUsage } from '@/lib/planUsage'
-import { loadRazorpay } from './razorpay'
+import { fmt } from '@/utils'
+import { usePlanUsage, type ResourceUsage } from '@/lib/planUsage'
+import AddonCart, { type Cycle } from './AddonCart'
 
-export type Addon = { id: number; name: string; slug: string; description: string | null; type: 'feature' | 'message_pack' | 'storage' | 'limit'; price: string | number; price_yearly?: string | number | null; billing_cycle: 'monthly' | 'yearly' | 'one_time'; group?: { key: string; title: string; icon: string }; config: { resource?: string; amount?: number; [k: string]: unknown } | null }
+export type Addon = { id: number; name: string; slug: string; description: string | null; type: 'feature' | 'message_pack' | 'storage' | 'limit' | 'module'; price: string | number; price_yearly?: string | number | null; billing_cycle: 'monthly' | 'yearly' | 'one_time'; group?: { key: string; title: string; icon: string }; config: { resource?: string; amount?: number; [k: string]: unknown } | null }
 export type MyAddon = { id: number; status: string; amount_paid: string | number; starts_at: string; expires_at: string | null; addon: Addon | null }
 
 const CYCLE: Record<string, string> = { monthly: 'per month', yearly: 'per year', one_time: 'one time' }
-type Cycle = 'monthly' | 'yearly'
 const yearly = (a: Addon) => a.price_yearly != null ? Number(a.price_yearly) : Number(a.price) * 12
 const priceFor = (a: Addon, c: Cycle) => a.billing_cycle === 'one_time' ? `₹${fmt.number(Math.round(Number(a.price)))} one time`
   : c === 'yearly' ? `₹${fmt.number(Math.round(yearly(a)))} per year` : `₹${fmt.number(Math.round(Number(a.price)))} per month`
 const saving = (a: Addon) => Math.round(Number(a.price) * 12 - yearly(a))
 
-export default function AddonsSection({ addons, mine, focus, onChanged }: { addons: Addon[]; mine: MyAddon[]; focus?: string | null; onChanged: () => void }) {
+export default function AddonsSection({ addons, mine, focus, cart, setCart, cycle, setCycle, onChanged }: { addons: Addon[]; mine: MyAddon[]; focus?: string | null; cart: number[]; setCart: (ids: number[]) => void; cycle: Cycle; setCycle: (c: Cycle) => void; onChanged: () => void }) {
   const { resources } = usePlanUsage()
-  const [paying, setPaying] = useState<number | null>(null)
-  const [cycle, setCycle] = useState<Cycle>('monthly')
   const focusRef = useRef<HTMLDivElement | null>(null)
   useEffect(() => { focusRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }) }, [focus, addons.length])
 
   const limitPacks = addons.filter(a => a.type === 'limit' && a.config?.resource)
-  const others = addons.filter(a => a.type !== 'limit')
+  const others = addons.filter(a => a.type !== 'limit' && a.type !== 'module')
+  const features = addons.filter(a => a.type === 'module')
+  const inCart = (a: Addon) => cart.includes(a.id)
+  const toggleCart = (a: Addon) => setCart(inCart(a) ? cart.filter(x => x !== a.id) : [...cart, a.id])
+  const cartButton = (a: Addon) => <Button size="sm" variant={inCart(a) ? 'secondary' : 'primary'} onClick={() => toggleCart(a)}>{inCart(a) ? '✓ In cart' : 'Add to cart'}</Button>
 
   // feature sections (WA Chat, CRM & Leads, …) in the server's order; inside each, one card per limit — the ones at/over the limit first
   const sections = useMemo(() => {
@@ -42,31 +41,11 @@ export default function AddonsSection({ addons, mine, focus, onChanged }: { addo
     return secs
   }, [limitPacks, resources])
 
-  const buy = async (addon: Addon) => {
-    setPaying(addon.id)
-    try {
-      const { data } = await planApi.addonOrder(addon.id, addon.billing_cycle === 'one_time' ? undefined : cycle)
-      await loadRazorpay()
-      const rzp = new window.Razorpay({
-        key: data.razorpay_key, amount: data.amount, currency: 'INR', order_id: data.order_id,
-        name: 'Teamzo By Univexa Technologies', description: addon.name, theme: { color: '#1D9E75' },
-        handler: async (r: any) => {
-          try {
-            await planApi.verifyAddon({ razorpay_order_id: r.razorpay_order_id, razorpay_payment_id: r.razorpay_payment_id, razorpay_signature: r.razorpay_signature, addon_id: addon.id, billing_cycle: data.billing_cycle ?? cycle })
-            toast.success(`${addon.name} added.`)
-            refreshPlanUsage(); onChanged()
-          } catch (e) { toast.error(getError(e)) } finally { setPaying(null) }
-        },
-        modal: { ondismiss: () => setPaying(null) },
-      })
-      rzp.open()
-    } catch (e) { toast.error(getError(e)); setPaying(null) }
-  }
-
   const empty = addons.length === 0
   const maxSaving = Math.max(0, ...addons.filter(a => a.billing_cycle !== 'one_time').map(saving))
   return (
-    <div className="space-y-6">
+    <div className="grid items-start gap-6 lg:grid-cols-[1fr_320px]">
+    <div className="min-w-0 space-y-6">
       {addons.some(a => a.billing_cycle !== 'one_time') && (
         <div className="flex items-center gap-3">
           <div className="inline-flex rounded-lg border border-gray-200 p-0.5 text-sm" role="group" aria-label="Billing period">
@@ -82,6 +61,27 @@ export default function AddonsSection({ addons, mine, focus, onChanged }: { addo
         <div className="rounded-2xl border border-dashed border-gray-300 p-8 text-center text-sm text-gray-500">
           No add-ons are available right now. If you need more of something, upgrade your plan under <b>All plans</b>.
         </div>)}
+
+      {features.length > 0 && (
+        <section className="space-y-3">
+          <div><h3 className="font-semibold text-gray-900">Unlock a feature</h3>
+            <p className="text-sm text-gray-500">Switch on a whole feature without changing your plan. It appears in your sidebar once paid.</p></div>
+          <div className="grid gap-4 md:grid-cols-2">
+            {features.map(a => {
+              const running = mine.find(m => m.addon?.id === a.id && m.status === 'active' && (!m.expires_at || new Date(m.expires_at) > new Date()))
+              return (
+                <div key={a.id} className="card flex items-center gap-3 p-4">
+                  <span className="text-2xl">{a.group?.icon ?? '✨'}</span>
+                  <div className="min-w-0 flex-1">
+                    <p className="font-medium text-gray-900">{a.name}</p>
+                    <p className="text-xs text-gray-500">{priceFor(a, cycle)}{a.description ? ` · ${a.description}` : ''}</p>
+                    {running && <p className="text-[11px] text-green-600">Active{running.expires_at ? ` until ${fmt.date(running.expires_at)}` : ''} — add to extend</p>}
+                  </div>
+                  {cartButton(a)}
+                </div>)
+            })}
+          </div>
+        </section>)}
 
       {sections.length > 0 && (
         <section className="space-y-3">
@@ -118,7 +118,7 @@ export default function AddonsSection({ addons, mine, focus, onChanged }: { addo
                           <p className="text-sm font-medium text-gray-900">{p.name}</p>
                           <p className="text-xs text-gray-500">{priceFor(p, cycle)}{p.description ? ` · ${p.description}` : ''}</p>
                         </div>
-                        <Button size="sm" loading={paying === p.id} onClick={() => buy(p)}>Add</Button>
+                        {cartButton(p)}
                       </div>))}
                   </div>
                 </div>)
@@ -137,7 +137,7 @@ export default function AddonsSection({ addons, mine, focus, onChanged }: { addo
                   <p className="font-medium text-gray-900">{a.name}</p>
                   <p className="text-xs text-gray-500">{priceFor(a, cycle)}{a.description ? ` · ${a.description}` : ''}</p>
                 </div>
-                <Button size="sm" loading={paying === a.id} onClick={() => buy(a)}>Buy</Button>
+                {cartButton(a)}
               </div>))}
           </div>
         </section>)}
@@ -159,6 +159,8 @@ export default function AddonsSection({ addons, mine, focus, onChanged }: { addo
                 </tr>)
             })}</tbody></table></div></div>)}
       </section>
+    </div>
+    <AddonCart addons={addons} cart={cart} setCart={setCart} cycle={cycle} onPaid={onChanged} />
     </div>
   )
 }

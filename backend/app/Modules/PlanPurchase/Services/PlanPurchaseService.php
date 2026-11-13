@@ -8,6 +8,7 @@ use App\Models\CompanyPlan;
 use App\Models\PaymentOrder;
 use App\Models\Plan;
 use App\Models\TopupPackage;
+use App\Support\CouponService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -16,7 +17,7 @@ class PlanPurchaseService
     // ── Public plan list ──────────────────────────────────────────────────────
     public function publicPlans(): \Illuminate\Database\Eloquent\Collection
     {
-        return Plan::where('is_active', true)->where('is_custom', false)->where('price', '>', 0)->orderBy('price')->get();
+        return Plan::where('is_active', true)->where('is_custom', false)->where('price', '>', 0)->orderBy('sort_order')->orderBy('price')->get();
     }
 
     // ── Active plans for company ──────────────────────────────────────────────
@@ -78,53 +79,72 @@ class PlanPurchaseService
         ];
     }
 
-    // ── Create Razorpay order for plan purchase ───────────────────────────────
-    public function createPlanOrder(int $companyId, int $userId, int $planId, string $durationType): array
+    // ── Quote (price, coupon discount, final) ─────────────────────────────────
+    /** What this plan costs for a duration after an optional coupon. Throws a validation error for a bad coupon. */
+    public function quotePlan(?int $companyId, int $planId, string $durationType, ?string $couponCode = null, ?string $email = null): array
     {
         $plan = Plan::findOrFail($planId);
-         $user = auth()->user();
+        $subtotal = round($this->calculatePrice($plan, $durationType), 2);
+        $coupon = null; $discount = 0.0;
+        if (filled($couponCode)) {
+            $r = app(CouponService::class)->evaluate($couponCode, $subtotal, 'plan', $companyId, $plan->id, [], $durationType, $email);
+            $coupon = $r['coupon']; $discount = $r['discount'];
+        }
+        return ['plan' => $plan, 'subtotal' => $subtotal, 'discount' => $discount, 'final' => round($subtotal - $discount, 2), 'coupon' => $coupon];
+    }
+
+    // ── Create Razorpay order for plan purchase ───────────────────────────────
+    public function createPlanOrder(int $companyId, int $userId, int $planId, string $durationType, ?string $couponCode = null): array
+    {
+        $user = auth()->user();
 
         // Guard: block a downgrade while current usage still exceeds the
         // target plan's limits (mirrors PlanLimitMiddleware at create time).
         $preview = $this->changePreview($companyId, $planId, $durationType);
         if (! $preview['can_proceed']) {
-            throw \Illuminate\Validation\ValidationException::withMessages([
-                'plan_id' => $preview['blockers'],
-            ]);
+            throw \Illuminate\Validation\ValidationException::withMessages(['plan_id' => $preview['blockers']]);
         }
 
-        // Calculate price based on duration
-        $price = $this->calculatePrice($plan, $durationType);
+        $q = $this->quotePlan($companyId, $planId, $durationType, $couponCode);
+        $plan = $q['plan'];
+        $fields = ['purpose' => 'plan', 'subtotal' => $q['subtotal'], 'discount' => $q['discount'], 'coupon_id' => $q['coupon']?->id, 'coupon_code' => $q['coupon']?->code,
+                   'meta' => ['plan_id' => $plan->id, 'duration_type' => $durationType]];
+
+        // A coupon that covers the whole price needs no gateway at all.
+        if ($q['final'] <= 0) {
+            $order = PaymentOrder::create(['company_id' => $companyId, 'user_id' => $userId, 'razorpay_order_id' => 'FREE_' . uniqid(), 'amount' => 0, 'messages_credit' => 0, 'status' => 'paid', 'gateway' => 'free', 'paid_at' => now()] + $fields);
+            $cp = $this->activatePlan($order, $companyId, $plan->id, $durationType);
+            app(CouponService::class)->redeem($order);
+            return ['free' => true, 'message' => "Plan activated: {$plan->name}", 'company_plan' => $cp];
+        }
 
         $api   = new \Razorpay\Api\Api(config('services.razorpay.key'), config('services.razorpay.secret'));
         $order = $api->order->create([
-            'amount'   => (int) ($price * 100),
+            'amount'   => (int) round($q['final'] * 100),
             'currency' => 'INR',
             'receipt'  => 'PLAN_' . uniqid(),
-            'notes'    => ['company_id' => $companyId, 'plan_id' => $planId, 'duration' => $durationType],
+            'notes'    => ['company_id' => $companyId, 'plan_id' => $planId, 'duration' => $durationType, 'coupon' => $q['coupon']?->code],
         ]);
 
         PaymentOrder::create([
             'company_id'        => $companyId,
             'user_id'           => $userId,
             'razorpay_order_id' => $order->id,
-            'amount'            => $price,
+            'amount'            => $q['final'],
             'messages_credit'   => 0,  // plan purchase, not wallet topup
             'status'            => 'pending',
-        ]);
+            'gateway'           => 'razorpay',
+        ] + $fields);
 
         return [
             'order_id'      => $order->id,
-            'amount'        => (int)($price * 100),
+            'amount'        => (int) round($q['final'] * 100),
             'currency'      => 'INR',
             'razorpay_key'  => config('services.razorpay.key'),
-            'plan'          => ['id' => $plan->id, 'name' => $plan->name, 'price' => $price],
+            'plan'          => ['id' => $plan->id, 'name' => $plan->name, 'price' => $q['final']],
+            'subtotal'      => $q['subtotal'], 'discount' => $q['discount'], 'coupon_code' => $q['coupon']?->code,
             'duration_type' => $durationType,
-            'user' => [
-                'name' => $user->name,
-                'email' => $user->email,
-                'phone' => $user->phone,
-            ]
+            'user' => ['name' => $user->name, 'email' => $user->email, 'phone' => $user->phone],
         ];
     }
 
@@ -147,41 +167,47 @@ class PlanPurchaseService
             'razorpay_payment_id' => $data['razorpay_payment_id'],
             'razorpay_signature'  => $data['razorpay_signature'],
             'status'              => 'paid',
+            'paid_at'             => now(),
+            'purpose'             => $order->purpose === 'topup' ? 'plan' : $order->purpose,
         ]);
 
-        return DB::transaction(function () use ($companyId, $data, $order) {
-            $planId       = $data['plan_id'];
-            $durationType = $data['duration_type'];
-            $plan         = Plan::findOrFail($planId);
+        // What was bought comes from the order we created, not from what the browser claims.
+        $planId       = (int) ($order->meta['plan_id'] ?? $data['plan_id']);
+        $durationType = (string) ($order->meta['duration_type'] ?? $data['duration_type']);
 
-            // Expire old active plan
-            CompanyPlan::where('company_id', $companyId)->where('status', 'active')
-                ->update(['status' => 'upgraded']);
-
-            $startsAt  = now();
-            $expiresAt = $this->calculateExpiry($startsAt, $durationType, $plan->duration_months);
-
-            $companyPlan = CompanyPlan::create([
-                'company_id'       => $companyId,
-                'plan_id'          => $planId,
-                'payment_order_id' => $order->id,
-                'duration_type'    => $durationType,
-                'duration_months'  => $plan->duration_months,
-                'amount_paid'      => $order->amount,
-                'status'           => 'active',
-                'starts_at'        => $startsAt,
-                'expires_at'       => $expiresAt,
-            ]);
-
-            // Update company's plan + expiry
-            Company::where('id', $companyId)->update([
-                'plan_id'         => $planId,
-                'status'          => 'active',
-                'plan_expires_at' => $expiresAt,
-            ]);
-
-            return $companyPlan->load('plan');
+        return DB::transaction(function () use ($companyId, $order, $planId, $durationType) {
+            $cp = $this->activatePlan($order, $companyId, $planId, $durationType);
+            app(CouponService::class)->redeem($order);
+            return $cp;
         });
+    }
+
+    /** Make a paid (or free) order take effect: close the old plan, open the new one, point the company at it. */
+    public function activatePlan(PaymentOrder $order, int $companyId, int $planId, string $durationType): CompanyPlan
+    {
+        $plan = Plan::findOrFail($planId);
+
+        CompanyPlan::where('company_id', $companyId)->where('status', 'active')->update(['status' => 'upgraded']);
+
+        $startsAt  = now();
+        $expiresAt = $this->calculateExpiry($startsAt, $durationType, $plan->duration_months);
+
+        $companyPlan = CompanyPlan::create([
+            'company_id'       => $companyId,
+            'plan_id'          => $planId,
+            'payment_order_id' => $order->id,
+            'duration_type'    => $durationType,
+            'duration_months'  => $plan->duration_months,
+            'amount_paid'      => $order->amount,
+            'status'           => 'active',
+            'starts_at'        => $startsAt,
+            'expires_at'       => $expiresAt,
+        ]);
+
+        Company::where('id', $companyId)->update(['plan_id' => $planId, 'status' => 'active', 'plan_expires_at' => $expiresAt]);
+        \App\Support\Entitlements::forget();
+
+        return $companyPlan->load('plan');
     }
 
     // ── Purchase history ──────────────────────────────────────────────────────
@@ -229,31 +255,111 @@ class PlanPurchaseService
         })->all();
     }
 
-    // ── Create addon order ────────────────────────────────────────────────────
-    public function createAddonOrder(int $companyId, int $userId, int $addonId, ?string $cycle = null): array
+    // ── Add-on cart ───────────────────────────────────────────────────────────
+    /** Price a set of add-ons for one cycle, with an optional coupon. Items already bought and still running are flagged, not blocked (limit packs stack). */
+    public function quoteCart(?int $companyId, array $addonIds, ?string $cycle, ?string $couponCode = null): array
     {
-        $addon  = Addon::findOrFail($addonId);
-        abort_unless($addon->is_active, 422, 'This add-on is not available.');
-        $cycle  = $this->addonCycle($addon, $cycle);
-        $amount = $this->addonPrice($addon, $cycle);
-        $api    = new \Razorpay\Api\Api(config('services.razorpay.key'), config('services.razorpay.secret'));
-        $order  = $api->order->create([
-            'amount'   => (int) round($amount * 100),
+        $addons = Addon::whereIn('id', $addonIds)->get();
+        abort_if($addons->isEmpty(), 422, 'Your cart is empty.');
+        abort_if($addons->contains(fn ($a) => !$a->is_active), 422, 'One of the add-ons in your cart is no longer available.');
+
+        $lines = $addons->map(function (Addon $a) use ($cycle) {
+            $c = $this->addonCycle($a, $cycle);
+            return ['addon' => $a, 'cycle' => $c, 'price' => round($this->addonPrice($a, $c), 2)];
+        });
+        $subtotal = round($lines->sum('price'), 2);
+        $coupon = null; $discount = 0.0;
+        if (filled($couponCode)) {
+            $r = app(CouponService::class)->evaluate($couponCode, $subtotal, 'addon', $companyId, null, $addons->pluck('id')->all(), $cycle);
+            $coupon = $r['coupon']; $discount = $r['discount'];
+        }
+        return ['lines' => $lines, 'subtotal' => $subtotal, 'discount' => $discount, 'final' => round($subtotal - $discount, 2), 'coupon' => $coupon];
+    }
+
+    /** One order for one or many add-ons (a single add-on is just a cart of one). */
+    public function createCartOrder(int $companyId, int $userId, array $addonIds, ?string $cycle = null, ?string $couponCode = null): array
+    {
+        $addonIds = array_values(array_unique(array_map('intval', $addonIds)));
+        $q = $this->quoteCart($companyId, $addonIds, $cycle, $couponCode);
+        $fields = ['purpose' => count($addonIds) > 1 ? 'cart' : 'addon', 'subtotal' => $q['subtotal'], 'discount' => $q['discount'],
+                   'coupon_id' => $q['coupon']?->id, 'coupon_code' => $q['coupon']?->code,
+                   'meta' => ['addon_ids' => $addonIds, 'cycle' => $cycle, 'lines' => $q['lines']->map(fn ($l) => ['addon_id' => $l['addon']->id, 'cycle' => $l['cycle'], 'price' => $l['price']])->all()]];
+
+        if ($q['final'] <= 0) {
+            $order = PaymentOrder::create(['company_id' => $companyId, 'user_id' => $userId, 'razorpay_order_id' => 'FREE_' . uniqid(), 'amount' => 0, 'messages_credit' => 0, 'status' => 'paid', 'gateway' => 'free', 'paid_at' => now()] + $fields);
+            $items = $this->activateCart($order);
+            app(CouponService::class)->redeem($order);
+            return ['free' => true, 'message' => 'Add-ons activated.', 'company_addons' => $items];
+        }
+
+        $api   = new \Razorpay\Api\Api(config('services.razorpay.key'), config('services.razorpay.secret'));
+        $order = $api->order->create([
+            'amount'   => (int) round($q['final'] * 100),
             'currency' => 'INR',
             'receipt'  => 'ADDON_' . uniqid(),
-            'notes'    => ['company_id' => $companyId, 'addon_id' => $addonId, 'cycle' => $cycle],
+            'notes'    => ['company_id' => $companyId, 'addon_ids' => implode(',', $addonIds), 'cycle' => $cycle, 'coupon' => $q['coupon']?->code],
         ]);
+        PaymentOrder::create(['company_id' => $companyId, 'user_id' => $userId, 'razorpay_order_id' => $order->id, 'amount' => $q['final'], 'messages_credit' => 0, 'status' => 'pending', 'gateway' => 'razorpay'] + $fields);
 
-        PaymentOrder::create([
-            'company_id'        => $companyId,
-            'user_id'           => $userId,
-            'razorpay_order_id' => $order->id,
-            'amount'            => $amount,
-            'messages_credit'   => 0,
-            'status'            => 'pending',
-        ]);
+        $user = auth()->user();
+        return ['order_id' => $order->id, 'amount' => (int) round($q['final'] * 100), 'currency' => 'INR', 'billing_cycle' => $cycle, 'razorpay_key' => config('services.razorpay.key'),
+                'subtotal' => $q['subtotal'], 'discount' => $q['discount'], 'coupon_code' => $q['coupon']?->code,
+                'addon' => $q['lines']->count() === 1 ? $q['lines']->first()['addon'] : null,
+                'user' => ['name' => $user?->name, 'email' => $user?->email, 'phone' => $user?->phone]];
+    }
 
-        return ['order_id' => $order->id, 'amount' => (int) round($amount * 100), 'billing_cycle' => $cycle, 'razorpay_key' => config('services.razorpay.key'), 'addon' => $addon];
+    /** Verify a cart payment and switch every add-on in it on. */
+    public function verifyCartPayment(int $companyId, array $data): array
+    {
+        $order = PaymentOrder::where('razorpay_order_id', $data['razorpay_order_id'])->where('company_id', $companyId)->where('status', 'pending')->firstOrFail();
+        $expected = hash_hmac('sha256', $data['razorpay_order_id'] . '|' . $data['razorpay_payment_id'], config('services.razorpay.secret'));
+        if (!hash_equals($expected, $data['razorpay_signature'])) { $order->update(['status' => 'failed']); throw new \Exception('Signature invalid.'); }
+        $order->update(['razorpay_payment_id' => $data['razorpay_payment_id'], 'razorpay_signature' => $data['razorpay_signature'], 'status' => 'paid', 'paid_at' => now()]);
+        return DB::transaction(function () use ($order) {
+            $items = $this->activateCart($order);
+            app(CouponService::class)->redeem($order);
+            return $items;
+        });
+    }
+
+    /** @return CompanyAddon[] */
+    public function activateCart(PaymentOrder $order): array
+    {
+        $lines = collect($order->meta['lines'] ?? []);
+        $subtotal = max(0.01, (float) ($order->subtotal ?? $lines->sum('price')));
+        $out = [];
+        foreach ($lines as $l) {
+            $addon = Addon::withTrashed()->findOrFail($l['addon_id']);
+            // Each add-on carries its share of what was actually paid (so revenue per add-on adds up after a coupon).
+            $paid = round((float) $order->amount * ((float) $l['price'] / $subtotal), 2);
+            $out[] = $this->activateAddon($order, $addon, $l['cycle'], $paid);
+        }
+        \App\Support\Entitlements::forget();
+        \App\Support\PlanLimits::forgetCache();
+        return $out;
+    }
+
+    private function activateAddon(PaymentOrder $order, Addon $addon, string $cycle, float $paid): CompanyAddon
+    {
+        $startsAt = now();
+        $length = fn (\Carbon\Carbon $from) => match ($cycle) { 'one_time' => null, 'yearly' => $from->copy()->addYear(), default => $from->copy()->addMonth() };
+
+        // A feature (module) add-on is not a stackable pack: buying it again extends the running one instead of adding a copy.
+        if ($addon->type === 'module') {
+            $running = CompanyAddon::where('company_id', $order->company_id)->where('addon_id', $addon->id)->where('status', 'active')
+                ->where(fn ($q) => $q->whereNull('expires_at')->orWhere('expires_at', '>', now()))->orderByDesc('expires_at')->first();
+            if ($running && $running->expires_at && $cycle !== 'one_time') {
+                $running->update(['expires_at' => $length($running->expires_at), 'amount_paid' => (float) $running->amount_paid + $paid, 'payment_order_id' => $order->id]);
+                return $running;
+            }
+        }
+        return CompanyAddon::create(['company_id' => $order->company_id, 'addon_id' => $addon->id, 'payment_order_id' => $order->id, 'amount_paid' => $paid, 'status' => 'active', 'billing_cycle' => $cycle, 'starts_at' => $startsAt, 'expires_at' => $length($startsAt)]);
+    }
+
+    // ── Create addon order (single) ───────────────────────────────────────────
+    public function createAddonOrder(int $companyId, int $userId, int $addonId, ?string $cycle = null, ?string $couponCode = null): array
+    {
+        return $this->createCartOrder($companyId, $userId, [$addonId], $cycle, $couponCode);
     }
 
     // ── Verify addon payment ──────────────────────────────────────────────────
@@ -264,17 +370,19 @@ class PlanPurchaseService
         if (!hash_equals($expected, $data['razorpay_signature'])) { $order->update(['status' => 'failed']); throw new \Exception('Signature invalid.'); }
         $addon = Addon::findOrFail($data['addon_id']);
         $cycle = $this->addonCycle($addon, $data['billing_cycle'] ?? null);
-        // The amount actually paid must be this add-on's price for this cycle — otherwise a cheap order could be claimed as a
-        // dearer add-on, or a monthly payment as a yearly one.
-        if (abs((float) $order->amount - $this->addonPrice($addon, $cycle)) > 0.01) {
+        // What was charged must be this add-on's price for this cycle (less any coupon recorded on the order) — otherwise a cheap
+        // order could be claimed as a dearer add-on, or a monthly payment as a yearly one.
+        $expectedList = $this->addonPrice($addon, $cycle);
+        if (abs((float) ($order->subtotal ?? $order->amount) - $expectedList) > 0.01) {
             $order->update(['status' => 'failed']);
             \Log::warning('Add-on payment amount mismatch', ['company_id' => $companyId, 'addon_id' => $addon->id, 'cycle' => $cycle, 'paid' => (float) $order->amount, 'order' => $order->razorpay_order_id]);
             throw new \Exception('The amount paid does not match this add-on. Contact support with your payment reference.');
         }
-        $order->update(['razorpay_payment_id' => $data['razorpay_payment_id'], 'status' => 'paid']);
-        $startsAt = now();
-        $expires  = match ($cycle) { 'one_time' => null, 'yearly' => $startsAt->copy()->addYear(), default => $startsAt->copy()->addMonth() };
-        return CompanyAddon::create(['company_id' => $companyId,'addon_id' => $addon->id,'payment_order_id' => $order->id,'amount_paid' => $order->amount,'status' => 'active','billing_cycle' => $cycle,'starts_at' => $startsAt,'expires_at' => $expires]);
+        $order->update(['razorpay_payment_id' => $data['razorpay_payment_id'], 'status' => 'paid', 'paid_at' => now(), 'purpose' => $order->purpose === 'topup' ? 'addon' : $order->purpose]);
+        $ca = $this->activateAddon($order, $addon, $cycle, (float) $order->amount);
+        app(CouponService::class)->redeem($order);
+        \App\Support\Entitlements::forget();
+        return $ca;
     }
 
     // ── Superadmin: assign custom plan ────────────────────────────────────────
@@ -303,8 +411,8 @@ class PlanPurchaseService
     public function deleteTopupPackage(int $id): void            { TopupPackage::findOrFail($id)->delete(); }
     public function createAddon(array $d): Addon                 { return Addon::create($d); }
     public function updateAddon(int $id, array $d): Addon        { $a = Addon::findOrFail($id); $a->update($d); return $a->fresh(); }
-    public function superAdminPlans(): \Illuminate\Database\Eloquent\Collection { return Plan::withCount('companies')->get(); }
-    public function superAdminAddons(): \Illuminate\Database\Eloquent\Collection { return Addon::get(); }
+    public function superAdminPlans(): \Illuminate\Database\Eloquent\Collection { return Plan::withTrashed()->withCount('companies')->orderBy('sort_order')->orderBy('price')->get(); }
+    public function superAdminAddons(): \Illuminate\Database\Eloquent\Collection { return Addon::withTrashed()->get(); }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
     /** Plan price for a duration. A yearly price set by the superadmin wins; otherwise the old 20%-off rule applies. */

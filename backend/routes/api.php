@@ -117,6 +117,7 @@ Route::prefix('v1')->group(function () {
         Route::post('register', [AuthController::class, 'register'])->name('register');
         Route::get('captcha',   [\App\Modules\Auth\Http\Controllers\CaptchaController::class, 'show'])->middleware('throttle:30,1')->name('captcha');
         Route::post('login',    [AuthController::class, 'login'])->name('login');
+        Route::post('coupons/validate', [\App\Modules\PlanPurchase\Http\Controllers\CouponController::class, 'publicCheck'])->middleware('throttle:20,1')->name('coupons.validate');
         Route::post('demo-requests', [\App\Http\Controllers\DemoRequestController::class, 'store'])->middleware('throttle:5,1')->name('demo-requests.store');
         Route::post('web-sessions/remove', [AuthController::class, 'removeWebSession'])->name('web-sessions.remove');
     });
@@ -143,7 +144,7 @@ Route::prefix('v1')->group(function () {
     // this actually working for an expired token, not just a still-valid one.
     Route::post('auth/refresh', [AuthController::class, 'refresh'])->name('auth.refresh');
 
-    Route::middleware(['jwt.auth'])->group(function () {
+    Route::middleware(['jwt.auth', 'module.gate'])->group(function () {
 
         Route::get('mobile-modules/hidden', [\App\Http\Controllers\MobileModulesController::class, 'hidden']);
 
@@ -459,7 +460,7 @@ Route::prefix('v1')->group(function () {
             });
 
             Route::post('/', [CampaignController::class, 'store'])
-                ->middleware(['permission:campaigns.manage', 'plan.limit:campaigns'])->name('store');
+                ->middleware(['permission:campaigns.manage', 'plan.limit:campaigns', 'plan.monthly_limit:campaigns_month'])->name('store');
 
             Route::put('/{campaign}', [CampaignController::class, 'update'])
                 ->middleware('permission:campaigns.manage')->name('update');
@@ -515,7 +516,7 @@ Route::prefix('v1')->group(function () {
         Route::prefix('survey-forms')->group(function () {
             Route::post('/seed-samples',    [\App\Http\Controllers\SampleDataController::class, 'surveyForms']);
             Route::get('/',                 [SurveyFormController::class, 'index']);
-            Route::post('/',                [SurveyFormController::class, 'store']);
+            Route::post('/',                [SurveyFormController::class, 'store'])->middleware('plan.limit:surveys');
             Route::get('/{id}',             [SurveyFormController::class, 'show']);
             Route::put('/{id}',             [SurveyFormController::class, 'update']);
             Route::delete('/{id}',          [SurveyFormController::class, 'destroy']);
@@ -858,7 +859,7 @@ Route::prefix('v1')->group(function () {
         Route::prefix('short-links')->name('short-links.')->group(function () {
             Route::get('/',        [ShortLinkController::class, 'index'])->name('index');
             Route::get('/check-code', [ShortLinkController::class, 'checkCode'])->name('check-code');
-            Route::post('/',       [ShortLinkController::class, 'store'])->name('store');
+            Route::post('/',       [ShortLinkController::class, 'store'])->middleware('plan.limit:short_links')->name('store');
             Route::get('/{id}/analytics', [ShortLinkController::class, 'analytics'])->name('analytics');
             Route::put('/{id}',    [ShortLinkController::class, 'update'])->name('update');
             Route::delete('/{id}', [ShortLinkController::class, 'destroy'])->name('destroy');
@@ -1021,7 +1022,12 @@ Route::prefix('v1')->group(function () {
             Route::get('billing/invoices',             [PlanPurchaseController::class, 'invoices'])->name('billing.invoices');
             Route::post('addons/{addon}/create-order', [PlanPurchaseController::class, 'addonOrder'])->name('addons.order');
             Route::post('addons/verify-payment',       [PlanPurchaseController::class, 'verifyAddonPayment'])->name('addons.verify');
+            Route::post('addons/cart/quote',           [PlanPurchaseController::class, 'cartQuote'])->name('addons.cart.quote');
+            Route::post('addons/cart/create-order',    [PlanPurchaseController::class, 'cartOrder'])->name('addons.cart.order');
+            Route::post('addons/cart/verify-payment',  [PlanPurchaseController::class, 'cartVerify'])->name('addons.cart.verify');
+            Route::post('plans/coupon/quote',          [PlanPurchaseController::class, 'planCouponQuote'])->name('plans.coupon.quote');
         });
+        Route::get('plan/modules', [PlanPurchaseController::class, 'modules'])->name('plan.modules');
 
         // Superadmin plan management
         Route::middleware(['superadmin'])->prefix('superadmin')->group(function () {
@@ -1030,6 +1036,23 @@ Route::prefix('v1')->group(function () {
             Route::put('plans/{id}',        [PlanPurchaseController::class, 'superAdminUpdatePlan'])->name('sa.plans.update');
             Route::delete('plans/{id}',     [PlanPurchaseController::class, 'superAdminDeletePlan'])->name('sa.plans.destroy');
             Route::post('plans/assign',     [PlanPurchaseController::class, 'assignCustomPlan'])->name('sa.plans.assign');
+            Route::get('plans/catalog',     [PlanPurchaseController::class, 'planCatalog'])->name('sa.plans.catalog');
+            Route::post('plans/{id}/restore', [PlanPurchaseController::class, 'superAdminRestorePlan'])->name('sa.plans.restore');
+            Route::delete('addons/{id}',    [PlanPurchaseController::class, 'superAdminDeleteAddon'])->name('sa.addons.destroy');
+
+            // Coupons + revenue
+            $cc = \App\Modules\PlanPurchase\Http\Controllers\CouponController::class;
+            Route::get('coupons',                [$cc, 'index'])->name('sa.coupons.index');
+            Route::get('coupons/analytics',      [$cc, 'analytics'])->name('sa.coupons.analytics');
+            Route::post('coupons',               [$cc, 'store'])->name('sa.coupons.store');
+            Route::put('coupons/{id}',           [$cc, 'update'])->name('sa.coupons.update');
+            Route::delete('coupons/{id}',        [$cc, 'destroy'])->name('sa.coupons.destroy');
+            Route::post('coupons/{id}/restore',  [$cc, 'restore'])->name('sa.coupons.restore');
+            Route::get('coupons/{id}/usage',     [$cc, 'usage'])->name('sa.coupons.usage');
+            $rc = \App\Modules\PlanPurchase\Http\Controllers\RevenueController::class;
+            Route::get('revenue',                [$rc, 'summary'])->name('sa.revenue');
+            Route::get('payments',               [$rc, 'payments'])->name('sa.payments');
+            Route::post('payments/manual',       [$rc, 'recordManual'])->name('sa.payments.manual');
             Route::get('addons/resources',  [PlanPurchaseController::class, 'addonResources'])->name('sa.addons.resources');
             Route::get('addons',            [PlanPurchaseController::class, 'superAdminAddons'])->name('sa.addons.index');
             Route::get('expiries',                    [\App\Modules\PlanPurchase\Http\Controllers\PlanMonitorController::class, 'expiries'])->name('sa.expiries');
@@ -1541,7 +1564,7 @@ Route::post('v1/frontend-errors', [\App\Http\Controllers\FrontendErrorController
     ->middleware('throttle:30,1');
 
 // ── Protected WA Chat routes ─────────────────────────────────────────────
-Route::prefix('v1')->middleware(['jwt.auth'])->group(function () {
+Route::prefix('v1')->middleware(['jwt.auth', 'module.gate'])->group(function () {
 
     // Gateway API-key status / reconnect — must stay reachable even with an expired
     // token, since reconnecting IS how a company recovers from that exact state.

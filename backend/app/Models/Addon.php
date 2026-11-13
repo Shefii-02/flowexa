@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -12,6 +13,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 // ════════════════════════════════════════════════════════════════════════════
 class Addon extends Model
 {
+    use SoftDeletes;
+
     protected $fillable = [
         'name','slug','description','type','price','price_yearly','billing_cycle','config','is_active',
     ];
@@ -28,6 +31,9 @@ class Addon extends Model
     /** Which feature group this add-on belongs to (for the grouped list); non-limit add-ons go under "Other". */
     public function getGroupAttribute(): array
     {
+        if ($this->type === 'module' && !empty($this->config['module']) && ($m = \App\Support\Modules::get($this->config['module']))) {
+            return ['key' => 'module', 'title' => 'Features', 'icon' => $m['icon']];
+        }
         $g = ($this->type === 'limit' && !empty($this->config['resource'])) ? \App\Support\PlanLimits::groupKeyOf($this->config['resource']) : null;
         return $g ? ['key' => $g, 'title' => \App\Support\PlanLimits::GROUPS[$g][0], 'icon' => \App\Support\PlanLimits::GROUPS[$g][1]] : ['key' => 'other', 'title' => 'Other add-ons', 'icon' => '✨'];
     }
