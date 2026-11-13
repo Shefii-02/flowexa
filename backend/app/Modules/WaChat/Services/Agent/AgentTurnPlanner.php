@@ -77,7 +77,7 @@ class AgentTurnPlanner
 
     private function systemPrompt(AgentPlaybook $playbook, array $slots, string $kbContext): string
     {
-        $questions = $playbook->qualification_questions ?? [];
+        $questions = $playbook->can('qualify') ? ($playbook->qualification_questions ?? []) : [];
         $missing   = $playbook->missingRequiredSlots($slots);
 
         $qLines = [];
@@ -91,6 +91,9 @@ class AgentTurnPlanner
 
         $agentName = $playbook->agent_name ?: 'AI Assistant';
         $base      = $playbook->system_prompt ?: "You are {$agentName}, a helpful WhatsApp assistant.";
+
+        $focus = $playbook->focusInstruction();
+        if ($focus) { $base .= "\n\n" . $focus; }
 
         $prompt = <<<TXT
 {$base}

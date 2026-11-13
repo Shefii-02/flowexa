@@ -838,9 +838,9 @@ export const accountsApi = {
   },
 }
 
-// ── Flow builder: pickers for the AI-agent button / node (existing WA Agent data) ─────────────
+// ── Flow builder: pickers for the AI-agent button / node (existing AI Agent data) ─────────────
 export const flowAiApi = {
-  /** existing AI agents (WA Agent → playbooks) */
+  /** existing AI agents (AI Agent → playbooks) */
   agents: () => api.get('/wa-agent/playbook'),
   /** existing knowledge-base documents */
   knowledge: () => api.get('/wa-agent/knowledge-base'),

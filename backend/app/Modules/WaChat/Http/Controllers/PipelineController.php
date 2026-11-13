@@ -13,9 +13,17 @@ use Illuminate\Support\Facades\Auth;
 
 class PipelineController extends Controller
 {
-    public function index(): JsonResponse
+    private function ownAgentId(?int $id): ?int
+    {
+        if (!$id) { return null; }
+        abort_unless(\App\Modules\WaChat\Models\AgentPlaybook::where('company_id', Auth::user()->company_id)->whereKey($id)->exists(), 422, 'Unknown agent.');
+        return $id;
+    }
+
+    public function index(Request $request): JsonResponse
     {
         $pipelines = AiPipeline::where('company_id', Auth::user()->company_id)
+            ->when($request->filled('agent_id'), fn ($q) => $request->query('agent_id') === 'shared' ? $q->whereNull('agent_id') : $q->where('agent_id', (int) $request->query('agent_id')))
             ->withCount('runs')
             ->orderBy('created_at', 'desc')
             ->get();
@@ -32,7 +40,9 @@ class PipelineController extends Controller
             'trigger_config' => 'nullable|array',
             'steps'          => 'required|array|min:1',
             'is_active'      => 'boolean',
+            'agent_id'       => 'nullable|integer',
         ]);
+        $data['agent_id'] = $this->ownAgentId($data['agent_id'] ?? null);
 
         $pipeline = AiPipeline::create(array_merge($data, [
             'company_id' => Auth::user()->company_id,
@@ -64,12 +74,14 @@ class PipelineController extends Controller
         $data = $request->validate([
             'name'           => 'sometimes|string|max:120',
             'description'    => 'nullable|string|max:500',
+            'agent_id'       => 'nullable|integer',
             'trigger_type'   => 'sometimes|in:message,webhook,cron,manual',
             'trigger_config' => 'nullable|array',
             'steps'          => 'sometimes|array|min:1',
             'is_active'      => 'boolean',
         ]);
 
+        if (array_key_exists('agent_id', $data)) { $data['agent_id'] = $this->ownAgentId($data['agent_id']); }
         $pipeline->update($data);
 
         return response()->json($pipeline);

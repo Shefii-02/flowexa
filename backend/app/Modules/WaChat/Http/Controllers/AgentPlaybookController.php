@@ -35,6 +35,11 @@ class AgentPlaybookController extends Controller
         'escalation'                => 'sometimes|nullable|array',
         'payment'                   => 'sometimes|nullable|array',
         'is_active'                 => 'sometimes|boolean',
+        'function_key'              => 'sometimes|string|in:general,sales,support,hr,finance,custom',
+        'abilities'                 => 'sometimes|nullable|array',
+        'abilities.*'               => 'string|in:answer_questions,qualify,leads,lead_scoring,followup_tasks',
+        'channels'                  => 'sometimes|nullable|array',
+        'channels.*'                => 'string|in:wa_chat,wa_cloud,instagram,widget',
         'ai_schedule_mode'          => 'sometimes|string|in:always,scheduled',
         'ai_schedule_days'          => 'sometimes|nullable|array',
         'ai_schedule_days.*'        => 'integer|min:0|max:6',
@@ -49,6 +54,7 @@ class AgentPlaybookController extends Controller
 
         $playbooks = AgentPlaybook::where('company_id', $companyId)
             ->orderByRaw('session_id IS NOT NULL')
+            ->orderBy('id')
             ->get();
 
         $templates = AgentPlaybookTemplate::where('is_active', true)
@@ -58,6 +64,9 @@ class AgentPlaybookController extends Controller
         return response()->json([
             'playbooks' => $playbooks,
             'templates' => $templates,
+            'abilities' => collect(AgentPlaybook::ABILITIES)->map(fn ($a, $k) => ['key' => $k, 'label' => $a[0], 'description' => $a[1], 'module' => $a[2]])->values(),
+            'ability_defaults' => collect(array_keys(AgentPlaybook::FUNCTIONS))->mapWithKeys(fn ($f) => [$f => AgentPlaybook::defaultAbilities($f)]),
+            'functions' => collect(AgentPlaybook::FUNCTIONS)->map(fn ($f, $k) => ['key' => $k, 'label' => $f[0]])->values(),
         ]);
     }
 
@@ -67,14 +76,21 @@ class AgentPlaybookController extends Controller
         $data = $request->validate([
             'template_key' => 'required|string|exists:agent_playbook_templates,key',
             'session_id'   => 'nullable|string|max:190',
+            'function_key' => 'nullable|string|in:general,sales,support,hr,finance,custom',
+            'channels'     => 'nullable|array',
+            'channels.*'   => 'string|in:wa_chat,wa_cloud,instagram,widget',
+            'agent_name'   => 'nullable|string|max:120',
         ]);
 
         $companyId = Auth::user()->company_id;
         $template  = AgentPlaybookTemplate::where('key', $data['template_key'])->firstOrFail();
 
+        // One agent per (session, function): adding a second function creates a second agent, re-adding the same one refreshes it.
+        $function = $data['function_key'] ?? 'general';
+        $extra = array_filter(['agent_name' => $data['agent_name'] ?? null], fn ($v) => $v !== null);
         $playbook = AgentPlaybook::updateOrCreate(
-            ['company_id' => $companyId, 'session_id' => $data['session_id'] ?? null],
-            array_merge($template->toPlaybookAttributes(), ['is_active' => true]),
+            ['company_id' => $companyId, 'session_id' => $data['session_id'] ?? null, 'function_key' => $function],
+            array_merge($template->toPlaybookAttributes(), $extra, ['is_active' => true, 'channels' => $data['channels'] ?? null]),
         );
 
         return response()->json(['message' => 'Playbook created.', 'data' => $playbook], 201);

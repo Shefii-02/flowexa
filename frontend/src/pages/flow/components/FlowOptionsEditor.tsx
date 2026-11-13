@@ -334,7 +334,7 @@ export function AiAgentPicker({ agentId, kbIds, onChange }: {
   return (
     <div className="border border-purple-200 bg-purple-50/40 rounded-xl p-3 space-y-3">
       <p className="text-[11px] text-purple-700">🤖 The customer chats with an AI agent that answers from your <b>knowledge base</b>. They can type <b>M</b> for the Main Menu or <b>E</b> to exit.</p>
-      {state === 'denied' && <p className="text-[11px] text-amber-600">Could not load your AI agents / knowledge base (needs WA Agent access). The default assistant and the whole knowledge base will be used.</p>}
+      {state === 'denied' && <p className="text-[11px] text-amber-600">Could not load your AI agents / knowledge base (needs AI Agent access). The default assistant and the whole knowledge base will be used.</p>}
       <div>
         <label className="label text-xs">AI agent <span className="text-gray-400">(existing agent — its name, tone and instructions)</span></label>
         <select className="form-control text-sm" value={agentId ?? ''} onChange={e => onChange({ agentId: e.target.value ? Number(e.target.value) : null, kbIds })}>
@@ -345,7 +345,7 @@ export function AiAgentPicker({ agentId, kbIds, onChange }: {
       <div>
         <label className="label text-xs">Answer from <span className="text-gray-400">({kbIds.length ? `${kbIds.length} selected` : 'all knowledge'})</span></label>
         {state === 'loading' ? <p className="text-xs text-gray-400">Loading…</p> : ready.length === 0 ? (
-          <p className="text-xs text-gray-400">No knowledge documents yet — add some under WA Agent → Knowledge Base. Until then the agent has nothing to answer from.</p>
+          <p className="text-xs text-gray-400">No knowledge documents yet — add some under AI Agent → Knowledge Base. Until then the agent has nothing to answer from.</p>
         ) : (
           <div className="max-h-36 overflow-y-auto border border-gray-200 rounded-lg bg-white divide-y divide-gray-100">
             {ready.map(d => (

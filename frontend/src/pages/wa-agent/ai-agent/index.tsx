@@ -571,7 +571,7 @@ function LiveChatDrawer({ open, onClose, waSessions, companyName }: {
                 ))}
               </select>
               {/* Model isn't picked here — the chosen key runs with the model already
-                  configured for its provider under AI Model Configuration above. */}
+                  configured for its provider under AI Agent → Settings. */}
             </div>
           </div>
 
@@ -773,139 +773,6 @@ type ProviderGroup = {
   models: ModelInfo[]
 }
 
-// ── AI Model Config Panel ──────────────────────────────────────────────────────
-
-function AiModelConfig() {
-  const [groups, setGroups]         = useState<ProviderGroup[]>([])
-  const [provider, setProvider]     = useState('')
-  const [model, setModel]           = useState('')
-  const [open, setOpen]             = useState(false)
-  const [saving, setSaving]         = useState(false)
-  const [saved, setSaved]           = useState(false)
-
-  useEffect(() => {
-    api.get('/wa-agent/available-models').then(r => {
-      setGroups(r.data)
-      const first = r.data.find((g: ProviderGroup) => g.has_key)
-      if (first) {
-        setProvider(first.provider)
-        setModel(first.models[0]?.id ?? '')
-      }
-    }).catch(() => {})
-  }, [])
-
-  const save = async () => {
-    setSaving(true)
-    try {
-      await api.post('/wa-agent/config', { ai_provider: provider, ai_model: model })
-      setSaved(true)
-      setTimeout(() => setSaved(false), 2000)
-    } catch {} finally { setSaving(false) }
-  }
-
-  const activeGroup = groups.find(g => g.provider === provider)
-
-  return (
-    <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden mb-6">
-      <button
-        onClick={() => setOpen(!open)}
-        className="flex items-center justify-between w-full px-5 py-4 hover:bg-gray-50 transition-colors"
-      >
-        <div className="flex items-center gap-2">
-          <Settings size={15} className="text-gray-400" />
-          <span className="text-sm font-semibold text-gray-800">AI Model Configuration</span>
-          {activeGroup && (
-            <span className="text-xs text-gray-400 font-normal">
-              · {activeGroup.provider} / {model}
-              {activeGroup.active_key_hint && <span className="ml-1 text-gray-300">({activeGroup.active_key_hint})</span>}
-            </span>
-          )}
-        </div>
-        <ChevronDown size={14} className={`text-gray-400 transition-transform ${open ? 'rotate-180' : ''}`} />
-      </button>
-
-      {open && (
-        <div className="border-t border-gray-100 px-5 py-4 space-y-4">
-          {/* Provider tabs */}
-          <div>
-            <label className="text-xs font-medium text-gray-500 mb-1.5 block">Provider</label>
-            <div className="flex gap-2 flex-wrap">
-              {groups.map(g => (
-                <button
-                  key={g.provider}
-                  onClick={() => { setProvider(g.provider); setModel(g.models[0]?.id ?? '') }}
-                  disabled={!g.has_key}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
-                    provider === g.provider
-                      ? 'bg-indigo-600 text-white border-indigo-600'
-                      : g.has_key
-                        ? 'border-gray-300 text-gray-700 hover:border-indigo-400'
-                        : 'border-gray-200 text-gray-300 cursor-not-allowed'
-                  }`}
-                >
-                  {g.provider === 'anthropic' ? '🧠' : g.provider === 'openai' ? '🤖' : '✦'}{' '}
-                  {g.provider.charAt(0).toUpperCase() + g.provider.slice(1).replace('_', ' ')}
-                  {!g.has_key && ' (no key)'}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Model selector */}
-          {activeGroup && (
-            <div>
-              <label className="text-xs font-medium text-gray-500 mb-1.5 block">Model</label>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {activeGroup.models.map(m => (
-                  <button
-                    key={m.id}
-                    onClick={() => setModel(m.id)}
-                    className={`text-left px-3 py-2.5 rounded-xl border transition-colors ${
-                      model === m.id
-                        ? 'border-indigo-400 bg-indigo-50'
-                        : 'border-gray-200 hover:border-gray-300 bg-white'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm font-medium text-gray-800">{m.label}</span>
-                      <span className="text-xs text-gray-400">{m.cost}</span>
-                    </div>
-                    <div className="flex items-center gap-2 mt-0.5">
-                      <span className="text-xs text-gray-400">{m.description}</span>
-                      <span className="text-[10px] bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded">{m.speed}</span>
-                    </div>
-                  </button>
-                ))}
-              </div>
-              {activeGroup.active_key_hint && (
-                <p className="text-xs text-gray-400 mt-1.5">Active key: {activeGroup.active_key_hint}</p>
-              )}
-            </div>
-          )}
-
-          <div className="flex items-center gap-3">
-            <button
-              onClick={save}
-              disabled={saving || !provider || !model}
-              className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2"
-            >
-              {saving && <Loader2 size={13} className="animate-spin" />}
-              Save Config
-            </button>
-            {saved && (
-              <span className="flex items-center gap-1 text-sm text-green-600">
-                <CheckCircle size={14} /> Saved
-              </span>
-            )}
-            <a href="/settings/api-keys" className="text-xs text-indigo-500 hover:underline ml-auto">
-              Manage API Keys →
-            </a>
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
 
 // ── Main Page ──────────────────────────────────────────────────────────────────
 
@@ -991,8 +858,6 @@ export default function AiAgentPage() {
           ))}
         </div>
       )}
-
-      <AiModelConfig />
 
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-3 mb-4">

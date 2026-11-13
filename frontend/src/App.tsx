@@ -20,7 +20,6 @@ import DashboardPage from '@/pages/dashboard/DashboardPage'
 import StaffPage from '@/pages/staff/StaffPage'
 import PrivacyPolicyPage from '@/pages/legal/PrivacyPolicyPage'
 import RolesPage from '@/pages/staff/RolesPage'
-import StaffAccountAccessPage from '@/pages/staff/StaffAccountAccessPage'
 import StaffAccessPage from '@/pages/staff/StaffAccessPage'
 import ContactsPage from '@/pages/contacts/ContactsPage'
 // import FlowPage from '@/pages/flow/FlowPage'
@@ -157,7 +156,7 @@ import WaGroupsPage from '@/pages/wa-chat/pages/WaGroups'
 
 // Settings pages
 
-// WA Agent module
+// AI Agent module
 import WaAgentShell from '@/pages/wa-agent/WaAgentShell'
 import WaAgentAutomations from '@/pages/wa-agent/automations'
 import WaAgentKnowledgeBase from '@/pages/wa-agent/knowledge-base'
@@ -169,8 +168,7 @@ import WidgetChatsPage from '@/pages/wa-agent/widget/chats/WidgetChatsPage'
 import SetupGuidePage from '@/pages/setup-guide/SetupGuidePage'
 import WaAgentLogs from '@/pages/wa-agent/logs'
 import LeadIntelligencePage from '@/pages/wa-agent/lead-intelligence'
-import MetaAiConfigPage from '@/pages/wa-agent/meta-ai-config'
-import WaAgentSettingsPage from '@/pages/wa-agent/settings'
+import WaAgentSettingsPage from '@/pages/wa-agent/settings/AiSettingsHub'
 import WaAgentPlaybookPage from '@/pages/wa-agent/playbook'
 
 // WA Cloud pages
@@ -211,6 +209,12 @@ const RoleBasedRedirect = () => {
 }
 
 // /templates/:id → /wa-cloud/templates/:id (the detail page moved under the WA Cloud section)
+/** /wa-agent/knowledge-base → /ai-agent/knowledge-base (the module was renamed AI Agent), keeping the query string. */
+function LegacyAgentRedirect() {
+  const { pathname, search, hash } = useLocation()
+  return <Navigate to={pathname.replace(/^\/wa-agent/, '/ai-agent') + search + hash} replace />
+}
+
 /** Old ?builder=7 links open the same builder at /wa-cloud/flow/builder/7 (no id: back to the list). */
 function LegacyFlowRedirect() {
   const { search } = useLocation()
@@ -282,26 +286,28 @@ export default function App() {
                 <Route path="groups" element={<WaGroupsPage />} />
               </Route>
 
-              <Route path="catalog" element={<Navigate to="/wa-agent/catalog" replace />} />   {/* old URL */}
+              <Route path="catalog" element={<Navigate to="/ai-agent/catalog" replace />} />   {/* old URL */}
               <Route path="website-widget" element={<WidgetPage />} />
               <Route path="website-widget/chats" element={<WidgetChatsPage />} />
-              {/* WA Agent module */}
-              <Route path="wa-agent" element={<WaAgentShell />}>
+              {/* AI Agent module */}
+              <Route path="wa-agent/*" element={<LegacyAgentRedirect />} />   {/* old URL → /ai-agent/... */}
+              <Route path="ai-agent" element={<WaAgentShell />}>
 
                 <Route index element={<Navigate to="automations" replace />} />
                 <Route path="automations" element={<WaAgentAutomations />} />
-                <Route path="automation" element={<Navigate to="/wa-agent/automations" replace />} />
+                <Route path="automation" element={<Navigate to="/ai-agent/automations" replace />} />
                 <Route path="knowledge-base" element={<WaAgentKnowledgeBase />} />
                 <Route path="pipelines" element={<WaAgentPipelines />} />
                 <Route path="catalog" element={<CatalogPage />} />
-                <Route path="ai-agent" element={<WaAgentAiAgent />} />
+                <Route path="agent" element={<WaAgentAiAgent />} />
+                <Route path="ai-agent" element={<Navigate to="/ai-agent/agent" replace />} />
                 {/* AI Schedule now lives as a section inside each channel's own automation page
                     (WA Chat Automation → AI Schedule tab, WA Cloud Automations, Instagram
                     Automations) rather than a separate page — redirect old links there. */}
                 <Route path="ai-schedule" element={<Navigate to="/wa-chat/automations" replace />} />
                 <Route path="playbook" element={<WaAgentPlaybookPage />} />
                 <Route path="lead-intelligence" element={<LeadIntelligencePage />} />
-                <Route path="meta-ai" element={<MetaAiConfigPage />} />
+                <Route path="meta-ai" element={<Navigate to="/ai-agent/settings?section=intelligence" replace />} />
                 <Route path="logs" element={<WaAgentLogs />} />
                 <Route path="settings" element={<WaAgentSettingsPage />} />
               </Route>
@@ -310,7 +316,7 @@ export default function App() {
               <Route path="staff/index" element={<StaffPage />} />
               <Route path="staff/roles" element={<RolesPage />} />
               <Route path="staff/access" element={<StaffAccessPage />} />
-              <Route path="staff/account-access" element={<StaffAccountAccessPage />} />
+              <Route path="staff/account-access" element={<Navigate to="/staff/access" replace />} />
               <Route path="crm/contacts" element={<ContactsPage />} />
               <Route path="crm/labels" element={<LabelsPage />} />
               {/* <Route path="flow" element={<FlowPage />} /> */}
@@ -340,7 +346,7 @@ export default function App() {
               <Route path="settings/integrations/drive" element={<DrivePage />} />
               <Route path="settings/integrations/calendar" element={<CalendarIntegrationPage />} />
               <Route path="settings/integrations/email" element={<EmailIntegrationPage />} />
-              <Route path="settings/api-keys" element={<Navigate to="/wa-agent/settings" replace />} />
+              <Route path="settings/api-keys" element={<Navigate to="/ai-agent/settings" replace />} />
 
               {/* V2 routes */}
               <Route path="wa-cloud/phone-numbers" element={<PhoneNumbersPage />} />

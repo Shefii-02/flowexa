@@ -391,7 +391,7 @@ const SidebarInner = () => {
   const detectOpen = (path: string): AccordionId => {
     if (path.startsWith('/wa-chat')) return 'wa-chat'
     if (path.startsWith('/wa-cloud') || path.startsWith('/phone-numbers') || path.startsWith('/flow')) return 'wa-cloud'
-    if (path.startsWith('/wa-agent')) return 'wa-agent'
+    if (path.startsWith('/ai-agent')) return 'wa-agent'
     if (path.startsWith('/meta-ads')) return 'meta-ads'
     if (path.startsWith('/instagram')) return 'instagram'
     if (path.startsWith('/messenger')) return 'messenger'
@@ -520,11 +520,11 @@ const SidebarInner = () => {
               <FlatLink to="/wa-chat/analytics" icon="📈" label="Inbox Analytics" />
               <FlatLink to="/wa-chat/logs" icon="🧾" label="Audit Log" />
 
-              {/* Nested WA Agent inside WA Chat */}
+              {/* Nested AI Agent inside WA Chat */}
               {/* {canViewAuto && ( */}
               {/* <NestedAccordion
                 icon="🤖"
-                label="WA Agent"
+                label="AI Agent"
                 basePaths={['/wa-chat/automations']}
               >
                 <SubLink to="/wa-chat/automations" icon="⚙️" label="Automations" />
@@ -570,11 +570,11 @@ const SidebarInner = () => {
               {/* } */}
               <FlatLink to="/wa-cloud/audit-log" icon="🧾" label="Audit Log" />
 
-              {/* Nested WA Agent inside WA Cloud */}
+              {/* Nested AI Agent inside WA Cloud */}
               {/* {canViewAuto && ( */}
               {/* <NestedAccordion
                 icon="🤖"
-                label="WA Agent"
+                label="AI Agent"
                 basePaths={['/wa-cloud/automations']}
               > */}
               {/* <SubLink to="/wa-cloud/automations" icon="⚙️" label="Automations" />
@@ -583,32 +583,31 @@ const SidebarInner = () => {
             </Accordion>
             {/* )} */}
 
-            {/* ── WA Agent accordion ── */}
+            {/* ── AI Agent accordion ── */}
             {/* {canViewWaAgent && ( */}
             <Accordion
               id="wa-agent"
               icon="🧠"
-              label="WA Agent"
-              basePaths={['/wa-agent']}
+              label="AI Agent"
+              basePaths={['/ai-agent']}
               isOpen={openAccordion === 'wa-agent'}
               onToggle={() => toggle('wa-agent')}
             >
               {/* {canViewKb &&  */}
-              <SubLink to="/wa-agent/knowledge-base" icon="📚" label="Knowledge Base" />
-              <SubLink to="/wa-agent/catalog" icon="📦" label="Catalog" />
+              <SubLink to="/ai-agent/knowledge-base" icon="📚" label="Knowledge Base" />
+              <SubLink to="/ai-agent/catalog" icon="📦" label="Catalog" />
               {/* } */}
 
               {/* {canViewPipes &&  */}
-              <SubLink to="/wa-agent/pipelines" icon="🔄" label="Pipelines" />
+              <SubLink to="/ai-agent/pipelines" icon="🔄" label="Pipelines" />
               {/* } */}
-              <SubLink to="/wa-agent/ai-agent" icon="🤖" label="AI Agent" />
-              <SubLink to="/wa-agent/playbook" icon="📖" label="Playbook" />
+              <SubLink to="/ai-agent/agent" icon="🤖" label="Agent & Chat Tester" />
+              <SubLink to="/ai-agent/playbook" icon="📖" label="Agents & Playbook" />
               {/* {canViewAgLeads &&  */}
-              <SubLink to="/wa-agent/lead-intelligence" icon="🎯" label="Lead Intelligence" />
+              <SubLink to="/ai-agent/lead-intelligence" icon="🎯" label="Lead Intelligence" />
               {/* } */}
-              <SubLink to="/wa-agent/meta-ai" icon="⚙️" label="AI Config" />
-              <SubLink to="/wa-agent/logs" icon="📜" label="Logs" />
-              <SubLink to="/wa-agent/settings" icon="🔑" label="Settings" />
+              <SubLink to="/ai-agent/logs" icon="📜" label="Logs" />
+              <SubLink to="/ai-agent/settings" icon="🔑" label="Settings & AI Config" />
             </Accordion>
             {/* )} */}
 
@@ -781,7 +780,6 @@ const SidebarInner = () => {
             {/* {canViewRoles &&  */}
             <FlatLink to="/staff/roles" icon="🎭" label="Roles" />
             <FlatLink to="/staff/access" icon="🧩" label="Staff Access" />
-            <FlatLink to="/staff/account-access" icon="🔐" label="Account Access" />
             {/* } */}
 
 

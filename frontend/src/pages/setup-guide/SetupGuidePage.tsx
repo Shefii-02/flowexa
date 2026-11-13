@@ -310,10 +310,10 @@ const SECTIONS: Section[] = [
         ),
       },
       {
-        h: '2 · Add it in WA Agent settings',
+        h: '2 · Add it in AI Agent settings',
         body: (
           <>
-            <b>WA Agent → Settings</b> → choose the provider, paste the key, pick a model, set it{' '}
+            <b>AI Agent → Settings</b> → choose the provider, paste the key, pick a model, set it{' '}
             <b>active</b>. The same key powers DM replies, the website widget agent, and the AI
             campaign builder.
           </>
@@ -323,7 +323,7 @@ const SECTIONS: Section[] = [
         h: '3 · Fill the catalog and knowledge base',
         body: (
           <>
-            <b>WA Agent → Listings &amp; Products</b> — pick your industry (Real Estate, Health Clinic,
+            <b>AI Agent → Listings &amp; Products</b> — pick your industry (Real Estate, Health Clinic,
             Education, or Other) and add your properties / services / courses. The agent answers from
             this live data and matches it to what each customer asks for. Add FAQs and policies in{' '}
             <b>Knowledge Base</b>.
@@ -341,7 +341,7 @@ const SECTIONS: Section[] = [
     steps: [
       {
         h: 'Where',
-        body: <><b>WA Agent → Knowledge Base</b>. Each row is one “document”.</>,
+        body: <><b>AI Agent → Knowledge Base</b>. Each row is one “document”.</>,
       },
       {
         h: 'Add content — three ways',
@@ -393,7 +393,7 @@ const SECTIONS: Section[] = [
             <li>Write it the way a customer asks — “How much is the 3-month course?” → a line that answers exactly that.</li>
             <li>Split big topics into separate documents (Pricing, Admissions, Refund policy, Location) — retrieval is sharper.</li>
             <li>Keep it current — stale prices or hours in here become wrong answers to customers.</li>
-            <li>Test after changes: <b>WA Agent → AI Agent</b> has a chat tester — ask it questions and confirm the answers.</li>
+            <li>Test after changes: <b>AI Agent → AI Agent</b> has a chat tester — ask it questions and confirm the answers.</li>
           </ul>
         ),
       },
@@ -410,7 +410,7 @@ const SECTIONS: Section[] = [
         h: '1 · Create the widget',
         body: (
           <>
-            <b>WA Agent → Website Widget → New widget</b>. Set an internal name, the agent display
+            <b>AI Agent → Website Widget → New widget</b>. Set an internal name, the agent display
             name, the greeting (first message the visitor sees), the launcher button text, brand
             colour and position (left / right). Leave the industry on the company default unless this
             widget is for a different vertical.
@@ -596,7 +596,7 @@ GOOGLE_CLIENT_SECRET=GOCSPX-xxxxxxxx
         h: 'Knowledge Base — what it answers from',
         body: (
           <>
-            <b>WA Agent → Knowledge Base</b>. Add your FAQs, pricing, policies, brochures (text, a
+            <b>AI Agent → Knowledge Base</b>. Add your FAQs, pricing, policies, brochures (text, a
             web page URL, or a file). The agent retrieves the most relevant pieces for each question
             and answers <b>only</b> from them — if the answer isn’t there, it says a team member will
             follow up instead of guessing. A new company starts with one <i>Sample FAQ</i> — replace
@@ -608,7 +608,7 @@ GOOGLE_CLIENT_SECRET=GOCSPX-xxxxxxxx
         h: 'Playbook — the agent’s persona & qualification',
         body: (
           <>
-            <b>WA Agent → Playbook</b>. Sets the agent name, tone, languages, the greeting for new vs
+            <b>AI Agent → Playbook</b>. Sets the agent name, tone, languages, the greeting for new vs
             returning customers, the closing message, and the <b>qualification questions</b> it works
             through one at a time (name, budget, preferred course, …). When every required answer is
             collected the lead is marked qualified and handed off. Your new company has an inactive{' '}
@@ -630,7 +630,7 @@ GOOGLE_CLIENT_SECRET=GOCSPX-xxxxxxxx
         h: 'Lead Intelligence — scoring & summaries',
         body: (
           <>
-            <b>WA Agent → Lead Intelligence</b>. After each conversation the agent scores the lead
+            <b>AI Agent → Lead Intelligence</b>. After each conversation the agent scores the lead
             (0–100), detects intent and sentiment, keeps a running summary of the person, and flags
             buying signals or objections — so your team sees who to call first.
           </>
@@ -640,7 +640,7 @@ GOOGLE_CLIENT_SECRET=GOCSPX-xxxxxxxx
         h: 'Pipelines — extra automations',
         body: (
           <>
-            <b>WA Agent → Pipelines</b>. Multi-step flows that run on a trigger (a new conversation, a
+            <b>AI Agent → Pipelines</b>. Multi-step flows that run on a trigger (a new conversation, a
             webhook, a schedule) — e.g. welcome message → run agent → notify staff. A new company
             gets one inactive <i>Sample pipeline</i> to look at or delete.
           </>
@@ -650,7 +650,7 @@ GOOGLE_CLIENT_SECRET=GOCSPX-xxxxxxxx
         h: 'AI Config & keys',
         body: (
           <>
-            <b>WA Agent → AI Config / Settings</b>. Pick the model provider (Claude / OpenAI / Gemini)
+            <b>AI Agent → AI Config / Settings</b>. Pick the model provider (Claude / OpenAI / Gemini)
             and paste your API key. Nothing above works until a key is set.
           </>
         ),
@@ -776,19 +776,19 @@ GOOGLE_CLIENT_SECRET=GOCSPX-xxxxxxxx
     steps: [
       {
         h: 'Playbook',
-        body: <><b>WA Agent → Playbook</b> — agent name, tone, languages, greetings, the qualification questions, escalation keywords, and hand-off behaviour. Edit the sample one and switch it on.</>,
+        body: <><b>AI Agent → Playbook</b> — agent name, tone, languages, greetings, the qualification questions, escalation keywords, and hand-off behaviour. Edit the sample one and switch it on.</>,
       },
       {
         h: 'Pipelines',
-        body: <><b>WA Agent → Pipelines</b> — trigger-based automations (new conversation / webhook / schedule) with steps like send message → run agent → notify staff. Toggle active per pipeline.</>,
+        body: <><b>AI Agent → Pipelines</b> — trigger-based automations (new conversation / webhook / schedule) with steps like send message → run agent → notify staff. Toggle active per pipeline.</>,
       },
       {
         h: 'Lead Intelligence',
-        body: <><b>WA Agent → Lead Intelligence</b> — per-contact score, intent, sentiment, buying signals and objections; and <b>AI Config</b> for how often it re-analyses.</>,
+        body: <><b>AI Agent → Lead Intelligence</b> — per-contact score, intent, sentiment, buying signals and objections; and <b>AI Config</b> for how often it re-analyses.</>,
       },
       {
         h: 'Catalog',
-        body: <><b>WA Agent → Catalog</b> — the items the agent quotes. Set a per-item staff incentive % here; a sale then credits the counsellor automatically (<b>HR → Sales</b>).</>,
+        body: <><b>AI Agent → Catalog</b> — the items the agent quotes. Set a per-item staff incentive % here; a sale then credits the counsellor automatically (<b>HR → Sales</b>).</>,
       },
       {
         h: 'Templates & Campaigns',

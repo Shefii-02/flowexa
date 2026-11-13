@@ -6,7 +6,7 @@ import { stickyApi } from '@/api'
 export const SIDEBAR_SECTIONS: { id: string; label: string; icon: string }[] = [
   { id: 'wa-chat',      label: 'WA Chat',      icon: '💬' },
   { id: 'wa-cloud',     label: 'WA Cloud',     icon: '☁️' },
-  { id: 'wa-agent',     label: 'WA Agent',     icon: '🧠' },
+  { id: 'wa-agent',     label: 'AI Agent',     icon: '🧠' },
   { id: 'meta-ads',     label: 'Meta Ads',     icon: '📣' },
   { id: 'instagram',    label: 'Instagram',    icon: '📸' },
   { id: 'messenger',    label: 'Messenger',    icon: '💬' },

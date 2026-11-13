@@ -103,7 +103,7 @@ export function AiCampaignBuilder({ accounts, onBuilt }: { accounts: Account[]; 
       >
         {configured === false && (
           <div className="mb-4 rounded-lg bg-amber-50 border border-amber-200 p-3 text-sm text-amber-800">
-            No AI key configured. Add one in <b>WA Agent → Settings</b> to use the campaign builder.
+            No AI key configured. Add one in <b>AI Agent → Settings</b> to use the campaign builder.
           </div>
         )}
 

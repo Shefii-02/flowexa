@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import AgentScopeBar, { useAgentScope } from '@/components/ai/AgentScope'
 import { api } from '@/api/client'
 
 type Pipeline = {
@@ -37,6 +38,7 @@ export default function PipelinesPage() {
   const [pipelines, setPipelines] = useState<Pipeline[]>([])
   const [loading, setLoading]     = useState(true)
   const [modal, setModal]         = useState(false)
+  const agentScope = useAgentScope()
   const [editId, setEditId]       = useState<number | null>(null)
   const [form, setForm]           = useState({
     name: '', description: '', trigger_type: 'manual' as Pipeline['trigger_type'], is_active: true,
@@ -49,12 +51,12 @@ export default function PipelinesPage() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await api.get('/wa-agent/pipelines')
+      const res = await api.get('/wa-agent/pipelines', { params: agentScope.listParams })
       setPipelines(res.data)
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [agentScope.scope])
 
   useEffect(() => { load() }, [load])
 
@@ -84,7 +86,7 @@ export default function PipelinesPage() {
     if (steps.length === 0) { setErr('Add at least one step.'); return }
     setSaving(true)
     try {
-      const payload = { ...form, steps }
+      const payload = { ...form, steps, ...(editId ? {} : { agent_id: agentScope.newAgentId }) }
       if (editId) {
         await api.patch(`/wa-agent/pipelines/${editId}`, payload)
       } else {
@@ -121,7 +123,7 @@ export default function PipelinesPage() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-xl font-bold text-gray-900">Pipelines</h1>
-          <p className="text-sm text-gray-500 mt-1">Multi-step automated workflows with AI, HTTP, and message steps</p>
+          <p className="text-sm text-gray-500 mt-1">Multi-step workflows — shared, or owned by one AI agent</p>
         </div>
         <button
           onClick={openCreate}
@@ -130,6 +132,8 @@ export default function PipelinesPage() {
           + New Pipeline
         </button>
       </div>
+
+      <AgentScopeBar agents={agentScope.agents} scope={agentScope.scope} setScope={agentScope.setScope} what="pipelines" />
 
       {loading ? (
         <div className="text-center py-16 text-gray-400">Loading...</div>

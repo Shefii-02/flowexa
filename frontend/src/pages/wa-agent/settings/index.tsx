@@ -118,7 +118,7 @@ export default function WaAgentSettingsPage() {
   return (
     <div className="p-6 max-w-3xl mx-auto space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">WA Agent · Settings</h1>
+        <h1 className="text-2xl font-bold text-gray-900">AI Agent · Settings</h1>
         <p className="text-sm text-gray-500 mt-1">
           Choose the AI provider the agent, RAG replies and lead intelligence run on, and manage the API keys.
           One provider is active at a time. If you don&apos;t add your own key, the agent uses the platform key

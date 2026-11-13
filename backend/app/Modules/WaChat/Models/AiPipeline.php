@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class AiPipeline extends Model
 {
     protected $fillable = [
-        'company_id', 'name', 'description',
+        'company_id', 'agent_id', 'name', 'description',
         'trigger_type', 'trigger_config', 'steps', 'is_active',
     ];
 

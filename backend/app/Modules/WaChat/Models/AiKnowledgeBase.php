@@ -10,7 +10,7 @@ class AiKnowledgeBase extends Model
     protected $table = 'ai_knowledge_base';
 
     protected $fillable = [
-        'company_id', 'name', 'description', 'document_type',
+        'company_id', 'agent_id', 'name', 'description', 'document_type',
         'raw_content', 'file_path', 'source_url',
         'status', 'word_count', 'chunk_count', 'error_message',
     ];

@@ -528,7 +528,7 @@ function ScheduleTab() {
 const SOURCE_TYPES = [
   { id: 'text', label: 'Text / Document', desc: 'Paste or write knowledge directly', emoji: '📄' },
   { id: 'url',  label: 'URL / Web page',  desc: 'Scrape content from a webpage',    emoji: '🔗' },
-  { id: 'file', label: 'File upload',      desc: 'PDF, DOCX, TXT (via WA Agent)',   emoji: '📁' },
+  { id: 'file', label: 'File upload',      desc: 'PDF, DOCX, TXT (via AI Agent)',   emoji: '📁' },
   { id: 'api',  label: 'API Source',       desc: 'Pull data from external API',     emoji: '🌐' },
 ] as const
 
@@ -616,7 +616,7 @@ function SourcesTab() {
 
   const saveDoc = async () => {
     if (!form.title.trim()) { toast.error('Title required'); return }
-    if (form.source_type === 'file') { toast.error('File upload: use WA Agent → Knowledge Base page.'); return }
+    if (form.source_type === 'file') { toast.error('File upload: use AI Agent → Knowledge Base page.'); return }
     setSaving(true)
     try {
       await api.post('/wa-agent/knowledge-base', form)
@@ -695,7 +695,7 @@ function SourcesTab() {
           )}
           {form.source_type === 'file' && (
             <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-700">
-              File upload is available in the WA Agent → Knowledge Base section. Go there for PDF/DOCX uploads.
+              File upload is available in the AI Agent → Knowledge Base section. Go there for PDF/DOCX uploads.
             </div>
           )}
           {form.source_type === 'api' && (

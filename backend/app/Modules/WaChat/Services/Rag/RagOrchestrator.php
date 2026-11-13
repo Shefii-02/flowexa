@@ -128,7 +128,7 @@ class RagOrchestrator
         // and any other RagOrchestrator caller behave the same way, without spending an LLM
         // call on something fully deterministic.
         if ($this->planner->isGreeting($query)) {
-            $playbook = AgentPlaybook::resolveFor($companyId, $wahaSessionId);
+            $playbook = AgentPlaybook::resolveFor($companyId, $wahaSessionId, 'wa_chat');
             $isFirstMessage = empty($history);
 
             $response = $isFirstMessage
@@ -161,7 +161,9 @@ class RagOrchestrator
             $subQueries = $this->planner->decompose($searchQuery);
 
             // 5. Retrieve evidence
-            $evidence = $this->collector->collect($subQueries, $companyId);
+            // Only the documents this agent may read (its own + the shared ones).
+            $agent    = AgentPlaybook::resolveFor($companyId, $wahaSessionId, 'wa_chat');
+            $evidence = $this->collector->collect($subQueries, $companyId, $agent ? ($agent->knowledgeBaseIds() ?: [0]) : []);   // [0] = this agent has no documents: match nothing, not everything
             $context  = $this->collector->buildContext($evidence);
 
             // 6. Verify relevance

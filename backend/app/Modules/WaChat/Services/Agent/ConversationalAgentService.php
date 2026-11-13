@@ -44,7 +44,7 @@ class ConversationalAgentService
             return false;
         }
 
-        $playbook = AgentPlaybook::resolveFor($in->companyId, $in->sessionRef);
+        $playbook = AgentPlaybook::resolveFor($in->companyId, $in->sessionRef, $in->channel === 'meta_cloud' ? 'wa_cloud' : 'wa_chat');
         if (!$playbook) {
             return false;
         }
@@ -132,7 +132,8 @@ class ConversationalAgentService
 
         // ── New conversation: greet, open a lead, ask the first question ──────
         if ($isNew) {
-            $contact   = $this->ensureContactAndLead($in);
+            // Only an agent whose job includes leads opens one; a support/HR agent just talks.
+            $contact   = $playbook->can('leads') ? $this->ensureContactAndLead($in) : null;
             $returning  = $this->isReturning($in, $session->id);
             $greeting   = $returning
                 ? ($playbook->greeting_returning ?: $playbook->greeting_new)
@@ -148,9 +149,13 @@ class ConversationalAgentService
         }
 
         // ── Retrieve knowledge-base context for this message ─────────────────
-        $subQueries = $this->subQueryPlanner->decompose($in->text);
-        $found      = $this->evidence->collect($subQueries, $in->companyId);
-        $kbContext  = $this->evidence->buildContext($found);
+        $kbContext = '';
+        if ($playbook->can('answer_questions')) {
+            $subQueries = $this->subQueryPlanner->decompose($in->text);
+            $ids        = $playbook->knowledgeBaseIds();   // this agent's own documents + the shared ones, never another agent's
+            $found      = $ids ? $this->evidence->collect($subQueries, $in->companyId, $ids) : [];
+            $kbContext  = $this->evidence->buildContext($found);
+        }
 
         // ── One LLM call: reply + slot extraction + flags ────────────────────
         $slots = $session->collected_slots ?? [];
@@ -195,7 +200,7 @@ class ConversationalAgentService
         // ── Outcomes ────────────────────────────────────────────────────────
         // Customer explicitly asked to be contacted later, rather than right now — schedule it
         // regardless of what else happens this turn (human handoff / qualification below).
-        if ($plan['followup']['requested']) {
+        if ($plan['followup']['requested'] && $playbook->can('followup_tasks')) {
             $this->scheduleRequestedFollowup($in, $plan['followup']);
         }
 
@@ -204,6 +209,9 @@ class ConversationalAgentService
         }
 
         $missing = $playbook->missingRequiredSlots($slots);
+        if (!$playbook->can('qualify')) {
+            return true;   // this agent only answers — no qualification flow, no lead hand-off
+        }
         if ($plan['qualification_done'] || empty($missing)) {
             $this->completeQualification($in, $session, $playbook);
         } else {
@@ -381,7 +389,7 @@ class ConversationalAgentService
             ->map(fn($v, $k) => "• {$k}: {$v}")
             ->implode("\n");
 
-        if ($lead) {
+        if ($lead && $playbook->can('leads')) {
             $lead->update([
                 'stage'    => $handoff['lead_stage'] ?? $lead->stage ?? 'qualified',
                 'category' => $handoff['lead_category'] ?? $lead->category,
@@ -393,14 +401,14 @@ class ConversationalAgentService
         // Lead-intelligence scoring on the now-complete transcript.
         $lastUser = collect($session->conversation_history ?? [])
             ->last(fn($t) => ($t['role'] ?? '') === 'user')['content'] ?? $in->text;
-        AnalyzeConversation::dispatch($in->companyId, $contact->id, $in->phone, $lastUser, $in->sessionRef)
+        if ($playbook->can('lead_scoring')) AnalyzeConversation::dispatch($in->companyId, $contact->id, $in->phone, $lastUser, $in->sessionRef)
             ->onQueue('analysis');
 
         // Safety net: qualification finished but nothing here actually confirms a booking/sale —
         // put a default check-in on a staff member's plate a week out so a qualified lead never
         // just goes quiet. Staff can complete it early the moment the deal actually closes.
         $company = Company::find($in->companyId);
-        if ($company) {
+        if ($company && $playbook->can('followup_tasks')) {
             $this->followupScheduler->schedule(
                 $company, $contact,
                 'Follow up — AI-qualified lead' . ($contact->name && $contact->name !== $contact->phone ? " ({$contact->name})" : ''),

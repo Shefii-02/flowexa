@@ -316,7 +316,7 @@ export default function WidgetPage() {
                   </label>
                   <p className="text-[11px] text-gray-400">Uses your knowledge base and continues until the visitor marks the issue solved or a staff member joins. Without it, visitors only see “we'll contact you”.</p>
                   {!aiConfigured && (
-                    <p className="text-[11px] text-amber-600">No AI key is configured for this company yet. Add one under <Link to="/wa-agent/settings" className="underline">AI Settings → API Keys</Link>.</p>
+                    <p className="text-[11px] text-amber-600">No AI key is configured for this company yet. Add one under <Link to="/ai-agent/settings" className="underline">AI Settings → API Keys</Link>.</p>
                   )}
                 </>
               )}

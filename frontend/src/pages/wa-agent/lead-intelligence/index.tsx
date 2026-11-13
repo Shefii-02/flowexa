@@ -438,7 +438,7 @@ export default function LeadIntelligencePage() {
             <div className="text-center py-20 text-gray-400">
               <AlertCircle size={40} strokeWidth={1} className="mx-auto mb-3" />
               <p className="text-sm">No leads scored yet.</p>
-              <p className="text-xs mt-1">Enable Conversation Intelligence in WA Agent → Meta AI Config.</p>
+              <p className="text-xs mt-1">Enable Conversation Intelligence in AI Agent → Meta AI Config.</p>
             </div>
           ) : (
             <div className="bg-white border border-gray-200 rounded-2xl overflow-hidden">

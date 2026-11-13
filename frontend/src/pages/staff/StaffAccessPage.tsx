@@ -4,6 +4,7 @@
 import { useEffect, useState, useCallback, useMemo } from 'react'
 import { staffAccessApi, staffAccountAccessApi } from '@/api'
 import { Button, EmptyState, Spinner } from '@/components/ui'
+import StaffAccountAccessCards, { type AccountRow } from './StaffAccountAccessCards'
 import AccessSectionPicker, { sectionAddedPermissions, type AccessSection } from './AccessSectionPicker'
 import { getError } from '@/utils'
 import toast from 'react-hot-toast'
@@ -15,6 +16,7 @@ export default function StaffAccessPage() {
   const [loading, setLoading] = useState(true)
   const [staff, setStaff] = useState<StaffRow[]>([])
   const [sections, setSections] = useState<Section[]>([])
+  const [accounts, setAccounts] = useState<Record<string, AccountRow[]>>({})
   const [search, setSearch] = useState('')
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [busy, setBusy] = useState(false)
@@ -28,7 +30,7 @@ export default function StaffAccessPage() {
 
   useEffect(() => {
     Promise.all([staffAccountAccessApi.options(), staffAccessApi.sections()])
-      .then(([o, s]) => { setStaff(o.data.staff ?? []); setSections(s.data.sections ?? []) })
+      .then(([o, s]) => { setStaff(o.data.staff ?? []); setAccounts(o.data.accounts ?? {}); setSections(s.data.sections ?? []) })
       .catch((e) => toast.error(getError(e)))
       .finally(() => setLoading(false))
   }, [])
@@ -64,7 +66,7 @@ export default function StaffAccessPage() {
     <div className="space-y-5">
       <div>
         <h1 className="page-title">Staff Access</h1>
-        <p className="page-sub">Give each staff member a main access section and any sub sections, and choose whether they can use the web portal and the mobile app. Sections add to what their role already allows.</p>
+        <p className="page-sub">Give each staff member a main access section and any sub sections, and choose whether they can use the web portal and the mobile app. Sections add to what their role already allows. You can also limit them to specific WhatsApp sessions, numbers and connected accounts.</p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-5">
@@ -128,6 +130,12 @@ export default function StaffAccessPage() {
               })()}
 
               <div className="flex justify-end"><Button loading={saving} onClick={save}>Save access</Button></div>
+
+              <div>
+                <h2 className="text-base font-semibold text-gray-900">Connected accounts</h2>
+                <p className="text-sm text-gray-500">Restrict {selected.name} to specific WA Chat sessions, WA Cloud numbers, Instagram or Meta Ads accounts. Leave a type unchecked to keep full access to it.</p>
+              </div>
+              <StaffAccountAccessCards staffId={selected.id} staffName={selected.name} roleLabel={selected.role?.label} accounts={accounts} />
             </>
           )}
         </div>

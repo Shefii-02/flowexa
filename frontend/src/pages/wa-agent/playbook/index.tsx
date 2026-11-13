@@ -35,6 +35,9 @@ type Playbook = {
   session_id: string | null
   template_key: string | null
   business_type: string
+  function_key?: string
+  channels?: string[] | null
+  abilities?: string[] | null
   is_active: boolean
   agent_name: string
   tone: string
@@ -51,6 +54,61 @@ type Playbook = {
 }
 
 type Template = { id: number; key: string; name: string; description: string | null; icon: string | null }
+
+const FUNCTIONS = [
+  { key: 'general', label: 'General', icon: '🤖', hint: 'Answers anything about the business' },
+  { key: 'sales',   label: 'Sales',   icon: '💼', hint: 'Products, pricing, demos, buying' },
+  { key: 'support', label: 'Support', icon: '🎧', hint: 'Help, orders, troubleshooting' },
+  { key: 'hr',      label: 'HR',      icon: '👥', hint: 'Jobs, attendance, leave, payroll' },
+  { key: 'finance', label: 'Finance', icon: '🧾', hint: 'Invoices, payments, dues' },
+  { key: 'custom',  label: 'Custom',  icon: '✨', hint: 'Your own instructions only' },
+]
+const CHANNELS = [
+  { key: 'wa_chat', label: 'WA Chat' }, { key: 'wa_cloud', label: 'WA Cloud' }, { key: 'instagram', label: 'Instagram' }, { key: 'widget', label: 'Website widget' },
+]
+const ABILITIES = [
+  { key: 'answer_questions', label: 'Answer questions', hint: 'Replies from its knowledge base' },
+  { key: 'qualify',          label: 'Ask qualification questions', hint: 'Collects the questions below one by one' },
+  { key: 'leads',            label: 'Create & update leads', hint: 'Needs the Leads feature on your plan' },
+  { key: 'lead_scoring',     label: 'Score leads', hint: 'Sentiment and buying intent (Leads feature)' },
+  { key: 'followup_tasks',   label: 'Schedule follow-ups', hint: 'CRM tasks for staff (CRM feature)' },
+]
+const DEFAULT_ABILITIES: Record<string, string[]> = {
+  general: ['answer_questions', 'qualify', 'leads', 'lead_scoring', 'followup_tasks'], sales: ['answer_questions', 'qualify', 'leads', 'lead_scoring', 'followup_tasks'],
+  support: ['answer_questions', 'followup_tasks'], hr: ['answer_questions'], finance: ['answer_questions'], custom: ['answer_questions'],
+}
+const abilitiesOf = (p: { abilities?: string[] | null; function_key?: string }) => p.abilities ?? DEFAULT_ABILITIES[p.function_key ?? 'general'] ?? ['answer_questions']
+const fnOf = (k?: string) => FUNCTIONS.find(f => f.key === (k ?? 'general')) ?? FUNCTIONS[0]
+const channelText = (c?: string[] | null) => (!c || c.length === 0 ? 'All channels' : c.map(x => CHANNELS.find(y => y.key === x)?.label ?? x).join(' · '))
+
+/** Function (what the agent is for) + channels (where it answers). */
+function ScopeFields({ fn, channels, onFn, onChannels }: { fn: string; channels: string[] | null | undefined; onFn: (v: string) => void; onChannels: (v: string[]) => void }) {
+  const list = channels ?? []
+  return (
+    <div className="space-y-4">
+      <div>
+        <span className="mb-1 block text-xs font-semibold text-gray-700">What is this agent for?</span>
+        <div className="grid gap-2 sm:grid-cols-3">
+          {FUNCTIONS.map(f => (
+            <button type="button" key={f.key} onClick={() => onFn(f.key)} aria-pressed={fn === f.key}
+              className={`rounded-xl border p-3 text-left text-sm ${fn === f.key ? 'border-indigo-500 bg-indigo-50' : 'border-gray-200 hover:border-indigo-300'}`}>
+              <span className="font-medium text-gray-900">{f.icon} {f.label}</span><span className="block text-[11px] text-gray-500">{f.hint}</span>
+            </button>))}
+        </div>
+      </div>
+      <div>
+        <span className="mb-1 block text-xs font-semibold text-gray-700">Where does it answer? <span className="font-normal text-gray-400">(none selected = every channel)</span></span>
+        <div className="flex flex-wrap gap-2">
+          {CHANNELS.map(c => {
+            const on = list.includes(c.key)
+            return <button type="button" key={c.key} aria-pressed={on} onClick={() => onChannels(on ? list.filter(x => x !== c.key) : [...list, c.key])}
+              className={`rounded-full border px-3 py-1 text-xs font-medium ${on ? 'border-indigo-600 bg-indigo-600 text-white' : 'border-gray-200 text-gray-600 hover:border-indigo-300'}`}>{c.label}</button>
+          })}
+        </div>
+      </div>
+    </div>
+  )
+}
 
 // ── Small field helpers ───────────────────────────────────────────────────────
 
@@ -135,8 +193,11 @@ function PlaybookEditor({ playbook, onSaved, onReset }: {
         handoff: form.handoff,
         escalation: form.escalation,
         is_active: form.is_active,
+        function_key: form.function_key ?? 'general',
+        channels: form.channels && form.channels.length ? form.channels : null,
+        abilities: abilitiesOf(form),
       })
-      toast.success('Playbook saved.')
+      toast.success('Agent saved.')
       onSaved()
     } catch (e: any) {
       toast.error(e?.response?.data?.message ?? 'Save failed.')
@@ -150,21 +211,45 @@ function PlaybookEditor({ playbook, onSaved, onReset }: {
       {/* Header row */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-2">
-          <button onClick={onReset} className="text-gray-400 hover:text-gray-600" title="Choose a different template">
+          <button onClick={onReset} className="text-gray-400 hover:text-gray-600" title="Back to all agents">
             <ArrowLeft size={16} />
           </button>
           <span className="text-sm text-gray-500">
             Based on <span className="font-medium text-gray-700">{form.template_key ?? 'custom'}</span>
-            {form.session_id ? ` · session ${form.session_id}` : ' · all sessions'}
+            {form.session_id ? ` · session ${form.session_id}` : ' · all sessions'} · {channelText(form.channels)}
           </span>
         </div>
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={form.is_active} onChange={e => set('is_active', e.target.checked)} />
           <span className={form.is_active ? 'text-green-700 font-medium' : 'text-gray-500'}>
-            {form.is_active ? 'Active' : 'Paused'}
+            {form.is_active ? 'On — answering messages' : 'Off — not answering'}
           </span>
         </label>
       </div>
+
+      {/* Scope */}
+      <section className="bg-white border border-gray-200 rounded-2xl p-5 space-y-3">
+        <h3 className="text-sm font-semibold text-gray-900">Role & channels</h3>
+        <ScopeFields fn={form.function_key ?? 'general'} channels={form.channels} onFn={v => setForm(f => ({ ...f, function_key: v, abilities: DEFAULT_ABILITIES[v] ?? ['answer_questions'] }))} onChannels={v => set('channels', v)} />
+      </section>
+
+      {/* Jobs */}
+      <section className="bg-white border border-gray-200 rounded-2xl p-5 space-y-3">
+        <div>
+          <h3 className="text-sm font-semibold text-gray-900">What this agent does</h3>
+          <p className="text-xs text-gray-500">Each agent only does the jobs switched on here — a support agent never touches leads, an HR agent only answers. Its own documents and pipelines are set under Knowledge Base and Pipelines.</p>
+        </div>
+        <div className="grid gap-2 sm:grid-cols-2">
+          {ABILITIES.map(a => {
+            const on = abilitiesOf(form).includes(a.key)
+            return (
+              <label key={a.key} className={`flex cursor-pointer items-start gap-2 rounded-xl border p-3 text-sm ${on ? 'border-indigo-300 bg-indigo-50' : 'border-gray-200'}`}>
+                <input type="checkbox" className="mt-0.5" checked={on} onChange={() => set('abilities', on ? abilitiesOf(form).filter(x => x !== a.key) : [...abilitiesOf(form), a.key])} />
+                <span><span className="font-medium text-gray-900">{a.label}</span><span className="block text-[11px] text-gray-500">{a.hint}</span></span>
+              </label>)
+          })}
+        </div>
+      </section>
 
       {/* Persona */}
       <section className="bg-white border border-gray-200 rounded-2xl p-5 space-y-4">
@@ -274,7 +359,11 @@ export default function PlaybookPage() {
   const [playbooks, setPlaybooks] = useState<Playbook[]>([])
   const [templates, setTemplates] = useState<Template[]>([])
   const [busy, setBusy] = useState<string | null>(null)
-  const [pickMode, setPickMode] = useState(false)
+  const [selectedId, setSelectedId] = useState<number | null>(null)
+  const [creating, setCreating] = useState(false)
+  const [newFn, setNewFn] = useState('sales')
+  const [newChannels, setNewChannels] = useState<string[]>([])
+  const [newName, setNewName] = useState('')
 
   const load = useCallback(async () => {
     try {
@@ -282,7 +371,7 @@ export default function PlaybookPage() {
       setPlaybooks(r.data.playbooks ?? [])
       setTemplates(r.data.templates ?? [])
     } catch {
-      toast.error('Failed to load playbook.')
+      toast.error('Failed to load agents.')
     } finally {
       setLoading(false)
     }
@@ -290,15 +379,16 @@ export default function PlaybookPage() {
 
   useEffect(() => { load() }, [load])
 
-  const companyWide = playbooks.find(p => !p.session_id) ?? null
+  const selected = playbooks.find(p => p.id === selectedId) ?? null
 
   const adopt = async (key: string) => {
     setBusy(key)
     try {
-      await api.post('/wa-agent/playbook', { template_key: key })
-      toast.success('Playbook created from template.')
-      setPickMode(false)
+      const r = await api.post('/wa-agent/playbook', { template_key: key, function_key: newFn, channels: newChannels.length ? newChannels : null, agent_name: newName.trim() || undefined })
+      toast.success('Agent created.')
+      setCreating(false); setNewName(''); setNewChannels([])
       await load()
+      setSelectedId(r.data?.data?.id ?? null)
     } catch (e: any) {
       toast.error(e?.response?.data?.message ?? 'Failed.')
     } finally {
@@ -306,35 +396,90 @@ export default function PlaybookPage() {
     }
   }
 
+  // The on/off switch: a paused agent stops answering; the next agent that covers that channel (if any) takes over.
+  const toggle = async (p: Playbook) => {
+    try {
+      await api.post(`/wa-agent/playbook/${p.id}/toggle`)
+      toast.success(p.is_active ? `${p.agent_name} is off` : `${p.agent_name} is on`)
+      load()
+    } catch (e: any) { toast.error(e?.response?.data?.message ?? 'Failed.') }
+  }
+
+  const remove = async (p: Playbook) => {
+    if (!confirm(`Delete the agent "${p.agent_name}"?`)) return
+    try { await api.delete(`/wa-agent/playbook/${p.id}`); toast.success('Deleted'); if (selectedId === p.id) setSelectedId(null); load() }
+    catch (e: any) { toast.error(e?.response?.data?.message ?? 'Failed.') }
+  }
+
   if (loading) {
     return <div className="flex items-center justify-center py-24"><Loader2 size={28} className="animate-spin text-indigo-400" /></div>
   }
 
-  const showPicker = !companyWide || pickMode
+  const anyOn = playbooks.some(p => p.is_active)
+  const firstTime = playbooks.length === 0
 
   return (
     <div className="p-6 mx-auto space-y-6">
-      <div className="flex items-start gap-3">
-        <Bot size={22} className="text-indigo-500 mt-0.5" />
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">Agent Playbook</h1>
-          <p className="text-sm text-gray-500 mt-1">
-            Pick the category that matches this business, then tune the questions and lead handoff.
-            The agent runs on every incoming WhatsApp message (open-wa and Meta Cloud) once a playbook is active.
-          </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex items-start gap-3">
+          <Bot size={22} className="text-indigo-500 mt-0.5" />
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">AI Agents</h1>
+            <p className="text-sm text-gray-500 mt-1">
+              Create separate agents for sales, support, HR… and choose which channel each one answers on. Switch an agent off and it stops replying immediately.
+            </p>
+          </div>
         </div>
+        {!creating && !selected && !firstTime && (
+          <button onClick={() => setCreating(true)} className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"><Plus size={14} /> New agent</button>
+        )}
       </div>
 
-      {!companyWide && (
+      {!anyOn && (
         <div className="flex items-center gap-2 p-3 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-700">
-          <AlertCircle size={16} /> No playbook yet — the AI agent is not answering messages. Choose a template below.
+          <AlertCircle size={16} /> {firstTime ? 'No agent yet — the AI is not answering messages. Create one below.' : 'Every agent is switched off — the AI is not answering messages.'}
         </div>
       )}
 
-      {showPicker ? (
-        <TemplatePicker templates={templates} onPick={adopt} busy={busy} />
+      {selected && !creating ? (
+        <PlaybookEditor playbook={selected} onSaved={load} onReset={() => setSelectedId(null)} />
+      ) : creating || firstTime ? (
+        <div className="space-y-5">
+          {!firstTime && <button onClick={() => setCreating(false)} className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700"><ArrowLeft size={14} /> Back to agents</button>}
+          <section className="bg-white border border-gray-200 rounded-2xl p-5 space-y-4">
+            <h3 className="text-sm font-semibold text-gray-900">1 · Role & channels</h3>
+            <Field label="Agent name (optional)"><input className={inputCls} placeholder="e.g. Riya — Sales" value={newName} onChange={e => setNewName(e.target.value)} /></Field>
+            <ScopeFields fn={newFn} channels={newChannels} onFn={setNewFn} onChannels={setNewChannels} />
+          </section>
+          <section className="space-y-3">
+            <h3 className="text-sm font-semibold text-gray-900">2 · Start from a template</h3>
+            <TemplatePicker templates={templates} onPick={adopt} busy={busy} />
+          </section>
+        </div>
       ) : (
-        <PlaybookEditor playbook={companyWide!} onSaved={load} onReset={() => setPickMode(true)} />
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {playbooks.map(p => {
+            const f = fnOf(p.function_key)
+            return (
+              <div key={p.id} className={`rounded-2xl border bg-white p-5 ${p.is_active ? 'border-gray-200' : 'border-gray-200 opacity-70'}`}>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="truncate font-semibold text-gray-900">{f.icon} {p.agent_name}</p>
+                    <p className="text-xs text-gray-500">{f.label} · {channelText(p.channels)}{p.session_id ? ` · ${p.session_id}` : ''}</p>
+                  </div>
+                  <button role="switch" aria-checked={p.is_active} aria-label={`${p.agent_name} on/off`} onClick={() => toggle(p)}
+                    className={`relative h-6 w-11 flex-shrink-0 rounded-full transition-colors ${p.is_active ? 'bg-green-500' : 'bg-gray-300'}`}>
+                    <span className={`absolute top-1 h-4 w-4 rounded-full bg-white transition-all ${p.is_active ? 'left-6' : 'left-1'}`} />
+                  </button>
+                </div>
+                <p className={`mt-2 text-xs font-medium ${p.is_active ? 'text-green-700' : 'text-gray-400'}`}>{p.is_active ? 'On — answering messages' : 'Off'}</p>
+                <div className="mt-4 flex gap-2">
+                  <button onClick={() => setSelectedId(p.id)} className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm hover:bg-gray-50">Edit</button>
+                  <button onClick={() => remove(p)} className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50">Delete</button>
+                </div>
+              </div>)
+          })}
+        </div>
       )}
     </div>
   )

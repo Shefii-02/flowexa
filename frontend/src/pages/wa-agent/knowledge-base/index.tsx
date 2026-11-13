@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
+import AgentScopeBar, { useAgentScope } from '@/components/ai/AgentScope'
 import { api } from '@/api/client'
 import { toast } from 'react-hot-toast'
 
@@ -27,6 +28,7 @@ const STATUS_COLORS: Record<string, string> = {
 }
 
 export default function KnowledgeBasePage() {
+  const agentScope = useAgentScope()
   const [items, setItems]     = useState<KB[]>([])
   const [loading, setLoading] = useState(true)
   const [modal, setModal]     = useState<'text' | 'url' | 'file' | null>(null)
@@ -50,12 +52,12 @@ export default function KnowledgeBasePage() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await api.get('/wa-agent/knowledge-base')
+      const res = await api.get('/wa-agent/knowledge-base', { params: agentScope.listParams })
       setItems(res.data)
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [agentScope.scope])
 
   useEffect(() => { load() }, [load])
 
@@ -72,6 +74,7 @@ export default function KnowledgeBasePage() {
           description: form.description,
           document_type: 'text',
           raw_content: form.content,
+          agent_id: agentScope.newAgentId,
         })
       } else if (modal === 'url') {
         if (!form.url) { setErr('URL is required.'); setSaving(false); return }
@@ -80,12 +83,14 @@ export default function KnowledgeBasePage() {
           description: form.description,
           document_type: 'url',
           source_url: form.url,
+          agent_id: agentScope.newAgentId,
         })
       } else if (modal === 'file') {
         if (!file) { setErr('File is required.'); setSaving(false); return }
         const fd = new FormData()
         fd.append('name', form.name)
         fd.append('file', file)
+        if (agentScope.newAgentId) fd.append('agent_id', String(agentScope.newAgentId))
         await api.post('/wa-agent/knowledge-base/upload', fd, {
           headers: { 'Content-Type': 'multipart/form-data' },
         })
@@ -225,7 +230,7 @@ export default function KnowledgeBasePage() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-xl font-bold text-gray-900">Knowledge Base</h1>
-          <p className="text-sm text-gray-500 mt-1">Documents used by the AI agent to answer questions</p>
+          <p className="text-sm text-gray-500 mt-1">The rule book each AI agent answers from — shared documents, or a private set per agent</p>
         </div>
         <div className="flex flex-wrap gap-2 justify-end">
           <button
@@ -271,6 +276,8 @@ export default function KnowledgeBasePage() {
             + Upload File
           </button>
         </div>
+
+      <AgentScopeBar agents={agentScope.agents} scope={agentScope.scope} setScope={agentScope.setScope} what="documents" />
       </div>
 
       {loading ? (

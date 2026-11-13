@@ -17,9 +17,18 @@ use Illuminate\Support\Facades\Storage;
 
 class KnowledgeBaseController extends Controller
 {
-    public function index(): JsonResponse
+    /** An agent id must belong to this company; null = shared with every agent. */
+    private function ownAgentId(?int $id, int $companyId): ?int
+    {
+        if (!$id) { return null; }
+        abort_unless(\App\Modules\WaChat\Models\AgentPlaybook::where('company_id', $companyId)->whereKey($id)->exists(), 422, 'Unknown agent.');
+        return $id;
+    }
+
+    public function index(Request $request): JsonResponse
     {
         $items = AiKnowledgeBase::where('company_id', Auth::user()->company_id)
+            ->when($request->filled('agent_id'), fn ($q) => $request->query('agent_id') === 'shared' ? $q->whereNull('agent_id') : $q->where('agent_id', (int) $request->query('agent_id')))
             ->orderBy('created_at', 'desc')
             ->get();
 
@@ -34,9 +43,11 @@ class KnowledgeBaseController extends Controller
             'document_type' => 'required|in:text,url,file',
             'raw_content'   => 'required_if:document_type,text|nullable|string',
             'source_url'    => 'required_if:document_type,url|nullable|url',
+            'agent_id'      => 'nullable|integer',
         ]);
 
         $companyId = Auth::user()->company_id;
+        $data['agent_id'] = $this->ownAgentId($data['agent_id'] ?? null, $companyId);
 
         $kb = AiKnowledgeBase::create(array_merge($data, [
             'company_id' => $companyId,
@@ -53,6 +64,7 @@ class KnowledgeBaseController extends Controller
         $request->validate([
             'name'  => 'required|string|max:120',
             'file'  => 'required|file|mimes:txt,pdf,doc,docx|max:5120',
+            'agent_id' => 'nullable|integer',
         ]);
 
         $companyId = Auth::user()->company_id;
@@ -60,6 +72,7 @@ class KnowledgeBaseController extends Controller
 
         $kb = AiKnowledgeBase::create([
             'company_id'    => $companyId,
+            'agent_id'      => $this->ownAgentId($request->integer('agent_id') ?: null, $companyId),
             'name'          => $request->name,
             'document_type' => 'file',
             'file_path'     => $path,
@@ -96,7 +109,9 @@ class KnowledgeBaseController extends Controller
             'description' => 'nullable|string|max:500',
             'raw_content' => 'sometimes|string',
             'source_url'  => 'nullable|url',
+            'agent_id'    => 'nullable|integer',
         ]);
+        if (array_key_exists('agent_id', $data)) { $data['agent_id'] = $this->ownAgentId($data['agent_id'], Auth::user()->company_id); }
 
         $kb->update($data);
 
