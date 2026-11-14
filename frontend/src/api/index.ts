@@ -391,6 +391,7 @@ export const superadminApi = {
   clearSystemLog: (file: string) => api.delete('/superadmin/system-log', { params: { file } }),
   impersonate: (id: number) => api.post(`/superadmin/companies/${id}/impersonate`),
   plans: () => api.get('/superadmin/plans'),
+  planOverview: (id: number) => api.get(`/superadmin/companies/${id}/plan-overview`),
   createPlan: (d: Record<string, unknown>) => api.post('/superadmin/plans', d),
   updatePlan: (id: number, d: Record<string, unknown>) => api.put(`/superadmin/plans/${id}`, d),
   users: (p?: Record<string, unknown>) => api.get('/superadmin/users', { params: p }),

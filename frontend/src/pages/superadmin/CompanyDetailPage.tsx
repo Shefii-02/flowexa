@@ -9,6 +9,8 @@ import { superadminApi } from '@/api'
 import { Button, Input, Badge, ConfirmModal, Modal, Spinner } from '@/components/ui'
 import { fmt, getError } from '@/utils'
 import toast from 'react-hot-toast'
+import CompanyPlanOverview from './CompanyPlanOverview'
+import CompanyActivityPanel from './CompanyActivityPanel'
 
 const INDUSTRY_TYPES = [
   { value: 'generic',       label: 'Other / general business' },
@@ -259,8 +261,8 @@ export default function CompanyDetailPage() {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="card p-4">
           <p className="stat-label">Owner</p>
-          <p className="font-medium text-gray-900">{company.users?.find((u: any) => u.role?.name === 'owner')?.name ?? '—'}</p>
-          <p className="text-xs text-gray-400">{company.users?.find((u: any) => u.role?.name === 'owner')?.email ?? ''}</p>
+          <p className="font-medium text-gray-900">{(company.users?.find((u: any) => u.role?.name === 'owner') ?? company.users?.[0])?.name ?? '—'}</p>
+          <p className="text-xs text-gray-400">{(company.users?.find((u: any) => u.role?.name === 'owner') ?? company.users?.[0])?.email ?? ''}</p>
         </div>
         <div className="card p-4">
           <p className="stat-label">Plan</p>
@@ -277,6 +279,8 @@ export default function CompanyDetailPage() {
         </div>
       </div>
 
+      <CompanyPlanOverview companyId={companyId} onChanged={load} />
+
       {/* Usage */}
       <div className="card">
         <div className="card-header"><h3 className="card-title">Usage</h3></div>
@@ -285,6 +289,8 @@ export default function CompanyDetailPage() {
           <UsageBar label="WA Chat media" used={cfg.waha_media_used_mb ?? 0} limit={cfg.waha_media_limit_mb ?? 0} format={(n) => `${fmt.number(n)} MB`} />
         </div>
       </div>
+
+      <CompanyActivityPanel companyId={companyId} />
 
       {/* General */}
       <Section title="General" footer={<Button size="sm" loading={savingSection === 'General'} onClick={saveGeneral}>Save General</Button>}>

@@ -198,6 +198,7 @@ Route::prefix('v1')->group(function () {
                 Route::delete('companies/{company}',           [SuperAdminController::class, 'deleteCompany'])->name('companies.destroy');
                 Route::post('companies/{company}/top-up',      [SuperAdminController::class, 'topUp'])->name('companies.top-up');
                 Route::post('companies/{company}/reset-api-key', [SuperAdminController::class, 'resetApiKey'])->name('companies.reset-api-key');
+                Route::get('companies/{company}/plan-overview', [SuperAdminController::class, 'planOverview'])->name('companies.plan-overview');
                 Route::get('companies/{company}/config',       [SuperAdminController::class, 'showCompanyConfig'])->name('companies.config.show');
                 Route::put('companies/{company}/config',       [SuperAdminController::class, 'updateCompanyConfig'])->name('companies.config.update');
                 Route::get('companies/{company}/wa-chat/status',    [SuperAdminController::class, 'waChatStatus'])->name('companies.wa-chat.status');

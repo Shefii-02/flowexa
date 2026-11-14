@@ -56,7 +56,7 @@ export default function ErrorLogsPage() {
     setLoading(true)
     superadminApi.errorLogs({
       source,
-      company_id: !isNode && companyId ? companyId : undefined,
+      company_id: companyId || undefined,
       exception: !isNode && exceptionFilter ? exceptionFilter : undefined,
       search: !isNode && search ? search : undefined,
       page,

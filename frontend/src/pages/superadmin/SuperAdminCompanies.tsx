@@ -89,6 +89,14 @@ export default function SuperAdminCompanies() {
 
   const [editingCompany, setEditingCompany] = useState<Company | null>(null)
   const [openMenuId, setOpenMenuId] = useState<number | null>(null)
+  // The actions menu is fixed to the screen (not the table cell), so a scrolling / clipping table can never hide Edit or View.
+  const [menuPos, setMenuPos] = useState<{ top: number; left: number }>({ top: 0, left: 0 })
+  useEffect(() => {
+    if (openMenuId === null) return
+    const close = () => setOpenMenuId(null)
+    window.addEventListener('scroll', close, true); window.addEventListener('resize', close)
+    return () => { window.removeEventListener('scroll', close, true); window.removeEventListener('resize', close) }
+  }, [openMenuId])
 
   const [resetKeyFor, setResetKeyFor] = useState<Company | null>(null)
   const [resettingKey, setResettingKey] = useState(false)
@@ -709,13 +717,12 @@ export default function SuperAdminCompanies() {
                       <td className="relative">
 
                         <button
-                          onClick={() =>
-                            setOpenMenuId(
-                              openMenuId === company.id
-                                ? null
-                                : company.id
-                            )
-                          }
+                          onClick={(event) => {
+                            const r = event.currentTarget.getBoundingClientRect()
+                            const menuH = 340                                   // tall menu: open upward when there is no room below
+                            setMenuPos({ top: r.bottom + menuH > window.innerHeight ? Math.max(8, r.top - menuH) : r.bottom + 4, left: Math.max(8, r.right - 176) })
+                            setOpenMenuId(openMenuId === company.id ? null : company.id)
+                          }}
                           className="px-3 py-1.5 border border-gray-200 rounded-md text-sm hover:bg-gray-50"
                         >
                           Actions
@@ -726,7 +733,7 @@ export default function SuperAdminCompanies() {
 
                         {openMenuId === company.id && (
 
-                          <div className="absolute right-0 top-9 z-30 w-40 bg-white border border-gray-200 rounded-lg shadow-lg py-1">
+                          <div style={{ top: menuPos.top, left: menuPos.left }} className="fixed z-50 w-44 max-h-[80vh] overflow-y-auto bg-white border border-gray-200 rounded-lg shadow-lg py-1">
 
                             {/* View / Config */}
                             <Link

@@ -35,14 +35,12 @@ class SuperAdminCompanyResource extends JsonResource
                 'is_low' => $this->wallet->is_low,
             ]),
 
-            'company_owner' => $this->whenLoaded('companyOwner', fn () =>
-                $this->companyOwner ? [
-                    'id' => $this->companyOwner->id,
-                    'name' => $this->companyOwner->name,
-                    'email' => $this->companyOwner->email,
-                    'phone' => $this->companyOwner->phone,
-                ] : null
-            ),
+            // The owner-role user; a company whose owner has a different role name still shows its first user, so the edit form is never blank.
+            'company_owner' => $this->whenLoaded('companyOwner', function () {
+                $o = $this->companyOwner ?? $this->users()->orderBy('id')->first();
+                return $o ? ['id' => $o->id, 'name' => $o->name, 'email' => $o->email, 'phone' => $o->phone] : null;
+            }),
+            'plan_expires_at' => $this->plan_expires_at,
 
             'wa_connected' => $this->wa_connected,
         ];

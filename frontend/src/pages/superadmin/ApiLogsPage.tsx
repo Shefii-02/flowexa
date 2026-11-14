@@ -54,7 +54,7 @@ export default function ApiLogsPage() {
 
   const filters = useCallback(() => ({
     source,
-    company_id: !isNode && companyId ? companyId : undefined,
+    company_id: companyId || undefined,
     method: !isNode && method ? method : undefined,
     activity_only: !isNode && activityOnly ? activityOnly : undefined,
     is_error: !isNode && errorOnly ? '1' : undefined,
@@ -67,7 +67,7 @@ export default function ApiLogsPage() {
     setLoading(true)
     Promise.all([
       superadminApi.apiLogs(filters()),
-      superadminApi.apiLogStats({ source, company_id: !isNode && companyId ? companyId : undefined, days: 7 }),
+      superadminApi.apiLogStats({ source, company_id: companyId || undefined, days: 7 }),
     ]).then(([logs, s]) => {
       setRows(logs.data.data ?? [])
       setTotal(logs.data.total ?? 0)

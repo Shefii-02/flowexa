@@ -59,6 +59,34 @@ class SuperAdminController extends Controller
         );
     }
 
+    /** GET /superadmin/companies/{company}/plan-overview — what the company's plan (and add-ons) give it, and how much it has used. */
+    public function planOverview(Company $company): JsonResponse
+    {
+        $plan = $company->plan;
+        $e = \App\Support\Entitlements::forCompany($company);
+        $usage = $plan ? \App\Support\PlanLimits::usage($company->id, $plan) : [];
+        $addons = \App\Models\CompanyAddon::with('addon')->where('company_id', $company->id)->latest()->limit(30)->get()
+            ->map(fn ($a) => ['id' => $a->id, 'name' => $a->addon?->name, 'type' => $a->addon?->type, 'status' => $a->isActive() ? 'active' : 'expired',
+                'billing_cycle' => $a->billing_cycle, 'amount_paid' => (float) $a->amount_paid, 'starts_at' => $a->starts_at, 'expires_at' => $a->expires_at]);
+        $payments = \App\Models\PaymentOrder::where('company_id', $company->id)->where('status', 'paid')->latest()->limit(10)
+            ->get(['id', 'purpose', 'gateway', 'method', 'amount', 'discount', 'coupon_code', 'paid_at', 'created_at']);
+        $current = \App\Models\CompanyPlan::where('company_id', $company->id)->where('status', 'active')->latest()->first();
+
+        return response()->json([
+            'plan' => $plan ? array_merge($plan->only(['id', 'name', 'price', 'price_yearly', 'duration_type', 'is_public', 'archived_at', 'deleted_at', 'messages_limit', 'lead_assign_methods']),
+                ['archived' => (bool) $plan->archived_at, 'removed' => $plan->trashed()]) : null,
+            'subscription' => ['status' => $company->status, 'plan_expires_at' => $company->plan_expires_at, 'trial_ends_at' => $company->trial_ends_at,
+                'duration_type' => $current?->duration_type, 'amount_paid' => $current ? (float) $current->amount_paid : null, 'started_at' => $current?->starts_at],
+            'modules'  => collect(\App\Support\Modules::catalog())->map(fn ($m) => $m + [
+                'enabled' => $e['all'] || in_array($m['key'], $e['modules'], true),
+                'source'  => in_array($m['key'], $e['from_addons'], true) ? 'addon' : (in_array($m['key'], $e['from_plan'], true) ? 'plan' : null),
+            ])->values(),
+            'usage'    => collect($usage)->values(),
+            'addons'   => $addons,
+            'payments' => $payments,
+        ]);
+    }
+
     public function showCompany(Company $company): JsonResponse
     {
         return response()->json(['company' => $company->load(['plan', 'wallet', 'users.role'])]);
@@ -285,7 +313,10 @@ class SuperAdminController extends Controller
         $page    = max(1, (int) $request->input('page', 1));
 
         try {
-            $result = $waChatTokens->gatewayActivity($perPage, ($page - 1) * $perPage);
+            // One company's own slice (its WA Chat sessions only) when company_id is given; the whole gateway otherwise.
+            $result = $request->filled('company_id')
+                ? $waChatTokens->gatewayAudit(Company::findOrFail((int) $request->input('company_id')), null, $perPage, ($page - 1) * $perPage)
+                : $waChatTokens->gatewayActivity($perPage, ($page - 1) * $perPage);
         } catch (\Throwable $e) {
             return response()->json(['message' => $e->getMessage()], 502);
         }
@@ -354,7 +385,9 @@ class SuperAdminController extends Controller
         $page    = max(1, (int) $request->input('page', 1));
 
         try {
-            $result = $waChatTokens->gatewayErrors($perPage, ($page - 1) * $perPage);
+            $result = $request->filled('company_id')
+                ? $waChatTokens->gatewayAudit(Company::findOrFail((int) $request->input('company_id')), 'error', $perPage, ($page - 1) * $perPage)
+                : $waChatTokens->gatewayErrors($perPage, ($page - 1) * $perPage);
         } catch (\Throwable $e) {
             return response()->json(['message' => $e->getMessage()], 502);
         }
