@@ -1037,13 +1037,13 @@ export default function SuperAdminCompanies() {
                 — Select plan —
               </option>
 
-              {plans.filter((plan) => !plan.deleted_at || String(plan.id) === form.plan_id).map((plan) => (
+              {plans.filter((plan) => (!plan.deleted_at && !plan.archived_at) || String(plan.id) === form.plan_id).map((plan) => (
 
                 <option
                   key={plan.id}
                   value={plan.id}
                 >
-                  {plan.name} (
+                  {plan.name}{plan.is_public === false ? ' · private' : ''} (
                   ₹{plan.price}
                   )
                 </option>

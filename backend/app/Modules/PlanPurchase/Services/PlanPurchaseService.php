@@ -17,13 +17,13 @@ class PlanPurchaseService
     // ── Public plan list ──────────────────────────────────────────────────────
     public function publicPlans(): \Illuminate\Database\Eloquent\Collection
     {
-        return Plan::where('is_active', true)->where('is_custom', false)->where('price', '>', 0)->orderBy('sort_order')->orderBy('price')->get();
+        return Plan::purchasable()->where('price', '>', 0)->orderBy('sort_order')->orderBy('price')->get();
     }
 
     // ── Active plans for company ──────────────────────────────────────────────
     public function activePlans(): \Illuminate\Database\Eloquent\Collection
     {
-        return Plan::where('is_active', true)->where('is_custom', false)->where('price', '>', 0)->orderBy('price')->get();
+        return Plan::purchasable()->where('price', '>', 0)->orderBy('sort_order')->orderBy('price')->get();
     }
 
     // ── Current plan for company ──────────────────────────────────────────────
@@ -97,6 +97,12 @@ class PlanPurchaseService
     public function createPlanOrder(int $companyId, int $userId, int $planId, string $durationType, ?string $couponCode = null): array
     {
         $user = auth()->user();
+
+        // A private or archived plan can only be given by staff — unless the company is already on it (renewal).
+        $target = Plan::findOrFail($planId);
+        if (!$target->isPurchasable() && Company::whereKey($companyId)->value('plan_id') !== $target->id) {
+            throw \Illuminate\Validation\ValidationException::withMessages(['plan_id' => 'This plan is not available for purchase.']);
+        }
 
         // Guard: block a downgrade while current usage still exceeds the
         // target plan's limits (mirrors PlanLimitMiddleware at create time).

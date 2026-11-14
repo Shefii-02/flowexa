@@ -160,8 +160,19 @@ class PlanPurchaseController extends Controller
             'lead_assign_methods' => ['nullable', 'array'], 'lead_assign_methods.*' => ['string', \Illuminate\Validation\Rule::in(array_keys(\App\Support\Modules::ASSIGN_METHODS))],
             'google_sheets_enabled' => ['nullable', 'boolean'], 'google_drive_enabled' => ['nullable', 'boolean'],
             'calendar_enabled' => ['nullable', 'boolean'], 'email_integration_enabled' => ['nullable', 'boolean'],
-            'is_active' => ['nullable', 'boolean'], 'is_popular' => ['nullable', 'boolean'], 'sort_order' => ['nullable', 'integer'],
+            'is_active' => ['nullable', 'boolean'], 'is_public' => ['nullable', 'boolean'], 'archived' => ['nullable', 'boolean'], 'is_popular' => ['nullable', 'boolean'], 'sort_order' => ['nullable', 'integer'],
         ];
+    }
+
+    /** The form's "archived" switch becomes archived_at; an archived plan is also never public. */
+    private function visibility(array $d): array
+    {
+        if (array_key_exists('archived', $d)) {
+            $d['archived_at'] = $d['archived'] ? now() : null;
+            if ($d['archived']) { $d['is_public'] = false; }
+            unset($d['archived']);
+        }
+        return $d;
     }
 
     public function superAdminCreatePlan(Request $request): JsonResponse
@@ -169,13 +180,13 @@ class PlanPurchaseController extends Controller
         $d = $request->validate($this->planRules(false));
         // A brand-new plan lists its modules explicitly (an empty list = none), unlike old plans where NULL meant "all".
         $d['modules'] = $d['modules'] ?? [];
-        return response()->json(['plan' => Plan::create($d)], 201);
+        return response()->json(['plan' => Plan::create($this->visibility($d))], 201);
     }
 
     public function superAdminUpdatePlan(Request $request, int $id): JsonResponse
     {
         $plan = Plan::findOrFail($id);
-        $plan->update($request->validate($this->planRules(true)));
+        $plan->update($this->visibility($request->validate($this->planRules(true))));
         \App\Support\Entitlements::forget();
         return response()->json(['plan' => $plan->fresh()]);
     }

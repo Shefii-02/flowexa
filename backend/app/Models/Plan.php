@@ -22,7 +22,7 @@ class Plan extends Model
         'max_leads_per_month', 'max_lead_categories', 'max_roles',
         'max_instagram_accounts', 'max_instagram_automations', 'max_instagram_dms_monthly', 'max_meta_ads_accounts', 'max_website_widgets',
         'google_sheets_enabled', 'google_drive_enabled', 'calendar_enabled', 'email_integration_enabled',
-        'modules', 'lead_assign_methods', 'max_media_storage_mb', 'max_campaigns_per_month', 'max_surveys', 'max_short_links', 'sort_order', 'is_popular',
+        'is_public', 'archived_at', 'modules', 'lead_assign_methods', 'max_media_storage_mb', 'max_campaigns_per_month', 'max_surveys', 'max_short_links', 'sort_order', 'is_popular',
     ];
 
     protected $appends = ['yearly_price', 'sections'];
@@ -32,6 +32,8 @@ class Plan extends Model
         'modules'               => 'array',
         'lead_assign_methods'   => 'array',
         'is_popular'            => 'boolean',
+        'is_public'             => 'boolean',
+        'archived_at'           => 'datetime',
         'max_media_storage_mb'  => 'integer',
         'max_campaigns_per_month' => 'integer',
         'max_surveys'           => 'integer',
@@ -75,6 +77,17 @@ class Plan extends Model
     public function getSectionsAttribute(): array
     {
         return \App\Support\PlanLimits::sectionsFor($this);
+    }
+
+    /** Plans anyone may buy: on sale, public, not archived and not a one-off custom plan. */
+    public function scopePurchasable($q)
+    {
+        return $q->where('is_active', true)->where('is_custom', false)->where('is_public', true)->whereNull('archived_at');
+    }
+
+    public function isPurchasable(): bool
+    {
+        return $this->is_active && !$this->is_custom && $this->is_public && $this->archived_at === null;
     }
 
     /** Module keys this plan switches on (see App\Support\Modules). NULL on the row = every module (plans that pre-date toggles). */

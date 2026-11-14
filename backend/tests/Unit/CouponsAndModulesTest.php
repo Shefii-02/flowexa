@@ -23,7 +23,7 @@ class CouponsAndModulesTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        Schema::create('plans', function ($t) { $t->id(); $t->string('name'); $t->decimal('price', 10, 2)->default(0); $t->decimal('price_yearly', 10, 2)->nullable(); $t->unsignedInteger('max_campaigns')->nullable(); $t->unsignedInteger('max_website_widgets')->nullable(); $t->boolean('is_active')->default(true); $t->json('features')->nullable(); $t->timestamps(); });
+        Schema::create('plans', function ($t) { $t->id(); $t->string('name'); $t->decimal('price', 10, 2)->default(0); $t->decimal('price_yearly', 10, 2)->nullable(); $t->unsignedInteger('max_campaigns')->nullable(); $t->unsignedInteger('max_website_widgets')->nullable(); $t->boolean('is_active')->default(true); $t->boolean('is_custom')->default(false); $t->json('features')->nullable(); $t->timestamps(); });
         Schema::create('companies', function ($t) { $t->id(); $t->string('name')->nullable(); $t->string('status')->default('active'); $t->unsignedBigInteger('plan_id')->nullable(); $t->timestamp('plan_expires_at')->nullable(); $t->timestamps(); $t->softDeletes(); });
         Schema::create('addons', function ($t) { $t->id(); $t->string('name'); $t->string('type')->default('limit'); $t->decimal('price', 10, 2)->default(0); $t->decimal('price_yearly', 10, 2)->nullable(); $t->string('billing_cycle')->default('monthly'); $t->json('config')->nullable(); $t->boolean('is_active')->default(true); $t->timestamps(); });
         Schema::create('company_addons', function ($t) { $t->id(); $t->unsignedBigInteger('company_id'); $t->unsignedBigInteger('addon_id'); $t->unsignedBigInteger('payment_order_id')->nullable(); $t->decimal('amount_paid', 10, 2)->default(0); $t->string('status')->default('active'); $t->string('billing_cycle')->default('monthly'); $t->timestamp('starts_at')->nullable(); $t->timestamp('expires_at')->nullable(); $t->timestamps(); });
@@ -31,6 +31,7 @@ class CouponsAndModulesTest extends TestCase
         Schema::create('company_plans', function ($t) { $t->id(); $t->unsignedBigInteger('company_id'); $t->unsignedBigInteger('plan_id'); $t->unsignedBigInteger('payment_order_id')->nullable(); $t->string('duration_type')->nullable(); $t->integer('duration_months')->nullable(); $t->decimal('amount_paid', 10, 2)->default(0); $t->string('status')->default('active'); $t->timestamp('starts_at')->nullable(); $t->timestamp('expires_at')->nullable(); $t->timestamp('cancelled_at')->nullable(); $t->text('notes')->nullable(); $t->timestamps(); });
         foreach (['max_surveys', 'max_short_links'] as $c) { /* added by the migration under test */ }
         (include database_path('migrations/2026_11_13_000001_plan_modules_coupons_and_revenue.php'))->up();
+        (include database_path('migrations/2026_11_14_000003_add_visibility_to_plans.php'))->up();
         Entitlements::forget();
     }
 
@@ -118,5 +119,20 @@ class CouponsAndModulesTest extends TestCase
         $this->assertNotNull($c->fresh()->plan);
         $this->assertTrue(Entitlements::has($c->fresh(), 'hr'));
         $this->assertSame(0, Plan::count());
+    }
+
+    #[Test]
+    public function private_and_archived_plans_are_not_offered_but_still_serve_their_companies(): void
+    {
+        $public  = $this->plan(['name' => 'Public']);
+        $private = $this->plan(['name' => 'Private', 'is_public' => false]);
+        $old     = $this->plan(['name' => 'Old', 'archived_at' => now()]);
+        $this->assertSame(['Public'], Plan::purchasable()->pluck('name')->all());
+        $this->assertFalse($private->fresh()->isPurchasable() || $old->fresh()->isPurchasable());
+        $this->assertTrue($public->fresh()->isPurchasable());
+
+        $c = $this->company($private);                       // staff-assigned: keeps working
+        $this->assertSame('Private', $c->fresh()->plan->name);
+        $this->assertSame(3, Plan::count(), 'still visible to the admin side');
     }
 }

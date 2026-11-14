@@ -19,11 +19,13 @@ const LIMIT_BLOCKS: { id: string; title: string; icon: string; module: string | 
     { key: 'max_users', label: 'Staff users' }, { key: 'max_roles', label: 'Roles' },
     { key: 'max_media_storage_mb', label: 'Media storage (MB)' }, { key: 'max_short_links', label: 'Short links' } ] },
   { id: 'wa_chat', title: 'WA Chat', icon: '💬', module: 'wa_chat', fields: [
-    { key: 'max_wa_sessions', label: 'WhatsApp sessions' }, { key: 'max_campaigns_per_month', label: 'Campaigns per month' },
-    { key: 'max_campaign_contacts', label: 'Max recipients per campaign', hint: 'campaign sending numbers' }, { key: 'max_campaigns', label: 'Campaigns in total' } ] },
+    { key: 'max_wa_sessions', label: 'WhatsApp sessions' } ] },
   { id: 'wa_cloud', title: 'WA Cloud', icon: '☁️', module: 'wa_cloud', fields: [
     { key: 'max_phone_numbers', label: 'Phone numbers' }, { key: 'max_templates', label: 'Templates' },
-    { key: 'max_surveys', label: 'Survey forms' }, { key: 'max_flow_nodes', label: 'Flow builder nodes' } ] },
+    { key: 'max_surveys', label: 'Survey forms' }, { key: 'max_flow_nodes', label: 'Flow builder nodes' },
+    { key: 'max_campaigns_per_month', label: 'Campaigns per month' },
+    { key: 'max_campaign_contacts', label: 'Max recipients per campaign', hint: 'how many numbers one campaign may send to' },
+    { key: 'max_campaigns', label: 'Campaigns in total' } ] },
   { id: 'crm', title: 'CRM', icon: '🗂️', module: 'crm', fields: [ { key: 'max_contacts', label: 'Contacts' }, { key: 'max_labels', label: 'Labels' } ] },
   { id: 'leads', title: 'Leads', icon: '🎯', module: 'leads', fields: [ { key: 'max_leads_per_month', label: 'Leads per month' }, { key: 'max_lead_categories', label: 'Lead categories' } ] },
   { id: 'social', title: 'Instagram & Facebook DM', icon: '📸', module: 'social_dm', fields: [
@@ -39,12 +41,12 @@ const INTEGRATIONS = [
 
 type Form = {
   name: string; price: string; price_yearly: string; duration_type: string; duration_months: string; messages_limit: string; throttle_per_minute: string
-  alert_before_days: string; highlights: string; is_active: boolean; is_popular: boolean; sort_order: string
+  alert_before_days: string; highlights: string; is_active: boolean; is_public: boolean; archived: boolean; is_popular: boolean; sort_order: string
   modules: string[]; lead_assign_methods: string[]; integrations: Record<string, boolean>; limits: Record<string, string>
 }
 const EMPTY: Form = {
   name: '', price: '499', price_yearly: '', duration_type: 'monthly', duration_months: '1', messages_limit: '1000', throttle_per_minute: '60',
-  alert_before_days: '7', highlights: '', is_active: true, is_popular: false, sort_order: '0',
+  alert_before_days: '7', highlights: '', is_active: true, is_public: true, archived: false, is_popular: false, sort_order: '0',
   modules: [], lead_assign_methods: ['manual', 'round_robin'], integrations: {}, limits: {},
 }
 
@@ -97,7 +99,7 @@ export default function SuperAdminPlans() {
       name: p.name ?? '', price: String(p.price ?? ''), price_yearly: p.price_yearly != null ? String(p.price_yearly) : '',
       duration_type: p.duration_type ?? 'monthly', duration_months: String(p.duration_months ?? 1), messages_limit: String(p.messages_limit ?? 0),
       throttle_per_minute: String(p.throttle_per_minute ?? 60), alert_before_days: String(p.alert_before_days ?? 7),
-      highlights: Array.isArray(p.features) ? p.features.join('\n') : '', is_active: !!p.is_active, is_popular: !!p.is_popular, sort_order: String(p.sort_order ?? 0),
+      highlights: Array.isArray(p.features) ? p.features.join('\n') : '', is_active: !!p.is_active, is_public: p.is_public !== false, archived: !!p.archived_at, is_popular: !!p.is_popular, sort_order: String(p.sort_order ?? 0),
       // an old plan with no module list had everything on — show it that way so saving does not silently drop features
       modules: p.modules ?? mods.map(m => m.key), lead_assign_methods: p.lead_assign_methods ?? methods.map(m => m.key),
       integrations: Object.fromEntries(INTEGRATIONS.map(i => [i.key, !!p[i.key]])),
@@ -113,7 +115,7 @@ export default function SuperAdminPlans() {
       duration_type: form.duration_type, duration_months: form.duration_months ? +form.duration_months : null,
       messages_limit: +form.messages_limit || 0, throttle_per_minute: +form.throttle_per_minute || 60, alert_before_days: +form.alert_before_days || 7,
       features: form.highlights.split('\n').map(s => s.trim()).filter(Boolean),
-      is_active: form.is_active, is_popular: form.is_popular, sort_order: +form.sort_order || 0,
+      is_active: form.is_active, is_public: form.is_public && !form.archived, archived: form.archived, is_popular: form.is_popular, sort_order: +form.sort_order || 0,
       modules: form.modules, lead_assign_methods: form.lead_assign_methods, ...form.integrations,
     }
     LIMIT_KEYS.forEach(k => { payload[k] = form.limits[k] === '' || form.limits[k] === undefined ? null : +form.limits[k] })
@@ -151,7 +153,11 @@ export default function SuperAdminPlans() {
               <div key={p.id} className={`card flex flex-col p-5 ${!p.is_active ? 'opacity-60' : ''}`}>
                 <div className="mb-3 flex items-center justify-between">
                   <h3 className="font-semibold text-gray-900">{p.name}{p.is_popular && <span className="ml-2 text-xs text-amber-600">★ popular</span>}</h3>
-                  <Badge variant={p.is_active ? 'green' : 'gray'}>{p.is_active ? 'Active' : 'Hidden'}</Badge>
+                  <span className="flex gap-1">
+                    {p.archived_at && <Badge variant="red">Archived</Badge>}
+                    {!p.archived_at && p.is_public === false && <Badge variant="purple">Private</Badge>}
+                    <Badge variant={p.is_active ? 'green' : 'gray'}>{p.is_active ? 'Active' : 'Off'}</Badge>
+                  </span>
                 </div>
                 <p className="text-2xl font-bold text-gray-900">₹{fmt.number(p.price)}<span className="text-sm font-normal text-gray-400">/{p.duration_type === 'monthly' ? 'mo' : p.duration_type}</span></p>
                 <p className="text-xs text-gray-500">{p.price_yearly != null ? `₹${fmt.number(p.price_yearly)}/year` : `₹${fmt.number(Math.round(p.price * 12 * 0.8))}/year (12 months − 20%)`}</p>
@@ -190,9 +196,11 @@ export default function SuperAdminPlans() {
             </div>
             <label className="block text-sm font-medium text-gray-700">Highlights shown on the plan card <span className="font-normal text-gray-400">(one per line)</span>
               <textarea className="input mt-1 w-full" rows={3} value={form.highlights} onChange={e => set('highlights', e.target.value)} placeholder={'Priority support\nFree onboarding call'} /></label>
-            <div className="flex gap-6 text-sm">
-              <label className="flex items-center gap-2"><input type="checkbox" checked={form.is_active} onChange={e => set('is_active', e.target.checked)} /> Available to buy</label>
-              <label className="flex items-center gap-2"><input type="checkbox" checked={form.is_popular} onChange={e => set('is_popular', e.target.checked)} /> Mark as popular</label>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <Toggle on={form.is_active} onChange={v => set('is_active', v)} label="Available to buy" sub="Off = nobody can buy it, even if public" />
+              <Toggle on={form.is_public && !form.archived} onChange={v => set('is_public', v)} label="Show publicly" sub={form.archived ? 'Archived plans are never public' : 'Pricing page, sign-up and every company’s upgrade list. Off = private: only you can assign it'} />
+              <Toggle on={form.archived} onChange={v => set('archived', v)} label="Archived" sub="Admin side only. Companies already on it keep it; nobody new can get it" />
+              <Toggle on={form.is_popular} onChange={v => set('is_popular', v)} label="Mark as popular" />
             </div>
           </Section>
 

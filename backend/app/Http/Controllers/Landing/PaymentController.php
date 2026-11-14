@@ -36,6 +36,7 @@ class PaymentController extends Controller
         $svc   = app(PlanPurchaseService::class);
         $quote = $svc->quotePlan(null, (int) $d['plan_id'], $d['duration_type'], $d['coupon_code'] ?? null, $d['email']);
         $plan  = $quote['plan'];
+        abort_unless($plan->isPurchasable(), 422, 'This plan is not available for purchase.');
         $price = $quote['final'];
 
         // A coupon that covers everything: no gateway, the account is created right away.

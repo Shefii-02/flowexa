@@ -8,7 +8,7 @@ class HomeController extends Controller
 {
     public function index()
     {
-        $plans = Plan::where('is_active', true)->where('is_custom', false)->orderBy('price')->get();
+        $plans = Plan::purchasable()->orderBy('price')->get();
         return view('landing.home', compact('plans'));
     }
 
