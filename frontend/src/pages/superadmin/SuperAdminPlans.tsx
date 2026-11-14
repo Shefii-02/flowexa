@@ -19,7 +19,10 @@ const LIMIT_BLOCKS: { id: string; title: string; icon: string; module: string | 
     { key: 'max_users', label: 'Staff users' }, { key: 'max_roles', label: 'Roles' },
     { key: 'max_media_storage_mb', label: 'Media storage (MB)' }, { key: 'max_short_links', label: 'Short links' } ] },
   { id: 'wa_chat', title: 'WA Chat', icon: '💬', module: 'wa_chat', fields: [
-    { key: 'max_wa_sessions', label: 'WhatsApp sessions' } ] },
+    { key: 'max_wa_sessions', label: 'WhatsApp sessions' },
+    { key: 'max_chat_campaigns_per_month', label: 'Campaigns per month' },
+    { key: 'max_chat_campaign_recipients', label: 'Max recipients per campaign', hint: 'how many numbers one campaign may send to' },
+    { key: 'max_chat_campaigns', label: 'Campaigns in total' } ] },
   { id: 'wa_cloud', title: 'WA Cloud', icon: '☁️', module: 'wa_cloud', fields: [
     { key: 'max_phone_numbers', label: 'Phone numbers' }, { key: 'max_templates', label: 'Templates' },
     { key: 'max_surveys', label: 'Survey forms' }, { key: 'max_flow_nodes', label: 'Flow builder nodes' },

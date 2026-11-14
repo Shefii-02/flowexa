@@ -31,6 +31,8 @@ class PlanLimits
         'meta_ads_accounts'  => ['Meta Ads accounts', 'meta_ad_accounts',   'max_meta_ads_accounts',  'total'],
         'website_widgets'    => ['Website widgets',   'chat_widgets',       'max_website_widgets',    'total'],
         'leads'              => ['Leads this month',  'leads',              'max_leads_per_month',    'monthly'],
+        'chat_campaigns'     => ['WA Chat campaigns', 'openwa_message_sender_jobs', 'max_chat_campaigns', 'total'],
+        'chat_campaigns_month' => ['WA Chat campaigns this month', 'openwa_message_sender_jobs', 'max_chat_campaigns_per_month', 'monthly'],
         'campaigns_month'    => ['Campaigns this month', 'campaigns',           'max_campaigns_per_month', 'monthly'],
         'surveys'            => ['Survey forms',      'survey_forms',       'max_surveys',            'total'],
         'short_links'        => ['Short links',       'short_links',        'max_short_links',        'total'],
@@ -38,7 +40,7 @@ class PlanLimits
 
     /** Feature groups, in the order customers see them: key => [title, icon, [resource keys]]. Every REGISTRY key belongs to exactly one. */
     public const GROUPS = [
-        'wa_chat'   => ['WA Chat',               '💬', ['wa_sessions']],
+        'wa_chat'   => ['WA Chat',               '💬', ['wa_sessions', 'chat_campaigns', 'chat_campaigns_month']],
         'wa_cloud'  => ['WA Cloud',              '☁️', ['phone_numbers', 'templates', 'campaigns', 'campaigns_month', 'surveys', 'flow_nodes']],
         'social'    => ['Instagram & Messenger', '📸', ['instagram_accounts']],
         'ads'       => ['Meta Ads',              '📣', ['meta_ads_accounts']],
@@ -186,6 +188,15 @@ class PlanLimits
                 $c = is_string($j) ? json_decode($j, true) : (array) $j;
                 return ($c['resource'] ?? null) === $key;
             });
+    }
+
+    /** WA Chat per-campaign recipient cap (plans.max_chat_campaign_recipients). */
+    public static function chatCampaignAudienceViolation(?object $plan, int $audience): ?array
+    {
+        $max = $plan->max_chat_campaign_recipients ?? null;
+        if ($max === null || $audience <= (int) $max) { return null; }
+        return ['message' => "Limit exceeded: your plan allows {$max} recipients per WA Chat campaign and this one has {$audience}. Narrow the audience or upgrade your plan.",
+                'error_code' => 'plan_limit_reached', 'resource' => 'chat_campaign_recipients', 'current' => $audience, 'limit' => (int) $max, 'remaining' => 0, 'adding' => $audience];
     }
 
     /** Per-campaign cap (plans.max_campaign_contacts): null when the audience fits, otherwise the error payload. */

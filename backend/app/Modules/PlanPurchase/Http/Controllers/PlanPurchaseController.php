@@ -148,7 +148,7 @@ class PlanPurchaseController extends Controller
             'max_users' => $int(), 'max_roles' => $int(), 'max_templates' => $int(),
             'max_phone_numbers' => ['nullable', 'integer', 'min:0', 'max:50'],
             'max_wa_sessions' => ['nullable', 'integer', 'min:0', 'max:50'],
-            'max_campaigns' => $int(), 'max_campaigns_per_month' => $int(), 'max_campaign_contacts' => $int(),
+            'max_campaigns' => $int(), 'max_campaigns_per_month' => $int(), 'max_chat_campaigns' => $int(), 'max_chat_campaigns_per_month' => $int(), 'max_chat_campaign_recipients' => $int(), 'max_campaign_contacts' => $int(),
             'max_surveys' => $int(), 'max_flow_nodes' => $int(),
             'max_contacts' => $int(), 'max_labels' => $int(),
             'max_leads_per_month' => $int(), 'max_lead_categories' => $int(),

@@ -75,6 +75,15 @@ class MessageSenderController extends Controller
             'session_id.exists' => 'That session no longer exists — pick a currently active one.',
         ]);
 
+        // Plan caps for WA Chat campaigns: how many in total / this month, and how many recipients in one.
+        if ($ctx = \App\Support\PlanLimits::context(auth()->user())) {
+            [$companyId, $plan] = $ctx;
+            foreach (['chat_campaigns', 'chat_campaigns_month'] as $resource) { \App\Support\PlanLimits::assertCanAdd($companyId, $plan, $resource); }
+            if ($v = \App\Support\PlanLimits::chatCampaignAudienceViolation($plan, (int) $data['total'])) {
+                return response()->json($v, 403);
+            }
+        }
+
         // Speed and message variation, checked against the limits the superadmin set (defaults: 2–3 a minute).
         $data['sending_options'] = \App\Modules\WaChat\Support\SenderLimits::normalize($request->input('sending_options'));
 
