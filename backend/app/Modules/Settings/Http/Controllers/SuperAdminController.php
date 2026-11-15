@@ -79,7 +79,8 @@ class SuperAdminController extends Controller
                 'duration_type' => $current?->duration_type, 'amount_paid' => $current ? (float) $current->amount_paid : null, 'started_at' => $current?->starts_at],
             'modules'  => collect(\App\Support\Modules::catalog())->map(fn ($m) => $m + [
                 'enabled' => $e['all'] || in_array($m['key'], $e['modules'], true),
-                'source'  => in_array($m['key'], $e['from_addons'], true) ? 'addon' : (in_array($m['key'], $e['from_plan'], true) ? 'plan' : null),
+                'source'  => in_array($m['key'], $e['from_addons'], true) ? 'addon' : (in_array($m['key'], $e['from_plan'], true) ? 'plan' : (in_array($m['key'], $e['from_complimentary'], true) ? 'complimentary' : null)),
+                'complimentary_until' => $e['complimentary'][$m['key']] ?? null,
             ])->values(),
             'usage'    => collect($usage)->values(),
             'addons'   => $addons,
@@ -104,7 +105,10 @@ class SuperAdminController extends Controller
     {
         $request->validate([
             'name'          => ['sometimes', 'string', 'max:100'],
-            'plan_id'       => ['sometimes', 'integer', 'exists:plans,id'],
+            'company_name'  => ['sometimes', 'string', 'max:100'],
+            'owner_name'    => ['sometimes', 'nullable', 'string', 'max:100'],
+            'owner_email'   => ['sometimes', 'nullable', 'email'],
+            'owner_phone'   => ['sometimes', 'nullable', 'string', 'max:20'],
             'email'         => ['sometimes', 'email'],
             'company_email' => ['sometimes', 'email'],
             'company_phone' => ['sometimes', 'nullable', 'string', 'max:20'],

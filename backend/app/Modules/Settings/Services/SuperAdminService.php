@@ -134,34 +134,34 @@ class SuperAdminService
 
     public function updateCompany(Company $company, array $data): Company
     {
+        // Plan changes are not made here — they go through "Upgrade plan" so billing and expiry stay correct.
+        $pick = fn (string ...$keys) => collect($keys)->first(fn ($k) => array_key_exists($k, $data));
+        $map  = ['name' => $pick('company_name', 'name'), 'email' => $pick('company_email', 'email'), 'phone' => $pick('company_phone'), 'website' => $pick('website'),
+                 'max_devices_per_user' => $pick('max_devices_per_user'), 'max_web_devices_per_user' => $pick('max_web_devices_per_user')];
+        $update = [];
+        foreach ($map as $col => $key) {
+            if ($key === null) continue;
+            $v = $data[$key];
+            // name / email / device limits can't be blanked; phone and website can be cleared.
+            if (in_array($col, ['phone', 'website'], true)) { $update[$col] = filled($v) ? $v : null; }
+            elseif (filled($v)) { $update[$col] = $v; }
+        }
+        if ($update) { $company->update($update); }
 
-
-        $company->update(array_filter([
-            'name'    => $data['name']    ?? null,
-            'plan_id' => $data['plan_id'] ?? null,
-            'email'   => $data['company_email'] ?? $data['email'] ?? null,
-            'phone'   => $data['company_phone']   ?? null,
-            'website' => $data['website'] ?? null,
-            'max_devices_per_user' => $data['max_devices_per_user'] ?? null,
-        ], fn($v) => !is_null($v)));
-
-
-        $ownerData = [
-            'name'      => $data['owner_name'] ?? null,
-            'phone'     => $data['owner_phone'] ?? null,
-            'email'     => $data['owner_email'] ?? null,
-            'is_active' => true,
-        ];
-
-        if (!empty($data['owner_password'])) {
-            $ownerData['password'] = Hash::make($data['owner_password']);
+        // The owner: the owner-role user, or the company's first user when none has that role.
+        $owner = $company->users()->whereHas('role', fn ($q) => $q->where('name', 'owner'))->orderBy('id')->first()
+            ?? $company->users()->orderBy('id')->first();
+        if ($owner) {
+            $ownerData = array_filter([
+                'name'  => $data['owner_name'] ?? null,
+                'phone' => $data['owner_phone'] ?? null,
+                'email' => $data['owner_email'] ?? null,
+            ], fn ($v) => filled($v));
+            if (!empty($data['owner_password'])) { $ownerData['password'] = Hash::make($data['owner_password']); }
+            if ($ownerData) { $owner->update($ownerData); }
         }
 
-        User::where('company_id', $company->id)
-            ->whereHas('role', fn($q) => $q->where('name','owner'))
-            ->update(array_filter($ownerData, fn($v) => !is_null($v)));
-
-        return $company->fresh(['plan','wallet']);
+        return $company->fresh(['plan', 'wallet', 'companyOwner']);
     }
 
     /**

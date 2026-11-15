@@ -1039,6 +1039,10 @@ Route::prefix('v1')->group(function () {
             Route::put('plans/{id}',        [PlanPurchaseController::class, 'superAdminUpdatePlan'])->name('sa.plans.update');
             Route::delete('plans/{id}',     [PlanPurchaseController::class, 'superAdminDeletePlan'])->name('sa.plans.destroy');
             Route::post('plans/assign',     [PlanPurchaseController::class, 'assignCustomPlan'])->name('sa.plans.assign');
+            Route::post('companies/{company}/plan-upgrade/quote',  [PlanPurchaseController::class, 'saUpgradeQuote'])->whereNumber('company')->name('sa.plan-upgrade.quote');
+            Route::post('companies/{company}/plan-upgrade/order',  [PlanPurchaseController::class, 'saUpgradeOrder'])->whereNumber('company')->name('sa.plan-upgrade.order');
+            Route::post('companies/{company}/plan-upgrade/verify', [PlanPurchaseController::class, 'saUpgradeVerify'])->whereNumber('company')->name('sa.plan-upgrade.verify');
+            Route::post('companies/{company}/plan-upgrade/manual', [PlanPurchaseController::class, 'saUpgradeManual'])->whereNumber('company')->name('sa.plan-upgrade.manual');
             Route::get('plans/catalog',     [PlanPurchaseController::class, 'planCatalog'])->name('sa.plans.catalog');
             Route::post('plans/{id}/restore', [PlanPurchaseController::class, 'superAdminRestorePlan'])->name('sa.plans.restore');
             Route::delete('addons/{id}',    [PlanPurchaseController::class, 'superAdminDeleteAddon'])->name('sa.addons.destroy');

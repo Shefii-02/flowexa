@@ -94,13 +94,13 @@ class PlanPurchaseService
     }
 
     // ── Create Razorpay order for plan purchase ───────────────────────────────
-    public function createPlanOrder(int $companyId, int $userId, int $planId, string $durationType, ?string $couponCode = null): array
+    public function createPlanOrder(int $companyId, int $userId, int $planId, string $durationType, ?string $couponCode = null, bool $staff = false): array
     {
         $user = auth()->user();
 
         // A private or archived plan can only be given by staff — unless the company is already on it (renewal).
         $target = Plan::findOrFail($planId);
-        if (!$target->isPurchasable() && Company::whereKey($companyId)->value('plan_id') !== $target->id) {
+        if (!$staff && !$target->isPurchasable() && Company::whereKey($companyId)->value('plan_id') !== $target->id) {
             throw \Illuminate\Validation\ValidationException::withMessages(['plan_id' => 'This plan is not available for purchase.']);
         }
 
@@ -182,6 +182,33 @@ class PlanPurchaseService
         $durationType = (string) ($order->meta['duration_type'] ?? $data['duration_type']);
 
         return DB::transaction(function () use ($companyId, $order, $planId, $durationType) {
+            $cp = $this->activatePlan($order, $companyId, $planId, $durationType);
+            app(CouponService::class)->redeem($order);
+            return $cp;
+        });
+    }
+
+    /**
+     * Superadmin: the company paid outside the gateway (cash, bank transfer, UPI to account, cheque).
+     * Records a paid order and switches the plan on straight away.
+     */
+    public function manualPlanPurchase(int $companyId, int $planId, string $durationType, string $method, ?string $reference, ?string $note, ?string $couponCode = null, ?float $amount = null): CompanyPlan
+    {
+        $preview = $this->changePreview($companyId, $planId, $durationType);
+        if (! $preview['can_proceed']) {
+            throw \Illuminate\Validation\ValidationException::withMessages(['plan_id' => $preview['blockers']]);
+        }
+
+        $q = $this->quotePlan($companyId, $planId, $durationType, $couponCode);
+        $paid = $amount ?? $q['final'];
+
+        return DB::transaction(function () use ($companyId, $planId, $durationType, $method, $reference, $note, $q, $paid) {
+            $order = PaymentOrder::create([
+                'company_id' => $companyId, 'user_id' => auth()->id(), 'razorpay_order_id' => 'MANUAL_' . uniqid(), 'razorpay_payment_id' => $reference,
+                'amount' => $paid, 'subtotal' => $q['subtotal'], 'discount' => $q['discount'], 'coupon_id' => $q['coupon']?->id, 'coupon_code' => $q['coupon']?->code,
+                'messages_credit' => 0, 'status' => 'paid', 'purpose' => 'plan', 'gateway' => 'manual', 'method' => $method, 'paid_at' => now(),
+                'meta' => ['plan_id' => $planId, 'duration_type' => $durationType, 'note' => $note, 'recorded_by' => auth()->id()],
+            ]);
             $cp = $this->activatePlan($order, $companyId, $planId, $durationType);
             app(CouponService::class)->redeem($order);
             return $cp;

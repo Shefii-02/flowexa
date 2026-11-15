@@ -85,7 +85,12 @@ class User extends Authenticatable implements JWTSubject
                 ? array_merge($perms, Permission::pluck('key')->all())
                 : array_merge($perms, $section);
         }
-        return $this->_effectivePerms = array_values(array_unique($perms));
+        $perms = array_values(array_unique($perms));
+        // The company's plan caps what its roles can use inside each feature (Plan → Included features → permissions).
+        if (!$this->isSuperAdmin() && ($plan = $this->company?->plan) && $plan->permissions !== null) {
+            $perms = array_values(array_filter($perms, fn ($k) => $plan->allowsPermission($k)));
+        }
+        return $this->_effectivePerms = $perms;
     }
 
     /** Whether this account may use the given channel: 'portal' (web) or 'mobile'. Owners/superadmins always can. */

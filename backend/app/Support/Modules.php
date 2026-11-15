@@ -43,6 +43,9 @@ class Modules
         'channels' => 'Channels',
     ];
 
+    /** Free-period lengths (months) a plan can offer on a complimentary feature. */
+    public const COMPLIMENTARY_MONTHS = [1, 2, 6, 12];
+
     /** Lead assignment methods a plan can allow (LeadAssignmentRule.notification_mode / strategy). */
     public const ASSIGN_METHODS = [
         'manual'      => 'Manual assignment',
@@ -51,6 +54,32 @@ class Modules
         'uber'        => 'Notify one at a time (accept / decline)',
         'auto'        => 'Auto-assign top pick',
     ];
+
+    /**
+     * Permission key prefix (the part before the first dot) => the feature (module) it belongs to.
+     * A permission whose prefix is not listed (dashboard, wallet, staff, roles, settings…) is core: every plan has it, a plan cannot remove it.
+     */
+    public const PERMISSION_MODULES = [
+        'wa_chat' => 'wa_chat', 'wa_agent' => 'ai_agent', 'wa_cloud' => 'wa_cloud', 'surveys' => 'wa_cloud', 'phone_numbers' => 'wa_cloud',
+        'leads' => 'leads', 'lead_assignment' => 'leads', 'hr' => 'hr', 'accounts' => 'finance', 'instagram' => 'social_dm',
+        'widget_chat' => 'web_widgets', 'meta_ads' => 'meta_ads', 'integrations' => 'integrations',
+    ];
+
+    /** The feature a permission belongs to, or null for a core permission. */
+    public static function permissionModule(string $permission): ?string
+    {
+        return self::PERMISSION_MODULES[explode('.', $permission)[0]] ?? null;
+    }
+
+    /** module key => [{key,label,type}] — the permissions a plan can switch on or off inside each feature. */
+    public static function permissionCatalog(): array
+    {
+        $out = [];
+        foreach (\App\Models\Permission::orderBy('sort_order')->orderBy('key')->get(['key', 'label', 'type']) as $p) {
+            if ($m = self::permissionModule($p->key)) { $out[$m][] = ['key' => $p->key, 'label' => $p->label, 'type' => $p->type]; }
+        }
+        return $out;
+    }
 
     public static function keys(): array { return array_keys(self::REGISTRY); }
 

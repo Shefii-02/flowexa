@@ -595,7 +595,7 @@ export const surveyFormApi = {
 
 
 export type ModuleInfo = { key: string; label: string; icon: string; group: string; description: string }
-export type Entitlements = { all: boolean; modules: string[]; from_plan: string[]; from_addons: string[]; locked: ModuleInfo[]; assign_methods: string[] }
+export type Entitlements = { all: boolean; modules: string[]; from_plan: string[]; from_addons: string[]; from_complimentary?: string[]; complimentary?: Record<string, string>; locked: ModuleInfo[]; assign_methods: string[] }
 export type CouponQuote = { subtotal: number; discount: number; final: number; coupon: { code: string; name: string; discount_type: string; discount_value: number } | null }
 export type CartQuote = CouponQuote & { lines: { addon_id: number; name: string; cycle: string; price: number }[] }
 
@@ -625,6 +625,10 @@ export const planApi = {
   saUpdatePlan: (id: number, d: Record<string, unknown>) => api.put(`/superadmin/plans/${id}`, d),
   saDeletePlan: (id: number) => api.delete(`/superadmin/plans/${id}`),
   saAssignCustom: (d: Record<string, unknown>) => api.post('/superadmin/plans/assign', d),
+  saUpgradeQuote: (companyId: number, d: Record<string, unknown>) => api.post(`/superadmin/companies/${companyId}/plan-upgrade/quote`, d),
+  saUpgradeOrder: (companyId: number, d: Record<string, unknown>) => api.post(`/superadmin/companies/${companyId}/plan-upgrade/order`, d),
+  saUpgradeVerify: (companyId: number, d: Record<string, unknown>) => api.post(`/superadmin/companies/${companyId}/plan-upgrade/verify`, d),
+  saUpgradeManual: (companyId: number, d: Record<string, unknown>) => api.post(`/superadmin/companies/${companyId}/plan-upgrade/manual`, d),
   saAddons: () => api.get('/superadmin/addons'),
   saCreateAddon: (d: Record<string, unknown>) => api.post('/superadmin/addons', d),
   saAddonResources: () => api.get<{ resources: { key: string; label: string; kind: string }[] }>('/superadmin/addons/resources'),
@@ -634,7 +638,7 @@ export const planApi = {
   saUpdateAddon: (id: number, d: Record<string, unknown>) => api.put(`/superadmin/addons/${id}`, d),
   saDeleteAddon: (id: number) => api.delete(`/superadmin/addons/${id}`),
   saRestorePlan: (id: number) => api.post(`/superadmin/plans/${id}/restore`),
-  saPlanCatalog: () => api.get<{ modules: ModuleInfo[]; groups: Record<string, string>; assign_methods: { key: string; label: string }[] }>('/superadmin/plans/catalog'),
+  saPlanCatalog: () => api.get<{ modules: ModuleInfo[]; groups: Record<string, string>; assign_methods: { key: string; label: string }[]; permissions?: Record<string, { key: string; label: string; type: string }[]>; complimentary_months?: number[] }>('/superadmin/plans/catalog'),
   // Coupons
   saCoupons: () => api.get('/superadmin/coupons'),
   saCreateCoupon: (d: Record<string, unknown>) => api.post('/superadmin/coupons', d),

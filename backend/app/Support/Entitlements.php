@@ -28,11 +28,14 @@ class Entitlements
         $plan = $company->plan;
         $fromPlan = $plan->enabledModules();
         $fromAddons = self::addonModules($company->id);
-        $modules = array_values(array_unique(array_merge($fromPlan, $fromAddons)));
+        $comp = self::complimentary($company, $plan);          // module => expires_at (still running)
+        $modules = array_values(array_unique(array_merge($fromPlan, $fromAddons, array_keys($comp))));
         $locked = array_values(array_filter(array_map(fn ($k) => in_array($k, $modules, true) ? null : Modules::get($k), Modules::keys())));
 
         $d = [
             'all' => false, 'modules' => $modules, 'from_plan' => $fromPlan, 'from_addons' => array_values(array_diff($fromAddons, $fromPlan)),
+            'from_complimentary' => array_values(array_diff(array_keys($comp), $fromPlan, $fromAddons)),
+            'complimentary' => $comp,
             'locked' => $locked,
             'assign_methods' => $plan->lead_assign_methods === null ? array_keys(Modules::ASSIGN_METHODS) : array_values($plan->lead_assign_methods),
         ];
@@ -48,7 +51,32 @@ class Entitlements
 
     private static function open(): array
     {
-        return ['all' => true, 'modules' => Modules::keys(), 'from_plan' => Modules::keys(), 'from_addons' => [], 'locked' => [], 'assign_methods' => array_keys(Modules::ASSIGN_METHODS)];
+        return ['all' => true, 'modules' => Modules::keys(), 'from_plan' => Modules::keys(), 'from_addons' => [], 'from_complimentary' => [], 'complimentary' => [], 'locked' => [], 'assign_methods' => array_keys(Modules::ASSIGN_METHODS)];
+    }
+
+    /**
+     * Free features the company's plan offers for a limited time. The period starts the first time the company is on a plan that offers
+     * the feature and never restarts (so renewing or switching plans cannot farm it); once it ends the feature locks until bought as an add-on.
+     * @return array<string,string> module => expiry (ISO) for the ones still running
+     */
+    private static function complimentary(Company $company, \App\Models\Plan $plan): array
+    {
+        $offer = $plan->complimentaryMap();
+        if (!$offer || !Schema::hasTable('company_complimentary')) { return []; }
+        $rows = DB::table('company_complimentary')->where('company_id', $company->id)->get()->keyBy('module');
+        $out = [];
+        foreach ($offer as $module => $months) {
+            $row = $rows->get($module);
+            if (!$row) {
+                $start = now(); $end = $start->copy()->addMonths($months);
+                DB::table('company_complimentary')->insert(['company_id' => $company->id, 'module' => $module, 'plan_id' => $plan->id, 'months' => $months,
+                    'starts_at' => $start, 'expires_at' => $end, 'created_at' => $start, 'updated_at' => $start]);
+                $out[$module] = $end->toIso8601String();
+            } elseif (\Illuminate\Support\Carbon::parse($row->expires_at)->isFuture()) {
+                $out[$module] = \Illuminate\Support\Carbon::parse($row->expires_at)->toIso8601String();
+            }
+        }
+        return $out;
     }
 
     /** Module keys switched on by active, unexpired "module" add-ons (a retired add-on still counts until it expires). */

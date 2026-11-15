@@ -22,7 +22,7 @@ class Plan extends Model
         'max_leads_per_month', 'max_lead_categories', 'max_roles',
         'max_instagram_accounts', 'max_instagram_automations', 'max_instagram_dms_monthly', 'max_meta_ads_accounts', 'max_website_widgets',
         'google_sheets_enabled', 'google_drive_enabled', 'calendar_enabled', 'email_integration_enabled',
-        'is_public', 'archived_at', 'modules', 'lead_assign_methods', 'max_media_storage_mb', 'max_campaigns_per_month', 'max_chat_campaigns', 'max_chat_campaigns_per_month', 'max_chat_campaign_recipients', 'max_surveys', 'max_short_links', 'sort_order', 'is_popular',
+        'is_public', 'archived_at', 'modules', 'permissions', 'complimentary', 'lead_assign_methods', 'max_media_storage_mb', 'max_campaigns_per_month', 'max_chat_campaigns', 'max_chat_campaigns_per_month', 'max_chat_campaign_recipients', 'max_surveys', 'max_short_links', 'sort_order', 'is_popular',
     ];
 
     protected $appends = ['yearly_price', 'sections'];
@@ -30,6 +30,8 @@ class Plan extends Model
     protected $casts = [
         'features'              => 'array',
         'modules'               => 'array',
+        'permissions'           => 'array',
+        'complimentary'         => 'array',
         'lead_assign_methods'   => 'array',
         'is_popular'            => 'boolean',
         'is_public'             => 'boolean',
@@ -97,6 +99,25 @@ class Plan extends Model
     public function enabledModules(): array
     {
         return $this->modules === null ? \App\Support\Modules::keys() : array_values(array_intersect(\App\Support\Modules::keys(), $this->modules));
+    }
+
+    /** Complimentary features as [module => months], for modules the plan does not already include. */
+    public function complimentaryMap(): array
+    {
+        $own = $this->enabledModules();
+        $out = [];
+        foreach ($this->complimentary ?? [] as $row) {
+            $m = $row['module'] ?? null; $n = (int) ($row['months'] ?? 0);
+            if ($m && $n > 0 && isset(\App\Support\Modules::REGISTRY[$m]) && !in_array($m, $own, true)) { $out[$m] = $n; }
+        }
+        return $out;
+    }
+
+    /** Whether this plan lets roles use a permission. Core permissions always; feature permissions unless the plan's list leaves them out. NULL list = all. */
+    public function allowsPermission(string $permission): bool
+    {
+        if (\App\Support\Modules::permissionModule($permission) === null) return true;
+        return $this->permissions === null || in_array($permission, $this->permissions, true);
     }
 
     public function companies(): HasMany

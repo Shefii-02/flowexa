@@ -5,8 +5,9 @@ import toast from 'react-hot-toast'
 import { superadminApi, planApi } from '@/api'
 import { Badge, Button, Spinner } from '@/components/ui'
 import { fmt, getError } from '@/utils'
+import CompanyPlanUpgradeModal from './CompanyPlanUpgradeModal'
 
-type Mod = { key: string; label: string; icon: string; group: string; enabled: boolean; source: 'plan' | 'addon' | null }
+type Mod = { key: string; label: string; icon: string; group: string; enabled: boolean; source: 'plan' | 'addon' | 'complimentary' | null; complimentary_until?: string | null }
 type Use = { key: string; label: string; kind: string; used: number; limit: number | null; plan_limit: number | null; addon_extra: number; percent: number | null; exceeded: boolean }
 
 const money = (n: number | string | null | undefined) => `₹${fmt.number(Math.round(Number(n ?? 0)))}`
@@ -17,6 +18,7 @@ export default function CompanyPlanOverview({ companyId, onChanged }: { companyI
   const [pick, setPick] = useState('')
   const [expires, setExpires] = useState('')
   const [busy, setBusy] = useState(false)
+  const [upgrading, setUpgrading] = useState(false)
 
   const load = useCallback(() => {
     superadminApi.planOverview(companyId).then(r => setD(r.data)).catch(e => toast.error(getError(e)))
@@ -42,6 +44,7 @@ export default function CompanyPlanOverview({ companyId, onChanged }: { companyI
     <div className="card">
       <div className="card-header flex flex-wrap items-center justify-between gap-2">
         <h3 className="card-title">Plan &amp; features</h3>
+        <Button size="sm" onClick={() => setUpgrading(true)}>🚀 Upgrade plan</Button>
         {d.plan && <span className="flex gap-1">
           {d.plan.archived && <Badge variant="red">Archived plan</Badge>}
           {d.plan.removed && <Badge variant="red">Removed plan</Badge>}
@@ -65,9 +68,9 @@ export default function CompanyPlanOverview({ companyId, onChanged }: { companyI
           <p className="mb-2 text-sm font-semibold text-gray-800">Features <span className="font-normal text-gray-400">({mods.filter(m => m.enabled).length} of {mods.length} active)</span></p>
           <div className="flex flex-wrap gap-1.5">
             {mods.map(m => (
-              <span key={m.key} title={m.enabled ? (m.source === 'addon' ? 'Switched on by an add-on' : 'Included in the plan') : 'Not active'}
-                className={`rounded-full px-2.5 py-1 text-xs ${m.enabled ? (m.source === 'addon' ? 'bg-indigo-50 text-indigo-700' : 'bg-brand-50 text-brand-700') : 'bg-gray-100 text-gray-400 line-through'}`}>
-                {m.icon} {m.label}{m.source === 'addon' ? ' · add-on' : ''}</span>))}
+              <span key={m.key} title={m.enabled ? (m.source === 'addon' ? 'Switched on by an add-on' : m.source === 'complimentary' ? `Complimentary until ${fmt.date(m.complimentary_until!)}` : 'Included in the plan') : 'Not active'}
+                className={`rounded-full px-2.5 py-1 text-xs ${m.enabled ? (m.source === 'addon' ? 'bg-indigo-50 text-indigo-700' : m.source === 'complimentary' ? 'bg-amber-50 text-amber-700' : 'bg-brand-50 text-brand-700') : 'bg-gray-100 text-gray-400 line-through'}`}>
+                {m.icon} {m.label}{m.source === 'addon' ? ' · add-on' : m.source === 'complimentary' ? ` · free until ${fmt.date(m.complimentary_until!)}` : ''}</span>))}
           </div>
         </div>
 
@@ -126,8 +129,10 @@ export default function CompanyPlanOverview({ companyId, onChanged }: { companyI
           <label className="text-xs font-medium text-gray-600">Expires <span className="text-gray-400">(optional)</span>
             <input type="date" className="input mt-1 block" value={expires} onChange={e => setExpires(e.target.value)} /></label>
           <Button size="sm" loading={busy} disabled={!pick} onClick={assign}>Assign plan</Button>
-          <p className="basis-full text-[11px] text-gray-400">Recorded as a free, staff-assigned plan. For a paid plan, use Revenue → Record manual payment.</p>
+          <p className="basis-full text-[11px] text-gray-400">Recorded as a free, staff-assigned plan. For a paid plan, use Upgrade plan above (online or manual payment).</p>
         </div>
+        <CompanyPlanUpgradeModal company={upgrading ? { id: companyId, name: d.company_name ?? `#${companyId}`, plan_id: d.plan?.id } : null}
+          onClose={() => setUpgrading(false)} onDone={() => { load(); onChanged() }} />
       </div>
     </div>
   )

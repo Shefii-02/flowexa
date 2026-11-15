@@ -36,7 +36,8 @@ class SuperAdminCompanyResource extends JsonResource
             ]),
 
             // The owner-role user; a company whose owner has a different role name still shows its first user, so the edit form is never blank.
-            'company_owner' => $this->whenLoaded('companyOwner', function () {
+            // (whenLoaded would hide a null relation, so the first-user fallback would never run.)
+            'company_owner' => $this->when($this->resource->relationLoaded('companyOwner'), function () {
                 $o = $this->companyOwner ?? $this->users()->orderBy('id')->first();
                 return $o ? ['id' => $o->id, 'name' => $o->name, 'email' => $o->email, 'phone' => $o->phone] : null;
             }),

@@ -16,6 +16,7 @@ import {
 } from '@/components/ui'
 import { fmt, getError } from '@/utils'
 import toast from 'react-hot-toast'
+import CompanyPlanUpgradeModal from './CompanyPlanUpgradeModal'
 
 type Company = {
   id: number
@@ -85,6 +86,7 @@ export default function SuperAdminCompanies() {
 
   const [showCreate, setShowCreate] = useState(false)
   const [showTopUp, setShowTopUp] = useState<Company | null>(null)
+  const [upgradeFor, setUpgradeFor] = useState<Company | null>(null)
   const [delCompany, setDelCompany] = useState<Company | null>(null)
 
   const [editingCompany, setEditingCompany] = useState<Company | null>(null)
@@ -270,7 +272,7 @@ export default function SuperAdminCompanies() {
       return
     }
 
-    if (!form.plan_id) {
+    if (!editingCompany && !form.plan_id) {
       toast.error('Please select a plan.')
       return
     }
@@ -293,14 +295,14 @@ export default function SuperAdminCompanies() {
         owner_email: form.owner_email,
         owner_phone: form.owner_phone,
 
-        plan_id: Number(form.plan_id),
-        initial_balance: Number(form.initial_balance),
         max_devices_per_user: Number(form.max_devices_per_user) || 2,
         max_web_devices_per_user: Number(form.max_web_devices_per_user) || 3,
       }
 
       // Business type / trial status — only meaningful when creating.
       if (!editingCompany) {
+        payload.plan_id = Number(form.plan_id)
+        payload.initial_balance = Number(form.initial_balance)
         payload.business_type = form.business_type
         payload.status = form.status
         if (form.status === 'trial') {
@@ -774,6 +776,17 @@ export default function SuperAdminCompanies() {
                               💳 Top-up
                             </button>
 
+                            {/* Upgrade plan */}
+                            <button
+                              onClick={() => {
+                                setUpgradeFor(company)
+                                setOpenMenuId(null)
+                              }}
+                              className="block w-full text-left px-3 py-2 text-sm text-green-700 hover:bg-green-50"
+                            >
+                              🚀 Upgrade plan
+                            </button>
+
                             {/* Login as */}
                             <button
                               onClick={() =>
@@ -1024,8 +1037,8 @@ export default function SuperAdminCompanies() {
             />
           )}
 
-          {/* Plan */}
-          <div>
+          {/* Plan — chosen at creation only; afterwards use "Upgrade plan" */}
+          {!editingCompany && <div>
             <label className="label">
               Plan *
             </label>
@@ -1058,7 +1071,7 @@ export default function SuperAdminCompanies() {
               ))}
 
             </select>
-          </div>
+          </div>}
 
           {/* Billing at creation — active companies only */}
           {!editingCompany && form.status === 'active' && (
@@ -1160,6 +1173,13 @@ export default function SuperAdminCompanies() {
         </div>
 
       </Modal>
+
+      {/* Upgrade plan (online / manual payment) */}
+      <CompanyPlanUpgradeModal
+        company={upgradeFor}
+        onClose={() => setUpgradeFor(null)}
+        onDone={() => load()}
+      />
 
       {/* Top-up Modal */}
       <Modal

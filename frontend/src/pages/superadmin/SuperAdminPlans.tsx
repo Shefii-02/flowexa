@@ -45,12 +45,12 @@ const INTEGRATIONS = [
 type Form = {
   name: string; price: string; price_yearly: string; duration_type: string; duration_months: string; messages_limit: string; throttle_per_minute: string
   alert_before_days: string; highlights: string; is_active: boolean; is_public: boolean; archived: boolean; is_popular: boolean; sort_order: string
-  modules: string[]; lead_assign_methods: string[]; integrations: Record<string, boolean>; limits: Record<string, string>
+  modules: string[]; permissions: string[]; complimentary: { module: string; months: number }[]; lead_assign_methods: string[]; integrations: Record<string, boolean>; limits: Record<string, string>
 }
 const EMPTY: Form = {
   name: '', price: '499', price_yearly: '', duration_type: 'monthly', duration_months: '1', messages_limit: '1000', throttle_per_minute: '60',
   alert_before_days: '7', highlights: '', is_active: true, is_public: true, archived: false, is_popular: false, sort_order: '0',
-  modules: [], lead_assign_methods: ['manual', 'round_robin'], integrations: {}, limits: {},
+  modules: [], permissions: [], complimentary: [], lead_assign_methods: ['manual', 'round_robin'], integrations: {}, limits: {},
 }
 
 const Toggle = ({ on, onChange, label, sub }: { on: boolean; onChange: (v: boolean) => void; label: string; sub?: string }) => (
@@ -75,6 +75,8 @@ export default function SuperAdminPlans() {
   const [mods, setMods] = useState<ModuleInfo[]>([])
   const [groups, setGroups] = useState<Record<string, string>>({})
   const [methods, setMethods] = useState<{ key: string; label: string }[]>([])
+  const [compMonths, setCompMonths] = useState<number[]>([1, 2, 6, 12])
+  const [permCat, setPermCat] = useState<Record<string, { key: string; label: string; type: string }[]>>({})
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [editPlan, setEditPlan] = useState<any>(null)
@@ -88,14 +90,15 @@ export default function SuperAdminPlans() {
   const load = () => {
     setLoading(true)
     Promise.all([planApi.saPlans(), planApi.saPlanCatalog()])
-      .then(([p, c]) => { setPlans(p.data.plans); setMods(c.data.modules); setGroups(c.data.groups); setMethods(c.data.assign_methods) })
+      .then(([p, c]) => { setPlans(p.data.plans); setMods(c.data.modules); setGroups(c.data.groups); setMethods(c.data.assign_methods); setPermCat(c.data.permissions ?? {}); setCompMonths(c.data.complimentary_months ?? [1, 2, 6, 12]) })
       .catch(e => toast.error(getError(e))).finally(() => setLoading(false))
   }
   useEffect(() => { load() }, [])
 
+  const allPermKeys = useMemo(() => Object.values(permCat).flat().map(p => p.key), [permCat])
   const byGroup = useMemo(() => Object.keys(groups).map(g => ({ id: g, title: groups[g], items: mods.filter(m => m.group === g) })), [groups, mods])
 
-  const openCreate = () => { setEditPlan(null); setForm(EMPTY); setShowModal(true) }
+  const openCreate = () => { setEditPlan(null); setForm({ ...EMPTY, permissions: allPermKeys }); setShowModal(true) }
   const openEdit = (p: any) => {
     setEditPlan(p)
     setForm({
@@ -104,7 +107,7 @@ export default function SuperAdminPlans() {
       throttle_per_minute: String(p.throttle_per_minute ?? 60), alert_before_days: String(p.alert_before_days ?? 7),
       highlights: Array.isArray(p.features) ? p.features.join('\n') : '', is_active: !!p.is_active, is_public: p.is_public !== false, archived: !!p.archived_at, is_popular: !!p.is_popular, sort_order: String(p.sort_order ?? 0),
       // an old plan with no module list had everything on — show it that way so saving does not silently drop features
-      modules: p.modules ?? mods.map(m => m.key), lead_assign_methods: p.lead_assign_methods ?? methods.map(m => m.key),
+      modules: p.modules ?? mods.map(m => m.key), permissions: p.permissions ?? allPermKeys, complimentary: Array.isArray(p.complimentary) ? p.complimentary : [], lead_assign_methods: p.lead_assign_methods ?? methods.map(m => m.key),
       integrations: Object.fromEntries(INTEGRATIONS.map(i => [i.key, !!p[i.key]])),
       limits: Object.fromEntries(LIMIT_KEYS.map(k => [k, p[k] != null ? String(p[k]) : ''])),
     })
@@ -120,6 +123,9 @@ export default function SuperAdminPlans() {
       features: form.highlights.split('\n').map(s => s.trim()).filter(Boolean),
       is_active: form.is_active, is_public: form.is_public && !form.archived, archived: form.archived, is_popular: form.is_popular, sort_order: +form.sort_order || 0,
       modules: form.modules, lead_assign_methods: form.lead_assign_methods, ...form.integrations,
+      // every permission ticked = the default (stored as null, so permissions added later are allowed too)
+      complimentary: form.complimentary.filter(c => !form.modules.includes(c.module)),
+      permissions: allPermKeys.every(k => form.permissions.includes(k)) ? null : form.permissions.filter(k => allPermKeys.includes(k)),
     }
     LIMIT_KEYS.forEach(k => { payload[k] = form.limits[k] === '' || form.limits[k] === undefined ? null : +form.limits[k] })
     try {
@@ -213,12 +219,68 @@ export default function SuperAdminPlans() {
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                   {g.items.map(m => <Toggle key={m.key} on={form.modules.includes(m.key)} onChange={() => set('modules', flip(form.modules, m.key))} label={`${m.icon} ${m.label}`} sub={m.description} />)}
                 </div></div>))}
+            {/* permissions inside each included feature */}
+            {mods.some(m => form.modules.includes(m.key) && permCat[m.key]?.length) && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Permissions inside features</p>
+                  <button type="button" className="text-xs text-brand-600 hover:underline" onClick={() => set('permissions', allPermKeys)}>Reset all to defaults</button>
+                </div>
+                <p className="text-[11px] text-gray-400">Roles in a company on this plan can only be given the ticked permissions. Saved with the plan.</p>
+                {mods.filter(m => form.modules.includes(m.key) && permCat[m.key]?.length).map(m => {
+                  const keys = permCat[m.key].map(x => x.key)
+                  const on = keys.filter(k => form.permissions.includes(k)).length
+                  return (
+                    <details key={m.key} className="rounded-xl border border-gray-200 bg-white">
+                      <summary className="flex cursor-pointer items-center justify-between gap-2 p-2.5 text-sm font-medium text-gray-800">
+                        <span>{m.icon} {m.label}</span>
+                        <span className={`text-xs font-normal ${on === keys.length ? 'text-gray-400' : 'text-amber-600'}`}>{on} of {keys.length} allowed</span>
+                      </summary>
+                      <div className="space-y-1 border-t border-gray-100 p-2.5">
+                        <div className="mb-1 flex gap-3 text-xs">
+                          <button type="button" className="text-brand-600 hover:underline" onClick={() => set('permissions', Array.from(new Set([...form.permissions, ...keys])))}>Select all</button>
+                          <button type="button" className="text-brand-600 hover:underline" onClick={() => set('permissions', form.permissions.filter(k => !keys.includes(k)))}>Clear</button>
+                          <button type="button" className="text-gray-500 hover:underline" onClick={() => set('permissions', Array.from(new Set([...form.permissions, ...keys])))}>Reset to default</button>
+                        </div>
+                        <div className="grid gap-1 sm:grid-cols-2">
+                          {permCat[m.key].map(pm => (
+                            <label key={pm.key} className="flex items-center gap-2 text-sm text-gray-700">
+                              <input type="checkbox" checked={form.permissions.includes(pm.key)} onChange={() => set('permissions', flip(form.permissions, pm.key))} />
+                              <span>{pm.label} <span className="text-[10px] text-gray-400">{pm.type}</span></span>
+                            </label>))}
+                        </div>
+                      </div>
+                    </details>)
+                })}
+              </div>)}
             {form.modules.includes('integrations') && (
               <div><p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-gray-400">Integrations allowed</p>
                 <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">{INTEGRATIONS.map(i => <Toggle key={i.key} on={!!form.integrations[i.key]} onChange={v => set('integrations', { ...form.integrations, [i.key]: v })} label={i.label} />)}</div></div>)}
           </Section>
 
-          <Section n={3} title="Limits" sub="Leave blank for unlimited, 0 for none.">
+          <Section n={3} title="Complimentary features" sub="Free for a limited time — promote a new feature. When the period ends it locks, and the company buys it separately as an add-on.">
+            {mods.filter(m => !form.modules.includes(m.key)).length === 0
+              ? <p className="text-sm text-gray-400">Every feature is already included in this plan.</p>
+              : (
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                  {mods.filter(m => !form.modules.includes(m.key)).map(m => {
+                    const c = form.complimentary.find(x => x.module === m.key)
+                    return (
+                      <div key={m.key} className={`flex items-center gap-3 rounded-xl border p-2.5 ${c ? 'border-amber-300 bg-amber-50' : 'border-gray-200 bg-white'}`}>
+                        <input type="checkbox" checked={!!c} onChange={() => set('complimentary', c ? form.complimentary.filter(x => x.module !== m.key) : [...form.complimentary, { module: m.key, months: compMonths[0] }])} />
+                        <span className="min-w-0 flex-1 text-sm font-medium text-gray-800">{m.icon} {m.label}</span>
+                        {c && (
+                          <select className="select !w-auto text-xs" value={c.months} onChange={e => set('complimentary', form.complimentary.map(x => x.module === m.key ? { ...x, months: +e.target.value } : x))}>
+                            {compMonths.map(n => <option key={n} value={n}>{n} month{n > 1 ? 's' : ''} free</option>)}
+                          </select>)}
+                      </div>)
+                  })}
+                </div>)}
+            {form.complimentary.length > 0 && <button type="button" className="text-xs text-brand-600 hover:underline" onClick={() => set('complimentary', [])}>Reset — no complimentary features</button>}
+            <p className="text-[11px] text-gray-400">The free period starts when a company first gets this plan, and is never restarted by renewing or switching plans.</p>
+          </Section>
+
+          <Section n={4} title="Limits" sub="Leave blank for unlimited, 0 for none.">
             {LIMIT_BLOCKS.map(b => {
               const off = b.module !== null && !form.modules.includes(b.module)
               return (
@@ -232,7 +294,7 @@ export default function SuperAdminPlans() {
           </Section>
 
           {leadsOn && (
-            <Section n={4} title="Lead assign methods" sub="Which assignment modes this plan can switch on.">
+            <Section n={5} title="Lead assign methods" sub="Which assignment modes this plan can switch on.">
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 {methods.map(m => <Toggle key={m.key} on={form.lead_assign_methods.includes(m.key)} onChange={() => set('lead_assign_methods', flip(form.lead_assign_methods, m.key))} label={m.label} />)}
               </div>

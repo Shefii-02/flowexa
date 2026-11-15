@@ -157,6 +157,9 @@ class PlanPurchaseController extends Controller
             'throttle_per_minute' => [$req, 'integer', 'min:10', 'max:1000'],
             'features' => ['nullable', 'array'], 'features.*' => ['string', 'max:150'],
             'modules' => ['nullable', 'array'], 'modules.*' => ['string', \Illuminate\Validation\Rule::in(\App\Support\Modules::keys())],
+            'complimentary' => ['nullable', 'array'], 'complimentary.*.module' => ['required', 'string', \Illuminate\Validation\Rule::in(\App\Support\Modules::keys())],
+            'complimentary.*.months' => ['required', 'integer', \Illuminate\Validation\Rule::in(\App\Support\Modules::COMPLIMENTARY_MONTHS)],
+            'permissions' => ['nullable', 'array'], 'permissions.*' => ['string', 'max:100'],
             'lead_assign_methods' => ['nullable', 'array'], 'lead_assign_methods.*' => ['string', \Illuminate\Validation\Rule::in(array_keys(\App\Support\Modules::ASSIGN_METHODS))],
             'google_sheets_enabled' => ['nullable', 'boolean'], 'google_drive_enabled' => ['nullable', 'boolean'],
             'calendar_enabled' => ['nullable', 'boolean'], 'email_integration_enabled' => ['nullable', 'boolean'],
@@ -213,8 +216,48 @@ class PlanPurchaseController extends Controller
     {
         return response()->json([
             'modules' => \App\Support\Modules::catalog(), 'groups' => \App\Support\Modules::GROUPS,
+            'permissions' => \App\Support\Modules::permissionCatalog(), 'complimentary_months' => \App\Support\Modules::COMPLIMENTARY_MONTHS,
             'assign_methods' => collect(\App\Support\Modules::ASSIGN_METHODS)->map(fn ($l, $k) => ['key' => $k, 'label' => $l])->values(),
         ]);
+    }
+
+    // ── Superadmin: upgrade / change a company's plan with online or manual payment ──
+
+    private function upgradeRules(): array
+    {
+        return ['plan_id' => ['required', 'integer', 'exists:plans,id'], 'duration_type' => ['required', 'in:monthly,3month,6month,yearly,12month'], 'coupon_code' => ['nullable', 'string', 'max:40']];
+    }
+
+    /** POST superadmin/companies/{company}/plan-upgrade/quote — change type, price, coupon and any usage that blocks the switch. */
+    public function saUpgradeQuote(Request $request, int $company): JsonResponse
+    {
+        $d = $request->validate($this->upgradeRules());
+        $preview = $this->svc->changePreview($company, $d['plan_id'], $d['duration_type']);
+        $q = $this->svc->quotePlan($company, $d['plan_id'], $d['duration_type'], $d['coupon_code'] ?? null);
+        return response()->json($preview + ['subtotal' => $q['subtotal'], 'discount' => $q['discount'], 'final' => $q['final'], 'coupon' => $q['coupon']?->only(['code', 'name', 'discount_type', 'discount_value'])]);
+    }
+
+    /** POST superadmin/companies/{company}/plan-upgrade/order — Razorpay order (or instant activation when a coupon makes it free). */
+    public function saUpgradeOrder(Request $request, int $company): JsonResponse
+    {
+        $d = $request->validate($this->upgradeRules());
+        return response()->json($this->svc->createPlanOrder($company, auth()->id(), $d['plan_id'], $d['duration_type'], $d['coupon_code'] ?? null, true));
+    }
+
+    /** POST superadmin/companies/{company}/plan-upgrade/verify — confirm the Razorpay payment and activate. */
+    public function saUpgradeVerify(Request $request, int $company): JsonResponse
+    {
+        $d = $request->validate(['razorpay_order_id' => ['required', 'string'], 'razorpay_payment_id' => ['required', 'string'], 'razorpay_signature' => ['required', 'string'], 'plan_id' => ['required', 'integer'], 'duration_type' => ['required', 'string']]);
+        $cp = $this->svc->verifyPlanPayment($company, $d);
+        return response()->json(['message' => "Plan activated: {$cp->plan->name}", 'company_plan' => $cp]);
+    }
+
+    /** POST superadmin/companies/{company}/plan-upgrade/manual — cash / bank / UPI received outside the gateway. */
+    public function saUpgradeManual(Request $request, int $company): JsonResponse
+    {
+        $d = $request->validate($this->upgradeRules() + ['method' => ['required', 'string', 'max:30'], 'reference' => ['nullable', 'string', 'max:100'], 'note' => ['nullable', 'string', 'max:300'], 'amount' => ['nullable', 'numeric', 'min:0']]);
+        $cp = $this->svc->manualPlanPurchase($company, $d['plan_id'], $d['duration_type'], $d['method'], $d['reference'] ?? null, $d['note'] ?? null, $d['coupon_code'] ?? null, isset($d['amount']) ? (float) $d['amount'] : null);
+        return response()->json(['message' => "Plan activated: {$cp->plan->name}", 'company_plan' => $cp]);
     }
 
     public function assignCustomPlan(Request $request): JsonResponse

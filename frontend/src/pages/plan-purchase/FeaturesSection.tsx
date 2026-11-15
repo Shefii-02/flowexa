@@ -27,6 +27,7 @@ export default function FeaturesSection({ addons, mine, focus, cart, setCart, on
         <div className="min-w-0 flex-1">
           <p className={`font-medium ${on ? 'text-gray-900' : 'text-gray-500'}`}>{m.label}</p>
           <p className="text-xs text-gray-500">{m.description}</p>
+          {on && e.from_complimentary?.includes(m.key) && <p className="text-[11px] text-indigo-600">🎁 Free trial of this feature · until {fmt.date(e.complimentary![m.key])}</p>}
           {viaAddon && <p className="text-[11px] text-green-600">Via add-on{expiry(m.key) ? ` · until ${fmt.date(expiry(m.key)!)}` : ''}</p>}
         </div>
         {on ? <Badge variant="green">Active</Badge>
