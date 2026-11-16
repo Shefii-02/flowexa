@@ -53,83 +53,166 @@ class WaCloudReplyRouter
 
     private function whenMatches(WaCloudReplyRoute $r): bool
     {
-        if ($r->when_mode === 'always') {
+        // New (steps) routes carry their schedule on each step; only a legacy single-type route filters here.
+        if (!empty($r->steps) || $r->when_mode === 'always') {
             return true;
         }
         $open = $this->withinHours($r);
         return $r->when_mode === 'in_hours' ? $open : !$open;
     }
 
+    // ── Responder chain ──────────────────────────────────────────────────────
+
+    /** Is this step switched on right now? schedule = {mode: always|in_hours|out_of_hours, days?, start?, end?} */
+    public function stepActive(array $step): bool
+    {
+        $sc = (array) ($step['schedule'] ?? []);
+        $mode = $sc['mode'] ?? 'always';
+        if ($mode === 'always') {
+            return true;
+        }
+        $open = $this->withinWindow($sc['days'] ?? [], $sc['start'] ?? null, $sc['end'] ?? null);
+        return $mode === 'in_hours' ? $open : !$open;
+    }
+
+    /** Where this customer currently is in the chain (sticky for 12 h of silence), or null for "start at step 1". */
+    public function currentStep(Company $company, string $phone, WaCloudReplyRoute $route): ?int
+    {
+        $v = Cache::get("wcrr:step:{$company->id}:{$phone}");
+        return is_array($v) && ($v['route'] ?? null) === $route->id ? (int) $v['step'] : null;
+    }
+
+    public function rememberStep(Company $company, string $phone, WaCloudReplyRoute $route, int $index): void
+    {
+        Cache::put("wcrr:step:{$company->id}:{$phone}", ['route' => $route->id, 'step' => $index], now()->addHours(12));
+    }
+
+    /** Customer asked for a person ("agent", "human"…): jump to the next human step after $from, else just the next step. */
+    public function escalationTarget(array $steps, int $from): int
+    {
+        for ($i = $from + 1; $i < count($steps); $i++) {
+            if (in_array($steps[$i]['type'] ?? '', ['handover', 'manual'], true)) {
+                return $i;
+            }
+        }
+        return min($from + 1, count($steps) - 1);
+    }
+
+    public function wantsEscalation(WaCloudReplyRoute $route, string $text): bool
+    {
+        $t = mb_strtolower(trim($text));
+        if ($t === '') {
+            return false;
+        }
+        foreach ((array) ($route->escalate_keywords ?? []) as $k) {
+            $k = mb_strtolower(trim((string) $k));
+            if ($k !== '' && str_contains($t, $k)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /** True when "now" falls inside the route's office days / hours (no hours configured = always open). */
     public function withinHours(WaCloudReplyRoute $r): bool
     {
+        return $this->withinWindow($r->schedule_days ?? [], $r->schedule_start, $r->schedule_end);
+    }
+
+    /** @param array<int,string>|null $days */
+    public function withinWindow(?array $days, ?string $start, ?string $end): bool
+    {
         $now = Carbon::now();
-        $days = array_map('mb_strtolower', $r->schedule_days ?? []);
+        $days = array_map('mb_strtolower', $days ?? []);
         if ($days !== [] && !in_array(mb_strtolower($now->format('l')), $days, true)) {
             return false;
         }
-        if (!$r->schedule_start || !$r->schedule_end) {
+        if (!$start || !$end) {
             return true;
         }
         $cur = $now->format('H:i');
-        return $r->schedule_start <= $r->schedule_end
-            ? ($cur >= $r->schedule_start && $cur <= $r->schedule_end)
-            : ($cur >= $r->schedule_start || $cur <= $r->schedule_end);   // overnight window
+        return $start <= $end
+            ? ($cur >= $start && $cur <= $end)
+            : ($cur >= $start || $cur <= $end);   // overnight window
     }
 
-    // ── Handover ─────────────────────────────────────────────────────────────
+    // ── Handover (lead routing) ──────────────────────────────────────────────
 
     /**
-     * Hand the conversation to a sales-team member: pick one (round-robin or least busy among the chosen users),
-     * assign the inbox conversation, and notify them (push + live socket). Returns the user id, or null if nobody
-     * could be picked.
+     * Sales-team handover = LEAD ROUTING. The chat becomes a lead assignment run by the company's own
+     * Lead Assignment rule (CRM → Leads → Assignment rules): its strategy (weighted algorithm, or simple round
+     * robin), its notification mode (instant auto-assign, or notify one agent at a time → Accept/Decline →
+     * cascade), working hours (outside them the AI agent takes over), SLA and duplicate handling. The route only
+     * adds an optional "only these people" limit.
      *
-     * @param array{user_ids?:array<int>,strategy?:string} $cfg
+     * @param array{user_ids?:array<int>} $cfg
+     * @return array{status:string,staff_id:?int,detail:?string}  status: assigned | notifying | ai | existing | skipped | failed
      */
-    public function handover(Company $company, string $phone, array $cfg, ?int $routeId = null): ?int
+    public function handover(Company $company, string $phone, array $cfg, ?int $routeId = null): array
     {
-        $conv = WaConversation::where('company_id', $company->id)->where('phone', $phone)->first();
-        if (!$conv) {
-            return null;
+        $contact = \App\Models\Contact::where('company_id', $company->id)->where('phone', $phone)->first();
+        if (!$contact) {
+            return ['status' => 'failed', 'staff_id' => null, 'detail' => 'contact not found'];
+        }
+        $rule = \App\Models\LeadAssignmentRule::where('company_id', $company->id)->first()
+            ?? \App\Models\LeadAssignmentRule::create(\App\Models\LeadAssignmentRule::defaultForCompany($company->id));
+        $summary = $this->describeRule($rule);
+
+        if (!$rule->auto_assign_enabled) {
+            return ['status' => 'skipped', 'staff_id' => null, 'detail' => 'Lead routing: auto-assign is off — staff pick it up from the inbox'];
         }
 
-        // Keep the same person on a customer who is already assigned to an active staff member.
-        if ($conv->assigned_to && User::where('company_id', $company->id)->where('id', $conv->assigned_to)->where('is_active', true)->exists()) {
-            $this->notify((int) $conv->assigned_to, $conv, 'New message from your customer');
-            return (int) $conv->assigned_to;
+        // One routing run per customer, not one per message: while a lead assignment is already open for this
+        // contact, a new message just alerts the person who owns it (or keeps waiting for the notify cascade).
+        $cur = $contact->current_assignment_id ? \App\Models\LeadAssignment::find($contact->current_assignment_id) : null;
+        if ($cur && in_array($cur->status, ['pending', 'notified', 'assigned', 'accepted'], true) && $cur->created_at && $cur->created_at->gt(now()->subDays(14))) {
+            if ($cur->staff_id) {
+                $conv = WaConversation::where('company_id', $company->id)->where('phone', $phone)->first();
+                if ($conv) {
+                    $this->notify((int) $cur->staff_id, $conv, 'New message from your customer');
+                }
+                return ['status' => 'existing', 'staff_id' => (int) $cur->staff_id, 'detail' => 'already with the assigned agent'];
+            }
+            return ['status' => 'notifying', 'staff_id' => null, 'detail' => 'lead routing already in progress · ' . $summary];
         }
 
-        $uid = $this->pickStaff($company, (array) ($cfg['user_ids'] ?? []), (string) ($cfg['strategy'] ?? 'round_robin'), $routeId);
-        if (!$uid) {
-            return null;
-        }
-        $conv->update(['assigned_to' => $uid, 'status' => 'open']);
-        $this->notify($uid, $conv, 'New conversation assigned to you');
-        return $uid;
+        $only = array_values(array_filter(array_map('intval', (array) ($cfg['user_ids'] ?? []))));
+        $lead = \App\Models\Lead::where('company_id', $company->id)->where('contact_id', $contact->id)
+            ->whereNotIn('stage', ['enrolled', 'lost'])->latest('id')->first();
+
+        $a = app(\App\Services\LeadAssignment\LeadAssignmentEngine::class)->assign(
+            $company, $contact, 'whatsapp_cloud', null, 'reply_route' . ($routeId ? ":{$routeId}" : ''), 'auto', $lead, $only ?: null,
+        )->fresh();
+
+        $status = $a->staff_id ? 'assigned' : ($a->ai_agent_session_id ? 'ai' : 'notifying');
+        $detail = match ($status) {
+            'assigned'  => $summary,
+            'ai'        => 'AI agent took over (' . ($a->transfer_reason ?: 'nobody available') . ')',
+            default     => $summary . ' · offered to agents one by one',
+        };
+        return ['status' => $status, 'staff_id' => $a->staff_id ? (int) $a->staff_id : null, 'detail' => $detail];
     }
 
-    /** @param array<int> $userIds */
-    public function pickStaff(Company $company, array $userIds, string $strategy, ?int $routeId = null): ?int
+    private function describeRule(\App\Models\LeadAssignmentRule $r): string
     {
-        $pool = User::where('company_id', $company->id)->where('is_active', true)
-            ->when($userIds, fn ($q) => $q->whereIn('id', $userIds))
-            ->orderBy('id')->pluck('id')->map(fn ($v) => (int) $v)->all();
-        if (!$pool) {
-            return null;
-        }
+        $strategy = ($r->strategy ?? 'algorithm') === 'round_robin' ? 'Simple round robin' : 'Weighted algorithm';
+        $mode = match ($r->notification_mode) {
+            'auto'   => 'instant auto-assign',
+            'uber'   => 'notify one at a time (accept / decline)',
+            'hybrid' => 'hybrid notify → accept / decline → cascade',
+            default  => (string) $r->notification_mode,
+        };
+        return "{$strategy} · {$mode}";
+    }
 
-        if ($strategy === 'least_busy') {
-            $open = WaConversation::where('company_id', $company->id)->where('status', 'open')->whereIn('assigned_to', $pool)
-                ->groupBy('assigned_to')->select('assigned_to', DB::raw('count(*) as c'))->pluck('c', 'assigned_to');
-            usort($pool, fn ($a, $b) => ($open[$a] ?? 0) <=> ($open[$b] ?? 0) ?: $a <=> $b);
-            return $pool[0];
-        }
-
-        // round robin: a per-route (or per-company) rotating pointer
-        $key = 'wcrr:rr:' . $company->id . ':' . ($routeId ?? 0);
-        $i = (int) Cache::get($key, 0);
-        Cache::put($key, $i + 1, now()->addDays(30));
-        return $pool[$i % count($pool)];
+    /** The company's current lead-routing settings, for the UI summary. */
+    public function ruleSummary(Company $company): array
+    {
+        $r = \App\Models\LeadAssignmentRule::where('company_id', $company->id)->first();
+        return $r ? [
+            'auto_assign_enabled' => (bool) $r->auto_assign_enabled, 'strategy' => $r->strategy, 'notification_mode' => $r->notification_mode,
+            'summary' => $this->describeRule($r),
+        ] : ['auto_assign_enabled' => true, 'strategy' => 'algorithm', 'notification_mode' => 'uber', 'summary' => 'Weighted algorithm · notify one at a time (accept / decline)'];
     }
 
     private function notify(int $userId, WaConversation $conv, string $title): void
@@ -153,12 +236,12 @@ class WaCloudReplyRouter
     // ── Analytics log ────────────────────────────────────────────────────────
 
     public function record(Company $company, ?WaCloudReplyRoute $route, ?int $numberId, string $phone, string $outcome,
-        ?string $finalType = null, ?int $assignedTo = null, ?string $detail = null): void
+        ?string $finalType = null, ?int $assignedTo = null, ?string $detail = null, ?int $step = null): void
     {
         try {
             WaCloudRouteEvent::create([
                 'company_id' => $company->id, 'route_id' => $route?->id, 'wa_phone_number_id' => $numberId ?? $route?->wa_phone_number_id,
-                'phone' => $phone, 'response_type' => $route?->response_type ?? 'none', 'final_type' => $finalType ?? $route?->response_type,
+                'phone' => $phone, 'response_type' => $route?->response_type ?? 'none', 'final_type' => $finalType ?? $route?->response_type, 'step' => $step,
                 'outcome' => $outcome, 'assigned_to' => $assignedTo, 'detail' => $detail ? mb_substr($detail, 0, 190) : null, 'created_at' => now(),
             ]);
         } catch (\Throwable $e) {

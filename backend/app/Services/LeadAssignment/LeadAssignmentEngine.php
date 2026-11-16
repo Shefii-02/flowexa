@@ -35,6 +35,7 @@ class LeadAssignmentEngine
         ?string $sourceRef = null,
         string $assignmentType = 'auto',
         ?Lead $lead = null,
+        ?array $onlyStaffIds = null,   // limit the candidate pool (WA Cloud reply routing); null = any eligible staff
     ): LeadAssignment {
         $rule = LeadAssignmentRule::where('company_id', $company->id)->first()
             ?? LeadAssignmentRule::create(LeadAssignmentRule::defaultForCompany($company->id));
@@ -60,7 +61,7 @@ class LeadAssignmentEngine
 
         return DB::transaction(function () use (
             $company, $contact, $campaignId, $sourceType, $sourceRef,
-            $assignmentType, $rule, $dupCheck, $lead
+            $assignmentType, $rule, $dupCheck, $lead, $onlyStaffIds
         ) {
             $resolvedType = $rule->notification_mode === 'uber' ? 'notification' : $assignmentType;
 
@@ -75,6 +76,7 @@ class LeadAssignmentEngine
                 'assignment_type'      => $resolvedType,
                 'priority'             => $this->calculatePriority($contact, $dupCheck),
                 'response_sla_minutes' => $rule->sla_minutes,
+                'candidate_staff_ids'  => $onlyStaffIds ?: null,
                 'notes'                => $dupCheck['is_duplicate'] ? $dupCheck['reason'] : null,
             ]);
 
@@ -101,9 +103,10 @@ class LeadAssignmentEngine
             // notification modes below.
             if ($dupCheck['is_duplicate'] && $dupCheck['recommended_action'] === 'assign_same_staff' && $dupCheck['previous_staff']) {
                 $prevStaff = $dupCheck['previous_staff'];
+                $prevAllowed = !$onlyStaffIds || in_array($prevStaff->id, $onlyStaffIds, true);
                 $prevAvail = StaffAvailability::ensureExists($company->id, $prevStaff->id);
                 $prevScore = $this->scorer->score($prevStaff, $prevAvail, $rule, $dupCheck['previous_assignment']);
-                if ($prevScore > 0) {
+                if ($prevAllowed && $prevScore > 0) {
                     $this->assignToStaff($assignment, $prevStaff, $rule);
                     return $assignment;
                 }
@@ -114,8 +117,8 @@ class LeadAssignmentEngine
             // algorithm), falling back to the AI agent only if nobody is available at all.
             if ($rule->notification_mode === 'auto') {
                 $staff = ($rule->strategy ?? 'algorithm') === 'round_robin'
-                    ? $this->roundRobinPick($company)
-                    : ($this->scorer->rankStaff($company, $rule, $dupCheck['previous_assignment'] ?? null)->first()->staff ?? null);
+                    ? $this->roundRobinPick($company, [], $onlyStaffIds ?? [])
+                    : ($this->scorer->rankStaff($company, $rule, $dupCheck['previous_assignment'] ?? null, [], $onlyStaffIds ?? [])->first()->staff ?? null);
 
                 if ($staff) {
                     $this->assignToStaff($assignment, $staff, $rule);
@@ -207,13 +210,14 @@ class LeadAssignmentEngine
     }
 
     /** Least-loaded available staff member, then longest-idle (round-robin) — optionally skipping candidates already tried for this assignment. */
-    public function roundRobinPick(Company $company, array $excludeStaffIds = []): ?User
+    public function roundRobinPick(Company $company, array $excludeStaffIds = [], array $onlyStaffIds = []): ?User
     {
         $candidate = StaffAvailability::query()
             ->where('company_id', $company->id)
             ->where('is_available', true)
             ->whereNotIn('status', ['offline', 'busy'])
             ->when($excludeStaffIds, fn ($q) => $q->whereNotIn('staff_id', $excludeStaffIds))
+            ->when($onlyStaffIds, fn ($q) => $q->whereIn('staff_id', $onlyStaffIds))
             ->whereHas('staff', fn ($q) => $q->where('is_active', true))
             ->orderBy('today_leads_count')
             ->orderByRaw('last_seen_at IS NULL DESC')

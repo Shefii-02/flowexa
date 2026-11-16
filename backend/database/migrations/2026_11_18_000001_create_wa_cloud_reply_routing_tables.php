@@ -27,7 +27,9 @@ return new class extends Migration
             $t->unsignedBigInteger('playbook_id')->nullable();           // ai_agent: which AI agent
             $t->json('handover')->nullable();                            // {user_ids:[], strategy: round_robin|least_busy, ack_message}
             $t->text('reply_text')->nullable();                          // auto_reply body
-            $t->string('fallback_type', 12)->default('none');            // none | handover | auto_reply — when AI/chatbot cannot handle it
+            $t->string('fallback_type', 12)->default('none');            // legacy single-step routes only
+            $t->json('steps')->nullable();                               // ordered responders: [{type, flow_builder_id, playbook_id, handover, reply_text, schedule}, …]
+            $t->json('escalate_keywords')->nullable();                   // customer says one of these → jump to the next human step
             $t->unsignedSmallInteger('priority')->default(0);
             $t->boolean('is_active')->default(true);
             $t->timestamps();
@@ -42,6 +44,7 @@ return new class extends Migration
             $t->string('phone', 32);
             $t->string('response_type', 12);                             // what the route chose
             $t->string('final_type', 12)->nullable();                    // what actually answered (differs after a fallback)
+            $t->unsignedTinyInteger('step')->nullable();                 // 1-based position in the chain that answered
             $t->string('outcome', 10);                                   // handled | fallback | skipped | failed
             $t->unsignedBigInteger('assigned_to')->nullable();
             $t->string('detail', 190)->nullable();

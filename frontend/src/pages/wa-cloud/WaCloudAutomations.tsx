@@ -11,6 +11,45 @@ const RULE_TYPES = [
   { value: 'inactivity_trigger', label: 'Inactivity Trigger' },
 ]
 
+/** What each rule type does, when it fires, and a worked example the form can be filled with. */
+const RULE_DOCS: Record<string, { when: string; how: string; sample: Record<string, unknown> }> = {
+  welcome_message: {
+    when: 'A customer’s very first message to you.',
+    how: 'Sends your greeting once per customer, ever. Add "assign" to hand new customers to the sales team.',
+    sample: { name: 'Welcome new customers', message: 'Hi 👋 Welcome! Thanks for messaging us.\nHow can we help you today?' },
+  },
+  out_of_office: {
+    when: 'A message arrives OUTSIDE your working days / hours.',
+    how: 'Set your open hours below; anything outside them gets this reply (at most once every N hours per customer) and can create a task so someone answers next morning.',
+    sample: { name: 'After-hours auto reply', message: 'We’re closed right now 🌙\nOur team replies Mon–Fri, 9 AM – 6 PM. Leave your message and we’ll get back to you first thing.', schedule_start: '09:00', schedule_end: '18:00', schedule_days: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'], do_task: true, task_title: 'Reply to after-hours message', task_hours: '12' },
+  },
+  lead_qualifier: {
+    when: 'First message — or any message containing your keywords.',
+    how: 'Asks the qualifying questions and (optionally) hands the chat to the sales team through lead routing.',
+    sample: { name: 'Qualify pricing enquiries', keywords: 'price, pricing, quote, cost, demo, buy', message: 'Thanks for your interest! 🙌 To help you faster, could you share your name, city and what you’re looking for?', do_assign: true },
+  },
+  keyword_trigger: {
+    when: 'The message contains any of your keywords.',
+    how: 'Instant canned answers — opening hours, address, brochure link — for common questions.',
+    sample: { name: 'Opening hours & address', keywords: 'hours, timing, open, address, location', message: '📍 Visit us: <your address>\n🕘 Open Mon–Sat, 9 AM – 7 PM\nReply *AGENT* to talk to a person.' },
+  },
+  follow_up_reminder: {
+    when: 'TIME-based: a chat has been silent for N hours.',
+    how: 'Sends a nudge after the delay (checked every few minutes by the scheduler). Set “Delay (hours)”.',
+    sample: { name: 'Gentle reminder after 1 day', message: 'Just checking in 😊 Is there anything else we can help you with?', delay_hours: '24' },
+  },
+  follow_up_agent: {
+    when: 'TIME-based: a chat has been silent for N hours.',
+    how: 'Doesn’t message the customer — it alerts your team and creates a follow-up task.',
+    sample: { name: 'Alert the agent after 2 days of silence', message: '', delay_hours: '48', do_notify: true, do_task: true, task_title: 'Follow up with customer', task_hours: '24' },
+  },
+  inactivity_trigger: {
+    when: 'TIME-based: no activity from the customer for N hours.',
+    how: 'Re-engages a customer who went quiet. Set “Trigger after inactivity (hours)”.',
+    sample: { name: 'Re-engage after 3 days', message: 'Hi! We haven’t heard from you in a while. Still interested? Reply YES and we’ll pick up where we left off.', inactivity_hours: '72' },
+  },
+}
+
 const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
 
 // Matches PhoneNumberController::index()'s actual shape ({ phone_numbers: [...] } with
@@ -124,7 +163,6 @@ export function RulesTab() {
   const handleSave = async () => {
     setErr('')
     if (!form.name || (!form.message && !form.do_assign && !form.do_notify && !form.do_task)) { setErr('Give the rule a name and at least one action (a reply message, assign, notify or task).'); return }
-    if (form.do_assign && form.assign_users.length === 0) { setErr('Choose which team members the chat is assigned to.'); return }
     setSaving(true)
     try {
       const payload: Record<string, unknown> = {
@@ -135,7 +173,7 @@ export function RulesTab() {
         priority: Number(form.priority),
         actions: [
           ...(form.message ? [{ type: 'send_message', message: form.message }] : []),
-          ...(form.do_assign ? [{ type: 'assign_agent', user_ids: form.assign_users, strategy: form.assign_strategy }] : []),
+          ...(form.do_assign ? [{ type: 'assign_agent', user_ids: form.assign_users }] : []),
           ...(form.do_notify ? [{ type: 'notify_agent', user_ids: form.notify_users }] : []),
           ...(form.do_task ? [{ type: 'create_task', title: form.task_title || undefined, due_hours: Number(form.task_hours) || 24 }] : []),
         ],
@@ -166,6 +204,12 @@ export function RulesTab() {
   }
 
   const f = form
+  const useSample = () => setForm(p => ({ ...p, ...(RULE_DOCS[p.rule_type]?.sample ?? {}), schedule_days: (RULE_DOCS[p.rule_type]?.sample?.schedule_days as string[] | undefined) ?? p.schedule_days } as typeof p))
+  const [seeding, setSeeding] = useState(false)
+  const seedSamples = async () => {
+    setSeeding(true)
+    try { const r = await api.post('/wa-cloud/automations/seed-samples'); alert(r.data?.message ?? 'Done'); load() } finally { setSeeding(false) }
+  }
   const set = (k: keyof typeof form, v: unknown) => setForm(p => ({ ...p, [k]: v }))
   const toggleDay = (day: string) => setForm(p => ({
     ...p,
@@ -186,9 +230,14 @@ export function RulesTab() {
           <h2 className="text-lg font-bold text-gray-900">Automation rules</h2>
           <p className="text-sm text-gray-500 mt-1">Triggers that react to a message or silence — send a reply, assign the chat, notify the team, create a task. Per number or all numbers.</p>
         </div>
-        <button onClick={openCreate} className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700">
-          + New Rule
-        </button>
+        <div className="flex gap-2 shrink-0">
+          <button onClick={seedSamples} disabled={seeding} className="px-4 py-2 border border-indigo-200 text-indigo-700 bg-indigo-50 rounded-lg text-sm font-medium hover:bg-indigo-100 disabled:opacity-50" title="Adds one paused example per rule type that you can edit">
+            {seeding ? 'Adding…' : '✨ Add sample rules'}
+          </button>
+          <button onClick={openCreate} className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700">
+            + New Rule
+          </button>
+        </div>
       </div>
 
       {loading ? (
@@ -256,6 +305,14 @@ export function RulesTab() {
                 </div>
               </div>
 
+              {RULE_DOCS[f.rule_type] && (
+                <div className="rounded-xl border border-indigo-100 bg-indigo-50/50 p-3 text-xs space-y-1.5">
+                  <div><span className="font-semibold text-indigo-800">When it fires: </span><span className="text-gray-700">{RULE_DOCS[f.rule_type].when}</span></div>
+                  <div><span className="font-semibold text-indigo-800">How to use: </span><span className="text-gray-700">{RULE_DOCS[f.rule_type].how}</span></div>
+                  <button type="button" onClick={useSample} className="mt-1 px-3 py-1.5 rounded-lg bg-white border border-indigo-200 text-indigo-700 font-medium hover:bg-indigo-100">✨ Fill the form with a sample</button>
+                </div>
+              )}
+
               <div>
                 <label className="block text-xs font-medium text-gray-700 mb-1">Rule Name *</label>
                 <input value={f.name} onChange={e => set('name', e.target.value)} className={inp} placeholder="e.g. Welcome new customers" />
@@ -317,14 +374,12 @@ export function RulesTab() {
               <div className="rounded-xl border border-indigo-100 bg-indigo-50/40 p-3 space-y-3">
                 <div className="text-xs font-semibold text-indigo-800">Then also (runs automatically)</div>
 
-                <label className="flex items-center gap-2 text-sm text-gray-700"><input type="checkbox" checked={f.do_assign} onChange={e => set('do_assign', e.target.checked)} className="w-4 h-4" /> 👥 Assign the chat to sales-team users</label>
+                <label className="flex items-center gap-2 text-sm text-gray-700"><input type="checkbox" checked={f.do_assign} onChange={e => set('do_assign', e.target.checked)} className="w-4 h-4" /> 👥 Hand over to the sales team (lead routing)</label>
                 {f.do_assign && (
                   <div className="ml-6 space-y-2">
+                    <p className="text-[11px] text-gray-600">Runs your <a href="/crm/leads/assignment-rules" target="_blank" rel="noreferrer" className="text-indigo-600 hover:underline">Lead assignment rules</a> — weighted algorithm or round robin, instant assign or notify-one-at-a-time with Accept / Decline.</p>
+                    <div className="text-[11px] font-medium text-gray-600">Only offer to these people <span className="text-gray-400 font-normal">(empty = everyone eligible)</span></div>
                     <StaffPick staff={staff} value={f.assign_users} onChange={v => set('assign_users', v)} />
-                    <select value={f.assign_strategy} onChange={e => set('assign_strategy', e.target.value)} className={inp}>
-                      <option value="round_robin">Round robin (take turns)</option>
-                      <option value="least_busy">Least busy (fewest open chats)</option>
-                    </select>
                   </div>
                 )}
 

@@ -10,7 +10,7 @@ class WaCloudRouteEvent extends Model
     public $timestamps = false;
 
     protected $fillable = [
-        'company_id', 'route_id', 'wa_phone_number_id', 'phone', 'response_type', 'final_type', 'outcome', 'assigned_to', 'detail', 'created_at',
+        'company_id', 'route_id', 'wa_phone_number_id', 'phone', 'response_type', 'final_type', 'step', 'outcome', 'assigned_to', 'detail', 'created_at',
     ];
 
     protected $casts = ['created_at' => 'datetime'];

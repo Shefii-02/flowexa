@@ -250,15 +250,13 @@ class WaCloudAutomationEngine
 
     // ── Real actions (assign / notify / task / label / lead) ─────────────────
 
-    /** @param array<string,mixed> $a {user_ids?:int[], strategy?:round_robin|least_busy} @return array{0:bool,1:string,2:?array,3:?string} */
+    /** Assign = lead routing (the company's Lead Assignment rule). @param array<string,mixed> $a {user_ids?:int[]} @return array{0:bool,1:string,2:?array,3:?string} */
     private function doAssign(Company $company, WaCloudAutomationRule $rule, string $phone, array $a): array
     {
-        $uid = app(WaCloudReplyRouter::class)->handover($company, $phone, [
-            'user_ids' => (array) ($a['user_ids'] ?? []), 'strategy' => (string) ($a['strategy'] ?? 'round_robin'),
-        ], $rule->id);
-        return $uid
-            ? [true, 'assign_agent', ['assigned_to' => $uid], null]
-            : [false, 'assign_agent', null, 'No active staff member to assign (or no conversation yet for this contact).'];
+        $r = app(WaCloudReplyRouter::class)->handover($company, $phone, ['user_ids' => (array) ($a['user_ids'] ?? [])], $rule->id);
+        return in_array($r['status'], ['assigned', 'notifying', 'existing', 'ai'], true)
+            ? [true, 'assign_agent', ['status' => $r['status'], 'assigned_to' => $r['staff_id'], 'routing' => $r['detail']], null]
+            : [false, 'assign_agent', null, $r['detail'] ?? 'Lead routing could not assign this chat.'];
     }
 
     /** @param array<string,mixed> $a {user_ids?:int[], title?:string} @return array{0:bool,1:string,2:?array,3:?string} */

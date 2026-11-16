@@ -1502,6 +1502,17 @@ class WebhookService
                 return true;
             }
             if ($no) {
+                // Reply routing: when a later responder (AI agent / staff) is configured, "not solved" escalates to it
+                // instead of the flow's own "describe the issue" step.
+                try {
+                    $c = \App\Models\Contact::where('company_id', $company->id)->where('phone', $dto->phone)->first();
+                    if ($c && $this->applyReplyRoute($company, $c, $dto, 'My issue is not resolved, I need more help', 'text', null, true) === 'stop') {
+                        $session->delete();
+                        return true;
+                    }
+                } catch (\Throwable $e) {
+                    Log::warning('Reply-route escalation failed: ' . $e->getMessage());
+                }
                 $session->update(['context' => array_merge($session->context ?? [], ['awaiting' => 'issue'])]);
                 $this->sendText($company, $dto->phone, $m['resolved_no_reply']);
                 return true;
@@ -1824,10 +1835,17 @@ class WebhookService
     private ?int $forcedBuilderId = null;
 
     /**
-     * Applies the matching reply route. Returns 'default' (no route / let the legacy logic run), 'chatbot' (run the flow
-     * logic with the route's flow forced) or 'stop' (the route fully handled the message).
+     * Applies the matching reply route — an ORDERED CHAIN of responders (e.g. chatbot → AI agent → manual staff).
+     * Each step has its own schedule. The message goes to the first step that is on right now and can answer; a step
+     * that can't (AI declines, nobody to hand over to…) passes it to the next one. The customer's position in the
+     * chain is remembered for 12 h so a conversation stays with whoever took it, and it escalates forward when the
+     * customer asks for a person (route keywords) or says a chatbot flow did not solve their issue.
+     *
+     * Returns 'default' (no route → legacy logic), 'chatbot' (run the flow logic with the step's flow forced) or
+     * 'stop' (a step fully handled it).
      */
-    private function applyReplyRoute(Company $company, \App\Models\Contact $contact, InboundMessageDTO $dto, string $text, string $type, ?string $receivedOn): string
+    private function applyReplyRoute(Company $company, \App\Models\Contact $contact, InboundMessageDTO $dto, string $text, string $type,
+        ?string $receivedOn, bool $escalate = false): string
     {
         $router = app(\App\Modules\WaCloud\Services\WaCloudReplyRouter::class);
         $meta = $receivedOn ?: $company->wa_phone_id;
@@ -1837,77 +1855,95 @@ class WebhookService
         }
         $numberId = $router->numberId($company, $meta);
         $phone = $dto->phone;
-
-        switch ($route->response_type) {
-            case 'manual':
-                $router->record($company, $route, $numberId, $phone, 'skipped', 'manual', null, 'left for staff to answer');
-                return 'stop';
-
-            case 'auto_reply':
-                $this->routeAutoReply($company, $route, $phone);
-                $router->record($company, $route, $numberId, $phone, 'handled', 'auto_reply');
-                return 'stop';
-
-            case 'handover':
-                $this->routeHandover($company, $route, $phone, $numberId, 'handover');
-                return 'stop';
-
-            case 'chatbot':
-                $this->forcedBuilderId = $route->flow_builder_id ?: null;
-                $router->record($company, $route, $numberId, $phone, 'handled', 'chatbot', null, $route->flow_builder_id ? "flow #{$route->flow_builder_id}" : 'default flow');
-                return 'chatbot';
-
-            case 'ai_agent':
-                $handled = false;
-                if (in_array($type, ['text', 'interactive', 'voice'], true) && trim($text) !== '') {
-                    $handled = app(\App\Modules\WaChat\Services\Agent\ConversationalAgentService::class)->handle(
-                        new \App\Modules\WaChat\Services\Agent\AgentInbound(
-                            companyId: $company->id, channel: 'meta_cloud', sessionRef: (string) ($company->wa_phone_id ?: 'meta_cloud'),
-                            phone: $phone, text: $text, type: $type, playbookId: $route->playbook_id ?: null,
-                        )
-                    );
-                }
-                if ($handled) {
-                    $router->record($company, $route, $numberId, $phone, 'handled', 'ai_agent', null, $route->playbook_id ? "agent #{$route->playbook_id}" : null);
-                    return 'stop';
-                }
-                // AI could not answer (not text, agent off / outside its hours, or it errored) → the route's fallback
-                if ($route->fallback_type === 'handover') {
-                    $this->routeHandover($company, $route, $phone, $numberId, 'handover', true);
-                } elseif ($route->fallback_type === 'auto_reply') {
-                    $this->routeAutoReply($company, $route, $phone);
-                    $router->record($company, $route, $numberId, $phone, 'fallback', 'auto_reply', null, 'AI did not answer');
-                } else {
-                    $router->record($company, $route, $numberId, $phone, 'skipped', 'ai_agent', null, 'AI did not answer, no fallback');
-                }
-                return 'stop';
+        $steps = $route->resolvedSteps();
+        $n = count($steps);
+        if ($n === 0) {
+            return 'default';
         }
-        return 'default';
+
+        $cur = $router->currentStep($company, $phone, $route) ?? 0;
+        $from = $cur;
+        if ($escalate && $cur < $n - 1) {
+            $from = $cur + 1;                                            // "issue not solved" → next responder
+        } elseif ($n > 1 && $router->wantsEscalation($route, $text)) {
+            $from = $router->escalationTarget($steps, $cur);             // "I want an agent" → next human step
+        }
+
+        for ($i = min($from, $n - 1); $i < $n; $i++) {
+            $step = $steps[$i];
+            if (!$router->stepActive($step)) {
+                continue;                                                // this responder is off right now
+            }
+            $stepNo = $i + 1;
+            $stepType = (string) ($step['type'] ?? 'manual');
+
+            switch ($stepType) {
+                case 'chatbot':
+                    $this->forcedBuilderId = !empty($step['flow_builder_id']) ? (int) $step['flow_builder_id'] : null;
+                    $router->rememberStep($company, $phone, $route, $i);
+                    $router->record($company, $route, $numberId, $phone, $i > $cur ? 'fallback' : 'handled', 'chatbot', null,
+                        !empty($step['flow_builder_id']) ? "flow #{$step['flow_builder_id']}" : 'default flow', $stepNo);
+                    return 'chatbot';
+
+                case 'ai_agent':
+                    $handled = false;
+                    if (in_array($type, ['text', 'interactive', 'voice'], true) && trim($text) !== '' && !empty($step['playbook_id'])) {
+                        $handled = app(\App\Modules\WaChat\Services\Agent\ConversationalAgentService::class)->handle(
+                            new \App\Modules\WaChat\Services\Agent\AgentInbound(
+                                companyId: $company->id, channel: 'meta_cloud', sessionRef: (string) ($company->wa_phone_id ?: 'meta_cloud'),
+                                phone: $phone, text: $text, type: $type, playbookId: (int) $step['playbook_id'],
+                            )
+                        );
+                    }
+                    if ($handled) {
+                        $router->rememberStep($company, $phone, $route, $i);
+                        $router->record($company, $route, $numberId, $phone, $i > $cur ? 'fallback' : 'handled', 'ai_agent', null, "agent #{$step['playbook_id']}", $stepNo);
+                        return 'stop';
+                    }
+                    $router->record($company, $route, $numberId, $phone, 'fallback', 'ai_agent', null, "step {$stepNo} AI could not answer → next", $stepNo);
+                    break;   // → next step
+
+                case 'handover':
+                    $r = $router->handover($company, $phone, (array) ($step['handover'] ?? []), $route->id);
+                    if (in_array($r['status'], ['assigned', 'notifying', 'existing', 'ai', 'skipped'], true)) {
+                        $ack = trim((string) ($step['handover']['ack_message'] ?? ''));
+                        if ($ack !== '' && $r['status'] !== 'skipped' && \Illuminate\Support\Facades\Cache::add("wcrr:ack:{$route->id}:{$phone}", 1, now()->addHours(6))) {
+                            $this->sendText($company, $phone, $ack);
+                        }
+                        $router->rememberStep($company, $phone, $route, $i);
+                        $router->record($company, $route, $numberId, $phone,
+                            $r['status'] === 'skipped' ? 'skipped' : ($i > $cur ? 'fallback' : 'handled'), 'handover', $r['staff_id'], $r['detail'], $stepNo);
+                        return 'stop';
+                    }
+                    $router->record($company, $route, $numberId, $phone, 'failed', 'handover', null, $r['detail'], $stepNo);
+                    break;   // nobody could take it → next step
+
+                case 'auto_reply':
+                    $this->routeAutoReply($company, (string) ($step['reply_text'] ?? ''), "{$route->id}:{$i}", $phone);
+                    $router->rememberStep($company, $phone, $route, $i);
+                    $router->record($company, $route, $numberId, $phone, $i > $cur ? 'fallback' : 'handled', 'auto_reply', null, null, $stepNo);
+                    return 'stop';
+
+                default: // 'manual' — leave it for staff in the inbox
+                    $router->rememberStep($company, $phone, $route, $i);
+                    $router->record($company, $route, $numberId, $phone, 'skipped', 'manual', null, 'left in the inbox for staff', $stepNo);
+                    return 'stop';
+            }
+        }
+
+        // Every step was off or declined — nothing automatic answers; staff will see it in the inbox.
+        $router->record($company, $route, $numberId, $phone, 'skipped', 'manual', null, 'no step could answer', null);
+        return 'stop';
     }
 
-    /** Auto-reply text, at most once per contact per 6 h per route so a chatty customer is not answered every time. */
-    private function routeAutoReply(Company $company, \App\Modules\WaCloud\Models\WaCloudReplyRoute $route, string $phone): void
+    /** Auto-reply text, at most once per contact per 6 h per step so a chatty customer is not answered every time. */
+    private function routeAutoReply(Company $company, string $text, string $throttleKey, string $phone): void
     {
-        $body = trim((string) $route->reply_text);
-        if ($body === '' || !\Illuminate\Support\Facades\Cache::add("wcrr:auto:{$route->id}:{$phone}", 1, now()->addHours(6))) {
+        $body = trim($text);
+        if ($body === '' || !\Illuminate\Support\Facades\Cache::add("wcrr:auto:{$throttleKey}:{$phone}", 1, now()->addHours(6))) {
             return;
         }
         $this->sendText($company, $phone, $body);
-    }
-
-    private function routeHandover(Company $company, \App\Modules\WaCloud\Models\WaCloudReplyRoute $route, string $phone, ?int $numberId, string $finalType, bool $isFallback = false): void
-    {
-        $router = app(\App\Modules\WaCloud\Services\WaCloudReplyRouter::class);
-        $cfg = (array) ($route->handover ?? []);
-        $uid = $router->handover($company, $phone, $cfg, $route->id);
-        if ($uid) {
-            $ack = trim((string) ($cfg['ack_message'] ?? ''));
-            if ($ack !== '' && \Illuminate\Support\Facades\Cache::add("wcrr:ack:{$route->id}:{$phone}", 1, now()->addHours(6))) {
-                $this->sendText($company, $phone, $ack);
-            }
-        }
-        $router->record($company, $route, $numberId, $phone, $uid ? ($isFallback ? 'fallback' : 'handled') : 'failed', $finalType, $uid,
-            $uid ? null : 'no active staff to hand over to');
     }
 
     private function sendText(Company $company, string $phone, string $text): void

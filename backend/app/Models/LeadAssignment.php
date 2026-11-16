@@ -10,7 +10,7 @@ use App\Modules\WaChat\Models\AiAgentSession;
 class LeadAssignment extends Model
 {
     protected $fillable = [
-        'company_id', 'contact_id', 'lead_id', 'staff_id', 'ai_agent_session_id', 'campaign_id',
+        'candidate_staff_ids', 'company_id', 'contact_id', 'lead_id', 'staff_id', 'ai_agent_session_id', 'campaign_id',
         'source_type', 'source_ref', 'status', 'assignment_type', 'priority',
         'accepted_at', 'first_reply_at', 'response_sla_minutes',
         'sla_breached', 'sla_breached_at',
@@ -19,6 +19,7 @@ class LeadAssignment extends Model
     ];
 
     protected $casts = [
+        'candidate_staff_ids' => 'array',
         'sla_breached'       => 'boolean',
         'accepted_at'        => 'datetime',
         'first_reply_at'     => 'datetime',

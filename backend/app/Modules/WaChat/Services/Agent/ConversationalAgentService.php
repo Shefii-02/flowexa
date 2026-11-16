@@ -63,7 +63,9 @@ class ConversationalAgentService
         // company might want the AI running 24/7 on one WA session but only during set hours
         // on another (or on Instagram). Configured per playbook (which is itself scoped per
         // WA session/number, or company-wide as the default).
-        if (!AgentScheduleChecker::isActiveNow(
+        // A reply-routing step with an explicit playbook has its OWN schedule (the chain decides when the AI is on),
+        // so the playbook's built-in schedule must not silently veto it.
+        if (!$in->playbookId && !AgentScheduleChecker::isActiveNow(
             $playbook->ai_schedule_mode ?? 'always',
             $playbook->ai_schedule_days,
             $playbook->ai_schedule_start,

@@ -6,6 +6,7 @@ import { TYPE_META } from './ReplyRoutingTab'
 type A = {
   totals: { events: number; handled: number; fallback: number; skipped: number; failed: number; handled_rate: number }
   by_type: Record<string, number>
+  by_step?: { step: number; total: number; by_type: Record<string, number> }[]
   by_number: { wa_phone_number_id: number | null; label: string; total: number; by_type: Record<string, number> }[]
   daily: ({ date: string } & Record<string, number | string>)[]
   handovers: { user_id: number; name: string; count: number }[]
@@ -66,6 +67,16 @@ export default function AutomationAnalyticsTab() {
               {pie.length === 0 ? <Empty /> : <ResponsiveContainer width="100%" height={260}><PieChart><Pie data={pie} dataKey="value" nameKey="name" innerRadius={55} outerRadius={90} paddingAngle={2}>{pie.map(p => <Cell key={p.name} fill={p.color} />)}</Pie><Tooltip /><Legend /></PieChart></ResponsiveContainer>}
             </Card>
           </div>
+
+          <Card title="Where conversations were answered in the chain (1st responder → escalations)">
+            {!a.by_step?.length ? <Empty /> : <div className="grid sm:grid-cols-3 gap-3">{a.by_step.map(st => (
+              <div key={st.step} className="rounded-xl border border-gray-200 p-3">
+                <div className="text-xs font-bold text-gray-400">{['1st', '2nd', '3rd', '4th', '5th'][st.step - 1] ?? st.step} step</div>
+                <div className="text-2xl font-extrabold text-gray-900">{st.total}</div>
+                <div className="mt-1 space-y-0.5">{TYPES.filter(t => st.by_type?.[t]).map(t => <div key={t} className="flex justify-between text-xs"><span style={{ color: TYPE_META[t].color }}>{TYPE_META[t].icon} {TYPE_META[t].short}</span><span className="text-gray-600">{st.by_type[t]}</span></div>)}</div>
+              </div>))}</div>}
+            <p className="text-[11px] text-gray-400 mt-2">A big number on step 2 or 3 means the earlier responders are off (schedule) or can't answer — tune them.</p>
+          </Card>
 
           <div className="grid lg:grid-cols-2 gap-4">
             <Card title="By phone number">

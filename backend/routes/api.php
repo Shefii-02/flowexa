@@ -1827,6 +1827,7 @@ Route::prefix('v1')->middleware(['jwt.auth', 'module.gate'])->group(function () 
         Route::get('/options',   [WaCloudReplyRouteController::class, 'options']);
         Route::get('/analytics', [WaCloudReplyRouteController::class, 'analytics']);
         Route::middleware('permission:wa_cloud.manage')->group(function () {
+            Route::post('/seed-samples', [WaCloudReplyRouteController::class, 'seedSamples']);
             Route::post('/',            [WaCloudReplyRouteController::class, 'store']);
             Route::patch('/{id}',       [WaCloudReplyRouteController::class, 'update']);
             Route::delete('/{id}',      [WaCloudReplyRouteController::class, 'destroy']);
@@ -1841,6 +1842,7 @@ Route::prefix('v1')->middleware(['jwt.auth', 'module.gate'])->group(function () 
         Route::get('/{id}',         [WaCloudAutomationController::class, 'show']);
 
         Route::middleware('permission:wa_cloud.manage')->group(function () {
+            Route::post('/seed-samples', [WaCloudAutomationController::class, 'seedSamples']);
             Route::post('/',            [WaCloudAutomationController::class, 'store']);
             Route::patch('/{id}',       [WaCloudAutomationController::class, 'update']);
             Route::delete('/{id}',      [WaCloudAutomationController::class, 'destroy']);

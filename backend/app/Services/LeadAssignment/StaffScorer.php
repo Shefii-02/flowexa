@@ -76,11 +76,13 @@ class StaffScorer
         \App\Models\Company $company,
         LeadAssignmentRule $rule,
         ?LeadAssignment $previousAssignment = null,
-        array $excludeStaffIds = []
+        array $excludeStaffIds = [],
+        array $onlyStaffIds = []   // optional: limit the pool (reply routing → "hand over to these people")
     ): Collection {
         $staffList = User::where('company_id', $company->id)
             ->where('is_active', true)
             ->whereNotIn('id', $excludeStaffIds)
+            ->when($onlyStaffIds, fn ($q) => $q->whereIn('id', $onlyStaffIds))
             ->whereHas('role', fn($q) => $q->whereJsonContains('permissions', 'leads.manage'))
             ->get();
 
