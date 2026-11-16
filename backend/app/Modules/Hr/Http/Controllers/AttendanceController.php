@@ -748,7 +748,7 @@ class AttendanceController extends Controller
         abort_unless($this->canManage(), 403, 'No HR permission.');
 
         $rows = HrAttendance::where('company_id', $this->companyId())
-            ->with('user:id,name,avatar,department', 'breaks:id,attendance_id,minutes,over_limit,break_type_id', 'sessions')
+            ->with('user:id,name,avatar,department', 'breaks:id,attendance_id,break_type_id,start_at,end_at,minutes,over_limit', 'breaks.breakType:id,name', 'sessions')
             ->when($request->filled('user_id'), fn ($q) => $q->where('user_id', $request->integer('user_id')))
             ->when($request->filled('status'), fn ($q) => $q->where('status', $request->string('status')))
             ->when($request->filled('date'), fn ($q) => $q->whereDate('work_date', $request->date('date')))
@@ -909,6 +909,13 @@ class AttendanceController extends Controller
             $att = HrAttendance::where('company_id', $p->company_id)->where('user_id', $p->user_id)
                 ->whereBetween('work_date', [$month, $end])->get();
 
+            // Working days so far this month (this staff's own weekly-off / company hours), for the attendance %.
+            $workingDays = 0;
+            for ($d = $month->copy(); $d->lte(min($end, now()->endOfDay())); $d->addDay()) {
+                if ($this->svc->isWorkingDay($p, $d)) { $workingDays++; }
+            }
+            $presentDays = $att->where('status', 'present')->count();
+
             $workedHours = round($att->sum('worked_minutes') / 60, 2);
             $otHours = round($att->where('overtime_status', 'approved')->sum('overtime_minutes') / 60, 2);
             $rate = $p->hourly_rate
@@ -919,7 +926,9 @@ class AttendanceController extends Controller
 
             return [
                 'user'          => $p->user,
-                'present_days'  => $att->where('status', 'present')->count(),
+                'present_days'  => $presentDays,
+                'working_days'  => $workingDays,
+                'attendance_pct' => $workingDays > 0 ? min(100, round($presentDays / $workingDays * 100, 1)) : null,
                 'leave_days'    => $att->where('status', 'on_leave')->count(),
                 'late_days'     => $att->where('late_minutes', '>', 0)->count(),
                 'worked_hours'  => $workedHours,
