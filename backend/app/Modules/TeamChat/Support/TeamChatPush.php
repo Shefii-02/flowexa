@@ -32,11 +32,12 @@ class TeamChatPush
             $sender = (string) DB::table('users')->where('id', $senderId)->value('name');
             $preview = self::preview($msg);
             $mentions = array_map('intval', $mentions ?: ($msg->mentions ? json_decode($msg->mentions, true) : []));
-            $members = DB::table('team_chat_members')->where('chat_id', $chatId)->whereNull('left_at')->where('user_id', '!=', $senderId)->get(['user_id', 'muted']);
+            $members = DB::table('team_chat_members')->where('chat_id', $chatId)->whereNull('left_at')->where('user_id', '!=', $senderId)->get(['user_id', 'muted', 'muted_until']);
             $svc = app(FirebasePushService::class);
             foreach ($members as $m) {
                 $mentioned = in_array((int) $m->user_id, $mentions, true);
-                if ($m->muted && !$mentioned) { continue; }
+                $mutedNow = $m->muted && (!$m->muted_until || strtotime((string) $m->muted_until) > time());
+                if ($mutedNow && !$mentioned) { continue; }
                 $title = $mentioned ? "{$sender} mentioned you" . ($chat->type === 'group' ? " in {$chat->name}" : '')
                                     : ($chat->type === 'group' ? $chat->name : $sender);
                 $body = $chat->type === 'group' && !$mentioned ? "{$sender}: {$preview}" : $preview;

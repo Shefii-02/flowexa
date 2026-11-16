@@ -547,6 +547,8 @@ Route::prefix('v1')->group(function () {
         Route::prefix('team-chat')->middleware(['company.active'])->group(function () {
             $c = \App\Modules\TeamChat\Http\Controllers\TeamChatController::class;
             Route::get('users',                          [$c, 'users']);
+            Route::get('mentions',                       [$c, 'mentions']);
+            Route::get('search',                         [$c, 'search']);
             Route::get('chats',                          [$c, 'chats']);
             Route::post('chats',                         [$c, 'create']);
             Route::get('chats/{id}',                     [$c, 'show']);
@@ -556,7 +558,10 @@ Route::prefix('v1')->group(function () {
             Route::delete('chats/{id}/members/{userId}', [$c, 'removeMember']);
             Route::post('chats/{id}/members/{userId}/role', [$c, 'setRole']);
             Route::post('chats/{id}/mute',               [$c, 'mute']);
+            Route::post('chats/{id}/avatar',             [$c, 'avatar']);
+            Route::get('chats/{id}/media',               [$c, 'media']);
             Route::post('chats/{id}/read',               [$c, 'read']);
+            Route::post('chats/{id}/delivered',          [$c, 'delivered']);
             Route::get('chats/{id}/messages',            [$c, 'messages']);
             Route::get('chats/{id}/messages-by-ids',     [$c, 'byIds']);
             Route::post('chats/{id}/messages',           [$c, 'send']);
@@ -564,7 +569,21 @@ Route::prefix('v1')->group(function () {
             Route::delete('messages/{mid}',              [$c, 'deleteMessage']);
             Route::post('messages/{mid}/react',          [$c, 'react']);
             Route::post('messages/{mid}/forward',        [$c, 'forward']);
-            Route::get('messages/{mid}/seen',            [$c, 'seen']);
+            Route::get('messages/{mid}/info',            [$c, 'info']);
+            Route::post('messages/{mid}/star',           [$c, 'star']);
+            Route::post('messages/{mid}/pin',            [$c, 'pin']);
+            Route::get('messages/{mid}/reactions',       [$c, 'reactions']);
+            Route::get('starred',                        [$c, 'starred']);
+            Route::get('chats/{id}/pins',                [$c, 'pins']);
+            Route::get('messages/{mid}/original',        [$c, 'original']);
+            Route::post('messages/{mid}/report',         [$c, 'report']);
+            // Company moderation (owner / staff managers): reports + every group, including ones they have left
+            Route::get('admin/reports',                  [$c, 'reports']);
+            Route::post('admin/reports/{id}/resolve',    [$c, 'resolveReport']);
+            Route::get('admin/groups',                   [$c, 'adminGroups']);
+            Route::get('admin/groups/{id}',              [$c, 'adminGroup']);
+            Route::delete('admin/groups/{id}/members/{userId}', [$c, 'adminRemoveMember']);
+            Route::delete('admin/groups/{id}',           [$c, 'adminDeleteGroup']);
         });
 
         // ── HR — Attendance / Breaks / Leave (mobile app + web) ──────────────
