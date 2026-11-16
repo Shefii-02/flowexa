@@ -18,7 +18,7 @@ export type Msg = {
   duration?: number | null; latitude: number | null; longitude: number | null; location_label: string | null
   contact_name: string | null; contact_phone: string | null
   reply_to: { id: number; sender_name: string | null; preview: string; type?: string; thumb?: string | null } | null
-  reactions: Reaction[]; seen_by_count: number; delivered_count: number; recipients: number
+  reactions: Reaction[]; mentions?: number[]; seen_by_count: number; delivered_count: number; recipients: number
   created_at: string; pending?: boolean; failed?: boolean
   deleted_by_name?: string | null; deleted_at?: string | null   // admin transcript / sender
 }

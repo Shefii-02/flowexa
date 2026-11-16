@@ -5,7 +5,7 @@ import { subscribeStaffEvent } from '@/socket/staffSocket'
 import { adminMessages, command, tcPost, dayOf, emitTyping, errMsg, getInfo, listMessages, timeOf, type ChatInfo, type Msg } from './teamChatApi'
 
 /** Fill the fields some endpoints omit (the admin transcript has no reactions / receipts) so rendering never reads `undefined`. */
-const normalizeMsg = (m: Msg): Msg => ({ ...m, reactions: m.reactions ?? [], seen_by_count: m.seen_by_count ?? 0, delivered_count: m.delivered_count ?? 0, recipients: m.recipients ?? 0, mentions: (m as any).mentions ?? [] })
+const normalizeMsg = (m: Msg): Msg => ({ ...m, reactions: m.reactions ?? [], seen_by_count: m.seen_by_count ?? 0, delivered_count: m.delivered_count ?? 0, recipients: m.recipients ?? 0, mentions: m.mentions ?? [] })
 
 const QUICK = ['👍', '❤️', '😂', '😮', '😢', '🙏']
 const bytes = (n?: number | null) => (!n ? '' : n > 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`)
