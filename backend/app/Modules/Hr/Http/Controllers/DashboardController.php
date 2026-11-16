@@ -29,8 +29,12 @@ class DashboardController extends Controller
         $user = auth()->user();
         $companyId = (int) $user->company_id;
         $userId = (int) $user->id;
+        // ?scope=all → company-wide pipeline / follow-ups / tasks (needs staff.view or owner); default is the caller's own.
+        $all = request()->query('scope') === 'all' && ($user->hasPermission('staff.view') || $user->isOwner());
+        $scopeId = $all ? null : $userId;
 
         return response()->json([
+            'scope'        => $all ? 'all' : 'my',
             'greeting'     => $this->greeting($user),
             'attendance'   => $this->attendance($companyId, $userId),
             'sales_target' => $this->salesTarget($companyId, $userId),
@@ -38,9 +42,9 @@ class DashboardController extends Controller
             'rank'         => $this->rank($companyId, $userId),
             'leads'        => ['new_today' => Lead::where('company_id', $companyId)
                 ->where('assigned_to', $userId)->whereDate('created_at', today())->count()],
-            'pipeline'     => $this->pipeline($companyId, $userId),
-            'follow_ups'   => $this->followUps($companyId, $userId),
-            'tasks'        => $this->tasks($companyId, $userId),
+            'pipeline'     => $this->pipeline($companyId, $scopeId),
+            'follow_ups'   => $this->followUps($companyId, $scopeId),
+            'tasks'        => $this->tasks($companyId, $scopeId),
             'next_up'      => $this->nextUp($companyId, $userId),
         ]);
     }
@@ -129,9 +133,9 @@ class DashboardController extends Controller
         ];
     }
 
-    private function pipeline(int $companyId, int $userId): array
+    private function pipeline(int $companyId, ?int $userId): array
     {
-        $counts = Lead::where('company_id', $companyId)->where('assigned_to', $userId)
+        $counts = Lead::where('company_id', $companyId)->when($userId, fn ($q) => $q->where('assigned_to', $userId))
             ->selectRaw('stage, COUNT(*) as c')->groupBy('stage')->pluck('c', 'stage');
 
         return [
@@ -142,9 +146,9 @@ class DashboardController extends Controller
     }
 
     /** Contact-outreach tasks (call/whatsapp/email) that carry a due date. */
-    private function followUpsQuery(int $companyId, int $userId)
+    private function followUpsQuery(int $companyId, ?int $userId)
     {
-        return CrmTask::where('company_id', $companyId)->where('assigned_to', $userId)
+        return CrmTask::where('company_id', $companyId)->when($userId, fn ($q) => $q->where('assigned_to', $userId))
             ->where('status', 'open')
             ->whereIn('type', ['call', 'whatsapp', 'email'])
             ->whereNotNull('due_at');
@@ -159,7 +163,7 @@ class DashboardController extends Controller
         return $dueAt->lt(today()) ? 'late' : 'upcoming';
     }
 
-    private function followUps(int $companyId, int $userId): array
+    private function followUps(int $companyId, ?int $userId): array
     {
         $rows = $this->followUpsQuery($companyId, $userId)
             ->with('contact:id,name,phone')
@@ -169,6 +173,7 @@ class DashboardController extends Controller
 
         $counts = ['missed' => 0, 'late' => 0, 'due_today' => 0];
         $items = [];
+        $names = $userId ? [] : User::whereIn('id', $rows->pluck('assigned_to')->filter()->unique())->pluck('name', 'id');
 
         foreach ($rows as $row) {
             $bucket = $this->followUpBucket($row->due_at);
@@ -183,6 +188,7 @@ class DashboardController extends Controller
                 'contact_phone'=> $row->contact?->phone,
                 'due_at'       => $row->due_at,
                 'bucket'       => $bucket,
+                'assignee'     => $userId ? null : ($names[$row->assigned_to] ?? null),
                 'days_late'    => $bucket === 'late' ? today()->diffInDays($row->due_at->copy()->startOfDay()) : 0,
             ];
         }
@@ -190,9 +196,9 @@ class DashboardController extends Controller
         return ['counts' => $counts, 'items' => $items];
     }
 
-    private function tasks(int $companyId, int $userId): array
+    private function tasks(int $companyId, ?int $userId): array
     {
-        $rows = CrmTask::where('company_id', $companyId)->where('assigned_to', $userId)
+        $rows = CrmTask::where('company_id', $companyId)->when($userId, fn ($q) => $q->where('assigned_to', $userId))
             ->whereIn('type', ['todo', 'meeting'])
             ->where(function ($q) {
                 $q->where('status', 'done')->whereDate('completed_at', today())
