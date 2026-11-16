@@ -161,6 +161,92 @@ class AnalyticsController extends Controller
         return response()->json(['range' => $range, 'series' => $series, 'totals' => $totals]);
     }
 
+    // GET /v1/analytics/sales-team?range=today|this_week|this_month|last_3_months
+    // One row per staff: leads received, converted, rejected, still pending, and follow-ups
+    // (due in range) split into done / missed / upcoming.
+    public function salesTeam(Request $request): JsonResponse
+    {
+        $user = auth()->user();
+        abort_unless($user->hasPermission('staff.view') || $user->isOwner(), 403, 'No permission.');
+        $cid = (int) $user->company_id;
+        $range = $request->query('range', 'this_month');
+        [$from, $to] = match ($range) {
+            'today'         => [now()->startOfDay(), now()->endOfDay()],
+            'this_week'     => [now()->startOfWeek(), now()->endOfDay()],
+            'last_3_months' => [now()->subMonthsNoOverflow(2)->startOfMonth(), now()->endOfDay()],
+            default         => [now()->startOfMonth(), now()->endOfDay()],
+        };
+
+        $leads = fn () => \DB::table('leads')->where('company_id', $cid)->whereNull('deleted_at')->whereNotNull('assigned_to');
+        $by = fn ($q) => $q->select('assigned_to', \DB::raw('count(*) as c'))->groupBy('assigned_to')->pluck('c', 'assigned_to');
+
+        $received  = $by($leads()->whereBetween('created_at', [$from, $to]));
+        $converted = $by($leads()->where('stage', 'enrolled')->whereBetween('enrolled_at', [$from, $to]));
+        $rejected  = $by($leads()->where('stage', 'lost')->whereBetween('lost_at', [$from, $to]));
+        $pending   = $by($leads()->whereIn('stage', ['new', 'contacted', 'follow_up']));   // open right now
+
+        $tasks = fn () => \DB::table('crm_tasks')->where('company_id', $cid)->whereIn('type', ['call', 'whatsapp', 'email', 'followup'])
+            ->whereNotNull('due_at')->whereBetween('due_at', [$from, $to]);
+        $fuTotal  = $by($tasks());
+        $fuDone   = $by($tasks()->where('status', 'done'));
+        $fuMissed = $by($tasks()->where('status', 'open')->where('due_at', '<', now()));
+
+        $rows = \DB::table('users')->where('company_id', $cid)->where('is_active', true)->get(['id', 'name', 'avatar'])
+            ->map(function ($u) use ($received, $converted, $rejected, $pending, $fuTotal, $fuDone, $fuMissed) {
+                $r = [
+                    'id' => $u->id, 'name' => $u->name, 'avatar' => $u->avatar,
+                    'leads' => (int) ($received[$u->id] ?? 0), 'converted' => (int) ($converted[$u->id] ?? 0),
+                    'rejected' => (int) ($rejected[$u->id] ?? 0), 'pending' => (int) ($pending[$u->id] ?? 0),
+                    'followups' => (int) ($fuTotal[$u->id] ?? 0), 'followups_done' => (int) ($fuDone[$u->id] ?? 0),
+                    'missed' => (int) ($fuMissed[$u->id] ?? 0),
+                ];
+                return $r;
+            })
+            ->filter(fn ($r) => $r['leads'] + $r['converted'] + $r['rejected'] + $r['pending'] + $r['followups'] > 0)
+            ->sortByDesc('leads')->values();
+
+        return response()->json([
+            'range'  => $range,
+            'staff'  => $rows,
+            'totals' => collect(['leads', 'converted', 'rejected', 'pending', 'followups', 'followups_done', 'missed'])
+                ->mapWithKeys(fn ($k) => [$k => $rows->sum($k)]),
+        ]);
+    }
+
+    // GET /v1/analytics/campaigns-home?range=today|last_week|this_month|last_month|last_3_months
+    // Per campaign (started/created in range, newest first, max 10): messages sent and incoming responses.
+    public function campaignsHome(Request $request, \App\Modules\Campaign\Repositories\CampaignRepository $repo): JsonResponse
+    {
+        $cid = (int) auth()->user()->company_id;
+        $range = $request->query('range', 'this_month');
+        [$from, $to] = match ($range) {
+            'today'         => [now()->startOfDay(), now()->endOfDay()],
+            'last_week'     => [now()->subWeek()->startOfWeek(), now()->subWeek()->endOfWeek()],
+            'last_month'    => [now()->subMonthNoOverflow()->startOfMonth(), now()->subMonthNoOverflow()->endOfMonth()],
+            'last_3_months' => [now()->subMonthsNoOverflow(2)->startOfMonth(), now()->endOfDay()],
+            default         => [now()->startOfMonth(), now()->endOfDay()],
+        };
+        $rows = \DB::table('campaigns')->where('company_id', $cid)->whereNull('deleted_at')
+            ->whereRaw('COALESCE(started_at, launched_at, created_at) BETWEEN ? AND ?', [$from, $to])
+            ->orderByRaw('COALESCE(started_at, launched_at, created_at) DESC')->limit(10)
+            ->get(['id', 'name', 'status', 'total_contacts', 'sent']);
+
+        $campaigns = $rows->map(function ($c) use ($repo, $cid) {
+            $r = $repo->replyTotals((int) $c->id, $cid);
+            return [
+                'id' => $c->id, 'name' => $c->name, 'status' => $c->status,
+                'total' => (int) $c->total_contacts, 'sent' => (int) $c->sent,
+                'responded' => $r['responded'], 'responses' => $r['responses'],
+                'response_rate' => $c->sent ? round($r['responded'] / $c->sent * 100, 1) : 0,
+            ];
+        })->values();
+
+        return response()->json([
+            'range' => $range, 'campaigns' => $campaigns,
+            'totals' => ['sent' => $campaigns->sum('sent'), 'responses' => $campaigns->sum('responses'), 'responded' => $campaigns->sum('responded')],
+        ]);
+    }
+
     // GET /v1/analytics/leads
     public function leads(): JsonResponse
     {

@@ -441,6 +441,8 @@ Route::prefix('v1')->group(function () {
             Route::get('wallet',    [AnalyticsController::class, 'wallet'])->name('wallet');
             Route::get('wa-cloud-home', [AnalyticsController::class, 'waCloudHome'])->name('wa-cloud-home');
             Route::get('leads-home', [AnalyticsController::class, 'leadsHome'])->name('leads-home');
+            Route::get('sales-team', [AnalyticsController::class, 'salesTeam'])->name('sales-team');
+            Route::get('campaigns-home', [AnalyticsController::class, 'campaignsHome'])->name('campaigns-home');
             Route::get('leads',     [AnalyticsController::class, 'leads'])->name('leads');
             Route::get('messages',  [AnalyticsController::class, 'messages'])->name('messages');
         });
