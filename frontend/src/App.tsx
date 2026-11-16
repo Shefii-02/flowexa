@@ -101,6 +101,7 @@ import InstagramAutomationsPage from '@/pages/instagram/InstagramAutomationsPage
 import AskPortalPage from '@/pages/tools/AskPortalPage'
 import StickyNotesPage from '@/pages/tools/StickyNotesPage'
 import TodoPage from '@/pages/tools/TodoPage'
+import TeamChatPage from '@/pages/team-chat/TeamChatPage'
 import MessengerPagesPage from '@/pages/messenger/MessengerPagesPage'
 import InstagramAutoDmPage from '@/pages/instagram/InstagramAutoDmPage'
 import InstagramReviewDemoPage from '@/pages/instagram/InstagramReviewDemoPage'
@@ -262,6 +263,7 @@ export default function App() {
               <Route path="ask" element={<AskPortalPage />} />
               <Route path="sticky-notes" element={<StickyNotesPage />} />
               <Route path="todo" element={<TodoPage />} />
+              <Route path="team-chat" element={<TeamChatPage />} />
 
               {/* WA Chat module (embedded WAHA dashboard → unichatwa.univexa.in) */}
               <Route path="wa-chat" element={<WaChatShell />}>

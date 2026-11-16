@@ -35,6 +35,14 @@ class StaffRealtime
         ]);
     }
 
+    /** Same event to many staff in ONE internal call (team chat fan-out): avoids N HTTP requests for an N-member group. */
+    public static function toStaffMany(array $staffIds, string $type, array $data): void
+    {
+        $staffIds = array_values(array_unique(array_map('intval', $staffIds)));
+        if (!$staffIds) return;
+        self::queue('emit-many', 'm:' . $type . ':' . md5(json_encode([$staffIds, $data])), fn () => ['type' => $type, 'staff_ids' => $staffIds, 'data' => $data]);
+    }
+
     /** Ping the visitor of one website-chat conversation ("something changed — poll now"). */
     public static function toWidgetVisitor(int $conversationId): void
     {

@@ -670,6 +670,7 @@ const SidebarInner = () => {
             <FlatLink to="/website-widget" icon="🌐" label="Website Widget" />
             {/* Personal tools — the same things as the floating buttons, as full pages */}
             <FlatLink to="/ask" icon="✨" label="Ask in portal" />
+            <FlatLink to="/team-chat" icon="💬" label="Team chat" />
             <FlatLink to="/sticky-notes" icon="📝" label="Sticky notes" />
             <FlatLink to="/todo" icon="✅" label="To-do list" />
             {/* ── ACCOUNTS ── */}

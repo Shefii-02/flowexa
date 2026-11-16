@@ -44,7 +44,9 @@ class ConversationalAgentService
             return false;
         }
 
-        $playbook = AgentPlaybook::resolveFor($in->companyId, $in->sessionRef, $in->channel === 'meta_cloud' ? 'wa_cloud' : 'wa_chat');
+        $playbook = $in->playbookId
+            ? AgentPlaybook::where('company_id', $in->companyId)->where('is_active', true)->find($in->playbookId)
+            : AgentPlaybook::resolveFor($in->companyId, $in->sessionRef, $in->channel === 'meta_cloud' ? 'wa_cloud' : 'wa_chat');
         if (!$playbook) {
             return false;
         }

@@ -42,7 +42,7 @@ return new class extends Migration
             $t->timestamp('left_at')->nullable();         // set when removed / left; history stays
             $t->timestamps();
             $t->unique(['chat_id', 'user_id']);
-            $t->index('user_id');
+            $t->index(['user_id', 'left_at'], 'tcmem_user_active');
             $t->foreign('chat_id')->references('id')->on('team_chats')->cascadeOnDelete();
         });
 
@@ -65,12 +65,15 @@ return new class extends Migration
             $t->string('contact_phone', 40)->nullable();
             $t->boolean('forwarded')->default(false);
             $t->unsignedBigInteger('reply_to_id')->nullable();
+            $t->string('client_id', 40)->nullable();                // idempotency key: a retried send returns the original message
             $t->json('mentions')->nullable();                   // user ids
             $t->timestamp('edited_at')->nullable();
             $t->timestamp('deleted_at')->nullable();             // deleted for everyone — content is KEPT so company admins can review it
             $t->unsignedBigInteger('deleted_by')->nullable();
             $t->timestamps();
             $t->index(['chat_id', 'id']);
+            $t->unique(['chat_id', 'sender_id', 'client_id'], 'tcm_idempotency');
+            $t->index(['chat_id', 'type', 'id'], 'tcm_media');          // media / docs / links listing
             $t->foreign('chat_id')->references('id')->on('team_chats')->cascadeOnDelete();
         });
 

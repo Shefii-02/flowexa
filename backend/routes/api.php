@@ -86,6 +86,7 @@ use App\Modules\WaCloud\Http\Controllers\WaCloudApiConfigController;
 use App\Modules\WaCloud\Http\Controllers\WaCloudApiPublicController;
 use App\Modules\WaCloud\Http\Controllers\WaCloudInboxAnalyticsController;
 use App\Modules\WaCloud\Http\Controllers\WaCloudAutomationController;
+use App\Modules\WaCloud\Http\Controllers\WaCloudReplyRouteController;
 use App\Modules\WaChat\Http\Controllers\WaExportController;
 use App\Modules\WaChat\Http\Controllers\AutomationController;
 use App\Modules\WaChat\Http\Controllers\KnowledgeBaseController;
@@ -580,6 +581,8 @@ Route::prefix('v1')->group(function () {
             // Company moderation (owner / staff managers): reports + every group, including ones they have left
             Route::get('admin/reports',                  [$c, 'reports']);
             Route::post('admin/reports/{id}/resolve',    [$c, 'resolveReport']);
+            Route::get('admin/chats',                    [$c, 'adminChats']);
+            Route::get('admin/chats/{id}/messages',      [$c, 'adminMessages']);
             Route::get('admin/groups',                   [$c, 'adminGroups']);
             Route::get('admin/groups/{id}',              [$c, 'adminGroup']);
             Route::delete('admin/groups/{id}/members/{userId}', [$c, 'adminRemoveMember']);
@@ -1816,6 +1819,19 @@ Route::prefix('v1')->middleware(['jwt.auth', 'module.gate'])->group(function () 
     Route::prefix('wa-cloud/inbox-analytics')->middleware(['company.active', 'permission:wa_cloud.view'])->group(function () {
         Route::get('/',       [WaCloudInboxAnalyticsController::class, 'summary']);
         Route::get('/agents', [WaCloudInboxAnalyticsController::class, 'agents']);
+    });
+
+    // WA Cloud → Reply routing: how an incoming message is answered (chatbot / AI agent / handover / auto-reply), per number or all
+    Route::prefix('wa-cloud/reply-routes')->middleware(['company.active', 'permission:wa_cloud.view'])->group(function () {
+        Route::get('/',          [WaCloudReplyRouteController::class, 'index']);
+        Route::get('/options',   [WaCloudReplyRouteController::class, 'options']);
+        Route::get('/analytics', [WaCloudReplyRouteController::class, 'analytics']);
+        Route::middleware('permission:wa_cloud.manage')->group(function () {
+            Route::post('/',            [WaCloudReplyRouteController::class, 'store']);
+            Route::patch('/{id}',       [WaCloudReplyRouteController::class, 'update']);
+            Route::delete('/{id}',      [WaCloudReplyRouteController::class, 'destroy']);
+            Route::post('/{id}/toggle', [WaCloudReplyRouteController::class, 'toggle']);
+        });
     });
 
     // WA Cloud → Automation Rules (own tables — separate from /wa-agent/automations)

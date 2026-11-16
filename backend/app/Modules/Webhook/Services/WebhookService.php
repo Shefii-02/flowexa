@@ -74,6 +74,7 @@ class WebhookService
     // ─── Handle inbound message ───────────────────────────────────────────────
     public function handleInbound(Company $company, InboundMessageDTO $dto, ?string $receivedOnPhoneNumberId = null): void
     {
+        $this->forcedBuilderId = null; // per message — this service object is reused across queued jobs
         // 0. Meta re-delivers a webhook when we answer slowly — handle each message id only once,
         // otherwise the bot replies (and creates leads / logs) again for every retry.
         if ($dto->messageId && !\Illuminate\Support\Facades\Cache::add("wa-inbound:{$dto->messageId}", 1, now()->addDay())) {
@@ -199,6 +200,19 @@ class WebhookService
             return;
         }
 
+        // 5a-2. Reply routing (Automation → Reply routing): per phone number — or all numbers, optionally by business
+        // hours — decide whether this message goes to a chatbot flow, an AI agent, a sales-team member, an auto-reply or
+        // nobody. No matching route = untouched legacy behaviour below.
+        $routeMode = 'default';
+        try {
+            $routeMode = $this->applyReplyRoute($company, $contact, $dto, $inboundText, $voiceTranscript !== null ? 'voice' : $dto->type, $receivedOnPhoneNumberId);
+        } catch (\Throwable $e) {
+            Log::warning('WA Cloud reply routing failed, using default handling: ' . $e->getMessage());
+        }
+        if ($routeMode === 'stop') {
+            return;
+        }
+
         // 5b. Conversational AI agent — normally gated by the company-wide Settings →
         // Response Type toggle ("AI Agent"), but a number with its OWN AI Schedule
         // override (Automation → AI Agent → AI Schedule, same per-number control WA Chat
@@ -216,6 +230,9 @@ class WebhookService
         $tryAiAgent = $numberMode !== null
             ? in_array($numberMode, ['manual', 'always', 'scheduled'], true)
             : $company->responseModeAllows('wa_cloud', 'ai_agent');
+        if ($routeMode === 'chatbot') {
+            $tryAiAgent = false; // the route chose the chatbot flow for this message
+        }
 
         // $voiceTranscript (resolved above, once) means this was a real voice note — reuse it
         // rather than re-downloading from Meta. $agentType is normalized to 'voice' in that case
@@ -265,6 +282,9 @@ class WebhookService
         $tryChatbot = $numberMode !== null
             ? $numberMode === 'chatbot'
             : $company->responseModeAllows('wa_cloud', 'chat_bot');
+        if ($routeMode === 'chatbot') {
+            $tryChatbot = true;
+        }
 
         if (!$tryChatbot) {
             return;
@@ -939,6 +959,13 @@ class WebhookService
     // Priority: keyword → season (date range) → default active
     private function resolveFlowBuilderWithReason(Company $company, string $text): array
     {
+        // The reply route picked a specific chatbot flow for this number → use it (when it's still active).
+        if ($this->forcedBuilderId) {
+            $forced = FlowBuilder::where('company_id', $company->id)->where('is_active', true)->find($this->forcedBuilderId);
+            if ($forced) {
+                return [$forced, 'route'];
+            }
+        }
         $keyword = strtolower(trim($text));
         $now     = now();
 
@@ -1794,6 +1821,95 @@ class WebhookService
     }
 
     // ─── WhatsApp API helpers ─────────────────────────────────────────────────
+    private ?int $forcedBuilderId = null;
+
+    /**
+     * Applies the matching reply route. Returns 'default' (no route / let the legacy logic run), 'chatbot' (run the flow
+     * logic with the route's flow forced) or 'stop' (the route fully handled the message).
+     */
+    private function applyReplyRoute(Company $company, \App\Models\Contact $contact, InboundMessageDTO $dto, string $text, string $type, ?string $receivedOn): string
+    {
+        $router = app(\App\Modules\WaCloud\Services\WaCloudReplyRouter::class);
+        $meta = $receivedOn ?: $company->wa_phone_id;
+        $route = $router->resolve($company, $meta);
+        if (!$route) {
+            return 'default';
+        }
+        $numberId = $router->numberId($company, $meta);
+        $phone = $dto->phone;
+
+        switch ($route->response_type) {
+            case 'manual':
+                $router->record($company, $route, $numberId, $phone, 'skipped', 'manual', null, 'left for staff to answer');
+                return 'stop';
+
+            case 'auto_reply':
+                $this->routeAutoReply($company, $route, $phone);
+                $router->record($company, $route, $numberId, $phone, 'handled', 'auto_reply');
+                return 'stop';
+
+            case 'handover':
+                $this->routeHandover($company, $route, $phone, $numberId, 'handover');
+                return 'stop';
+
+            case 'chatbot':
+                $this->forcedBuilderId = $route->flow_builder_id ?: null;
+                $router->record($company, $route, $numberId, $phone, 'handled', 'chatbot', null, $route->flow_builder_id ? "flow #{$route->flow_builder_id}" : 'default flow');
+                return 'chatbot';
+
+            case 'ai_agent':
+                $handled = false;
+                if (in_array($type, ['text', 'interactive', 'voice'], true) && trim($text) !== '') {
+                    $handled = app(\App\Modules\WaChat\Services\Agent\ConversationalAgentService::class)->handle(
+                        new \App\Modules\WaChat\Services\Agent\AgentInbound(
+                            companyId: $company->id, channel: 'meta_cloud', sessionRef: (string) ($company->wa_phone_id ?: 'meta_cloud'),
+                            phone: $phone, text: $text, type: $type, playbookId: $route->playbook_id ?: null,
+                        )
+                    );
+                }
+                if ($handled) {
+                    $router->record($company, $route, $numberId, $phone, 'handled', 'ai_agent', null, $route->playbook_id ? "agent #{$route->playbook_id}" : null);
+                    return 'stop';
+                }
+                // AI could not answer (not text, agent off / outside its hours, or it errored) → the route's fallback
+                if ($route->fallback_type === 'handover') {
+                    $this->routeHandover($company, $route, $phone, $numberId, 'handover', true);
+                } elseif ($route->fallback_type === 'auto_reply') {
+                    $this->routeAutoReply($company, $route, $phone);
+                    $router->record($company, $route, $numberId, $phone, 'fallback', 'auto_reply', null, 'AI did not answer');
+                } else {
+                    $router->record($company, $route, $numberId, $phone, 'skipped', 'ai_agent', null, 'AI did not answer, no fallback');
+                }
+                return 'stop';
+        }
+        return 'default';
+    }
+
+    /** Auto-reply text, at most once per contact per 6 h per route so a chatty customer is not answered every time. */
+    private function routeAutoReply(Company $company, \App\Modules\WaCloud\Models\WaCloudReplyRoute $route, string $phone): void
+    {
+        $body = trim((string) $route->reply_text);
+        if ($body === '' || !\Illuminate\Support\Facades\Cache::add("wcrr:auto:{$route->id}:{$phone}", 1, now()->addHours(6))) {
+            return;
+        }
+        $this->sendText($company, $phone, $body);
+    }
+
+    private function routeHandover(Company $company, \App\Modules\WaCloud\Models\WaCloudReplyRoute $route, string $phone, ?int $numberId, string $finalType, bool $isFallback = false): void
+    {
+        $router = app(\App\Modules\WaCloud\Services\WaCloudReplyRouter::class);
+        $cfg = (array) ($route->handover ?? []);
+        $uid = $router->handover($company, $phone, $cfg, $route->id);
+        if ($uid) {
+            $ack = trim((string) ($cfg['ack_message'] ?? ''));
+            if ($ack !== '' && \Illuminate\Support\Facades\Cache::add("wcrr:ack:{$route->id}:{$phone}", 1, now()->addHours(6))) {
+                $this->sendText($company, $phone, $ack);
+            }
+        }
+        $router->record($company, $route, $numberId, $phone, $uid ? ($isFallback ? 'fallback' : 'handled') : 'failed', $finalType, $uid,
+            $uid ? null : 'no active staff to hand over to');
+    }
+
     private function sendText(Company $company, string $phone, string $text): void
     {
         $this->dispatch($company, [

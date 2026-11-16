@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
 import { api } from '@/api/client'
-import { AiScheduleSection } from '@/components/ai/AiScheduleSection'
 
 const RULE_TYPES = [
   { value: 'welcome_message',    label: 'Welcome Message' },
@@ -26,7 +25,7 @@ type Rule = {
   is_active: boolean
   priority: number
   keywords?: string[] | null
-  actions: { type: string; message?: string }[]
+  actions: { type: string; message?: string; user_ids?: number[]; strategy?: string; title?: string; due_hours?: number }[]
   schedule_start?: string | null
   schedule_end?: string | null
   schedule_days?: string[] | null
@@ -48,12 +47,19 @@ const emptyForm = () => ({
   schedule_days: [] as string[],
   delay_hours: '',
   inactivity_hours: '',
+  // "then also" — real actions that run after the reply
+  do_assign: false, assign_users: [] as number[], assign_strategy: 'round_robin',
+  do_notify: false, notify_users: [] as number[],
+  do_task: false, task_title: '', task_hours: '24',
 })
 
-export default function WaCloudAutomations() {
+type Staff = { id: number; name: string }
+
+export function RulesTab() {
   const [rules, setRules] = useState<Rule[]>([])
   const [loading, setLoading] = useState(true)
   const [phones, setPhones] = useState<PhoneNumber[]>([])
+  const [staff, setStaff] = useState<Staff[]>([])
   const [modal, setModal] = useState(false)
   const [editId, setEditId] = useState<number | null>(null)
   const [form, setForm] = useState(emptyForm())
@@ -63,10 +69,12 @@ export default function WaCloudAutomations() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const [rulesRes, phoneRes] = await Promise.all([
+      const [rulesRes, phoneRes, optRes] = await Promise.all([
         api.get('/wa-cloud/automations'),
         api.get('/phone-numbers'),
+        api.get('/wa-cloud/reply-routes/options').catch(() => ({ data: { staff: [] } })),
       ])
+      setStaff(Array.isArray(optRes.data?.staff) ? optRes.data.staff : [])
       setRules(Array.isArray(rulesRes.data) ? rulesRes.data : [])
       const p = phoneRes.data
       setPhones(Array.isArray(p?.phone_numbers) ? p.phone_numbers : Array.isArray(p?.data) ? p.data : Array.isArray(p) ? p : [])
@@ -100,6 +108,14 @@ export default function WaCloudAutomations() {
       schedule_days: r.schedule_days ?? [],
       delay_hours: r.delay_hours ? String(r.delay_hours) : '',
       inactivity_hours: r.inactivity_hours ? String(r.inactivity_hours) : '',
+      do_assign: !!r.actions?.some(a => a.type === 'assign_agent'),
+      assign_users: r.actions?.find(a => a.type === 'assign_agent')?.user_ids ?? [],
+      assign_strategy: r.actions?.find(a => a.type === 'assign_agent')?.strategy ?? 'round_robin',
+      do_notify: !!r.actions?.some(a => a.type === 'notify_agent'),
+      notify_users: r.actions?.find(a => a.type === 'notify_agent')?.user_ids ?? [],
+      do_task: !!r.actions?.some(a => a.type === 'create_task'),
+      task_title: r.actions?.find(a => a.type === 'create_task')?.title ?? '',
+      task_hours: String(r.actions?.find(a => a.type === 'create_task')?.due_hours ?? 24),
     })
     setErr('')
     setModal(true)
@@ -107,7 +123,8 @@ export default function WaCloudAutomations() {
 
   const handleSave = async () => {
     setErr('')
-    if (!form.name || !form.message) { setErr('Name and message are required.'); return }
+    if (!form.name || (!form.message && !form.do_assign && !form.do_notify && !form.do_task)) { setErr('Give the rule a name and at least one action (a reply message, assign, notify or task).'); return }
+    if (form.do_assign && form.assign_users.length === 0) { setErr('Choose which team members the chat is assigned to.'); return }
     setSaving(true)
     try {
       const payload: Record<string, unknown> = {
@@ -116,7 +133,12 @@ export default function WaCloudAutomations() {
         name: form.name,
         is_active: form.is_active,
         priority: Number(form.priority),
-        actions: [{ type: 'send_message', message: form.message }],
+        actions: [
+          ...(form.message ? [{ type: 'send_message', message: form.message }] : []),
+          ...(form.do_assign ? [{ type: 'assign_agent', user_ids: form.assign_users, strategy: form.assign_strategy }] : []),
+          ...(form.do_notify ? [{ type: 'notify_agent', user_ids: form.notify_users }] : []),
+          ...(form.do_task ? [{ type: 'create_task', title: form.task_title || undefined, due_hours: Number(form.task_hours) || 24 }] : []),
+        ],
         keywords: form.keywords ? form.keywords.split(',').map(k => k.trim()).filter(Boolean) : null,
         schedule_start: form.schedule_start || null,
         schedule_end: form.schedule_end || null,
@@ -158,23 +180,15 @@ export default function WaCloudAutomations() {
   const inp = 'w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500'
 
   return (
-    <div className="p-6 max-w-5xl mx-auto">
+    <div>
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-xl font-bold text-gray-900">WA Cloud Automation Rules</h1>
-          <p className="text-sm text-gray-500 mt-1">Auto-reply and trigger rules for your WhatsApp Cloud API inbox</p>
+          <h2 className="text-lg font-bold text-gray-900">Automation rules</h2>
+          <p className="text-sm text-gray-500 mt-1">Triggers that react to a message or silence — send a reply, assign the chat, notify the team, create a task. Per number or all numbers.</p>
         </div>
         <button onClick={openCreate} className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700">
           + New Rule
         </button>
-      </div>
-
-      <div className="bg-white border border-gray-200 rounded-xl p-4 mb-6">
-        <h2 className="text-sm font-semibold text-gray-900 mb-1">🕒 AI Schedule</h2>
-        <p className="text-xs text-gray-500 mb-3">
-          Always on, or only during set hours — per number. Outside scheduled hours a task goes to a staff member instead.
-        </p>
-        <AiScheduleSection channel="wa_cloud" emptyText="No WhatsApp Cloud numbers connected yet." />
       </div>
 
       {loading ? (
@@ -248,7 +262,7 @@ export default function WaCloudAutomations() {
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Reply Message *</label>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Reply message <span className="text-gray-400 font-normal">(optional if you add another action)</span></label>
                 <textarea rows={3} value={f.message} onChange={e => set('message', e.target.value)}
                   className={`${inp} resize-none`} placeholder="Message to send when this rule triggers" />
               </div>
@@ -300,6 +314,32 @@ export default function WaCloudAutomations() {
                 </div>
               )}
 
+              <div className="rounded-xl border border-indigo-100 bg-indigo-50/40 p-3 space-y-3">
+                <div className="text-xs font-semibold text-indigo-800">Then also (runs automatically)</div>
+
+                <label className="flex items-center gap-2 text-sm text-gray-700"><input type="checkbox" checked={f.do_assign} onChange={e => set('do_assign', e.target.checked)} className="w-4 h-4" /> 👥 Assign the chat to sales-team users</label>
+                {f.do_assign && (
+                  <div className="ml-6 space-y-2">
+                    <StaffPick staff={staff} value={f.assign_users} onChange={v => set('assign_users', v)} />
+                    <select value={f.assign_strategy} onChange={e => set('assign_strategy', e.target.value)} className={inp}>
+                      <option value="round_robin">Round robin (take turns)</option>
+                      <option value="least_busy">Least busy (fewest open chats)</option>
+                    </select>
+                  </div>
+                )}
+
+                <label className="flex items-center gap-2 text-sm text-gray-700"><input type="checkbox" checked={f.do_notify} onChange={e => set('do_notify', e.target.checked)} className="w-4 h-4" /> 🔔 Notify team members (push + live alert)</label>
+                {f.do_notify && <div className="ml-6"><StaffPick staff={staff} value={f.notify_users} onChange={v => set('notify_users', v)} empty="Leave empty to notify whoever the chat is assigned to." /></div>}
+
+                <label className="flex items-center gap-2 text-sm text-gray-700"><input type="checkbox" checked={f.do_task} onChange={e => set('do_task', e.target.checked)} className="w-4 h-4" /> ✅ Create a follow-up task</label>
+                {f.do_task && (
+                  <div className="ml-6 grid grid-cols-3 gap-2">
+                    <input value={f.task_title} onChange={e => set('task_title', e.target.value)} className={`${inp} col-span-2`} placeholder="Task title (optional)" />
+                    <input type="number" min={1} value={f.task_hours} onChange={e => set('task_hours', e.target.value)} className={inp} placeholder="Due in hours" />
+                  </div>
+                )}
+              </div>
+
               <div className="flex items-center gap-2">
                 <input type="checkbox" id="wc_is_active" checked={f.is_active} onChange={e => set('is_active', e.target.checked)} className="w-4 h-4 text-indigo-600 rounded" />
                 <label htmlFor="wc_is_active" className="text-sm text-gray-700">Active immediately</label>
@@ -317,3 +357,21 @@ export default function WaCloudAutomations() {
     </div>
   )
 }
+
+
+function StaffPick({ staff, value, onChange, empty }: { staff: Staff[]; value: number[]; onChange: (v: number[]) => void; empty?: string }) {
+  return (
+    <div>
+      <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto">
+        {staff.map(u => (
+          <button key={u.id} type="button" onClick={() => onChange(value.includes(u.id) ? value.filter(x => x !== u.id) : [...value, u.id])}
+            className={`px-2.5 py-1 rounded-full text-xs border ${value.includes(u.id) ? 'bg-indigo-600 text-white border-indigo-600' : 'border-gray-300 text-gray-600 hover:border-indigo-400 bg-white'}`}>{u.name}</button>
+        ))}
+        {staff.length === 0 && <span className="text-xs text-gray-400">No team members found.</span>}
+      </div>
+      {value.length === 0 && empty && <p className="text-[11px] text-gray-400 mt-1">{empty}</p>}
+    </div>
+  )
+}
+
+export default RulesTab

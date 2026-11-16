@@ -155,8 +155,16 @@ class WaCloudAutomationEngine
                         => $this->doSendText($company, $phone, (string) ($action['message'] ?? $action['text'] ?? '')),
                     'send_template'
                         => $this->doSendTemplate($company, $phone, (int) ($action['config_id'] ?? 0), (array) ($action['variables'] ?? [])),
-                    'assign_agent', 'notify_agent', 'create_task', 'add_label', 'mark_lead'
-                        => [true, "logged: {$type}", ['note' => 'no-op action recorded'], null],
+                    'assign_agent', 'handover'
+                        => $this->doAssign($company, $rule, $phone, $action),
+                    'notify_agent'
+                        => $this->doNotify($company, $phone, $action),
+                    'create_task'
+                        => $this->doCreateTask($company, $phone, $action),
+                    'add_label'
+                        => $this->doAddLabel($company, $phone, $action),
+                    'mark_lead'
+                        => $this->doMarkLead($company, $phone, $action),
                     default
                         => [false, "unknown action: {$type}", null, "Unsupported action type '{$type}'"],
                 };
@@ -238,6 +246,82 @@ class WaCloudAutomationEngine
         return $ok
             ? [true, "send_template #{$configId}", ['wa_message_id' => $waId], null]
             : [false, "send_template #{$configId}", null, $error];
+    }
+
+    // ── Real actions (assign / notify / task / label / lead) ─────────────────
+
+    /** @param array<string,mixed> $a {user_ids?:int[], strategy?:round_robin|least_busy} @return array{0:bool,1:string,2:?array,3:?string} */
+    private function doAssign(Company $company, WaCloudAutomationRule $rule, string $phone, array $a): array
+    {
+        $uid = app(WaCloudReplyRouter::class)->handover($company, $phone, [
+            'user_ids' => (array) ($a['user_ids'] ?? []), 'strategy' => (string) ($a['strategy'] ?? 'round_robin'),
+        ], $rule->id);
+        return $uid
+            ? [true, 'assign_agent', ['assigned_to' => $uid], null]
+            : [false, 'assign_agent', null, 'No active staff member to assign (or no conversation yet for this contact).'];
+    }
+
+    /** @param array<string,mixed> $a {user_ids?:int[], title?:string} @return array{0:bool,1:string,2:?array,3:?string} */
+    private function doNotify(Company $company, string $phone, array $a): array
+    {
+        $conv = WaConversation::where('company_id', $company->id)->where('phone', $phone)->first();
+        if (!$conv) {
+            return [false, 'notify_agent', null, 'No conversation for this contact.'];
+        }
+        $ids = (array) ($a['user_ids'] ?? []);
+        if (!$ids && $conv->assigned_to) {
+            $ids = [(int) $conv->assigned_to];
+        }
+        $ids = \App\Models\User::where('company_id', $company->id)->where('is_active', true)->whereIn('id', $ids)->pluck('id')->all();
+        if (!$ids) {
+            return [false, 'notify_agent', null, 'Nobody to notify (pick users, or assign the chat first).'];
+        }
+        $router = app(WaCloudReplyRouter::class);
+        foreach ($ids as $id) {
+            $router->notifyUser((int) $id, $conv, (string) ($a['title'] ?? 'Automation: customer needs attention'));
+        }
+        return [true, 'notify_agent', ['notified' => $ids], null];
+    }
+
+    /** @param array<string,mixed> $a {title?:string, due_hours?:int, user_id?:int, priority?:string} @return array{0:bool,1:string,2:?array,3:?string} */
+    private function doCreateTask(Company $company, string $phone, array $a): array
+    {
+        $contact = \App\Models\Contact::where('company_id', $company->id)->where('phone', $phone)->first();
+        $conv = WaConversation::where('company_id', $company->id)->where('phone', $phone)->first();
+        $assignee = (int) ($a['user_id'] ?? 0) ?: ($conv?->assigned_to);
+        $task = \App\Models\CrmTask::create([
+            'company_id' => $company->id, 'contact_id' => $contact?->id, 'assigned_to' => $assignee, 'created_by' => $assignee,
+            'title' => (string) ($a['title'] ?? 'Follow up with ' . ($contact?->name ?: $phone)),
+            'type' => 'followup', 'priority' => (string) ($a['priority'] ?? 'medium'), 'status' => 'open',
+            'due_at' => now()->addHours(max(1, (int) ($a['due_hours'] ?? 24))),
+        ]);
+        return [true, 'create_task', ['task_id' => $task->id], null];
+    }
+
+    /** @param array<string,mixed> $a {label_id:int} @return array{0:bool,1:string,2:?array,3:?string} */
+    private function doAddLabel(Company $company, string $phone, array $a): array
+    {
+        $labelId = (int) ($a['label_id'] ?? 0);
+        $contact = \App\Models\Contact::where('company_id', $company->id)->where('phone', $phone)->first();
+        $label = $labelId ? \App\Models\ContactLabel::where('company_id', $company->id)->find($labelId) : null;
+        if (!$contact || !$label) {
+            return [false, 'add_label', null, 'Contact or label not found.'];
+        }
+        $contact->labels()->syncWithoutDetaching([$label->id]);
+        return [true, 'add_label', ['label_id' => $label->id], null];
+    }
+
+    /** @param array<string,mixed> $a {stage?:string} @return array{0:bool,1:string,2:?array,3:?string} */
+    private function doMarkLead(Company $company, string $phone, array $a): array
+    {
+        $contact = \App\Models\Contact::where('company_id', $company->id)->where('phone', $phone)->first();
+        $lead = $contact ? \App\Models\Lead::where('company_id', $company->id)->where('contact_id', $contact->id)->latest('id')->first() : null;
+        if (!$lead) {
+            return [false, 'mark_lead', null, 'No lead for this contact yet.'];
+        }
+        $stage = in_array($a['stage'] ?? '', ['new', 'contacted', 'follow_up', 'enrolled', 'lost'], true) ? $a['stage'] : 'contacted';
+        $lead->update(['stage' => $stage]);
+        return [true, 'mark_lead', ['lead_id' => $lead->id, 'stage' => $stage], null];
     }
 
     // ── Helpers ─────────────────────────────────────────────────────────────

@@ -16,6 +16,8 @@ readonly class AgentInbound
         public string  $text,         // text body, media caption, or a "[voice message]" placeholder
         public string  $type = 'text',
         public bool    $fromGroup = false,
+        /** WA Cloud reply routing: answer with THIS AI agent (playbook) instead of resolving one by session. */
+        public ?int    $playbookId = null,
     ) {}
 
     public function hasText(): bool

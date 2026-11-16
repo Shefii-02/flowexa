@@ -82,10 +82,9 @@ class TeamChatController extends Controller
     /** Tell every active member's socket something changed in this chat (clients re-fetch / patch). */
     private function emit(int $chatId, string $kind, array $extra = []): void
     {
-        $ids = DB::table('team_chat_members')->where('chat_id', $chatId)->whereNull('left_at')->pluck('user_id');
-        foreach ($ids as $u) {
-            StaffRealtime::toStaff((int) $u, 'team_chat', ['chat_id' => $chatId, 'kind' => $kind, 'by' => $this->uid()] + $extra);
-        }
+        // One internal call for the whole chat (not one HTTP request per member) — see StaffRealtime::toStaffMany.
+        $ids = DB::table('team_chat_members')->where('chat_id', $chatId)->whereNull('left_at')->pluck('user_id')->map(fn ($u) => (int) $u)->all();
+        StaffRealtime::toStaffMany($ids, 'team_chat', ['chat_id' => $chatId, 'kind' => $kind, 'by' => $this->uid()] + $extra);
     }
 
     /** Push for a new message: mentioned users always (even if muted), everyone else not muted. */
@@ -136,10 +135,10 @@ class TeamChatController extends Controller
         $rows = $fetched->take($perPage)->values();
 
         // Total unread across ALL my chats (not just this page) — drives the tab badge.
-        $unreadTotal = (int) DB::table('team_chat_messages as msg')->join('team_chat_members as m', function ($j) use ($uid) {
+        $unreadTotal = (int) (DB::table('team_chat_messages as msg')->join('team_chat_members as m', function ($j) use ($uid) {
                 $j->on('m.chat_id', '=', 'msg.chat_id')->where('m.user_id', $uid)->whereNull('m.left_at')->where(fn ($mm) => $mm->where('m.muted', false)->orWhere(fn ($t) => $t->whereNotNull('m.muted_until')->where('m.muted_until', '<=', now())));
             })->join('team_chats as c', 'c.id', '=', 'msg.chat_id')->where('c.company_id', $this->cid())->whereNull('msg.deleted_at')
-            ->whereColumn('msg.id', '>', 'm.last_read_message_id')->where(fn ($x) => $x->whereNull('msg.sender_id')->orWhere('msg.sender_id', '!=', $uid))->count();
+            ->whereColumn('msg.id', '>', 'm.last_read_message_id')->where(fn ($x) => $x->whereNull('msg.sender_id')->orWhere('msg.sender_id', '!=', $uid))->count());
 
         // Tab badges across ALL my chats (not only this page): unread conversations per kind + unread @mentions.
         $perChat = DB::table('team_chat_messages as msg')->join('team_chat_members as m', function ($j) use ($uid) {
@@ -467,8 +466,9 @@ class TeamChatController extends Controller
     private function format($rows, int $chatId): array
     {
         $ids = $rows->pluck('id');
-        $senders = DB::table('users')->whereIn('id', $rows->pluck('sender_id')->filter()->unique())->pluck('name', 'id');
         $replies = DB::table('team_chat_messages')->whereIn('id', $rows->pluck('reply_to_id')->filter())->get()->keyBy('id');
+        // one users query for senders, reply authors and deleters (no per-message lookups)
+        $senders = DB::table('users')->whereIn('id', $rows->pluck('sender_id')->merge($replies->pluck('sender_id'))->merge($rows->pluck('deleted_by'))->filter()->unique())->pluck('name', 'id');
         $react = DB::table('team_chat_reactions')->whereIn('message_id', $ids)->get()->groupBy('message_id');
         $members = DB::table('team_chat_members')->where('chat_id', $chatId)->whereNull('left_at')->get(['user_id', 'last_read_message_id', 'last_delivered_message_id']);
         $starred = DB::table('team_chat_stars')->whereIn('message_id', $ids)->where('user_id', $this->uid())->pluck('message_id')->flip();
@@ -485,13 +485,13 @@ class TeamChatController extends Controller
                 'mine' => (int) $m->sender_id === $uid,
                 'body' => $m->deleted_at ? null : $m->body, 'deleted' => (bool) $m->deleted_at, 'edited' => (bool) $m->edited_at,
                 // Only the sender learns who removed their message; company admins read the original via /original.
-                'deleted_by_name' => $m->deleted_at && (int) $m->sender_id === $uid && $m->deleted_by ? ($senders[$m->deleted_by] ?? DB::table('users')->where('id', $m->deleted_by)->value('name')) : null,
+                'deleted_by_name' => $m->deleted_at && (int) $m->sender_id === $uid && $m->deleted_by ? ($senders[$m->deleted_by] ?? null) : null,
                 'attachment_url' => $m->deleted_at ? null : $m->attachment_url, 'attachment_name' => $m->attachment_name, 'attachment_size' => $m->attachment_size,
                 'attachment_mime' => $m->attachment_mime, 'duration' => $m->duration_seconds, 'forwarded' => (bool) $m->forwarded,
                 'latitude' => $m->latitude !== null ? (float) $m->latitude : null, 'longitude' => $m->longitude !== null ? (float) $m->longitude : null,
                 'location_label' => $m->location_label, 'contact_name' => $m->contact_name, 'contact_phone' => $m->contact_phone,
                 'mentions' => $m->mentions ? json_decode($m->mentions, true) : [],
-                'reply_to' => $rep ? ['id' => $rep->id, 'sender_name' => $rep->sender_id ? ($senders[$rep->sender_id] ?? DB::table('users')->where('id', $rep->sender_id)->value('name')) : null,
+                'reply_to' => $rep ? ['id' => $rep->id, 'sender_name' => $rep->sender_id ? ($senders[$rep->sender_id] ?? null) : null,
                                       'preview' => $this->preview($rep), 'type' => $rep->type, 'thumb' => $rep->type === 'image' && !$rep->deleted_at ? $rep->attachment_url : null] : null,
                 'reactions' => collect($react[$m->id] ?? [])->groupBy('emoji')->map(fn ($g, $e) => ['emoji' => $e, 'count' => $g->count(), 'mine' => $g->contains('user_id', $uid)])->values(),
                 'starred' => isset($starred[$m->id]), 'pinned' => isset($pinned[$m->id]),
@@ -507,10 +507,15 @@ class TeamChatController extends Controller
         abort_if($me->type === 'group' && $me->only_admins_post && $me->role !== 'admin', 403, 'Only admins can post in this group.');
         $d = $r->validate([
             'body' => 'nullable|string|max:4000', 'reply_to_id' => 'nullable|integer', 'mentions' => 'nullable|array', 'mentions.*' => 'integer',
-            'file' => 'nullable|file|max:25600', 'duration' => 'nullable|integer|min:0|max:7200',
+            'file' => 'nullable|file|max:25600', 'duration' => 'nullable|integer|min:0|max:7200', 'client_id' => 'nullable|string|max:40',
             'latitude' => 'nullable|numeric|between:-90,90', 'longitude' => 'nullable|numeric|between:-180,180', 'location_label' => 'nullable|string|max:200',
             'contact_name' => 'nullable|string|max:120', 'contact_phone' => 'nullable|string|max:40',
         ]);
+        // A retry of a send we already stored (e.g. the socket ack timed out, then REST was tried) returns the original.
+        if (!empty($d['client_id'])) {
+            $dup = DB::table('team_chat_messages')->where(['chat_id' => $id, 'sender_id' => $this->uid(), 'client_id' => $d['client_id']])->value('id');
+            if ($dup) { return response()->json(['id' => (int) $dup, 'duplicate' => true]); }
+        }
         $isLocation = isset($d['latitude'], $d['longitude']);
         $isContact = filled($d['contact_name'] ?? null);
         abort_if(!filled($d['body'] ?? null) && !$r->hasFile('file') && !$isLocation && !$isContact, 422, 'Write a message or attach something.');
@@ -539,7 +544,7 @@ class TeamChatController extends Controller
             'attachment_url' => $url, 'attachment_name' => $name, 'attachment_size' => $size, 'attachment_mime' => $mime,
             'duration_seconds' => $d['duration'] ?? null, 'latitude' => $d['latitude'] ?? null, 'longitude' => $d['longitude'] ?? null,
             'location_label' => $d['location_label'] ?? null, 'contact_name' => $d['contact_name'] ?? null, 'contact_phone' => $d['contact_phone'] ?? null,
-            'reply_to_id' => $d['reply_to_id'] ?? null, 'mentions' => $mentions ? json_encode($mentions) : null, 'created_at' => now(), 'updated_at' => now(),
+            'reply_to_id' => $d['reply_to_id'] ?? null, 'mentions' => $mentions ? json_encode($mentions) : null, 'client_id' => $d['client_id'] ?? null, 'created_at' => now(), 'updated_at' => now(),
         ]);
         DB::table('team_chats')->where('id', $id)->update(['last_message_id' => $mid, 'last_message_at' => now()]);
         DB::table('team_chat_members')->where('chat_id', $id)->where('user_id', $this->uid())->update(['last_read_message_id' => $mid]);
@@ -843,5 +848,58 @@ class TeamChatController extends Controller
         abort_unless(DB::table('team_chats')->where('id', $id)->where('company_id', $this->cid())->where('type', 'group')->exists(), 404);
         DB::table('team_chats')->where('id', $id)->delete();
         return response()->json(['ok' => true]);
+    }
+
+    /** GET /team-chat/admin/chats?q=&type=&page= — EVERY conversation in the company (direct + groups), read-only, for company admins. */
+    public function adminChats(Request $r): JsonResponse
+    {
+        $this->moderatorOnly();
+        $perPage = min(max((int) $r->query('per_page', 30), 5), 100);
+        $page = max((int) $r->query('page', 1), 1);
+        $q = trim((string) $r->query('q', ''));
+        $base = DB::table('team_chats as c')->where('c.company_id', $this->cid())
+            ->when(in_array($r->query('type'), ['direct', 'group'], true), fn ($x) => $x->where('c.type', $r->query('type')))
+            ->when($q !== '', function ($x) use ($q) {
+                $like = '%' . str_replace(['%', '_'], ['\\%', '\\_'], $q) . '%';
+                $x->where(fn ($w) => $w->where('c.name', 'like', $like)->orWhereExists(fn ($e) => $e->select(DB::raw(1))->from('team_chat_members as om')
+                    ->join('users as ou', 'ou.id', '=', 'om.user_id')->whereColumn('om.chat_id', 'c.id')->where('ou.name', 'like', $like)));
+            });
+        $fetched = (clone $base)->orderByRaw('COALESCE(c.last_message_at, c.created_at) DESC')->orderByDesc('c.id')
+            ->offset(($page - 1) * $perPage)->limit($perPage + 1)->get(['c.*']);
+        $rows = $fetched->take($perPage)->values();
+        $people = DB::table('team_chat_members as m')->join('users as u', 'u.id', '=', 'm.user_id')->whereIn('m.chat_id', $rows->pluck('id'))
+            ->get(['m.chat_id', 'u.id', 'u.name', 'u.avatar', 'm.left_at'])->groupBy('chat_id');
+        $last = DB::table('team_chat_messages')->whereIn('id', $rows->pluck('last_message_id')->filter())->get()->keyBy('id');
+        return response()->json(['data' => $rows->map(function ($c) use ($people, $last) {
+            $p = $people[$c->id] ?? collect();
+            $active = $p->whereNull('left_at');
+            return [
+                'id' => $c->id, 'type' => $c->type,
+                'name' => $c->type === 'group' ? $c->name : $active->pluck('name')->join(' ↔ '),
+                'avatar' => $c->type === 'group' ? $c->avatar_url : null,
+                'participants' => $active->map(fn ($u) => ['id' => $u->id, 'name' => $u->name, 'avatar' => $u->avatar])->values(),
+                'members_count' => $active->count(), 'former_count' => $p->whereNotNull('left_at')->count(),
+                'last_message' => isset($last[$c->last_message_id]) ? $this->preview($last[$c->last_message_id]) : null, 'last_message_at' => $c->last_message_at,
+            ];
+        }), 'page' => $page, 'has_more' => $fetched->count() > $perPage]);
+    }
+
+    /** GET /team-chat/admin/chats/{id}/messages?before_id=&limit= — read-only transcript for company admins; deleted messages show their original. */
+    public function adminMessages(Request $r, int $id): JsonResponse
+    {
+        $this->moderatorOnly();
+        abort_unless(DB::table('team_chats')->where('id', $id)->where('company_id', $this->cid())->exists(), 404);
+        $limit = min(max((int) $r->query('limit', 50), 1), 100);
+        $q = DB::table('team_chat_messages as m')->leftJoin('users as u', 'u.id', '=', 'm.sender_id')->leftJoin('users as d', 'd.id', '=', 'm.deleted_by')
+            ->where('m.chat_id', $id)->when($r->filled('before_id'), fn ($x) => $x->where('m.id', '<', (int) $r->query('before_id')))
+            ->orderByDesc('m.id')->limit($limit);
+        $rows = $q->get(['m.*', 'u.name as sender_name', 'd.name as deleted_by_name'])->reverse()->values();
+        return response()->json(['data' => $rows->map(fn ($m) => [
+            'id' => $m->id, 'type' => $m->type, 'sender_id' => $m->sender_id, 'sender_name' => $m->sender_name, 'body' => $m->body,
+            'attachment_url' => $m->attachment_url, 'attachment_name' => $m->attachment_name, 'attachment_mime' => $m->attachment_mime,
+            'latitude' => $m->latitude, 'longitude' => $m->longitude, 'location_label' => $m->location_label,
+            'contact_name' => $m->contact_name, 'contact_phone' => $m->contact_phone,
+            'deleted' => (bool) $m->deleted_at, 'deleted_at' => $m->deleted_at, 'deleted_by_name' => $m->deleted_by_name,
+            'edited' => (bool) $m->edited_at, 'forwarded' => (bool) $m->forwarded, 'created_at' => $m->created_at])]);
     }
 }
