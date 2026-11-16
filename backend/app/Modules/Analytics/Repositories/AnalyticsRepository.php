@@ -26,6 +26,10 @@ class AnalyticsRepository implements AnalyticsRepositoryInterface
                 'opted_in'    => (clone $contacts)->where('opted_in', true)->count(),
                 'new_today'   => (clone $contacts)->whereDate('created_at', $today)->count(),
                 'new_month'   => (clone $contacts)->where('created_at', '>=', $thisMonth)->count(),
+                'monthly'     => DB::table('contacts')->where('company_id', $companyId)
+                    ->where('created_at', '>=', now()->subMonths(5)->startOfMonth())
+                    ->select(DB::raw("DATE_FORMAT(created_at,'%Y-%m') as month"), DB::raw('count(*) as total'))
+                    ->groupBy('month')->orderBy('month')->get(),
             ],
             'leads' => [
                 'total'           => (clone $leads)->count(),

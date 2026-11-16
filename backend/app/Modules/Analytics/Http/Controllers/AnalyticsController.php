@@ -59,6 +59,64 @@ class AnalyticsController extends Controller
         );
     }
 
+    // GET /v1/analytics/wa-cloud-home?range=this_month|last_month|last_3_months
+    // Company-admin Home: plan usage (templates / campaigns / this-month campaigns) + a daily series for the chart.
+    public function waCloudHome(Request $request): JsonResponse
+    {
+        $user = auth()->user();
+        $cid  = (int) $user->company_id;
+        $range = $request->query('range', 'this_month');
+        [$from, $to] = match ($range) {
+            'last_month'    => [now()->subMonthNoOverflow()->startOfMonth(), now()->subMonthNoOverflow()->endOfMonth()],
+            'last_3_months' => [now()->subMonthsNoOverflow(2)->startOfMonth(), now()->endOfDay()],
+            default         => [now()->startOfMonth(), now()->endOfDay()],
+        };
+
+        $usage = \App\Support\PlanLimits::usage($cid, $user->company?->plan);
+        $u = fn (string $k) => ['used' => $usage[$k]['used'] ?? 0, 'limit' => $usage[$k]['limit'] ?? null];
+
+        $monthStart = now()->startOfMonth();
+        $camp = \DB::table('campaigns')->where('company_id', $cid);
+        $month = [
+            'running'   => (clone $camp)->where('status', 'running')->count(),
+            'completed' => (clone $camp)->where('status', 'completed')->where('created_at', '>=', $monthStart)->count(),
+        ];
+
+        // One row per day in range, so the chart has a continuous x axis.
+        $days = [];
+        for ($d = $from->copy()->startOfDay(); $d <= $to; $d->addDay()) { $days[$d->toDateString()] = ['incoming' => 0, 'outgoing' => 0, 'campaigns' => 0, 'leads' => 0, 'converted' => 0, 'rejected' => 0]; }
+        $fill = function ($rows, string $key) use (&$days) { foreach ($rows as $r) { if (isset($days[$r->d])) { $days[$r->d][$key] = (int) $r->c; } } };
+
+        $count = fn ($q) => $q->select(\DB::raw('DATE(created_at) as d'), \DB::raw('count(*) as c'))->groupBy('d')->get();
+        $msgs = \DB::table('message_logs')->where('company_id', $cid)->whereBetween('created_at', [$from, $to]);
+        $fill($count((clone $msgs)->where('direction', 'inbound')), 'incoming');
+        $fill($count((clone $msgs)->where('direction', 'outbound')), 'outgoing');
+        $fill($count(\DB::table('campaigns')->where('company_id', $cid)->whereBetween('created_at', [$from, $to])), 'campaigns');
+        $leads = \DB::table('leads')->where('company_id', $cid)->whereNull('deleted_at')->whereBetween('created_at', [$from, $to]);
+        $fill($count(clone $leads), 'leads');
+        $fill($count((clone $leads)->where('stage', 'enrolled')), 'converted');
+        $fill($count((clone $leads)->where('stage', 'lost')), 'rejected');
+
+        $series = [];
+        foreach ($days as $date => $v) { $series[] = ['date' => $date] + $v; }
+
+        return response()->json([
+            'range'     => $range,
+            'templates' => $u('templates'),
+            'campaigns' => $u('campaigns'),
+            'campaigns_month' => $u('campaigns_month') + $month,
+            'series'    => $series,
+            'totals'    => [
+                'incoming'  => array_sum(array_column($series, 'incoming')),
+                'outgoing'  => array_sum(array_column($series, 'outgoing')),
+                'campaigns' => array_sum(array_column($series, 'campaigns')),
+                'leads'     => array_sum(array_column($series, 'leads')),
+                'converted' => array_sum(array_column($series, 'converted')),
+                'rejected'  => array_sum(array_column($series, 'rejected')),
+            ],
+        ]);
+    }
+
     // GET /v1/analytics/leads
     public function leads(): JsonResponse
     {
