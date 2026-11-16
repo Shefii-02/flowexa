@@ -67,6 +67,8 @@ class AnalyticsController extends Controller
         $cid  = (int) $user->company_id;
         $range = $request->query('range', 'this_month');
         [$from, $to] = match ($range) {
+            'today'         => [now()->startOfDay(), now()->endOfDay()],
+            'last_week'     => [now()->subWeek()->startOfWeek(), now()->subWeek()->endOfWeek()],
             'last_month'    => [now()->subMonthNoOverflow()->startOfMonth(), now()->subMonthNoOverflow()->endOfMonth()],
             'last_3_months' => [now()->subMonthsNoOverflow(2)->startOfMonth(), now()->endOfDay()],
             default         => [now()->startOfMonth(), now()->endOfDay()],
@@ -84,10 +86,12 @@ class AnalyticsController extends Controller
 
         // One row per day in range, so the chart has a continuous x axis.
         $days = [];
-        for ($d = $from->copy()->startOfDay(); $d <= $to; $d->addDay()) { $days[$d->toDateString()] = ['incoming' => 0, 'outgoing' => 0, 'campaigns' => 0, 'leads' => 0, 'converted' => 0, 'rejected' => 0]; }
+        $hourly = $range === 'today';
+        $bucket = $hourly ? "DATE_FORMAT(created_at,'%Y-%m-%d %H')" : 'DATE(created_at)';
+        for ($d = $from->copy()->startOfDay(); $d <= $to; $hourly ? $d->addHour() : $d->addDay()) { $days[$hourly ? $d->format('Y-m-d H') : $d->toDateString()] = ['incoming' => 0, 'outgoing' => 0, 'campaigns' => 0, 'leads' => 0, 'converted' => 0, 'rejected' => 0]; }
         $fill = function ($rows, string $key) use (&$days) { foreach ($rows as $r) { if (isset($days[$r->d])) { $days[$r->d][$key] = (int) $r->c; } } };
 
-        $count = fn ($q) => $q->select(\DB::raw('DATE(created_at) as d'), \DB::raw('count(*) as c'))->groupBy('d')->get();
+        $count = fn ($q) => $q->select(\DB::raw("$bucket as d"), \DB::raw('count(*) as c'))->groupBy('d')->get();
         $msgs = \DB::table('message_logs')->where('company_id', $cid)->whereBetween('created_at', [$from, $to]);
         $fill($count((clone $msgs)->where('direction', 'inbound')), 'incoming');
         $fill($count((clone $msgs)->where('direction', 'outbound')), 'outgoing');
@@ -115,6 +119,46 @@ class AnalyticsController extends Controller
                 'rejected'  => array_sum(array_column($series, 'rejected')),
             ],
         ]);
+    }
+
+    // GET /v1/analytics/leads-home?range=this_month|last_month|last_3_months
+    // Daily series: leads created, converted (enrolled), closed (enrolled or lost), rejected (lost),
+    // pending (open: new/contacted) and follow-ups (stage follow_up).
+    public function leadsHome(Request $request): JsonResponse
+    {
+        $cid = (int) auth()->user()->company_id;
+        $range = $request->query('range', 'this_month');
+        [$from, $to] = match ($range) {
+            'today'         => [now()->startOfDay(), now()->endOfDay()],
+            'last_week'     => [now()->subWeek()->startOfWeek(), now()->subWeek()->endOfWeek()],
+            'last_month'    => [now()->subMonthNoOverflow()->startOfMonth(), now()->subMonthNoOverflow()->endOfMonth()],
+            'last_3_months' => [now()->subMonthsNoOverflow(2)->startOfMonth(), now()->endOfDay()],
+            default         => [now()->startOfMonth(), now()->endOfDay()],
+        };
+        $keys = ['leads', 'converted', 'closed', 'rejected', 'pending', 'followups'];
+        $days = [];
+        $hourly = $range === 'today';
+        for ($d = $from->copy()->startOfDay(); $d <= $to; $hourly ? $d->addHour() : $d->addDay()) { $days[$hourly ? $d->format('Y-m-d H') : $d->toDateString()] = array_fill_keys($keys, 0); }
+        $base = fn () => \DB::table('leads')->where('company_id', $cid)->whereNull('deleted_at');
+        $fill = function ($q, string $col, string $key) use (&$days, $from, $to, $hourly) {
+            $expr = $hourly ? "DATE_FORMAT($col,'%Y-%m-%d %H')" : "DATE($col)";
+            foreach ($q->whereBetween($col, [$from, $to])->select(\DB::raw("$expr as d"), \DB::raw('count(*) as c'))->groupBy('d')->get() as $r) {
+                if (isset($days[$r->d])) { $days[$r->d][$key] += (int) $r->c; }
+            }
+        };
+        $fill($base(), 'created_at', 'leads');
+        $fill($base()->where('stage', 'enrolled'), 'enrolled_at', 'converted');
+        $fill($base()->where('stage', 'enrolled'), 'enrolled_at', 'closed');
+        $fill($base()->where('stage', 'lost'), 'lost_at', 'closed');
+        $fill($base()->where('stage', 'lost'), 'lost_at', 'rejected');
+        $fill($base()->whereIn('stage', ['new', 'contacted']), 'created_at', 'pending');
+        $fill($base()->where('stage', 'follow_up'), 'created_at', 'followups');
+
+        $series = [];
+        foreach ($days as $date => $v) { $series[] = ['date' => $date] + $v; }
+        $totals = [];
+        foreach ($keys as $k) { $totals[$k] = array_sum(array_column($series, $k)); }
+        return response()->json(['range' => $range, 'series' => $series, 'totals' => $totals]);
     }
 
     // GET /v1/analytics/leads
