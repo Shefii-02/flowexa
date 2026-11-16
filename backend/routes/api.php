@@ -543,6 +543,30 @@ Route::prefix('v1')->group(function () {
             Route::put('me', [\App\Http\Controllers\NotificationPreferenceController::class, 'update']);
         });
 
+        // ── Team chat (internal 1:1 + groups; mobile "Chats" tab) ────────────
+        Route::prefix('team-chat')->middleware(['company.active'])->group(function () {
+            $c = \App\Modules\TeamChat\Http\Controllers\TeamChatController::class;
+            Route::get('users',                          [$c, 'users']);
+            Route::get('chats',                          [$c, 'chats']);
+            Route::post('chats',                         [$c, 'create']);
+            Route::get('chats/{id}',                     [$c, 'show']);
+            Route::patch('chats/{id}',                   [$c, 'update']);
+            Route::delete('chats/{id}',                  [$c, 'destroy']);
+            Route::post('chats/{id}/members',            [$c, 'addMembers']);
+            Route::delete('chats/{id}/members/{userId}', [$c, 'removeMember']);
+            Route::post('chats/{id}/members/{userId}/role', [$c, 'setRole']);
+            Route::post('chats/{id}/mute',               [$c, 'mute']);
+            Route::post('chats/{id}/read',               [$c, 'read']);
+            Route::get('chats/{id}/messages',            [$c, 'messages']);
+            Route::get('chats/{id}/messages-by-ids',     [$c, 'byIds']);
+            Route::post('chats/{id}/messages',           [$c, 'send']);
+            Route::patch('messages/{mid}',               [$c, 'edit']);
+            Route::delete('messages/{mid}',              [$c, 'deleteMessage']);
+            Route::post('messages/{mid}/react',          [$c, 'react']);
+            Route::post('messages/{mid}/forward',        [$c, 'forward']);
+            Route::get('messages/{mid}/seen',            [$c, 'seen']);
+        });
+
         // ── HR — Attendance / Breaks / Leave (mobile app + web) ──────────────
         Route::prefix('hr')->middleware(['company.active'])->group(function () {
             // Self service — every staff member manages their own attendance/leave, no permission needed.
@@ -1508,6 +1532,16 @@ Route::prefix('v1')->group(function () {
             'company_id' => $u?->company_id, 'name' => $u?->name,
         ]);
     })->middleware('throttle:600,1');
+
+    // ── Server-to-server: backend-node asks Laravel to push-notify a team-chat message it just stored ──
+    Route::post('/internal/team-chat-push', function (\Illuminate\Http\Request $request) {
+        $key = (string) config('services.internal.key');
+        abort_unless($key !== '' && hash_equals($key, (string) $request->header('X-Internal-Key')), 401);
+        $d = $request->validate(['chat_id' => ['required', 'integer'], 'message_id' => ['required', 'integer'], 'sender_id' => ['required', 'integer'],
+            'mentions' => ['nullable', 'array'], 'mentions.*' => ['integer']]);
+        \App\Modules\TeamChat\Support\TeamChatPush::send($d['chat_id'], $d['message_id'], $d['sender_id'], $d['mentions'] ?? []);
+        return response()->json(['ok' => true]);
+    })->middleware('throttle:1200,1');
 
     // ── Public website chat widget (called from customer sites) ──
     Route::prefix('public/widget')->middleware(['widget.cors'])->group(function () {

@@ -206,7 +206,11 @@ class DashboardController extends Controller
             })
             ->orderByRaw("CASE WHEN status = 'open' THEN 0 ELSE 1 END")
             ->orderByRaw('due_at IS NULL, due_at ASC')
-            ->get(['id', 'title', 'status', 'priority', 'due_at']);
+            ->get(['id', 'title', 'status', 'priority', 'due_at', 'assigned_to']);
+
+        // Company-wide view: say whose task each one is.
+        $names = $userId ? [] : User::whereIn('id', $rows->pluck('assigned_to')->filter()->unique())->pluck('name', 'id');
+        $rows->each(fn ($r) => $r->setAttribute('assignee', $userId ? null : ($names[$r->assigned_to] ?? null)));
 
         return [
             'done'  => $rows->where('status', 'done')->count(),

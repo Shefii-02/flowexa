@@ -27,6 +27,14 @@ class StaffRealtime
         ]);
     }
 
+    /** Push an event to one staff member's connected socket(s) (backend-node `emit-notification`). */
+    public static function toStaff(int $staffId, string $type, array|\Closure $data): void
+    {
+        self::queue('emit-notification', "s:{$staffId}:{$type}:" . uniqid('', true), fn () => [
+            'type' => $type, 'staff_id' => $staffId, 'data' => $data instanceof \Closure ? $data() : $data,
+        ]);
+    }
+
     /** Ping the visitor of one website-chat conversation ("something changed — poll now"). */
     public static function toWidgetVisitor(int $conversationId): void
     {
