@@ -181,7 +181,7 @@ class TeamChatController extends Controller
                 'members_count' => (int) ($counts[$c->id] ?? 0), 'muted' => $this->mutedNow($c), 'muted_until' => $c->muted ? $c->muted_until : null, 'my_role' => $c->my_role,
                 'unread' => (int) ($unread[$c->id] ?? 0), 'unread_mentions' => (int) ($mentionUnread[$c->id] ?? 0),
                 'last_sender' => $l && $l->sender_id ? ($lastSenders[$l->sender_id] ?? null) : null, 'last_sender_id' => $l->sender_id ?? null,
-                'last_message' => $l ? $this->preview($l) : null, 'last_message_at' => $c->last_message_at,
+                'last_message' => $l ? $this->preview($l) : null, 'last_message_at' => $c->last_message_at ? \Illuminate\Support\Carbon::parse($c->last_message_at)->toIso8601String() : null,
             ];
         });
         return response()->json(['data' => $data, 'page' => $page, 'has_more' => $hasMore, 'unread_total' => $unreadTotal, 'counts' => $tabCounts]);
@@ -495,7 +495,7 @@ class TeamChatController extends Controller
                                       'preview' => $this->preview($rep), 'type' => $rep->type, 'thumb' => $rep->type === 'image' && !$rep->deleted_at ? $rep->attachment_url : null] : null,
                 'reactions' => collect($react[$m->id] ?? [])->groupBy('emoji')->map(fn ($g, $e) => ['emoji' => $e, 'count' => $g->count(), 'mine' => $g->contains('user_id', $uid)])->values(),
                 'starred' => isset($starred[$m->id]), 'pinned' => isset($pinned[$m->id]),
-                'seen_by_count' => $seen, 'delivered_count' => $delivered, 'recipients' => $others->count(), 'created_at' => $m->created_at,
+                'seen_by_count' => $seen, 'delivered_count' => $delivered, 'recipients' => $others->count(), 'created_at' => \Illuminate\Support\Carbon::parse($m->created_at)->toIso8601String(),
             ];
         })->all();
     }
@@ -900,6 +900,8 @@ class TeamChatController extends Controller
             'latitude' => $m->latitude, 'longitude' => $m->longitude, 'location_label' => $m->location_label,
             'contact_name' => $m->contact_name, 'contact_phone' => $m->contact_phone,
             'deleted' => (bool) $m->deleted_at, 'deleted_at' => $m->deleted_at, 'deleted_by_name' => $m->deleted_by_name,
-            'edited' => (bool) $m->edited_at, 'forwarded' => (bool) $m->forwarded, 'created_at' => $m->created_at])]);
+            'edited' => (bool) $m->edited_at, 'forwarded' => (bool) $m->forwarded, 'created_at' => $m->created_at,
+            // same shape as the member endpoints so every client can render it without special cases
+            'mine' => false, 'reactions' => [], 'reply_to' => null, 'seen_by_count' => 0, 'delivered_count' => 0, 'recipients' => 0, 'mentions' => []])]);
     }
 }

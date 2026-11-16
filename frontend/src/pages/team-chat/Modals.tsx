@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import toast from 'react-hot-toast'
 import { api as http } from '@/api/client'
-import { errMsg, getInfo, listUsers, type ChatInfo, type Member } from './teamChatApi'
+import { errMsg, getInfo, listUsers, tcPost, type ChatInfo, type Member } from './teamChatApi'
 
 function Shell({ title, onClose, children, wide }: { title: string; onClose: () => void; children: React.ReactNode; wide?: boolean }) {
   return (
@@ -37,7 +37,7 @@ function UserPicker({ users, selected, onToggle, exclude = [], single }: { users
 export function NewChatModal({ onClose, onOpen }: { onClose: () => void; onOpen: (id: number) => void }) {
   const [users, setUsers] = useState<Member[]>([])
   useEffect(() => { listUsers().then(setUsers).catch(e => toast.error(errMsg(e))) }, [])
-  const start = async (id: number) => { try { const r = await http.post('/team-chat/chats', { type: 'direct', user_id: id }); onOpen(r.data.id) } catch (e) { toast.error(errMsg(e)) } }
+  const start = async (id: number) => { try { const r = await tcPost('/chats', { type: 'direct', user_id: id }); onOpen(r.id) } catch (e) { toast.error(errMsg(e)) } }
   return <Shell title="New chat" onClose={onClose}><UserPicker users={users} selected={[]} single onToggle={start} /></Shell>
 }
 
@@ -47,7 +47,7 @@ export function NewGroupModal({ onClose, onCreated }: { onClose: () => void; onC
   const create = async () => {
     if (!name.trim() || !sel.length) return toast.error('Add a group name and at least one member.')
     setBusy(true)
-    try { const r = await http.post('/team-chat/chats', { type: 'group', name: name.trim(), member_ids: sel }); onCreated(r.data.id) } catch (e) { toast.error(errMsg(e)) } finally { setBusy(false) }
+    try { const r = await tcPost('/chats', { type: 'group', name: name.trim(), member_ids: sel }); onCreated(r.id) } catch (e) { toast.error(errMsg(e)) } finally { setBusy(false) }
   }
   return (
     <Shell title="New group" onClose={onClose}>

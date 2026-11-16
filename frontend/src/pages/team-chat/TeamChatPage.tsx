@@ -6,7 +6,7 @@ import { useAppSelector } from '@/store'
 import { subscribeStaffEvent } from '@/socket/staffSocket'
 import ChatRoom from './ChatRoom'
 import { GroupInfoModal, NewChatModal, NewGroupModal } from './Modals'
-import { command, dayOf, errMsg, listAllChatsAdmin, listChats, timeOf, type Chat } from './teamChatApi'
+import { command, dayOf, errMsg, listAllChatsAdmin, listChats, tcPost, timeOf, type Chat } from './teamChatApi'
 
 type Tab = 'all' | 'direct' | 'group' | 'unread' | 'admin'
 
@@ -53,7 +53,7 @@ export default function TeamChatPage() {
     let t: ReturnType<typeof setTimeout> | undefined
     const off = subscribeStaffEvent<any>('team_chat', e => {
       clearTimeout(t); t = setTimeout(() => load(1), 400)
-      if (e.kind === 'message' && e.by !== me?.id) command('chat:delivered', { chat_id: e.chat_id }, () => http.post(`/team-chat/chats/${e.chat_id}/delivered`)).catch(() => {})
+      if (e.kind === 'message' && e.by !== me?.id) command('chat:delivered', { chat_id: e.chat_id }, () => tcPost(`/chats/${e.chat_id}/delivered`)).catch(() => {})
     }, c => { connected = c })
     const poll = setInterval(() => { if (!connected) load(1) }, 30000)
     return () => { off(); clearInterval(poll); clearTimeout(t) }
@@ -72,7 +72,7 @@ export default function TeamChatPage() {
     ...(isAdmin ? [{ id: 'admin' as Tab, label: '👁 All conversations' }] : []),
   ]
 
-  const markRead = (c: Chat) => command('chat:read', { chat_id: c.id }, () => http.post(`/team-chat/chats/${c.id}/read`)).then(() => load(1)).catch(() => {})
+  const markRead = (c: Chat) => command('chat:read', { chat_id: c.id }, () => tcPost(`/chats/${c.id}/read`)).then(() => load(1)).catch(() => {})
 
   return (
     <div className="-m-4 flex h-[calc(100vh-4rem)] overflow-hidden rounded-none bg-gradient-to-br from-sky-50 via-white to-blue-50 md:-m-6">

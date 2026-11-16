@@ -1,5 +1,6 @@
 // Team chat (internal 1:1 + group chat) — API + realtime helpers shared by the page components.
 import { api as http } from '@/api/client'
+import { nodeApi } from '@/api/nodeClient'
 import { getStaffSocket } from '@/socket/staffSocket'
 
 export type Chat = {
@@ -27,14 +28,29 @@ export type ChatInfo = {
   only_admins_post: boolean; only_admins_edit: boolean; only_admins_add: boolean; members: Member[]; former_members?: (Member & { left_at: string })[]
 }
 
-export const listChats = (params: Record<string, unknown>) => http.get('/team-chat/chats', { params }).then(r => r.data)
+/**
+ * Team chat REST. The Node server (the one that also pushes the live `team_chat` socket events) serves it first; Laravel is
+ * only the fallback when Node is unreachable, errors (5xx), is not deployed yet (404) or is misconfigured (503). Same paths
+ * and JSON on both. File uploads and group admin always go to Laravel (`http`).
+ */
+const fallbackWorthy = (e: any): boolean => { const c = e?.response?.status; return !c || c >= 500 || c === 404 }
+export async function tcGet<T = any>(path: string, params?: Record<string, unknown>): Promise<T> {
+  try { return (await nodeApi.get(`/team-chat${path}`, { params })).data }
+  catch (e) { if (!fallbackWorthy(e)) throw e; return (await http.get(`/team-chat${path}`, { params })).data }
+}
+export async function tcPost<T = any>(path: string, data?: unknown): Promise<T> {
+  try { return (await nodeApi.post(`/team-chat${path}`, data)).data }
+  catch (e) { if (!fallbackWorthy(e)) throw e; return (await http.post(`/team-chat${path}`, data)).data }
+}
+
+export const listChats = (params: Record<string, unknown>) => tcGet('/chats', params)
 export const listAllChatsAdmin = (params: Record<string, unknown>) => http.get('/team-chat/admin/chats', { params }).then(r => r.data)
-export const getInfo = (id: number): Promise<ChatInfo> => http.get(`/team-chat/chats/${id}`).then(r => r.data)
+export const getInfo = (id: number): Promise<ChatInfo> => tcGet(`/chats/${id}`)
 export const listMessages = (id: number, params: Record<string, unknown> = {}): Promise<Msg[]> =>
-  http.get(`/team-chat/chats/${id}/messages`, { params }).then(r => r.data.data)
+  tcGet(`/chats/${id}/messages`, params).then(r => r.data)
 export const adminMessages = (id: number, params: Record<string, unknown> = {}): Promise<Msg[]> =>
   http.get(`/team-chat/admin/chats/${id}/messages`, { params }).then(r => r.data.data)
-export const listUsers = (): Promise<Member[]> => http.get('/team-chat/users').then(r => r.data.data)
+export const listUsers = (): Promise<Member[]> => tcGet('/users').then(r => r.data)
 
 /** Socket-first command (Node saves + fans out + acks). Falls back to the REST call if the socket is down or silent. */
 export function command<T = any>(event: string, data: Record<string, unknown>, rest: () => Promise<T>): Promise<any> {

@@ -2,7 +2,10 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import toast from 'react-hot-toast'
 import { api as http } from '@/api/client'
 import { subscribeStaffEvent } from '@/socket/staffSocket'
-import { adminMessages, command, dayOf, emitTyping, errMsg, getInfo, listMessages, timeOf, type ChatInfo, type Msg } from './teamChatApi'
+import { adminMessages, command, tcPost, dayOf, emitTyping, errMsg, getInfo, listMessages, timeOf, type ChatInfo, type Msg } from './teamChatApi'
+
+/** Fill the fields some endpoints omit (the admin transcript has no reactions / receipts) so rendering never reads `undefined`. */
+const normalizeMsg = (m: Msg): Msg => ({ ...m, reactions: m.reactions ?? [], seen_by_count: m.seen_by_count ?? 0, delivered_count: m.delivered_count ?? 0, recipients: m.recipients ?? 0, mentions: (m as any).mentions ?? [] })
 
 const QUICK = ['👍', '❤️', '😂', '😮', '😢', '🙏']
 const bytes = (n?: number | null) => (!n ? '' : n > 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`)
@@ -51,7 +54,7 @@ export default function ChatRoom({ chatId, myId, admin = false, title, onChanged
   const debounce = useRef<ReturnType<typeof setTimeout>>()
 
   const mergeMsgs = useCallback((rows: Msg[]) => setMsgs(prev => {
-    const by = new Map(prev.map(m => [m.id, m])); rows.forEach(m => by.set(m.id, m))
+    const by = new Map(prev.map(m => [m.id, m])); rows.forEach(m => by.set(m.id, normalizeMsg(m)))
     const key = (m: Msg) => (m.id < 0 ? 2 ** 50 + -m.id : m.id)   // optimistic messages stay at the end
     return [...by.values()].sort((a, b) => key(a) - key(b))
   }), [])
@@ -78,8 +81,8 @@ export default function ChatRoom({ chatId, myId, admin = false, title, onChanged
         if (!admin) setInfo(await getInfo(chatId)); else setInfo(null)
         const rows = admin ? await adminMessages(chatId, { limit: 60 }) : await listMessages(chatId, { limit: 60 })
         if (!live) return
-        setMsgs(rows); setNoMore(rows.length < 60)
-        if (!admin) { command('chat:delivered', { chat_id: chatId }, () => http.post(`/team-chat/chats/${chatId}/delivered`)).catch(() => {}); markRead() }
+        setMsgs(rows.map(normalizeMsg)); setNoMore(rows.length < 60)
+        if (!admin) { command('chat:delivered', { chat_id: chatId }, () => tcPost(`/chats/${chatId}/delivered`)).catch(() => {}); markRead() }
       } catch (e) { toast.error(errMsg(e)) } finally { if (live) setLoading(false) }
     })()
     return () => { live = false }
@@ -87,7 +90,7 @@ export default function ChatRoom({ chatId, myId, admin = false, title, onChanged
   }, [chatId, admin])
 
   const markRead = useCallback(() => {
-    command('chat:read', { chat_id: chatId }, () => http.post(`/team-chat/chats/${chatId}/read`)).then(onChanged).catch(() => {})
+    command('chat:read', { chat_id: chatId }, () => tcPost(`/chats/${chatId}/read`)).then(onChanged).catch(() => {})
   }, [chatId, onChanged])
 
   // realtime
@@ -147,7 +150,7 @@ export default function ChatRoom({ chatId, myId, admin = false, title, onChanged
       // client_id makes a retry (socket ack timed out → REST) return the stored message instead of sending twice
       const client_id = `${myId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
       const payload = { chat_id: chatId, client_id, body, mentions, ...(replyTo ? { reply_to_id: replyTo.id } : {}) }
-      const res = await command('chat:send', payload, () => http.post(`/team-chat/chats/${chatId}/messages`, { client_id, body, mentions, ...(replyTo ? { reply_to_id: replyTo.id } : {}) }))
+      const res = await command('chat:send', payload, () => tcPost(`/chats/${chatId}/messages`, { client_id, body, mentions, ...(replyTo ? { reply_to_id: replyTo.id } : {}) }))
       setMsgs(p => p.filter(m => m.id !== temp))
       if (res.message) mergeMsgs([res.message]); else await fetchLatest()
       onChanged()
@@ -223,9 +226,9 @@ export default function ChatRoom({ chatId, myId, admin = false, title, onChanged
                       {m.edited && <span>edited</span>}<span>{timeOf(m.created_at)}</span>{m.mine && !admin && !m.deleted && <Ticks m={m} />}
                     </div>
                   </div>
-                  {m.reactions.length > 0 && (
+                  {(m.reactions?.length ?? 0) > 0 && (
                     <div className={`-mt-2 flex gap-1 ${m.mine ? 'justify-end pr-2' : 'pl-2'}`}>
-                      {m.reactions.map(r => <button key={r.emoji} onClick={() => react(m, r.emoji)} className={`rounded-full border px-1.5 text-xs ${r.mine ? 'border-sky-400 bg-sky-100' : 'border-gray-200 bg-white'}`}>{r.emoji}{r.count > 1 ? ` ${r.count}` : ''}</button>)}
+                      {(m.reactions ?? []).map(r => <button key={r.emoji} onClick={() => react(m, r.emoji)} className={`rounded-full border px-1.5 text-xs ${r.mine ? 'border-sky-400 bg-sky-100' : 'border-gray-200 bg-white'}`}>{r.emoji}{r.count > 1 ? ` ${r.count}` : ''}</button>)}
                     </div>
                   )}
                   {!admin && m.id > 0 && (
