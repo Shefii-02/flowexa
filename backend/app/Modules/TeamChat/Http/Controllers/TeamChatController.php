@@ -90,7 +90,9 @@ class TeamChatController extends Controller
     /** Push for a new message: mentioned users always (even if muted), everyone else not muted. */
     private function push(int $chatId, int $mid, string $preview, array $mentions): void
     {
-        \App\Modules\TeamChat\Support\TeamChatPush::send($chatId, $mid, $this->uid(), $mentions);
+        // After the response is sent: one Firebase call per member would otherwise hold the sender's request open.
+        $uid = $this->uid();
+        app()->terminating(fn () => \App\Modules\TeamChat\Support\TeamChatPush::send($chatId, $mid, $uid, $mentions));
     }
 
     // ── People ───────────────────────────────────────────────────────────────
