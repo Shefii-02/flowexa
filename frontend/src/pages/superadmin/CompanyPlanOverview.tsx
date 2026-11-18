@@ -21,7 +21,8 @@ export default function CompanyPlanOverview({ companyId, onChanged }: { companyI
   const [upgrading, setUpgrading] = useState(false)
   // which validity is being extended: 'plan' or a complimentary module key
   const [ext, setExt] = useState<string | null>(null)
-  const [extDays, setExtDays] = useState('30')
+  const [extDays, setExtDays] = useState('1')
+  const [extUnit, setExtUnit] = useState<'months' | 'days'>('months')
   const [extNote, setExtNote] = useState('')
 
   const load = useCallback(() => {
@@ -47,9 +48,9 @@ export default function CompanyPlanOverview({ companyId, onChanged }: { companyI
     if (!ext || !+extDays) return
     setBusy(true)
     try {
-      const body = { days: +extDays, note: extNote || undefined }
+      const body = { [extUnit]: +extDays, note: extNote || undefined }
       if (ext === 'plan') await superadminApi.extendPlan(companyId, body); else await superadminApi.extendComplimentary(companyId, { module: ext, ...body })
-      toast.success('Validity extended'); setExt(null); setExtNote(''); setExtDays('30'); load(); onChanged()
+      toast.success('Validity extended'); setExt(null); setExtNote(''); setExtDays('1'); setExtUnit('months'); load(); onChanged()
     } catch (e) { toast.error(getError(e)) } finally { setBusy(false) }
   }
 
@@ -118,8 +119,11 @@ export default function CompanyPlanOverview({ companyId, onChanged }: { companyI
         {ext && (
           <div className="flex flex-wrap items-end gap-2 rounded-xl border border-purple-200 bg-purple-50 p-3">
             <p className="basis-full text-sm font-semibold text-gray-800">Extend {ext === 'plan' ? 'plan validity' : `“${mods.find(m => m.key === ext)?.label ?? ext}” free period`}</p>
-            <label className="text-xs font-medium text-gray-600">Days
-              <input type="number" min={1} className="input mt-1 block w-24" value={extDays} onChange={e => setExtDays(e.target.value)} /></label>
+            <label className="text-xs font-medium text-gray-600">Extend by
+              <span className="mt-1 flex gap-1">
+                <input type="number" min={1} className="input block w-20" value={extDays} onChange={e => setExtDays(e.target.value)} />
+                <select className="select !w-auto" value={extUnit} onChange={e => setExtUnit(e.target.value as 'months' | 'days')}><option value="months">months</option><option value="days">days</option></select>
+              </span></label>
             <label className="min-w-[12rem] flex-1 text-xs font-medium text-gray-600">Reason <span className="text-gray-400">(optional)</span>
               <input className="input mt-1 block w-full" value={extNote} onChange={e => setExtNote(e.target.value)} placeholder="e.g. payment delayed, goodwill" /></label>
             <Button size="sm" loading={busy} onClick={extend}>Extend</Button>

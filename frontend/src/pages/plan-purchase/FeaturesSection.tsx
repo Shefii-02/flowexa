@@ -28,6 +28,7 @@ export default function FeaturesSection({ addons, mine, focus, cart, setCart, on
           <p className={`font-medium ${on ? 'text-gray-900' : 'text-gray-500'}`}>{m.label}</p>
           <p className="text-xs text-gray-500">{m.description}</p>
           {on && e.from_complimentary?.includes(m.key) && <p className="text-[11px] text-indigo-600">🎁 Free trial of this feature · until {fmt.date(e.complimentary![m.key])}</p>}
+          {!on && disabledByAdmin(m.key) && <p className="text-[11px] text-red-600">Turned off by your administrator — contact support.</p>}
           {viaAddon && <p className="text-[11px] text-green-600">Via add-on{expiry(m.key) ? ` · until ${fmt.date(expiry(m.key)!)}` : ''}</p>}
         </div>
         {on ? <Badge variant="green">Active</Badge>
@@ -38,6 +39,8 @@ export default function FeaturesSection({ addons, mine, focus, cart, setCart, on
   }
 
   const off = modules.filter(m => !isOn(m.key))
+  const comp = modules.filter(m => e.from_complimentary?.includes(m.key))
+  const disabledByAdmin = (k: string) => (e as any).disabled?.includes(k)
   return (
     <div className="space-y-6">
       <div className="rounded-xl border border-brand-100 bg-brand-50/40 p-4 text-sm text-gray-600">
@@ -46,8 +49,11 @@ export default function FeaturesSection({ addons, mine, focus, cart, setCart, on
       {off.length > 0 && (
         <section className="space-y-3"><h3 className="font-semibold text-gray-900">Not active <span className="text-sm font-normal text-gray-400">({off.length})</span></h3>
           <div className="grid gap-3 md:grid-cols-2">{off.map(row)}</div></section>)}
+      {comp.length > 0 && (
+        <section className="space-y-3"><h3 className="font-semibold text-amber-700">🎁 Complimentary <span className="text-sm font-normal text-gray-400">— free for a limited time ({comp.length})</span></h3>
+          <div className="grid gap-3 md:grid-cols-2">{comp.map(row)}</div></section>)}
       {Object.keys(groups).map(g => {
-        const on = modules.filter(m => m.group === g && isOn(m.key))
+        const on = modules.filter(m => m.group === g && isOn(m.key) && !e.from_complimentary?.includes(m.key))
         return on.length ? (
           <section key={g} className="space-y-3"><h3 className="text-sm font-semibold uppercase tracking-wide text-gray-400">{groups[g]}</h3>
             <div className="grid gap-3 md:grid-cols-2">{on.map(row)}</div></section>) : null

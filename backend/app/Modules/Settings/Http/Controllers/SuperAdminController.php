@@ -128,24 +128,25 @@ class SuperAdminController extends Controller
     /** POST /superadmin/companies/{company}/extend-plan — push the plan expiry out by N days (from the current expiry, or from today if already lapsed). */
     public function extendPlan(Request $request, Company $company): JsonResponse
     {
-        $d = $request->validate(['days' => ['required', 'integer', 'min:1', 'max:3650'], 'note' => ['nullable', 'string', 'max:255']]);
+        $d = $request->validate(['days' => ['required_without:months', 'nullable', 'integer', 'min:1', 'max:3650'], 'months' => ['required_without:days', 'nullable', 'integer', 'min:1', 'max:120'], 'note' => ['nullable', 'string', 'max:255']]);
         $old = $company->plan_expires_at;
         $base = $old && $old->isFuture() ? $old->copy() : now();
-        $new = $base->copy()->addDays((int) $d['days']);
+        $new = !empty($d['months']) ? $base->copy()->addMonths((int) $d['months']) : $base->copy()->addDays((int) $d['days']);
+        $d['days'] = max(1, (int) $base->diffInDays($new));
         \Illuminate\Support\Facades\DB::transaction(function () use ($company, $new, $old, $d) {
             $company->forceFill(['plan_expires_at' => $new])->save();
             \App\Models\CompanyPlan::where('company_id', $company->id)->where('status', 'active')->latest()->first()?->forceFill(['expires_at' => $new])->save();
             $this->logExtension($company->id, 'plan', null, $old, $new, (int) $d['days'], $d['note'] ?? null);
         });
         \App\Support\Entitlements::forget();
-        return response()->json(['message' => "Plan extended by {$d['days']} days.", 'plan_expires_at' => $new]);
+        return response()->json(['message' => 'Plan validity extended.', 'plan_expires_at' => $new]);
     }
 
     /** POST /superadmin/companies/{company}/extend-complimentary — extend (or restart) one complimentary feature's free period. */
     public function extendComplimentary(Request $request, Company $company): JsonResponse
     {
         $d = $request->validate(['module' => ['required', 'string', \Illuminate\Validation\Rule::in(\App\Support\Modules::keys())],
-            'days' => ['required', 'integer', 'min:1', 'max:3650'], 'note' => ['nullable', 'string', 'max:255']]);
+            'days' => ['required_without:months', 'nullable', 'integer', 'min:1', 'max:3650'], 'months' => ['required_without:days', 'nullable', 'integer', 'min:1', 'max:120'], 'note' => ['nullable', 'string', 'max:255']]);
         $plan = $company->plan;
         $months = $plan?->complimentaryMap()[$d['module']] ?? null;
         $row = \Illuminate\Support\Facades\DB::table('company_complimentary')->where('company_id', $company->id)->where('module', $d['module'])->first();
@@ -153,7 +154,8 @@ class SuperAdminController extends Controller
 
         $old = $row ? \Illuminate\Support\Carbon::parse($row->expires_at) : null;
         $base = $old && $old->isFuture() ? $old->copy() : now();
-        $new = $base->copy()->addDays((int) $d['days']);
+        $new = !empty($d['months']) ? $base->copy()->addMonths((int) $d['months']) : $base->copy()->addDays((int) $d['days']);
+        $d['days'] = max(1, (int) $base->diffInDays($new));
         if ($row) {
             \Illuminate\Support\Facades\DB::table('company_complimentary')->where('id', $row->id)->update(['expires_at' => $new, 'updated_at' => now()]);
         } else {
@@ -162,7 +164,7 @@ class SuperAdminController extends Controller
         }
         $this->logExtension($company->id, 'complimentary', $d['module'], $old, $new, (int) $d['days'], $d['note'] ?? null);
         \App\Support\Entitlements::forget();
-        return response()->json(['message' => "Complimentary period extended by {$d['days']} days.", 'expires_at' => $new]);
+        return response()->json(['message' => 'Complimentary period extended.', 'expires_at' => $new]);
     }
 
     private function logExtension(int $companyId, string $kind, ?string $module, $old, $new, int $days, ?string $note): void

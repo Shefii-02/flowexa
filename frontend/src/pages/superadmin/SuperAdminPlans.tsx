@@ -171,8 +171,18 @@ export default function SuperAdminPlans() {
                 <p className="text-2xl font-bold text-gray-900">₹{fmt.number(p.price)}<span className="text-sm font-normal text-gray-400">/{p.duration_type === 'monthly' ? 'mo' : p.duration_type}</span></p>
                 <p className="text-xs text-gray-500">{p.price_yearly != null ? `₹${fmt.number(p.price_yearly)}/year` : `₹${fmt.number(Math.round(p.price * 12 * 0.8))}/year (12 months − 20%)`}</p>
                 <p className="mt-1 text-sm text-gray-500">{fmt.number(p.messages_limit)} messages</p>
-                <div className="mt-3 flex flex-wrap gap-1">
-                  {mods.map(m => <span key={m.key} title={m.label} className={`rounded-full px-2 py-0.5 text-[11px] ${on.includes(m.key) ? 'bg-brand-50 text-brand-700' : 'bg-gray-100 text-gray-400 line-through'}`}>{m.icon} {m.label}</span>)}
+                <p className="mt-3 text-[11px] font-semibold uppercase tracking-wide text-gray-400">Included features</p>
+                <div className="mt-1 flex flex-wrap gap-1">
+                  {mods.filter(m => on.includes(m.key)).map(m => <span key={m.key} title={m.label} className="rounded-full bg-brand-50 px-2 py-0.5 text-[11px] text-brand-700">{m.icon} {m.label}</span>)}
+                  {mods.filter(m => on.includes(m.key)).length === 0 && <span className="text-[11px] text-gray-400">None</span>}
+                </div>
+                <p className="mt-3 text-[11px] font-semibold uppercase tracking-wide text-gray-400">Complimentary features</p>
+                <div className="mt-1 flex flex-wrap gap-1">
+                  {(Array.isArray(p.complimentary) ? p.complimentary : []).filter((c: any) => !on.includes(c.module)).map((c: any) => {
+                    const m = mods.find(x => x.key === c.module)
+                    return m ? <span key={c.module} title={`${m.label} — free for ${c.months} month(s)`} className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] text-amber-700">{m.icon} {m.label} · {c.months} mo free</span> : null
+                  })}
+                  {!(Array.isArray(p.complimentary) && p.complimentary.some((c: any) => !on.includes(c.module))) && <span className="text-[11px] text-gray-400">None</span>}
                 </div>
                 <p className="mt-3 text-xs text-gray-400">{p.companies_count ?? 0} companies on this plan</p>
                 <div className="mt-auto flex gap-2 pt-4"><Button variant="secondary" size="sm" onClick={() => openEdit(p)}>Edit</Button><Button variant="danger" size="sm" onClick={() => remove(p)}>Delete</Button></div>
