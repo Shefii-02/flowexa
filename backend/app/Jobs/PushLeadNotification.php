@@ -33,7 +33,7 @@ class PushLeadNotification implements ShouldQueue
 
         try {
             $internalKey = config('services.internal.key', '');
-            $nodeUrl     = config('services.node.url', 'http://localhost:3000');
+            $nodeUrl     = config('services.chat.url', 'http://localhost:3005');
 
             \Illuminate\Support\Facades\Http::withHeaders(['X-Internal-Key' => $internalKey])
                 ->post("{$nodeUrl}/api/internal/emit-notification", [

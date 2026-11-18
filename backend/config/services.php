@@ -18,14 +18,13 @@ return [
         'key' => env('POSTMARK_API_KEY'),
     ],
 
-    // backend-node's staff-notify InternalController (real-time staff notifications) — a
-    // shared secret, not a per-company key. Must match INTERNAL_API_KEY in backend-node's own
-    // .env exactly, or NotifyStaffAiHandoff/NotifyStaffNewLead's calls will be rejected.
-    'node' => [
-        'url' => env('NODE_SERVICE_URL', 'http://localhost:3000'),
+    // chat-server (realtime staff sockets, team chat, website live chat) — InternalController authenticates with a
+    // shared secret, not a per-company key. Must match INTERNAL_API_KEY in chat-server's own .env exactly.
+    'chat' => [
+        'url' => env('CHAT_SERVICE_URL', 'http://localhost:3005'),
         // Browser-reachable URL of the same service — used by the embeddable website-chat widget to open its
         // realtime socket. Leave empty to keep the widget on (adaptive) polling only.
-        'public_url' => env('NODE_PUBLIC_URL', ''),
+        'public_url' => env('CHAT_PUBLIC_URL', ''),
     ],
     'internal' => [
         'key' => env('INTERNAL_API_KEY'),

@@ -103,7 +103,7 @@ class AiStaffHandoffService
         // Emit via Node.js socket — fire and forget
         try {
             $internalKey = config('services.internal.key', '');
-            $nodeUrl = config('services.node.url', 'http://localhost:3000');
+            $nodeUrl = config('services.chat.url', 'http://localhost:3005');
             $contact = $assignment->contact;
 
             \Illuminate\Support\Facades\Http::withHeaders(['X-Internal-Key' => $internalKey])

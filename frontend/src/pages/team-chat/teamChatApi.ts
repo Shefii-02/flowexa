@@ -1,6 +1,6 @@
 // Team chat (internal 1:1 + group chat) — API + realtime helpers shared by the page components.
 import { api as http } from '@/api/client'
-import { nodeApi } from '@/api/nodeClient'
+import { chatApi } from '@/api/chatClient'
 import { getStaffSocket } from '@/socket/staffSocket'
 
 export type Chat = {
@@ -19,7 +19,7 @@ export type Msg = {
   contact_name: string | null; contact_phone: string | null
   reply_to: { id: number; sender_name: string | null; preview: string; type?: string; thumb?: string | null } | null
   reactions: Reaction[]; mentions?: number[]; seen_by_count: number; delivered_count: number; recipients: number
-  created_at: string; pending?: boolean; failed?: boolean
+  created_at: string; pending?: boolean; failed?: boolean; client_id?: string | null
   deleted_by_name?: string | null; deleted_at?: string | null   // admin transcript / sender
 }
 export type Member = { id: number; name: string; avatar: string | null; role?: 'admin' | 'member' }
@@ -35,11 +35,11 @@ export type ChatInfo = {
  */
 const fallbackWorthy = (e: any): boolean => { const c = e?.response?.status; return !c || c >= 500 || c === 404 }
 export async function tcGet<T = any>(path: string, params?: Record<string, unknown>): Promise<T> {
-  try { return (await nodeApi.get(`/team-chat${path}`, { params })).data }
+  try { return (await chatApi.get(`/team-chat${path}`, { params })).data }
   catch (e) { if (!fallbackWorthy(e)) throw e; return (await http.get(`/team-chat${path}`, { params })).data }
 }
 export async function tcPost<T = any>(path: string, data?: unknown): Promise<T> {
-  try { return (await nodeApi.post(`/team-chat${path}`, data)).data }
+  try { return (await chatApi.post(`/team-chat${path}`, data)).data }
   catch (e) { if (!fallbackWorthy(e)) throw e; return (await http.post(`/team-chat${path}`, data)).data }
 }
 

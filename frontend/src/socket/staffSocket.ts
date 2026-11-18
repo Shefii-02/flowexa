@@ -5,7 +5,7 @@ import { store } from '@/store'
 import { addNotification, addAiOffer, updateAssignment } from '@/store/slices'
 import type { LeadNotification, AiHandoffOffer, LeadAssignment } from '@/types'
 
-const NODE_URL = import.meta.env.VITE_NODE_URL || 'http://localhost:3000'
+const CHAT_URL = import.meta.env.VITE_CHAT_URL || 'https://chatserver.teamzo.io'
 
 let socket: Socket | null = null
 
@@ -15,7 +15,7 @@ export function connectStaffSocket(staffId: number, companyId: number): void {
   const token = store.getState().auth.token
   if (!token) return
 
-  socket = io(`${NODE_URL}/staff`, {
+  socket = io(`${CHAT_URL}/staff`, {
     transports: ['websocket'],
     reconnectionAttempts: 5,
     reconnectionDelay: 2000,

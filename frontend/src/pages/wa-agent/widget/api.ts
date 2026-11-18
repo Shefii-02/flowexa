@@ -123,8 +123,8 @@ export interface ChatCrm {
   lead_id: number | null
 }
 
-// ── Website live chat served by backend-node (same MySQL tables; realtime over the /staff socket) ──
-import { nodeApi } from '@/api/nodeClient'
+// ── Website live chat served by chat-server (same MySQL tables; realtime over the /staff socket) ──
+import { chatApi } from '@/api/chatClient'
 
 export interface NodeInboxRow extends InboxRow {
   widget_name?: string
@@ -157,16 +157,16 @@ export interface NodeConversation {
 
 export const nodeChatApi = {
   inbox: (p: { tab: InboxTab; q?: string; page?: number; per_page?: number; widget_id?: number }) =>
-    nodeApi.get<NodeInboxPage>('/widget-chat/inbox', { params: { ...p, q: p.q || undefined } }),
-  me: () => nodeApi.get<{ muted: boolean; handling: number; limit: number }>('/widget-chat/me'),
-  setMuted: (muted: boolean) => nodeApi.put<{ muted: boolean }>('/widget-chat/me', { muted }),
+    chatApi.get<NodeInboxPage>('/widget-chat/inbox', { params: { ...p, q: p.q || undefined } }),
+  me: () => chatApi.get<{ muted: boolean; handling: number; limit: number }>('/widget-chat/me'),
+  setMuted: (muted: boolean) => chatApi.put<{ muted: boolean }>('/widget-chat/me', { muted }),
   show: (id: number, after = 0) =>
-    nodeApi.get<{ conversation: NodeConversation; messages: LiveMessage[] }>(`/widget-chat/${id}`, { params: { after } }),
+    chatApi.get<{ conversation: NodeConversation; messages: LiveMessage[] }>(`/widget-chat/${id}`, { params: { after } }),
   older: (id: number, before: number) =>
-    nodeApi.get<{ messages: LiveMessage[]; has_more: boolean }>(`/widget-chat/${id}/older`, { params: { before, limit: 50 } }),
-  accept: (id: number) => nodeApi.post(`/widget-chat/${id}/accept`),
+    chatApi.get<{ messages: LiveMessage[]; has_more: boolean }>(`/widget-chat/${id}/older`, { params: { before, limit: 50 } }),
+  accept: (id: number) => chatApi.post(`/widget-chat/${id}/accept`),
   reply: (id: number, text: string, replyToId?: number | null) =>
-    nodeApi.post<{ message: LiveMessage }>(`/widget-chat/${id}/reply`, { text, reply_to_id: replyToId ?? undefined }),
-  end: (id: number) => nodeApi.post(`/widget-chat/${id}/end`),
-  markRead: (id: number) => nodeApi.post(`/widget-chat/${id}/read`),
+    chatApi.post<{ message: LiveMessage }>(`/widget-chat/${id}/reply`, { text, reply_to_id: replyToId ?? undefined }),
+  end: (id: number) => chatApi.post(`/widget-chat/${id}/end`),
+  markRead: (id: number) => chatApi.post(`/widget-chat/${id}/read`),
 }

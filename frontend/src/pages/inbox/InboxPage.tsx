@@ -287,7 +287,7 @@ export default function InboxPage() {
   }, [reply])
 
   // ── realtime ────────────────────────────────────────────────────────────
-  // Pushed by Laravel through backend-node's /staff socket (same payload the old Echo `.message.new` carried).
+  // Pushed by Laravel through chat-server's /staff socket (same payload the old Echo `.message.new` carried).
   useEffect(() => {
     let everUp = false
     return subscribeStaffEvent<any>('wa_message_new', ({ message, conversation }) => {

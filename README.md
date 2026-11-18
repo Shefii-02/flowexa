@@ -54,9 +54,13 @@ waapi/
 | React frontend | `https://teamzo.io` |
 | Laravel backend | `https://api.teamzo.io` |
 | Node (OpenWA) gateway | `https://chatwa.teamzo.io` |
+| Chat server (team chat, live chat, staff alerts socket) | `https://chatserver.teamzo.io` |
 
 Every `localhost`/`127.0.0.1` URL below is for local development only — swap in the domains
-above for every production `.env` / config value.
+above for every production `.env` / config value. The web app (`teamzo.io`), mobile app, Laravel (`api.teamzo.io`) and the
+WA gateway (`chatwa.teamzo.io`) all reach realtime chat through `https://chatserver.teamzo.io`.
+
+**DNS:** add an `A` record `chatserver.teamzo.io` → the VPS IP (same as `api.teamzo.io`) before running certbot.
 
 ---
 
@@ -390,6 +394,7 @@ Create `.env` (no `.env.example` is committed — these are the vars the code re
 VITE_API_URL=https://api.teamzo.io/api/v1
 VITE_WA_CHAT_API_URL=https://admin.chatwa.teamzo.io
 VITE_WA_CHAT_WS_URL=wss://admin.chatwa.teamzo.io
+VITE_CHAT_URL=https://chatserver.teamzo.io
 VITE_APP_ENV=production
 VITE_SESSION_TIMEOUT_MINUTES=60
 VITE_SESSION_WARNING_MINUTES=5
@@ -426,6 +431,8 @@ a new environment, edit `lib/core/constants/api_constants.dart`:
 static const laravelBase   = 'https://api.teamzo.io/api/v1';
 static const nodeBase      = 'https://admin.chatwa.teamzo.io';
 static const socketUrl     = 'wss://admin.chatwa.teamzo.io';
+static const chatBase      = 'https://chatserver.teamzo.io';
+static const chatSocketUrl = 'wss://chatserver.teamzo.io';
 static const laravelOrigin = 'https://api.teamzo.io'; // used to resolve storage:// avatar URLs
 ```
 
@@ -437,6 +444,56 @@ flutter build ios --release              # iOS (requires Xcode + signing setup o
 
 ---
 
+## 4b. Chat server (`chat-server/`) — `chatserver.teamzo.io`
+
+NestJS + Socket.IO. Serves the `/staff` socket (lead alerts, team chat), `/widget` visitor socket, team-chat and website
+live-chat REST. It shares Laravel's MySQL database and verifies Laravel's JWT locally. Runs on port **3005** behind Nginx.
+
+```bash
+cd /var/www/waapi/chat-server
+cp .env.example .env     # DB_* , JWT_SECRET , INTERNAL_API_KEY must equal backend/.env
+npm ci && npm run build
+pm2 start ecosystem.config.cjs && pm2 save && pm2 startup
+```
+
+`chat-server/.env` (production):
+
+```env
+PORT=3005
+DB_HOST=127.0.0.1            # MySQL runs on this VPS
+DB_DATABASE=...  DB_USERNAME=...  DB_PASSWORD=...     # copy from backend/.env
+JWT_SECRET=...               # = backend JWT_SECRET
+INTERNAL_API_KEY=...         # = backend INTERNAL_API_KEY
+LARAVEL_INTERNAL_URL=https://api.teamzo.io
+LARAVEL_PUBLIC_URL=https://api.teamzo.io
+APP_TIMEZONE=Asia/Kolkata
+```
+
+Nginx + TLS (config ships in `chat-server/deploy/nginx-chatserver.teamzo.io.conf`):
+
+```bash
+sudo cp chat-server/deploy/nginx-chatserver.teamzo.io.conf /etc/nginx/sites-available/chatserver.teamzo.io
+# first time only: comment the 443 server block, or issue the cert first:
+sudo certbot certonly --nginx -d chatserver.teamzo.io
+sudo ln -s /etc/nginx/sites-available/chatserver.teamzo.io /etc/nginx/sites-enabled/
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+Laravel `backend/.env` additions:
+
+```env
+CHAT_SERVICE_URL=http://127.0.0.1:3005       # server-to-server on the same VPS — /api/internal/* is blocked on the public domain
+CHAT_PUBLIC_URL=https://chatserver.teamzo.io # browsers / widget / mobile
+INTERNAL_API_KEY=...                         # same value as chat-server
+```
+
+Clients: web `VITE_CHAT_URL=https://chatserver.teamzo.io`; Flutter `ApiConstants.chatBase` / `chatSocketUrl`
+(`https://` / `wss://chatserver.teamzo.io`). Check: `curl -I https://chatserver.teamzo.io` answers, then
+`node scripts/smoke.js --user <staffId> --chat <chatId> --url https://chatserver.teamzo.io`.
+Run a **single** instance only (presence/rooms are in-process).
+
+---
+
 ## 5. Fresh-server checklist (do it in this order)
 
 1. **Provision the VPS** → run section 0 in full.
@@ -444,10 +501,11 @@ flutter build ios --release              # iOS (requires Xcode + signing setup o
 3. **Node gateway** (§2) — bring it up first; Laravel needs its admin key to finish configuring.
 4. **Laravel backend** (§1) — install, migrate, seed, `jwt:secret`, wire `WA_CHAT_ADMIN_KEY`
    (§2.4), Horizon + scheduler cron.
+4b. **Chat server** (§4b) — DNS `chatserver.teamzo.io`, `pm2`, Nginx + certbot; needs MySQL and Laravel's `JWT_SECRET`/`INTERNAL_API_KEY`.
 5. **React frontend** (§3) — point its `.env` at the live backend + gateway URLs, build, deploy.
 6. **Flutter app** (§4) — only needed when you're cutting a new mobile build; edit
    `api_constants.dart` and rebuild.
-7. **Nginx + TLS** for all three hostnames: `teamzo.io` (React), `api.teamzo.io` (Laravel),
+7. **Nginx + TLS** for all hostnames: `teamzo.io` (React), `api.teamzo.io` (Laravel), `chatserver.teamzo.io` (chat server),
    `admin.chatwa.teamzo.io` (Node gateway — remember the WebSocket-upgrade headers from §2.2).
 8. Smoke test: log in on the web app → connect a WhatsApp number (QR shows up via the gateway's
    socket) → send a test message (`php artisan wa-chat:send-test`) → confirm it's queued/sent via

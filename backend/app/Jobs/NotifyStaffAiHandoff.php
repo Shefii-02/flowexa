@@ -36,7 +36,7 @@ class NotifyStaffAiHandoff implements ShouldQueue
         }
 
         try {
-            $nodeUrl     = config('services.node.url', 'http://localhost:3000');
+            $nodeUrl     = config('services.chat.url', 'http://localhost:3005');
             $internalKey = config('services.internal.key', '');
 
             \Illuminate\Support\Facades\Http::withHeaders(['X-Internal-Key' => $internalKey])

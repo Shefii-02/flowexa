@@ -91,3 +91,6 @@ firebase-service-account*.json
 .env
 .env.*
 !.env.example
+
+# chat-server has its own repo (github.com/Shefii-02/teamzo-chatserver)
+/chat-server/

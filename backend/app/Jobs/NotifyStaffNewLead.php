@@ -30,7 +30,7 @@ class NotifyStaffNewLead implements ShouldQueue
         $rule    = \App\Models\LeadAssignmentRule::where('company_id', $assignment->company_id)->first();
 
         try {
-            $nodeUrl     = config('services.node.url', 'http://localhost:3000');
+            $nodeUrl     = config('services.chat.url', 'http://localhost:3005');
             $internalKey = config('services.internal.key', '');
 
             \Illuminate\Support\Facades\Http::withHeaders(['X-Internal-Key' => $internalKey])

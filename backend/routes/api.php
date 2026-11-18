@@ -199,6 +199,9 @@ Route::prefix('v1')->group(function () {
                 Route::delete('companies/{company}',           [SuperAdminController::class, 'deleteCompany'])->name('companies.destroy');
                 Route::post('companies/{company}/top-up',      [SuperAdminController::class, 'topUp'])->name('companies.top-up');
                 Route::post('companies/{company}/reset-api-key', [SuperAdminController::class, 'resetApiKey'])->name('companies.reset-api-key');
+                Route::post('companies/{company}/module-toggle', [SuperAdminController::class, 'toggleModule'])->name('companies.module-toggle');
+                Route::post('companies/{company}/extend-plan', [SuperAdminController::class, 'extendPlan'])->name('companies.extend-plan');
+                Route::post('companies/{company}/extend-complimentary', [SuperAdminController::class, 'extendComplimentary'])->name('companies.extend-complimentary');
                 Route::get('companies/{company}/plan-overview', [SuperAdminController::class, 'planOverview'])->name('companies.plan-overview');
                 Route::get('companies/{company}/config',       [SuperAdminController::class, 'showCompanyConfig'])->name('companies.config.show');
                 Route::put('companies/{company}/config',       [SuperAdminController::class, 'updateCompanyConfig'])->name('companies.config.update');
@@ -1543,7 +1546,7 @@ Route::prefix('v1')->group(function () {
     // Google OAuth redirect-back (browser hit, not an API call).
     Route::get('/google/callback', [\App\Modules\Google\Http\Controllers\GoogleIntegrationController::class, 'callback']);
 
-    // ── Server-to-server: backend-node asks "may this staff member use X?" (single source of truth for permissions) ──
+    // ── Server-to-server: chat-server asks "may this staff member use X?" (single source of truth for permissions) ──
     Route::post('/internal/staff-can', function (\Illuminate\Http\Request $request) {
         $key = (string) config('services.internal.key');
         abort_unless($key !== '' && hash_equals($key, (string) $request->header('X-Internal-Key')), 401);
@@ -1555,7 +1558,7 @@ Route::prefix('v1')->group(function () {
         ]);
     })->middleware('throttle:600,1');
 
-    // ── Server-to-server: backend-node asks Laravel to push-notify a team-chat message it just stored ──
+    // ── Server-to-server: chat-server asks Laravel to push-notify a team-chat message it just stored ──
     Route::post('/internal/team-chat-push', function (\Illuminate\Http\Request $request) {
         $key = (string) config('services.internal.key');
         abort_unless($key !== '' && hash_equals($key, (string) $request->header('X-Internal-Key')), 401);

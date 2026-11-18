@@ -6,7 +6,7 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Best-effort realtime pushes through backend-node's socket.io gateways (/staff and /widget).
+ * Best-effort realtime pushes through chat-server's socket.io gateways (/staff and /widget).
  *
  * Calls are queued in memory and sent after the HTTP response (1 s timeout, never throws), so a slow or
  * dead Node service can't slow down or break a request. Clients keep a slow fallback poll for when a
@@ -27,7 +27,7 @@ class StaffRealtime
         ]);
     }
 
-    /** Push an event to one staff member's connected socket(s) (backend-node `emit-notification`). */
+    /** Push an event to one staff member's connected socket(s) (chat-server `emit-notification`). */
     public static function toStaff(int $staffId, string $type, array|\Closure $data): void
     {
         self::queue('emit-notification', "s:{$staffId}:{$type}:" . uniqid('', true), fn () => [
@@ -65,7 +65,7 @@ class StaffRealtime
                 try {
                     Http::withHeaders(['X-Internal-Key' => config('services.internal.key')])
                         ->connectTimeout(1)->timeout(1)
-                        ->post(config('services.node.url', 'http://localhost:3000') . "/api/internal/{$endpoint}", $body());
+                        ->post(config('services.chat.url', 'http://localhost:3005') . "/api/internal/{$endpoint}", $body());
                 } catch (\Throwable $e) {
                     Log::debug("realtime push {$endpoint} failed: " . $e->getMessage());
                 }

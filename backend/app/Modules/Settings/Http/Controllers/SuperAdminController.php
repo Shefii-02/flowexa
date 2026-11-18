@@ -81,11 +81,96 @@ class SuperAdminController extends Controller
                 'enabled' => $e['all'] || in_array($m['key'], $e['modules'], true),
                 'source'  => in_array($m['key'], $e['from_addons'], true) ? 'addon' : (in_array($m['key'], $e['from_plan'], true) ? 'plan' : (in_array($m['key'], $e['from_complimentary'], true) ? 'complimentary' : null)),
                 'complimentary_until' => $e['complimentary'][$m['key']] ?? null,
+                'disabled' => in_array($m['key'], $e['disabled'] ?? [], true),
             ])->values(),
             'usage'    => collect($usage)->values(),
+            'complimentary' => $this->complimentaryRows($company, $plan),
+            'extensions' => \Illuminate\Support\Facades\Schema::hasTable('company_plan_extensions')
+                ? \Illuminate\Support\Facades\DB::table('company_plan_extensions')->where('company_id', $company->id)->latest('id')->limit(30)->get() : [],
             'addons'   => $addons,
             'payments' => $payments,
         ]);
+    }
+
+    /** POST /superadmin/companies/{company}/module-toggle — switch one feature off (or back on) for this company, plan-included or complimentary. */
+    public function toggleModule(Request $request, Company $company): JsonResponse
+    {
+        $d = $request->validate(['module' => ['required', 'string', \Illuminate\Validation\Rule::in(\App\Support\Modules::keys())], 'enabled' => ['required', 'boolean']]);
+        $q = \Illuminate\Support\Facades\DB::table('company_module_overrides')->where('company_id', $company->id)->where('module', $d['module']);
+        if ($d['enabled']) { $q->delete(); }
+        elseif (!$q->exists()) {
+            $u = auth()->user();
+            \Illuminate\Support\Facades\DB::table('company_module_overrides')->insert(['company_id' => $company->id, 'module' => $d['module'],
+                'disabled_by' => $u?->id, 'disabled_by_name' => $u?->name, 'created_at' => now(), 'updated_at' => now()]);
+        }
+        \App\Support\Entitlements::forget();
+        return response()->json(['message' => $d['enabled'] ? 'Feature turned on.' : 'Feature turned off.']);
+    }
+
+    /** Every complimentary feature the plan offers (running, ended, or not yet started) with its free period and any manual extension. */
+    private function complimentaryRows(Company $company, ?Plan $plan): array
+    {
+        if (!$plan || !\Illuminate\Support\Facades\Schema::hasTable('company_complimentary')) { return []; }
+        $rows = \Illuminate\Support\Facades\DB::table('company_complimentary')->where('company_id', $company->id)->get()->keyBy('module');
+        $extra = \Illuminate\Support\Facades\Schema::hasTable('company_plan_extensions')
+            ? \Illuminate\Support\Facades\DB::table('company_plan_extensions')->where('company_id', $company->id)->where('kind', 'complimentary')->selectRaw('module, SUM(days) d')->groupBy('module')->pluck('d', 'module') : collect();
+        $cat = collect(\App\Support\Modules::catalog())->keyBy('key');
+        $out = [];
+        foreach ($plan->complimentaryMap() as $module => $months) {
+            $r = $rows->get($module);
+            $exp = $r ? \Illuminate\Support\Carbon::parse($r->expires_at) : null;
+            $out[] = ['key' => $module, 'label' => $cat[$module]['label'] ?? $module, 'icon' => $cat[$module]['icon'] ?? '', 'months' => $months,
+                'expires_at' => $exp?->toIso8601String(), 'active' => $exp ? $exp->isFuture() : false, 'disabled' => in_array($module, \App\Support\Entitlements::disabled($company->id), true), 'extended_days' => (int) ($extra[$module] ?? 0)];
+        }
+        return $out;
+    }
+
+    /** POST /superadmin/companies/{company}/extend-plan — push the plan expiry out by N days (from the current expiry, or from today if already lapsed). */
+    public function extendPlan(Request $request, Company $company): JsonResponse
+    {
+        $d = $request->validate(['days' => ['required', 'integer', 'min:1', 'max:3650'], 'note' => ['nullable', 'string', 'max:255']]);
+        $old = $company->plan_expires_at;
+        $base = $old && $old->isFuture() ? $old->copy() : now();
+        $new = $base->copy()->addDays((int) $d['days']);
+        \Illuminate\Support\Facades\DB::transaction(function () use ($company, $new, $old, $d) {
+            $company->forceFill(['plan_expires_at' => $new])->save();
+            \App\Models\CompanyPlan::where('company_id', $company->id)->where('status', 'active')->latest()->first()?->forceFill(['expires_at' => $new])->save();
+            $this->logExtension($company->id, 'plan', null, $old, $new, (int) $d['days'], $d['note'] ?? null);
+        });
+        \App\Support\Entitlements::forget();
+        return response()->json(['message' => "Plan extended by {$d['days']} days.", 'plan_expires_at' => $new]);
+    }
+
+    /** POST /superadmin/companies/{company}/extend-complimentary — extend (or restart) one complimentary feature's free period. */
+    public function extendComplimentary(Request $request, Company $company): JsonResponse
+    {
+        $d = $request->validate(['module' => ['required', 'string', \Illuminate\Validation\Rule::in(\App\Support\Modules::keys())],
+            'days' => ['required', 'integer', 'min:1', 'max:3650'], 'note' => ['nullable', 'string', 'max:255']]);
+        $plan = $company->plan;
+        $months = $plan?->complimentaryMap()[$d['module']] ?? null;
+        $row = \Illuminate\Support\Facades\DB::table('company_complimentary')->where('company_id', $company->id)->where('module', $d['module'])->first();
+        if (!$row && !$months) { return response()->json(['message' => 'This plan does not offer that feature as complimentary.'], 422); }
+
+        $old = $row ? \Illuminate\Support\Carbon::parse($row->expires_at) : null;
+        $base = $old && $old->isFuture() ? $old->copy() : now();
+        $new = $base->copy()->addDays((int) $d['days']);
+        if ($row) {
+            \Illuminate\Support\Facades\DB::table('company_complimentary')->where('id', $row->id)->update(['expires_at' => $new, 'updated_at' => now()]);
+        } else {
+            \Illuminate\Support\Facades\DB::table('company_complimentary')->insert(['company_id' => $company->id, 'module' => $d['module'], 'plan_id' => $plan->id,
+                'months' => $months, 'starts_at' => now(), 'expires_at' => $new, 'created_at' => now(), 'updated_at' => now()]);
+        }
+        $this->logExtension($company->id, 'complimentary', $d['module'], $old, $new, (int) $d['days'], $d['note'] ?? null);
+        \App\Support\Entitlements::forget();
+        return response()->json(['message' => "Complimentary period extended by {$d['days']} days.", 'expires_at' => $new]);
+    }
+
+    private function logExtension(int $companyId, string $kind, ?string $module, $old, $new, int $days, ?string $note): void
+    {
+        $u = auth()->user();
+        \Illuminate\Support\Facades\DB::table('company_plan_extensions')->insert(['company_id' => $companyId, 'kind' => $kind, 'module' => $module,
+            'old_expires_at' => $old, 'new_expires_at' => $new, 'days' => $days, 'note' => $note, 'extended_by' => $u?->id, 'extended_by_name' => $u?->name,
+            'created_at' => now(), 'updated_at' => now()]);
     }
 
     public function showCompany(Company $company): JsonResponse

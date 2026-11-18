@@ -73,7 +73,7 @@ let isRefreshing = false
 let refreshFailed = false
 let queue: Array<{ resolve: (v: unknown) => void; reject: (e: unknown) => void }> = []
 
-// A valid access token for callers that talk to a DIFFERENT server than this client (e.g. backend-node): same
+// A valid access token for callers that talk to a DIFFERENT server than this client (e.g. chat-server): same
 // expiry pre-check + shared refresh as the request interceptor above. Never throws — a failed refresh just
 // returns whatever token we have and the server's 401 surfaces through the normal error path.
 export const getFreshToken = async (): Promise<string | null> => {

@@ -29,13 +29,14 @@ class Entitlements
         $fromPlan = $plan->enabledModules();
         $fromAddons = self::addonModules($company->id);
         $comp = self::complimentary($company, $plan);          // module => expires_at (still running)
-        $modules = array_values(array_unique(array_merge($fromPlan, $fromAddons, array_keys($comp))));
+        $disabled = self::disabled($company->id);              // switched off by the super admin for this company
+        $modules = array_values(array_diff(array_unique(array_merge($fromPlan, $fromAddons, array_keys($comp))), $disabled));
         $locked = array_values(array_filter(array_map(fn ($k) => in_array($k, $modules, true) ? null : Modules::get($k), Modules::keys())));
 
         $d = [
             'all' => false, 'modules' => $modules, 'from_plan' => $fromPlan, 'from_addons' => array_values(array_diff($fromAddons, $fromPlan)),
             'from_complimentary' => array_values(array_diff(array_keys($comp), $fromPlan, $fromAddons)),
-            'complimentary' => $comp,
+            'complimentary' => $comp, 'disabled' => $disabled,
             'locked' => $locked,
             'assign_methods' => $plan->lead_assign_methods === null ? array_keys(Modules::ASSIGN_METHODS) : array_values($plan->lead_assign_methods),
         ];
@@ -77,6 +78,13 @@ class Entitlements
             }
         }
         return $out;
+    }
+
+    /** Module keys the super admin has switched off for this company. */
+    public static function disabled(int $companyId): array
+    {
+        if (!Schema::hasTable('company_module_overrides')) { return []; }
+        return DB::table('company_module_overrides')->where('company_id', $companyId)->pluck('module')->all();
     }
 
     /** Module keys switched on by active, unexpired "module" add-ons (a retired add-on still counts until it expires). */

@@ -98,7 +98,7 @@ export default function ChatRoom({ chatId, myId, admin = false, title, onChanged
     const off = subscribeStaffEvent<any>('team_chat', e => {
       if (e.chat_id !== chatId) return
       if (e.kind === 'message' && e.message && !admin) {
-        setMsgs(prev => prev.filter(x => !(x.pending && x.body === e.message.body && x.type === e.message.type)))
+        setMsgs(prev => prev.filter(x => !(x.pending && (e.message.client_id ? x.client_id === e.message.client_id : x.body === e.message.body && x.type === e.message.type))))
         mergeMsgs([e.message])
         if (!e.message.mine) markRead()
       } else { clearTimeout(debounce.current); debounce.current = setTimeout(fetchLatest, 300) }
@@ -141,14 +141,15 @@ export default function ChatRoom({ chatId, myId, admin = false, title, onChanged
     }
     const mentions = [...body.matchAll(/@([^\s@]+(?: [^\s@]+)?)/g)].map(x => [...names.entries()].find(([, n]) => n.toLowerCase() === x[1].toLowerCase())?.[0]).filter(Boolean) as number[]
     const temp = -(++tempSeq.current)
+    // client_id makes a retry (socket ack timed out → REST) return the stored message instead of sending twice, and lets every
+    // device of the sender swap its optimistic copy for the real one.
+    const client_id = `${myId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
     const optimistic: Msg = { id: temp, type: 'text', sender_id: myId, sender_name: null, mine: true, body, deleted: false, edited: false, forwarded: false,
       attachment_url: null, attachment_name: null, attachment_size: null, attachment_mime: null, latitude: null, longitude: null, location_label: null,
       contact_name: null, contact_phone: null, reply_to: reply ? { id: reply.id, sender_name: reply.sender_name, preview: reply.body ?? '' } : null,
-      reactions: [], seen_by_count: 0, delivered_count: 0, recipients: 0, created_at: new Date().toISOString(), pending: true }
+      reactions: [], seen_by_count: 0, delivered_count: 0, recipients: 0, created_at: new Date().toISOString(), pending: true, client_id }
     mergeMsgs([optimistic]); setText(''); const replyTo = reply; setReply(null); stickBottom.current = true; emitTyping(chatId, false)
     try {
-      // client_id makes a retry (socket ack timed out → REST) return the stored message instead of sending twice
-      const client_id = `${myId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
       const payload = { chat_id: chatId, client_id, body, mentions, ...(replyTo ? { reply_to_id: replyTo.id } : {}) }
       const res = await command('chat:send', payload, () => tcPost(`/chats/${chatId}/messages`, { client_id, body, mentions, ...(replyTo ? { reply_to_id: replyTo.id } : {}) }))
       setMsgs(p => p.filter(m => m.id !== temp))

@@ -131,6 +131,12 @@ class FlowImportExportController extends Controller
         $nodesData   = $json['nodes'];
         $builderData = $json['builder'];
 
+        // ── Plan limit: every node in the file counts against the company's flow-node cap ──
+        if ($ctx = \App\Support\PlanLimits::context(auth()->user())) {
+            [$companyId, $plan] = $ctx;
+            \App\Support\PlanLimits::assertCanAdd($companyId, $plan, 'flow_nodes', count($nodesData));
+        }
+
         // ── Duplicate reply_id check within the import file itself ────────
         $replyIds = array_column($nodesData, 'reply_id');
         if (count($replyIds) !== count(array_unique($replyIds))) {

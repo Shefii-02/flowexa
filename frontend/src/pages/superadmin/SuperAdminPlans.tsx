@@ -107,7 +107,7 @@ export default function SuperAdminPlans() {
       throttle_per_minute: String(p.throttle_per_minute ?? 60), alert_before_days: String(p.alert_before_days ?? 7),
       highlights: Array.isArray(p.features) ? p.features.join('\n') : '', is_active: !!p.is_active, is_public: p.is_public !== false, archived: !!p.archived_at, is_popular: !!p.is_popular, sort_order: String(p.sort_order ?? 0),
       // an old plan with no module list had everything on — show it that way so saving does not silently drop features
-      modules: p.modules ?? mods.map(m => m.key), permissions: p.permissions ?? allPermKeys, complimentary: Array.isArray(p.complimentary) ? p.complimentary : [], lead_assign_methods: p.lead_assign_methods ?? methods.map(m => m.key),
+      modules: p.modules ?? mods.map(m => m.key), permissions: p.permissions ?? allPermKeys, complimentary: (Array.isArray(p.complimentary) ? p.complimentary : []).map((c: any) => ({ module: String(c.module), months: Number(c.months) || compMonths[0] })), lead_assign_methods: p.lead_assign_methods ?? methods.map(m => m.key),
       integrations: Object.fromEntries(INTEGRATIONS.map(i => [i.key, !!p[i.key]])),
       limits: Object.fromEntries(LIMIT_KEYS.map(k => [k, p[k] != null ? String(p[k]) : ''])),
     })
@@ -255,7 +255,7 @@ export default function SuperAdminPlans() {
               </div>)}
             {form.modules.includes('integrations') && (
               <div><p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-gray-400">Integrations allowed</p>
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">{INTEGRATIONS.map(i => <Toggle key={i.key} on={!!form.integrations[i.key]} onChange={v => set('integrations', { ...form.integrations, [i.key]: v })} label={i.label} />)}</div></div>)}
+                <div className="grid grid-cols-2 gap-2">{INTEGRATIONS.map(i => <Toggle key={i.key} on={!!form.integrations[i.key]} onChange={v => set('integrations', { ...form.integrations, [i.key]: v })} label={i.label} />)}</div></div>)}
           </Section>
 
           <Section n={3} title="Complimentary features" sub="Free for a limited time — promote a new feature. When the period ends it locks, and the company buys it separately as an add-on.">
@@ -271,7 +271,7 @@ export default function SuperAdminPlans() {
                         <span className="min-w-0 flex-1 text-sm font-medium text-gray-800">{m.icon} {m.label}</span>
                         {c && (
                           <select className="select !w-auto text-xs" value={c.months} onChange={e => set('complimentary', form.complimentary.map(x => x.module === m.key ? { ...x, months: +e.target.value } : x))}>
-                            {compMonths.map(n => <option key={n} value={n}>{n} month{n > 1 ? 's' : ''} free</option>)}
+                            {(compMonths.includes(c.months) ? compMonths : [...compMonths, c.months].sort((a, b) => a - b)).map(n => <option key={n} value={n}>{n} month{n > 1 ? 's' : ''} free</option>)}
                           </select>)}
                       </div>)
                   })}

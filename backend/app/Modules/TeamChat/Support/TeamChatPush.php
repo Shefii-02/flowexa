@@ -7,7 +7,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Push notifications for team-chat messages. Called by the REST controller (uploads) and by backend-node
+ * Push notifications for team-chat messages. Called by the REST controller (uploads) and by chat-server
  * (socket sends, via POST /internal/team-chat-push) so both paths notify identically:
  * mentioned users always, everyone else unless they muted the chat.
  */
