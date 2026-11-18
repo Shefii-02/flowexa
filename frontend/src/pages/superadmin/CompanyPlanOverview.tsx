@@ -10,6 +10,15 @@ import CompanyPlanUpgradeModal from './CompanyPlanUpgradeModal'
 type Mod = { key: string; label: string; icon: string; group: string; enabled: boolean; source: 'plan' | 'addon' | 'complimentary' | null; complimentary_until?: string | null; disabled?: boolean }
 type Use = { key: string; label: string; kind: string; used: number; limit: number | null; plan_limit: number | null; addon_extra: number; percent: number | null; exceeded: boolean }
 
+function Switch({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <button type="button" role="switch" aria-checked={on} onClick={() => onChange(!on)}
+      className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${on ? 'bg-brand-600' : 'bg-gray-300'}`}>
+      <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all ${on ? 'left-[18px]' : 'left-0.5'}`} />
+    </button>
+  )
+}
+
 const money = (n: number | string | null | undefined) => `₹${fmt.number(Math.round(Number(n ?? 0)))}`
 
 export default function CompanyPlanOverview({ companyId, onChanged }: { companyId: number; onChanged: () => void }) {
@@ -87,14 +96,18 @@ export default function CompanyPlanOverview({ companyId, onChanged }: { companyI
 
         {/* features: plan + add-on, then complimentary, shown separately */}
         <div>
-          <p className="mb-2 text-sm font-semibold text-gray-800">Plan features <span className="font-normal text-gray-400">({mods.filter(m => m.enabled && m.source !== 'complimentary').length} of {mods.length} active)</span></p>
-          <div className="flex flex-wrap gap-1.5">
-            {mods.filter(m => m.source !== 'complimentary').map(m => (
-              <button type="button" key={m.key} onClick={() => (m.enabled || m.disabled) && toggle(m.key, !!m.disabled)}
-                title={m.disabled ? 'Turned off by admin — click to turn on' : m.enabled ? 'Click to turn off for this company' : 'Not in the plan'}
-                className={`rounded-full px-2.5 py-1 text-xs ${m.disabled ? 'bg-red-50 text-red-600 line-through ring-1 ring-red-200' : m.enabled ? (m.source === 'addon' ? 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100' : 'bg-brand-50 text-brand-700 hover:bg-brand-100') : 'cursor-default bg-gray-100 text-gray-400 line-through'}`}>
-                {m.icon} {m.label}{m.source === 'addon' ? ' · add-on' : ''}{m.disabled ? ' · off' : ''}</button>))}
-          </div>
+          <p className="mb-2 text-sm font-semibold text-gray-800">Plan included features <span className="font-normal text-gray-400">({mods.filter(m => m.enabled && m.source !== 'complimentary').length} on · switch to turn off for this company)</span></p>
+          <ul className="grid gap-1.5 sm:grid-cols-2">
+            {mods.filter(m => m.source === 'plan' || m.source === 'addon' || (m.disabled && m.source !== 'complimentary')).map(m => (
+              <li key={m.key} className={`flex items-center justify-between gap-2 rounded-xl border px-3 py-2 text-sm ${m.disabled ? 'border-red-200 bg-red-50' : 'border-gray-200 bg-white'}`}>
+                <span className={m.disabled ? 'text-gray-500 line-through' : 'text-gray-800'}>{m.icon} {m.label}
+                  {m.source === 'addon' && <span className="ml-1 text-[11px] text-indigo-600">add-on</span>}
+                  {m.disabled && <span className="ml-1 text-[11px] font-medium text-red-600 no-underline">turned off</span>}</span>
+                <Switch on={!m.disabled} onChange={v => toggle(m.key, v)} />
+              </li>))}
+          </ul>
+          {mods.some(m => !m.enabled && !m.disabled && m.source === null) && (
+            <p className="mt-2 text-[11px] text-gray-400">Not in this plan: {mods.filter(m => !m.enabled && !m.disabled && m.source === null).map(m => m.label).join(', ')}</p>)}
         </div>
 
         <div>
@@ -108,9 +121,8 @@ export default function CompanyPlanOverview({ companyId, onChanged }: { companyI
                       {c.expires_at ? (c.active ? `free until ${fmt.date(c.expires_at)}` : `ended ${fmt.date(c.expires_at)}`) : `${c.months} month${c.months > 1 ? 's' : ''} free — starts when first used`}
                       {c.extended_days > 0 && <span className="ml-1 font-medium text-purple-600">⏱ extended +{c.extended_days} d</span>}</span></span>
                   <span className="flex items-center gap-2">
-                    {c.disabled && <Badge variant="red">Off</Badge>}
                     <Button size="sm" variant="secondary" onClick={() => setExt(c.key)}>+ Extend</Button>
-                    <Button size="sm" variant={c.disabled ? 'primary' : 'danger'} onClick={() => toggle(c.key, !!c.disabled)}>{c.disabled ? 'Turn on' : 'Turn off'}</Button>
+                    <Switch on={!c.disabled} onChange={v => toggle(c.key, v)} />
                   </span>
                 </li>))}
             </ul>)}

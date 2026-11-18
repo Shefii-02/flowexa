@@ -227,9 +227,7 @@ Route::prefix('v1')->group(function () {
                 Route::delete('system-log',       [SuperAdminController::class, 'clearSystemLog'])->name('system-log.clear');
                 Route::post('companies/{company}/impersonate', [SuperAdminController::class, 'impersonate'])->name('companies.impersonate');
                 Route::patch('companies/{company}/status',     [SuperAdminController::class, 'updateStatus'])->name('companies.status');
-                Route::get('plans',                            [SuperAdminController::class, 'plans'])->name('plans.index');
-                Route::post('plans',                           [SuperAdminController::class, 'createPlan'])->name('plans.store');
-                Route::put('plans/{plan}',                     [SuperAdminController::class, 'updatePlan'])->name('plans.update');
+                // Plan CRUD lives in PlanPurchaseController (sa.plans.* below) — it saves modules, complimentary features, limits.
                 Route::get('users',                            [SuperAdminController::class, 'users'])->name('users.index');
                 Route::get('stats',                            [SuperAdminController::class, 'stats'])->name('stats');
                 Route::get('billing',                          [SuperAdminController::class, 'billing'])->name('billing');
