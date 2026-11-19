@@ -550,6 +550,7 @@
     p = String(p == null ? "" : p).trim();
     if (!p) return null;
     if (/^[a-z][a-z0-9+.-]*:\/\//i.test(p)) { try { p = new URL(p).pathname + (/\*$/.test(p) ? "*" : ""); } catch (e) {} }
+    else if (/^(www\.)?[a-z0-9-]+(\.[a-z0-9-]+)*\.(com|io|in|net|org|co|app|dev|ai|me|info|biz)(\/|$)/i.test(p)) { p = p.replace(/^[^\/]+/, ""); }   // "teamzo.io/pricing" typed without https://
     p = p.split("#")[0].split("?")[0];
     if (p.charAt(0) !== "/") p = "/" + p;
     if (p.length > 1) p = p.replace(/\/+$/, "");
@@ -576,6 +577,7 @@
     if (!booted) return;
     var show = shouldShow();
     root.style.display = show ? "" : "none";
+    if (!show) { try { console.info("[chat widget] hidden by page rules — mode: " + ((cfg.branding && cfg.branding.url_mode) || "all") + ", pages: " + JSON.stringify((cfg.branding && cfg.branding.url_patterns) || []) + ", this page: " + location.pathname); } catch (e) {} }
     if (!show && open) { try { toggle(); } catch (e) {} }   // close an open panel when navigating to a hidden page
   }
   // single-page apps change the URL without reloading — re-check on every navigation
