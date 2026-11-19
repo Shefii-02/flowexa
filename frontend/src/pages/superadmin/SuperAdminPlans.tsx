@@ -7,6 +7,12 @@ import PricingPdfButton from '@/components/plan/PricingPdfButton'
 import { fmt, getError } from '@/utils'
 import toast from 'react-hot-toast'
 
+// Billing periods besides monthly (always sold): switch on to sell it, % off versus paying month by month.
+const BILLING_KEYS = [{ key: '3month', label: '3 months' }, { key: '6month', label: '6 months' }, { key: 'yearly', label: '12 months' }]
+const DEFAULT_BILLING: Record<string, { on: boolean; pct: string }> = { '3month': { on: true, pct: '5' }, '6month': { on: true, pct: '10' }, yearly: { on: true, pct: '20' } }
+const billingFrom = (o: Record<string, number> | null | undefined) => o == null ? DEFAULT_BILLING
+  : Object.fromEntries(BILLING_KEYS.map(b => [b.key, { on: o[b.key] != null, pct: String(o[b.key] ?? DEFAULT_BILLING[b.key].pct) }]))
+
 const DURATION_TYPES = [
   { value: 'monthly', label: 'Monthly' }, { value: '3month', label: '3 Months' }, { value: '6month', label: '6 Months' },
   { value: 'yearly', label: 'Yearly (12 months)' }, { value: '12month', label: '12 Months' }, { value: 'custom', label: 'Custom' }, { value: 'unlimited', label: 'Unlimited' },
@@ -45,12 +51,12 @@ const INTEGRATIONS = [
 type Form = {
   name: string; price: string; price_yearly: string; duration_type: string; duration_months: string; messages_limit: string; throttle_per_minute: string
   alert_before_days: string; highlights: string; is_active: boolean; is_public: boolean; archived: boolean; is_popular: boolean; sort_order: string
-  modules: string[]; permissions: string[]; complimentary: { module: string; months: number }[]; lead_assign_methods: string[]; integrations: Record<string, boolean>; limits: Record<string, string>
+  modules: string[]; permissions: string[]; complimentary: { module: string; months: number }[]; billing: Record<string, { on: boolean; pct: string }>; lead_assign_methods: string[]; integrations: Record<string, boolean>; limits: Record<string, string>
 }
 const EMPTY: Form = {
   name: '', price: '499', price_yearly: '', duration_type: 'monthly', duration_months: '1', messages_limit: '1000', throttle_per_minute: '60',
   alert_before_days: '7', highlights: '', is_active: true, is_public: true, archived: false, is_popular: false, sort_order: '0',
-  modules: [], permissions: [], complimentary: [], lead_assign_methods: ['manual', 'round_robin'], integrations: {}, limits: {},
+  modules: [], permissions: [], complimentary: [], billing: DEFAULT_BILLING, lead_assign_methods: ['manual', 'round_robin'], integrations: {}, limits: {},
 }
 
 const Toggle = ({ on, onChange, label, sub }: { on: boolean; onChange: (v: boolean) => void; label: string; sub?: string }) => (
@@ -107,7 +113,7 @@ export default function SuperAdminPlans() {
       throttle_per_minute: String(p.throttle_per_minute ?? 60), alert_before_days: String(p.alert_before_days ?? 7),
       highlights: Array.isArray(p.features) ? p.features.join('\n') : '', is_active: !!p.is_active, is_public: p.is_public !== false, archived: !!p.archived_at, is_popular: !!p.is_popular, sort_order: String(p.sort_order ?? 0),
       // an old plan with no module list had everything on — show it that way so saving does not silently drop features
-      modules: p.modules ?? mods.map(m => m.key), permissions: p.permissions ?? allPermKeys, complimentary: (Array.isArray(p.complimentary) ? p.complimentary : []).map((c: any) => ({ module: String(c.module), months: Number(c.months) || compMonths[0] })), lead_assign_methods: p.lead_assign_methods ?? methods.map(m => m.key),
+      modules: p.modules ?? mods.map(m => m.key), permissions: p.permissions ?? allPermKeys, billing: billingFrom(p.billing_options), complimentary: (Array.isArray(p.complimentary) ? p.complimentary : []).map((c: any) => ({ module: String(c.module), months: Number(c.months) || compMonths[0] })), lead_assign_methods: p.lead_assign_methods ?? methods.map(m => m.key),
       integrations: Object.fromEntries(INTEGRATIONS.map(i => [i.key, !!p[i.key]])),
       limits: Object.fromEntries(LIMIT_KEYS.map(k => [k, p[k] != null ? String(p[k]) : ''])),
     })
@@ -130,6 +136,7 @@ export default function SuperAdminPlans() {
       modules: form.modules, lead_assign_methods: form.lead_assign_methods, ...form.integrations,
       // every permission ticked = the default (stored as null, so permissions added later are allowed too)
       complimentary: form.complimentary.filter(c => !form.modules.includes(c.module)),
+      billing_options: Object.fromEntries(BILLING_KEYS.filter(b => form.billing[b.key]?.on).map(b => [b.key, Math.min(90, Math.max(0, +form.billing[b.key].pct || 0))])),
       ...(editPlan ? { apply_to_existing: applyToExisting } : {}),
       permissions: allPermKeys.every(k => form.permissions.includes(k)) ? null : form.permissions.filter(k => allPermKeys.includes(k)),
     }
@@ -230,15 +237,36 @@ export default function SuperAdminPlans() {
               <Input label="Warn before expiry (days)" type="number" min={0} max={60} value={form.alert_before_days} onChange={e => set('alert_before_days', e.target.value)} />
               <Input label="Order on pricing page" type="number" value={form.sort_order} onChange={e => set('sort_order', e.target.value)} />
             </div>
-            {+form.price > 0 && (() => {
-              const m = +form.price, y = form.price_yearly ? +form.price_yearly : Math.round(m * 12 * 0.8)
-              const rows = [['1 month', m, ''], ['3 months', Math.round(m * 3 * 0.95), '−5%'], ['6 months', Math.round(m * 6 * 0.9), '−10%'], ['12 months', y, form.price_yearly ? 'yearly price' : '−20%']]
-              return (
-                <div className="rounded-xl bg-gray-50 p-3 text-xs text-gray-600">
-                  <p className="mb-1 font-medium text-gray-700">Billing periods buyers can pick — created automatically from this one plan, no extra plans needed</p>
-                  <p className="flex flex-wrap gap-x-4 gap-y-1">{rows.map(([l, v, n]) => <span key={String(l)}><b>{l}</b> ₹{fmt.number(Number(v))}{n ? ` (${n})` : ''}</span>)}</p>
-                </div>)
-            })()}
+            <div className="rounded-xl border border-gray-200 bg-gray-50 p-3 text-xs text-gray-600">
+              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                <p className="font-medium text-gray-700">Billing periods buyers can pick <span className="font-normal text-gray-400">— all made from this one plan, no extra plans needed</span></p>
+                <span className="flex gap-3">
+                  <button type="button" className="text-brand-600 hover:underline" onClick={() => set('billing', Object.fromEntries(BILLING_KEYS.map(b => [b.key, { on: false, pct: form.billing[b.key].pct }])))}>Monthly only</button>
+                  <button type="button" className="text-brand-600 hover:underline" onClick={() => set('billing', Object.fromEntries(BILLING_KEYS.map(b => [b.key, { on: b.key === 'yearly', pct: form.billing[b.key].pct }])))}>Monthly + yearly only</button>
+                  <button type="button" className="text-brand-600 hover:underline" onClick={() => set('billing', DEFAULT_BILLING)}>1 / 3 / 6 / 12 months</button>
+                </span>
+              </div>
+              {(() => {
+                const m = +form.price || 0
+                const row = (label: string, on: boolean, total: number, pct?: { v: string; set: (v: string) => void; locked?: boolean }, toggle?: () => void) => (
+                  <div key={label} className={`flex items-center gap-3 py-1 ${on ? '' : 'opacity-50'}`}>
+                    <label className="flex w-28 items-center gap-2 text-gray-700"><input type="checkbox" checked={on} disabled={!toggle} onChange={toggle} />{label}</label>
+                    {pct ? <span className="flex items-center gap-1">−<input type="number" min={0} max={90} className="input !w-16 !py-0.5 text-xs" value={pct.v} disabled={pct.locked || !on} onChange={e => pct.set(e.target.value)} />% off</span> : <span className="w-28 text-gray-400">base price</span>}
+                    <span className="ml-auto font-medium text-gray-800">{m > 0 ? `₹${fmt.number(Math.round(total))}` : '—'}</span>
+                  </div>)
+                const yearlyFixed = !!form.price_yearly
+                const setPct = (k: string) => (v: string) => set('billing', { ...form.billing, [k]: { ...form.billing[k], pct: v } })
+                const tog = (k: string) => () => set('billing', { ...form.billing, [k]: { ...form.billing[k], on: !form.billing[k].on } })
+                const tot = (k: string, months: number) => k === 'yearly' && yearlyFixed ? +form.price_yearly : m * months * (1 - (+form.billing[k].pct || 0) / 100)
+                return (<>
+                  {row('1 month', true, m)}
+                  {row('3 months', form.billing['3month'].on, tot('3month', 3), { v: form.billing['3month'].pct, set: setPct('3month') }, tog('3month'))}
+                  {row('6 months', form.billing['6month'].on, tot('6month', 6), { v: form.billing['6month'].pct, set: setPct('6month') }, tog('6month'))}
+                  {row('12 months', form.billing.yearly.on, tot('yearly', 12), { v: form.billing.yearly.pct, set: setPct('yearly'), locked: yearlyFixed }, tog('yearly'))}
+                  {yearlyFixed && <p className="mt-1 text-gray-400">12 months uses the yearly price you entered above, so its % is ignored.</p>}
+                </>)
+              })()}
+            </div>
             <label className="block text-sm font-medium text-gray-700">Highlights shown on the plan card <span className="font-normal text-gray-400">(one per line)</span>
               <textarea className="input mt-1 w-full" rows={3} value={form.highlights} onChange={e => set('highlights', e.target.value)} placeholder={'Priority support\nFree onboarding call'} /></label>
             <div className="grid gap-2 sm:grid-cols-2">

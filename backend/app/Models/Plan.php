@@ -22,16 +22,17 @@ class Plan extends Model
         'max_leads_per_month', 'max_lead_categories', 'max_roles',
         'max_instagram_accounts', 'max_instagram_automations', 'max_instagram_dms_monthly', 'max_meta_ads_accounts', 'max_website_widgets',
         'google_sheets_enabled', 'google_drive_enabled', 'calendar_enabled', 'email_integration_enabled',
-        'is_public', 'archived_at', 'modules', 'permissions', 'complimentary', 'lead_assign_methods', 'max_media_storage_mb', 'max_campaigns_per_month', 'max_chat_campaigns', 'max_chat_campaigns_per_month', 'max_chat_campaign_recipients', 'max_surveys', 'max_short_links', 'sort_order', 'is_popular',
+        'is_public', 'archived_at', 'modules', 'permissions', 'complimentary', 'billing_options', 'lead_assign_methods', 'max_media_storage_mb', 'max_campaigns_per_month', 'max_chat_campaigns', 'max_chat_campaigns_per_month', 'max_chat_campaign_recipients', 'max_surveys', 'max_short_links', 'sort_order', 'is_popular',
     ];
 
-    protected $appends = ['yearly_price', 'sections'];
+    protected $appends = ['yearly_price', 'sections', 'billing_periods'];
 
     protected $casts = [
         'features'              => 'array',
         'modules'               => 'array',
         'permissions'           => 'array',
         'complimentary'         => 'array',
+        'billing_options'       => 'array',
         'lead_assign_methods'   => 'array',
         'is_popular'            => 'boolean',
         'is_public'             => 'boolean',
@@ -82,6 +83,43 @@ class Plan extends Model
     public function getSectionsAttribute(): array
     {
         return \App\Support\PlanLimits::sectionsFor($this);
+    }
+
+    /** Default offer for plans that pre-date billing options: % off per period. */
+    public const DEFAULT_BILLING = ['3month' => 5, '6month' => 10, 'yearly' => 20];
+
+    /** The periods this plan sells with their % off (monthly is always sold). null column = the default offer. */
+    public function billingOffer(): array
+    {
+        $o = is_array($this->billing_options) ? $this->billing_options : self::DEFAULT_BILLING;
+        $out = [];
+        foreach (self::DEFAULT_BILLING as $k => $_) {
+            if (array_key_exists($k, $o)) { $out[$k] = max(0, min(90, (float) $o[$k])); }
+        }
+        return $out;
+    }
+
+    public function getBillingPeriodsAttribute(): array
+    {
+        $offer = $this->billingOffer();
+        $rows = [['key' => 'monthly', 'label' => '1 Month', 'months' => 1, 'discount' => 0]];
+        foreach (['3month' => ['3 Months', 3], '6month' => ['6 Months', 6], 'yearly' => ['12 Months', 12]] as $k => [$label, $months]) {
+            if (!isset($offer[$k])) { continue; }
+            $d = $offer[$k];
+            if ($k === 'yearly' && $this->price_yearly !== null && (float) $this->price > 0) {
+                $d = round((1 - (float) $this->price_yearly / ((float) $this->price * 12)) * 100, 1);
+            }
+            $rows[] = ['key' => $k, 'label' => $label, 'months' => $months, 'discount' => $d];
+        }
+        return $rows;
+    }
+
+    /** Whether a duration may be bought on this plan. Durations outside the four standard ones (custom, unlimited) are not restricted. */
+    public function offersDuration(string $durationType): bool
+    {
+        $k = $durationType === '12month' ? 'yearly' : $durationType;
+        if (!in_array($k, ['monthly', '3month', '6month', 'yearly'], true) || $k === 'monthly') { return true; }
+        return array_key_exists($k, $this->billingOffer());
     }
 
     /** Plans anyone may buy: on sale, public, not archived and not a one-off custom plan. */

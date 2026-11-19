@@ -3,7 +3,7 @@ import PlanFeaturesPanel from './PlanFeaturesPanel'
 import PlanUsagePanel from '@/components/plan/PlanUsagePanel'
 import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { planApi } from '@/api'
+import { planApi, type ModuleInfo } from '@/api'
 import { Button, Badge, Spinner, StatCard } from '@/components/ui'
 import { fmt, getError, normalizePhone } from '@/utils'
 import toast from 'react-hot-toast'
@@ -41,6 +41,8 @@ const featureIcon = (f: string) => {
 export default function PlanPurchasePage() {
   const [plans, setPlans] = useState<any[]>([])
   const [current, setCurrent] = useState<any>(null)
+  const [catalog, setCatalog] = useState<ModuleInfo[]>([])
+  useEffect(() => { planApi.modules().then(r => setCatalog(r.data.modules)).catch(() => {}) }, [])
   const [history, setHistory] = useState<any[]>([])
   const [duration, setDuration] = useState('monthly')
   const [loading, setLoading] = useState(true)
@@ -77,12 +79,15 @@ export default function PlanPurchasePage() {
   }
 
   // 12 months uses the yearly price the superadmin set (the server computes the same number); shorter periods keep the small discounts
+  const offered = (plan: any, dur: string): { key: string; months: number; discount: number } | undefined =>
+    (plan.billing_periods ?? DURATIONS.map(d => ({ key: d.key, months: { monthly: 1, '3month': 3, '6month': 6, yearly: 12 }[d.key] ?? 1, discount: d.discount }))).find((p: any) => p.key === dur)
   const calcPrice = (plan: any, dur: string) => {
-    if (dur === 'yearly') return Number(plan.yearly_price ?? plan.price * 12 * 0.8)
-    const d = DURATIONS.find(d => d.key === dur)!
-    const months = { monthly: 1, '3month': 3, '6month': 6 }[dur] ?? 1
-    return plan.price * months * (1 - d.discount / 100)
+    if (dur === 'yearly') return Number(plan.yearly_price ?? plan.price * 12 * (1 - (offered(plan, 'yearly')?.discount ?? 20) / 100))
+    const p = offered(plan, dur)
+    return plan.price * (p?.months ?? 1) * (1 - (p?.discount ?? 0) / 100)
   }
+  // billing periods any plan sells (a plan that does not sell the picked period shows "not available" on its card)
+  const periods = DURATIONS.filter(d => d.key === 'monthly' || plans.some((pl: any) => offered(pl, d.key)))
 
   // price every plan with the coupon so each card shows its own discounted total (a coupon can be limited to certain plans)
   const applyCoupon = async () => {
@@ -249,13 +254,13 @@ export default function PlanPurchasePage() {
       <div>
         <p className="text-sm font-medium text-gray-700 mb-3">Billing period</p>
         <div className="flex gap-3 flex-wrap">
-          {DURATIONS.map(d => (
+          {periods.map(d => (
             <button key={d.key} onClick={() => setDuration(d.key)}
               className={`px-4 py-2 rounded-xl border text-sm font-medium transition-all ${duration === d.key ? 'border-brand-500 bg-brand-500 text-white' : 'border-gray-200 text-gray-600 hover:border-brand-300'}`}>
               {d.label}
-              {d.discount > 0 && (
+              {(plans.find((pl: any) => offered(pl, d.key))?.billing_periods?.find((p: any) => p.key === d.key)?.discount ?? d.discount) > 0 && (
                 <span className={`ml-2 text-xs ${duration === d.key ? 'text-brand-100' : 'text-green-600'}`}>
-                  -{d.discount}%
+                  -{Math.round(plans.find((pl: any) => offered(pl, d.key))?.billing_periods?.find((p: any) => p.key === d.key)?.discount ?? d.discount)}%
                 </span>
               )}
             </button>
@@ -267,6 +272,9 @@ export default function PlanPurchasePage() {
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
         {plans.map(plan => {
           const price = calcPrice(plan, duration)
+          const available = !!offered(plan, duration)
+          const comp: any[] = (Array.isArray(plan.complimentary) ? plan.complimentary : []).filter((c: any) => !(plan.modules ?? catalog.map(m => m.key)).includes(c.module))
+          const incl = catalog.filter(m => (plan.modules ?? catalog.map(x => x.key)).includes(m.key))
           const rel = relationTo(plan)
           const isCurrentPlan = rel === 'current'
 
@@ -307,6 +315,14 @@ export default function PlanPurchasePage() {
                   </div>))}
               </div>
 
+              {/* Included vs complimentary features */}
+              <div className="mb-4 space-y-2 border-t pt-3 text-xs">
+                <div><p className="mb-1 font-semibold text-gray-800">Included features</p>
+                  <div className="flex flex-wrap gap-1">{incl.map(m => <span key={m.key} className="rounded-full bg-brand-50 px-2 py-0.5 text-[11px] text-brand-700">{m.icon} {m.label}</span>)}{incl.length === 0 && <span className="text-gray-400">None</span>}</div></div>
+                <div><p className="mb-1 font-semibold text-gray-800">🎁 Complimentary <span className="font-normal text-gray-400">(free for a limited time)</span></p>
+                  <div className="flex flex-wrap gap-1">{comp.map((c: any) => { const m = catalog.find(x => x.key === c.module); return m ? <span key={c.module} className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] text-amber-700">{m.icon} {m.label} · {c.months} mo free</span> : null })}{comp.length === 0 && <span className="text-gray-400">None</span>}</div></div>
+              </div>
+
               {/* Features */}
               {plan.features && (
                 <ul className="space-y-1 text-xs text-gray-500 mb-4 border-t pt-3">
@@ -322,6 +338,7 @@ export default function PlanPurchasePage() {
                 className="w-full justify-center mt-auto"
                 variant={rel === 'current' ? 'secondary' : 'primary'}
                 loading={paying === plan.id}
+                disabled={!available}
                 onClick={() => handleBuy(plan)}
               >
                 {rel === 'current' ? 'Renew plan'
@@ -329,6 +346,7 @@ export default function PlanPurchasePage() {
                   : rel === 'downgrade' ? 'Downgrade'
                   : 'Buy plan'}
               </Button>
+              {!available && <p className="text-[11px] text-red-500 mt-1.5 text-center">Not sold for this billing period — pick another above.</p>}
               {rel === 'downgrade' && (
                 <p className="text-[11px] text-gray-400 mt-1.5 text-center">Applies immediately · no refund for unused days</p>
               )}

@@ -164,6 +164,7 @@ class PlanPurchaseController extends Controller
             'google_sheets_enabled' => ['nullable', 'boolean'], 'google_drive_enabled' => ['nullable', 'boolean'],
             'calendar_enabled' => ['nullable', 'boolean'], 'email_integration_enabled' => ['nullable', 'boolean'],
             'apply_to_existing' => ['nullable', 'boolean'],
+            'billing_options' => ['nullable', 'array'], 'billing_options.3month' => ['nullable', 'numeric', 'min:0', 'max:90'], 'billing_options.6month' => ['nullable', 'numeric', 'min:0', 'max:90'], 'billing_options.yearly' => ['nullable', 'numeric', 'min:0', 'max:90'],
             'is_active' => ['nullable', 'boolean'], 'is_public' => ['nullable', 'boolean'], 'archived' => ['nullable', 'boolean'], 'is_popular' => ['nullable', 'boolean'], 'sort_order' => ['nullable', 'integer'],
         ];
     }

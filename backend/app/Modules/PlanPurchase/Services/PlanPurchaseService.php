@@ -44,6 +44,7 @@ class PlanPurchaseService
     {
         $company = Company::findOrFail($companyId);
         $target  = Plan::findOrFail($planId);
+        $this->assertOffered($target, $durationType);
         $current = $company->plan;
 
         $type = 'new';
@@ -84,6 +85,7 @@ class PlanPurchaseService
     public function quotePlan(?int $companyId, int $planId, string $durationType, ?string $couponCode = null, ?string $email = null): array
     {
         $plan = Plan::findOrFail($planId);
+        $this->assertOffered($plan, $durationType);
         $subtotal = round($this->calculatePrice($plan, $durationType), 2);
         $coupon = null; $discount = 0.0;
         if (filled($couponCode)) {
@@ -100,6 +102,7 @@ class PlanPurchaseService
 
         // A private or archived plan can only be given by staff — unless the company is already on it (renewal).
         $target = Plan::findOrFail($planId);
+        $this->assertOffered($target, $durationType);
         if (!$staff && !$target->isPurchasable() && Company::whereKey($companyId)->value('plan_id') !== $target->id) {
             throw \Illuminate\Validation\ValidationException::withMessages(['plan_id' => 'This plan is not available for purchase.']);
         }
@@ -452,15 +455,26 @@ class PlanPurchaseService
     public function calculatePrice(Plan $plan, string $durationType): float
     {
         $base = (float) $plan->price;
-        $yearly = $plan->price_yearly !== null ? (float) $plan->price_yearly : $base * 12 * 0.80;
+        $offer = $plan->billingOffer();
+        $off = fn (string $k) => $offer[$k] ?? Plan::DEFAULT_BILLING[$k];
+        $yearly = $plan->price_yearly !== null ? (float) $plan->price_yearly : $base * 12 * (1 - $off('yearly') / 100);
         return match ($durationType) {
             'monthly'  => $base,
-            '3month'   => $base * 3 * 0.95,    // 5% off
-            '6month'   => $base * 6 * 0.90,    // 10% off
+            '3month'   => $base * 3 * (1 - $off('3month') / 100),
+            '6month'   => $base * 6 * (1 - $off('6month') / 100),
             'yearly', '12month' => $yearly,
             default    => $base,
         };
     }
+
+    /** Refuse a billing period the plan does not sell. */
+    private function assertOffered(Plan $plan, string $durationType): void
+    {
+        if (!$plan->offersDuration($durationType)) {
+            throw \Illuminate\Validation\ValidationException::withMessages(['duration_type' => ["{$plan->name} is not sold for that billing period."]]);
+        }
+    }
+
 
     /** What an add-on costs for a cycle. One-time add-ons have a single price; yearly falls back to 12 × monthly. */
     public function addonPrice(Addon $addon, string $cycle): float
