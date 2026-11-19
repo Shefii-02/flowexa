@@ -148,14 +148,7 @@ class LeadAssignmentEngine
             'accepted_at' => now(),
         ]);
 
-        $availability = StaffAvailability::ensureExists($assignment->company_id, $staff->id);
-        $availability->increment('current_leads_count');
-        $availability->increment('today_leads_count');
-
-        // Mark busy if at max_leads
-        if ($staff->max_leads > 0 && $availability->fresh()->current_leads_count >= $staff->max_leads) {
-            $availability->update(['status' => 'busy', 'is_available' => false]);
-        }
+        $this->bumpWorkload($assignment->company_id, $staff);
 
         $this->activity->syncAssignee($assignment, $staff->id);
         if (!$wasTransfer) {
@@ -168,6 +161,18 @@ class LeadAssignmentEngine
 
         dispatch(new CheckLeadSla($assignment->id))
             ->delay(now()->addMinutes($assignment->response_sla_minutes));
+    }
+
+    /** One more open lead for this staff member; flips them to busy at their max_leads. */
+    public function bumpWorkload(int $companyId, User $staff): void
+    {
+        $availability = StaffAvailability::ensureExists($companyId, $staff->id);
+        $availability->increment('current_leads_count');
+        $availability->increment('today_leads_count');
+
+        if ($staff->max_leads > 0 && $availability->fresh()->current_leads_count >= $staff->max_leads) {
+            $availability->update(['status' => 'busy', 'is_available' => false]);
+        }
     }
 
     /**
@@ -222,6 +227,7 @@ class LeadAssignmentEngine
             ->orderBy('today_leads_count')
             ->orderByRaw('last_seen_at IS NULL DESC')
             ->orderBy('last_seen_at')
+            ->lockForUpdate()   // inside assign()'s transaction: a concurrent lead waits, then sees the bumped count and picks someone else
             ->first();
 
         return $candidate?->staff;

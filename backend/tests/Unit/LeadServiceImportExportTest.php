@@ -27,7 +27,11 @@ class LeadServiceImportExportTest extends TestCase
             }
 
             public function findById(int $id, int $companyId): ?Lead { return null; }
-            public function findByContact(int $contactId, int $companyId): ?Lead { return null; }
+            public function findByContact(int $contactId, int $companyId, ?string $category = null): ?Lead { return null; }
+            public function recipients(int $companyId, int $userId, bool $viewAll, LeadFilterDTO $filter): \Illuminate\Support\Collection { return collect(); }
+            public function reassignBulk(int $companyId, int $fromUserId, int $toUserId, bool $includeClosed): int { return 0; }
+            public function deleteBulk(int $companyId, array $leadIds): int { return 0; }
+            public function logs(int $companyId, int $userId, bool $viewAll, array $filter): LengthAwarePaginator { return new LengthAwarePaginator([], 0, 15); }
             public function create(int $companyId, $dto): Lead { return new Lead(); }
             public function update(Lead $lead, $dto): Lead { return $lead; }
             public function assign(Lead $lead, int $assignedTo, int $assignedBy): Lead { return $lead; }

@@ -185,7 +185,8 @@ class AuthController extends Controller
         if (!$record || !Hash::check($d['token'], $record->token)) {
             return response()->json(['message' => 'Invalid or expired reset token.'], 422);
         }
-        if (now()->diffInMinutes($record->created_at) > 60) {
+        // diffInMinutes is signed in Carbon 3 (now → past is negative), so compare instants instead: tokens older than 60 min are rejected
+        if (!$record->created_at || \Illuminate\Support\Carbon::parse($record->created_at)->lt(now()->subMinutes(60))) {
             return response()->json(['message' => 'Reset token has expired. Request a new one.'], 422);
         }
         User::where('email', $d['email'])->update(['password' => Hash::make($d['password'])]);

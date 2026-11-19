@@ -35,7 +35,9 @@ function NotificationCard({ notification, onDone }: { notification: LeadNotifica
       onDone()
     } catch (e) {
       toast.error(getError(e))
-      setResponding(false)
+      // 403 / 409: the lead was already taken or is no longer offered to you — nothing left to do here
+      if ([403, 409].includes((e as any)?.response?.status)) onDone()
+      else setResponding(false)
     }
   }
 
@@ -47,7 +49,8 @@ function NotificationCard({ notification, onDone }: { notification: LeadNotifica
       onDone()
     } catch (e) {
       toast.error(getError(e))
-      setResponding(false)
+      if ([403, 409].includes((e as any)?.response?.status)) onDone()
+      else setResponding(false)
     }
   }
 

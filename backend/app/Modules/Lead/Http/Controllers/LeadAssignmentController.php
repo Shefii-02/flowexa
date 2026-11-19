@@ -23,6 +23,28 @@ class LeadAssignmentController extends Controller
         private readonly LeadActivityLogger $activity,
     ) {}
 
+    /** Owner / super admin / anyone with leads.manage may act on any assignment in the company. */
+    private function isManager(User $u): bool
+    {
+        return $u->isSuperAdmin() || $u->isOwner() || $u->hasPermission('leads.manage');
+    }
+
+    /** Staff may act on an assignment only if it is theirs or was offered to them; managers on any. */
+    private function mayAct(LeadAssignment $a, User $u): bool
+    {
+        return $this->isManager($u)
+            || (int) $a->staff_id === (int) $u->id
+            || LeadAssignmentNotification::where('assignment_id', $a->id)->where('staff_id', $u->id)->exists();
+    }
+
+    /** Managers see every assignment; staff only their own and the ones offered to them. */
+    private function visibleTo($query, User $u)
+    {
+        if ($this->isManager($u)) { return $query; }
+        return $query->where(fn ($q) => $q->where('staff_id', $u->id)
+            ->orWhereIn('id', LeadAssignmentNotification::where('staff_id', $u->id)->select('assignment_id')));
+    }
+
     // GET /api/v1/lead-assignments
     public function index(Request $request): JsonResponse
     {
@@ -31,6 +53,7 @@ class LeadAssignmentController extends Controller
         $query = LeadAssignment::where('company_id', $company->id)
             ->with(['contact', 'staff', 'campaign'])
             ->latest();
+        $this->visibleTo($query, Auth::user());
 
         if ($request->filled('status'))      $query->where('status', $request->status);
         if ($request->filled('staff_id'))    $query->where('staff_id', $request->staff_id);
@@ -40,7 +63,19 @@ class LeadAssignmentController extends Controller
         if ($request->filled('date_from'))   $query->whereDate('created_at', '>=', $request->date_from);
         if ($request->filled('date_to'))     $query->whereDate('created_at', '<=', $request->date_to);
 
-        return response()->json($query->paginate(20));
+        $user = Auth::user();
+        $page = $query->paginate(20);
+        // tell the clients which buttons to offer: complete/transfer = it's mine (or I manage), accept/decline = it is currently offered to me
+        $offered = LeadAssignmentNotification::where('staff_id', $user->id)->whereNull('responded_at')
+            ->whereIn('assignment_id', $page->getCollection()->pluck('id'))->pluck('assignment_id')->all();
+        $manager = $this->isManager($user);
+        $page->getCollection()->transform(function ($a) use ($user, $manager, $offered) {
+            $a->setAttribute('can_act', $manager || (int) $a->staff_id === (int) $user->id);
+            $a->setAttribute('offered_to_me', in_array($a->id, $offered, true));
+            return $a;
+        });
+
+        return response()->json($page);
     }
 
     // GET /api/v1/lead-assignments/stats
@@ -91,7 +126,7 @@ class LeadAssignmentController extends Controller
     public function show(int $id): JsonResponse
     {
         $company = Auth::user()->company;
-        $assignment = LeadAssignment::where('company_id', $company->id)
+        $assignment = $this->visibleTo(LeadAssignment::where('company_id', $company->id), Auth::user())
             ->with(['contact', 'staff', 'campaign', 'notifications.staff', 'aiSession'])
             ->findOrFail($id);
 
@@ -104,8 +139,8 @@ class LeadAssignmentController extends Controller
         $request->validate([
             'contact_id'  => 'required|integer',
             'source_type' => 'nullable|in:wa_chat,meta_api,campaign,organic,flow_builder,manual',
-            'campaign_id' => 'nullable|integer',
-            'staff_id'    => 'nullable|integer',
+            'campaign_id' => ['nullable', 'integer', \Illuminate\Validation\Rule::exists('campaigns', 'id')->where('company_id', Auth::user()->company_id)],
+            'staff_id'    => ['nullable', 'integer', \Illuminate\Validation\Rule::exists('users', 'id')->where('company_id', Auth::user()->company_id)],
             'notes'       => 'nullable|string',
         ]);
 
@@ -140,8 +175,13 @@ class LeadAssignmentController extends Controller
     {
         $company    = Auth::user()->company;
         $assignment = LeadAssignment::where('company_id', $company->id)->findOrFail($id);
+        abort_unless($this->mayAct($assignment, Auth::user()), 403, 'This lead is not assigned to you.');
 
-        $assignment->update($request->only(['status', 'notes']));
+        $data = $request->validate([
+            'status' => ['sometimes', 'in:pending,notified,accepted,assigned,ai_handling,ai_offered,transferred,completed,dropped'],
+            'notes'  => ['sometimes', 'nullable', 'string', 'max:2000'],
+        ]);
+        $assignment->update($data);
         return response()->json(['data' => $assignment->fresh(['contact', 'staff'])]);
     }
 
@@ -151,18 +191,26 @@ class LeadAssignmentController extends Controller
         $user    = Auth::user();
         $company = $user->company;
 
-        $assignment = LeadAssignment::where('company_id', $company->id)->findOrFail($id);
+        $assignment = DB::transaction(function () use ($id, $user, $company) {
+            // row lock: two staff pressing Accept at once — only the first wins
+            $assignment = LeadAssignment::where('company_id', $company->id)->lockForUpdate()->findOrFail($id);
+            abort_unless($this->mayAct($assignment, $user), 403, 'This lead was not offered to you.');
 
-        LeadAssignmentNotification::where('assignment_id', $id)
-            ->where('staff_id', $user->id)
-            ->whereNull('responded_at')
-            ->update(['response' => 'accepted', 'responded_at' => now()]);
+            $takenByOther = $assignment->staff_id && (int) $assignment->staff_id !== (int) $user->id
+                && in_array($assignment->status, ['assigned', 'accepted', 'completed'], true);
+            abort_if($takenByOther || in_array($assignment->status, ['completed', 'dropped'], true), 409, 'This lead has already been taken.');
 
-        $assignment->update([
-            'staff_id'    => $user->id,
-            'status'      => 'accepted',
-            'accepted_at' => now(),
-        ]);
+            LeadAssignmentNotification::where('assignment_id', $id)
+                ->where('staff_id', $user->id)
+                ->whereNull('responded_at')
+                ->update(['response' => 'accepted', 'responded_at' => now()]);
+
+            // the instant-assign path already counted this lead against the staff member; an accepted offer has not been counted yet
+            $alreadyCounted = (int) $assignment->staff_id === (int) $user->id;
+            $assignment->update(['staff_id' => $user->id, 'status' => 'accepted', 'accepted_at' => $assignment->accepted_at ?? now()]);
+            if (!$alreadyCounted) { $this->engine->bumpWorkload($company->id, $user); }
+            return $assignment;
+        });
 
         $this->activity->syncAssignee($assignment, $user->id);
         $this->activity->log($assignment, 'lead_assignment_accepted', ['staff_id' => $user->id, 'staff_name' => $user->name], $user->id);
@@ -179,10 +227,12 @@ class LeadAssignmentController extends Controller
 
         $assignment = LeadAssignment::where('company_id', $company->id)->findOrFail($id);
 
-        LeadAssignmentNotification::where('assignment_id', $id)
+        $declined = LeadAssignmentNotification::where('assignment_id', $id)
             ->where('staff_id', $user->id)
             ->whereNull('responded_at')
             ->update(['response' => 'declined', 'responded_at' => now()]);
+        // only a staff member this lead is currently offered to can decline it (otherwise anyone could re-trigger the cascade)
+        abort_if($declined === 0, 403, 'This lead is not currently offered to you.');
 
         $this->activity->log($assignment, 'lead_assignment_declined', ['staff_id' => $user->id, 'staff_name' => $user->name], $user->id);
 
@@ -202,8 +252,15 @@ class LeadAssignmentController extends Controller
     // POST /api/v1/lead-assignments/{id}/complete
     public function complete(int $id): JsonResponse
     {
-        $company    = Auth::user()->company;
+        $user       = Auth::user();
+        $company    = $user->company;
         $assignment = LeadAssignment::where('company_id', $company->id)->findOrFail($id);
+        abort_unless($this->isManager($user) || (int) $assignment->staff_id === (int) $user->id, 403, 'Only the assigned staff member or a manager can complete this lead.');
+
+        // idempotent: completing twice must not decrement the workload / bump conversions twice
+        if ($assignment->status === 'completed') {
+            return response()->json(['data' => $assignment->fresh()]);
+        }
 
         $assignment->update(['status' => 'completed']);
         $this->activity->log($assignment, 'lead_assignment_completed', ['staff_id' => $assignment->staff_id]);
@@ -213,7 +270,7 @@ class LeadAssignmentController extends Controller
         }
 
         if ($assignment->staff_id) {
-            $avail = StaffAvailability::where('staff_id', $assignment->staff_id)->first();
+            $avail = StaffAvailability::where('company_id', $company->id)->where('staff_id', $assignment->staff_id)->first();
             if ($avail && $avail->current_leads_count > 0) {
                 $avail->decrement('current_leads_count');
                 $avail->increment('today_conversions');
@@ -232,12 +289,14 @@ class LeadAssignmentController extends Controller
     public function transfer(Request $request, int $id): JsonResponse
     {
         $request->validate([
-            'to_staff_id' => 'required|integer',
-            'reason'      => 'nullable|string',
+            'to_staff_id' => ['required', 'integer', \Illuminate\Validation\Rule::exists('users', 'id')->where('company_id', Auth::user()->company_id)],
+            'reason'      => 'nullable|string|max:500',
         ]);
 
         $company    = Auth::user()->company;
         $assignment = LeadAssignment::where('company_id', $company->id)->findOrFail($id);
+        abort_unless($this->isManager(Auth::user()) || (int) $assignment->staff_id === (int) Auth::id(), 403, 'Only the assigned staff member or a manager can transfer this lead.');
+        abort_if(in_array($assignment->status, ['completed', 'dropped'], true), 422, 'This lead is already closed.');
         $newStaff   = User::where('company_id', $company->id)->findOrFail($request->to_staff_id);
         $rule       = LeadAssignmentRule::where('company_id', $company->id)->firstOrNew();
 

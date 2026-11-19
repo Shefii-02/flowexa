@@ -189,7 +189,7 @@ class DashboardController extends Controller
                 'due_at'       => $row->due_at,
                 'bucket'       => $bucket,
                 'assignee'     => $userId ? null : ($names[$row->assigned_to] ?? null),
-                'days_late'    => $bucket === 'late' ? today()->diffInDays($row->due_at->copy()->startOfDay()) : 0,
+                'days_late'    => $bucket === 'late' ? (int) $row->due_at->copy()->startOfDay()->diffInDays(today()) : 0,
             ];
         }
 

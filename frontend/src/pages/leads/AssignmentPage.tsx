@@ -1,6 +1,6 @@
 // src/pages/leads/AssignmentPage.tsx
 import { useEffect, useState, useCallback } from 'react'
-import { useAppDispatch, useAppSelector } from '@/store'
+import { useAppDispatch, useAppSelector, usePermission } from '@/store'
 import { fetchAssignmentsThunk, fetchAssignmentStatsThunk, updateAssignment } from '@/store/slices'
 import { leadAssignmentApi } from '@/api'
 import { Badge, StatCard, Pagination, TableSkeleton } from '@/components/ui'
@@ -44,6 +44,10 @@ const presenceLabel: Record<string, string> = { online: 'ðŸŸ¢ Online', away: 'ðŸ
 export default function AssignmentPage() {
   const dispatch = useAppDispatch()
   const { assignments, total, stats, loading } = useAppSelector(s => s.leadAssignment)
+  // staff can only complete / transfer their own leads; managers (leads.manage, owner) can act on any
+  const me = useAppSelector(s => s.auth.user)
+  const canManage = usePermission('leads.manage') || me?.role?.name === 'owner'
+  const canAct = (a: LeadAssignment) => (a as any).can_act ?? (canManage || (!!me && a.staff_id === me.id))
 
   const [page, setPage]         = useState(1)
   const [statusFilter, setStatus] = useState('')
@@ -157,7 +161,7 @@ export default function AssignmentPage() {
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-1">
-                      {!['completed', 'dropped'].includes(a.status) && (
+                      {!['completed', 'dropped'].includes(a.status) && canAct(a) && (
                         <>
                           <button
                             onClick={() => handleComplete(a.id)}

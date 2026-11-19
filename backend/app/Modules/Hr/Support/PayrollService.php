@@ -38,9 +38,10 @@ class PayrollService
         // released runs untouched; a re-generate rebuilds draft items
         $run->items()->delete();
 
-        $workingDaysElapsed = $this->workingDaysElapsed($companyId, $month, $end, $settings);
-
-        foreach (HrStaffProfile::where('company_id', $companyId)->where('is_active', true)->with('user:id,name,department')->get() as $profile) {
+        foreach (HrStaffProfile::where('company_id', $companyId)->where('is_active', true)->with('user:id,name,department,created_at')->get() as $profile) {
+            // someone who joined mid-month is not marked absent for the days before their account existed
+            $from = $profile->user?->created_at && $profile->user->created_at->greaterThan($month) ? $profile->user->created_at->copy()->startOfDay() : $month;
+            $workingDaysElapsed = $this->workingDaysElapsed($companyId, $from, $end, $settings);
             $attrs = $this->computeItem($profile, $month, $end, $settings, $workingDaysElapsed, $run->id);
             $item = $run->items()->create($attrs);
 
@@ -178,9 +179,10 @@ class PayrollService
 
     private function leaveDaysInMonth(HrLeaveRequest $lv, Carbon $month, Carbon $end): float
     {
-        $from = $lv->start_date->greaterThan($month) ? $lv->start_date : $month;
-        $to   = $lv->end_date->lessThan($end) ? $lv->end_date : $end;
-        $days = $from->diffInDays($to) + 1;
+        // whole calendar days: $end is 23:59:59 of the last day, so compare start-of-day to start-of-day (a raw diff gave 5.99… → 6.99 days)
+        $from = ($lv->start_date->greaterThan($month) ? $lv->start_date : $month)->copy()->startOfDay();
+        $to   = ($lv->end_date->lessThan($end) ? $lv->end_date : $end)->copy()->startOfDay();
+        $days = (int) $from->diffInDays($to) + 1;
         return $lv->half_day ? min(0.5, $days) : $days;
     }
 

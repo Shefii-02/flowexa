@@ -97,6 +97,9 @@ class PayrollController extends Controller
         if ($run->isReleased()) {
             throw ValidationException::withMessages(['payroll' => 'Already released.']);
         }
+        if (!$run->items()->exists()) {
+            throw ValidationException::withMessages(['payroll' => 'This run has no pay lines — generate it first.']);
+        }
 
         return response()->json(['data' => $this->payroll->release($run, (int) auth()->id())]);
     }
