@@ -1,5 +1,5 @@
 // One lead, on its own page — pipeline progress, activity feed, and a full edit form.
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { leadApi, leadCategoryApi, staffApi, contactApi, labelApi } from '@/api'
 import { catalogApi } from '@/pages/wa-agent/catalog/api'
@@ -12,6 +12,21 @@ import toast from 'react-hot-toast'
 import type { Lead, LeadStage } from '@/types'
 
 const STAGES: LeadStage[] = ['new', 'contacted', 'follow_up', 'enrolled', 'lost']
+
+const PALETTE = ['#2563eb', '#16a34a', '#f59e0b', '#dc2626', '#9333ea', '#0891b2', '#db2777', '#64748b']
+
+const Field = ({ label, children, wide }: { label: string; children: ReactNode; wide?: boolean }) => (
+  <div className={wide ? 'sm:col-span-2' : ''}><p className="text-[11px] uppercase tracking-wide text-gray-400">{label}</p><div className="mt-0.5 text-sm text-gray-800">{children}</div></div>
+)
+const Swatches = ({ value, onChange }: { value: string; onChange: (c: string) => void }) => (
+  <div className="flex flex-wrap items-center gap-2 mt-1">
+    {PALETTE.map((c) => (
+      <button key={c} type="button" aria-label={c} onClick={() => onChange(c)}
+        className={`h-7 w-7 rounded-full border-2 ${value === c ? 'border-gray-900' : 'border-transparent'}`} style={{ background: c }} />))}
+    <input type="color" value={value} onChange={(e) => onChange(e.target.value)} className="h-7 w-9 cursor-pointer rounded border border-gray-200 bg-white p-0.5" title="Custom colour" />
+  </div>
+)
+
 
 export default function LeadDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -29,7 +44,11 @@ export default function LeadDetailPage() {
   const [catList, setCatList] = useState<{ id: number; name: string; color?: string }[]>([])
   const [labelList, setLabelList] = useState<{ id: number; name: string; color?: string }[]>([])
   const [chipBusy, setChipBusy] = useState(false)
-  const [newCat, setNewCat] = useState('')
+  // "new category" / "new label" each open in their own drawer
+  const [catDrawer, setCatDrawer] = useState(false)
+  const [newCat, setNewCat] = useState({ name: '', color: PALETTE[0], description: '' })
+  const [labelDrawer, setLabelDrawer] = useState(false)
+  const [newLabel, setNewLabel] = useState({ name: '', color: PALETTE[1] })
   const [contactEditing, setContactEditing] = useState(false)
   const [chatOpen, setChatOpen] = useState(false)   // drawer with the contact's chats
   const [assignOpen, setAssignOpen] = useState(false) // drawer with the staff list
@@ -136,16 +155,37 @@ export default function LeadDetailPage() {
     finally { setChipBusy(false) }
   }
   const createCategory = async () => {
-    const name = newCat.trim()
-    if (!name) return
+    const name = newCat.name.trim()
+    if (!name || !lead) return
     setChipBusy(true)
     try {
-      const r = await leadCategoryApi.create({ name })
+      const r = await leadCategoryApi.create({ name, color: newCat.color, description: newCat.description.trim() || undefined })
       if (r.data?.category) setCatList((cs) => [...cs, r.data.category])
-      setCategories((cs) => [...cs, name]); setNewCat('')
-      await leadCategoryApi.assign(lead!.id, name)
-      setLead({ ...lead!, category: name } as Lead)
-      toast.success(`Category “${name}” created.`)
+      setCategories((cs) => [...cs, name])
+      await leadCategoryApi.assign(lead.id, name)
+      setLead({ ...lead, category: name } as Lead)
+      setEditForm((f) => ({ ...f, category: name }))
+      setNewCat({ name: '', color: PALETTE[0], description: '' }); setCatDrawer(false)
+      toast.success(`Category “${name}” created and set on this lead.`)
+    } catch (e) { toast.error(getError(e)) }
+    finally { setChipBusy(false) }
+  }
+  const createLabel = async () => {
+    const name = newLabel.name.trim()
+    if (!name || !lead?.contact) return
+    setChipBusy(true)
+    try {
+      const r = await labelApi.create({ name, color: newLabel.color })
+      const created = r.data?.label ?? r.data?.data ?? r.data
+      const full = created?.id ? created : (await labelApi.list().then((x) => (x.data?.labels ?? x.data?.data ?? x.data ?? []) as any[])).find((l) => l.name === name)
+      if (full?.id) {
+        setLabelList((ls) => (ls.some((l) => l.id === full.id) ? ls : [...ls, full]))
+        const next = [...(lead.contact.labels ?? []).map((l) => l.id), full.id]
+        const sync = await contactApi.syncLabels(lead.contact.id, next)
+        setLead({ ...lead, contact: { ...lead.contact, labels: sync.data?.contact?.labels ?? [...(lead.contact.labels ?? []), full] } } as Lead)
+      }
+      setNewLabel({ name: '', color: PALETTE[1] }); setLabelDrawer(false)
+      toast.success(`Label “${name}” created and added.`)
     } catch (e) { toast.error(getError(e)) }
     finally { setChipBusy(false) }
   }
@@ -206,228 +246,210 @@ export default function LeadDetailPage() {
   if (loading) return <div className="flex justify-center py-12"><Spinner size="lg" /></div>
   if (!lead) return <p className="text-sm text-gray-400">Lead not found.</p>
 
+  const selectedLabels = lead.contact?.labels ?? []
+  const availableLabels = labelList.filter((l) => !selectedLabels.some((x) => x.id === l.id))
+  const initial = (lead.contact?.name || lead.contact?.phone || '?').trim().charAt(0).toUpperCase()
   return (
-    <div className="space-y-5 max-w-5xl">
+    <div className="space-y-5 max-w-6xl">
       <Link to="/crm/leads" className="text-xs text-gray-400 hover:underline">← All leads</Link>
 
       {/* Header */}
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="page-title">{lead.contact?.name || 'Unnamed contact'}</h1>
-          <p className="page-sub font-mono">{formatPhone(lead.contact?.phone || '')}{lead.contact?.email ? ` · ${lead.contact.email}` : ''}</p>
+      <div className="card p-5 flex flex-wrap items-center gap-4">
+        <span className="w-14 h-14 rounded-2xl bg-brand-100 text-brand-700 flex items-center justify-center text-xl font-bold">{initial}</span>
+        <div className="min-w-0 flex-1">
+          <h1 className="text-xl font-semibold text-gray-900 truncate">{lead.contact?.name || 'Unnamed contact'}</h1>
+          <p className="text-sm text-gray-500 font-mono">{formatPhone(lead.contact?.phone || '')}{lead.contact?.email ? ` · ${lead.contact.email}` : ''}</p>
+          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+            <span className={`badge ${stageConfig[lead.stage].badge}`}>{stageConfig[lead.stage].label}</span>
+            <span className={`badge ${priorityConfig[lead.priority].badge}`}>{priorityConfig[lead.priority].label} priority</span>
+            {lead.category && <Badge variant="gray">{lead.category}</Badge>}
+            {lead.source && <Badge variant="gray">{lead.source_label ?? lead.source}</Badge>}
+          </div>
         </div>
-        <div className="flex gap-2">
-          <Button variant="secondary" onClick={() => setAssignOpen(true)}>{lead.assigned_to?.name ? `👤 ${lead.assigned_to.name} · Switch` : 'Assign'}</Button>
-          <Button variant={editing ? 'secondary' : 'primary'} onClick={() => setEditing((v) => !v)}>{editing ? 'Cancel edit' : 'Edit lead'}</Button>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="secondary" onClick={() => setAssignOpen(true)}>{lead.assigned_to?.name ? '👤 Switch staff' : '👤 Assign'}</Button>
+          <Button onClick={() => setEditing(true)}>✎ Edit lead</Button>
           <Button variant="danger" onClick={() => setShowDelete(true)}>Delete</Button>
         </div>
       </div>
 
-      {/* Manage: staff, lead category and labels — all in one place */}
-      <div className="card p-5 grid grid-cols-1 lg:grid-cols-3 gap-5">
-        <div>
-          <p className="text-sm font-semibold text-gray-800 mb-2">Assigned staff</p>
-          {lead.assigned_to?.name ? (
-            <div className="flex items-center gap-3 mb-3">
-              <span className="w-9 h-9 rounded-full bg-brand-100 text-brand-700 flex items-center justify-center text-sm font-semibold">
-                {lead.assigned_to.name.trim().charAt(0).toUpperCase()}
-              </span>
-              <span className="min-w-0">
-                <span className="block text-sm font-medium text-gray-900 truncate">{lead.assigned_to.name}</span>
-                {lead.assigned_at && <span className="block text-[11px] text-gray-400">since {fmt.date(lead.assigned_at as any)}</span>}
-              </span>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 items-start">
+        {/* ── Main column ───────────────────────────────────────── */}
+        <div className="lg:col-span-2 space-y-5">
+          {/* Pipeline */}
+          <div className="card p-5">
+            <p className="text-sm font-semibold text-gray-800 mb-4">Pipeline</p>
+            {lead.stage === 'lost' ? (
+              <div className="flex items-center gap-3">
+                <Badge variant="red" className="text-sm px-3 py-1">Lost</Badge>
+                <button disabled={stageUpdating} onClick={() => handleStageChange('new')} className="text-xs text-brand-600 hover:underline">Reopen as New</button>
+              </div>
+            ) : (
+              <div className="flex items-center">
+                {(() => { const forward = STAGES.filter((s) => s !== 'lost'); const currentIdx = forward.indexOf(lead.stage); return forward.map((s, i) => {
+                  const done = i < currentIdx
+                  const current = s === lead.stage
+                  return (
+                    <div key={s} className="flex items-center flex-1 last:flex-none">
+                      <button disabled={stageUpdating} onClick={() => handleStageChange(s)} className="flex flex-col items-center gap-1.5 group">
+                        <span className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold transition-colors ${
+                          current ? 'bg-brand-500 text-white' : done ? 'bg-brand-100 text-brand-600' : 'bg-gray-100 text-gray-400 group-hover:bg-gray-200'
+                        }`}>{done ? '✓' : i + 1}</span>
+                        <span className={`text-xs whitespace-nowrap ${current ? 'font-semibold text-gray-900' : 'text-gray-400'}`}>{stageConfig[s].label}</span>
+                      </button>
+                      {i < forward.length - 1 && <div className={`h-0.5 flex-1 mx-2 ${done ? 'bg-brand-200' : 'bg-gray-100'}`} />}
+                    </div>
+                  )
+                }) })()}
+                <button disabled={stageUpdating} onClick={() => handleStageChange('lost')}
+                  className="ml-4 text-xs text-red-400 hover:text-red-600 hover:underline whitespace-nowrap">Mark as Lost</button>
+              </div>
+            )}
+          </div>
+
+          {/* Chat preview */}
+          {lead.contact?.phone && (
+            <LeadChatCard contactId={lead.contact.id} phone={lead.contact.phone} name={lead.contact.name} onOpen={() => setChatOpen(true)} />
+          )}
+
+          {/* Lead information (read-only — "Edit lead" opens the drawer) */}
+          <div className="card p-5">
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-sm font-semibold text-gray-800">Lead information</p>
+              <button className="text-xs text-brand-600 hover:underline" onClick={() => setEditing(true)}>Edit</button>
             </div>
-          ) : <p className="text-sm text-gray-400 mb-3">Not assigned to anyone yet</p>}
-          <Button variant="secondary" onClick={() => setAssignOpen(true)}>{lead.assigned_to?.name ? 'Switch to another staff' : 'Assign staff'}</Button>
-        </div>
-
-        <div>
-          <p className="text-sm font-semibold text-gray-800 mb-2">Lead category</p>
-          <div className="flex flex-wrap gap-1.5">
-            {catList.map((c) => {
-              const on = lead.category === c.name
-              const col = c.color ?? '#6b7280'
-              return (
-                <button key={c.id} disabled={chipBusy} onClick={() => setCategory(on ? null : c.name)}
-                  title={on ? 'Tap to remove this category' : 'Tap to assign this category'}
-                  className="text-xs px-2.5 py-1 rounded-full border transition-colors"
-                  style={{ borderColor: col, background: on ? col : 'transparent', color: on ? '#fff' : col, fontWeight: on ? 700 : 500 }}>
-                  {on ? '✓ ' : '+ '}{c.name}{on ? ' ×' : ''}
-                </button>
-              )
-            })}
-            {catList.length === 0 && <span className="text-xs text-gray-400">No categories yet.</span>}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3">
+              <Field label="Source">{lead.source ? (lead.source_label ?? lead.source) : '—'}</Field>
+              <Field label="Origin">{lead.origin_label ?? '—'}</Field>
+              <Field label="Priority"><span className={`badge ${priorityConfig[lead.priority].badge}`}>{priorityConfig[lead.priority].label}</span></Field>
+              <Field label="Category">{lead.category || '—'}</Field>
+              <Field label="Assigned to">{lead.assigned_to?.name || 'Unassigned'}</Field>
+              <Field label="Created">{fmt.date(lead.created_at)}</Field>
+              <Field label="Item / listing">{lead.listing?.title || '—'}</Field>
+              <Field label="Deal value">{lead.sale_value != null ? fmt.currency(lead.sale_value) : '—'}</Field>
+              {lead.sale && <Field label="Sale recorded" wide><span className="text-green-600">✓ {fmt.currency(lead.sale.amount)} on {lead.sale.sold_at ? fmt.date(lead.sale.sold_at) : '—'}</span></Field>}
+              {lead.notes && <Field label="Notes" wide><span className="text-gray-600 whitespace-pre-wrap">{lead.notes}</span></Field>}
+            </div>
           </div>
-          <div className="flex gap-2 mt-2">
-            <input className="input flex-1" placeholder="+ New category" maxLength={100} value={newCat}
-              onChange={(e) => setNewCat(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && createCategory()} />
-            <Button variant="secondary" onClick={createCategory} disabled={!newCat.trim() || chipBusy}>Add</Button>
-          </div>
-        </div>
 
-        <div>
-          <p className="text-sm font-semibold text-gray-800 mb-2">Contact labels</p>
-          {!lead.contact ? <p className="text-xs text-gray-400">No contact on this lead.</p> : (
-            <div className="flex flex-wrap gap-1.5">
-              {labelList.map((l) => {
-                const on = (lead.contact!.labels ?? []).some((x) => x.id === l.id)
-                const col = l.color ?? '#6b7280'
+          {/* Activity */}
+          <div className="card p-5">
+            <p className="text-sm font-semibold text-gray-800 mb-3">Lead activities</p>
+            <div className="flex gap-2 mb-4">
+              <input className="input flex-1" placeholder="Log a call, meeting, or note…" value={activityText}
+                onChange={(e) => setActivityText(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleAddActivity()} />
+              <Button onClick={handleAddActivity} loading={postingActivity} disabled={!activityText.trim()}>Add</Button>
+            </div>
+            <div className="space-y-0.5 max-h-96 overflow-y-auto">
+              {(lead.events?.length ?? 0) === 0 && <p className="text-xs text-gray-300">No activity recorded yet.</p>}
+              {lead.events?.map((e) => {
+                const line = eventLine(e)
+                if (line === null) return null
                 return (
-                  <button key={l.id} disabled={chipBusy} onClick={() => toggleLabel(l.id)}
-                    title={on ? 'Tap to remove this label' : 'Tap to add this label'}
+                  <div key={e.id} className="flex gap-3 text-xs py-2 border-b border-gray-50">
+                    <span className="text-gray-400 w-24 flex-shrink-0">{fmt.relative(e.created_at)}</span>
+                    <span className="flex-1 text-gray-700">{line}</span>
+                    {e.user && <span className="text-gray-400">{e.user}</span>}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+
+        {/* ── Side column ───────────────────────────────────────── */}
+        <aside className="space-y-5">
+          {/* Assigned staff */}
+          <div className="card p-5">
+            <p className="text-sm font-semibold text-gray-800 mb-3">Assigned staff</p>
+            {lead.assigned_to?.name ? (
+              <div className="flex items-center gap-3 mb-3">
+                <span className="w-9 h-9 rounded-full bg-brand-100 text-brand-700 flex items-center justify-center text-sm font-semibold">{lead.assigned_to.name.trim().charAt(0).toUpperCase()}</span>
+                <span className="min-w-0">
+                  <span className="block text-sm font-medium text-gray-900 truncate">{lead.assigned_to.name}</span>
+                  {lead.assigned_at && <span className="block text-[11px] text-gray-400">since {fmt.date(lead.assigned_at as any)}</span>}
+                </span>
+              </div>
+            ) : <p className="text-sm text-gray-400 mb-3">Not assigned to anyone yet</p>}
+            <Button variant="secondary" className="w-full justify-center" onClick={() => setAssignOpen(true)}>{lead.assigned_to?.name ? 'Switch to another staff' : 'Assign staff'}</Button>
+          </div>
+
+          {/* Lead category — pick one */}
+          <div className="card p-5">
+            <div className="flex items-center justify-between mb-1">
+              <p className="text-sm font-semibold text-gray-800">Lead category</p>
+              <button className="text-xs text-brand-600 hover:underline" onClick={() => setCatDrawer(true)}>+ New category</button>
+            </div>
+            <p className="text-[11px] text-gray-400 mb-3">Choose one. Tap the selected one again to clear it.</p>
+            <div className="flex flex-wrap gap-1.5">
+              {catList.map((c) => {
+                const on = lead.category === c.name
+                const col = c.color ?? '#6b7280'
+                return (
+                  <button key={c.id} disabled={chipBusy} onClick={() => setCategory(on ? null : c.name)}
+                    title={on ? 'Tap to remove this category' : 'Tap to set this category'}
                     className="text-xs px-2.5 py-1 rounded-full border transition-colors"
                     style={{ borderColor: col, background: on ? col : 'transparent', color: on ? '#fff' : col, fontWeight: on ? 700 : 500 }}>
-                    {on ? '✓ ' : '+ '}{l.name}{on ? ' ×' : ''}
+                    {on ? '✓ ' : ''}{c.name}
                   </button>
                 )
               })}
-              {labelList.length === 0 && <span className="text-xs text-gray-400">No labels yet — create them on the Labels page.</span>}
+              {catList.length === 0 && <span className="text-xs text-gray-400">No categories yet.</span>}
             </div>
-          )}
-        </div>
-      </div>
-
-      {/* Chat preview — the latest messages, and the drawer with the chats listing */}
-      {lead.contact?.phone && (
-        <LeadChatCard contactId={lead.contact.id} phone={lead.contact.phone} name={lead.contact.name} onOpen={() => setChatOpen(true)} />
-      )}
-
-      {/* Pipeline + activity */}
-      <div className="card p-5">
-        <p className="text-sm font-semibold text-gray-800 mb-4">Pipeline</p>
-        {lead.stage === 'lost' ? (
-          <div className="flex items-center gap-3 mb-5">
-            <Badge variant="red" className="text-sm px-3 py-1">Lost</Badge>
-            <button disabled={stageUpdating} onClick={() => handleStageChange('new')} className="text-xs text-brand-600 hover:underline">Reopen as New</button>
           </div>
-        ) : (
-          <div className="flex items-center mb-5">
-            {(() => { const forward = STAGES.filter((s) => s !== 'lost'); const currentIdx = forward.indexOf(lead.stage); return forward.map((s, i) => {
-              const done = i < currentIdx
-              const current = s === lead.stage
-              return (
-                <div key={s} className="flex items-center flex-1 last:flex-none">
-                  <button disabled={stageUpdating} onClick={() => handleStageChange(s)} className="flex flex-col items-center gap-1.5 group">
-                    <span className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold transition-colors ${
-                      current ? 'bg-brand-500 text-white' : done ? 'bg-brand-100 text-brand-600' : 'bg-gray-100 text-gray-400 group-hover:bg-gray-200'
-                    }`}>{done ? '✓' : i + 1}</span>
-                    <span className={`text-xs whitespace-nowrap ${current ? 'font-semibold text-gray-900' : 'text-gray-400'}`}>{stageConfig[s].label}</span>
-                  </button>
-                  {i < 3 && <div className={`h-0.5 flex-1 mx-2 ${done ? 'bg-brand-200' : 'bg-gray-100'}`} />}
-                </div>
-              )
-            }) })()}
-            <button disabled={stageUpdating} onClick={() => handleStageChange('lost')}
-              className="ml-4 text-xs text-red-400 hover:text-red-600 hover:underline whitespace-nowrap">Mark as Lost</button>
-          </div>
-        )}
 
-        {/* Add activity */}
-        <div className="flex gap-2 mb-4">
-          <input className="input flex-1" placeholder="Log a call, meeting, or note…" value={activityText}
-            onChange={(e) => setActivityText(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleAddActivity()} />
-          <Button onClick={handleAddActivity} loading={postingActivity} disabled={!activityText.trim()}>Add activity</Button>
-        </div>
-
-        <p className="text-sm font-semibold text-gray-800 mb-2">Lead activities</p>
-        {/* Activity feed */}
-        <div className="space-y-0.5 max-h-80 overflow-y-auto">
-          {(lead.events?.length ?? 0) === 0 && <p className="text-xs text-gray-300">No activity recorded yet.</p>}
-          {lead.events?.map((e) => {
-            const line = eventLine(e)
-            if (line === null) return null
-            return (
-              <div key={e.id} className="flex gap-3 text-xs py-2 border-b border-gray-50">
-                <span className="text-gray-400 w-24 flex-shrink-0">{fmt.relative(e.created_at)}</span>
-                <span className="flex-1 text-gray-700">{line}</span>
-                {e.user && <span className="text-gray-400">{e.user}</span>}
-              </div>
-            )
-          })}
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        {/* Lead information */}
-        <div className="card p-5">
-          <p className="text-sm font-semibold text-gray-800 mb-3">Lead information</p>
-          {!editing ? (
-            <div className="grid grid-cols-2 gap-3 text-sm">
-              <div><span className="label">Source</span><p>{lead.source_label ?? lead.source}</p></div>
-              <div><span className="label">Origin</span><p>{lead.origin_label ?? '—'}</p></div>
-              <div><span className="label">Priority</span><span className={`badge ${priorityConfig[lead.priority].badge}`}>{priorityConfig[lead.priority].label}</span></div>
-              <div><span className="label">Category</span><p>{lead.category || '—'}</p></div>
-              <div><span className="label">Assigned to</span><p>{lead.assigned_to?.name || 'Unassigned'}</p></div>
-              <div><span className="label">Created</span><p>{fmt.date(lead.created_at)}</p></div>
-              <div><span className="label">Item / listing</span><p>{lead.listing?.title || '—'}</p></div>
-              <div><span className="label">Deal value</span><p>{lead.sale_value != null ? fmt.currency(lead.sale_value) : '—'}</p></div>
-              {lead.sale && <div className="col-span-2"><span className="label">Sale recorded</span><p className="text-green-600">✓ {fmt.currency(lead.sale.amount)} on {lead.sale.sold_at ? fmt.date(lead.sale.sold_at) : '—'}</p></div>}
-              {lead.notes && <div className="col-span-2"><span className="label">Notes</span><p className="text-gray-600 whitespace-pre-wrap">{lead.notes}</p></div>}
+          {/* Labels — selected / available */}
+          <div className="card p-5">
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-sm font-semibold text-gray-800">Contact labels</p>
+              <button className="text-xs text-brand-600 hover:underline" onClick={() => setLabelDrawer(true)} disabled={!lead.contact}>+ New label</button>
             </div>
-          ) : (
-            <div className="space-y-3">
-              <div>
-                <span className="label">Priority</span>
-                <select className="select w-full mt-1" value={editForm.priority} onChange={(e) => setEditForm((f) => ({ ...f, priority: e.target.value }))}>
-                  <option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option>
-                </select>
-              </div>
-              <div>
-                <span className="label">Category</span>
-                <select className="select w-full mt-1" value={editForm.category} onChange={(e) => setEditForm((f) => ({ ...f, category: e.target.value }))}>
-                  <option value="">— None —</option>
-                  {!categories.includes(editForm.category) && editForm.category && <option value={editForm.category}>{editForm.category}</option>}
-                  {categories.map((c) => <option key={c} value={c}>{c}</option>)}
-                </select>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <span className="label">Item / listing</span>
-                  <select className="select w-full mt-1" value={editForm.listing_id} onChange={(e) => setEditForm((f) => ({ ...f, listing_id: e.target.value }))}>
-                    <option value="">— None —</option>
-                    {listings.map((it) => <option key={it.id} value={it.id}>{it.title}{it.price ? ` (${fmt.currency(it.price)})` : ''}</option>)}
-                  </select>
+            {!lead.contact ? <p className="text-xs text-gray-400">No contact on this lead.</p> : (
+              <>
+                <p className="text-[11px] uppercase tracking-wide text-gray-400 mb-1.5">Selected ({selectedLabels.length})</p>
+                <div className="flex flex-wrap gap-1.5 mb-4">
+                  {selectedLabels.map((l) => {
+                    const col = (l as any).color ?? '#6b7280'
+                    return (
+                      <button key={l.id} disabled={chipBusy} onClick={() => toggleLabel(l.id)} title="Tap to remove"
+                        className="text-xs px-2.5 py-1 rounded-full border font-semibold" style={{ borderColor: col, background: col, color: '#fff' }}>
+                        {l.name} ×
+                      </button>)
+                  })}
+                  {selectedLabels.length === 0 && <span className="text-xs text-gray-400">None selected.</span>}
                 </div>
-                <div>
-                  <span className="label">Deal value</span>
-                  <input type="number" min="0" className="input w-full mt-1" value={editForm.sale_value}
-                    onChange={(e) => setEditForm((f) => ({ ...f, sale_value: e.target.value }))} placeholder="₹" />
+                <p className="text-[11px] uppercase tracking-wide text-gray-400 mb-1.5">Available</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {availableLabels.map((l) => {
+                    const col = l.color ?? '#6b7280'
+                    return (
+                      <button key={l.id} disabled={chipBusy} onClick={() => toggleLabel(l.id)} title="Tap to add"
+                        className="text-xs px-2.5 py-1 rounded-full border" style={{ borderColor: col, color: col }}>
+                        + {l.name}
+                      </button>)
+                  })}
+                  {availableLabels.length === 0 && <span className="text-xs text-gray-400">{labelList.length === 0 ? 'No labels yet.' : 'All labels are selected.'}</span>}
                 </div>
-              </div>
-              <div>
-                <span className="label">Notes</span>
-                <textarea className="textarea w-full mt-1" rows={3} value={editForm.notes} onChange={(e) => setEditForm((f) => ({ ...f, notes: e.target.value }))} />
-              </div>
-              <div className="flex justify-end gap-2">
-                <Button variant="secondary" onClick={() => setEditing(false)}>Cancel</Button>
-                <Button onClick={handleSave} loading={saving}>Save changes</Button>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Contact */}
-        <div className="card p-5">
-          <div className="flex items-center justify-between mb-3">
-            <p className="text-sm font-semibold text-gray-800">Contact details</p>
-            {lead.contact && !contactEditing && (
-              <button className="text-xs text-brand-600 hover:underline"
-                onClick={() => { setContactForm({ name: lead.contact?.name ?? '', email: lead.contact?.email ?? '' }); setContactEditing(true) }}>Edit</button>
+              </>
             )}
           </div>
-            <div className="space-y-2 text-sm">
-              <div><span className="label">Name</span><p>{lead.contact?.name || '—'}</p></div>
-              <div><span className="label">Phone</span><p className="font-mono">{formatPhone(lead.contact?.phone || '')}</p></div>
-              <div><span className="label">Email</span><p>{lead.contact?.email || '—'}</p></div>
-              {(lead.contact?.labels?.length ?? 0) > 0 && (
-                <div><span className="label">Labels</span>
-                  <div className="flex flex-wrap gap-1 mt-1">
-                    {lead.contact!.labels.map((l) => <Badge key={l.id} variant="gray">{l.name}</Badge>)}
-                  </div>
-                </div>
+
+          {/* Contact */}
+          <div className="card p-5">
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-sm font-semibold text-gray-800">Contact details</p>
+              {lead.contact && (
+                <button className="text-xs text-brand-600 hover:underline"
+                  onClick={() => { setContactForm({ name: lead.contact?.name ?? '', email: lead.contact?.email ?? '' }); setContactEditing(true) }}>Edit</button>
               )}
             </div>
-        </div>
+            <div className="space-y-2.5">
+              <Field label="Name">{lead.contact?.name || '—'}</Field>
+              <Field label="Phone"><span className="font-mono">{formatPhone(lead.contact?.phone || '')}</span></Field>
+              <Field label="Email">{lead.contact?.email || '—'}</Field>
+            </div>
+          </div>
+        </aside>
       </div>
 
       {lead.contact?.phone && (
@@ -437,11 +459,69 @@ export default function LeadDetailPage() {
       <AssignStaffDrawer open={assignOpen} staff={counsellors} currentId={lead.assigned_to?.id} currentName={lead.assigned_to?.name}
         busyId={assigning ? assignTo : null} onAssign={handleAssign} onClose={() => setAssignOpen(false)} />
 
+      {/* Edit lead */}
+      <SideDrawer open={editing} onClose={() => setEditing(false)} title="Edit lead" subtitle={lead.contact?.name || formatPhone(lead.contact?.phone || '')} width="max-w-lg"
+        footer={<><Button variant="secondary" onClick={() => setEditing(false)}>Cancel</Button><Button onClick={handleSave} loading={saving}>Save changes</Button></>}>
+        <div className="p-5 space-y-4 text-sm">
+          <div>
+            <span className="label">Priority</span>
+            <select className="select w-full mt-1" value={editForm.priority} onChange={(e) => setEditForm((f) => ({ ...f, priority: e.target.value }))}>
+              <option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option>
+            </select>
+          </div>
+          <div>
+            <span className="label">Category</span>
+            <select className="select w-full mt-1" value={editForm.category} onChange={(e) => setEditForm((f) => ({ ...f, category: e.target.value }))}>
+              <option value="">— None —</option>
+              {!categories.includes(editForm.category) && editForm.category && <option value={editForm.category}>{editForm.category}</option>}
+              {categories.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <span className="label">Item / listing</span>
+              <select className="select w-full mt-1" value={editForm.listing_id} onChange={(e) => setEditForm((f) => ({ ...f, listing_id: e.target.value }))}>
+                <option value="">— None —</option>
+                {listings.map((it) => <option key={it.id} value={it.id}>{it.title}{it.price ? ` (${fmt.currency(it.price)})` : ''}</option>)}
+              </select>
+            </div>
+            <div>
+              <span className="label">Deal value</span>
+              <input type="number" min="0" className="input w-full mt-1" value={editForm.sale_value}
+                onChange={(e) => setEditForm((f) => ({ ...f, sale_value: e.target.value }))} placeholder="₹" />
+            </div>
+          </div>
+          <div>
+            <span className="label">Notes</span>
+            <textarea className="textarea w-full mt-1" rows={5} value={editForm.notes} onChange={(e) => setEditForm((f) => ({ ...f, notes: e.target.value }))} />
+          </div>
+        </div>
+      </SideDrawer>
+
+      {/* New category */}
+      <SideDrawer open={catDrawer} onClose={() => setCatDrawer(false)} title="New lead category" subtitle="It will be set on this lead"
+        footer={<><Button variant="secondary" onClick={() => setCatDrawer(false)}>Cancel</Button><Button onClick={createCategory} loading={chipBusy} disabled={!newCat.name.trim()}>Create &amp; set</Button></>}>
+        <div className="p-5 space-y-4 text-sm">
+          <div><span className="label">Name</span><input className="input w-full mt-1" maxLength={100} autoFocus value={newCat.name} onChange={(e) => setNewCat((f) => ({ ...f, name: e.target.value }))} onKeyDown={(e) => e.key === 'Enter' && createCategory()} /></div>
+          <div><span className="label">Colour</span><Swatches value={newCat.color} onChange={(c) => setNewCat((f) => ({ ...f, color: c }))} /></div>
+          <div><span className="label">Description <span className="text-gray-400">(optional)</span></span><textarea className="textarea w-full mt-1" rows={3} maxLength={500} value={newCat.description} onChange={(e) => setNewCat((f) => ({ ...f, description: e.target.value }))} /></div>
+          <p className="text-xs text-gray-400">Preview: <span className="ml-1 rounded-full border px-2.5 py-1 text-xs font-semibold text-white" style={{ background: newCat.color, borderColor: newCat.color }}>{newCat.name || 'Category'}</span></p>
+        </div>
+      </SideDrawer>
+
+      {/* New label */}
+      <SideDrawer open={labelDrawer} onClose={() => setLabelDrawer(false)} title="New label" subtitle="It will be added to this contact"
+        footer={<><Button variant="secondary" onClick={() => setLabelDrawer(false)}>Cancel</Button><Button onClick={createLabel} loading={chipBusy} disabled={!newLabel.name.trim()}>Create &amp; add</Button></>}>
+        <div className="p-5 space-y-4 text-sm">
+          <div><span className="label">Name</span><input className="input w-full mt-1" maxLength={50} autoFocus value={newLabel.name} onChange={(e) => setNewLabel((f) => ({ ...f, name: e.target.value }))} onKeyDown={(e) => e.key === 'Enter' && createLabel()} /></div>
+          <div><span className="label">Colour</span><Swatches value={newLabel.color} onChange={(c) => setNewLabel((f) => ({ ...f, color: c }))} /></div>
+          <p className="text-xs text-gray-400">Preview: <span className="ml-1 rounded-full border px-2.5 py-1 text-xs font-semibold text-white" style={{ background: newLabel.color, borderColor: newLabel.color }}>{newLabel.name || 'Label'}</span></p>
+        </div>
+      </SideDrawer>
+
+      {/* Edit contact */}
       <SideDrawer open={contactEditing} onClose={() => setContactEditing(false)} title="Edit contact" subtitle={lead.contact?.phone ? formatPhone(lead.contact.phone) : undefined}
-        footer={<>
-          <Button variant="secondary" onClick={() => setContactEditing(false)}>Cancel</Button>
-          <Button onClick={saveContact} loading={contactSaving}>Save</Button>
-        </>}>
+        footer={<><Button variant="secondary" onClick={() => setContactEditing(false)}>Cancel</Button><Button onClick={saveContact} loading={contactSaving}>Save</Button></>}>
         <div className="p-5 space-y-4 text-sm">
           <div><span className="label">Name</span><input className="input w-full mt-1" value={contactForm.name} maxLength={100} autoFocus onChange={(e) => setContactForm((f) => ({ ...f, name: e.target.value }))} /></div>
           <div><span className="label">Email</span><input type="email" className="input w-full mt-1" value={contactForm.email} maxLength={150} onChange={(e) => setContactForm((f) => ({ ...f, email: e.target.value }))} /></div>

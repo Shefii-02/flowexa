@@ -52,7 +52,7 @@ export default function DealsPage() {
 
   useEffect(() => { load() }, [load])
   useEffect(() => {
-    api.get('/contacts', { params: { per_page: 200 } })
+    api.get('/contacts', { params: { per_page: 100 } })
       .then(r => setContacts(Array.isArray(r.data?.data) ? r.data.data : Array.isArray(r.data?.contacts) ? r.data.contacts : []))
       .catch(() => {})
     api.get('/wa-cloud/inbox-analytics/agents').then(r => setAgents(r.data?.data ?? [])).catch(() => {})

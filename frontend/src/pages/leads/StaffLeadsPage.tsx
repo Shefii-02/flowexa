@@ -33,10 +33,19 @@ export default function StaffLeadsPage() {
   const load = () => {
     if (!staffId) return
     setLoading(true)
-    leadApi.list({ assigned_to: staffId, per_page: 200 })
-      .then((r) => setLeads(r.data.data ?? []))
-      .catch((e) => toast.error(getError(e)))
-      .finally(() => setLoading(false))
+    // the API caps a page at 100 — walk the pages (up to 2,000 leads)
+    ;(async () => {
+      try {
+        const all: Lead[] = []
+        for (let pg = 1; pg <= 20; pg++) {
+          const { data } = await leadApi.list({ assigned_to: staffId, per_page: 100, page: pg })
+          all.push(...(data.data ?? []))
+          if (pg >= (data.last_page ?? 1)) break
+        }
+        setLeads(all)
+      } catch (e) { toast.error(getError(e)) }
+      finally { setLoading(false) }
+    })()
   }
 
   useEffect(() => { load(); setSelectedIds(new Set()) }, [staffId]) // eslint-disable-line react-hooks/exhaustive-deps

@@ -93,6 +93,26 @@ export default function LeadsPage() {
     dispatch(fetchLeadsThunk({ page, per_page: perPage, ...filters }))
   }, [dispatch, page, perPage, stage, sourceFilter, assignedFilter, search, createdFrom, createdTo, closedFrom, closedTo]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Kanban: every column loads its own leads (own count, own "load more") instead of slicing the table's single page
+  type Col = { items: Lead[]; total: number; page: number; loading: boolean }
+  const emptyCols = () => Object.fromEntries(STAGES.map((st) => [st, { items: [] as Lead[], total: 0, page: 0, loading: false }])) as Record<LeadStage, Col>
+  const [cols, setCols] = useState<Record<LeadStage, Col>>(emptyCols)
+  const [kanbanPer, setKanbanPer] = useState(20)
+  const kanbanStages = STAGES.filter((st) => !stage || st === stage)   // a stage filter narrows the board to that column
+
+  const fetchColumn = useCallback(async (st: LeadStage, pg: number) => {
+    setCols((c) => ({ ...c, [st]: { ...c[st], loading: true } }))
+    try {
+      const { data } = await leadApi.list({ ...filters, stage: st, page: pg, per_page: kanbanPer })
+      setCols((c) => ({ ...c, [st]: {
+        items: pg === 1 ? data.data : [...c[st].items, ...data.data.filter((n: Lead) => !c[st].items.some((o) => o.id === n.id))],
+        total: data.total, page: data.current_page, loading: false } }))
+    } catch (e) { toast.error(getError(e)); setCols((c) => ({ ...c, [st]: { ...c[st], loading: false } })) }
+  }, [stage, sourceFilter, assignedFilter, search, createdFrom, createdTo, closedFrom, closedTo, kanbanPer]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const loadKanban = useCallback(() => { kanbanStages.forEach((st) => void fetchColumn(st, 1)) }, [fetchColumn, stage]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (view === 'kanban') loadKanban() }, [view, loadKanban])
+
   useEffect(() => { load() }, [load])
   useEffect(() => { dispatch(fetchLeadAnalyticsThunk()) }, [dispatch])
   useEffect(() => { setSelectedIds(new Set()) }, [list])
@@ -194,10 +214,21 @@ export default function LeadsPage() {
   useEffect(() => {
     if (!showReassign || !reassignFrom) { setReassignLeads([]); setReassignSelected(new Set()); return }
     setReassignLoadingLeads(true)
-    leadApi.list({ assigned_to: reassignFrom, per_page: 200 })
-      .then((r) => setReassignLeads(r.data.data ?? []))
-      .catch((e) => toast.error(getError(e)))
-      .finally(() => setReassignLoadingLeads(false))
+    // the API caps a page at 100 — walk the pages (up to 2,000 leads) instead of asking for one big page
+    let cancelled = false
+    ;(async () => {
+      try {
+        const all: Lead[] = []
+        for (let pg = 1; pg <= 20; pg++) {
+          const { data } = await leadApi.list({ assigned_to: reassignFrom, per_page: 100, page: pg })
+          all.push(...(data.data ?? []))
+          if (pg >= (data.last_page ?? 1)) break
+        }
+        if (!cancelled) setReassignLeads(all)
+      } catch (e) { if (!cancelled) toast.error(getError(e)) }
+      finally { if (!cancelled) setReassignLoadingLeads(false) }
+    })()
+    return () => { cancelled = true }
   }, [showReassign, reassignFrom])
 
   const reassignVisible = reassignIncludeClosed ? reassignLeads : reassignLeads.filter((l) => !['enrolled', 'lost'].includes(l.stage))
@@ -271,20 +302,27 @@ export default function LeadsPage() {
     downloadBlob(new Blob([sample], { type: 'text/csv' }), 'leads_sample.csv')
   }
 
-  const kanbanByStage = STAGES.reduce((acc, s) => {
-    acc[s] = list.filter((l) => l.stage === s)
-    return acc
-  }, {} as Record<LeadStage, Lead[]>)
+    const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }))
 
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }))
-
-  const handleDragEnd = (e: DragEndEvent) => {
+  const handleDragEnd = async (e: DragEndEvent) => {
     const { active, over } = e
     if (!over) return
     const newStage = over.id as LeadStage
-    const lead = list.find((l) => l.id === Number(active.id))
-    if (!lead) return
-    void handleStageUpdate(lead, newStage)
+    const lead = STAGES.flatMap((st) => cols[st].items).find((l) => l.id === Number(active.id))
+    if (!lead || lead.stage === newStage) return
+    setStageUpdating(lead.id)
+    try {
+      const { data } = await leadApi.update(lead.id, { stage: newStage })
+      dispatch(updateLeadInList(data.lead))
+      // move the card between columns without reloading the board
+      setCols((c) => ({
+        ...c,
+        [lead.stage]: { ...c[lead.stage], items: c[lead.stage].items.filter((l) => l.id !== lead.id), total: Math.max(0, c[lead.stage].total - 1) },
+        [newStage]: { ...c[newStage], items: [{ ...lead, ...data.lead, contact: lead.contact, assigned_to: data.lead.assigned_to ?? lead.assigned_to }, ...c[newStage].items], total: c[newStage].total + 1 },
+      }))
+      toast.success(`Stage → ${stageConfig[newStage].label}`)
+    } catch (err) { toast.error(getError(err)) }
+    finally { setStageUpdating(null) }
   }
 
   return (
@@ -438,14 +476,28 @@ export default function LeadsPage() {
 
       {/* Kanban view — drag a card to another column to change its stage */}
       {view === 'kanban' && (
-        <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
-          <div className="flex gap-4 overflow-x-auto pb-4">
-            {STAGES.map((s) => (
-              <KanbanColumn key={s} stage={s} leads={kanbanByStage[s]}
-                stageUpdating={stageUpdating} onCardClick={(l) => navigate(`/crm/leads/${l.id}`)} />
-            ))}
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-gray-500">
+            <span>Drag a card to another column to change its stage. Each column loads its own leads.</span>
+            <span className="flex items-center gap-3">
+              <label className="flex items-center gap-2">Cards per column
+                <select className="text-sm border border-gray-200 rounded-lg px-2 py-1" value={kanbanPer} onChange={(e) => setKanbanPer(+e.target.value)}>
+                  {[10, 20, 50, 100].map((n) => <option key={n} value={n}>{n}</option>)}
+                </select>
+              </label>
+              <button type="button" onClick={loadKanban} className="text-brand-600 hover:underline">↻ Refresh</button>
+            </span>
           </div>
-        </DndContext>
+          <DndContext sensors={sensors} onDragEnd={(e) => void handleDragEnd(e)}>
+            <div className="flex gap-4 overflow-x-auto pb-4">
+              {kanbanStages.map((st) => (
+                <KanbanColumn key={st} stage={st} col={cols[st]} sources={sources}
+                  stageUpdating={stageUpdating} onCardClick={(l) => navigate(`/crm/leads/${l.id}`)}
+                  onLoadMore={() => void fetchColumn(st, cols[st].page + 1)} />
+              ))}
+            </div>
+          </DndContext>
+        </div>
       )}
 
       <ConfirmModal
@@ -645,40 +697,53 @@ export default function LeadsPage() {
   )
 }
 
-function KanbanColumn({ stage, leads, stageUpdating, onCardClick }: {
-  stage: LeadStage; leads: Lead[]; stageUpdating: number | null; onCardClick: (l: Lead) => void
+function KanbanColumn({ stage, col, sources, stageUpdating, onCardClick, onLoadMore }: {
+  stage: LeadStage; col: { items: Lead[]; total: number; page: number; loading: boolean }; sources: Record<string, { label: string; icon: string }>
+  stageUpdating: number | null; onCardClick: (l: Lead) => void; onLoadMore: () => void
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: stage })
   const cfg = stageConfig[stage]
+  const more = col.total - col.items.length
   return (
     <div ref={setNodeRef} className={`flex-shrink-0 w-64 rounded-xl transition-colors ${isOver ? 'bg-brand-50 ring-2 ring-brand-200' : ''} p-1`}>
       <div className="flex items-center justify-between mb-3 px-1">
         <span className={`badge ${cfg.badge}`}>{cfg.label}</span>
-        <span className="text-xs text-gray-400">{leads.length}</span>
+        <span className="text-xs text-gray-400" title="Leads in this stage matching the filters">{col.items.length} / {fmt.number(col.total)}</span>
       </div>
       <div className="space-y-2 min-h-[60px]">
-        {leads.map((l) => (
-          <KanbanCard key={l.id} lead={l} busy={stageUpdating === l.id} onClick={() => onCardClick(l)} />
+        {col.items.map((l) => (
+          <KanbanCard key={l.id} lead={l} sources={sources} busy={stageUpdating === l.id} onClick={() => onCardClick(l)} />
         ))}
-        {leads.length === 0 && (
+        {col.loading && col.items.length === 0 && <div className="py-6 text-center text-xs text-gray-300">Loading…</div>}
+        {!col.loading && col.items.length === 0 && (
           <div className="border-2 border-dashed border-gray-200 rounded-xl py-6 text-center text-xs text-gray-300">Drop here</div>
         )}
+        {more > 0 && (
+          <button type="button" onClick={onLoadMore} disabled={col.loading}
+            className="w-full rounded-lg border border-gray-200 bg-white py-1.5 text-xs text-brand-600 hover:bg-brand-50 disabled:opacity-50">
+            {col.loading ? 'Loading…' : `Load more (${fmt.number(more)} left)`}
+          </button>)}
       </div>
     </div>
   )
 }
 
-function KanbanCard({ lead, busy, onClick }: { lead: Lead; busy: boolean; onClick: () => void }) {
+function KanbanCard({ lead, sources, busy, onClick }: { lead: Lead; sources: Record<string, { label: string; icon: string }>; busy: boolean; onClick: () => void }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: lead.id, disabled: busy })
   const style = transform ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)` } : undefined
   return (
     <div ref={setNodeRef} style={style} {...listeners} {...attributes} onClick={onClick}
       className={`card p-3 cursor-grab active:cursor-grabbing hover:shadow-sm transition-shadow select-none ${isDragging ? 'opacity-50 shadow-lg relative z-10' : ''} ${busy ? 'opacity-60 pointer-events-none' : ''}`}>
       <p className="text-sm font-medium text-gray-900 truncate">{lead.contact?.name || lead.contact?.phone}</p>
-      <p className="text-xs text-gray-400 mt-0.5">{lead.category || 'General'}</p>
+      {lead.contact?.name && lead.contact?.phone && <p className="text-[11px] font-mono text-gray-400 truncate">{formatPhone(lead.contact.phone)}</p>}
+      <p className="text-xs text-gray-400 mt-0.5 truncate">{lead.category || 'General'}</p>
       <div className="flex items-center justify-between mt-2">
         <span className={`badge ${priorityConfig[lead.priority].badge} text-xs`}>{priorityConfig[lead.priority].label}</span>
-        {lead.assigned_to && <span className="text-xs text-gray-400">{lead.assigned_to.name?.split(' ')[0]}</span>}
+        {lead.assigned_to ? <span className="text-xs text-gray-400">{lead.assigned_to.name?.split(' ')[0]}</span> : <span className="text-[11px] text-gray-300">Unassigned</span>}
+      </div>
+      <div className="mt-1.5 flex items-center justify-between text-[11px] text-gray-400">
+        <span className="truncate">{lead.source ? `${sources[lead.source]?.icon ?? '•'} ${lead.source_label ?? lead.source}` : ''}</span>
+        {!!lead.repeat_count && lead.repeat_count > 0 && <span title="Same person enquired again" className="text-amber-600">🔁 {lead.repeat_count}</span>}
       </div>
     </div>
   )

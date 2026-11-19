@@ -116,10 +116,14 @@ class StaffRepository implements StaffRepositoryInterface
     // ─── Performance data for all counsellors/team leads ─────────────────────
     public function getPerformance(int $companyId): Collection
     {
+        // Everyone who can hold leads: active staff of the company except viewers / platform accounts. Role names come in two
+        // spellings (system roles lowercase, a company's own roles Title Case — "Admin", "Sales Agent"), so match case-insensitively
+        // and by exclusion, not by a fixed lowercase list that hides every company-defined role.
         return User::with('role')
             ->where('company_id', $companyId)
+            ->where('is_active', true)
             ->whereHas('role', fn($q) =>
-                $q->whereIn('name', ['counsellor', 'team_lead', 'admin'])
+                $q->whereNotIn(\Illuminate\Support\Facades\DB::raw('LOWER(name)'), ['viewer', 'superadmin', 'superadmin_staff'])
             )
             ->withCount([
                 'leads as total_leads',
