@@ -30,7 +30,7 @@
     });
   }
 
-  var color = "#4f46e5", pos = "right", vpos = "bottom";   // vpos: "bottom" or "center"
+  var color = "#4f46e5", textColor = "#ffffff", chatBg = "#f6f7f9", chatText = "#1f2937", pos = "right", vpos = "bottom";   // vpos: "bottom" or "center"
 
   var root = h("div", { id: "wgt-root-" + KEY });
   var shadow = root.attachShadow ? root.attachShadow({ mode: "open" }) : root;
@@ -44,7 +44,7 @@
     return `
       :host, * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
       .launcher { position: fixed; ${pos}: ${GAP_SIDE}px; ${launcherV} z-index: 2147483000;
-        background: ${color}; color: #fff; border: none; border-radius: 999px; cursor: pointer;
+        background: ${color}; color: ${textColor}; border: none; border-radius: 999px; cursor: pointer;
         padding: 14px 18px; font-size: 15px; font-weight: 600; box-shadow: 0 8px 30px rgba(0,0,0,.22); display: flex; align-items: center; gap: 8px; }
       .launcher { position: fixed; }
       .badge { position: absolute; top: -6px; right: -4px; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 999px; background: #ef4444; color: #fff; font-size: 12px; font-weight: 700; display: none; align-items: center; justify-content: center; border: 2px solid #fff; }
@@ -57,15 +57,15 @@
         box-shadow: 0 20px 60px rgba(0,0,0,.28); display: flex; flex-direction: column; opacity: 0; transform: translateY(12px);
         transition: opacity .18s, transform .18s; pointer-events: none; }
       .panel.show { opacity: 1; transform: none; pointer-events: auto; }
-      .hd { background: ${color}; color: #fff; padding: 14px 16px; font-weight: 700; font-size: 15px; display:flex; align-items:center; justify-content:space-between; }
-      .hd button { background: transparent; border: none; color: #fff; font-size: 20px; cursor: pointer; line-height: 1; }
-      .body { flex: 1; overflow-y: auto; padding: 14px; background: #f6f7f9; display: flex; flex-direction: column; gap: 8px; }
+      .hd { background: ${color}; color: ${textColor}; padding: 14px 16px; font-weight: 700; font-size: 15px; display:flex; align-items:center; justify-content:space-between; }
+      .hd button { background: transparent; border: none; color: ${textColor}; font-size: 20px; cursor: pointer; line-height: 1; }
+      .body { flex: 1; overflow-y: auto; padding: 14px; background: ${chatBg}; display: flex; flex-direction: column; gap: 8px; }
       .msg { max-width: 82%; padding: 9px 12px; border-radius: 14px; font-size: 14px; line-height: 1.4; white-space: pre-wrap; word-wrap: break-word; }
-      .msg.a { background: #fff; color: #1f2937; align-self: flex-start; border: 1px solid #e5e7eb; }
-      .msg.v { background: ${color}; color: #fff; align-self: flex-end; }
+      .msg.a { background: #fff; color: ${chatText}; align-self: flex-start; border: 1px solid #e5e7eb; }
+      .msg.v { background: ${color}; color: ${textColor}; align-self: flex-end; }
       .opts { align-self: flex-start; display: flex; flex-wrap: wrap; gap: 6px; max-width: 92%; }
       .opt { background: #fff; color: ${color}; border: 1px solid ${color}; border-radius: 999px; padding: 6px 12px; font-size: 13px; cursor: pointer; }
-      .opt:hover { background: ${color}; color: #fff; }
+      .opt:hover { background: ${color}; color: ${textColor}; }
       .ctl { align-self: flex-start; display: flex; flex-wrap: wrap; gap: 6px; max-width: 92%; margin-top: 2px; }
       .ctl button { background: transparent; color: #6b7280; border: 1px solid #d1d5db; border-radius: 999px; padding: 4px 10px; font-size: 12px; cursor: pointer; }
       .ctl button:hover { background: #e5e7eb; }
@@ -73,7 +73,7 @@
       .form label { font-size: 12px; color: #6b7280; }
       .form input { border: 1px solid #d1d5db; border-radius: 8px; padding: 8px 10px; font-size: 14px; outline: none; width: 100%; }
       .form .err { color: #dc2626; font-size: 12px; }
-      .form .go { background: ${color}; color: #fff; border: none; border-radius: 8px; padding: 9px; font-size: 14px; font-weight: 600; cursor: pointer; }
+      .form .go { background: ${color}; color: ${textColor}; border: none; border-radius: 8px; padding: 9px; font-size: 14px; font-weight: 600; cursor: pointer; }
       .form .lnk { background: none; border: none; color: ${color}; font-size: 12px; cursor: pointer; text-align: left; padding: 0; }
       .msg.s { background: #eef2ff; color: #3730a3; align-self: flex-start; border: 1px solid #c7d2fe; }
       .msg.sys { background: transparent; color: #6b7280; align-self: center; font-size: 12px; text-align: center; border: none; }
@@ -548,7 +548,11 @@
     .then(function (d) {
       cfg = d || cfg;
       cfg.branding = cfg.branding || {};
-      if (cfg.branding.primary_color) color = cfg.branding.primary_color;
+      var hex = function (v) { return typeof v === "string" && /^#[0-9a-f]{3,8}$/i.test(v.trim()) ? v.trim() : null; };
+      color = hex(cfg.branding.primary_color) || color;
+      textColor = hex(cfg.branding.text_color) || textColor;
+      chatBg = hex(cfg.branding.chat_bg) || chatBg;
+      chatText = hex(cfg.branding.chat_text_color) || chatText;
       var bp = String(cfg.branding.position || "");   // right | left | right-center | left-center
       if (bp.indexOf("left") === 0) pos = "left";
       if (bp.indexOf("center") > -1) vpos = "center";

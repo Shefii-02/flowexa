@@ -26,6 +26,9 @@ type Draft = {
   agent_name: string
   greeting: string
   primary_color: string
+  text_color: string
+  chat_bg: string
+  chat_text_color: string
   position: 'right' | 'left' | 'right-center' | 'left-center'
   bottom_offset: string
   center_top: string
@@ -41,7 +44,7 @@ type Draft = {
 
 const emptyDraft = (): Draft => ({
   name: 'Website chat', is_active: true, live_chat_enabled: false, live_wait_seconds: '90', ai_fallback_enabled: true, live_max_per_staff: '5', agent_name: 'Assistant',
-  greeting: 'Hi! 👋 How can I help you today?', primary_color: '#4f46e5', position: 'right', bottom_offset: '20', center_top: '20', center_bottom: '20', side_offset: '20',
+  greeting: 'Hi! 👋 How can I help you today?', primary_color: '#4f46e5', text_color: '#ffffff', chat_bg: '#f6f7f9', chat_text_color: '#1f2937', position: 'right', bottom_offset: '20', center_top: '20', center_bottom: '20', side_offset: '20',
   launcher_text: 'Chat with us', allowed_origins: '', notify_emails: '', notify_whatsapp: '', wa_session_id: '', flow_builder_id: '',
 })
 
@@ -86,6 +89,9 @@ export default function WidgetPage() {
     live_chat_enabled: !!w.live_chat_enabled, live_wait_seconds: String(w.live_wait_seconds ?? 90), ai_fallback_enabled: w.ai_fallback_enabled !== false, live_max_per_staff: String(w.live_max_per_staff ?? 5),
     agent_name: w.agent_name, greeting: w.greeting,
     primary_color: w.branding?.primary_color ?? '#4f46e5',
+    text_color: w.branding?.text_color ?? '#ffffff',
+    chat_bg: w.branding?.chat_bg ?? '#f6f7f9',
+    chat_text_color: w.branding?.chat_text_color ?? '#1f2937',
     position: w.branding?.position ?? 'right',
     bottom_offset: String(w.branding?.bottom_offset ?? 20),
     center_top: String(w.branding?.center_top ?? w.branding?.center_gap ?? 20),
@@ -112,7 +118,7 @@ export default function WidgetPage() {
         live_max_per_staff: Number(editor.live_max_per_staff) || 5,
         agent_name: editor.agent_name,
         greeting: editor.greeting,
-        branding: { primary_color: editor.primary_color, position: editor.position, bottom_offset: Number(editor.bottom_offset) || 0, center_top: Number(editor.center_top) || 0, center_bottom: Number(editor.center_bottom) || 0, side_offset: Number(editor.side_offset) || 0, launcher_text: editor.launcher_text },
+        branding: { primary_color: editor.primary_color, text_color: editor.text_color, chat_bg: editor.chat_bg, chat_text_color: editor.chat_text_color, position: editor.position, bottom_offset: Number(editor.bottom_offset) || 0, center_top: Number(editor.center_top) || 0, center_bottom: Number(editor.center_bottom) || 0, side_offset: Number(editor.side_offset) || 0, launcher_text: editor.launcher_text },
         allowed_origins: editor.allowed_origins.split(/[\s,]+/).map(s => s.trim()).filter(Boolean),
         notify_emails: editor.notify_emails.split(/[\s,]+/).map(s => s.trim()).filter(Boolean),
         notify_whatsapp: editor.notify_whatsapp.split(/[\s,]+/).map(s => s.trim()).filter(Boolean),
@@ -213,9 +219,37 @@ export default function WidgetPage() {
             <Textarea label="Greeting (first message)" rows={2} value={editor.greeting} onChange={e => setEditor({ ...editor, greeting: e.target.value })} />
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="label">Brand color</label>
+                <label className="label">Primary / background color</label>
                 <input type="color" className="w-full h-9 rounded border border-gray-300" value={editor.primary_color}
                   onChange={e => setEditor({ ...editor, primary_color: e.target.value })} />
+                <p className="text-[11px] text-gray-400 mt-0.5">Header, launcher button, visitor messages, buttons</p>
+              </div>
+              <div>
+                <label className="label">Text color (on primary)</label>
+                <input type="color" className="w-full h-9 rounded border border-gray-300" value={editor.text_color}
+                  onChange={e => setEditor({ ...editor, text_color: e.target.value })} />
+                <p className="text-[11px] text-gray-400 mt-0.5">Text and icons on the primary color</p>
+              </div>
+              <div>
+                <label className="label">Chat area background</label>
+                <input type="color" className="w-full h-9 rounded border border-gray-300" value={editor.chat_bg}
+                  onChange={e => setEditor({ ...editor, chat_bg: e.target.value })} />
+                <p className="text-[11px] text-gray-400 mt-0.5">The space inside the chat window</p>
+              </div>
+              <div>
+                <label className="label">Assistant message text</label>
+                <input type="color" className="w-full h-9 rounded border border-gray-300" value={editor.chat_text_color}
+                  onChange={e => setEditor({ ...editor, chat_text_color: e.target.value })} />
+                <p className="text-[11px] text-gray-400 mt-0.5">Text inside the assistant's bubbles</p>
+              </div>
+              <button type="button" className="col-span-2 text-left text-xs text-gray-400 hover:underline"
+                onClick={() => setEditor({ ...editor, primary_color: '#4f46e5', text_color: '#ffffff', chat_bg: '#f6f7f9', chat_text_color: '#1f2937' })}>Reset colors to default</button>
+              <div className="col-span-2 rounded-lg border border-gray-200 overflow-hidden" style={{ background: editor.chat_bg }}>
+                <div className="px-3 py-2 text-sm font-semibold" style={{ background: editor.primary_color, color: editor.text_color }}>{editor.agent_name || 'Assistant'}</div>
+                <div className="p-3 space-y-2">
+                  <div className="inline-block max-w-[80%] rounded-xl border border-gray-200 bg-white px-3 py-1.5 text-sm" style={{ color: editor.chat_text_color }}>{editor.greeting}</div>
+                  <div className="flex justify-end"><div className="inline-block rounded-xl px-3 py-1.5 text-sm" style={{ background: editor.primary_color, color: editor.text_color }}>Hello!</div></div>
+                </div>
               </div>
               <div>
                 <label className="label">Position</label>

@@ -111,7 +111,10 @@ class WidgetController extends Controller
             'agent_name'         => ['sometimes', 'string', 'max:80'],
             'greeting'           => ['sometimes', 'string', 'max:500'],
             'branding'           => ['sometimes', 'nullable', 'array'],
-            'branding.primary_color' => ['sometimes', 'nullable', 'string', 'max:9'],
+            'branding.primary_color'    => ['sometimes', 'nullable', 'regex:/^#[0-9a-fA-F]{3,8}$/'],   // widget header / launcher / visitor bubbles
+            'branding.text_color'       => ['sometimes', 'nullable', 'regex:/^#[0-9a-fA-F]{3,8}$/'],   // text + icons on the primary color
+            'branding.chat_bg'          => ['sometimes', 'nullable', 'regex:/^#[0-9a-fA-F]{3,8}$/'],   // background inside the chat area
+            'branding.chat_text_color'  => ['sometimes', 'nullable', 'regex:/^#[0-9a-fA-F]{3,8}$/'],   // text in the assistant / agent bubbles
             'branding.position'  => ['sometimes', 'nullable', Rule::in(['right', 'left', 'right-center', 'left-center'])],
             'branding.bottom_offset' => ['sometimes', 'nullable', 'integer', 'min:0', 'max:1000'],
             'branding.center_gap' => ['sometimes', 'nullable', 'integer', 'min:0', 'max:500'],
