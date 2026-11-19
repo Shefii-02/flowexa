@@ -230,6 +230,15 @@ export default function SuperAdminPlans() {
               <Input label="Warn before expiry (days)" type="number" min={0} max={60} value={form.alert_before_days} onChange={e => set('alert_before_days', e.target.value)} />
               <Input label="Order on pricing page" type="number" value={form.sort_order} onChange={e => set('sort_order', e.target.value)} />
             </div>
+            {+form.price > 0 && (() => {
+              const m = +form.price, y = form.price_yearly ? +form.price_yearly : Math.round(m * 12 * 0.8)
+              const rows = [['1 month', m, ''], ['3 months', Math.round(m * 3 * 0.95), '−5%'], ['6 months', Math.round(m * 6 * 0.9), '−10%'], ['12 months', y, form.price_yearly ? 'yearly price' : '−20%']]
+              return (
+                <div className="rounded-xl bg-gray-50 p-3 text-xs text-gray-600">
+                  <p className="mb-1 font-medium text-gray-700">Billing periods buyers can pick — created automatically from this one plan, no extra plans needed</p>
+                  <p className="flex flex-wrap gap-x-4 gap-y-1">{rows.map(([l, v, n]) => <span key={String(l)}><b>{l}</b> ₹{fmt.number(Number(v))}{n ? ` (${n})` : ''}</span>)}</p>
+                </div>)
+            })()}
             <label className="block text-sm font-medium text-gray-700">Highlights shown on the plan card <span className="font-normal text-gray-400">(one per line)</span>
               <textarea className="input mt-1 w-full" rows={3} value={form.highlights} onChange={e => set('highlights', e.target.value)} placeholder={'Priority support\nFree onboarding call'} /></label>
             <div className="grid gap-2 sm:grid-cols-2">

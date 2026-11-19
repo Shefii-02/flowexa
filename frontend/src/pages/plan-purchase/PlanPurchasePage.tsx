@@ -1,4 +1,5 @@
 // src/pages/plan-purchase/PlanPurchasePage.tsx
+import PlanFeaturesPanel from './PlanFeaturesPanel'
 import PlanUsagePanel from '@/components/plan/PlanUsagePanel'
 import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
@@ -228,6 +229,7 @@ export default function PlanPurchasePage() {
         </div>
       )}
 
+                <PlanFeaturesPanel />
                 <PlanUsagePanel />
                 {!current && <p className="text-sm text-gray-500">You don’t have an active plan yet. Pick one under <b>All plans</b>.</p>}
               </>
