@@ -121,6 +121,9 @@ class WidgetController extends Controller
             'branding.center_top' => ['sometimes', 'nullable', 'integer', 'min:0', 'max:500'],
             'branding.center_bottom' => ['sometimes', 'nullable', 'integer', 'min:0', 'max:500'],
             'branding.side_offset' => ['sometimes', 'nullable', 'integer', 'min:0', 'max:500'],
+            'branding.url_mode'         => ['sometimes', 'nullable', Rule::in(['all', 'only', 'hide'])],   // where the widget shows: everywhere / only on url_patterns / everywhere except url_patterns
+            'branding.url_patterns'     => ['sometimes', 'nullable', 'array', 'max:50'],
+            'branding.url_patterns.*'   => ['string', 'max:200'],
             'branding.launcher_text' => ['sometimes', 'nullable', 'string', 'max:40'],
             'allowed_origins'    => ['sometimes', 'nullable', 'array'],
             'allowed_origins.*'  => ['string', 'max:200'],

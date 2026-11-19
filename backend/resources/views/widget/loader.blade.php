@@ -543,6 +543,52 @@
     });
   }
 
+  // ── Page rules: show everywhere, only on listed URLs, or everywhere except listed URLs ──
+  // A pattern is a path ("/", "/pricing", "/app/*") or a full URL (host is ignored). "/" matches the home page only;
+  // any other plain path also matches its sub-pages; "*" is a wildcard. Query string and #hash are ignored.
+  function normPath(p) {
+    p = String(p == null ? "" : p).trim();
+    if (!p) return null;
+    if (/^[a-z][a-z0-9+.-]*:\/\//i.test(p)) { try { p = new URL(p).pathname + (/\*$/.test(p) ? "*" : ""); } catch (e) {} }
+    p = p.split("#")[0].split("?")[0];
+    if (p.charAt(0) !== "/") p = "/" + p;
+    if (p.length > 1) p = p.replace(/\/+$/, "");
+    return p || "/";
+  }
+  function pathMatches(pattern, path) {
+    pattern = normPath(pattern); path = normPath(path);
+    if (!pattern || !path) return false;
+    if (pattern.indexOf("*") > -1) {
+      var re = new RegExp("^" + pattern.split("*").map(function (x) { return x.replace(/[.+?^${}()|[\]\\]/g, "\\$&"); }).join(".*") + "$");
+      return re.test(path);
+    }
+    if (pattern === "/") return path === "/";
+    return path === pattern || path.indexOf(pattern + "/") === 0;
+  }
+  function shouldShow() {
+    var mode = (cfg.branding && cfg.branding.url_mode) || "all";
+    var list = (cfg.branding && cfg.branding.url_patterns) || [];
+    if (mode === "all" || !list.length) return true;
+    var hit = list.some(function (pt) { return pathMatches(pt, location.pathname); });
+    return mode === "only" ? hit : !hit;
+  }
+  function applyVisibility() {
+    if (!booted) return;
+    var show = shouldShow();
+    root.style.display = show ? "" : "none";
+    if (!show && open) { try { toggle(); } catch (e) {} }   // close an open panel when navigating to a hidden page
+  }
+  // single-page apps change the URL without reloading — re-check on every navigation
+  ["pushState", "replaceState"].forEach(function (m) {
+    var orig = history[m];
+    if (typeof orig !== "function" || orig.__wgt) return;
+    var wrapped = function () { var r = orig.apply(this, arguments); window.dispatchEvent(new Event("wgt-url-change")); return r; };
+    wrapped.__wgt = true; history[m] = wrapped;
+  });
+  window.addEventListener("popstate", applyVisibility);
+  window.addEventListener("hashchange", applyVisibility);
+  window.addEventListener("wgt-url-change", applyVisibility);
+
   fetch(API + "/" + KEY + "/bootstrap", { headers: { "Accept": "application/json" } })
     .then(function (r) { if (!r.ok) throw 0; return r.json(); })
     .then(function (d) {
@@ -565,6 +611,7 @@
       if (!isNaN(so) && so >= 0) GAP_SIDE = so;
       build();
       booted = true;
+      applyVisibility();
       if (localStorage.getItem(LS)) resumeLive();   // reconnect on every page, panel closed or not
     })
     .catch(function () { /* widget inactive or domain not allowed — render nothing */ });

@@ -25,6 +25,8 @@ type Draft = {
   is_active: boolean
   agent_name: string
   greeting: string
+  url_mode: 'all' | 'only' | 'hide'
+  url_patterns: string
   primary_color: string
   text_color: string
   chat_bg: string
@@ -44,7 +46,7 @@ type Draft = {
 
 const emptyDraft = (): Draft => ({
   name: 'Website chat', is_active: true, live_chat_enabled: false, live_wait_seconds: '90', ai_fallback_enabled: true, live_max_per_staff: '5', agent_name: 'Assistant',
-  greeting: 'Hi! 👋 How can I help you today?', primary_color: '#4f46e5', text_color: '#ffffff', chat_bg: '#f6f7f9', chat_text_color: '#1f2937', position: 'right', bottom_offset: '20', center_top: '20', center_bottom: '20', side_offset: '20',
+  greeting: 'Hi! 👋 How can I help you today?', url_mode: 'all', url_patterns: '', primary_color: '#4f46e5', text_color: '#ffffff', chat_bg: '#f6f7f9', chat_text_color: '#1f2937', position: 'right', bottom_offset: '20', center_top: '20', center_bottom: '20', side_offset: '20',
   launcher_text: 'Chat with us', allowed_origins: '', notify_emails: '', notify_whatsapp: '', wa_session_id: '', flow_builder_id: '',
 })
 
@@ -88,6 +90,8 @@ export default function WidgetPage() {
     id: w.id, name: w.name, is_active: w.is_active,
     live_chat_enabled: !!w.live_chat_enabled, live_wait_seconds: String(w.live_wait_seconds ?? 90), ai_fallback_enabled: w.ai_fallback_enabled !== false, live_max_per_staff: String(w.live_max_per_staff ?? 5),
     agent_name: w.agent_name, greeting: w.greeting,
+    url_mode: w.branding?.url_mode ?? 'all',
+    url_patterns: (w.branding?.url_patterns ?? []).join('\n'),
     primary_color: w.branding?.primary_color ?? '#4f46e5',
     text_color: w.branding?.text_color ?? '#ffffff',
     chat_bg: w.branding?.chat_bg ?? '#f6f7f9',
@@ -118,7 +122,7 @@ export default function WidgetPage() {
         live_max_per_staff: Number(editor.live_max_per_staff) || 5,
         agent_name: editor.agent_name,
         greeting: editor.greeting,
-        branding: { primary_color: editor.primary_color, text_color: editor.text_color, chat_bg: editor.chat_bg, chat_text_color: editor.chat_text_color, position: editor.position, bottom_offset: Number(editor.bottom_offset) || 0, center_top: Number(editor.center_top) || 0, center_bottom: Number(editor.center_bottom) || 0, side_offset: Number(editor.side_offset) || 0, launcher_text: editor.launcher_text },
+        branding: { url_mode: editor.url_mode, url_patterns: editor.url_patterns.split(/[\n,]+/).map(x => x.trim()).filter(Boolean), primary_color: editor.primary_color, text_color: editor.text_color, chat_bg: editor.chat_bg, chat_text_color: editor.chat_text_color, position: editor.position, bottom_offset: Number(editor.bottom_offset) || 0, center_top: Number(editor.center_top) || 0, center_bottom: Number(editor.center_bottom) || 0, side_offset: Number(editor.side_offset) || 0, launcher_text: editor.launcher_text },
         allowed_origins: editor.allowed_origins.split(/[\s,]+/).map(s => s.trim()).filter(Boolean),
         notify_emails: editor.notify_emails.split(/[\s,]+/).map(s => s.trim()).filter(Boolean),
         notify_whatsapp: editor.notify_whatsapp.split(/[\s,]+/).map(s => s.trim()).filter(Boolean),
@@ -215,6 +219,25 @@ export default function WidgetPage() {
             <div className="grid grid-cols-2 gap-3">
               <Input label="Agent display name" value={editor.agent_name} onChange={e => setEditor({ ...editor, agent_name: e.target.value })} />
               <Input label="Launcher button text" value={editor.launcher_text} onChange={e => setEditor({ ...editor, launcher_text: e.target.value })} />
+            </div>
+            <div className="rounded-lg border border-gray-200 p-3 space-y-2">
+              <label className="label">Which pages show the widget?</label>
+              <select className="select" value={editor.url_mode} onChange={e => setEditor({ ...editor, url_mode: e.target.value as Draft['url_mode'] })}>
+                <option value="all">Every page of the site</option>
+                <option value="only">Only on these pages</option>
+                <option value="hide">Every page except these</option>
+              </select>
+              {editor.url_mode !== 'all' && (
+                <>
+                  <Textarea label={editor.url_mode === 'only' ? 'Show only on (one per line)' : 'Hide on (one per line)'} rows={3} value={editor.url_patterns}
+                    placeholder={'/\n/pricing\n/blog/*'} onChange={e => setEditor({ ...editor, url_patterns: e.target.value })} />
+                  <p className="text-[11px] text-gray-500">
+                    Paths of your site. <code>/</code> = home page only · <code>/pricing</code> = that page and its sub-pages · <code>*</code> = wildcard (<code>/app/*</code>, <code>/superadmin*</code>).
+                    Full URLs work too (the domain is ignored). Works with single-page apps — it follows in-site navigation.
+                  </p>
+                  {editor.url_patterns.trim() === '' && <p className="text-[11px] text-amber-600">No pages listed yet — the widget will show everywhere until you add one.</p>}
+                </>
+              )}
             </div>
             <Textarea label="Greeting (first message)" rows={2} value={editor.greeting} onChange={e => setEditor({ ...editor, greeting: e.target.value })} />
             <div className="grid grid-cols-2 gap-3">
