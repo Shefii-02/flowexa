@@ -68,7 +68,7 @@ export default function FlowBuildersPage() {
       name:             b.name,
       description:      b.description    || '',
       trigger_type:     b.trigger_type   || 'default',
-      trigger_keywords: b.trigger_keywords || [],
+      trigger_keywords: Array.isArray(b.trigger_keywords) ? b.trigger_keywords : [],
       active_from:      b.active_from?.slice(0, 16) || '',
       active_until:     b.active_until?.slice(0, 16) || '',
     })
@@ -264,9 +264,9 @@ export default function FlowBuildersPage() {
                       )}
 
                       {/* Keywords */}
-                      {b.trigger_type === 'keyword' && (b.trigger_keywords || []).length > 0 && (
+                      {b.trigger_type === 'keyword' && (Array.isArray(b.trigger_keywords) ? b.trigger_keywords : []).length > 0 && (
                         <div className="flex gap-1.5 flex-wrap mt-2">
-                          {(b.trigger_keywords || []).map((kw: string) => (
+                          {(Array.isArray(b.trigger_keywords) ? b.trigger_keywords : []).map((kw: string) => (
                             <span
                               key={kw}
                               className="bg-blue-50 text-blue-600 text-xs px-2 py-0.5 rounded-full border border-blue-200 font-mono"

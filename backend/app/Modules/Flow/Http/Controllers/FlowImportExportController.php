@@ -177,7 +177,7 @@ class FlowImportExportController extends Controller
                 'name'             => $builderData['name'],
                 'description'      => $builderData['description']      ?? null,
                 'trigger_type'     => $builderData['trigger_type'],
-                'trigger_keywords' => json_encode($builderData['trigger_keywords'] ?? []),
+                'trigger_keywords' => $builderData['trigger_keywords'] ?? [],
                 'active_from'      => $builderData['active_from']      ?? null,
                 'active_until'     => $builderData['active_until']     ?? null,
                 'is_active'        => false,
