@@ -259,6 +259,7 @@ export const leadApi = {
   update: (id: number, d: Record<string, unknown>) => api.put(`/leads/${id}`, d),
   assign: (id: number, userId: number) => api.post(`/leads/${id}/assign`, { user_id: userId }),
   bulkAssign: (leadIds: number[], userIds: number[]) => api.post('/leads/bulk-assign', { lead_ids: leadIds, user_ids: userIds, mode: 'round_robin' }),
+  autoAssign: (strategy: 'algorithm' | 'round_robin', leadIds: number[] = []) => api.post('/leads/auto-assign', { strategy, lead_ids: leadIds }),
   bulkReassign: (fromUserId: number, toUserId: number, includeClosed = false) =>
     api.post('/leads/bulk-reassign', { from_user_id: fromUserId, to_user_id: toUserId, include_closed: includeClosed }),
   bulkDelete: (leadIds: number[]) => api.post('/leads/bulk-delete', { lead_ids: leadIds }),
@@ -268,6 +269,8 @@ export const leadApi = {
   analytics: () => api.get('/leads/analytics'),
   logs: (p?: Record<string, unknown>) => api.get('/leads/logs', { params: p }),
   sources: () => api.get('/leads/sources'),
+  staffOverview: () => api.get('/leads/staff-overview'),
+  staffDetail: (id: number) => api.get(`/leads/staff-overview/${id}`),
   notes: (id: number) => api.get(`/leads/${id}/notes`),
   addNote: (id: number, content: string) => api.post(`/leads/${id}/notes`, { content }),
 }
@@ -732,10 +735,14 @@ export const leadAssignmentApi = {
   accept: (id: number) => api.post(`/lead-assignments/${id}/accept`),
   decline: (id: number) => api.post(`/lead-assignments/${id}/decline`),
   complete: (id: number) => api.post(`/lead-assignments/${id}/complete`),
+  restore: (id: number) => api.post(`/lead-assignments/${id}/restore`),
   transfer: (id: number, d: { to_staff_id: number; reason?: string }) =>
     api.post(`/lead-assignments/${id}/transfer`, d),
   getRule: () => api.get('/lead-assignment-rules'),
   saveRule: (d: Record<string, unknown>) => api.post('/lead-assignment-rules', d),
+  routingList: () => api.get('/lead-assignment-rules/routing'),
+  routingSave: (d: Record<string, unknown>, id?: number) => id ? api.put(`/lead-assignment-rules/routing/${id}`, d) : api.post('/lead-assignment-rules/routing', d),
+  routingDelete: (id: number) => api.delete(`/lead-assignment-rules/routing/${id}`),
   staffAvailability: () => api.get('/staff/availability'),
   toggleAvailability: () => api.post('/staff/availability/toggle'),
   getWorkingHours: () => api.get('/working-hours'),

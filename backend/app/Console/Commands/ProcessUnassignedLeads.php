@@ -29,7 +29,7 @@ class ProcessUnassignedLeads extends Command
 
         $routed = 0;
         foreach ($leads as $lead) {
-            if (!$lead->contact || !$lead->company) {
+            if (!$lead->contact || !$lead->company || !\App\Models\LeadAssignmentRule::autoEnabled($lead->company_id)) {
                 continue;
             }
             try {

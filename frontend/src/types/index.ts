@@ -294,6 +294,8 @@ export interface LeadAssignment {
   source_ref: string | null
   status: LeadAssignmentStatus
   assignment_type: 'auto' | 'manual' | 'notification'
+  assignment_method?: string | null
+  previous_status?: string | null
   priority: number
   accepted_at: string | null
   first_reply_at: string | null
@@ -308,7 +310,8 @@ export interface LeadAssignment {
   notes: string | null
   created_at: string
   updated_at: string
-  contact?: { id: number; name: string | null; phone: string; lead_score: number }
+  contact?: { id: number; name: string | null; phone: string; lead_score: number; last_message_at?: string | null }
+  lead?: { id: number; source: string | null; category: string | null; origin_label: string | null; created_at: string } | null
   staff?: { id: number; name: string; email: string } | null
   campaign?: { id: number; name: string } | null
 }

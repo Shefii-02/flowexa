@@ -51,8 +51,8 @@ class LeadAssignmentController extends Controller
         $company = Auth::user()->company;
 
         $query = LeadAssignment::where('company_id', $company->id)
-            ->with(['contact', 'staff', 'campaign'])
-            ->latest();
+            ->with(['contact', 'staff', 'campaign', 'lead:id,source,category,origin_label,created_at'])
+            ->orderByDesc('created_at')->orderByDesc('id');
         $this->visibleTo($query, Auth::user());
 
         if ($request->filled('status'))      $query->where('status', $request->status);
@@ -160,7 +160,7 @@ class LeadAssignmentController extends Controller
         if ($request->filled('staff_id')) {
             $staff = User::where('company_id', $company->id)->findOrFail($request->staff_id);
             $rule  = LeadAssignmentRule::where('company_id', $company->id)->firstOrNew();
-            $this->engine->assignToStaff($assignment, $staff, $rule);
+            $this->engine->assignToStaff($assignment, $staff, $rule, 'manual');
         }
 
         if ($request->filled('notes')) {
@@ -207,7 +207,7 @@ class LeadAssignmentController extends Controller
 
             // the instant-assign path already counted this lead against the staff member; an accepted offer has not been counted yet
             $alreadyCounted = (int) $assignment->staff_id === (int) $user->id;
-            $assignment->update(['staff_id' => $user->id, 'status' => 'accepted', 'accepted_at' => $assignment->accepted_at ?? now()]);
+            $assignment->update(['staff_id' => $user->id, 'status' => 'accepted', 'accepted_at' => $assignment->accepted_at ?? now(), 'assignment_method' => $assignment->assignment_method ?: (LeadAssignmentRule::where('company_id', $company->id)->value('strategy') ?: 'algorithm')]);
             if (!$alreadyCounted) { $this->engine->bumpWorkload($company->id, $user); }
             return $assignment;
         });
@@ -262,8 +262,12 @@ class LeadAssignmentController extends Controller
             return response()->json(['data' => $assignment->fresh()]);
         }
 
-        $assignment->update(['status' => 'completed']);
-        $this->activity->log($assignment, 'lead_assignment_completed', ['staff_id' => $assignment->staff_id]);
+        $assignment->update([
+            'previous_status'     => $assignment->status,
+            'previous_lead_stage' => $assignment->contact?->lead_stage,
+            'status'              => 'completed',
+        ]);
+        $this->activity->log($assignment, 'lead_assignment_completed', ['staff_id' => $assignment->staff_id], $user->id);
 
         if ($assignment->contact) {
             $assignment->contact->update(['lead_stage' => 'converted']);
@@ -283,6 +287,47 @@ class LeadAssignmentController extends Controller
         }
 
         return response()->json(['data' => $assignment->fresh()]);
+    }
+
+    // POST /api/v1/lead-assignments/{id}/restore — undo "Complete" (back to its old status) or undo the last "Transfer" (back to the previous staff)
+    public function restore(int $id): JsonResponse
+    {
+        $user       = Auth::user();
+        $company    = $user->company;
+        $assignment = LeadAssignment::where('company_id', $company->id)->findOrFail($id);
+        abort_unless($this->isManager($user) || (int) $assignment->staff_id === (int) $user->id, 403, 'Only the assigned staff member or a manager can restore this lead.');
+
+        if ($assignment->status === 'completed') {
+            $assignment->update(['status' => $assignment->previous_status ?: 'assigned', 'previous_status' => null]);
+            if ($assignment->contact) {
+                $assignment->contact->update(['lead_stage' => $assignment->previous_lead_stage ?: 'new']);
+            }
+            if ($assignment->staff_id) {
+                $avail = StaffAvailability::where('company_id', $company->id)->where('staff_id', $assignment->staff_id)->first();
+                if ($avail) {
+                    $avail->increment('current_leads_count');
+                    if ($avail->total_conversions > 0) { $avail->decrement('total_conversions'); }
+                    if ($avail->today_conversions > 0) { $avail->decrement('today_conversions'); }
+                }
+            }
+            $this->activity->log($assignment, 'lead_assignment_restored', ['from' => 'completed', 'to' => $assignment->status], $user->id);
+        } elseif ($assignment->transferred_from && !in_array($assignment->status, ['dropped'], true)) {
+            $back = User::where('company_id', $company->id)->find($assignment->transferred_from);
+            abort_unless($back, 422, 'The previous staff member no longer exists.');
+            $current = $assignment->staff_id;
+            if ($current) {
+                $avail = StaffAvailability::where('staff_id', $current)->first();
+                if ($avail && $avail->current_leads_count > 0) { $avail->decrement('current_leads_count'); }
+            }
+            $rule = LeadAssignmentRule::where('company_id', $company->id)->firstOrNew();
+            $this->engine->assignToStaff($assignment, $back, $rule, 'restore');
+            $assignment->update(['transferred_from' => null, 'transfer_reason' => null]);
+            $this->activity->log($assignment, 'lead_assignment_restored', ['from' => 'transfer', 'to_staff_id' => $back->id, 'to_staff_name' => $back->name], $user->id);
+        } else {
+            abort(422, 'Nothing to restore.');
+        }
+
+        return response()->json(['data' => $assignment->fresh(['contact', 'staff', 'lead:id,source,category,origin_label,created_at'])]);
     }
 
     // POST /api/v1/lead-assignments/{id}/transfer
@@ -318,7 +363,7 @@ class LeadAssignmentController extends Controller
             }
         }
 
-        $this->engine->assignToStaff($assignment, $newStaff, $rule);
+        $this->engine->assignToStaff($assignment, $newStaff, $rule, 'transfer');
         $this->activity->log($assignment, 'lead_assignment_transferred', [
             'from_staff_id' => $oldStaffId, 'from_staff_name' => $oldStaffName,
             'to_staff_id'   => $newStaff->id, 'to_staff_name' => $newStaff->name,
@@ -369,6 +414,60 @@ class LeadAssignmentController extends Controller
         ]));
 
         return response()->json(['data' => $rule]);
+    }
+
+    // ── Category / campaign routing rules ─────────────────────────────────────
+    private function routingPayload(Request $request): array
+    {
+        $cid = Auth::user()->company_id;
+        $d = $request->validate([
+            'name'        => 'required|string|max:120',
+            'match_type'  => 'required|in:category,campaign',
+            'category'    => 'required_if:match_type,category|nullable|string|max:120',
+            'campaign_id' => ['nullable', 'integer', \Illuminate\Validation\Rule::exists('campaigns', 'id')->where('company_id', $cid)],
+            'starts_at'   => 'nullable|date',
+            'ends_at'     => 'nullable|date|after_or_equal:starts_at',
+            'staff_ids'   => 'required|array|min:1',
+            'staff_ids.*' => ['integer', \Illuminate\Validation\Rule::exists('users', 'id')->where('company_id', $cid)],
+            'strategy'    => 'nullable|in:algorithm,round_robin',
+            'is_active'   => 'boolean',
+            'priority'    => 'nullable|integer|min:1|max:9999',
+        ]);
+        abort_if($d['match_type'] === 'campaign' && empty($d['campaign_id']) && empty($d['starts_at']) && empty($d['ends_at']), 422, 'Pick a campaign or set a period.');
+        if ($d['match_type'] === 'category') { $d['campaign_id'] = null; } else { $d['category'] = null; }
+        $d['staff_ids'] = array_values(array_unique(array_map('intval', $d['staff_ids'])));
+        return $d;
+    }
+
+    // GET /api/v1/lead-assignment-rules/routing
+    public function routingIndex(): JsonResponse
+    {
+        $rules = \App\Models\LeadRoutingRule::where('company_id', Auth::user()->company_id)->orderBy('priority')->orderBy('id')->get();
+        $names = User::whereIn('id', $rules->pluck('staff_ids')->flatten()->unique())->pluck('name', 'id');
+        $camps = \App\Models\Campaign::whereIn('id', $rules->pluck('campaign_id')->filter())->pluck('name', 'id');
+        return response()->json(['data' => $rules->map(fn ($r) => array_merge($r->toArray(), [
+            'staff_names'   => collect($r->staff_ids)->map(fn ($i) => $names[$i] ?? "#$i")->values(),
+            'campaign_name' => $r->campaign_id ? ($camps[$r->campaign_id] ?? "#{$r->campaign_id}") : null,
+        ]))]);
+    }
+
+    public function routingStore(Request $request): JsonResponse
+    {
+        $rule = \App\Models\LeadRoutingRule::create($this->routingPayload($request) + ['company_id' => Auth::user()->company_id]);
+        return response()->json(['data' => $rule], 201);
+    }
+
+    public function routingUpdate(Request $request, int $id): JsonResponse
+    {
+        $rule = \App\Models\LeadRoutingRule::where('company_id', Auth::user()->company_id)->findOrFail($id);
+        $rule->update($this->routingPayload($request));
+        return response()->json(['data' => $rule]);
+    }
+
+    public function routingDestroy(int $id): JsonResponse
+    {
+        \App\Models\LeadRoutingRule::where('company_id', Auth::user()->company_id)->findOrFail($id)->delete();
+        return response()->json(['message' => 'Routing rule deleted.']);
     }
 
     // GET /api/v1/staff/availability

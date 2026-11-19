@@ -23,6 +23,13 @@ class LeadAssignmentRule extends Model
 
     public function company(): BelongsTo { return $this->belongsTo(Company::class); }
 
+    /** Is "Auto-assign new leads" on for this company? (no saved rule yet = the default, on) */
+    public static function autoEnabled(int $companyId): bool
+    {
+        $rule = static::where('company_id', $companyId)->first();
+        return $rule ? (bool) $rule->auto_assign_enabled : true;
+    }
+
     public static function defaultForCompany(int $companyId): array
     {
         return [

@@ -20,6 +20,11 @@ const statusConfig: Record<LeadAssignmentStatus, { label: string; color: string 
   dropped:     { label: 'Dropped',     color: 'bg-gray-100 text-gray-600' },
 }
 
+const methodLabel: Record<string, string> = {
+  algorithm: 'Weighted algorithm', round_robin: 'Round robin', manual: 'Manual', transfer: 'Transfer',
+  same_staff: 'Same staff', restore: 'Restored',
+}
+
 const sourceLabel: Record<string, string> = {
   wa_chat:      '💬 WA Chat',
   meta_api:     '📘 Meta API',
@@ -76,6 +81,14 @@ export default function AssignmentPage() {
     } catch (e) { toast.error(getError(e)) }
   }
 
+  const handleRestore = async (id: number) => {
+    try {
+      const { data } = await leadAssignmentApi.restore(id)
+      dispatch(updateAssignment(data.data))
+      toast.success('Restored')
+    } catch (e) { toast.error(getError(e)) }
+  }
+
   const handleTransfer = async () => {
     if (!transferId || !toStaffId) return
     try {
@@ -126,24 +139,30 @@ export default function AssignmentPage() {
       {/* Table */}
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         {loading ? (
-          <TableSkeleton rows={8} cols={8} />
+          <TableSkeleton rows={8} cols={11} />
         ) : (
           <table className="w-full text-sm">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
-                {['Contact', 'Phone', 'Source', 'Score', 'P', 'Assigned To', 'Status', 'Actions'].map(h => (
+                {['Contact', 'Phone', 'Lead came', 'Last active', 'Source', 'Category', 'Score', 'P', 'Assigned To', 'Method', 'Status', 'Actions'].map(h => (
                   <th key={h} className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {assignments.length === 0 ? (
-                <tr><td colSpan={8} className="text-center py-12 text-gray-400">No assignments found</td></tr>
+                <tr><td colSpan={11} className="text-center py-12 text-gray-400">No assignments found</td></tr>
               ) : assignments.map(a => (
                 <tr key={a.id} className="hover:bg-gray-50">
                   <td className="px-4 py-3 font-medium text-gray-900">{a.contact?.name ?? '—'}</td>
                   <td className="px-4 py-3 text-gray-500 font-mono text-xs">{a.contact?.phone}</td>
-                  <td className="px-4 py-3 text-xs">{sourceLabel[a.source_type] ?? a.source_type}</td>
+                  <td className="px-4 py-3 text-xs text-gray-600 whitespace-nowrap">{a.lead?.created_at ?? a.created_at ? new Date(a.lead?.created_at ?? a.created_at).toLocaleString() : '—'}</td>
+                  <td className="px-4 py-3 text-xs text-gray-600 whitespace-nowrap">{a.contact?.last_message_at ? new Date(a.contact.last_message_at).toLocaleString() : '—'}</td>
+                  <td className="px-4 py-3 text-xs">
+                    {a.lead?.source || sourceLabel[a.source_type] || a.source_type}
+                    {a.lead?.origin_label && <div className="text-gray-400">{a.lead.origin_label}</div>}
+                  </td>
+                  <td className="px-4 py-3 text-xs">{a.lead?.category || '—'}</td>
                   <td className="px-4 py-3">
                     <span className="text-xs font-bold text-brand-600">{a.contact?.lead_score ?? 0}</span>
                   </td>
@@ -153,6 +172,10 @@ export default function AssignmentPage() {
                     </span>
                   </td>
                   <td className="px-4 py-3 text-gray-600">{a.staff?.name ?? <span className="text-gray-400 italic">Unassigned</span>}</td>
+                  <td className="px-4 py-3 text-xs text-gray-600">
+                    {a.assignment_method ? (methodLabel[a.assignment_method] ?? a.assignment_method) : '—'}
+                    <div className="text-gray-400">{a.assignment_type === 'notification' ? 'notify → accept' : a.assignment_type}</div>
+                  </td>
                   <td className="px-4 py-3">
                     <span className={`text-xs px-2 py-1 rounded-full font-medium ${statusConfig[a.status]?.color}`}>
                       {statusConfig[a.status]?.label}
@@ -161,6 +184,13 @@ export default function AssignmentPage() {
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-1">
+                      {canAct(a) && (a.status === 'completed' || (a.transferred_from && a.status !== 'dropped')) && (
+                        <button
+                          onClick={() => handleRestore(a.id)}
+                          title={a.status === 'completed' ? 'Undo completion — back to its previous status' : 'Undo transfer — back to the previous staff member'}
+                          className="text-xs px-2 py-1 bg-amber-50 text-amber-700 rounded hover:bg-amber-100"
+                        >↩ {a.status === 'completed' ? 'Restore' : 'Undo transfer'}</button>
+                      )}
                       {!['completed', 'dropped'].includes(a.status) && canAct(a) && (
                         <>
                           <button

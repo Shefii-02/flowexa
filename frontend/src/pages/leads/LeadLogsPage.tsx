@@ -18,6 +18,7 @@ const EVENT_LABEL: Record<string, string> = {
   lead_assignment_timeout: 'Timed out',
   lead_assignment_transferred: 'Transferred',
   lead_assignment_completed: 'Completed',
+  lead_assignment_restored: 'Restored',
   lead_ai_handoff: 'AI hand-off',
   lead_sla_breached: 'SLA breached',
 }
@@ -25,7 +26,7 @@ const EVENT_LABEL: Record<string, string> = {
 const EVENT_ICON: Record<string, string> = {
   note_added: '📝', stage_changed: '🔀', assigned: '👤', reassigned_bulk: '⇄',
   lead_assigned: '📨', lead_assignment_accepted: '✅', lead_assignment_declined: '❌',
-  lead_assignment_timeout: '⏱️', lead_assignment_transferred: '🔁', lead_assignment_completed: '🏁',
+  lead_assignment_timeout: '⏱️', lead_assignment_transferred: '🔁', lead_assignment_completed: '🏁', lead_assignment_restored: '↩️',
   lead_ai_handoff: '🤖', lead_sla_breached: '⚠️',
 }
 
@@ -35,8 +36,14 @@ interface LogRow {
   payload: Record<string, any>
   user: string | null
   created_at: string
-  lead: { id: number; stage: string; contact: { name: string | null; phone: string } | null; assigned_to: string | null } | null
+  lead: { id: number; stage: string; source?: string | null; category?: string | null; origin?: string | null; contact: { name: string | null; phone: string } | null; assigned_to: string | null } | null
 }
+
+const METHOD_LABEL: Record<string, string> = {
+  algorithm: 'Weighted algorithm', round_robin: 'Round robin', manual: 'Manual', transfer: 'Manual transfer',
+  same_staff: 'Same staff (repeat lead)', restore: 'Restored',
+}
+const MODE_LABEL: Record<string, string> = { auto: 'auto', manual: 'manual', notification: 'notify → accept' }
 
 function describe(row: LogRow): string {
   const p = row.payload ?? {}
@@ -45,7 +52,8 @@ function describe(row: LogRow): string {
     case 'stage_changed':   return `${stageConfig[p.from as keyof typeof stageConfig]?.label ?? p.from} → ${stageConfig[p.to as keyof typeof stageConfig]?.label ?? p.to}`
     case 'assigned':        return p.to ? 'Assigned to a staff member' : 'Unassigned'
     case 'reassigned_bulk': return `From #${p.from ?? '—'} to #${p.to ?? '—'}`
-    case 'lead_assigned':             return `${p.staff_name ?? 'a staff member'}`
+    case 'lead_assigned':             return `Assigned to ${p.staff_name ?? 'a staff member'}${p.method ? ` · ${METHOD_LABEL[p.method] ?? p.method}` : ''}${p.mode ? ` · ${MODE_LABEL[p.mode] ?? p.mode}` : ''}`
+    case 'lead_assignment_restored':  return p.from === 'transfer' ? `Transfer undone — back to ${p.to_staff_name ?? 'previous staff'}` : `Completion undone — back to ${p.to ?? 'previous status'}`
     case 'lead_assignment_accepted':  return `${p.staff_name ?? 'Staff'} accepted`
     case 'lead_assignment_declined':  return `${p.staff_name ?? 'Staff'} declined`
     case 'lead_assignment_timeout':   return `${p.staff_name ?? 'Staff'} — no response in ${p.timeout_seconds ?? '?'}s`
@@ -114,11 +122,14 @@ export default function LeadLogsPage() {
           <>
             <div className="table-wrapper">
               <table className="table">
-                <thead><tr><th>When</th><th>Lead</th><th>Activity</th><th>Details</th><th>By</th></tr></thead>
+                <thead><tr><th>When</th><th>Lead</th><th>Source</th><th>Category</th><th>Activity</th><th>Details</th><th>By</th></tr></thead>
                 <tbody>
                   {rows.map((r) => (
                     <tr key={r.id}>
-                      <td className="text-xs text-gray-400 whitespace-nowrap">{fmt.relative(r.created_at)}</td>
+                      <td className="text-xs whitespace-nowrap">
+                        <div className="text-gray-700">{new Date(r.created_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' })}</div>
+                        <div className="text-gray-400">{fmt.relative(r.created_at)}</div>
+                      </td>
                       <td>
                         {r.lead ? (
                           <Link to={`/crm/leads/${r.lead.id}`} className="text-brand-600 hover:underline">
@@ -127,6 +138,8 @@ export default function LeadLogsPage() {
                         ) : <span className="text-gray-300">—</span>}
                         {r.lead && <Badge variant="gray" className="ml-2">{stageConfig[r.lead.stage as keyof typeof stageConfig]?.label ?? r.lead.stage}</Badge>}
                       </td>
+                      <td className="text-xs text-gray-600">{r.lead?.source || '—'}{r.lead?.origin && <div className="text-gray-400">{r.lead.origin}</div>}</td>
+                      <td className="text-xs text-gray-600">{r.lead?.category || '—'}</td>
                       <td className="whitespace-nowrap"><span className="mr-1.5">{EVENT_ICON[r.event] ?? '•'}</span>{EVENT_LABEL[r.event] ?? r.event.replace(/_/g, ' ')}</td>
                       <td className="text-sm text-gray-600 max-w-[360px] truncate" title={describe(r)}>{describe(r)}</td>
                       <td className="text-xs text-gray-400 whitespace-nowrap">{r.user ?? '—'}</td>

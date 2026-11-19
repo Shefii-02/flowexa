@@ -11,7 +11,7 @@ class LeadAssignment extends Model
 {
     protected $fillable = [
         'candidate_staff_ids', 'company_id', 'contact_id', 'lead_id', 'staff_id', 'ai_agent_session_id', 'campaign_id',
-        'source_type', 'source_ref', 'status', 'assignment_type', 'priority',
+        'source_type', 'source_ref', 'status', 'assignment_type', 'assignment_method', 'previous_status', 'previous_lead_stage', 'routing_strategy', 'routing_rule_id', 'priority',
         'accepted_at', 'first_reply_at', 'response_sla_minutes',
         'sla_breached', 'sla_breached_at',
         'ai_takeover_at', 'ai_offered_at', 'staff_confirmed_at',

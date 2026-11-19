@@ -280,7 +280,7 @@ class LeadRepository implements LeadRepositoryInterface
             ->when($filter['from'] ?? null, fn ($q, $f) => $q->whereDate('created_at', '>=', $f))
             ->when($filter['to'] ?? null, fn ($q, $t) => $q->whereDate('created_at', '<=', $t))
             ->with([
-                'lead:id,stage,contact_id,assigned_to',
+                'lead:id,stage,contact_id,assigned_to,source,category,origin_label',
                 'lead.contact:id,name,phone',
                 'lead.assignedTo:id,name',
                 'user:id,name',

@@ -10,6 +10,7 @@ import { leadApi, staffApi, leadImportExportApi, contactApi, leadCategoryApi } f
 import StaffPicker from './components/StaffPicker'
 import { Button, Modal, Drawer, ConfirmModal, Badge, EmptyState, Pagination, TableSkeleton, StatCard } from '@/components/ui'
 import DateRangePicker from '@/components/ui/DateRangePicker'
+import { useAssignMethods } from '@/store'
 import { fmt, formatPhone, getError, downloadBlob, stageConfig, priorityConfig } from '@/utils'
 import toast from 'react-hot-toast'
 import type { Lead, LeadStage } from '@/types'
@@ -76,6 +77,11 @@ export default function LeadsPage() {
   const [switchTarget, setSwitchTarget] = useState('')
   const [switching, setSwitching] = useState(false)
   const [showBulkDelete, setShowBulkDelete] = useState(false)
+  // "Auto assign" — ask which method to use, then route the ticked leads (or every unassigned one)
+  const allowedMethods = useAssignMethods()
+  const [showAutoAssign, setShowAutoAssign] = useState(false)
+  const [autoStrategy, setAutoStrategy] = useState<'algorithm' | 'round_robin'>('algorithm')
+  const [autoAssigning, setAutoAssigning] = useState(false)
   const [bulkDeleting, setBulkDeleting] = useState(false)
 
   const filters = {
@@ -283,6 +289,16 @@ export default function LeadsPage() {
     finally { setSwitching(false) }
   }
 
+  const handleAutoAssign = async () => {
+    setAutoAssigning(true)
+    try {
+      const { data } = await leadApi.autoAssign(autoStrategy, [...selectedIds])
+      toast.success(data.message ?? 'Leads auto-assigned.')
+      setShowAutoAssign(false); setSelectedIds(new Set()); load()
+    } catch (e) { toast.error(getError(e)) }
+    finally { setAutoAssigning(false) }
+  }
+
   const handleBulkDeleteSelected = async () => {
     setBulkDeleting(true)
     try {
@@ -337,6 +353,11 @@ export default function LeadsPage() {
           <Button variant="secondary" loading={exporting} onClick={handleExport}>↓ Export</Button>
           <LimitBadge resource="leads" />
           <Button variant="secondary" onClick={() => planLim.guard() && setShowImport(true)}>↑ Import CSV</Button>
+          <Button variant="secondary" onClick={() => {
+            const first = (['algorithm', 'round_robin'] as const).find(m => allowedMethods.includes(m))
+            if (!first) { toast.error('Auto-assign is not part of your plan.'); return }
+            setAutoStrategy(allowedMethods.includes(autoStrategy) ? autoStrategy : first); setShowAutoAssign(true)
+          }}>⚡ Auto assign</Button>
           <Button variant="secondary" onClick={() => setShowReassign(true)}>⇄ Switch leads</Button>
           <Button onClick={() => planLim.guard() && setShowCreate(true)}>+ Add lead</Button>
         </div>
@@ -378,6 +399,26 @@ export default function LeadsPage() {
         <DateRangePicker label="Closed between" from={closedFrom} to={closedTo}
           onChange={(f, t) => { setClosedFrom(f); setClosedTo(t); setPage(1) }} />
       </div>
+
+      <Modal open={showAutoAssign} onClose={() => setShowAutoAssign(false)} title="Auto assign leads">
+        <div className="space-y-3">
+          <p className="text-sm text-gray-500">
+            {selectedIds.size > 0 ? `Assign the ${selectedIds.size} selected lead(s)` : 'Assign every unassigned open lead'} to available staff. Which method should pick the staff member?
+          </p>
+          {(['algorithm', 'round_robin'] as const).map(s => (
+            <label key={s} className={`flex items-start gap-2 text-sm rounded-lg border p-3 ${autoStrategy === s ? 'border-brand-400 bg-brand-50' : 'border-gray-200'} ${allowedMethods.includes(s) ? 'cursor-pointer' : 'cursor-not-allowed opacity-50'}`}>
+              <input type="radio" name="auto-strategy" className="mt-0.5" disabled={!allowedMethods.includes(s)} checked={autoStrategy === s} onChange={() => setAutoStrategy(s)} />
+              <span>{s === 'algorithm'
+                ? <><b>Weighted algorithm</b> — scores every available agent (availability, capacity, performance, workload) and picks the top scorer</>
+                : <><b>Simple round robin</b> — the least-loaded, longest-idle available agent</>}</span>
+            </label>
+          ))}
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="secondary" onClick={() => setShowAutoAssign(false)}>Cancel</Button>
+            <Button onClick={handleAutoAssign} loading={autoAssigning}>Assign now</Button>
+          </div>
+        </div>
+      </Modal>
 
       {/* Table view */}
       {view === 'table' && (

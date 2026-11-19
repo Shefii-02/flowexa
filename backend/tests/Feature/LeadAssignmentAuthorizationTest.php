@@ -33,6 +33,14 @@ class LeadAssignmentAuthorizationTest extends TestCase
             $t->boolean('sla_breached')->default(false); $t->timestamp('sla_breached_at')->nullable(); $t->timestamp('ai_takeover_at')->nullable(); $t->timestamp('ai_offered_at')->nullable();
             $t->timestamp('staff_confirmed_at')->nullable(); $t->string('transfer_reason')->nullable(); $t->unsignedBigInteger('transferred_from')->nullable();
             $t->text('notes')->nullable(); $t->json('candidate_staff_ids')->nullable(); $t->timestamps();
+            $t->string('assignment_method')->nullable(); $t->string('previous_status')->nullable(); $t->string('previous_lead_stage')->nullable();
+            $t->string('routing_strategy')->nullable(); $t->unsignedBigInteger('routing_rule_id')->nullable();
+        });
+        Schema::create('users', function (Blueprint $t) {
+            $t->id(); $t->unsignedBigInteger('company_id')->nullable(); $t->string('name')->nullable(); $t->timestamps(); $t->softDeletes();
+        });
+        Schema::create('lead_assignment_rules', function (Blueprint $t) {
+            $t->id(); $t->unsignedBigInteger('company_id'); $t->string('strategy')->nullable(); $t->timestamps();
         });
         Schema::create('lead_assignment_notifications', function (Blueprint $t) {
             $t->id(); $t->unsignedBigInteger('company_id')->nullable(); $t->unsignedBigInteger('assignment_id'); $t->unsignedBigInteger('staff_id');
@@ -129,6 +137,31 @@ class LeadAssignmentAuthorizationTest extends TestCase
         $av = StaffAvailability::where('staff_id', 10)->first();
         $this->assertSame(2, (int) $av->current_leads_count);
         $this->assertSame(1, (int) $av->total_conversions);
+    }
+
+    public function test_restore_undoes_a_completion_and_the_counters(): void
+    {
+        $a = $this->assignment(['status' => 'accepted']);
+        StaffAvailability::create(['company_id' => 1, 'staff_id' => 10, 'status' => 'online', 'current_leads_count' => 3]);
+        $this->as($this->user(10));
+        $this->ctl->complete($a->id);
+        $this->assertSame('completed', $a->fresh()->status);
+        $this->assertSame('accepted', $a->fresh()->previous_status);
+
+        $this->assertSame(200, $this->code(fn () => $this->ctl->restore($a->id)));
+        $this->assertSame('accepted', $a->fresh()->status);
+        $av = StaffAvailability::where('staff_id', 10)->first();
+        $this->assertSame(3, (int) $av->current_leads_count);
+        $this->assertSame(0, (int) $av->total_conversions);
+    }
+
+    public function test_restore_is_refused_for_other_staff_and_when_nothing_to_undo(): void
+    {
+        $a = $this->assignment();
+        $this->as($this->user(20));
+        $this->assertSame(403, $this->code(fn () => $this->ctl->restore($a->id)));
+        $this->as($this->user(10));
+        $this->assertSame(422, $this->code(fn () => $this->ctl->restore($a->id)));
     }
 
     public function test_manager_can_complete_any_assignment(): void

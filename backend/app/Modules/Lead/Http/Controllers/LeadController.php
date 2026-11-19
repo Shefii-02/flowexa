@@ -90,6 +90,22 @@ class LeadController extends Controller
         return response()->json(['message' => "{$count} leads assigned (round-robin)."]);
     }
 
+    /** POST /leads/auto-assign — { strategy: algorithm|round_robin, lead_ids?: [] (none = all unassigned) } */
+    public function autoAssign(Request $request): JsonResponse
+    {
+        $d = $request->validate([
+            'strategy'   => ['required', 'in:algorithm,round_robin'],
+            'lead_ids'   => ['nullable', 'array'],
+            'lead_ids.*' => ['integer'],
+        ]);
+        $company = auth()->user()->company;
+        if (!in_array($d['strategy'], \App\Support\Entitlements::forCompany($company)['assign_methods'], true)) {
+            return response()->json(['message' => '"' . \App\Support\Modules::ASSIGN_METHODS[$d['strategy']] . '" assignment is not part of your plan.', 'error_code' => 'plan_feature_disabled'], 403);
+        }
+        $r = $this->leadService->autoAssign($company->id, $d['lead_ids'] ?? [], $d['strategy']);
+        return response()->json(['message' => "{$r['assigned']} lead(s) auto-assigned" . ($r['skipped'] ? ", {$r['skipped']} left (no available staff)." : '.'), ...$r]);
+    }
+
     public function bulkReassign(\App\Modules\Lead\Http\Requests\BulkReassignRequest $request): JsonResponse
     {
         $count = $this->leadService->bulkReassign(
@@ -133,6 +149,20 @@ class LeadController extends Controller
         return response()->json(['analytics' => $this->leadService->analytics(auth()->user()->company_id)]);
     }
 
+    /** GET /leads/staff-overview — every active employee's pipeline, workload and routing stats. */
+    public function staffOverview(\App\Modules\Lead\Services\StaffLeadInsights $insights): JsonResponse
+    {
+        return response()->json(['staff' => $insights->overview(auth()->user()->company_id)]);
+    }
+
+    /** GET /leads/staff-overview/{staff} — one employee in full, with recent assignments and activity. */
+    public function staffDetail(\App\Modules\Lead\Services\StaffLeadInsights $insights, int $staff): JsonResponse
+    {
+        $d = $insights->detail(auth()->user()->company_id, $staff);
+        abort_unless($d, 404, 'Employee not found.');
+        return response()->json(['staff' => $d]);
+    }
+
     /** GET /leads/sources — the canonical "Lead Source" list (config/lead_sources.php), for filter/create dropdowns. */
     public function sources(): JsonResponse
     {
@@ -161,6 +191,9 @@ class LeadController extends Controller
             'lead'       => $e->lead ? [
                 'id'          => $e->lead->id,
                 'stage'       => $e->lead->stage,
+                'source'      => $e->lead->source,
+                'category'    => $e->lead->category,
+                'origin'      => $e->lead->origin_label,
                 'contact'     => $e->lead->contact ? ['name' => $e->lead->contact->name, 'phone' => $e->lead->contact->phone] : null,
                 'assigned_to' => $e->lead->assignedTo?->name,
             ] : null,

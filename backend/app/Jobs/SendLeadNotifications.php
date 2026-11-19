@@ -43,7 +43,7 @@ class SendLeadNotifications implements ShouldQueue
 
         // Who gets notified next follows the rule's own routing strategy — least-loaded /
         // longest-idle for round robin, the weighted score for the algorithm strategy.
-        if (($rule->strategy ?? 'algorithm') === 'round_robin') {
+        if (($assignment->routing_strategy ?: $rule->strategy ?: 'algorithm') === 'round_robin') {
             $nextStaff = $engine->roundRobinPick($assignment->company, $alreadyNotified, $assignment->candidate_staff_ids ?? []);
         } else {
             $ranked    = $scorer->rankStaff($assignment->company, $rule, null, $alreadyNotified, $assignment->candidate_staff_ids ?? []);

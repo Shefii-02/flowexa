@@ -12,6 +12,7 @@ use App\Models\Contact;
 use App\Models\Lead;
 use App\Models\LeadAssignment;
 use App\Models\LeadAssignmentRule;
+use App\Models\LeadRoutingRule;
 use App\Models\StaffAvailability;
 use App\Models\User;
 use App\Models\WaConversation;
@@ -36,9 +37,26 @@ class LeadAssignmentEngine
         string $assignmentType = 'auto',
         ?Lead $lead = null,
         ?array $onlyStaffIds = null,   // limit the candidate pool (WA Cloud reply routing); null = any eligible staff
+        ?string $strategyOverride = null,   // manual "Auto assign" button: 'algorithm' | 'round_robin' — assigns instantly, ignores working hours
     ): LeadAssignment {
         $rule = LeadAssignmentRule::where('company_id', $company->id)->first()
             ?? LeadAssignmentRule::create(LeadAssignmentRule::defaultForCompany($company->id));
+
+        if ($strategyOverride) {
+            // in-memory only (never saved): the admin picked the method for this click
+            $rule->strategy = $strategyOverride;
+            $rule->notification_mode = 'auto';
+        }
+
+        // Category / campaign routing: matching leads go only to the employees (and, optionally,
+        // the method) set on a routing rule. An explicit pool from the caller (WA Cloud) wins.
+        $routing = LeadRoutingRule::matchFor($company->id, $lead?->category, $campaignId ?? $lead?->campaign_id);
+        if ($routing) {
+            $onlyStaffIds = $onlyStaffIds ?: array_map('intval', $routing->staff_ids);
+            if ($routing->strategy && !$strategyOverride) {
+                $rule->strategy = $routing->strategy;   // in-memory only
+            }
+        }
 
         $dupCheck = $this->detector->check($company, $contact, $campaignId);
 
@@ -61,7 +79,7 @@ class LeadAssignmentEngine
 
         return DB::transaction(function () use (
             $company, $contact, $campaignId, $sourceType, $sourceRef,
-            $assignmentType, $rule, $dupCheck, $lead, $onlyStaffIds
+            $assignmentType, $rule, $dupCheck, $lead, $onlyStaffIds, $strategyOverride, $routing
         ) {
             $resolvedType = $rule->notification_mode === 'uber' ? 'notification' : $assignmentType;
 
@@ -77,6 +95,8 @@ class LeadAssignmentEngine
                 'priority'             => $this->calculatePriority($contact, $dupCheck),
                 'response_sla_minutes' => $rule->sla_minutes,
                 'candidate_staff_ids'  => $onlyStaffIds ?: null,
+                'routing_strategy'     => $rule->strategy,
+                'routing_rule_id'      => $routing?->id,
                 'notes'                => $dupCheck['is_duplicate'] ? $dupCheck['reason'] : null,
             ]);
 
@@ -92,7 +112,7 @@ class LeadAssignmentEngine
 
             // Outside the company's working hours (per-weekday schedule + holiday
             // overrides) → hand straight to the AI agent so the lead isn't dropped.
-            if (!$this->withinWorkingHours($company, $rule)) {
+            if (!$strategyOverride && !$this->withinWorkingHours($company, $rule)) {
                 $this->startAiAgent($assignment, $company, $contact);
                 $assignment->update(['transfer_reason' => 'Received outside working hours — AI agent engaged.']);
                 return $assignment;
@@ -107,7 +127,7 @@ class LeadAssignmentEngine
                 $prevAvail = StaffAvailability::ensureExists($company->id, $prevStaff->id);
                 $prevScore = $this->scorer->score($prevStaff, $prevAvail, $rule, $dupCheck['previous_assignment']);
                 if ($prevAllowed && $prevScore > 0) {
-                    $this->assignToStaff($assignment, $prevStaff, $rule);
+                    $this->assignToStaff($assignment, $prevStaff, $rule, 'same_staff');
                     return $assignment;
                 }
             }
@@ -138,21 +158,23 @@ class LeadAssignmentEngine
         });
     }
 
-    public function assignToStaff(LeadAssignment $assignment, User $staff, LeadAssignmentRule $rule): void
+    public function assignToStaff(LeadAssignment $assignment, User $staff, LeadAssignmentRule $rule, ?string $method = null): void
     {
+        $method ??= $rule->strategy ?: 'algorithm';
         $wasTransfer = $assignment->staff_id && $assignment->staff_id !== $staff->id && $assignment->exists;
 
         $assignment->update([
-            'staff_id'    => $staff->id,
-            'status'      => 'assigned',
-            'accepted_at' => now(),
+            'staff_id'          => $staff->id,
+            'status'            => 'assigned',
+            'accepted_at'       => now(),
+            'assignment_method' => $method,
         ]);
 
         $this->bumpWorkload($assignment->company_id, $staff);
 
         $this->activity->syncAssignee($assignment, $staff->id);
         if (!$wasTransfer) {
-            $this->activity->log($assignment, 'lead_assigned', ['staff_id' => $staff->id, 'staff_name' => $staff->name]);
+            $this->activity->log($assignment, 'lead_assigned', ['staff_id' => $staff->id, 'staff_name' => $staff->name, 'method' => $method, 'mode' => $assignment->assignment_type, 'routing_rule' => $assignment->routing_rule_id ? LeadRoutingRule::find($assignment->routing_rule_id)?->name : null]);
         }
 
         $this->syncConversationOwner($assignment, $staff->id);

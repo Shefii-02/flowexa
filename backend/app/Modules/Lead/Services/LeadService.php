@@ -60,7 +60,25 @@ class LeadService
             $this->validateCounsellor($dto->assignedTo, $companyId);
         }
 
-        return $this->leadRepository->create($companyId, $dto);
+        $lead = $this->leadRepository->create($companyId, $dto);
+
+        // "Auto-assign new leads" — route an unowned lead through the engine right away
+        // (the leads:process-unassigned cron is only the safety net).
+        if (!$dto->assignedTo && \App\Models\LeadAssignmentRule::autoEnabled($companyId)) {
+            try {
+                $contact = $lead->contact ? \App\Models\Contact::find($lead->contact->id) : null;
+                $company = \App\Models\Company::find($companyId);
+                if ($contact && $company) {
+                    app(\App\Services\LeadAssignment\LeadAssignmentEngine::class)
+                        ->assign($company, $contact, $lead->source ?: 'organic', $lead->campaign_id, null, 'auto', $lead);
+                    $lead = $lead->fresh(['contact:id,name,phone', 'assignedTo:id,name']) ?? $lead;
+                }
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::warning('Lead auto-assign failed: ' . $e->getMessage(), ['lead_id' => $lead->id]);
+            }
+        }
+
+        return $lead;
     }
 
     public function update(int $id, int $companyId, int $userId, bool $viewAll, UpdateLeadDTO $dto): Lead
@@ -98,6 +116,35 @@ class LeadService
         }
 
         return $assigned;
+    }
+
+    /**
+     * "Auto assign" button — route the given leads (or every unowned open lead when none given)
+     * through the engine with the method the admin picked, assigning instantly.
+     * @return array{assigned:int, skipped:int}
+     */
+    public function autoAssign(int $companyId, array $leadIds, string $strategy): array
+    {
+        $company = \App\Models\Company::findOrFail($companyId);
+        $engine  = app(\App\Services\LeadAssignment\LeadAssignmentEngine::class);
+
+        $leads = \App\Models\Lead::where('company_id', $companyId)
+            ->when($leadIds, fn ($q) => $q->whereIn('id', $leadIds), fn ($q) => $q->whereNull('assigned_to')->limit(500))
+            ->whereNotIn('stage', ['enrolled', 'lost'])
+            ->with('contact')->get();
+
+        $assigned = 0; $skipped = 0;
+        foreach ($leads as $lead) {
+            if (!$lead->contact) { $skipped++; continue; }
+            try {
+                $a = $engine->assign($company, $lead->contact, $lead->source ?: 'organic', $lead->campaign_id, null, 'manual', $lead, null, $strategy);
+                $a->staff_id ? $assigned++ : $skipped++;   // no staff available → left for the AI agent
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::warning('Lead auto-assign (button) failed: ' . $e->getMessage(), ['lead_id' => $lead->id]);
+                $skipped++;
+            }
+        }
+        return ['assigned' => $assigned, 'skipped' => $skipped];
     }
 
     /** Bulk-switch every (open, unless includeClosed) lead from one employee to another. No capacity gate — this is a deliberate administrative transfer, not a new assignment. */

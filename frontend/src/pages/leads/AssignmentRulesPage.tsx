@@ -3,6 +3,7 @@ import { leadAssignmentApi } from '@/api'
 import { getError } from '@/utils'
 import { useAssignMethods } from '@/store'
 import toast from 'react-hot-toast'
+import RoutingRulesPanel from './components/RoutingRulesPanel'
 import VerticalTabs, { type VTab } from '@/components/layout/VerticalTabs'
 
 
@@ -45,6 +46,7 @@ export default function AssignmentRulesPage() {
   const notifying = rule.notification_mode === 'uber' || rule.notification_mode === 'hybrid'
   const tabs: VTab[] = [
     { id: 'routing',    icon: '🧭', label: 'Routing',                   desc: 'How the next lead picks its staff member' },
+    { id: 'routing-rules', icon: '🎯', label: 'Category & campaign routing', desc: 'Send chosen leads only to chosen staff' },
     { id: 'weights',    icon: '⚖️', label: 'Algorithm weights',         desc: 'How agents are scored', hidden: !algo, badge: totalWeight === 100 ? undefined : '⚠' },
     { id: 'sla',        icon: '⏱️', label: 'Response SLA & AI handoff', desc: 'Reply time limits and when AI takes over' },
     { id: 'notify',     icon: '🔔', label: 'Notification settings',     desc: 'Gaps, timeouts and how many staff to try', hidden: !notifying },
@@ -96,6 +98,7 @@ export default function AssignmentRulesPage() {
         </label>
       </section>
             )}
+            {id === 'routing-rules' && <RoutingRulesPanel />}
             {id === 'weights' && algo && (
               <section className={card}>
           <div className="flex items-center justify-between">

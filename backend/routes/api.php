@@ -745,6 +745,8 @@ Route::prefix('v1')->group(function () {
             Route::get('/',           [LeadController::class, 'index'])->middleware('permission:leads.view')->name('index');
             Route::get('/analytics',  [LeadController::class, 'analytics'])->middleware('permission:leads.view')->name('analytics');
             Route::get('/logs',       [LeadController::class, 'logs'])->middleware('permission:leads.view')->name('logs');
+            Route::get('/staff-overview',         [LeadController::class, 'staffOverview'])->middleware('permission:leads.view_all')->name('staff-overview');
+            Route::get('/staff-overview/{staff}', [LeadController::class, 'staffDetail'])->middleware('permission:leads.view_all')->whereNumber('staff')->name('staff-detail');
             Route::get('/sources',    [LeadController::class, 'sources'])->middleware('permission:leads.view')->name('sources');
             // Unpaginated id/name/phone list for a filter — feeds wa-chat message-sender's
             // "Lead" recipient tab. Declared before /{lead}.
@@ -773,6 +775,7 @@ Route::prefix('v1')->group(function () {
             Route::post('/{lead}/assign', [LeadController::class, 'assign'])->middleware('permission:leads.manage')->name('assign');
 
             Route::post('/bulk-assign', [LeadController::class, 'bulkAssign'])->middleware('permission:leads.manage')->name('bulk-assign');
+            Route::post('/auto-assign', [LeadController::class, 'autoAssign'])->middleware('permission:leads.manage')->name('auto-assign');
             Route::post('/bulk-reassign', [LeadController::class, 'bulkReassign'])->middleware('permission:leads.manage')->name('bulk-reassign');
 
             Route::post('/{lead}/crm-sync', [LeadController::class, 'crmSync'])->middleware('permission:lead_assignment.manage')->name('crm-sync');
@@ -800,11 +803,16 @@ Route::prefix('v1')->group(function () {
             Route::post('/{id}/decline',  [LeadAssignmentController::class, 'decline'])->name('decline');
             Route::post('/{id}/complete', [LeadAssignmentController::class, 'complete'])->name('complete');
             Route::post('/{id}/transfer', [LeadAssignmentController::class, 'transfer'])->name('transfer');
+            Route::post('/{id}/restore',  [LeadAssignmentController::class, 'restore'])->name('restore');
         });
 
         Route::prefix('lead-assignment-rules')->name('lead-assignment-rules.')->middleware('permission:lead_assignment.manage')->group(function () {
             Route::get('/',  [LeadAssignmentController::class, 'getRule'])->name('show');
             Route::post('/', [LeadAssignmentController::class, 'saveRule'])->name('save');
+            Route::get('/routing',         [LeadAssignmentController::class, 'routingIndex'])->name('routing.index');
+            Route::post('/routing',        [LeadAssignmentController::class, 'routingStore'])->name('routing.store');
+            Route::put('/routing/{id}',    [LeadAssignmentController::class, 'routingUpdate'])->name('routing.update');
+            Route::delete('/routing/{id}', [LeadAssignmentController::class, 'routingDestroy'])->name('routing.destroy');
         });
 
         // Per-weekday working hours + holiday overrides (used by the assignment engine)
