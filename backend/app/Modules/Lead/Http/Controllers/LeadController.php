@@ -97,13 +97,42 @@ class LeadController extends Controller
             'strategy'   => ['required', 'in:algorithm,round_robin'],
             'lead_ids'   => ['nullable', 'array'],
             'lead_ids.*' => ['integer'],
+            'staff_scope' => ['nullable', 'in:all,online,selected,selected_online'],   // omitted = follow the routing rules
+            'staff_ids'   => ['nullable', 'array'],
+            'staff_ids.*' => ['integer', \Illuminate\Validation\Rule::exists('users', 'id')->where('company_id', auth()->user()->company_id)],
         ]);
+        if (in_array($d['staff_scope'] ?? null, ['selected', 'selected_online'], true) && empty($d['staff_ids'])) {
+            return response()->json(['message' => 'Pick at least one employee.', 'errors' => ['staff_ids' => ['Pick at least one employee.']]], 422);
+        }
+        if (in_array($d['staff_scope'] ?? null, \App\Services\LeadAssignment\StaffPoolResolver::ATTENDANCE_SCOPES, true)
+            && !app(\App\Services\LeadAssignment\StaffPoolResolver::class)->attendanceAvailable((int) auth()->user()->company_id)) {
+            return response()->json(['message' => 'Attendance-based assignment needs the HR section, which is not available on your plan.', 'error_code' => 'hr_not_available'], 422);
+        }
         $company = auth()->user()->company;
         if (!in_array($d['strategy'], \App\Support\Entitlements::forCompany($company)['assign_methods'], true)) {
             return response()->json(['message' => '"' . \App\Support\Modules::ASSIGN_METHODS[$d['strategy']] . '" assignment is not part of your plan.', 'error_code' => 'plan_feature_disabled'], 403);
         }
-        $r = $this->leadService->autoAssign($company->id, $d['lead_ids'] ?? [], $d['strategy']);
+        $r = $this->leadService->autoAssign($company->id, $d['lead_ids'] ?? [], $d['strategy'], $d['staff_scope'] ?? null, $d['staff_ids'] ?? null);
         return response()->json(['message' => "{$r['assigned']} lead(s) auto-assigned" . ($r['skipped'] ? ", {$r['skipped']} left (no available staff)." : '.'), ...$r]);
+    }
+
+    /** POST /leads/recall — take assigned-but-pending leads back (many at once). preview=true only counts. */
+    public function recall(Request $request): JsonResponse
+    {
+        $d = $request->validate([
+            'lead_ids'         => ['nullable', 'array'],
+            'lead_ids.*'       => ['integer'],
+            'only_untouched'   => ['nullable', 'boolean'],   // default: true when recalling by filter, false for hand-picked leads
+            'staff_id'         => ['nullable', 'integer'],
+            'older_than_hours' => ['nullable', 'integer', 'min:1', 'max:8760'],
+            'preview'          => ['nullable', 'boolean'],
+        ]);
+        $ids = $d['lead_ids'] ?? [];
+        $r = $this->leadService->recall(
+            auth()->user()->company_id, $ids, (bool) ($d['only_untouched'] ?? !$ids),
+            $d['staff_id'] ?? null, $d['older_than_hours'] ?? null, (bool) ($d['preview'] ?? false),
+        );
+        return response()->json($r + ['message' => ($d['preview'] ?? false) ? "{$r['count']} lead(s) would be recalled." : "{$r['count']} lead(s) recalled — they are unassigned again."]);
     }
 
     public function bulkReassign(\App\Modules\Lead\Http\Requests\BulkReassignRequest $request): JsonResponse

@@ -4,15 +4,16 @@ import { useCallback, useEffect, useState } from 'react'
 import { leadAssignmentApi, leadCategoryApi, campaignApi, staffApi } from '@/api'
 import { Button, Modal, Spinner } from '@/components/ui'
 import { getError } from '@/utils'
+import StaffScopePicker, { needsStaff, scopeSummary, type StaffScope } from './StaffScopePicker'
 import toast from 'react-hot-toast'
 
 type Routing = {
   id?: number; name: string; match_type: 'category' | 'campaign'; category: string | null; campaign_id: number | null
-  starts_at: string | null; ends_at: string | null; staff_ids: number[]; strategy: '' | 'algorithm' | 'round_robin' | null
+  starts_at: string | null; ends_at: string | null; staff_scope: StaffScope; staff_ids: number[]; strategy: '' | 'algorithm' | 'round_robin' | null
   is_active: boolean; priority: number; staff_names?: string[]; campaign_name?: string | null
 }
 
-const blank = (): Routing => ({ name: '', match_type: 'category', category: '', campaign_id: null, starts_at: '', ends_at: '', staff_ids: [], strategy: '', is_active: true, priority: 100 })
+const blank = (): Routing => ({ name: '', match_type: 'category', category: '', campaign_id: null, starts_at: '', ends_at: '', staff_scope: 'selected', staff_ids: [], strategy: '', is_active: true, priority: 100 })
 const toLocal = (d: string | null) => d ? d.slice(0, 16).replace(' ', 'T') : ''
 const input = 'w-full border border-gray-300 rounded-lg px-3 py-2 text-sm'
 const METHOD = { algorithm: 'Weighted algorithm', round_robin: 'Round robin' } as const
@@ -25,7 +26,6 @@ export default function RoutingRulesPanel() {
   const [categories, setCategories] = useState<string[]>([])
   const [campaigns, setCampaigns] = useState<{ id: number; name: string }[]>([])
   const [staff, setStaff] = useState<{ id: number; name: string; department?: string | null }[]>([])
-  const [q, setQ] = useState('')
 
   const load = useCallback(async () => {
     try { setRules((await leadAssignmentApi.routingList()).data.data ?? []) }
@@ -40,7 +40,6 @@ export default function RoutingRulesPanel() {
   }, [load])
 
   const set = (k: keyof Routing, v: unknown) => setEdit(e => e && ({ ...e, [k]: v }))
-  const toggleStaff = (id: number) => setEdit(e => e && ({ ...e, staff_ids: e.staff_ids.includes(id) ? e.staff_ids.filter(i => i !== id) : [...e.staff_ids, id] }))
 
   const save = async () => {
     if (!edit) return
@@ -89,7 +88,8 @@ export default function RoutingRulesPanel() {
               <div className="space-y-1 min-w-0">
                 <p className="font-medium text-gray-900">{r.name} <span className="ml-1 text-xs text-gray-400">priority {r.priority}</span></p>
                 <p className="text-sm text-gray-600">{describe(r)} · {period(r)} · {r.strategy ? METHOD[r.strategy as 'algorithm' | 'round_robin'] : 'default method'}</p>
-                <div className="flex flex-wrap gap-1">{(r.staff_names ?? []).map(n => <span key={n} className="rounded-full bg-brand-50 text-brand-700 px-2 py-0.5 text-xs">{n}</span>)}</div>
+                <p className="text-xs text-gray-500">👥 {scopeSummary(r.staff_scope ?? 'selected', r.staff_names ?? [])}</p>
+                <div className="flex flex-wrap gap-1">{(r.staff_scope === 'all' || r.staff_scope === 'online' ? [] : (r.staff_names ?? [])).map(n => <span key={n} className="rounded-full bg-brand-50 text-brand-700 px-2 py-0.5 text-xs">{n}</span>)}</div>
               </div>
               <div className="flex gap-2 shrink-0">
                 <Button size="sm" variant="secondary" onClick={() => toggleActive(r)}>{r.is_active ? 'Pause' : 'Enable'}</Button>
@@ -145,27 +145,14 @@ export default function RoutingRulesPanel() {
                 <option value="algorithm">Weighted algorithm among the selected staff</option>
               </select>
             </label>
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-sm text-gray-600">Employees ({edit.staff_ids.length} selected)</span>
-                <input className="border border-gray-300 rounded-lg px-2 py-1 text-xs" placeholder="Search…" value={q} onChange={e => setQ(e.target.value)} />
-              </div>
-              <div className="max-h-48 overflow-y-auto border border-gray-200 rounded-lg divide-y divide-gray-100">
-                {staff.filter(s => s.name.toLowerCase().includes(q.toLowerCase())).map(s => (
-                  <label key={s.id} className="flex items-center gap-2 px-3 py-1.5 text-sm cursor-pointer hover:bg-gray-50">
-                    <input type="checkbox" checked={edit.staff_ids.includes(s.id)} onChange={() => toggleStaff(s.id)} />
-                    {s.name}{s.department && <span className="text-xs text-gray-400">· {s.department}</span>}
-                  </label>
-                ))}
-              </div>
-            </div>
+            <StaffScopePicker scope={edit.staff_scope ?? 'selected'} staffIds={edit.staff_ids} staff={staff} onChange={(sc, ids) => setEdit(e => e && ({ ...e, staff_scope: sc, staff_ids: ids }))} />
             <label className="block text-sm text-gray-600">Priority (lower runs first)
               <input type="number" min={1} className={`mt-1 ${input}`} value={edit.priority} onChange={e => set('priority', Number(e.target.value))} />
             </label>
             <div className="flex justify-end gap-2 pt-2">
               <Button variant="secondary" onClick={() => setEdit(null)}>Cancel</Button>
               <Button onClick={save} loading={saving}
-                disabled={!edit.name || edit.staff_ids.length === 0 || (edit.match_type === 'category' && !edit.category) || (edit.match_type === 'campaign' && !edit.campaign_id && !edit.starts_at && !edit.ends_at)}>Save rule</Button>
+                disabled={!edit.name || (needsStaff(edit.staff_scope ?? 'selected') && edit.staff_ids.length === 0) || (edit.match_type === 'category' && !edit.category) || (edit.match_type === 'campaign' && !edit.campaign_id && !edit.starts_at && !edit.ends_at)}>Save rule</Button>
             </div>
           </div>
         )}

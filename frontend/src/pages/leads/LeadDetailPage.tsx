@@ -1,5 +1,6 @@
 // One lead, on its own page — pipeline progress, activity feed, and a full edit form.
 import { useEffect, useState, type ReactNode } from 'react'
+import LeadCallLog from './components/LeadCallLog'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { leadApi, leadCategoryApi, staffApi, contactApi, labelApi } from '@/api'
 import { catalogApi } from '@/pages/wa-agent/catalog/api'
@@ -237,6 +238,14 @@ export default function LeadDetailPage() {
       case 'lead_assignment_timeout':   return `${e.payload?.staff_name ?? 'Staff'} didn't respond in time (${e.payload?.timeout_seconds ?? '?'}s) — offering it to another team member`
       case 'lead_assignment_transferred': return `Transferred from ${e.payload?.from_staff_name ?? '—'} to ${e.payload?.to_staff_name ?? '—'}${e.payload?.reason ? ` — ${e.payload.reason}` : ''}`
       case 'lead_assignment_completed': return 'Marked as completed/converted'
+      case 'lead_assignment_restored':  return e.payload?.from === 'transfer' ? `Transfer undone — back to ${e.payload?.to_staff_name ?? 'the previous staff member'}` : 'Completion undone — lead is open again'
+      case 'lead_recalled':             return e.payload?.reason === 'auto_reassign' ? 'Taken back and re-assigned by auto assign' : 'Recalled — unassigned again'
+      case 'call_logged': case 'message_logged': case 'meeting_logged': case 'visit_logged': case 'other_logged': {
+        const kind = e.event.replace('_logged', '')
+        return `${kind[0].toUpperCase()}${kind.slice(1)} logged${e.payload?.first ? ' (new-lead call)' : ''}${e.payload?.outcome ? ` — ${String(e.payload.outcome).replace('_', ' ')}` : ''}${e.payload?.notes ? `: ${e.payload.notes}` : ''}`
+      }
+      case 'lead_verified':             return 'Verified (approved)'
+      case 'lead_verification_revoked': return 'Verification removed'
       case 'lead_ai_handoff':           return `Handed to the AI agent${e.payload?.reason ? ` — ${e.payload.reason}` : ''}`
       case 'lead_sla_breached':         return `Reply SLA breached (${e.payload?.sla_minutes ?? '?'} min) — AI agent engaged`
       default:                return null
@@ -333,6 +342,8 @@ export default function LeadDetailPage() {
           </div>
 
           {/* Activity */}
+          <LeadCallLog leadId={lead.id} cost={(lead as any).cost} onChanged={load} />
+
           <div className="card p-5">
             <p className="text-sm font-semibold text-gray-800 mb-3">Lead activities</p>
             <div className="flex gap-2 mb-4">

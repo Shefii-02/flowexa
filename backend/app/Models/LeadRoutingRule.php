@@ -9,7 +9,7 @@ class LeadRoutingRule extends Model
 {
     protected $fillable = [
         'company_id', 'name', 'match_type', 'category', 'campaign_id', 'starts_at', 'ends_at',
-        'staff_ids', 'strategy', 'is_active', 'priority',
+        'staff_scope', 'staff_ids', 'strategy', 'is_active', 'priority',
     ];
 
     protected $casts = [
@@ -28,7 +28,8 @@ class LeadRoutingRule extends Model
             ->where(fn ($q) => $q->whereNull('ends_at')->orWhere('ends_at', '>=', $now))
             ->orderBy('priority')->orderBy('id')->get()
             ->first(function (self $r) use ($category, $campaignId) {
-                if (!$r->staff_ids) { return false; }
+                // a selected rule needs its employees; an all / online rule needs none
+                if (in_array($r->staff_scope ?: 'selected', ['selected', 'selected_online'], true) && !$r->staff_ids) { return false; }
                 if ($r->match_type === 'category') {
                     return $category && $r->category && mb_strtolower(trim($r->category)) === mb_strtolower(trim($category));
                 }

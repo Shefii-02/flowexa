@@ -26,6 +26,7 @@ class LeadAssignmentEngine
         private readonly StaffScorer $scorer,
         private readonly DuplicateLeadDetector $detector,
         private readonly LeadActivityLogger $activity,
+        private readonly StaffPoolResolver $pools,
     ) {}
 
     public function assign(
@@ -38,6 +39,7 @@ class LeadAssignmentEngine
         ?Lead $lead = null,
         ?array $onlyStaffIds = null,   // limit the candidate pool (WA Cloud reply routing); null = any eligible staff
         ?string $strategyOverride = null,   // manual "Auto assign" button: 'algorithm' | 'round_robin' — assigns instantly, ignores working hours
+        array|bool|null $poolOverride = false,   // manual button only: false = follow the routing rules / default pool, null = every available staff member, array = exactly these (see StaffPoolResolver)
     ): LeadAssignment {
         $rule = LeadAssignmentRule::where('company_id', $company->id)->first()
             ?? LeadAssignmentRule::create(LeadAssignmentRule::defaultForCompany($company->id));
@@ -51,11 +53,24 @@ class LeadAssignmentEngine
         // Category / campaign routing: matching leads go only to the employees (and, optionally,
         // the method) set on a routing rule. An explicit pool from the caller (WA Cloud) wins.
         $routing = LeadRoutingRule::matchFor($company->id, $lead?->category, $campaignId ?? $lead?->campaign_id);
-        if ($routing) {
-            $onlyStaffIds = $onlyStaffIds ?: array_map('intval', $routing->staff_ids);
-            if ($routing->strategy && !$strategyOverride) {
-                $rule->strategy = $routing->strategy;   // in-memory only
-            }
+        if ($routing && $routing->strategy && !$strategyOverride) {
+            $rule->strategy = $routing->strategy;   // in-memory only
+        }
+
+        // Who may receive the lead: the matching routing rule's staff choice, else the company-wide one
+        // (all / attendance-online / selected / selected + online). A pool the caller passed in (WA Cloud) wins.
+        // Attendance-based pool but no HR section → everyone (or the picked staff), assigned round robin — the simple method
+        $poolScope = $routing ? ($routing->staff_scope ?: 'selected') : $rule->staff_scope;
+        if ($poolOverride === false && !$onlyStaffIds && !$strategyOverride && $this->pools->fallsBackToEveryone($company->id, $poolScope)) {
+            $rule->strategy = 'round_robin';   // in-memory only
+        }
+
+        if ($poolOverride !== false) {
+            $onlyStaffIds = $poolOverride;   // the admin chose the pool for this click — it beats rules and the default pool
+        } elseif (!$onlyStaffIds) {
+            $onlyStaffIds = $routing
+                ? $this->pools->resolve($company->id, $routing->staff_scope ?: 'selected', $routing->staff_ids)
+                : $this->pools->resolve($company->id, $rule->staff_scope, $rule->staff_ids);
         }
 
         $dupCheck = $this->detector->check($company, $contact, $campaignId);

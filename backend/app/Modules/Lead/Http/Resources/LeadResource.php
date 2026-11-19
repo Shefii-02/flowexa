@@ -33,6 +33,9 @@ class LeadResource extends JsonResource
             // "enrolled" to auto-record a sale and post the counsellor's incentive.
             'listing_id'  => $this->listing_id,
             'sale_value'  => $this->sale_value !== null ? (float) $this->sale_value : null,
+            'cost'        => $this->cost !== null ? (float) $this->cost : null,   // what the lead cost to get (feeds cost per converted lead)
+            'verified_at' => $this->verified_at?->toIso8601String(),
+            'verified_by' => $this->verified_by,
             'listing'     => $this->whenLoaded('listing', fn() => $this->listing ? [
                 'id' => $this->listing->id, 'title' => $this->listing->title, 'price' => (float) $this->listing->price,
             ] : null),

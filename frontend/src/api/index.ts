@@ -251,6 +251,28 @@ export const flowNodeApi = {
 
 }
 
+// ── Lead verification (converted / closed leads) ─
+export const leadVerificationApi = {
+  list: (p?: Record<string, unknown>) => api.get('/leads/verification', { params: p }),
+  approve: (d: Record<string, unknown>) => api.post('/leads/verification/approve', d),
+  revoke: (d: Record<string, unknown>) => api.post('/leads/verification/revoke', d),
+}
+
+// ── Sales activity (calls / follow-ups / conversions vs targets) ─
+export const leadActivityApi = {
+  list: (leadId: number) => api.get(`/leads/${leadId}/activities`),
+  log: (leadId: number, d: Record<string, unknown>) => api.post(`/leads/${leadId}/activities`, d),
+  setCost: (leadId: number, cost: number | null) => api.put(`/leads/${leadId}/cost`, { cost }),
+}
+export const salesActivityApi = {
+  team: (date?: string) => api.get('/hr/sales-activity/team', { params: { date } }),
+  staff: (id: number, date?: string) => api.get(`/hr/sales-activity/staff/${id}`, { params: { date } }),
+  me: (date?: string) => api.get('/hr/sales-activity/me', { params: { date } }),
+  targets: () => api.get('/hr/sales-activity/targets'),
+  saveTargets: (d: Record<string, unknown>) => api.put('/hr/sales-activity/targets', d),
+  resetTargets: (userId: number) => api.delete(`/hr/sales-activity/targets/${userId}`),
+}
+
 // ── Leads ─────────────────────────────────────────────────────────────────────
 export const leadApi = {
   list: (p?: Record<string, unknown>) => api.get('/leads', { params: p }),
@@ -259,7 +281,10 @@ export const leadApi = {
   update: (id: number, d: Record<string, unknown>) => api.put(`/leads/${id}`, d),
   assign: (id: number, userId: number) => api.post(`/leads/${id}/assign`, { user_id: userId }),
   bulkAssign: (leadIds: number[], userIds: number[]) => api.post('/leads/bulk-assign', { lead_ids: leadIds, user_ids: userIds, mode: 'round_robin' }),
-  autoAssign: (strategy: 'algorithm' | 'round_robin', leadIds: number[] = []) => api.post('/leads/auto-assign', { strategy, lead_ids: leadIds }),
+  autoAssign: (strategy: 'algorithm' | 'round_robin', leadIds: number[] = [], pool?: { staff_scope: string; staff_ids: number[] }) =>
+    api.post('/leads/auto-assign', { strategy, lead_ids: leadIds, ...(pool ?? {}) }),
+  recall: (p: { lead_ids?: number[]; only_untouched?: boolean; staff_id?: number | null; older_than_hours?: number | null; preview?: boolean }) =>
+    api.post('/leads/recall', p),
   bulkReassign: (fromUserId: number, toUserId: number, includeClosed = false) =>
     api.post('/leads/bulk-reassign', { from_user_id: fromUserId, to_user_id: toUserId, include_closed: includeClosed }),
   bulkDelete: (leadIds: number[]) => api.post('/leads/bulk-delete', { lead_ids: leadIds }),

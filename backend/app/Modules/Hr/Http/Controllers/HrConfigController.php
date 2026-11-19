@@ -48,6 +48,7 @@ class HrConfigController extends Controller
             'clock_out_early_window_minutes' => 'nullable|integer|min:0|max:120',
             'clock_out_grace_minutes'        => 'nullable|integer|min:0|max:120',
             'require_late_note'       => 'boolean',
+            'late_note_mode'          => 'nullable|in:required,optional,off',
             'require_early_leave_note' => 'boolean',
             'overtime_needs_approval' => 'boolean',
             'overtime_multiplier'     => 'nullable|numeric|min:1|max:5',

@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
-import { leadAssignmentApi } from '@/api'
+import { leadAssignmentApi, staffApi } from '@/api'
 import { getError } from '@/utils'
 import { useAssignMethods } from '@/store'
+import StaffScopePicker, { needsStaff, type StaffOpt, type StaffScope } from './components/StaffScopePicker'
 import toast from 'react-hot-toast'
 import RoutingRulesPanel from './components/RoutingRulesPanel'
 import VerticalTabs, { type VTab } from '@/components/layout/VerticalTabs'
@@ -15,6 +16,8 @@ export default function AssignmentRulesPage() {
   const [rule, setRule] = useState<Rule | null>(null)
   const [saving, setSaving] = useState(false)
   const [running, setRunning] = useState(false)
+  const [staffList, setStaffList] = useState<StaffOpt[]>([])
+  useEffect(() => { staffApi.performance().then(r => setStaffList(r.data.performance ?? [])).catch(() => {}) }, [])
 
   const load = useCallback(async () => {
     const r = await leadAssignmentApi.getRule()
@@ -26,6 +29,8 @@ export default function AssignmentRulesPage() {
 
   const totalWeight = (rule?.weight_availability ?? 0) + (rule?.weight_max_leads ?? 0) + (rule?.weight_performance ?? 0) + (rule?.weight_workload ?? 0)
   const weightsOk = rule?.strategy !== 'algorithm' || totalWeight === 100
+  const scope: StaffScope = (rule?.staff_scope ?? 'all') as StaffScope
+  const staffOk = !needsStaff(scope) || (rule?.staff_ids ?? []).length > 0
 
   const save = async () => {
     if (!rule) return
@@ -75,7 +80,8 @@ export default function AssignmentRulesPage() {
         footer={(
           <div className="flex items-center justify-end gap-3">
             {!weightsOk && <span className="text-xs text-red-500">Algorithm weights must total 100%.</span>}
-            <button onClick={save} disabled={saving || !weightsOk}
+            {!staffOk && <span className="text-xs text-red-500">Pick at least one employee.</span>}
+            <button onClick={save} disabled={saving || !weightsOk || !staffOk}
               className="px-8 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium disabled:opacity-50">
               {saving ? 'Saving…' : 'Save Rules'}
             </button>
@@ -95,6 +101,11 @@ export default function AssignmentRulesPage() {
               : 'Simple round robin — offer it to the least-loaded, longest-idle available agent'}</span>
           </label>
         ))}
+        <div className="rounded-lg border border-gray-200 p-4">
+          <StaffScopePicker scope={scope} staffIds={rule.staff_ids ?? []} staff={staffList}
+            onChange={(sc, ids) => setRule(r => ({ ...r, staff_scope: sc, staff_ids: ids }))} />
+          <p className="mt-2 text-xs text-gray-400">This is the default pool. A Category &amp; campaign routing rule that matches a lead uses its own staff choice instead.</p>
+        </div>
         <div>
           <label className="block text-sm text-gray-600 mb-1">Notification mode</label>
           <select className={input} value={rule.notification_mode ?? 'hybrid'} onChange={e => set('notification_mode', e.target.value)}>

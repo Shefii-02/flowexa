@@ -19,6 +19,9 @@ const EVENT_LABEL: Record<string, string> = {
   lead_assignment_transferred: 'Transferred',
   lead_assignment_completed: 'Completed',
   lead_assignment_restored: 'Restored',
+  lead_recalled: 'Recalled',
+  call_logged: 'Call logged', message_logged: 'Message logged', meeting_logged: 'Meeting logged', visit_logged: 'Visit logged', other_logged: 'Activity logged',
+  lead_verified: 'Verified', lead_verification_revoked: 'Verification removed',
   lead_ai_handoff: 'AI hand-off',
   lead_sla_breached: 'SLA breached',
 }
@@ -26,7 +29,7 @@ const EVENT_LABEL: Record<string, string> = {
 const EVENT_ICON: Record<string, string> = {
   note_added: '📝', stage_changed: '🔀', assigned: '👤', reassigned_bulk: '⇄',
   lead_assigned: '📨', lead_assignment_accepted: '✅', lead_assignment_declined: '❌',
-  lead_assignment_timeout: '⏱️', lead_assignment_transferred: '🔁', lead_assignment_completed: '🏁', lead_assignment_restored: '↩️',
+  lead_assignment_timeout: '⏱️', lead_assignment_transferred: '🔁', lead_assignment_completed: '🏁', lead_assignment_restored: '↩️', lead_recalled: '↩', call_logged: '📞', message_logged: '💬', meeting_logged: '🤝', visit_logged: '🏢', other_logged: '📝', lead_verified: '✅', lead_verification_revoked: '↺',
   lead_ai_handoff: '🤖', lead_sla_breached: '⚠️',
 }
 
@@ -59,6 +62,11 @@ function describe(row: LogRow): string {
     case 'lead_assignment_timeout':   return `${p.staff_name ?? 'Staff'} — no response in ${p.timeout_seconds ?? '?'}s`
     case 'lead_assignment_transferred': return `${p.from_staff_name ?? '—'} → ${p.to_staff_name ?? '—'}${p.reason ? ` (${p.reason})` : ''}`
     case 'lead_assignment_completed': return 'Marked as completed/converted'
+    case 'lead_recalled':             return p.reason === 'auto_reassign' ? 'Taken back and re-assigned by auto assign' : 'Taken back from the staff member — unassigned'
+    case 'call_logged': case 'message_logged': case 'meeting_logged': case 'visit_logged': case 'other_logged':
+      return `${p.first ? 'New-lead contact' : 'Follow-up'}${p.outcome ? ` · ${String(p.outcome).replace('_', ' ')}` : ''}${p.notes ? ` — ${p.notes}` : ''}`
+    case 'lead_verified':             return 'Converted / closed lead approved'
+    case 'lead_verification_revoked': return 'Approval taken back'
     case 'lead_ai_handoff':           return p.reason ? String(p.reason) : 'Handed to the AI agent'
     case 'lead_sla_breached':         return `Reply SLA (${p.sla_minutes ?? '?'} min) breached`
     default:                return '—'

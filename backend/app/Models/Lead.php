@@ -19,7 +19,7 @@ class Lead extends Model
         'flow_node_id', 'campaign_id', 'wa_open_campaign_id', 'stage', 'priority', 'category',
         'source', 'origin_type', 'origin_id', 'origin_label',
         'notes', 'crm_id', 'followed_up_at', 'enrolled_at', 'lost_at', 'assigned_at',
-        'listing_id', 'sale_value',
+        'listing_id', 'sale_value', 'cost', 'verified_at', 'verified_by',
     ];
 
     protected $casts = [
@@ -27,6 +27,7 @@ class Lead extends Model
         'enrolled_at'    => 'datetime',
         'lost_at'        => 'datetime',
         'assigned_at'    => 'datetime',
+        'verified_at'    => 'datetime',
         'sale_value'     => 'decimal:2',
     ];
 
@@ -45,6 +46,7 @@ class Lead extends Model
     public function siblings(): HasMany    { return $this->hasMany(Lead::class, 'contact_id', 'contact_id'); }
     public function events(): HasMany       { return $this->hasMany(LeadEvent::class)->latest(); }
     /** Routing/notification history from the assignment engine — see LeadAssignment::lead_id. */
+    public function verifiedBy(): BelongsTo { return $this->belongsTo(User::class, 'verified_by'); }
     public function assignments(): HasMany  { return $this->hasMany(LeadAssignment::class); }
 
     // ── Scopes ────────────────────────────────────────────────────────────────

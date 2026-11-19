@@ -166,6 +166,10 @@ class LeadRepository implements LeadRepositoryInterface
         if (isset($data['stage']) && $data['stage'] === 'lost') {
             $data['lost_at'] = now();
         }
+        if (isset($data['stage']) && $data['stage'] !== $oldStage && $lead->verified_at) {
+            $data['verified_at'] = null;   // converted / closed outcome changed — it has to be verified again
+            $data['verified_by'] = null;
+        }
 
         $lead->update($data);
 

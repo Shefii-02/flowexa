@@ -404,8 +404,22 @@ class LeadAssignmentController extends Controller
             }
         }
 
+        $cid = $company->id;
+        $request->validate([
+            'staff_scope'   => ['sometimes', 'in:all,online,selected,selected_online'],
+            'staff_ids'     => ['sometimes', 'nullable', 'array'],
+            'staff_ids.*'   => ['integer', \Illuminate\Validation\Rule::exists('users', 'id')->where('company_id', $cid)],
+        ]);
+        if ($request->input('staff_scope') !== $rule->staff_scope   // only a NEW choice is refused — a saved one that HR no longer backs just falls back to round robin
+            && in_array($request->input('staff_scope'), \App\Services\LeadAssignment\StaffPoolResolver::ATTENDANCE_SCOPES, true) && !app(\App\Services\LeadAssignment\StaffPoolResolver::class)->attendanceAvailable($cid)) {
+            return response()->json(['message' => 'Attendance-based assignment needs the HR section, which is not available on your plan.', 'error_code' => 'hr_not_available'], 422);
+        }
+        if (in_array($request->input('staff_scope'), ['selected', 'selected_online'], true) && empty($request->input('staff_ids'))) {   // filled() is true for an empty list
+            return response()->json(['message' => 'Pick at least one employee, or choose "All staff" / "Attendance-online staff".', 'errors' => ['staff_ids' => ['Pick at least one employee.']]], 422);
+        }
+
         $rule->update($request->only([
-            'auto_assign_enabled', 'strategy',
+            'auto_assign_enabled', 'strategy', 'staff_scope', 'staff_ids',
             'weight_availability', 'weight_max_leads', 'weight_performance', 'weight_workload',
             'sla_minutes', 'ai_takeover_after_minutes',
             'notification_mode', 'notification_gap_seconds', 'notification_timeout_seconds', 'max_notification_rounds',
@@ -420,7 +434,7 @@ class LeadAssignmentController extends Controller
     /** The rule plus when its auto-assign cron last ran / runs next. */
     private function ruleWithSchedule(LeadAssignmentRule $rule): array
     {
-        return $rule->toArray() + ['next_run_at' => app(\App\Services\LeadAssignment\ScheduledAutoAssigner::class)->nextRunAt($rule)?->toIso8601String()];
+        return $rule->toArray() + ['hr_available' => app(\App\Services\LeadAssignment\StaffPoolResolver::class)->attendanceAvailable($rule->company_id), 'next_run_at' => app(\App\Services\LeadAssignment\ScheduledAutoAssigner::class)->nextRunAt($rule)?->toIso8601String()];
     }
 
     // POST /api/v1/lead-assignment-rules/run-now — run the auto-assign cron for this company right now
@@ -434,7 +448,7 @@ class LeadAssignmentController extends Controller
     }
 
     // ── Category / campaign routing rules ─────────────────────────────────────
-    private function routingPayload(Request $request): array
+    private function routingPayload(Request $request, ?\App\Models\LeadRoutingRule $existing = null): array
     {
         $cid = Auth::user()->company_id;
         $d = $request->validate([
@@ -444,7 +458,8 @@ class LeadAssignmentController extends Controller
             'campaign_id' => ['nullable', 'integer', \Illuminate\Validation\Rule::exists('campaigns', 'id')->where('company_id', $cid)],
             'starts_at'   => 'nullable|date',
             'ends_at'     => 'nullable|date|after_or_equal:starts_at',
-            'staff_ids'   => 'required|array|min:1',
+            'staff_scope' => 'required|in:all,online,selected,selected_online',
+            'staff_ids'   => 'required_if:staff_scope,selected,selected_online|nullable|array',
             'staff_ids.*' => ['integer', \Illuminate\Validation\Rule::exists('users', 'id')->where('company_id', $cid)],
             'strategy'    => 'nullable|in:algorithm,round_robin',
             'is_active'   => 'boolean',
@@ -452,7 +467,9 @@ class LeadAssignmentController extends Controller
         ]);
         abort_if($d['match_type'] === 'campaign' && empty($d['campaign_id']) && empty($d['starts_at']) && empty($d['ends_at']), 422, 'Pick a campaign or set a period.');
         if ($d['match_type'] === 'category') { $d['campaign_id'] = null; } else { $d['category'] = null; }
-        $d['staff_ids'] = array_values(array_unique(array_map('intval', $d['staff_ids'])));
+        $d['staff_ids'] = in_array($d['staff_scope'], ['selected', 'selected_online'], true) ? array_values(array_unique(array_map('intval', $d['staff_ids'] ?? []))) : [];
+        abort_if(in_array($d['staff_scope'], ['selected', 'selected_online'], true) && !$d['staff_ids'], 422, 'Pick at least one employee.');
+        abort_if($d['staff_scope'] !== $existing?->staff_scope && in_array($d['staff_scope'], \App\Services\LeadAssignment\StaffPoolResolver::ATTENDANCE_SCOPES, true) && !app(\App\Services\LeadAssignment\StaffPoolResolver::class)->attendanceAvailable($cid), 422, 'Attendance-based assignment needs the HR section, which is not available on your plan.');
         return $d;
     }
 
@@ -460,10 +477,10 @@ class LeadAssignmentController extends Controller
     public function routingIndex(): JsonResponse
     {
         $rules = \App\Models\LeadRoutingRule::where('company_id', Auth::user()->company_id)->orderBy('priority')->orderBy('id')->get();
-        $names = User::whereIn('id', $rules->pluck('staff_ids')->flatten()->unique())->pluck('name', 'id');
+        $names = User::whereIn('id', $rules->pluck('staff_ids')->flatten()->filter()->unique())->pluck('name', 'id');
         $camps = \App\Models\Campaign::whereIn('id', $rules->pluck('campaign_id')->filter())->pluck('name', 'id');
         return response()->json(['data' => $rules->map(fn ($r) => array_merge($r->toArray(), [
-            'staff_names'   => collect($r->staff_ids)->map(fn ($i) => $names[$i] ?? "#$i")->values(),
+            'staff_names'   => collect($r->staff_ids ?? [])->map(fn ($i) => $names[$i] ?? "#$i")->values(),
             'campaign_name' => $r->campaign_id ? ($camps[$r->campaign_id] ?? "#{$r->campaign_id}") : null,
         ]))]);
     }
@@ -477,7 +494,7 @@ class LeadAssignmentController extends Controller
     public function routingUpdate(Request $request, int $id): JsonResponse
     {
         $rule = \App\Models\LeadRoutingRule::where('company_id', Auth::user()->company_id)->findOrFail($id);
-        $rule->update($this->routingPayload($request));
+        $rule->update($this->routingPayload($request, $rule));
         return response()->json(['data' => $rule]);
     }
 

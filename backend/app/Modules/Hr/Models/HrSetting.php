@@ -14,7 +14,7 @@ class HrSetting extends Model
         'company_id', 'office_lat', 'office_lng', 'geofence_radius_m', 'geofence_mandatory',
         'office_start', 'office_end', 'early_window_minutes', 'grace_minutes',
         'clock_out_early_window_minutes', 'clock_out_grace_minutes',
-        'require_late_note', 'require_early_leave_note', 'overtime_needs_approval',
+        'require_late_note', 'late_note_mode', 'require_early_leave_note', 'overtime_needs_approval',
         'overtime_multiplier', 'late_penalty_amount', 'payroll_working_days', 'deduct_unpaid_leave', 'deduct_absent_days', 'auto_availability', 'leave_auto_approve', 'reopen_auto_approve', 'timezone',
         'selfie_required_clock_in', 'selfie_required_clock_out',
         'selfie_required_break_start', 'selfie_required_break_end',
@@ -51,6 +51,26 @@ class HrSetting extends Model
         'break_overrun_notify_user_ids'  => 'array',
         'leave_request_notify_user_ids'  => 'array',
     ];
+
+    public const LATE_NOTE_MODES = ['required', 'optional', 'off'];
+
+    /** Keep the legacy boolean and the new mode in step, whichever one a client saves. */
+    protected static function booted(): void
+    {
+        static::saving(function (self $s) {
+            if ($s->isDirty('late_note_mode') && in_array($s->late_note_mode, self::LATE_NOTE_MODES, true)) {
+                $s->require_late_note = $s->late_note_mode === 'required';
+            } elseif ($s->isDirty('require_late_note')) {
+                $s->late_note_mode = $s->require_late_note ? 'required' : ($s->late_note_mode === 'optional' ? 'optional' : 'off');
+            }
+        });
+    }
+
+    /** required | optional | off — what to do when a staff member clocks in late. */
+    public function lateNoteMode(): string
+    {
+        return in_array($this->late_note_mode, self::LATE_NOTE_MODES, true) ? $this->late_note_mode : ($this->require_late_note ? 'required' : 'off');
+    }
 
     public function company(): BelongsTo { return $this->belongsTo(Company::class); }
 

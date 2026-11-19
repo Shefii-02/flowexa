@@ -340,6 +340,8 @@ const SidebarInner = () => {
   const isSuperAdmin = useIsSuperAdmin()
 
   // ── Permission hooks (all at top level) ──────────────────────────────────────
+  const canVerifyLeads = usePermission('leads.verify')
+  const canMonitorSales = usePermission('hr.sales_activity.view')
   const canViewDash = usePermission('dashboard.view')
   const canAccManage = usePermission('accounts.manage')
   const canAccPayroll = usePermission('accounts.payroll')
@@ -728,6 +730,7 @@ const SidebarInner = () => {
 
               <SubLink to="/crm/leads/by-staff" icon="👤" label="Leads by Staff" />
               <SubLink to="/crm/leads/logs" icon="📜" label="Lead Logs" />
+              {canVerifyLeads && <SubLink to="/crm/leads/verification" icon="✅" label="Verify Leads" />}
 
               {/* Basic — at-a-glance metrics */}
               {/* <NestedAccordion icon="🟢" label="Basic" basePaths={['/leads/summary']}>
@@ -763,6 +766,7 @@ const SidebarInner = () => {
             <NestedAccordion id="hr" icon="👥" label="HR" basePaths={['/hr']}>
               <SubLink to="/hr/attendance" icon="🕒" label="My Attendance" />
               <SubLink to="/hr/target" icon="🎯" label="My Target" />
+              <SubLink to="/hr/sales-activity" icon="📞" label={canMonitorSales ? 'Sales Activity' : 'My Sales Activity'} />
               <SubLink to="/hr/payroll" icon="💰" label="My Payroll" />
 
               <NestedAccordion icon="🛠️" label="Administration" basePaths={['/hr/admin']}>

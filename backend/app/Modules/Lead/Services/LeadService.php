@@ -123,8 +123,10 @@ class LeadService
      * through the engine with the method the admin picked, assigning instantly.
      * @return array{assigned:int, skipped:int}
      */
-    public function autoAssign(int $companyId, array $leadIds, string $strategy): array
+    public function autoAssign(int $companyId, array $leadIds, string $strategy, ?string $staffScope = null, ?array $staffIds = null): array
     {
+        // null scope = follow the routing rules; otherwise the chosen pool (all / attendance-online / selected / selected+online) decides who may get leads
+        $pool = $staffScope === null ? false : app(\App\Services\LeadAssignment\StaffPoolResolver::class)->resolve($companyId, $staffScope, $staffIds);
         $company = \App\Models\Company::findOrFail($companyId);
         $engine  = app(\App\Services\LeadAssignment\LeadAssignmentEngine::class);
 
@@ -137,7 +139,8 @@ class LeadService
         foreach ($leads as $lead) {
             if (!$lead->contact) { $skipped++; continue; }
             try {
-                $a = $engine->assign($company, $lead->contact, $lead->source ?: 'organic', $lead->campaign_id, null, 'manual', $lead, null, $strategy);
+                if ($lead->assigned_to) { $this->releaseLead($lead, 'auto_reassign'); $lead->refresh(); }
+                $a = $engine->assign($company, $lead->contact, $lead->source ?: 'organic', $lead->campaign_id, null, 'manual', $lead, null, $strategy, $pool);
                 $a->staff_id ? $assigned++ : $skipped++;   // no staff available → left for the AI agent
             } catch (\Throwable $e) {
                 \Illuminate\Support\Facades\Log::warning('Lead auto-assign (button) failed: ' . $e->getMessage(), ['lead_id' => $lead->id]);
@@ -145,6 +148,77 @@ class LeadService
             }
         }
         return ['assigned' => $assigned, 'skipped' => $skipped];
+    }
+
+    /** Open leads that are assigned to someone but nobody has touched yet (still "New", no follow-up, no logged activity). */
+    private function recallQuery(int $companyId, array $leadIds, bool $onlyUntouched, ?int $staffId, ?int $olderThanHours)
+    {
+        return \App\Models\Lead::where('company_id', $companyId)
+            ->whereNotNull('assigned_to')
+            ->whereNotIn('stage', ['enrolled', 'lost'])
+            ->when($leadIds, fn ($q) => $q->whereIn('id', $leadIds))
+            ->when($staffId, fn ($q) => $q->where('assigned_to', $staffId))
+            ->when($olderThanHours, fn ($q) => $q->where('assigned_at', '<=', now()->subHours($olderThanHours)))
+            ->when($onlyUntouched, function ($q) {
+                $q->where('stage', 'new')->whereNull('followed_up_at');
+                if (\Illuminate\Support\Facades\Schema::hasTable('lead_activities')) {
+                    $q->whereNotExists(fn ($a) => $a->select(\Illuminate\Support\Facades\DB::raw(1))->from('lead_activities')->whereColumn('lead_activities.lead_id', 'leads.id'));
+                }
+            });
+    }
+
+    /**
+     * Take assigned-but-pending leads back from their staff (many at once) so they are unassigned again.
+     * Open assignments are dropped and each staff member's open-lead count goes back down.
+     * @return array{count:int, sample:array<int,array>}   preview=true only counts, nothing changes
+     */
+    public function recall(int $companyId, array $leadIds, bool $onlyUntouched, ?int $staffId, ?int $olderThanHours, bool $preview = false): array
+    {
+        $q = $this->recallQuery($companyId, $leadIds, $onlyUntouched, $staffId, $olderThanHours);
+        $total = (clone $q)->count();
+        $sample = (clone $q)->with(['contact:id,name,phone', 'assignedTo:id,name'])->orderBy('assigned_at')->limit(20)->get()
+            ->map(fn ($l) => ['id' => $l->id, 'name' => $l->contact?->name ?: $l->contact?->phone, 'staff' => $l->assignedTo?->name, 'assigned_at' => $l->assigned_at?->toIso8601String()])->all();
+        if ($preview || $total === 0) {
+            return ['count' => $total, 'sample' => $sample];
+        }
+
+        $done = 0;
+        $q->with('contact')->chunkById(200, function ($leads) use (&$done) {
+            foreach ($leads as $lead) {
+                $this->releaseLead($lead);
+                $done++;
+            }
+        });
+
+        return ['count' => $done, 'sample' => $sample];
+    }
+
+    /** Take one lead back from its owner: unassign it, drop its open assignments and give the owner's workload slot back. */
+    private function releaseLead(\App\Models\Lead $lead, string $reason = 'recalled'): void
+    {
+        \Illuminate\Support\Facades\DB::transaction(function () use ($lead, $reason) {
+            $from = $lead->assigned_to;
+            $lead->update(['assigned_to' => null, 'assigned_by' => null, 'assigned_at' => null]);
+
+            $open = \App\Models\LeadAssignment::where('lead_id', $lead->id)
+                ->whereIn('status', ['pending', 'notified', 'assigned', 'accepted', 'ai_offered', 'ai_handling', 'transferred'])->get();
+            foreach ($open as $a) {
+                if ($a->staff_id && in_array($a->status, ['assigned', 'accepted'], true)) {
+                    $av = \App\Models\StaffAvailability::where('staff_id', $a->staff_id)->first();
+                    if ($av && $av->current_leads_count > 0) {
+                        $av->decrement('current_leads_count');
+                        $max = (int) \App\Models\User::where('id', $a->staff_id)->value('max_leads');
+                        if ($av->fresh()->status === 'busy' && ($max <= 0 || $av->fresh()->current_leads_count < $max)) {
+                            $av->update(['status' => 'online', 'is_available' => true]);
+                        }
+                    }
+                }
+                $a->update(['status' => 'dropped', 'transfer_reason' => $reason === 'recalled' ? 'Recalled by ' . (auth()->user()?->name ?? 'admin') : 'Re-assigned by auto assign']);
+            }
+            if ($lead->contact) { $lead->contact->update(['current_assignment_id' => null]); }
+            \App\Models\WaConversation::where('company_id', $lead->company_id)->where('contact_id', $lead->contact_id)->update(['assigned_to' => null]);
+            $this->leadRepository->logEvent($lead, 'lead_recalled', ['from' => $from, 'recalled_by' => auth()->id(), 'reason' => $reason]);
+        });
     }
 
     /** Bulk-switch every (open, unless includeClosed) lead from one employee to another. No capacity gate — this is a deliberate administrative transfer, not a new assignment. */

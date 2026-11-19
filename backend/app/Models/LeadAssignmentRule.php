@@ -16,11 +16,13 @@ class LeadAssignmentRule extends Model
         'working_hours_start', 'working_hours_end', 'working_days', 'timezone',
         'auto_assign_run_mode', 'auto_assign_interval_minutes', 'auto_assign_run_start', 'auto_assign_run_end',
         'auto_assign_last_run_at', 'auto_assign_last_run_count',
+        'staff_scope', 'staff_ids',
     ];
 
     protected $casts = [
         'auto_assign_enabled' => 'boolean',
         'working_days'        => 'array',
+        'staff_ids'           => 'array',
         'auto_assign_last_run_at' => 'datetime',
     ];
 

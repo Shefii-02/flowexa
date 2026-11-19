@@ -41,7 +41,7 @@ export default function HrOfficeDetailsPage() {
         overtime_multiplier: Number(s.overtime_multiplier),
         late_penalty_amount: Number(s.late_penalty_amount ?? 0),
         payroll_working_days: Number(s.payroll_working_days ?? 26),
-        require_late_note: s.require_late_note, require_early_leave_note: s.require_early_leave_note,
+        late_note_mode: s.late_note_mode ?? (s.require_late_note === false ? 'off' : 'required'), require_early_leave_note: s.require_early_leave_note,
         overtime_needs_approval: s.overtime_needs_approval, auto_availability: s.auto_availability,
         leave_auto_approve: s.leave_auto_approve, reopen_auto_approve: s.reopen_auto_approve, deduct_unpaid_leave: s.deduct_unpaid_leave, deduct_absent_days: s.deduct_absent_days,
         timezone: s.timezone,
@@ -108,6 +108,16 @@ export default function HrOfficeDetailsPage() {
                 <label className="text-xs text-gray-500">Clock-out early-leave window (min)<input type="number" value={s.clock_out_early_window_minutes ?? 15} onChange={e => setF('clock_out_early_window_minutes', e.target.value)} className={`block mt-1 w-full ${inp}`} /></label>
                 <label className="text-xs text-gray-500">Clock-out grace / "late" (min)<input type="number" value={s.clock_out_grace_minutes ?? 15} onChange={e => setF('clock_out_grace_minutes', e.target.value)} className={`block mt-1 w-full ${inp}`} /></label>
               </div>
+              <div className="rounded-lg border border-gray-200 p-3 space-y-1.5">
+                <label className="text-xs text-gray-500 block">Late clock-in reason
+                  <select value={s.late_note_mode ?? (s.require_late_note === false ? 'off' : 'required')} onChange={e => setF('late_note_mode', e.target.value)} className={`block mt-1 w-full ${inp}`}>
+                    <option value="required">Required — staff can't clock in late without writing a reason</option>
+                    <option value="optional">Optional — the app asks for a reason, staff may skip it</option>
+                    <option value="off">Off — never ask for a reason</option>
+                  </select>
+                </label>
+                <p className="text-[11px] text-gray-400">Applies when a clock-in is past the "late" grace above. The reason is saved with the attendance record (and its session) and shown in the late clock-in alert. The mobile app follows this setting.</p>
+              </div>
             </div>
           )}
 
@@ -155,7 +165,6 @@ export default function HrOfficeDetailsPage() {
               {[
                 ['deduct_unpaid_leave', 'Deduct pay for unpaid leave'],
                 ['deduct_absent_days', 'Deduct pay for absent days'],
-                ['require_late_note', 'Require a note when clocking in late'],
                 ['require_early_leave_note', 'Require a note when leaving early'],
                 ['overtime_needs_approval', 'Overtime needs manager approval'],
                 ['auto_availability', 'Attendance controls lead-assignment availability'],

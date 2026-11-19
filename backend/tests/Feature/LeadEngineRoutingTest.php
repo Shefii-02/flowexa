@@ -24,6 +24,7 @@ class LeadEngineRoutingTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        \App\Services\LeadAssignment\StaffPoolResolver::forgetMemo();
         Queue::fake();
         Schema::create('users', function (Blueprint $t) {
             $t->id(); $t->unsignedBigInteger('company_id'); $t->string('name')->default('x'); $t->boolean('is_active')->default(true);
@@ -50,12 +51,21 @@ class LeadEngineRoutingTest extends TestCase
             foreach (['weight_availability', 'weight_max_leads', 'weight_performance', 'weight_workload', 'ai_takeover_after_minutes', 'notification_gap_seconds',
                       'notification_timeout_seconds', 'max_notification_rounds', 'duplicate_window_days'] as $c) { $t->integer($c)->nullable(); }
             foreach (['duplicate_action', 'working_hours_start', 'working_hours_end', 'timezone'] as $c) { $t->string($c)->nullable(); }
-            $t->json('working_days')->nullable();
+            $t->json('working_days')->nullable(); $t->string('staff_scope')->default('all'); $t->json('staff_ids')->nullable();
         });
         Schema::create('lead_routing_rules', function (Blueprint $t) {
             $t->id(); $t->unsignedBigInteger('company_id'); $t->string('name'); $t->string('match_type'); $t->string('category')->nullable();
             $t->unsignedBigInteger('campaign_id')->nullable(); $t->dateTime('starts_at')->nullable(); $t->dateTime('ends_at')->nullable();
-            $t->json('staff_ids'); $t->string('strategy')->nullable(); $t->boolean('is_active')->default(true); $t->unsignedSmallInteger('priority')->default(100); $t->timestamps();
+            $t->string('staff_scope')->default('selected'); $t->json('staff_ids')->nullable(); $t->string('strategy')->nullable(); $t->boolean('is_active')->default(true); $t->unsignedSmallInteger('priority')->default(100); $t->timestamps();
+        });
+        Schema::create('companies', function (Blueprint $t) { $t->id(); $t->unsignedBigInteger('plan_id')->nullable(); $t->softDeletes(); });
+        \Illuminate\Support\Facades\DB::table('companies')->insert(['id' => 1]);
+        Schema::create('hr_attendance', function (Blueprint $t) {
+            $t->id(); $t->unsignedBigInteger('company_id'); $t->unsignedBigInteger('user_id'); $t->date('work_date');
+            $t->timestamp('clock_in_at')->nullable(); $t->timestamp('clock_out_at')->nullable();
+        });
+        Schema::create('hr_break_sessions', function (Blueprint $t) {
+            $t->id(); $t->unsignedBigInteger('attendance_id'); $t->timestamp('start_at')->nullable(); $t->timestamp('end_at')->nullable();
         });
         Schema::create('lead_assignments', function (Blueprint $t) {
             $t->id(); $t->unsignedBigInteger('company_id'); $t->unsignedBigInteger('contact_id')->nullable(); $t->unsignedBigInteger('lead_id')->nullable();
@@ -71,7 +81,7 @@ class LeadEngineRoutingTest extends TestCase
 
         $detector = \Mockery::mock(DuplicateLeadDetector::class);
         $detector->shouldReceive('check')->andReturn(['is_duplicate' => false, 'recommended_action' => null, 'previous_staff' => null, 'previous_assignment' => null, 'reason' => null]);
-        $this->engine = new LeadAssignmentEngine(app(StaffScorer::class), $detector, \Mockery::mock(LeadActivityLogger::class)->shouldIgnoreMissing());
+        $this->engine = new LeadAssignmentEngine(app(StaffScorer::class), $detector, \Mockery::mock(LeadActivityLogger::class)->shouldIgnoreMissing(), app(\App\Services\LeadAssignment\StaffPoolResolver::class));
     }
 
     private function staff(string $name): User
@@ -136,5 +146,107 @@ class LeadEngineRoutingTest extends TestCase
         // no AI session table here — the engine falls to startAiAgent; assert it did not hand the lead to A
         try { $asg = $this->route(null, 5); } catch (\Throwable) { $asg = null; }
         $this->assertTrue($asg === null || $asg->staff_id === null, 'never leaks to staff outside the rule');
+    }
+
+    private function clockedIn(User ...$users): void
+    {
+        foreach ($users as $u) {
+            \Illuminate\Support\Facades\DB::table('hr_attendance')->insert(['company_id' => 1, 'user_id' => $u->id, 'work_date' => now()->toDateString(), 'clock_in_at' => now()->subHour(), 'clock_out_at' => null]);
+        }
+    }
+
+    private function companyPool(string $scope, array $ids = []): void
+    {
+        \App\Models\LeadAssignmentRule::where('company_id', 1)->exists()
+            ?: \App\Models\LeadAssignmentRule::create(['company_id' => 1, 'strategy' => 'round_robin', 'notification_mode' => 'auto']);
+        \App\Models\LeadAssignmentRule::where('company_id', 1)->update(['staff_scope' => $scope, 'staff_ids' => json_encode($ids)]);
+    }
+
+    private function staffOf(\App\Models\LeadAssignment $a): ?int { return $a->staff_id ? (int) $a->staff_id : null; }
+
+    public function test_company_wide_selected_staff_only(): void
+    {
+        $a = $this->staff('A'); $b = $this->staff('B'); $c = $this->staff('C');
+        $this->companyPool('selected', [$b->id, $c->id]);
+        $got = [];
+        for ($i = 0; $i < 4; $i++) { $got[] = $this->staffOf($this->route(null)); }
+        $this->assertNotContains($a->id, $got);
+        $this->assertCount(2, array_unique($got));
+    }
+
+    public function test_company_wide_online_only_uses_clocked_in_staff(): void
+    {
+        $a = $this->staff('A'); $b = $this->staff('B'); $c = $this->staff('C');
+        $this->clockedIn($c);
+        $this->companyPool('online');
+        foreach (range(1, 3) as $_) { $this->assertSame($c->id, $this->staffOf($this->route(null))); }
+    }
+
+    public function test_online_only_with_nobody_clocked_in_assigns_no_staff(): void
+    {
+        $a = $this->staff('A'); $this->staff('B');
+        $this->companyPool('online');
+        try { $asg = $this->route(null); } catch (\Throwable) { $asg = null; }   // no ai_agent_sessions table in this test schema
+        $this->assertTrue($asg === null || $asg->staff_id === null, 'never falls back to someone who is not clocked in');
+    }
+
+    public function test_selected_and_online_is_the_overlap(): void
+    {
+        $a = $this->staff('A'); $b = $this->staff('B'); $c = $this->staff('C');
+        $this->clockedIn($a, $b);                      // A, B clocked in
+        $this->companyPool('selected_online', [$b->id, $c->id]);   // pick B, C → only B qualifies
+        foreach (range(1, 3) as $_) { $this->assertSame($b->id, $this->staffOf($this->route(null))); }
+    }
+
+    public function test_a_matching_routing_rule_overrides_the_company_pool(): void
+    {
+        $a = $this->staff('A'); $b = $this->staff('B'); $c = $this->staff('C');
+        $this->companyPool('selected', [$a->id]);       // default pool: A only
+        LeadRoutingRule::create(['company_id' => 1, 'name' => 'x', 'match_type' => 'category', 'category' => 'VIP', 'staff_scope' => 'selected', 'staff_ids' => [$b->id, $c->id]]);
+        $vip = $this->staffOf($this->route('VIP'));
+        $this->assertContains($vip, [$b->id, $c->id]);
+        $this->assertSame($a->id, $this->staffOf($this->route('Other')), 'unmatched leads use the company pool');
+    }
+
+    public function test_routing_rule_with_scope_all_and_online(): void
+    {
+        $a = $this->staff('A'); $b = $this->staff('B');
+        $this->companyPool('selected', [$a->id]);
+        LeadRoutingRule::create(['company_id' => 1, 'name' => 'any', 'match_type' => 'category', 'category' => 'Open', 'staff_scope' => 'all', 'staff_ids' => []]);
+        $got = [$this->staffOf($this->route('Open')), $this->staffOf($this->route('Open'))];
+        $this->assertEqualsCanonicalizing([$a->id, $b->id], $got, 'scope all ignores the company pool and spreads across everyone');
+
+        LeadRoutingRule::query()->delete();
+        $this->clockedIn($b);
+        LeadRoutingRule::create(['company_id' => 1, 'name' => 'live', 'match_type' => 'category', 'category' => 'Live', 'staff_scope' => 'online', 'staff_ids' => []]);
+        $this->assertSame($b->id, $this->staffOf($this->route('Live')));
+    }
+
+    public function test_attendance_scope_without_the_hr_section_falls_back_to_round_robin_over_everyone(): void
+    {
+        \Illuminate\Support\Facades\Schema::create('company_holidays', function (Blueprint $t) { $t->id(); $t->unsignedBigInteger('company_id'); $t->date('date'); $t->timestamps(); });
+        \Illuminate\Support\Facades\Schema::create('company_working_hours', function (Blueprint $t) {
+            $t->id(); $t->unsignedBigInteger('company_id'); $t->unsignedTinyInteger('weekday'); $t->boolean('is_open')->default(true); $t->string('start_time')->nullable(); $t->string('end_time')->nullable(); $t->timestamps();
+        });
+        $a = $this->staff('A'); $b = $this->staff('B');          // nobody is clocked in — but HR is not available, so that must not matter
+        $this->companyPool('online');
+        \App\Models\LeadAssignmentRule::where('company_id', 1)->update([
+            'strategy' => 'algorithm', 'notification_mode' => 'auto', 'timezone' => 'UTC',
+            'working_days' => json_encode([0, 1, 2, 3, 4, 5, 6]), 'working_hours_start' => '00:00:00', 'working_hours_end' => '23:59:59',
+        ]);
+
+        $noHr = new class extends \App\Services\LeadAssignment\StaffPoolResolver { public function attendanceAvailable(int $companyId): bool { return false; } };
+        $detector = \Mockery::mock(DuplicateLeadDetector::class);
+        $detector->shouldReceive('check')->andReturn(['is_duplicate' => false, 'recommended_action' => null, 'previous_staff' => null, 'previous_assignment' => null, 'reason' => null]);
+        $engine = new LeadAssignmentEngine(app(StaffScorer::class), $detector, \Mockery::mock(LeadActivityLogger::class)->shouldIgnoreMissing(), $noHr);
+
+        $got = [];
+        foreach (range(1, 4) as $_) {
+            $contact = new Contact(); $contact->forceFill(['company_id' => 1])->save();
+            $asg = $engine->assign((new Company())->forceFill(['id' => 1]), $contact, 'organic', null, null, 'auto', (new Lead())->forceFill(['category' => null]));
+            $got[] = (int) $asg->staff_id;
+            $this->assertSame('round_robin', $asg->routing_strategy, 'the weighted method is replaced by round robin');
+        }
+        $this->assertEqualsCanonicalizing([$a->id, $a->id, $b->id, $b->id], $got, 'spread one by one across every available staff member');
     }
 }

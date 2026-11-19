@@ -619,6 +619,14 @@ Route::prefix('v1')->group(function () {
             // rank + leads/pipeline/follow-ups/tasks in one round trip. Self-scoped.
             Route::get('dashboard/me', [\App\Modules\Hr\Http\Controllers\DashboardController::class, 'me']);
 
+            // Sales activity — daily / monthly calls, follow-ups and conversions vs targets (team leader+ sees everyone; anyone sees themselves)
+            Route::get('sales-activity/me',            [\App\Modules\Hr\Http\Controllers\SalesActivityController::class, 'me']);
+            Route::get('sales-activity/team',          [\App\Modules\Hr\Http\Controllers\SalesActivityController::class, 'team']);
+            Route::get('sales-activity/staff/{id}',    [\App\Modules\Hr\Http\Controllers\SalesActivityController::class, 'staff'])->whereNumber('id');
+            Route::get('sales-activity/targets',       [\App\Modules\Hr\Http\Controllers\SalesActivityController::class, 'targets']);
+            Route::put('sales-activity/targets',       [\App\Modules\Hr\Http\Controllers\SalesActivityController::class, 'saveTargets']);
+            Route::delete('sales-activity/targets/{userId}', [\App\Modules\Hr\Http\Controllers\SalesActivityController::class, 'resetTargets'])->whereNumber('userId');
+
             // Target screen — own progress, weekly breakdown, remaining/days-left + team standing.
             Route::get('sales/me', [\App\Modules\Hr\Http\Controllers\SalesController::class, 'me']);
 
@@ -748,6 +756,10 @@ Route::prefix('v1')->group(function () {
             Route::get('/',           [LeadController::class, 'index'])->middleware('permission:leads.view')->name('index');
             Route::get('/analytics',  [LeadController::class, 'analytics'])->middleware('permission:leads.view')->name('analytics');
             Route::get('/logs',       [LeadController::class, 'logs'])->middleware('permission:leads.view')->name('logs');
+            // verification of converted / closed leads — fixed paths, registered before any /{lead} route
+            Route::get('/verification',          [\App\Modules\Lead\Http\Controllers\LeadVerificationController::class, 'index'])->middleware('permission:leads.verify')->name('verification.index');
+            Route::post('/verification/approve', [\App\Modules\Lead\Http\Controllers\LeadVerificationController::class, 'approve'])->middleware('permission:leads.verify')->name('verification.approve');
+            Route::post('/verification/revoke',  [\App\Modules\Lead\Http\Controllers\LeadVerificationController::class, 'revoke'])->middleware('permission:leads.verify')->name('verification.revoke');
             Route::get('/staff-overview',         [LeadController::class, 'staffOverview'])->middleware('permission:leads.view_all')->name('staff-overview');
             Route::get('/staff-overview/{staff}', [LeadController::class, 'staffDetail'])->middleware('permission:leads.view_all')->whereNumber('staff')->name('staff-detail');
             Route::get('/sources',    [LeadController::class, 'sources'])->middleware('permission:leads.view')->name('sources');
@@ -778,6 +790,10 @@ Route::prefix('v1')->group(function () {
             Route::post('/{lead}/assign', [LeadController::class, 'assign'])->middleware('permission:leads.manage')->name('assign');
 
             Route::post('/bulk-assign', [LeadController::class, 'bulkAssign'])->middleware('permission:leads.manage')->name('bulk-assign');
+            Route::get('/{lead}/activities',  [\App\Modules\Lead\Http\Controllers\LeadActivityController::class, 'index'])->middleware('permission:leads.view')->whereNumber('lead')->name('activities.index');
+            Route::post('/{lead}/activities', [\App\Modules\Lead\Http\Controllers\LeadActivityController::class, 'store'])->middleware('permission:leads.view')->whereNumber('lead')->name('activities.store');
+            Route::put('/{lead}/cost',        [\App\Modules\Lead\Http\Controllers\LeadActivityController::class, 'cost'])->middleware('permission:leads.manage')->whereNumber('lead')->name('cost');
+            Route::post('/recall', [LeadController::class, 'recall'])->middleware('permission:leads.recall')->name('recall');
             Route::post('/auto-assign', [LeadController::class, 'autoAssign'])->middleware('permission:leads.manage')->name('auto-assign');
             Route::post('/bulk-reassign', [LeadController::class, 'bulkReassign'])->middleware('permission:leads.manage')->name('bulk-reassign');
 

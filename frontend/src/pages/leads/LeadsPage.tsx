@@ -8,9 +8,10 @@ import { useAppDispatch, useAppSelector } from '@/store'
 import { fetchLeadsThunk, fetchLeadAnalyticsThunk, updateLeadInList } from '@/store/slices'
 import { leadApi, staffApi, leadImportExportApi, contactApi, leadCategoryApi } from '@/api'
 import StaffPicker from './components/StaffPicker'
+import StaffScopePicker, { needsStaff, type StaffScope } from './components/StaffScopePicker'
 import { Button, Modal, Drawer, ConfirmModal, Badge, EmptyState, Pagination, TableSkeleton, StatCard } from '@/components/ui'
 import DateRangePicker from '@/components/ui/DateRangePicker'
-import { useAssignMethods } from '@/store'
+import { useAssignMethods, usePermission } from '@/store'
 import { fmt, formatPhone, getError, downloadBlob, stageConfig, priorityConfig } from '@/utils'
 import toast from 'react-hot-toast'
 import type { Lead, LeadStage } from '@/types'
@@ -79,9 +80,22 @@ export default function LeadsPage() {
   const [showBulkDelete, setShowBulkDelete] = useState(false)
   // "Auto assign" — ask which method to use, then route the ticked leads (or every unassigned one)
   const allowedMethods = useAssignMethods()
+  const canRecall = usePermission('leads.recall')
+  const canAssignAll = usePermission('leads.manage')
   const [showAutoAssign, setShowAutoAssign] = useState(false)
   const [autoStrategy, setAutoStrategy] = useState<'algorithm' | 'round_robin'>('algorithm')
   const [autoAssigning, setAutoAssigning] = useState(false)
+  const [poolRules, setPoolRules] = useState(true)                    // true = follow the routing rules; false = choose who gets them now
+  const [poolScope, setPoolScope] = useState<StaffScope>('all')
+  const [poolIds, setPoolIds] = useState<number[]>([])
+  // Recall — take assigned-but-pending leads back from staff (many at once)
+  const [showRecall, setShowRecall] = useState(false)
+  const [recallStaff, setRecallStaff] = useState('')
+  const [recallUntouched, setRecallUntouched] = useState(true)
+  const [recallHours, setRecallHours] = useState('')
+  const [recallPreview, setRecallPreview] = useState<{ count: number; sample: { id: number; name: string; staff: string; assigned_at: string }[] } | null>(null)
+  const [recalling, setRecalling] = useState(false)
+  const [showRecallSelected, setShowRecallSelected] = useState(false)
   const [bulkDeleting, setBulkDeleting] = useState(false)
 
   const filters = {
@@ -292,11 +306,30 @@ export default function LeadsPage() {
   const handleAutoAssign = async () => {
     setAutoAssigning(true)
     try {
-      const { data } = await leadApi.autoAssign(autoStrategy, [...selectedIds])
+      if (!poolRules && needsStaff(poolScope) && poolIds.length === 0) { toast.error('Pick at least one employee.'); setAutoAssigning(false); return }
+      const { data } = await leadApi.autoAssign(autoStrategy, [...selectedIds], poolRules ? undefined : { staff_scope: poolScope, staff_ids: needsStaff(poolScope) ? poolIds : [] })
       toast.success(data.message ?? 'Leads auto-assigned.')
       setShowAutoAssign(false); setSelectedIds(new Set()); load()
     } catch (e) { toast.error(getError(e)) }
     finally { setAutoAssigning(false) }
+  }
+
+  const recallParams = () => ({ only_untouched: recallUntouched, staff_id: recallStaff ? +recallStaff : null, older_than_hours: recallHours ? +recallHours : null })
+  useEffect(() => {
+    if (!showRecall) return
+    setRecallPreview(null)
+    const t = setTimeout(() => { leadApi.recall({ ...recallParams(), preview: true }).then(r => setRecallPreview(r.data)).catch(() => setRecallPreview({ count: 0, sample: [] })) }, 250)
+    return () => clearTimeout(t)
+  }, [showRecall, recallStaff, recallUntouched, recallHours]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const doRecall = async (ids?: number[]) => {
+    setRecalling(true)
+    try {
+      const { data } = await leadApi.recall(ids ? { lead_ids: ids, only_untouched: false } : recallParams())
+      toast.success(data.message ?? 'Leads recalled.')
+      setShowRecall(false); setShowRecallSelected(false); setSelectedIds(new Set()); load()
+    } catch (e) { toast.error(getError(e)) }
+    finally { setRecalling(false) }
   }
 
   const handleBulkDeleteSelected = async () => {
@@ -353,11 +386,12 @@ export default function LeadsPage() {
           <Button variant="secondary" loading={exporting} onClick={handleExport}>↓ Export</Button>
           <LimitBadge resource="leads" />
           <Button variant="secondary" onClick={() => planLim.guard() && setShowImport(true)}>↑ Import CSV</Button>
-          <Button variant="secondary" onClick={() => {
+          {canAssignAll && <Button variant="secondary" onClick={() => {
             const first = (['algorithm', 'round_robin'] as const).find(m => allowedMethods.includes(m))
             if (!first) { toast.error('Auto-assign is not part of your plan.'); return }
             setAutoStrategy(allowedMethods.includes(autoStrategy) ? autoStrategy : first); setShowAutoAssign(true)
-          }}>⚡ Auto assign</Button>
+          }}>⚡ Auto assign</Button>}
+          {canRecall && <Button variant="secondary" onClick={() => setShowRecall(true)}>↩ Recall pending</Button>}
           <Button variant="secondary" onClick={() => setShowReassign(true)}>⇄ Switch leads</Button>
           <Button onClick={() => planLim.guard() && setShowCreate(true)}>+ Add lead</Button>
         </div>
@@ -413,12 +447,51 @@ export default function LeadsPage() {
                 : <><b>Simple round robin</b> — the least-loaded, longest-idle available agent</>}</span>
             </label>
           ))}
+          <div className="rounded-lg border border-gray-200 p-3 space-y-2">
+            <p className="text-sm font-medium text-gray-700">Who can get these leads?</p>
+            <label className="flex items-start gap-2 text-sm cursor-pointer"><input type="radio" className="mt-0.5" checked={poolRules} onChange={() => setPoolRules(true)} />
+              <span><b>Follow my routing rules</b> — category / campaign rules and the default pool from Assignment Rules</span></label>
+            <label className="flex items-start gap-2 text-sm cursor-pointer"><input type="radio" className="mt-0.5" checked={!poolRules} onChange={() => setPoolRules(false)} />
+              <span><b>Choose now</b> — all staff, attendance-online staff, or selected staff (ignores the routing rules for this run)</span></label>
+            {!poolRules && <StaffScopePicker scope={poolScope} staffIds={poolIds} staff={counsellors} onChange={(s, ids) => { setPoolScope(s); setPoolIds(ids) }} />}
+          </div>
           <div className="flex justify-end gap-2 pt-2">
             <Button variant="secondary" onClick={() => setShowAutoAssign(false)}>Cancel</Button>
             <Button onClick={handleAutoAssign} loading={autoAssigning}>Assign now</Button>
           </div>
         </div>
       </Modal>
+
+      <Modal open={showRecall} onClose={() => setShowRecall(false)} title="Recall pending leads">
+        <div className="space-y-3">
+          <p className="text-sm text-gray-500">Take leads back from staff so they become <b>unassigned</b> again. Open assignments are cancelled and each person's open-lead count goes down.</p>
+          <label className="flex items-start gap-2 text-sm cursor-pointer"><input type="checkbox" className="mt-0.5" checked={recallUntouched} onChange={e => setRecallUntouched(e.target.checked)} />
+            <span><b>Only leads nobody has worked on</b> — still “New”, no follow-up, no call logged. Untick to recall every open assigned lead.</span></label>
+          <div className="grid grid-cols-2 gap-3">
+            <div><p className="text-xs text-gray-500 mb-1">From staff member</p><StaffPicker staff={counsellors} value={recallStaff} onChange={setRecallStaff} placeholder="Everyone" /></div>
+            <label className="text-xs text-gray-500">Assigned more than (hours ago)
+              <input type="number" min={1} className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" placeholder="any time" value={recallHours} onChange={e => setRecallHours(e.target.value)} /></label>
+          </div>
+          {recallStaff && <button className="text-xs text-gray-400 hover:underline" onClick={() => setRecallStaff('')}>Clear staff filter</button>}
+          <div className="rounded-lg bg-gray-50 border border-gray-200 p-3 text-sm">
+            {recallPreview === null ? <span className="text-gray-400">Counting…</span> : recallPreview.count === 0 ? <span className="text-gray-500">No leads match.</span> : (
+              <>
+                <p className="font-medium text-gray-800">{recallPreview.count} lead(s) will be recalled</p>
+                <ul className="mt-1 text-xs text-gray-500 space-y-0.5">{recallPreview.sample.slice(0, 5).map(s => <li key={s.id}>{s.name} · with {s.staff}</li>)}{recallPreview.count > 5 && <li>…and {recallPreview.count - 5} more</li>}</ul>
+              </>
+            )}
+          </div>
+          <p className="text-xs text-gray-400">If “Auto-assign new leads” is on, unassigned leads are picked up again on the next cron run. Switch it off first to hand-pick who gets them.</p>
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" onClick={() => setShowRecall(false)}>Cancel</Button>
+            <Button variant="danger" onClick={() => doRecall()} loading={recalling} disabled={!recallPreview || recallPreview.count === 0}>Recall {recallPreview?.count ?? ''} lead(s)</Button>
+          </div>
+        </div>
+      </Modal>
+      <ConfirmModal open={showRecallSelected} title={`Recall ${selectedIds.size} selected lead(s)?`}
+        message="They will be taken back from their staff and become unassigned."
+        confirmLabel="Recall" confirmVariant="danger" loading={recalling}
+        onConfirm={() => doRecall([...selectedIds])} onCancel={() => setShowRecallSelected(false)} />
 
       {/* Table view */}
       {view === 'table' && (
@@ -438,6 +511,7 @@ export default function LeadsPage() {
                 {Object.entries(priorityConfig).map(([k, p]) => <option key={k} value={k}>{p.label}</option>)}
               </select>
               <Button size="sm" onClick={handleBulkStatus} loading={bulkUpdating} disabled={!bulkStage && !bulkPriority}>Apply status</Button>
+              {canRecall && <Button size="sm" variant="secondary" onClick={() => setShowRecallSelected(true)}>↩ Recall selected</Button>}
               <Button size="sm" variant="danger" onClick={() => setShowBulkDelete(true)}>Delete selected</Button>
               <button onClick={() => setSelectedIds(new Set())} className="text-xs text-gray-400 hover:underline ml-auto">Clear selection</button>
             </div>

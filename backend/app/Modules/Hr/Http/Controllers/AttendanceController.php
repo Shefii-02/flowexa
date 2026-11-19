@@ -245,6 +245,7 @@ class AttendanceController extends Controller
             'distance_m'           => $geo['distance'],
             'allowed_m'            => $settings->geofence_radius_m,
             'note_required'        => false,
+            'note_optional'        => false,
             'note_message'         => null,
             'late_minutes'         => 0,
         ];
@@ -259,9 +260,13 @@ class AttendanceController extends Controller
             $sched = $this->svc->schedule($settings, $profile, $now);
             $status = $this->svc->clockInStatus($now, $sched['start'], $settings->early_window_minutes, $settings->grace_minutes);
             $result['late_minutes'] = $status['late_minutes'];
-            if ($status['requires_note'] && $settings->require_late_note) {
+            $result['late_note_mode'] = $settings->lateNoteMode();
+            if ($status['requires_note'] && $settings->lateNoteMode() === 'required') {
                 $result['note_required'] = true;
                 $result['note_message'] = 'A reason is required when clocking in late.';
+            } elseif ($status['requires_note'] && $settings->lateNoteMode() === 'optional') {
+                $result['note_optional'] = true;
+                $result['note_message'] = "You're {$status['late_minutes']} min late — you can add a reason (optional).";
             }
         } elseif ($data['action'] === 'clock_out' && $att?->clock_in_at) {
             $sched = $this->svc->schedule($settings, $profile, $now);
@@ -331,7 +336,7 @@ class AttendanceController extends Controller
 
         $this->guardMandatoryRadius($settings, $workMode, $geo, $data['radius_reason'] ?? null);
 
-        if ($status['requires_note'] && $settings->require_late_note && empty($data['note'])) {
+        if ($isFirstSession && $status['requires_note'] && $settings->lateNoteMode() === 'required' && empty(trim((string) ($data['note'] ?? '')))) {
             throw ValidationException::withMessages(['note' => 'A reason is required when clocking in late.']);
         }
 
