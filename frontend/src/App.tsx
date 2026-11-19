@@ -5,7 +5,8 @@ import { store } from '@/store'
 import { ProtectedRoute } from '@/components/shared/ProtectedRoute'
 import { DashboardLayout } from '@/components/layout/DashboardLayout'
 import { ErrorBoundary } from '@/components/error'
-import { useIsSuperAdmin } from '@/store'
+import { useIsSuperAdmin, useAppSelector } from '@/store'
+import { Spinner } from '@/components/ui'
 
 // Auth pages
 import HomePage from '@/pages/home/HomePage'
@@ -86,6 +87,7 @@ import SupportDeskPage from '@/pages/superadmin/SupportDeskPage'
 import SenderLimitsPage from '@/pages/superadmin/SenderLimitsPage'
 import SupportTicketsPage from '@/pages/support/SupportTicketsPage'
 import FailedJobsPage from '@/pages/superadmin/FailedJobsPage'
+import CronJobsPage from '@/pages/superadmin/CronJobsPage'
 import IndustryTemplatesPage from '@/pages/superadmin/IndustryTemplatesPage'
 import AgentPlaybookTemplatesPage from '@/pages/superadmin/AgentPlaybookTemplatesPage'
 
@@ -196,6 +198,9 @@ export const DashboardRouter = () => {
 // redirects everyone else straight to /dashboard.
 const SuperAdminRoute = ({ children }: { children: React.ReactNode }) => {
   const isSuperAdmin = useIsSuperAdmin()
+  const user = useAppSelector((s) => s.auth.user)
+  // user not loaded yet (page opened by URL / refreshed) — wait, do not bounce to /dashboard
+  if (!user) return <div className="flex justify-center py-12"><Spinner size="lg" /></div>
   if (!isSuperAdmin) {
     return <Navigate to="/dashboard" replace />
   }
@@ -580,6 +585,10 @@ export default function App() {
               <Route
                 path="superadmin/demo-requests"
                 element={<SuperAdminRoute><DemoRequestsPage /></SuperAdminRoute>}
+              />
+              <Route
+                path="superadmin/cron-jobs"
+                element={<SuperAdminRoute><CronJobsPage /></SuperAdminRoute>}
               />
               <Route
                 path="superadmin/failed-jobs"

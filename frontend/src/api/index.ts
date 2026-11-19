@@ -379,6 +379,9 @@ export const superadminApi = {
   aiTest: (d: { company_id: number; query: string; ai_config?: Record<string, unknown>; use_rag?: boolean }) =>
     api.post('/superadmin/ai-test', d),
   failedJobs: (p?: Record<string, unknown>) => api.get('/superadmin/failed-jobs', { params: p }),
+  cronOverview: () => api.get('/superadmin/cron'),
+  cronHistory: (p?: Record<string, unknown>) => api.get('/superadmin/cron/history', { params: p }),
+  cronClear: (p?: { older_than_days?: number; task?: string }) => api.delete('/superadmin/cron/history', { params: p }),
   retryFailedJob: (uuid: string) => api.post(`/superadmin/failed-jobs/${uuid}/retry`),
   deleteFailedJob: (uuid: string) => api.delete(`/superadmin/failed-jobs/${uuid}`),
   flushFailedJobs: () => api.delete('/superadmin/failed-jobs'),

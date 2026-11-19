@@ -24,6 +24,9 @@ class AppServiceProvider extends ServiceProvider
 
         Company::observe(CompanyObserver::class);
 
+        // Cron Jobs monitor: records every scheduled run + a heartbeat each time the server cron calls schedule:run
+        \App\Support\SchedulerMonitor::register();
+
         // Instagram conversion events (instagram_manage_events): a new lead / a won deal. The job checks the account's
         // opt-in itself, so for everyone else this is a cheap no-op.
         \App\Models\Lead::created(fn ($lead) => \App\Modules\Instagram\Jobs\SendInstagramConversionEvent::dispatch('lead', $lead->id));

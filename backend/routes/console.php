@@ -45,3 +45,6 @@ Schedule::call(fn () => \Illuminate\Support\Facades\DB::table('instagram_webhook
 
 // AutoDMs held back by the hourly DM cap are sent oldest-first as soon as the window frees up.
 Schedule::command('instagram:drain-queue')->everyMinute()->withoutOverlapping();
+
+// Keep 30 days of cron-run history for Superadmin → Cron Jobs.
+Schedule::call(fn () => \Illuminate\Support\Facades\DB::table('scheduler_runs')->where('started_at', '<', now()->subDays(30))->delete())->dailyAt('04:00')->name('scheduler-history:prune');

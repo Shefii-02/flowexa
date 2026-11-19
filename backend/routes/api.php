@@ -211,6 +211,9 @@ Route::prefix('v1')->group(function () {
                 Route::post('ai-test',                              [SuperAdminController::class, 'aiTest'])->name('ai-test');
 
                 // Failed queue jobs
+                Route::get('cron',                     [\App\Modules\Settings\Http\Controllers\CronMonitorController::class, 'index'])->name('cron.index');
+                Route::get('cron/history',             [\App\Modules\Settings\Http\Controllers\CronMonitorController::class, 'history'])->name('cron.history');
+                Route::delete('cron/history',          [\App\Modules\Settings\Http\Controllers\CronMonitorController::class, 'clear'])->name('cron.clear');
                 Route::get('failed-jobs',              [SuperAdminController::class, 'failedJobs'])->name('failed-jobs.index');
                 Route::delete('failed-jobs',            [SuperAdminController::class, 'flushFailedJobs'])->name('failed-jobs.flush');
                 Route::post('failed-jobs/{uuid}/retry', [SuperAdminController::class, 'retryFailedJob'])->name('failed-jobs.retry');

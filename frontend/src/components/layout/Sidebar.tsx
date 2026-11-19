@@ -81,6 +81,15 @@ function SectionHeader({ label, id, hideWhenFlat }: { label: string; id?: string
   )
 }
 
+/** A caption for a bundle of menu entries — hidden when the company has none of those features, so no empty headings. */
+function GroupHeader({ label, modules }: { label: string; modules: string[] }) {
+  const user = useAppSelector(s => s.auth.user)
+  const e = user?.company?.entitlements
+  const any = !e || e.all || modules.some(m => e.modules.includes(m))
+  if (!any) return null
+  return <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider px-2 pt-4 pb-1 select-none border-t border-gray-100 mt-2">{label}</p>
+}
+
 /** Expanded (non-accordion) group: the small uppercase caption, then its links — no collapsing. */
 const FlatDepth = createContext(0)
 function FlatGroup({ label, extra, children }: { label: string; extra?: React.ReactNode; children: React.ReactNode }) {
@@ -254,24 +263,24 @@ function Accordion({
 }
 
 // ── SuperAdmin menu: grouped, each group an accordion (one open at a time is not forced — admins jump between groups) ──
-const SUPERADMIN_NAV: { id: string; icon: string; label: string; items: { to: string; icon: string; label: string }[] }[] = [
-  { id: 'sales', icon: '🎯', label: 'Sales & Companies', items: [
+const SUPERADMIN_NAV: { id: string; section: string; icon: string; label: string; items: { to: string; icon: string; label: string }[] }[] = [
+  { id: 'sales', section: 'Business', icon: '🎯', label: 'Sales & Companies', items: [
     { to: '/superadmin/demo-requests', icon: '📅', label: 'Demo Requests (CRM)' },
     { to: '/superadmin/companies', icon: '🏢', label: 'Companies' },
     { to: '/superadmin/expiries', icon: '⏳', label: 'Plan expiry' },
   ] },
-  { id: 'plans', icon: '📦', label: 'Plans & Pricing', items: [
+  { id: 'plans', section: 'Business', icon: '📦', label: 'Plans & Pricing', items: [
     { to: '/superadmin/plans', icon: '📦', label: 'Plans' },
     { to: '/superadmin/addons', icon: '🧩', label: 'Add-ons' },
     { to: '/superadmin/coupons', icon: '🎟️', label: 'Coupons' },
     { to: '/superadmin/topup', icon: '💬', label: 'Top-up Packages' },
   ] },
-  { id: 'revenue', icon: '💰', label: 'Revenue & Billing', items: [
+  { id: 'revenue', section: 'Business', icon: '💰', label: 'Revenue & Billing', items: [
     { to: '/superadmin/revenue', icon: '📈', label: 'Revenue & Payments' },
     { to: '/superadmin/billing', icon: '💰', label: 'Billing' },
     { to: '/superadmin/reports', icon: '📊', label: 'Reports' },
   ] },
-  { id: 'platform', icon: '🛠️', label: 'Platform', items: [
+  { id: 'platform', section: 'Platform', icon: '🛠️', label: 'Platform', items: [
     { to: '/superadmin/staff', icon: '👤', label: 'Platform Staff' },
     { to: '/superadmin/permissions', icon: '🔑', label: 'Permissions' },
     { to: '/superadmin/mobile-modules', icon: '📱', label: 'Mobile App Tiles' },
@@ -280,11 +289,12 @@ const SUPERADMIN_NAV: { id: string; icon: string; label: string; items: { to: st
     { to: '/superadmin/industry-templates', icon: '🏭', label: 'Business Types / Industries' },
     { to: '/superadmin/agent-playbook-templates', icon: '🗒️', label: 'Agent Playbook Templates' },
   ] },
-  { id: 'ops', icon: '🩺', label: 'Support & Monitoring', items: [
+  { id: 'ops', section: 'Monitoring', icon: '🩺', label: 'Support & Monitoring', items: [
     { to: '/superadmin/support', icon: '🎧', label: 'Support Desk' },
     { to: '/superadmin/api-logs', icon: '📈', label: 'API & Activity' },
     { to: '/superadmin/errors', icon: '🐞', label: 'Error Logs' },
     { to: '/superadmin/system-log', icon: '📜', label: 'System Log' },
+    { to: '/superadmin/cron-jobs', icon: '⏰', label: 'Cron Jobs' },
     { to: '/superadmin/failed-jobs', icon: '🧯', label: 'Failed Jobs' },
     { to: '/superadmin/ai-test', icon: '🤖', label: 'AI Response Testing' },
   ] },
@@ -483,6 +493,7 @@ const SidebarInner = () => {
             {/* {canViewDash &&  */}
             <FlatLink to="/dashboard" icon="📊" label="Dashboard" end />
 
+            <GroupHeader label="Channels" modules={['wa_chat', 'wa_cloud', 'ai_agent', 'social_dm', 'web_widgets']} />
             {/* ── WA Chat accordion ── */}
             {/* {canViewWaChat && ( */}
             <Accordion
@@ -611,26 +622,6 @@ const SidebarInner = () => {
             </Accordion>
             {/* )} */}
 
-            {/* ── Meta Ads accordion ── */}
-            {/* {canViewMetaAds && ( */}
-            <Accordion
-              id="meta-ads"
-              icon="📣"
-              label="Meta Ads"
-              basePaths={['/meta-ads']}
-              isOpen={openAccordion === 'meta-ads'}
-              onToggle={() => toggle('meta-ads')}
-            >
-              <SubLink to="/meta-ads/accounts" icon="🏦" label="Ad Accounts" />
-              <SubLink to="/meta-ads/campaigns" icon="📢" label="Campaigns" />
-              <SubLink to="/meta-ads/audiences" icon="🎯" label="Audience Sets" />
-              <SubLink to="/meta-ads/lead-ads" icon="📥" label="Lead Ads" />
-              <SubLink to="/meta-ads/creatives" icon="🎨" label="Creative Studio" />
-              <SubLink to="/meta-ads/media" icon="🖼️" label="Media Library" />
-              <SubLink to="/meta-ads/insights" icon="📊" label="Ads Insight" />
-            </Accordion>
-            {/* )} */}
-
             {/* ── Instagram accordion ── */}
             <Accordion
               id="instagram"
@@ -663,28 +654,34 @@ const SidebarInner = () => {
               <SubLink to="/messenger/inbox" icon="📥" label="Inbox" />
             </Accordion>
 
+            {/* Catalog is a top-level item now (📦 Catalog under CRM) */}
+            <FlatLink to="/website-widget" icon="🌐" label="Website Widget" />
+            <GroupHeader label="Marketing" modules={['meta_ads', 'short_links', 'media_library']} />
+            {/* ── Meta Ads accordion ── */}
+            {/* {canViewMetaAds && ( */}
+            <Accordion
+              id="meta-ads"
+              icon="📣"
+              label="Meta Ads"
+              basePaths={['/meta-ads']}
+              isOpen={openAccordion === 'meta-ads'}
+              onToggle={() => toggle('meta-ads')}
+            >
+              <SubLink to="/meta-ads/accounts" icon="🏦" label="Ad Accounts" />
+              <SubLink to="/meta-ads/campaigns" icon="📢" label="Campaigns" />
+              <SubLink to="/meta-ads/audiences" icon="🎯" label="Audience Sets" />
+              <SubLink to="/meta-ads/lead-ads" icon="📥" label="Lead Ads" />
+              <SubLink to="/meta-ads/creatives" icon="🎨" label="Creative Studio" />
+              <SubLink to="/meta-ads/media" icon="🖼️" label="Media Library" />
+              <SubLink to="/meta-ads/insights" icon="📊" label="Ads Insight" />
+            </Accordion>
+            {/* )} */}
+
             <FlatLink to="/media-library" icon="🖼️" label="Media Library" />
             <FlatLink to="/short-links" icon="🔗" label="Short Links" />
 
-            {/* Catalog is a top-level item now (📦 Catalog under CRM) */}
-            <FlatLink to="/website-widget" icon="🌐" label="Website Widget" />
-            {/* Personal tools — the same things as the floating buttons, as full pages */}
-            <FlatLink to="/ask" icon="✨" label="Ask in portal" />
-            <FlatLink to="/team-chat" icon="💬" label="Team chat" />
-            <FlatLink to="/sticky-notes" icon="📝" label="Sticky notes" />
-            <FlatLink to="/todo" icon="✅" label="To-do list" />
-            {/* ── ACCOUNTS ── */}
-            {canViewAccounts && (
-              <>
-                <SectionHeader label="Accounts" id="accounts" hideWhenFlat />
-                <NestedAccordion id="accounts" icon="🧮" label="Accounts" basePaths={['/accounts']}>
-                  {accountsMenu}
-                </NestedAccordion>
-              </>
-            )}
-
+            <GroupHeader label="Sales" modules={['crm', 'tasks', 'leads']} />
             {/* ── CRM ── */}
-            <SectionHeader label="CRM" id="crm" hideWhenFlat />
             <NestedAccordion
               id="crm"
               icon="🗂️"
@@ -710,7 +707,6 @@ const SidebarInner = () => {
 
 
             {/* ── TASKS ── */}
-            <SectionHeader label="Tasks" id="tasks" hideWhenFlat />
             <NestedAccordion id="tasks" icon="📋" label="Tasks" basePaths={['/tasks']}>
               <SubLink to="/tasks" icon="📋" label="Tasks" />
               <SubLink to="/tasks/followups" icon="🔁" label="Follow-ups" />
@@ -718,7 +714,6 @@ const SidebarInner = () => {
             </NestedAccordion>
 
             {/* ── LEADS ── */}
-            <SectionHeader label="Leads" id="leads" hideWhenFlat />
             <NestedAccordion
               id="leads"
               icon="🎯"
@@ -753,8 +748,17 @@ const SidebarInner = () => {
               </NestedAccordion> */}
             </NestedAccordion>
 
+            <GroupHeader label="Business" modules={['finance', 'hr']} />
+            {/* ── ACCOUNTS ── */}
+            {canViewAccounts && (
+              <>
+                <NestedAccordion id="accounts" icon="🧮" label="Accounts" basePaths={['/accounts']}>
+                  {accountsMenu}
+                </NestedAccordion>
+              </>
+            )}
+
             {/* ── HR ── */}
-            <SectionHeader label="HR" id="hr" hideWhenFlat />
             <NestedAccordion id="hr" icon="👥" label="HR" basePaths={['/hr']}>
               <SubLink to="/hr/attendance" icon="🕒" label="My Attendance" />
               <SubLink to="/hr/target" icon="🎯" label="My Target" />
@@ -778,6 +782,12 @@ const SidebarInner = () => {
               </NestedAccordion>
             </NestedAccordion>
 
+            <SectionHeader label="My workspace" />
+            {/* Personal tools — the same things as the floating buttons, as full pages */}
+            <FlatLink to="/ask" icon="✨" label="Ask in portal" />
+            <FlatLink to="/team-chat" icon="💬" label="Team chat" />
+            <FlatLink to="/sticky-notes" icon="📝" label="Sticky notes" />
+            <FlatLink to="/todo" icon="✅" label="To-do list" />
             {/* ── STAFF ── */}
             <SectionHeader label="Staff" />
             {/* {canViewStaff &&  */}
@@ -815,14 +825,18 @@ const SidebarInner = () => {
           </>
         )}
 
-        {/* ── SuperAdmin section ── */}
+        {/* ── SuperAdmin section — one list, grouped; every page appears exactly once ── */}
         {isSuperAdmin && (
           <>
-            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider px-2 pt-3 pb-1">SuperAdmin</p>
             <FlatLink to="/superadmin" icon="📊" label="Dashboard" end />
-            {SUPERADMIN_NAV.map(g => (
-              <SuperAdminGroup key={g.id} group={g} />
+            {SUPERADMIN_NAV.map((g, i) => (
+              <div key={g.id}>
+                {(i === 0 || SUPERADMIN_NAV[i - 1].section !== g.section) && (
+                  <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider px-2 pt-4 pb-1 select-none border-t border-gray-100 mt-2">{g.section}</p>)}
+                <SuperAdminGroup group={g} />
+              </div>
             ))}
+            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider px-2 pt-4 pb-1 select-none border-t border-gray-100 mt-2">System</p>
             <FlatLink to="/settings/index" icon="⚙️" label="Settings" />
             <Accordion
               id="integrations"
@@ -837,41 +851,6 @@ const SidebarInner = () => {
               <SubLink to="/settings/integrations/calendar" icon="📅" label="Calendar" />
               <SubLink to="/settings/integrations/email" icon="✉️" label="Email" />
             </Accordion>
-            {/* } */}
-            <FlatLink to="/plan-purchase" icon="💳" label="Plans & Billing" />
-            {canViewSupport && <FlatLink to="/support" icon="🎧" label="Support" />}
-            <FlatLink to="/setup-guide" icon="🧭" label="Setup Guide" />
-          </>
-        )}
-
-        {/* ── SuperAdmin section ── */}
-        {isSuperAdmin && (
-          <>
-            <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider px-2 pt-3 pb-1">SuperAdmin</p>
-            <FlatLink to="/superadmin" icon="📊" label="Dashboard" end />
-            <FlatLink to="/superadmin/support" icon="🎧" label="Support Desk" />
-            <FlatLink to="/superadmin/sender-limits" icon="🚦" label="Sender Speed Limits" />
-            <FlatLink to="/superadmin/demo-requests" icon="📅" label="Demo Requests" />
-            <FlatLink to="/superadmin/companies" icon="🏢" label="Companies" />
-            <FlatLink to="/superadmin/plans" icon="📦" label="Plans" />
-            <FlatLink to="/superadmin/addons" icon="🧩" label="Add-ons" />
-            <FlatLink to="/superadmin/expiries" icon="⏳" label="Plan expiry" />
-            <FlatLink to="/superadmin/billing" icon="💰" label="Billing" />
-            <FlatLink to="/superadmin/staff" icon="👤" label="Platform Staff" />
-            <FlatLink to="/superadmin/permissions" icon="🔑" label="Permissions" />
-            <FlatLink to="/superadmin/mobile-modules" icon="📱" label="Mobile App Tiles" />
-            <FlatLink to="/superadmin/topup" icon="💬" label="Top-up Packages" />
-            <FlatLink to="/superadmin/prebuilt-templates" icon="🧩" label="Prebuilt Templates" />
-            <FlatLink to="/superadmin/reports" icon="📊" label="Reports" />
-            <FlatLink to="/superadmin/api-logs" icon="📈" label="API & Activity" />
-            <FlatLink to="/superadmin/errors" icon="🐞" label="Error Logs" />
-            <FlatLink to="/superadmin/system-log" icon="📜" label="System Log" />
-            <FlatLink to="/superadmin/ai-test" icon="🤖" label="AI Response Testing" />
-            <FlatLink to="/superadmin/failed-jobs" icon="🧯" label="Failed Jobs" />
-            <FlatLink to="/superadmin/industry-templates" icon="🏭" label="Business Types / Industries" />
-            <FlatLink to="/superadmin/agent-playbook-templates" icon="🗒️" label="Agent Playbook Templates" />
-            <FlatLink to="/settings/index" icon="⚙️" label="Settings" />
-            {/* } */}
             <FlatLink to="/setup-guide" icon="🧭" label="Setup Guide" />
           </>
         )}
