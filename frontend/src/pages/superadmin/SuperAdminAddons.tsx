@@ -6,8 +6,9 @@ import { Badge, Button, Input, Modal, Spinner } from '@/components/ui'
 import PricingPdfButton from '@/components/plan/PricingPdfButton'
 import { fmt, getError } from '@/utils'
 
-type Row = { id: number; name: string; slug: string; description: string | null; type: string; price: string | number; price_yearly: string | number | null; billing_cycle: string; group?: { title: string; icon: string }; config: { resource?: string; amount?: number; module?: string } | null; is_active: boolean; deleted_at?: string | null }
+type Row = { id: number; name: string; slug: string; description: string | null; type: string; price: string | number; price_yearly: string | number | null; billing_cycle: string; active_buyers?: number; group?: { title: string; icon: string }; config: { resource?: string; amount?: number; module?: string } | null; is_active: boolean; deleted_at?: string | null }
 type Res = { key: string; label: string; kind: string }
+const slugify = (t: string) => t.toLowerCase().normalize('NFKD').replace(/[^\w\s-]/g, '').trim().replace(/[\s_]+/g, '-').replace(/-+/g, '-')
 const EMPTY = { name: '', slug: '', description: '', type: 'limit', price: '', price_yearly: '', billing_cycle: 'monthly', resource: '', amount: '', module: '', is_active: true }
 
 export default function SuperAdminAddons() {
@@ -18,6 +19,9 @@ export default function SuperAdminAddons() {
   const [edit, setEdit] = useState<Row | 'new' | null>(null)
   const [form, setForm] = useState(EMPTY)
   const [saving, setSaving] = useState(false)
+  const [slugEdited, setSlugEdited] = useState(false)   // once typed by hand, the slug stops following the name
+  const [askApply, setAskApply] = useState(false)
+  const [applyChoice, setApplyChoice] = useState(true)
 
   const load = () => Promise.all([planApi.saAddons(), planApi.saAddonResources(), planApi.saPlanCatalog()])
     .then(([a, r, c]) => { setRows(a.data.addons ?? a.data.data ?? a.data); setResources(r.data.resources); setMods(c.data.modules) })
@@ -25,18 +29,25 @@ export default function SuperAdminAddons() {
   useEffect(() => { load() }, [])
 
   const open = (r: Row | 'new') => {
-    setEdit(r)
+    setEdit(r); setSlugEdited(false)
     setForm(r === 'new' ? EMPTY : { name: r.name, slug: r.slug, description: r.description ?? '', type: r.type, price: String(r.price), price_yearly: r.price_yearly != null ? String(r.price_yearly) : '', billing_cycle: r.billing_cycle, resource: r.config?.resource ?? '', amount: r.config?.amount != null ? String(r.config.amount) : '', module: r.config?.module ?? '', is_active: !!r.is_active })
   }
   const set = (k: keyof typeof EMPTY, v: string | boolean) => setForm(f => ({ ...f, [k]: v }))
 
-  const save = async () => {
+  // an add-on that companies currently hold: ask whether they get the change too
+  const requestSave = () => {
+    if (edit && edit !== 'new' && (edit.active_buyers ?? 0) > 0) { setApplyChoice(true); setAskApply(true) } else void save(true)
+  }
+
+  const save = async (applyToExisting: boolean = true) => {
+    setAskApply(false)
     setSaving(true)
     const payload = {
       name: form.name, slug: form.slug, description: form.description || null, type: form.type,
       price: +form.price, price_yearly: form.price_yearly ? +form.price_yearly : null,
       billing_cycle: form.billing_cycle, is_active: form.is_active,
       config: form.type === 'limit' ? { resource: form.resource, amount: +form.amount } : form.type === 'module' ? { module: form.module } : null,
+      ...(edit && edit !== 'new' ? { apply_to_existing: applyToExisting } : {}),
     }
     try {
       if (edit === 'new') await planApi.saCreateAddon(payload); else if (edit) await planApi.saUpdateAddon(edit.id, payload)
@@ -66,7 +77,7 @@ export default function SuperAdminAddons() {
             <td className="text-sm">{r.type === 'limit' ? `+${fmt.number(r.config?.amount ?? 0)} ${label(r.config?.resource)}` : r.type === 'module' ? `Unlocks ${mods.find(m => m.key === r.config?.module)?.label ?? r.config?.module}` : r.type}</td>
             <td>{r.billing_cycle === 'one_time' ? 'One time ' : ''}₹{fmt.number(Number(r.price))}</td>
             <td>{r.billing_cycle === 'one_time' ? '—' : r.price_yearly != null ? `₹${fmt.number(Number(r.price_yearly))}` : <span className="text-xs text-gray-400">₹{fmt.number(Number(r.price) * 12)} (12 × monthly)</span>}</td>
-            <td><Badge variant={r.deleted_at ? 'red' : r.is_active ? 'green' : 'gray'}>{r.deleted_at ? 'removed' : r.is_active ? 'active' : 'hidden'}</Badge></td>
+            <td><Badge variant={r.deleted_at ? 'red' : r.is_active ? 'green' : 'gray'}>{r.deleted_at ? 'removed' : r.is_active ? 'active' : 'hidden'}</Badge>{!!r.active_buyers && <p className="mt-0.5 text-[11px] text-gray-400">{r.active_buyers} using</p>}</td>
             <td className="text-right space-x-2">{!r.deleted_at && <><Button size="sm" variant="secondary" onClick={() => open(r)}>Edit</Button><Button size="sm" variant="danger" onClick={() => remove(r)}>Delete</Button></>}</td>
           </tr>))}
           {!rows.length && <tr><td colSpan={6} className="py-8 text-center text-sm text-gray-500">No add-ons yet.</td></tr>}
@@ -74,8 +85,9 @@ export default function SuperAdminAddons() {
 
       <Modal open={!!edit} onClose={() => setEdit(null)} title={edit === 'new' ? 'New add-on' : 'Edit add-on'}>
         <div className="space-y-3">
-          <Input label="Name" value={form.name} onChange={e => set('name', e.target.value)} />
-          <Input label="Slug" value={form.slug} onChange={e => set('slug', e.target.value)} disabled={edit !== 'new'} />
+          <Input label="Name" value={form.name} onChange={e => { const v = e.target.value; setForm(f => ({ ...f, name: v, slug: slugEdited ? f.slug : slugify(v) })) }} />
+          <Input label="Slug" value={form.slug} onChange={e => { setSlugEdited(true); set('slug', slugify(e.target.value)) }} />
+          <p className="-mt-2 text-[11px] text-gray-400">Follows the name automatically{slugEdited ? ' — you edited it by hand, so it no longer follows' : ''}. Kept unique on save.</p>
           <Input label="Description" value={form.description} onChange={e => set('description', e.target.value)} />
           <label className="block text-sm font-medium text-gray-700">Type
             <select className="select mt-1 w-full" value={form.type} onChange={e => set('type', e.target.value)}>
@@ -104,9 +116,30 @@ export default function SuperAdminAddons() {
             {form.billing_cycle !== 'one_time' && <Input label="Yearly price ₹" type="number" min={0} placeholder="blank = 12 × monthly" value={form.price_yearly} onChange={e => set('price_yearly', e.target.value)} />}
           </div>
           <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={form.is_active} onChange={e => set('is_active', e.target.checked)} /> Available to buy</label>
-          <div className="flex justify-end gap-2 pt-2"><Button variant="secondary" onClick={() => setEdit(null)}>Cancel</Button><Button onClick={save} loading={saving}>Save</Button></div>
+          <div className="flex justify-end gap-2 pt-2"><Button variant="secondary" onClick={() => setEdit(null)}>Cancel</Button><Button onClick={requestSave} loading={saving}>Save</Button></div>
         </div>
       </Modal>
+
+      {askApply && edit && edit !== 'new' && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40 p-4" onClick={e => e.target === e.currentTarget && setAskApply(false)}>
+          <div role="dialog" aria-modal="true" className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl">
+            <h3 className="text-base font-semibold text-gray-900">Apply changes to companies that already have it?</h3>
+            <p className="mt-1 text-sm text-gray-600"><b>{edit.active_buyers}</b> {edit.active_buyers === 1 ? 'company has' : 'companies have'} an active <b>{edit.name}</b>.</p>
+            <div className="mt-4 space-y-2">
+              {[{ v: true, t: 'Yes — update everyone', d: 'They get the new feature / limit straight away, for the rest of their paid period.' },
+                { v: false, t: 'No — new purchases only', d: 'They keep exactly what they bought; only people who buy it from now on get your changes.' }].map(o => (
+                <label key={String(o.v)} className={`flex cursor-pointer gap-3 rounded-xl border p-3 ${applyChoice === o.v ? 'border-brand-500 bg-brand-50' : 'border-gray-200'}`}>
+                  <input type="radio" name="apply-addon" className="mt-1" checked={applyChoice === o.v} onChange={() => setApplyChoice(o.v)} />
+                  <span><span className="block text-sm font-medium text-gray-900">{o.t}</span><span className="block text-xs text-gray-500">{o.d}</span></span>
+                </label>))}
+            </div>
+            <p className="mt-3 text-[11px] text-gray-400">Price changes never change what a company already paid.</p>
+            <div className="mt-4 flex justify-end gap-2">
+              <Button variant="secondary" onClick={() => setAskApply(false)}>Cancel</Button>
+              <Button onClick={() => save(applyChoice)}>Submit</Button>
+            </div>
+          </div>
+        </div>)}
     </div>
   )
 }

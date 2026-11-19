@@ -445,10 +445,57 @@ class PlanPurchaseService
     public function createTopupPackage(array $d): TopupPackage   { return TopupPackage::create($d); }
     public function updateTopupPackage(int $id, array $d): TopupPackage { $p = TopupPackage::findOrFail($id); $p->update($d); return $p->fresh(); }
     public function deleteTopupPackage(int $id): void            { TopupPackage::findOrFail($id)->delete(); }
-    public function createAddon(array $d): Addon                 { return Addon::create($d); }
-    public function updateAddon(int $id, array $d): Addon        { $a = Addon::findOrFail($id); $a->update($d); return $a->fresh(); }
+    /** A unique slug from the given text (or the name): "Extra Users" → extra-users, then extra-users-2 … if taken. */
+    public function addonSlug(string $text, ?int $ignoreId = null): string
+    {
+        $base = \Illuminate\Support\Str::slug($text) ?: 'addon';
+        $slug = $base; $i = 2;
+        while (Addon::withTrashed()->where('slug', $slug)->when($ignoreId, fn ($q) => $q->where('id', '!=', $ignoreId))->exists()) { $slug = $base . '-' . $i++; }
+        return $slug;
+    }
+
+    public function createAddon(array $d): Addon
+    {
+        $d['slug'] = $this->addonSlug($d['slug'] ?? $d['name']);
+        return Addon::create($d);
+    }
+
+    /**
+     * Edit an add-on. Companies that already bought it read its feature / limit live, so a change reaches all of them.
+     * $applyToExisting = false keeps them on exactly what they bought: they move to a hidden copy of the add-on as it is now,
+     * then the live add-on is edited (only new purchases get the change). Prices never alter what a company already paid.
+     */
+    public function updateAddon(int $id, array $d, bool $applyToExisting = true): Addon
+    {
+        $a = Addon::findOrFail($id);
+        if (array_key_exists('slug', $d) || array_key_exists('name', $d)) {
+            $d['slug'] = $this->addonSlug($d['slug'] ?? $d['name'] ?? $a->slug, $a->id);
+        }
+        DB::transaction(function () use ($a, $d, $applyToExisting) {
+            $activeBuyers = CompanyAddon::where('addon_id', $a->id)->where('status', 'active')
+                ->where(fn ($w) => $w->whereNull('expires_at')->orWhere('expires_at', '>', now()));
+            if (!$applyToExisting && (clone $activeBuyers)->exists()) {
+                $legacy = $a->replicate();
+                $legacy->slug = $this->addonSlug($a->slug . '-previous');
+                $legacy->is_active = false;
+                $legacy->save();
+                $legacy->delete();                                  // off sale, but still readable by the companies that hold it
+                CompanyAddon::whereIn('id', (clone $activeBuyers)->pluck('id'))->update(['addon_id' => $legacy->id]);
+            }
+            $a->update($d);
+        });
+        \App\Support\Entitlements::forget();
+        \App\Support\PlanLimits::forgetCache();
+        return $a->fresh();
+    }
     public function superAdminPlans(): \Illuminate\Database\Eloquent\Collection { return Plan::withTrashed()->withCount('companies')->orderBy('sort_order')->orderBy('price')->get(); }
-    public function superAdminAddons(): \Illuminate\Database\Eloquent\Collection { return Addon::withTrashed()->get(); }
+    public function superAdminAddons(): \Illuminate\Database\Eloquent\Collection
+    {
+        // `-previous` copies exist only to keep old buyers on what they bought — they are not for editing, so keep them out of the list
+        return Addon::withTrashed()
+            ->withCount(['companyAddons as active_buyers' => fn ($q) => $q->where('status', 'active')->where(fn ($w) => $w->whereNull('expires_at')->orWhere('expires_at', '>', now()))])
+            ->get()->reject(fn ($a) => $a->deleted_at && str_contains($a->slug, '-previous'))->values();
+    }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
     /** Plan price for a duration. A yearly price set by the superadmin wins; otherwise the old 20%-off rule applies. */

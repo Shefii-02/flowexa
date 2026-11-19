@@ -310,7 +310,7 @@ class PlanPurchaseController extends Controller
 
     public function superAdminCreateAddon(Request $request): JsonResponse
     {
-        $d = $request->validate(['name' => ['required', 'string', 'max:100'], 'slug' => ['required', 'string', 'max:110'], 'description' => ['nullable', 'string'], 'type' => ['required', 'in:feature,message_pack,storage,limit,module'], 'price' => ['required', 'numeric', 'min:0'], 'price_yearly' => ['nullable', 'numeric', 'min:0'], 'billing_cycle' => ['required', 'in:monthly,yearly,one_time'], 'config' => ['nullable', 'array'], 'is_active' => ['nullable', 'boolean']]);
+        $d = $request->validate(['name' => ['required', 'string', 'max:100'], 'slug' => ['nullable', 'string', 'max:110'], 'description' => ['nullable', 'string'], 'type' => ['required', 'in:feature,message_pack,storage,limit,module'], 'price' => ['required', 'numeric', 'min:0'], 'price_yearly' => ['nullable', 'numeric', 'min:0'], 'billing_cycle' => ['required', 'in:monthly,yearly,one_time'], 'config' => ['nullable', 'array'], 'is_active' => ['nullable', 'boolean']]);
         // A limit add-on raises one plan limit (e.g. staff users): it must name which one and by how much.
         if ($d['type'] === 'limit') {
             $request->validate([
@@ -326,7 +326,22 @@ class PlanPurchaseController extends Controller
 
     public function superAdminUpdateAddon(Request $request, int $id): JsonResponse
     {
-        return response()->json(['addon' => $this->svc->updateAddon($id, $request->all())]);
+        $d = $request->validate([
+            'name' => ['sometimes', 'string', 'max:100'], 'slug' => ['sometimes', 'nullable', 'string', 'max:110'], 'description' => ['nullable', 'string'],
+            'type' => ['sometimes', 'in:feature,message_pack,storage,limit,module'], 'price' => ['sometimes', 'numeric', 'min:0'], 'price_yearly' => ['nullable', 'numeric', 'min:0'],
+            'billing_cycle' => ['sometimes', 'in:monthly,yearly,one_time'], 'config' => ['nullable', 'array'], 'is_active' => ['nullable', 'boolean'],
+            'apply_to_existing' => ['nullable', 'boolean'],
+        ]);
+        if (($d['type'] ?? null) === 'limit') {
+            $request->validate(['config.resource' => ['required', 'string', \Illuminate\Validation\Rule::in(array_keys(\App\Support\PlanLimits::REGISTRY))], 'config.amount' => ['required', 'integer', 'min:1', 'max:100000']]);
+        }
+        if (($d['type'] ?? null) === 'module') {
+            $request->validate(['config.module' => ['required', 'string', \Illuminate\Validation\Rule::in(\App\Support\Modules::keys())]]);
+        }
+        $apply = $d['apply_to_existing'] ?? true;
+        unset($d['apply_to_existing']);
+        if (empty($d['slug'])) { unset($d['slug']); }
+        return response()->json(['addon' => $this->svc->updateAddon($id, $d, (bool) $apply)]);
     }
 
     /** DELETE superadmin/addons/{id} — retire an add-on; companies that already bought it keep it until it expires. */
