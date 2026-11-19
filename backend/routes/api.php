@@ -720,13 +720,15 @@ Route::prefix('v1')->group(function () {
         });
 
         Route::prefix('crm')->middleware(['company.active'])->group(function () {
-            Route::get('deals/board',        [DealController::class, 'board']);
-            Route::get('deals',              [DealController::class, 'index']);
-            Route::post('deals',             [DealController::class, 'store']);
-            Route::get('deals/{id}',         [DealController::class, 'show']);
-            Route::patch('deals/{id}',       [DealController::class, 'update']);
-            Route::patch('deals/{id}/stage', [DealController::class, 'moveStage']);
-            Route::delete('deals/{id}',      [DealController::class, 'destroy']);
+            Route::middleware('permission:contacts.view')->group(function () {   // same access as the Contacts section these live under
+                Route::get('deals/board',        [DealController::class, 'board']);
+                Route::get('deals',              [DealController::class, 'index']);
+                Route::post('deals',             [DealController::class, 'store']);
+                Route::get('deals/{id}',         [DealController::class, 'show']);
+                Route::patch('deals/{id}',       [DealController::class, 'update']);
+                Route::patch('deals/{id}/stage', [DealController::class, 'moveStage']);
+                Route::delete('deals/{id}',      [DealController::class, 'destroy']);
+            });
 
             Route::get('tasks',              [TaskController::class, 'index']);
             Route::post('tasks',             [TaskController::class, 'store']);
@@ -743,11 +745,13 @@ Route::prefix('v1')->group(function () {
             Route::post('calendar-events/{id}/no-show',   [\App\Modules\Calendar\Http\Controllers\CalendarController::class, 'noShow']);
             Route::delete('calendar-events/{id}',         [\App\Modules\Calendar\Http\Controllers\CalendarController::class, 'destroy']);
 
-            Route::get('segments',           [SegmentController::class, 'index']);
-            Route::post('segments',          [SegmentController::class, 'store']);
-            Route::post('segments/preview',  [SegmentController::class, 'preview']);
-            Route::patch('segments/{id}',    [SegmentController::class, 'update']);
-            Route::delete('segments/{id}',   [SegmentController::class, 'destroy']);
+            Route::middleware('permission:contacts.view')->group(function () {
+                Route::get('segments',           [SegmentController::class, 'index']);
+                Route::post('segments',          [SegmentController::class, 'store']);
+                Route::post('segments/preview',  [SegmentController::class, 'preview']);
+                Route::patch('segments/{id}',    [SegmentController::class, 'update']);
+                Route::delete('segments/{id}',   [SegmentController::class, 'destroy']);
+            });
         });
 
         Route::prefix('leads')->name('leads.')->group(function () {

@@ -91,6 +91,9 @@ class PermissionsSeeder extends Seeder
         // HR — sales activity monitoring (needs the HR section)
         ['key' => 'hr.sales_activity.view',   'label' => 'Monitor team sales activity (calls, follow-ups, conversions)', 'group' => 'HR', 'type' => 'viewer', 'sort_order' => 332],
         ['key' => 'hr.sales_activity.manage', 'label' => 'Set daily / monthly sales activity targets & lead cost',       'group' => 'HR', 'type' => 'manage', 'sort_order' => 333],
+        // Calendar (Tasks section) — without these a staff member only sees and manages their own bookings
+        ['key' => 'calendar.view_all',   'label' => "See every staff member's calendar bookings",                  'group' => 'Calendar', 'type' => 'viewer', 'sort_order' => 340],
+        ['key' => 'calendar.manage_all', 'label' => 'Book, reschedule and cancel for any staff member',            'group' => 'Calendar', 'type' => 'manage', 'sort_order' => 341],
         // Phone Numbers
         ['key' => 'phone_numbers.view',   'label' => 'View Phone Numbers',    'group' => 'Phone Numbers',                'type' => 'viewer', 'sort_order' => 110],
         ['key' => 'phone_numbers.manage', 'label' => 'Manage Phone Numbers',  'group' => 'Phone Numbers',                'type' => 'manage', 'sort_order' => 111],
@@ -194,6 +197,7 @@ class PermissionsSeeder extends Seeder
                 'staff.manage', 'devices.manage',
                 'instagram.manage', 'catalog.manage', 'integrations.manage', 'lead_assignment.manage',
                 'leads.verify', 'leads.recall', 'hr.sales_activity.view', 'hr.sales_activity.manage',
+                'calendar.view_all', 'calendar.manage_all',
                 'widget_chat.handle', 'widget_chat.review',
                 // "view_all" scoping doesn't end in ".view" so it isn't in $allViewer —
                 // a team lead should see everyone's leads/sessions/inbox/IG accounts, not

@@ -121,13 +121,19 @@ class CalendarService
             ->exists();
     }
 
-    public function upcoming(Company $company, ?Carbon $from = null, ?Carbon $to = null): Collection
+    /**
+     * @param int|null $onlyUserId  restrict to bookings that are this person's (assigned to them, or created by them) — null = everyone's
+     * @param int|null $staffId     with everyone's visible: just this staff member's bookings
+     */
+    public function upcoming(Company $company, ?Carbon $from = null, ?Carbon $to = null, ?int $onlyUserId = null, ?int $staffId = null): Collection
     {
         return CalendarEvent::where('company_id', $company->id)
+            ->when($onlyUserId, fn ($q) => $q->where(fn ($w) => $w->where('assigned_to', $onlyUserId)->orWhere('created_by', $onlyUserId)))
+            ->when(!$onlyUserId && $staffId, fn ($q) => $q->where('assigned_to', $staffId))
             ->when($from, fn ($q) => $q->where('ends_at', '>=', $from))
             ->when($to, fn ($q) => $q->where('starts_at', '<=', $to))
             ->orderBy('starts_at')
-            ->with(['contact:id,name,phone', 'lead:id,name,phone', 'assignee:id,name'])
+            ->with(['contact:id,name,phone', 'lead:id,contact_id,stage', 'lead.contact:id,name,phone', 'assignee:id,name'])
             ->get();
     }
 

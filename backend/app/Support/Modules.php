@@ -63,6 +63,7 @@ class Modules
     public const PERMISSION_MODULES = [
         'wa_chat' => 'wa_chat', 'wa_agent' => 'ai_agent', 'wa_cloud' => 'wa_cloud', 'surveys' => 'wa_cloud', 'phone_numbers' => 'wa_cloud',
         'leads' => 'leads', 'lead_assignment' => 'leads', 'hr' => 'hr', 'accounts' => 'finance', 'instagram' => 'social_dm',
+        'calendar' => 'tasks',   // Tasks, follow-ups and calendar
         'widget_chat' => 'web_widgets', 'meta_ads' => 'meta_ads', 'integrations' => 'integrations',
     ];
 

@@ -79,13 +79,16 @@ class DealController extends Controller
 
         $wasWon = $deal->status === 'won';
 
+        if (array_key_exists('stage', $data) && $data['stage'] === null) {
+            unset($data['stage']);   // a null stage means "unchanged", never "no stage"
+        }
         if (array_key_exists('stage', $data)) {
             $data['status'] = CrmDeal::statusForStage($data['stage']);
             $data['closed_at'] = in_array($data['status'], ['won', 'lost'], true) ? ($deal->closed_at ?? now()) : null;
         }
 
         $deal->update($data);
-        $this->awardIncentiveIfWon($deal->fresh(), $wasWon);
+        $this->syncIncentive($deal->fresh(), $wasWon);
 
         return response()->json(['data' => $deal->fresh()->load('contact:id,name,phone', 'owner:id,name')]);
     }
@@ -107,16 +110,48 @@ class DealController extends Controller
             'lost_reason' => $data['stage'] === 'lost' ? ($data['lost_reason'] ?? $deal->lost_reason) : null,
             'closed_at'   => in_array($status, ['won', 'lost'], true) ? ($deal->closed_at ?? now()) : null,
         ]);
-        $this->awardIncentiveIfWon($deal->fresh(), $wasWon);
+        $this->syncIncentive($deal->fresh(), $wasWon);
 
         return response()->json(['data' => $deal->fresh()->load('contact:id,name,phone', 'owner:id,name')]);
     }
 
     public function destroy(int $id): JsonResponse
     {
-        $this->scoped()->findOrFail($id)->delete();
+        $deal = $this->scoped()->findOrFail($id);
+        $this->pendingIncentives($deal)->delete();   // an incentive nobody has approved yet must not outlive its deal
+        $deal->delete();
 
         return response()->json(['message' => 'Deleted.']);
+    }
+
+    /** The deal's incentive rows that have not been approved or paid yet. */
+    private function pendingIncentives(CrmDeal $deal)
+    {
+        return HrIncentive::where('company_id', $deal->company_id)->where('source_type', 'deal')->where('source_id', $deal->id)->where('status', 'pending');
+    }
+
+    /**
+     * Keep the HR incentive in step with the deal: won → award it; no longer won (reopened or lost) → withdraw it while it is
+     * still pending; still won but the value / owner / rule changed → refresh the pending amount. Approved or paid incentives are
+     * never touched — that money is already committed.
+     */
+    private function syncIncentive(CrmDeal $deal, bool $wasWon): void
+    {
+        if ($wasWon && $deal->status !== 'won') {
+            $this->pendingIncentives($deal)->delete();
+            return;
+        }
+        if ($wasWon && $deal->status === 'won') {
+            $pending = $this->pendingIncentives($deal)->first();
+            $rule = $deal->incentive_rule_id ? HrIncentiveRule::where('company_id', $deal->company_id)->find($deal->incentive_rule_id) : null;
+            if ($pending && $rule && $deal->owner_id && (float) $deal->value > 0) {
+                $pending->update(['user_id' => $deal->owner_id, 'incentive_rule_id' => $rule->id, 'base_amount' => (float) $deal->value, 'amount' => $rule->amountFor((float) $deal->value), 'title' => "{$deal->title} — {$rule->name}"]);
+            } elseif ($pending) {
+                $pending->delete();   // owner, rule or value was removed — nothing left to pay on
+            }
+            return;
+        }
+        $this->awardIncentiveIfWon($deal, $wasWon);
     }
 
     /**

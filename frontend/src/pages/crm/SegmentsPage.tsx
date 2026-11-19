@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api } from '@/api/client'
 import toast from 'react-hot-toast'
+import { getError } from '@/utils'
 
 type Filters = {
   lead_stage?: string
@@ -56,7 +57,7 @@ export default function SegmentsPage() {
 
   const runPreview = async () => {
     try { const r = await api.post('/crm/segments/preview', { filters: form.filters }); setPreview(r.data) }
-    catch { toast.error('Preview failed.') }
+    catch (e) { toast.error(getError(e)) }
   }
 
   const save = async () => {
@@ -66,15 +67,19 @@ export default function SegmentsPage() {
       if (editId) await api.patch(`/crm/segments/${editId}`, payload)
       else await api.post('/crm/segments', payload)
       setModal(false); load()
-    } catch { toast.error('Could not save segment.') }
+      toast.success(editId ? 'Segment updated.' : 'Segment created.')
+    } catch (e) { toast.error(getError(e)) }
   }
 
-  const remove = async (id: number) => { if (confirm('Delete this segment?')) { await api.delete(`/crm/segments/${id}`); load() } }
+  const remove = async (id: number) => {
+    if (!confirm('Delete this segment?')) return
+    try { await api.delete(`/crm/segments/${id}`); load() } catch (e) { toast.error(getError(e)) }
+  }
 
   const viewContacts = async (s: Segment) => {
-    setViewing(s)
-    const r = await api.post('/crm/segments/preview', { filters: s.filters })
-    setPreview(r.data)
+    setViewing(s); setPreview(null)
+    try { const r = await api.post('/crm/segments/preview', { filters: s.filters }); setPreview(r.data) }
+    catch (e) { toast.error(getError(e)); setViewing(null) }
   }
 
   const inp = 'w-full border border-gray-300 rounded-lg px-3 py-2 text-sm'
@@ -152,7 +157,8 @@ export default function SegmentsPage() {
               <div className="text-xs font-semibold text-gray-500 pt-1">Filters</div>
               <div className="grid grid-cols-2 gap-3">
                 <label className="text-xs text-gray-500">Lead stage
-                  <input value={form.filters.lead_stage ?? ''} onChange={e => setFilter('lead_stage', e.target.value)} placeholder="any" className={`mt-1 ${inp}`} />
+                  <input list="seg-stages" value={form.filters.lead_stage ?? ''} onChange={e => setFilter('lead_stage', e.target.value)} placeholder="any" className={`mt-1 ${inp}`} />
+                  <datalist id="seg-stages">{['new', 'contacted', 'interested', 'qualified', 'converted', 'lost'].map(x => <option key={x} value={x} />)}</datalist>
                 </label>
                 <label className="text-xs text-gray-500">Min lead score
                   <input type="number" value={form.filters.score_min ?? ''} onChange={e => setFilter('score_min', e.target.value)} placeholder="any" className={`mt-1 ${inp}`} />

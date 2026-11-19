@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api } from '@/api/client'
 import toast from 'react-hot-toast'
+import { getError } from '@/utils'
 
 const STAGES = ['new', 'qualified', 'proposal', 'negotiation', 'won', 'lost'] as const
 const STAGE_LABEL: Record<string, string> = {
@@ -21,6 +22,9 @@ type Deal = {
   expected_close_date: string | null
   contact?: { id: number; name: string | null; phone: string } | null
   owner?: { id: number; name: string } | null
+  source?: string | null
+  notes?: string | null
+  incentive_rule_id?: number | null
 }
 type Column = { stage: string; count: number; value: number; deals: Deal[] }
 type Contact = { id: number; name: string | null; phone: string }
@@ -55,7 +59,9 @@ export default function DealsPage() {
     api.get('/contacts', { params: { per_page: 100 } })
       .then(r => setContacts(Array.isArray(r.data?.data) ? r.data.data : Array.isArray(r.data?.contacts) ? r.data.contacts : []))
       .catch(() => {})
-    api.get('/wa-cloud/inbox-analytics/agents').then(r => setAgents(r.data?.data ?? [])).catch(() => {})
+    api.get('/staff/performance')
+      .then(r => setAgents((r.data?.performance ?? []).map((p: any) => ({ id: p.id, name: p.name }))))
+      .catch(() => api.get('/wa-cloud/inbox-analytics/agents').then(r => setAgents(r.data?.data ?? [])).catch(() => {}))
     api.get('/hr/incentive-rules').then(r => setIncentiveRules(r.data?.data ?? [])).catch(() => {})
   }, [])
 
@@ -63,19 +69,29 @@ export default function DealsPage() {
   const won = columns.find(c => c.stage === 'won')
 
   const move = async (id: number, stage: string) => {
-    try { await api.patch(`/crm/deals/${id}/stage`, { stage }); load() }
-    catch { toast.error('Could not move deal.') }
+    // a lost deal is worth a one-line reason (kept on the deal); cancelling the prompt cancels the move
+    let lost_reason: string | undefined
+    if (stage === 'lost') {
+      const r = window.prompt('Why was this deal lost? (optional)')
+      if (r === null) return
+      lost_reason = r.trim() || undefined
+    }
+    try { await api.patch(`/crm/deals/${id}/stage`, { stage, lost_reason }); load() }
+    catch (e) { toast.error(getError(e)); load() }
   }
 
-  const openCreate = () => { setEditId(null); setForm(emptyForm()); setModal(true) }
+  const [editContact, setEditContact] = useState<Contact | null>(null)   // the deal's current contact — may not be among the first 100 loaded
+  const openCreate = () => { setEditId(null); setEditContact(null); setForm(emptyForm()); setModal(true) }
   const openEdit = (d: Deal) => {
     setEditId(d.id)
     setForm({
       title: d.title, value: String(d.value ?? ''), currency: d.currency || 'INR', stage: d.stage,
       contact_id: d.contact?.id ? String(d.contact.id) : '', owner_id: d.owner?.id ? String(d.owner.id) : '',
-      incentive_rule_id: (d as any).incentive_rule_id ? String((d as any).incentive_rule_id) : '',
-      expected_close_date: d.expected_close_date ?? '', source: '', notes: '',
+      incentive_rule_id: d.incentive_rule_id ? String(d.incentive_rule_id) : '',
+      expected_close_date: d.expected_close_date ? String(d.expected_close_date).slice(0, 10) : '',   // the API sends a full timestamp; a date field needs YYYY-MM-DD
+      source: d.source ?? '', notes: d.notes ?? '',
     })
+    setEditContact(d.contact ?? null)
     setModal(true)
   }
 
@@ -98,13 +114,13 @@ export default function DealsPage() {
       if (editId) await api.patch(`/crm/deals/${editId}`, payload)
       else await api.post('/crm/deals', payload)
       setModal(false); load()
-    } catch { toast.error('Could not save deal.') }
+    } catch (e) { toast.error(getError(e)) }
     finally { setSaving(false) }
   }
 
   const remove = async (id: number) => {
     if (!confirm('Delete this deal?')) return
-    await api.delete(`/crm/deals/${id}`); load()
+    try { await api.delete(`/crm/deals/${id}`); load() } catch (e) { toast.error(getError(e)) }
   }
 
   const set = (k: keyof ReturnType<typeof emptyForm>, v: string) => setForm(p => ({ ...p, [k]: v }))
@@ -173,6 +189,7 @@ export default function DealsPage() {
               </select>
               <select value={form.contact_id} onChange={e => set('contact_id', e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2">
                 <option value="">No contact</option>
+                {editContact && !contacts.some(c => c.id === editContact.id) && <option value={editContact.id}>{editContact.name || editContact.phone}</option>}
                 {contacts.map(c => <option key={c.id} value={c.id}>{c.name || c.phone}</option>)}
               </select>
               <select value={form.owner_id} onChange={e => set('owner_id', e.target.value)} className="w-full border border-gray-300 rounded-lg px-3 py-2">
