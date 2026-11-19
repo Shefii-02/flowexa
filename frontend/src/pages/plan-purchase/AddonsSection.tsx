@@ -135,6 +135,9 @@ export default function AddonsSection({ addons, mine, focus, cart, setCart, cycl
               <div key={a.id} className="card flex items-center gap-3 p-4">
                 <div className="min-w-0 flex-1">
                   <p className="font-medium text-gray-900">{a.name}</p>
+                  {(a.type === 'storage' || a.type === 'message_pack') && (
+                    <p className="text-xs font-medium text-brand-700">
+                      {a.type === 'storage' ? `+${fmt.number(Number(a.config?.mb ?? 0))} MB media & library storage` : `+${fmt.number(Number(a.config?.messages ?? 0))} messages added to your wallet`}</p>)}
                   <p className="text-xs text-gray-500">{priceFor(a, cycle)}{a.description ? ` · ${a.description}` : ''}</p>
                 </div>
                 {cartButton(a)}

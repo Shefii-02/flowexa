@@ -38,6 +38,57 @@ class PlanLimits
         'short_links'        => ['Short links',       'short_links',        'max_short_links',        'total'],
     ];
 
+    /** Per-USER caps (not company totals): key => [label, plan column]. Sticky notes a person keeps; open (not completed) to-do items a person has. */
+    public const PER_USER = [
+        'sticky_notes_per_user' => ['Sticky notes per user',        'max_sticky_notes_per_user'],
+        'todos_per_user'        => ['Open to-do items per user',    'max_todos_per_user'],
+    ];
+
+    /** What one person currently uses of a per-user cap. Completed / cancelled to-dos do not count. */
+    public static function usedByUser(int $companyId, int $userId, string $key): int
+    {
+        if ($key === 'sticky_notes_per_user') {
+            return Schema::hasTable('sticky_notes') ? (int) DB::table('sticky_notes')->where('company_id', $companyId)->where('user_id', $userId)->count() : 0;
+        }
+        if ($key === 'todos_per_user') {
+            if (!Schema::hasTable('crm_tasks')) { return 0; }
+            $q = DB::table('crm_tasks')->where('company_id', $companyId)->where('assigned_to', $userId)->where('type', 'todo')->where('status', 'open');
+            if (self::has('crm_tasks', 'deleted_at')) { $q->whereNull('deleted_at'); }
+            return (int) $q->count();
+        }
+        return 0;
+    }
+
+    /** null when this person may add `$adding` more, otherwise the same error payload shape as company limits. */
+    public static function userViolation(int $companyId, int $userId, ?object $plan, string $key, int $adding = 1): ?array
+    {
+        $col = self::PER_USER[$key][1] ?? null;
+        $max = $col && $plan ? ($plan->{$col} ?? null) : null;
+        if ($max === null) { return null; }
+        $max = (int) $max;
+        $used = self::usedByUser($companyId, $userId, $key);
+        if ($used + $adding <= $max) { return null; }
+        $what = strtolower(self::PER_USER[$key][0]);
+        return ['message' => "Limit reached: your plan allows {$max} {$what} and you already have {$used}." . ($key === 'todos_per_user' ? ' Completed items are not counted — finish or delete one first.' : ' Delete one first.'),
+                'error_code' => 'plan_limit_reached', 'resource' => $key, 'current' => $used, 'limit' => $max, 'remaining' => max(0, $max - $used), 'adding' => $adding, 'addon_available' => false];
+    }
+
+    public static function assertUserCanAdd(?object $user, string $key, int $adding = 1, ?int $forUserId = null): void
+    {
+        $ctx = self::context($user);
+        if (!$ctx) { return; }
+        [$companyId, $plan] = $ctx;
+        if ($v = self::userViolation($companyId, $forUserId ?? (int) $user->id, $plan, $key, $adding)) {
+            throw new HttpResponseException(response()->json($v, 403));
+        }
+    }
+
+    /** Resources that are not row counts but can still be raised by a "limit" add-on: key => [label, kind]. Media & library storage is in MB. */
+    public const EXTRA_RESOURCES = ['media_storage_mb' => ['Media & library storage (MB)', 'mb']];
+
+    /** MB of media / library storage bought through add-ons (storage add-ons and "raise a limit → media storage"). */
+    public static function mediaBonusMb(int $companyId): int { return self::bonus($companyId, 'media_storage_mb'); }
+
     /** Feature groups, in the order customers see them: key => [title, icon, [resource keys]]. Every REGISTRY key belongs to exactly one. */
     public const GROUPS = [
         'wa_chat'   => ['WA Chat',               '💬', ['wa_sessions', 'chat_campaigns', 'chat_campaigns_month']],
@@ -61,9 +112,13 @@ class PlanLimits
     {
         $out = [];
         foreach (self::GROUPS as $g => [$title, $icon, $keys]) {
-            $out[] = ['key' => $g, 'title' => $title, 'icon' => $icon, 'items' => array_map(fn ($k) => [
+            $items = array_map(fn ($k) => [
                 'key' => $k, 'label' => self::REGISTRY[$k][0], 'value' => $plan->{self::REGISTRY[$k][2]}, 'monthly' => self::REGISTRY[$k][3] === 'monthly',
-            ], $keys)];
+            ], $keys);
+            if ($g === 'common') {
+                foreach (self::PER_USER as $k => [$label, $col]) { $items[] = ['key' => $k, 'label' => $label, 'value' => $plan->{$col}, 'monthly' => false]; }
+            }
+            $out[] = ['key' => $g, 'title' => $title, 'icon' => $icon, 'items' => $items];
         }
         return $out;
     }
@@ -110,13 +165,14 @@ class PlanLimits
     {
         if (!Schema::hasTable('company_addons') || !Schema::hasTable('addons')) { return []; }
         $rows = DB::table('company_addons as ca')->join('addons as a', 'a.id', '=', 'ca.addon_id')
-            ->where('ca.company_id', $companyId)->where('ca.status', 'active')->where('a.type', 'limit')
+            ->where('ca.company_id', $companyId)->where('ca.status', 'active')->whereIn('a.type', ['limit', 'storage'])
             ->where(fn ($q) => $q->whereNull('ca.expires_at')->orWhere('ca.expires_at', '>', now()))
             ->pluck('a.config');
         $out = [];
         foreach ($rows as $json) {
             $c = is_string($json) ? json_decode($json, true) : (array) $json;
-            $res = $c['resource'] ?? null; $amt = (int) ($c['amount'] ?? 0);
+            // a "storage" add-on is simply +N MB of media / library storage
+            $res = $c['resource'] ?? (isset($c['mb']) ? 'media_storage_mb' : null); $amt = (int) ($c['amount'] ?? $c['mb'] ?? 0);
             if ($res && $amt > 0) { $out[$res] = ($out[$res] ?? 0) + $amt; }
         }
         return $out;

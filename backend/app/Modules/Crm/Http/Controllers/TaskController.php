@@ -73,6 +73,12 @@ class TaskController extends Controller
             $data['contact_id'] = \App\Models\Lead::where('company_id', $this->companyId())->whereKey($data['lead_id'])->value('contact_id');
         }
 
+        // plan cap on open to-do items per person (a "also add to my to-do list" copy counts too)
+        $isTodo = ($data['type'] ?? null) === 'todo';
+        $wantsTodoFor = fn () => (int) ($data['assigned_to'] ?? auth()->id());
+        if ($isTodo && ($data['status'] ?? 'open') === 'open') { \App\Support\PlanLimits::assertUserCanAdd(auth()->user(), 'todos_per_user', 1, $wantsTodoFor()); }
+        if ($sync && ($data['type'] ?? null) === 'followup') { \App\Support\PlanLimits::assertUserCanAdd(auth()->user(), 'todos_per_user', 1, $wantsTodoFor()); }
+
         $task = DB::transaction(function () use ($data, $sync) {
             $task = CrmTask::create($data);
             // "Also add to my to-do list": a linked to-do copy for whoever owns the follow-up; completing either completes both
@@ -111,6 +117,7 @@ class TaskController extends Controller
     {
         $task = $this->scoped()->findOrFail($id);
         $done = $task->status !== 'done';
+        if (!$done && $task->type === 'todo') { \App\Support\PlanLimits::assertUserCanAdd(auth()->user(), 'todos_per_user', 1, (int) $task->assigned_to ?: (int) auth()->id()); }   // re-opening a finished to-do counts again
         $patch = ['status' => $done ? 'done' : 'open', 'completed_at' => $done ? now() : null];
         $task->update($patch);
         $this->mirror($task, $patch);

@@ -153,7 +153,7 @@ class PlanPurchaseController extends Controller
             'max_contacts' => $int(), 'max_labels' => $int(),
             'max_leads_per_month' => $int(), 'max_lead_categories' => $int(),
             'max_instagram_accounts' => $int(), 'max_instagram_automations' => $int(), 'max_instagram_dms_monthly' => $int(),
-            'max_meta_ads_accounts' => $int(), 'max_website_widgets' => $int(), 'max_short_links' => $int(), 'max_media_storage_mb' => $int(),
+            'max_meta_ads_accounts' => $int(), 'max_website_widgets' => $int(), 'max_short_links' => $int(), 'max_sticky_notes_per_user' => $int(), 'max_todos_per_user' => $int(), 'max_media_storage_mb' => $int(),
             'throttle_per_minute' => [$req, 'integer', 'min:10', 'max:1000'],
             'features' => ['nullable', 'array'], 'features.*' => ['string', 'max:150'],
             'modules' => ['nullable', 'array'], 'modules.*' => ['string', \Illuminate\Validation\Rule::in(\App\Support\Modules::keys())],
@@ -305,7 +305,9 @@ class PlanPurchaseController extends Controller
     /** GET superadmin/addons/resources — the limits a "limit" add-on can raise (key, label, whether it resets monthly). */
     public function addonResources(): JsonResponse
     {
-        return response()->json(['resources' => collect(\App\Support\PlanLimits::REGISTRY)->map(fn ($r, $key) => ['key' => $key, 'label' => $r[0], 'kind' => $r[3]])->values()]);
+        $rows = collect(\App\Support\PlanLimits::REGISTRY)->map(fn ($r, $key) => ['key' => $key, 'label' => $r[0], 'kind' => $r[3]])->values();
+        $extra = collect(\App\Support\PlanLimits::EXTRA_RESOURCES)->map(fn ($r, $key) => ['key' => $key, 'label' => $r[0], 'kind' => $r[1]])->values();
+        return response()->json(['resources' => $rows->concat($extra)->values()]);
     }
 
     public function superAdminCreateAddon(Request $request): JsonResponse
@@ -314,14 +316,22 @@ class PlanPurchaseController extends Controller
         // A limit add-on raises one plan limit (e.g. staff users): it must name which one and by how much.
         if ($d['type'] === 'limit') {
             $request->validate([
-                'config.resource' => ['required', 'string', \Illuminate\Validation\Rule::in(array_keys(\App\Support\PlanLimits::REGISTRY))],
+                'config.resource' => ['required', 'string', \Illuminate\Validation\Rule::in(array_merge(array_keys(\App\Support\PlanLimits::REGISTRY), array_keys(\App\Support\PlanLimits::EXTRA_RESOURCES)))],
                 'config.amount'   => ['required', 'integer', 'min:1', 'max:100000'],
             ]);
         }
         if ($d['type'] === 'module') {
             $request->validate(['config.module' => ['required', 'string', \Illuminate\Validation\Rule::in(\App\Support\Modules::keys())]]);
         }
+        $this->validatePackConfig($request, $d['type']);
         return response()->json(['addon' => $this->svc->createAddon($d)], 201);
+    }
+
+    /** A storage add-on must say how many MB it adds; a message pack how many messages. */
+    private function validatePackConfig(Request $request, ?string $type): void
+    {
+        if ($type === 'storage') { $request->validate(['config.mb' => ['required', 'integer', 'min:1', 'max:10000000']]); }
+        if ($type === 'message_pack') { $request->validate(['config.messages' => ['required', 'integer', 'min:1', 'max:100000000']]); }
     }
 
     public function superAdminUpdateAddon(Request $request, int $id): JsonResponse
@@ -333,11 +343,12 @@ class PlanPurchaseController extends Controller
             'apply_to_existing' => ['nullable', 'boolean'],
         ]);
         if (($d['type'] ?? null) === 'limit') {
-            $request->validate(['config.resource' => ['required', 'string', \Illuminate\Validation\Rule::in(array_keys(\App\Support\PlanLimits::REGISTRY))], 'config.amount' => ['required', 'integer', 'min:1', 'max:100000']]);
+            $request->validate(['config.resource' => ['required', 'string', \Illuminate\Validation\Rule::in(array_merge(array_keys(\App\Support\PlanLimits::REGISTRY), array_keys(\App\Support\PlanLimits::EXTRA_RESOURCES)))], 'config.amount' => ['required', 'integer', 'min:1', 'max:100000']]);
         }
         if (($d['type'] ?? null) === 'module') {
             $request->validate(['config.module' => ['required', 'string', \Illuminate\Validation\Rule::in(\App\Support\Modules::keys())]]);
         }
+        $this->validatePackConfig($request, $d['type'] ?? null);
         $apply = $d['apply_to_existing'] ?? true;
         unset($d['apply_to_existing']);
         if (empty($d['slug'])) { unset($d['slug']); }

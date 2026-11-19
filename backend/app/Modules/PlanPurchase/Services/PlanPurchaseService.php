@@ -389,7 +389,15 @@ class PlanPurchaseService
                 return $running;
             }
         }
-        return CompanyAddon::create(['company_id' => $order->company_id, 'addon_id' => $addon->id, 'payment_order_id' => $order->id, 'amount_paid' => $paid, 'status' => 'active', 'billing_cycle' => $cycle, 'starts_at' => $startsAt, 'expires_at' => $length($startsAt)]);
+        $row = CompanyAddon::create(['company_id' => $order->company_id, 'addon_id' => $addon->id, 'payment_order_id' => $order->id, 'amount_paid' => $paid, 'status' => 'active', 'billing_cycle' => $cycle, 'starts_at' => $startsAt, 'expires_at' => $length($startsAt)]);
+
+        // A message pack is credit, not a running feature: its messages go into the wallet the moment it is paid for.
+        $messages = (int) ($addon->config['messages'] ?? 0);
+        if ($addon->type === 'message_pack' && $messages > 0) {
+            $wallet = \App\Models\Wallet::firstOrCreate(['company_id' => $order->company_id], ['balance' => 0, 'total_purchased' => 0]);
+            app(\App\Modules\Wallet\Repositories\WalletRepository::class)->credit($wallet, $messages, "Add-on — {$addon->name} (+" . number_format($messages) . ' messages)', (string) $order->id, 'addon');
+        }
+        return $row;
     }
 
     // ── Create addon order (single) ───────────────────────────────────────────

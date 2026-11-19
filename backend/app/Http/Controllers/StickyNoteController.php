@@ -64,6 +64,7 @@ class StickyNoteController extends Controller
         if ($this->mine()->count() >= self::MAX_NOTES) {
             return response()->json(['message' => 'You can keep up to ' . self::MAX_NOTES . ' sticky notes. Delete one first.'], 422);
         }
+        \App\Support\PlanLimits::assertUserCanAdd($u, 'sticky_notes_per_user');   // the plan's per-user cap
         $d = $request->validate($this->rules());
         $top = (int) $this->mine()->max('sort_order');
         $count = $this->mine()->count();

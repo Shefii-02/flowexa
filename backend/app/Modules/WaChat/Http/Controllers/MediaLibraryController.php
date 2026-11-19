@@ -27,7 +27,8 @@ class MediaLibraryController extends Controller
         $usedMb    = round($usedBytes / 1048576, 2);
         $company->forceFill(['waha_media_used_mb' => $usedMb])->saveQuietly();
 
-        return ['used_mb' => $usedMb, 'limit_mb' => (int) ($company->waha_media_limit_mb ?? 500)];
+        // base allowance (set per company) plus whatever storage add-ons the company has bought
+        return ['used_mb' => $usedMb, 'limit_mb' => (int) ($company->waha_media_limit_mb ?? 500) + \App\Support\PlanLimits::mediaBonusMb($company->id)];
     }
 
     private function systemFolderFromMime(string $mime): string

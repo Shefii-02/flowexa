@@ -24,6 +24,8 @@ const LIMIT_BLOCKS: { id: string; title: string; icon: string; module: string | 
   { id: 'common', title: 'Common', icon: '🧰', module: null, fields: [
     { key: 'max_users', label: 'Staff users' }, { key: 'max_roles', label: 'Roles' },
     { key: 'max_media_storage_mb', label: 'Media storage (MB)' }, { key: 'max_short_links', label: 'Short links' } ] },
+  { id: 'sticky', title: 'Sticky notes', icon: '🗒️', module: 'sticky_notes', fields: [ { key: 'max_sticky_notes_per_user', label: 'Notes per user', hint: 'how many sticky notes each staff member can keep' } ] },
+  { id: 'todo', title: 'To-do list', icon: '✅', module: 'todo', fields: [ { key: 'max_todos_per_user', label: 'Open items per user', hint: 'completed items are not counted' } ] },
   { id: 'wa_chat', title: 'WA Chat', icon: '💬', module: 'wa_chat', fields: [
     { key: 'max_wa_sessions', label: 'WhatsApp sessions' },
     { key: 'max_chat_campaigns_per_month', label: 'Campaigns per month' },
@@ -324,12 +326,14 @@ export default function SuperAdminPlans() {
 
           <Section n={4} title="Limits" sub="Leave blank for unlimited, 0 for none.">
             {LIMIT_BLOCKS.map(b => {
-              const off = b.module !== null && !form.modules.includes(b.module)
+              // a feature that is off in the plan but given as complimentary still needs its limits
+              const comp = b.module !== null && !form.modules.includes(b.module) && form.complimentary.some(c => c.module === b.module)
+              const off = b.module !== null && !form.modules.includes(b.module) && !comp
               return (
                 <div key={b.id} className={off ? 'opacity-40' : ''}>
-                  <p className="mb-1.5 text-sm font-semibold text-gray-800">{b.icon} {b.title}{off && <span className="ml-2 text-xs font-normal text-gray-500">feature is off</span>}</p>
+                  <p className="mb-1.5 text-sm font-semibold text-gray-800">{b.icon} {b.title}{off && <span className="ml-2 text-xs font-normal text-gray-500">feature is off</span>}{comp && <span className="ml-2 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">complimentary — limits apply while it is free</span>}</p>
                   <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-                    {b.fields.map(f => <Input key={f.key} label={f.label} type="number" min={0} disabled={off} placeholder="unlimited" value={form.limits[f.key] ?? ''} onChange={e => setLimit(f.key, e.target.value)} />)}
+                    {b.fields.map(f => <div key={f.key}><Input label={f.label} type="number" min={0} disabled={off} placeholder="unlimited" value={form.limits[f.key] ?? ''} onChange={e => setLimit(f.key, e.target.value)} />{f.hint && <p className="mt-1 text-[11px] text-gray-400">{f.hint}</p>}</div>)}
                   </div>
                 </div>)
             })}

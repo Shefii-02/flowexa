@@ -310,7 +310,7 @@ function TodoCard({ focusSignal, vp, x, y, color, onMove, onClose }: {
     try {
       const { data } = await http.post('/crm/tasks', { title, type: 'todo', assigned_to: me?.id })
       setItems(is => [...is, data.data]); setDraft('')
-    } catch { setErr('Could not add the task.') } finally { setAdding(false) }
+    } catch (e: any) { setErr(e?.response?.data?.message || 'Could not add the task.') } finally { setAdding(false) }
   }
 
   const pos = { x: clamp(x ?? vp.w - W - 100, 0, vp.w - Math.min(W, 120)), y: clamp(y ?? 80, 0, vp.h - 36) }

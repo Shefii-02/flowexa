@@ -6,10 +6,10 @@ import { Badge, Button, Input, Modal, Spinner } from '@/components/ui'
 import PricingPdfButton from '@/components/plan/PricingPdfButton'
 import { fmt, getError } from '@/utils'
 
-type Row = { id: number; name: string; slug: string; description: string | null; type: string; price: string | number; price_yearly: string | number | null; billing_cycle: string; active_buyers?: number; group?: { title: string; icon: string }; config: { resource?: string; amount?: number; module?: string } | null; is_active: boolean; deleted_at?: string | null }
+type Row = { id: number; name: string; slug: string; description: string | null; type: string; price: string | number; price_yearly: string | number | null; billing_cycle: string; active_buyers?: number; group?: { title: string; icon: string }; config: { resource?: string; amount?: number; module?: string; mb?: number; messages?: number } | null; is_active: boolean; deleted_at?: string | null }
 type Res = { key: string; label: string; kind: string }
 const slugify = (t: string) => t.toLowerCase().normalize('NFKD').replace(/[^\w\s-]/g, '').trim().replace(/[\s_]+/g, '-').replace(/-+/g, '-')
-const EMPTY = { name: '', slug: '', description: '', type: 'limit', price: '', price_yearly: '', billing_cycle: 'monthly', resource: '', amount: '', module: '', is_active: true }
+const EMPTY = { name: '', slug: '', description: '', type: 'limit', price: '', price_yearly: '', billing_cycle: 'monthly', resource: '', amount: '', module: '', mb: '', messages: '', is_active: true }
 
 export default function SuperAdminAddons() {
   const [rows, setRows] = useState<Row[]>([])
@@ -30,7 +30,7 @@ export default function SuperAdminAddons() {
 
   const open = (r: Row | 'new') => {
     setEdit(r); setSlugEdited(false)
-    setForm(r === 'new' ? EMPTY : { name: r.name, slug: r.slug, description: r.description ?? '', type: r.type, price: String(r.price), price_yearly: r.price_yearly != null ? String(r.price_yearly) : '', billing_cycle: r.billing_cycle, resource: r.config?.resource ?? '', amount: r.config?.amount != null ? String(r.config.amount) : '', module: r.config?.module ?? '', is_active: !!r.is_active })
+    setForm(r === 'new' ? EMPTY : { name: r.name, slug: r.slug, description: r.description ?? '', type: r.type, price: String(r.price), price_yearly: r.price_yearly != null ? String(r.price_yearly) : '', billing_cycle: r.billing_cycle, resource: r.config?.resource ?? '', amount: r.config?.amount != null ? String(r.config.amount) : '', module: r.config?.module ?? '', mb: r.config?.mb != null ? String(r.config.mb) : '', messages: r.config?.messages != null ? String(r.config.messages) : '', is_active: !!r.is_active })
   }
   const set = (k: keyof typeof EMPTY, v: string | boolean) => setForm(f => ({ ...f, [k]: v }))
 
@@ -46,7 +46,7 @@ export default function SuperAdminAddons() {
       name: form.name, slug: form.slug, description: form.description || null, type: form.type,
       price: +form.price, price_yearly: form.price_yearly ? +form.price_yearly : null,
       billing_cycle: form.billing_cycle, is_active: form.is_active,
-      config: form.type === 'limit' ? { resource: form.resource, amount: +form.amount } : form.type === 'module' ? { module: form.module } : null,
+      config: form.type === 'limit' ? { resource: form.resource, amount: +form.amount } : form.type === 'module' ? { module: form.module } : form.type === 'storage' ? { mb: +form.mb } : form.type === 'message_pack' ? { messages: +form.messages } : null,
       ...(edit && edit !== 'new' ? { apply_to_existing: applyToExisting } : {}),
     }
     try {
@@ -74,7 +74,7 @@ export default function SuperAdminAddons() {
         <tbody>{rows.map(r => (
           <tr key={r.id}>
             <td><p className="font-medium">{r.name}</p><p className="text-xs text-gray-400">{r.group ? `${r.group.icon} ${r.group.title} · ` : ''}{r.slug}</p></td>
-            <td className="text-sm">{r.type === 'limit' ? `+${fmt.number(r.config?.amount ?? 0)} ${label(r.config?.resource)}` : r.type === 'module' ? `Unlocks ${mods.find(m => m.key === r.config?.module)?.label ?? r.config?.module}` : r.type}</td>
+            <td className="text-sm">{r.type === 'limit' ? `+${fmt.number(r.config?.amount ?? 0)} ${label(r.config?.resource)}` : r.type === 'storage' ? `+${fmt.number(r.config?.mb ?? 0)} MB media & library storage` : r.type === 'message_pack' ? `+${fmt.number(r.config?.messages ?? 0)} messages (credited to the wallet)` : r.type === 'module' ? `Unlocks ${mods.find(m => m.key === r.config?.module)?.label ?? r.config?.module}` : r.type}</td>
             <td>{r.billing_cycle === 'one_time' ? 'One time ' : ''}₹{fmt.number(Number(r.price))}</td>
             <td>{r.billing_cycle === 'one_time' ? '—' : r.price_yearly != null ? `₹${fmt.number(Number(r.price_yearly))}` : <span className="text-xs text-gray-400">₹{fmt.number(Number(r.price) * 12)} (12 × monthly)</span>}</td>
             <td><Badge variant={r.deleted_at ? 'red' : r.is_active ? 'green' : 'gray'}>{r.deleted_at ? 'removed' : r.is_active ? 'active' : 'hidden'}</Badge>{!!r.active_buyers && <p className="mt-0.5 text-[11px] text-gray-400">{r.active_buyers} using</p>}</td>
@@ -99,6 +99,14 @@ export default function SuperAdminAddons() {
                 <option value="">Choose…</option>{mods.map(m => <option key={m.key} value={m.key}>{m.icon} {m.label}</option>)}
               </select>
               <span className="mt-1 block text-xs font-normal text-gray-500">The company gets this feature in its sidebar for the paid period, whatever its plan says.</span></label>)}
+          {form.type === 'storage' && (
+            <label className="block text-sm font-medium text-gray-700">Adds how many MB
+              <input type="number" min={1} className="input mt-1 w-full" value={form.mb} onChange={e => set('mb', e.target.value)} placeholder="e.g. 5120 = 5 GB" />
+              <span className="mt-1 block text-xs font-normal text-gray-500">{+form.mb > 0 ? `= ${(+form.mb / 1024).toFixed(+form.mb % 1024 === 0 ? 0 : 2)} GB. ` : ''}Added to the company's media &amp; library storage while the add-on is active (both the Media library and flow media).</span></label>)}
+          {form.type === 'message_pack' && (
+            <label className="block text-sm font-medium text-gray-700">Adds how many messages
+              <input type="number" min={1} className="input mt-1 w-full" value={form.messages} onChange={e => set('messages', e.target.value)} placeholder="e.g. 10000" />
+              <span className="mt-1 block text-xs font-normal text-gray-500">Credited to the company's message wallet once, the moment the add-on is paid for. Use “One time” billing.</span></label>)}
           {form.type === 'limit' && (
             <div className="grid grid-cols-2 gap-3">
               <label className="block text-sm font-medium text-gray-700">Which limit

@@ -30,7 +30,7 @@ export default function TodoPage() {
     try {
       const { data } = await http.post('/crm/tasks', { title: t, type: 'todo', priority, ...(due ? { due_at: due } : {}), assigned_to: me?.id })
       setItems(is => [data.data, ...is]); setTitle(''); setDue('')
-    } catch { toast.error('Could not add the task.') } finally { setBusy(null) }
+    } catch (e: any) { toast.error(e?.response?.data?.message || 'Could not add the task.') } finally { setBusy(null) }
   }
   const toggle = async (id: number) => {
     setBusy(id)

@@ -803,7 +803,7 @@ class FlowNodeController extends Controller
             }
         }
 
-        $limit = $company->storage_limit_bytes;
+        $limit = $company->storage_limit_bytes + \App\Support\PlanLimits::mediaBonusMb($company->id) * 1048576;   // + storage add-ons
         if ($company->fresh()->storage_used_bytes + $size > $limit) {
             return response()->json([
                 'message' => 'Storage limit reached. Free up space or upgrade your plan to upload more media.',
