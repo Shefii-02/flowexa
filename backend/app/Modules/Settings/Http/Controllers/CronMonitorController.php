@@ -34,6 +34,16 @@ class CronMonitorController extends Controller
         ]);
     }
 
+    /** POST superadmin/cron/run  { task } — run one scheduled task right now (recorded in the history). */
+    public function run(Request $request): JsonResponse
+    {
+        $d = $request->validate(['task' => ['required', 'string', 'max:190']]);
+        $r = SchedulerMonitor::runNow($d['task']);
+        abort_unless($r, 404, 'Unknown scheduled task.');
+        $msg = $r['status'] === 'success' ? "Ran {$d['task']} in {$r['duration_ms']} ms." : "{$d['task']} failed: " . ($r['error'] ?? 'non-zero exit');
+        return response()->json(['message' => $msg] + $r, $r['status'] === 'success' ? 200 : 500);
+    }
+
     /** GET superadmin/cron/history?task=&status=&page= */
     public function history(Request $request): JsonResponse
     {

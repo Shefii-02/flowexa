@@ -87,6 +87,7 @@ import SupportDeskPage from '@/pages/superadmin/SupportDeskPage'
 import SenderLimitsPage from '@/pages/superadmin/SenderLimitsPage'
 import SupportTicketsPage from '@/pages/support/SupportTicketsPage'
 import FailedJobsPage from '@/pages/superadmin/FailedJobsPage'
+import SuperAdminUsage from '@/pages/superadmin/SuperAdminUsage'
 import CronJobsPage from '@/pages/superadmin/CronJobsPage'
 import IndustryTemplatesPage from '@/pages/superadmin/IndustryTemplatesPage'
 import AgentPlaybookTemplatesPage from '@/pages/superadmin/AgentPlaybookTemplatesPage'
@@ -516,6 +517,10 @@ export default function App() {
               <Route
                 path="superadmin/expiries"
                 element={<SuperAdminRoute><SuperAdminExpiries /></SuperAdminRoute>}
+              />
+              <Route
+                path="superadmin/usage"
+                element={<SuperAdminRoute><SuperAdminUsage /></SuperAdminRoute>}
               />
               <Route
                 path="superadmin/stats"

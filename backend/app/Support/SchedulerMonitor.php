@@ -78,6 +78,44 @@ class SchedulerMonitor
         SchedulerRun::create(['task' => self::label($e), 'expression' => $e->expression, 'started_at' => now(), 'finished_at' => now(), 'duration_ms' => 0, 'status' => 'skipped']);
     }
 
+    /**
+     * Superadmin "Run now": run one scheduled task immediately, recording it in the run history like a cron run.
+     * @return array{status:string, duration_ms:int, output:string, error:?string}|null  null = no such task
+     */
+    public static function runNow(string $task): ?array
+    {
+        $events = app(Schedule::class)->events();
+        if (!$events) {
+            try { app(\Illuminate\Contracts\Console\Kernel::class)->bootstrap(); } catch (\Throwable) {}
+            $events = app(Schedule::class)->events();
+        }
+        $event = collect($events)->first(fn ($e) => self::label($e) === $task);
+        if (!$event) {
+            return null;
+        }
+
+        @set_time_limit(300);
+        $has = Schema::hasTable('scheduler_runs');
+        $row = $has ? SchedulerRun::create(['task' => $task, 'expression' => $event->expression, 'started_at' => now(), 'status' => 'running']) : null;
+        $start = microtime(true); $output = ''; $error = null; $code = 0;
+        try {
+            if ($event->command) {
+                $code = \Illuminate\Support\Facades\Artisan::call($task);   // the label is the artisan command (+ arguments)
+                $output = trim(\Illuminate\Support\Facades\Artisan::output());
+            } else {
+                $event->run(app());                                           // Schedule::call(...) closures
+                $code = is_int($event->exitCode) ? $event->exitCode : 0;
+            }
+        } catch (\Throwable $e) {
+            $error = mb_substr($e::class . ': ' . $e->getMessage(), 0, 2000); $code = 1;
+        }
+        $ms = (int) round((microtime(true) - $start) * 1000);
+        $failed = $error !== null || $code !== 0;
+        $row?->update(['finished_at' => now(), 'duration_ms' => $ms, 'status' => $failed ? 'failed' : 'success', 'exit_code' => $code, 'error' => $error]);
+
+        return ['status' => $failed ? 'failed' : 'success', 'duration_ms' => $ms, 'output' => mb_substr($output, 0, 4000), 'error' => $error];
+    }
+
     /** @return array{running:bool,last_tick:?string,seconds_ago:?int} */
     public static function heartbeat(): array
     {

@@ -14,6 +14,7 @@ export default function AssignmentRulesPage() {
   const can = (m: string) => allowedMethods.includes(m)
   const [rule, setRule] = useState<Rule | null>(null)
   const [saving, setSaving] = useState(false)
+  const [running, setRunning] = useState(false)
 
   const load = useCallback(async () => {
     const r = await leadAssignmentApi.getRule()
@@ -35,6 +36,16 @@ export default function AssignmentRulesPage() {
       load()
     } catch (e) { toast.error(getError(e)) }
     finally { setSaving(false) }
+  }
+
+  const runNow = async () => {
+    setRunning(true)
+    try {
+      const r = await leadAssignmentApi.runNow()
+      toast.success(r.data?.message ?? 'Auto-assign run finished')
+      setRule((cur: Rule | null) => ({ ...cur, ...r.data?.data }))
+    } catch (e) { toast.error(getError(e)) }
+    finally { setRunning(false) }
   }
 
   if (!rule) return <div className="p-6 text-gray-400">Loading…</div>
@@ -96,6 +107,43 @@ export default function AssignmentRulesPage() {
           <input type="checkbox" checked={!!rule.auto_assign_enabled} disabled={!can('algorithm') && !can('round_robin') && !can('uber') && !can('auto')} onChange={e => set('auto_assign_enabled', e.target.checked)} />
           Auto-assign new leads{!can('algorithm') && !can('round_robin') && !can('uber') && !can('auto') ? ' (not in your plan — leads are assigned manually)' : ''}
         </label>
+        {rule.auto_assign_enabled && (
+          <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 space-y-3">
+            <div>
+              <p className="text-sm font-medium text-gray-800">⏱ When does auto-assign run? (cron)</p>
+              <p className="text-xs text-gray-500">Waiting leads are routed through your Category &amp; campaign routing rules first, then the method above.</p>
+            </div>
+            <label className="block text-sm text-gray-600">Run mode
+              <select className={`mt-1 ${input}`} value={rule.auto_assign_run_mode ?? 'instant'} onChange={e => set('auto_assign_run_mode', e.target.value)}>
+                <option value="instant">Instantly — route each new lead as it arrives (cron sweeps every 5 min as a safety net)</option>
+                <option value="scheduled">Scheduled — leads wait and the cron routes them in batches</option>
+              </select>
+            </label>
+            {(rule.auto_assign_run_mode ?? 'instant') === 'scheduled' && (
+              <div className="grid grid-cols-3 gap-3">
+                <label className="text-sm text-gray-600">Run every (minutes)
+                  <input type="number" min={1} max={1440} className={`mt-1 ${input}`} value={rule.auto_assign_interval_minutes ?? 15} onChange={e => set('auto_assign_interval_minutes', Number(e.target.value))} />
+                </label>
+                <label className="text-sm text-gray-600">Only run from (optional)
+                  <input type="time" className={`mt-1 ${input}`} value={(rule.auto_assign_run_start ?? '').slice(0, 5)} onChange={e => set('auto_assign_run_start', e.target.value || null)} />
+                </label>
+                <label className="text-sm text-gray-600">Until (optional)
+                  <input type="time" className={`mt-1 ${input}`} value={(rule.auto_assign_run_end ?? '').slice(0, 5)} onChange={e => set('auto_assign_run_end', e.target.value || null)} />
+                </label>
+              </div>
+            )}
+            <div className="flex items-center justify-between flex-wrap gap-2 text-xs text-gray-500">
+              <span>
+                Last run: {rule.auto_assign_last_run_at ? `${new Date(rule.auto_assign_last_run_at).toLocaleString()} · ${rule.auto_assign_last_run_count ?? 0} lead(s)` : 'never'}
+                {rule.next_run_at && <> · Next run: ~{new Date(rule.next_run_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</>}
+              </span>
+              <button type="button" onClick={runNow} disabled={running} className="px-3 py-1.5 rounded-lg border border-gray-300 bg-white text-gray-700 text-xs font-medium disabled:opacity-50">
+                {running ? 'Running…' : '▶ Run now'}
+              </button>
+            </div>
+            <p className="text-xs text-gray-400">Save the rules first, then Run now uses the saved settings.</p>
+          </div>
+        )}
       </section>
             )}
             {id === 'routing-rules' && <RoutingRulesPanel />}

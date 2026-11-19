@@ -78,6 +78,7 @@ class LogApiRequest
                 'duration_ms'      => (int) round((microtime(true) - $start) * 1000),
                 'ip'               => (string) substr((string) $request->ip(), 0, 45),
                 'user_agent'       => (string) substr((string) $request->userAgent(), 0, 255),
+                'client'           => strtolower((string) $request->header('X-Client')) === 'mobile' ? 'app' : 'portal',
                 'request_summary'  => $this->summarize($this->redact($request->except(self::REDACT_KEYS))),
                 'response_summary' => $status >= 400 ? $this->responseSummary($response) : null,
                 'is_error'         => $status >= 400,

@@ -75,7 +75,7 @@ export default function RoutingRulesPanel() {
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
           <h2 className="font-semibold text-gray-800">Category &amp; campaign routing</h2>
-          <p className="text-sm text-gray-500">Send leads of a category, or from a campaign / period, only to the employees you pick. Leads that match no rule use the normal routing. First matching rule (lowest priority number) wins.</p>
+          <p className="text-sm text-gray-500">Send leads of a category, or from a campaign / period, only to the employees you pick. Leads that match no rule use the normal routing. First matching rule (lowest priority number) wins. These rules are applied each time auto-assign runs — instantly or on its cron schedule (set in Routing).</p>
         </div>
         <Button onClick={() => setEdit(blank())}>+ Add routing rule</Button>
       </div>

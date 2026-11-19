@@ -212,6 +212,7 @@ Route::prefix('v1')->group(function () {
 
                 // Failed queue jobs
                 Route::get('cron',                     [\App\Modules\Settings\Http\Controllers\CronMonitorController::class, 'index'])->name('cron.index');
+                Route::post('cron/run',                [\App\Modules\Settings\Http\Controllers\CronMonitorController::class, 'run'])->name('cron.run');
                 Route::get('cron/history',             [\App\Modules\Settings\Http\Controllers\CronMonitorController::class, 'history'])->name('cron.history');
                 Route::delete('cron/history',          [\App\Modules\Settings\Http\Controllers\CronMonitorController::class, 'clear'])->name('cron.clear');
                 Route::get('failed-jobs',              [SuperAdminController::class, 'failedJobs'])->name('failed-jobs.index');
@@ -221,6 +222,8 @@ Route::prefix('v1')->group(function () {
 
                 // Observability: API request/activity log, error log, raw system log file
                 Route::get('api-logs',            [SuperAdminController::class, 'apiLogs'])->name('api-logs.index');
+                Route::get('usage-analytics',             [\App\Modules\Settings\Http\Controllers\UsageAnalyticsController::class, 'index'])->name('usage.index');
+                Route::get('usage-analytics/{company}',   [\App\Modules\Settings\Http\Controllers\UsageAnalyticsController::class, 'company'])->whereNumber('company')->name('usage.company');
                 Route::get('api-logs/stats',      [SuperAdminController::class, 'apiLogStats'])->name('api-logs.stats');
                 Route::get('errors',              [SuperAdminController::class, 'errorLogs'])->name('errors.index');
                 Route::delete('errors',           [SuperAdminController::class, 'clearErrorLogs'])->name('errors.clear');
@@ -809,6 +812,7 @@ Route::prefix('v1')->group(function () {
         Route::prefix('lead-assignment-rules')->name('lead-assignment-rules.')->middleware('permission:lead_assignment.manage')->group(function () {
             Route::get('/',  [LeadAssignmentController::class, 'getRule'])->name('show');
             Route::post('/', [LeadAssignmentController::class, 'saveRule'])->name('save');
+            Route::post('/run-now',        [LeadAssignmentController::class, 'runNow'])->name('run-now');
             Route::get('/routing',         [LeadAssignmentController::class, 'routingIndex'])->name('routing.index');
             Route::post('/routing',        [LeadAssignmentController::class, 'routingStore'])->name('routing.store');
             Route::put('/routing/{id}',    [LeadAssignmentController::class, 'routingUpdate'])->name('routing.update');

@@ -382,7 +382,7 @@ class LeadAssignmentController extends Controller
             LeadAssignmentRule::defaultForCompany($company->id)
         );
 
-        return response()->json(['data' => $rule]);
+        return response()->json(['data' => $this->ruleWithSchedule($rule->fresh() ?? $rule)]);
     }
 
     // POST /api/v1/lead-assignment-rules
@@ -411,9 +411,26 @@ class LeadAssignmentController extends Controller
             'notification_mode', 'notification_gap_seconds', 'notification_timeout_seconds', 'max_notification_rounds',
             'duplicate_window_days', 'duplicate_action',
             'working_hours_start', 'working_hours_end', 'working_days', 'timezone',
+            'auto_assign_run_mode', 'auto_assign_interval_minutes', 'auto_assign_run_start', 'auto_assign_run_end',
         ]));
 
-        return response()->json(['data' => $rule]);
+        return response()->json(['data' => $this->ruleWithSchedule($rule->fresh())]);
+    }
+
+    /** The rule plus when its auto-assign cron last ran / runs next. */
+    private function ruleWithSchedule(LeadAssignmentRule $rule): array
+    {
+        return $rule->toArray() + ['next_run_at' => app(\App\Services\LeadAssignment\ScheduledAutoAssigner::class)->nextRunAt($rule)?->toIso8601String()];
+    }
+
+    // POST /api/v1/lead-assignment-rules/run-now — run the auto-assign cron for this company right now
+    public function runNow(): JsonResponse
+    {
+        $company = Auth::user()->company;
+        $rule = LeadAssignmentRule::firstOrCreate(['company_id' => $company->id], LeadAssignmentRule::defaultForCompany($company->id));
+        abort_unless($rule->auto_assign_enabled, 422, 'Auto-assign is switched off.');
+        $r = app(\App\Services\LeadAssignment\ScheduledAutoAssigner::class)->runForCompany($company);
+        return response()->json(['message' => "{$r['routed']} lead(s) routed" . ($r['found'] === 0 ? ' — nothing was waiting.' : '.'), ...$r, 'data' => $this->ruleWithSchedule($rule->fresh())]);
     }
 
     // ── Category / campaign routing rules ─────────────────────────────────────

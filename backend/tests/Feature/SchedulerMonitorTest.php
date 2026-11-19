@@ -100,4 +100,38 @@ class SchedulerMonitorTest extends TestCase
         (new CronMonitorController())->clear(Request::create('/', 'DELETE'));
         $this->assertSame(1, SchedulerRun::count());
     }
+
+    public function test_run_now_runs_a_closure_task_and_records_it(): void
+    {
+        $ran = false;
+        app(Schedule::class)->call(function () use (&$ran) { $ran = true; })->name('unit:manual')->everyMinute();
+        $r = SchedulerMonitor::runNow('unit:manual');
+        $this->assertTrue($ran);
+        $this->assertSame('success', $r['status']);
+        $this->assertSame('success', SchedulerRun::where('task', 'unit:manual')->latest('id')->first()->status);
+    }
+
+    public function test_run_now_records_a_failure(): void
+    {
+        app(Schedule::class)->call(function () { throw new \RuntimeException('boom'); })->name('unit:bad')->everyMinute();
+        $r = SchedulerMonitor::runNow('unit:bad');
+        $this->assertSame('failed', $r['status']);
+        $this->assertStringContainsString('boom', $r['error']);
+        $this->assertSame('failed', SchedulerRun::where('task', 'unit:bad')->first()->status);
+    }
+
+    public function test_run_now_runs_an_artisan_command_task(): void
+    {
+        app(Schedule::class)->command('list --format=json')->everyMinute();
+        $label = SchedulerMonitor::label(collect(app(Schedule::class)->events())->first(fn ($e) => str_contains((string) $e->command, 'list')));
+        $r = SchedulerMonitor::runNow($label);
+        $this->assertSame('success', $r['status']);
+        $this->assertNotSame('', $r['output']);
+    }
+
+    public function test_run_now_endpoint_404s_for_an_unknown_task(): void
+    {
+        $this->expectException(\Symfony\Component\HttpKernel\Exception\HttpException::class);
+        app(CronMonitorController::class)->run(Request::create('/x', 'POST', ['task' => 'nope:nothing']));
+    }
 }

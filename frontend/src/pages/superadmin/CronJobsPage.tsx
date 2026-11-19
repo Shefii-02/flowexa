@@ -27,6 +27,8 @@ export default function CronJobsPage() {
   const [clearMode, setClearMode] = useState<null | 'all' | 7 | 30>(null)
   const [clearing, setClearing] = useState(false)
   const [open, setOpen] = useState<number | null>(null)
+  const [runningTask, setRunningTask] = useState<string | null>(null)
+  const [confirmRun, setConfirmRun] = useState<string | null>(null)
 
   const loadOverview = useCallback(() => { superadminApi.cronOverview().then(r => setOv(r.data)).catch(e => toast.error(getError(e))) }, [])
   const loadHistory = useCallback(() => {
@@ -46,6 +48,17 @@ export default function CronJobsPage() {
       const { data } = await superadminApi.cronClear(clearMode === 'all' ? undefined : { older_than_days: clearMode })
       toast.success(data.message); setClearMode(null); setPage(1); loadHistory(); loadOverview()
     } catch (e) { toast.error(getError(e)) } finally { setClearing(false) }
+  }
+
+  const runTask = async () => {
+    if (!confirmRun) return
+    const task = confirmRun
+    setConfirmRun(null); setRunningTask(task)
+    try {
+      const { data } = await superadminApi.cronRun(task)
+      toast.success(data.message + (data.output ? ` — ${String(data.output).split('\n').pop()}` : ''))
+    } catch (e) { toast.error(getError(e)) }
+    finally { setRunningTask(null); loadOverview(); loadHistory() }
   }
 
   if (!ov) return <div className="flex justify-center py-12"><Spinner size="lg" /></div>
@@ -90,7 +103,7 @@ export default function CronJobsPage() {
       <div className="card">
         <div className="card-header"><h3 className="card-title">Scheduled tasks</h3></div>
         <div className="table-wrapper"><table className="table">
-          <thead><tr><th>Task</th><th>Schedule</th><th>Status</th><th>Last run</th><th>Last success</th><th>Next due</th><th>24 h</th></tr></thead>
+          <thead><tr><th>Task</th><th>Schedule</th><th>Status</th><th>Last run</th><th>Last success</th><th>Next due</th><th>24 h</th><th></th></tr></thead>
           <tbody>{ov.tasks.map(t => (
             <tr key={t.task}>
               <td className="font-mono text-xs">{t.task}</td>
@@ -100,6 +113,7 @@ export default function CronJobsPage() {
               <td className="text-xs text-gray-500">{t.last_success_at ? fmt.relative(t.last_success_at) : '—'}</td>
               <td className="text-xs text-gray-500">{t.next_due ? fmt.datetime(t.next_due) : '—'}</td>
               <td className="text-xs">{t.runs_24h}{t.failures_24h > 0 && <span className="ml-1 text-red-600">({t.failures_24h} failed)</span>}</td>
+              <td className="text-right"><Button size="sm" variant="secondary" loading={runningTask === t.task} disabled={runningTask !== null} onClick={() => setConfirmRun(t.task)}>▶ Run now</Button></td>
             </tr>))}
           </tbody></table></div>
       </div>
@@ -147,6 +161,10 @@ export default function CronJobsPage() {
       <ConfirmModal open={clearMode !== null} title="Clear run history?" loading={clearing} danger confirmLabel="Clear" confirmVariant="danger"
         message={clearMode === 'all' ? 'This deletes every recorded run. The scheduled tasks themselves are not affected.' : `This deletes runs older than ${clearMode} days. Newer runs and the schedule are not affected.`}
         onConfirm={clear} onCancel={() => setClearMode(null)} />
+
+      <ConfirmModal open={confirmRun !== null} title="Run this task now?" confirmLabel="Run now"
+        message={`Runs “${confirmRun}” immediately, outside its schedule, and records it in the run history. Some tasks (reminders, sends, sweeps) act on real data.`}
+        onConfirm={runTask} onCancel={() => setConfirmRun(null)} />
     </div>
   )
 }

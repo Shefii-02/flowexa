@@ -291,6 +291,7 @@ const SUPERADMIN_NAV: { id: string; section: string; icon: string; label: string
   ] },
   { id: 'ops', section: 'Monitoring', icon: '🩺', label: 'Support & Monitoring', items: [
     { to: '/superadmin/support', icon: '🎧', label: 'Support Desk' },
+    { to: '/superadmin/usage', icon: '📊', label: 'Usage Analytics' },
     { to: '/superadmin/api-logs', icon: '📈', label: 'API & Activity' },
     { to: '/superadmin/errors', icon: '🐞', label: 'Error Logs' },
     { to: '/superadmin/system-log', icon: '📜', label: 'System Log' },

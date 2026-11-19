@@ -112,7 +112,7 @@ class WaChatLeadAttributionService
         // is already saved and the 5-minute cron is still there as a safety net.
         try {
             $company = Company::find($companyId);
-            if ($company && \App\Models\LeadAssignmentRule::autoEnabled($company->id)) {
+            if ($company && \App\Models\LeadAssignmentRule::routesInstantly($company->id)) {
                 // wa_open_campaign_id (wa_chat) points at message_sender_jobs, a different table
                 // from the campaigns entity LeadAssignment.campaign_id/duplicate detection expect
                 // — only WA Cloud's campaignField ('campaign_id') is the same entity.

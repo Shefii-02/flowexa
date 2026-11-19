@@ -64,7 +64,7 @@ class LeadService
 
         // "Auto-assign new leads" — route an unowned lead through the engine right away
         // (the leads:process-unassigned cron is only the safety net).
-        if (!$dto->assignedTo && \App\Models\LeadAssignmentRule::autoEnabled($companyId)) {
+        if (!$dto->assignedTo && \App\Models\LeadAssignmentRule::routesInstantly($companyId)) {
             try {
                 $contact = $lead->contact ? \App\Models\Contact::find($lead->contact->id) : null;
                 $company = \App\Models\Company::find($companyId);

@@ -2,45 +2,44 @@
 
 namespace App\Console\Commands;
 
-use App\Models\Lead;
+use App\Models\Company;
+use App\Models\LeadAssignmentRule;
+use App\Services\LeadAssignment\ScheduledAutoAssigner;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Catches leads that never went through the routing engine at all — created manually, imported
- * via CSV, or left behind by a past failure — and routes them through the same round-robin /
- * weighted-algorithm engine every other lead gets, so nothing sits in "Unassigned" forever.
- * Skips a lead that already has an assignment in flight (pending/notified/assigned/accepted/
- * ai_handling/transferred) so it never double-notifies staff.
+ * Auto-assign cron. Runs every minute and, for each company whose auto-assign is on and whose run
+ * is due (its own interval + optional daily run window), routes every unassigned open lead through
+ * the assignment engine — Category & campaign routing rules first, then round robin / weighted.
+ * "Instant" companies only get a 5-minute safety-net sweep; "scheduled" ones are routed only here.
+ * Skips a lead that already has an assignment in flight so it never double-notifies staff.
  */
 class ProcessUnassignedLeads extends Command
 {
     protected $signature   = 'leads:process-unassigned';
-    protected $description = 'Route any CRM lead with no owner and no assignment in flight through the assignment engine';
+    protected $description = 'Route unassigned CRM leads for every company whose auto-assign run is due';
 
-    public function handle(\App\Services\LeadAssignment\LeadAssignmentEngine $engine): int
+    public function handle(ScheduledAutoAssigner $runner): int
     {
-        $leads = Lead::whereNull('assigned_to')
-            ->whereNotIn('stage', ['enrolled', 'lost'])
-            ->whereDoesntHave('assignments', fn ($q) => $q->whereNotIn('status', ['dropped']))
-            ->with('contact', 'company')
-            ->limit(200)
-            ->get();
-
-        $routed = 0;
-        foreach ($leads as $lead) {
-            if (!$lead->contact || !$lead->company || !\App\Models\LeadAssignmentRule::autoEnabled($lead->company_id)) {
+        $total = 0; $companies = 0;
+        foreach (LeadAssignmentRule::where('auto_assign_enabled', true)->get() as $rule) {
+            if (!$runner->isDue($rule)) {
+                continue;
+            }
+            $company = Company::find($rule->company_id);
+            if (!$company) {
                 continue;
             }
             try {
-                $engine->assign($lead->company, $lead->contact, $lead->source ?: 'organic', $lead->campaign_id, null, 'auto', $lead);
-                $routed++;
+                $r = $runner->runForCompany($company);
+                $total += $r['routed']; $companies++;
             } catch (\Throwable $e) {
-                Log::warning('leads:process-unassigned failed', ['lead_id' => $lead->id, 'error' => $e->getMessage()]);
+                Log::warning('leads:process-unassigned failed', ['company_id' => $rule->company_id, 'error' => $e->getMessage()]);
             }
         }
 
-        $this->info("Routed {$routed} of {$leads->count()} unassigned lead(s).");
+        $this->info("Routed {$total} lead(s) for {$companies} compan" . ($companies === 1 ? 'y' : 'ies') . '.');
         return self::SUCCESS;
     }
 }

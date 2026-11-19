@@ -17,7 +17,7 @@ class ApiRequestLog extends Model
 
     protected $fillable = [
         'company_id', 'user_id', 'actor_role', 'method', 'path', 'route_name',
-        'status_code', 'duration_ms', 'ip', 'user_agent',
+        'status_code', 'duration_ms', 'ip', 'user_agent', 'client',
         'request_summary', 'response_summary', 'is_error', 'created_at',
     ];
 
