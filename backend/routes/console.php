@@ -24,6 +24,9 @@ Schedule::command('wa-cloud:run-automations')->everyFifteenMinutes()->withoutOve
 // (WahaWebhookConfigController) on a connected→disconnected transition.
 Schedule::command('wa-chat:check-health')->everyFiveMinutes()->withoutOverlapping();
 
+// WA Chat gateway webhooks — re-point any hook still saved as http:// (the gateway refuses the https redirect) or with an old URL.
+Schedule::command('wa-chat:repair-webhooks')->hourly()->withoutOverlapping();
+
 // Subscriptions — expire trials + lapsed paid plans past their grace window
 Schedule::command('accounts:post-reversals')->dailyAt('00:10')->withoutOverlapping();
 Schedule::command('subscriptions:sweep')->dailyAt('00:30')->withoutOverlapping();
