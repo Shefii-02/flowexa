@@ -122,7 +122,8 @@ export default function SuperAdminPlans() {
 
   // editing a plan that companies already use: ask whether they get the changes too
   const [askApply, setAskApply] = useState(false)
-  const requestSave = () => { if (editPlan && (editPlan.companies_count ?? 0) > 0) setAskApply(true); else handleSave() }
+  const [applyChoice, setApplyChoice] = useState(true)
+  const requestSave = () => { if (editPlan && (editPlan.companies_count ?? 0) > 0) { setApplyChoice(true); setAskApply(true) } else handleSave() }
 
   const handleSave = async (applyToExisting: boolean = true) => {
     setAskApply(false)
@@ -213,14 +214,25 @@ export default function SuperAdminPlans() {
               <Button size="sm" variant="secondary" onClick={() => restore(p)}>Restore</Button></div>))}</div>}
         </div>)}
 
-      <Modal open={askApply} onClose={() => setAskApply(false)} title="Apply changes to existing companies?" size="md"
-        footer={<><Button variant="secondary" onClick={() => setAskApply(false)}>Cancel</Button>
-          <Button variant="secondary" onClick={() => handleSave(false)}>No — new purchases only</Button>
-          <Button onClick={() => handleSave(true)}>Yes — update everyone</Button></>}>
-        <p className="text-sm text-gray-600"><b>{editPlan?.companies_count}</b> {editPlan?.companies_count === 1 ? 'company is' : 'companies are'} already on <b>{editPlan?.name}</b>.</p>
-        <p className="mt-2 text-sm text-gray-600"><b>Yes</b> — they get the new features, complimentary features and limits straight away.</p>
-        <p className="mt-1 text-sm text-gray-600"><b>No</b> — they keep the plan exactly as it is today (moved onto a hidden copy); only people who buy it from now on get your changes.</p>
-      </Modal>
+      {askApply && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40 p-4" onClick={e => e.target === e.currentTarget && setAskApply(false)}>
+          <div role="dialog" aria-modal="true" className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl">
+            <h3 className="text-base font-semibold text-gray-900">Apply changes to existing companies?</h3>
+            <p className="mt-1 text-sm text-gray-600"><b>{editPlan?.companies_count}</b> {editPlan?.companies_count === 1 ? 'company is' : 'companies are'} already on <b>{editPlan?.name}</b>.</p>
+            <div className="mt-4 space-y-2">
+              {[{ v: true, t: 'Yes — update everyone', d: 'They get the new features, complimentary features and limits straight away.' },
+                { v: false, t: 'No — new purchases only', d: 'They keep the plan exactly as it is today; only people who buy it from now on get your changes.' }].map(o => (
+                <label key={String(o.v)} className={`flex cursor-pointer gap-3 rounded-xl border p-3 ${applyChoice === o.v ? 'border-brand-500 bg-brand-50' : 'border-gray-200'}`}>
+                  <input type="radio" name="apply-existing" className="mt-1" checked={applyChoice === o.v} onChange={() => setApplyChoice(o.v)} />
+                  <span><span className="block text-sm font-medium text-gray-900">{o.t}</span><span className="block text-xs text-gray-500">{o.d}</span></span>
+                </label>))}
+            </div>
+            <div className="mt-5 flex justify-end gap-2">
+              <Button variant="secondary" onClick={() => setAskApply(false)}>Cancel</Button>
+              <Button onClick={() => handleSave(applyChoice)}>Submit</Button>
+            </div>
+          </div>
+        </div>)}
 
       <Modal open={showModal} onClose={() => setShowModal(false)} title={editPlan ? `Edit plan — ${editPlan.name}` : 'Create plan'} size="lg"
         footer={<><Button variant="secondary" onClick={() => setShowModal(false)}>Cancel</Button><Button onClick={requestSave} loading={saving}>Save plan</Button></>}>
