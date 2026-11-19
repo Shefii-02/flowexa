@@ -29,7 +29,7 @@ class LeadRepository implements LeadRepositoryInterface
         $scopedOrigin = $viewAll ? [] : (($user = User::find($userId)) ? Lead::scopedOriginAccessFor($user) : []);
 
         return $this->applyFilters(
-            Lead::with(['contact:id,name,phone,email,wa_id', 'assignedTo:id,name,email,department'])
+            Lead::with(['contact:id,name,phone,email,wa_id', 'assignedTo:id,name,email,department', 'categoryLinks'])
                 ->withCount('siblings as contact_leads_count')
                 ->where('company_id', $companyId)
                 ->when(!$viewAll, fn($q) => $q->where(function ($qq) use ($userId, $scopedOrigin) {
@@ -73,7 +73,7 @@ class LeadRepository implements LeadRepositoryInterface
         return $query
             ->when($filter->stage,      fn($q) => $q->where('stage', $filter->stage))
             ->when($filter->priority,   fn($q) => $q->where('priority', $filter->priority))
-            ->when($filter->category,   fn($q) => $q->where('category', $filter->category))
+            ->when($filter->category,   fn($q) => $q->where(fn ($w) => $w->where('leads.category', $filter->category)->orWhere(fn ($x) => $x->inCategory($filter->category))))   // any of its categories, not just the primary
             ->when($filter->assignedTo, fn($q) => $q->where('assigned_to', $filter->assignedTo))
             ->when($filter->source,     fn($q) => $q->where('source', $filter->source))
             ->when($filter->search,     fn($q) =>
@@ -99,6 +99,7 @@ class LeadRepository implements LeadRepositoryInterface
     public function findById(int $id, int $companyId): ?Lead
     {
         return Lead::with([
+            'categoryLinks',
             'contact.labels',
             'assignedTo:id,name,email,department',
             'assignedBy:id,name',
@@ -341,7 +342,7 @@ class LeadRepository implements LeadRepositoryInterface
     public function exportAll(int $companyId, LeadFilterDTO $filter): Collection
     {
         return $this->applyFilters(
-            Lead::with(['contact', 'assignedTo', 'contact.labels'])->where('company_id', $companyId),
+            Lead::with(['contact', 'assignedTo', 'contact.labels', 'categoryLinks'])->where('company_id', $companyId),
             $filter,
         )
             ->latest()

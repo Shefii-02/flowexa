@@ -144,16 +144,22 @@ export default function LeadDetailPage() {
     finally { setAssigning(false); setAssignTo('') }
   }
 
-  // Lead category: tap one to assign (switches from any other), tap the selected one again to remove
-  const setCategory = async (name: string | null) => {
+  // Lead categories: a lead can have several — tap one to add it, tap it again to remove it (the first one is the primary)
+  const myCategories = (l: Lead): string[] => (l.categories?.length ? l.categories : l.category ? [l.category] : [])
+  const saveCategories = async (names: string[]) => {
     if (!lead) return
     setChipBusy(true)
     try {
-      await leadCategoryApi.assign(lead.id, name)
-      setLead({ ...lead, category: name } as Lead)
-      setEditForm((f) => ({ ...f, category: name ?? '' }))
+      const r = await leadApi.setCategories(lead.id, names)
+      setLead({ ...lead, category: r.data.category ?? null, categories: r.data.categories ?? names } as Lead)
+      setEditForm((f) => ({ ...f, category: r.data.category ?? '' }))
     } catch (e) { toast.error(getError(e)) }
     finally { setChipBusy(false) }
+  }
+  const toggleCategory = (name: string) => {
+    if (!lead) return
+    const cur = myCategories(lead)
+    void saveCategories(cur.includes(name) ? cur.filter((c) => c !== name) : [...cur, name])
   }
   const createCategory = async () => {
     const name = newCat.name.trim()
@@ -163,11 +169,11 @@ export default function LeadDetailPage() {
       const r = await leadCategoryApi.create({ name, color: newCat.color, description: newCat.description.trim() || undefined })
       if (r.data?.category) setCatList((cs) => [...cs, r.data.category])
       setCategories((cs) => [...cs, name])
-      await leadCategoryApi.assign(lead.id, name)
-      setLead({ ...lead, category: name } as Lead)
-      setEditForm((f) => ({ ...f, category: name }))
+      const r2 = await leadApi.setCategories(lead.id, [...myCategories(lead), name])
+      setLead({ ...lead, category: r2.data.category ?? name, categories: r2.data.categories ?? [name] } as Lead)
+      setEditForm((f) => ({ ...f, category: r2.data.category ?? name }))
       setNewCat({ name: '', color: PALETTE[0], description: '' }); setCatDrawer(false)
-      toast.success(`Category “${name}” created and set on this lead.`)
+      toast.success(`Category “${name}” created and added to this lead.`)
     } catch (e) { toast.error(getError(e)) }
     finally { setChipBusy(false) }
   }
@@ -244,6 +250,7 @@ export default function LeadDetailPage() {
         const kind = e.event.replace('_logged', '')
         return `${kind[0].toUpperCase()}${kind.slice(1)} logged${e.payload?.first ? ' (new-lead call)' : ''}${e.payload?.outcome ? ` — ${String(e.payload.outcome).replace('_', ' ')}` : ''}${e.payload?.notes ? `: ${e.payload.notes}` : ''}`
       }
+      case 'category_changed': { const f = [e.payload?.from].flat().filter(Boolean).join(', '); const t = [e.payload?.to].flat().filter(Boolean).join(', '); return t ? `Categories: ${f || 'none'} → ${t}` : `Categories removed${f ? ` (was ${f})` : ''}` }
       case 'lead_verified':             return 'Verified (approved)'
       case 'lead_verification_revoked': return 'Verification removed'
       case 'lead_ai_handoff':           return `Handed to the AI agent${e.payload?.reason ? ` — ${e.payload.reason}` : ''}`
@@ -271,7 +278,7 @@ export default function LeadDetailPage() {
           <div className="mt-2 flex flex-wrap items-center gap-1.5">
             <span className={`badge ${stageConfig[lead.stage].badge}`}>{stageConfig[lead.stage].label}</span>
             <span className={`badge ${priorityConfig[lead.priority].badge}`}>{priorityConfig[lead.priority].label} priority</span>
-            {lead.category && <Badge variant="gray">{lead.category}</Badge>}
+            {myCategories(lead).map((c) => <Badge key={c} variant="gray">{c}</Badge>)}
             {lead.source && <Badge variant="gray">{lead.source_label ?? lead.source}</Badge>}
           </div>
         </div>
@@ -331,7 +338,7 @@ export default function LeadDetailPage() {
               <Field label="Source">{lead.source ? (lead.source_label ?? lead.source) : '—'}</Field>
               <Field label="Origin">{lead.origin_label ?? '—'}</Field>
               <Field label="Priority"><span className={`badge ${priorityConfig[lead.priority].badge}`}>{priorityConfig[lead.priority].label}</span></Field>
-              <Field label="Category">{lead.category || '—'}</Field>
+              <Field label="Categories">{myCategories(lead).join(', ') || '—'}</Field>
               <Field label="Assigned to">{lead.assigned_to?.name || 'Unassigned'}</Field>
               <Field label="Created">{fmt.date(lead.created_at)}</Field>
               <Field label="Item / listing">{lead.listing?.title || '—'}</Field>
@@ -391,14 +398,14 @@ export default function LeadDetailPage() {
               <p className="text-sm font-semibold text-gray-800">Lead category</p>
               <button className="text-xs text-brand-600 hover:underline" onClick={() => setCatDrawer(true)}>+ New category</button>
             </div>
-            <p className="text-[11px] text-gray-400 mb-3">Choose one. Tap the selected one again to clear it.</p>
+            <p className="text-[11px] text-gray-400 mb-3">Choose as many as fit. Tap one again to take it off. The first is the primary category.</p>
             <div className="flex flex-wrap gap-1.5">
               {catList.map((c) => {
-                const on = lead.category === c.name
+                const on = myCategories(lead).includes(c.name)
                 const col = c.color ?? '#6b7280'
                 return (
-                  <button key={c.id} disabled={chipBusy} onClick={() => setCategory(on ? null : c.name)}
-                    title={on ? 'Tap to remove this category' : 'Tap to set this category'}
+                  <button key={c.id} disabled={chipBusy} onClick={() => toggleCategory(c.name)}
+                    title={on ? 'Tap to remove this category' : 'Tap to add this category'}
                     className="text-xs px-2.5 py-1 rounded-full border transition-colors"
                     style={{ borderColor: col, background: on ? col : 'transparent', color: on ? '#fff' : col, fontWeight: on ? 700 : 500 }}>
                     {on ? '✓ ' : ''}{c.name}

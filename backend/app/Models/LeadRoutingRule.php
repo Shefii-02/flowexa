@@ -20,18 +20,20 @@ class LeadRoutingRule extends Model
     ];
 
     /** First live rule (lowest priority number) that matches this lead's category / campaign right now. */
-    public static function matchFor(int $companyId, ?string $category, ?int $campaignId): ?self
+    /** @param string|string[]|null $category a lead's category, or all of its categories — the rule fires if it matches ANY of them */
+    public static function matchFor(int $companyId, string|array|null $category, ?int $campaignId): ?self
     {
+        $cats = array_values(array_filter(array_map(fn ($c) => mb_strtolower(trim((string) $c)), (array) $category), 'strlen'));
         $now = now();
         return static::where('company_id', $companyId)->where('is_active', true)
             ->where(fn ($q) => $q->whereNull('starts_at')->orWhere('starts_at', '<=', $now))
             ->where(fn ($q) => $q->whereNull('ends_at')->orWhere('ends_at', '>=', $now))
             ->orderBy('priority')->orderBy('id')->get()
-            ->first(function (self $r) use ($category, $campaignId) {
+            ->first(function (self $r) use ($cats, $campaignId) {
                 // a selected rule needs its employees; an all / online rule needs none
                 if (in_array($r->staff_scope ?: 'selected', ['selected', 'selected_online'], true) && !$r->staff_ids) { return false; }
                 if ($r->match_type === 'category') {
-                    return $category && $r->category && mb_strtolower(trim($r->category)) === mb_strtolower(trim($category));
+                    return $cats && $r->category && in_array(mb_strtolower(trim($r->category)), $cats, true);
                 }
                 // campaign: a specific one, or (campaign_id null) any campaign lead inside the period
                 return $campaignId && (!$r->campaign_id || (int) $r->campaign_id === (int) $campaignId);

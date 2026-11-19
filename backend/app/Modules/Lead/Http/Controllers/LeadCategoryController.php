@@ -32,8 +32,10 @@ class LeadCategoryController extends Controller
         }
 
         // Leads point at a category by its NAME (leads.category) — lead_category_id is never filled in — so count by name.
-        $stats = \App\Models\Lead::where('company_id', $cid)->whereNotNull('category')
-            ->selectRaw('category, count(*) as leads, count(distinct contact_id) as contacts')->groupBy('category')->get()->keyBy('category');
+        // A lead can have several categories, so count through lead_category_links (every category of every lead, primary included).
+        $stats = \Illuminate\Support\Facades\DB::table('lead_category_links as k')->join('leads as l', 'l.id', '=', 'k.lead_id')
+            ->where('k.company_id', $cid)->whereNull('l.deleted_at')
+            ->selectRaw('k.name as category, count(*) as leads, count(distinct l.contact_id) as contacts')->groupBy('k.name')->get()->keyBy('category');
 
         return response()->json([
             'categories' => $query->get()->map(function ($c) use ($stats) {
@@ -109,6 +111,7 @@ class LeadCategoryController extends Controller
         $category->update($d);
         if (isset($d['name']) && $d['name'] !== $oldName) { // leads carry the name, so they follow a rename
             \App\Models\Lead::where('company_id', $category->company_id)->where('category', $oldName)->update(['category' => $d['name']]);
+            \App\Models\LeadCategoryLink::where('company_id', $category->company_id)->where('name', $oldName)->update(['name' => $d['name']]);   // every lead that has it, primary or not
         }
 
         return response()->json(['category' => $category->fresh()]);
@@ -121,7 +124,7 @@ class LeadCategoryController extends Controller
             ->where('company_id', auth()->user()->company_id)
             ->firstOrFail();
 
-        $leadCount = \App\Models\Lead::where('company_id', $category->company_id)->where('category', $category->name)->count();
+        $leadCount = \App\Models\Lead::where('company_id', $category->company_id)->inCategory($category->name)->count();
         if ($leadCount > 0) {
             return response()->json([
                 'message' => "Cannot delete — {$leadCount} lead(s) use this category. Reassign them first.",
@@ -145,7 +148,7 @@ class LeadCategoryController extends Controller
         $category = $this->findCategory($id);
 
         $q = \App\Models\Contact::where('contacts.company_id', $cid)
-            ->whereIn('contacts.id', \App\Models\Lead::where('company_id', $cid)->where('category', $category->name)->select('contact_id'))
+            ->whereIn('contacts.id', \App\Models\Lead::where('company_id', $cid)->inCategory($category->name)->select('contact_id'))
             ->when(trim((string) $request->search) !== '', function ($q) use ($request) {
                 $t = '%' . trim((string) $request->search) . '%';
                 $q->where(fn ($w) => $w->where('contacts.name', 'like', $t)->orWhere('contacts.phone', 'like', $t));
@@ -156,7 +159,7 @@ class LeadCategoryController extends Controller
         $page = $q->paginate(min(max($request->integer('per_page', 25), 5), 100));
         $ids  = $page->getCollection()->pluck('id');
 
-        $leads = \App\Models\Lead::where('company_id', $cid)->where('category', $category->name)->whereIn('contact_id', $ids)
+        $leads = \App\Models\Lead::where('company_id', $cid)->inCategory($category->name)->whereIn('contact_id', $ids)
             ->with('assignedTo:id,name')->latest()->get()->groupBy('contact_id');
         $campaigns = \Illuminate\Support\Facades\DB::table('campaign_contacts')
             ->join('campaigns', 'campaigns.id', '=', 'campaign_contacts.campaign_id')
@@ -180,7 +183,7 @@ class LeadCategoryController extends Controller
             ];
         });
 
-        $stages = \App\Models\Lead::where('company_id', $cid)->where('category', $category->name)->selectRaw('stage, count(*) as n')->groupBy('stage')->pluck('n', 'stage');
+        $stages = \App\Models\Lead::where('company_id', $cid)->inCategory($category->name)->selectRaw('stage, count(*) as n')->groupBy('stage')->pluck('n', 'stage');
 
         return response()->json([
             'category' => $category, 'contacts' => $rows, 'total' => $page->total(), 'page' => $page->currentPage(), 'has_more' => $page->hasMorePages(),

@@ -19,7 +19,7 @@ const EVENT_LABEL: Record<string, string> = {
   lead_assignment_transferred: 'Transferred',
   lead_assignment_completed: 'Completed',
   lead_assignment_restored: 'Restored',
-  lead_recalled: 'Recalled',
+  lead_recalled: 'Recalled', category_changed: 'Category changed',
   call_logged: 'Call logged', message_logged: 'Message logged', meeting_logged: 'Meeting logged', visit_logged: 'Visit logged', other_logged: 'Activity logged',
   lead_verified: 'Verified', lead_verification_revoked: 'Verification removed',
   lead_ai_handoff: 'AI hand-off',
@@ -29,7 +29,7 @@ const EVENT_LABEL: Record<string, string> = {
 const EVENT_ICON: Record<string, string> = {
   note_added: '📝', stage_changed: '🔀', assigned: '👤', reassigned_bulk: '⇄',
   lead_assigned: '📨', lead_assignment_accepted: '✅', lead_assignment_declined: '❌',
-  lead_assignment_timeout: '⏱️', lead_assignment_transferred: '🔁', lead_assignment_completed: '🏁', lead_assignment_restored: '↩️', lead_recalled: '↩', call_logged: '📞', message_logged: '💬', meeting_logged: '🤝', visit_logged: '🏢', other_logged: '📝', lead_verified: '✅', lead_verification_revoked: '↺',
+  lead_assignment_timeout: '⏱️', lead_assignment_transferred: '🔁', lead_assignment_completed: '🏁', lead_assignment_restored: '↩️', lead_recalled: '↩', category_changed: '📂', call_logged: '📞', message_logged: '💬', meeting_logged: '🤝', visit_logged: '🏢', other_logged: '📝', lead_verified: '✅', lead_verification_revoked: '↺',
   lead_ai_handoff: '🤖', lead_sla_breached: '⚠️',
 }
 
@@ -65,6 +65,7 @@ function describe(row: LogRow): string {
     case 'lead_recalled':             return p.reason === 'auto_reassign' ? 'Taken back and re-assigned by auto assign' : 'Taken back from the staff member — unassigned'
     case 'call_logged': case 'message_logged': case 'meeting_logged': case 'visit_logged': case 'other_logged':
       return `${p.first ? 'New-lead contact' : 'Follow-up'}${p.outcome ? ` · ${String(p.outcome).replace('_', ' ')}` : ''}${p.notes ? ` — ${p.notes}` : ''}`
+    case 'category_changed': { const f = [p.from].flat().filter(Boolean).join(', '); const t = [p.to].flat().filter(Boolean).join(', '); return t ? `${f || 'none'} → ${t}` : `Removed${f ? ` (was ${f})` : ''}` }
     case 'lead_verified':             return 'Converted / closed lead approved'
     case 'lead_verification_revoked': return 'Approval taken back'
     case 'lead_ai_handoff':           return p.reason ? String(p.reason) : 'Handed to the AI agent'

@@ -19,8 +19,10 @@ class LeadAssignmentWorkloadTest extends TestCase
         parent::setUp();
         Schema::create('users', function (Blueprint $t) {
             $t->id(); $t->unsignedBigInteger('company_id'); $t->string('name')->default('x'); $t->boolean('is_active')->default(true);
-            $t->unsignedSmallInteger('max_leads')->default(50); $t->timestamps(); $t->softDeletes();
+            $t->unsignedSmallInteger('max_leads')->default(50); $t->unsignedBigInteger('role_id')->nullable(); $t->timestamps(); $t->softDeletes();
         });
+        Schema::create('roles', function (Blueprint $t) { $t->id(); $t->string('name')->nullable(); $t->json('permissions')->nullable(); $t->timestamps(); });
+        \Illuminate\Support\Facades\DB::table('roles')->insert(['id' => 1, 'name' => 'sales', 'permissions' => json_encode(['leads.manage'])]);
         Schema::create('staff_availability', function (Blueprint $t) {
             $t->id(); $t->unsignedBigInteger('company_id'); $t->unsignedBigInteger('staff_id')->unique();
             $t->boolean('is_online')->default(false); $t->boolean('is_available')->default(true); $t->timestamp('last_seen_at')->nullable();
@@ -35,7 +37,7 @@ class LeadAssignmentWorkloadTest extends TestCase
     private function staff(int $max = 50): User
     {
         $u = new User();
-        $u->forceFill(['company_id' => 1, 'name' => 'S', 'is_active' => true, 'max_leads' => $max])->save();
+        $u->forceFill(['company_id' => 1, 'name' => 'S', 'is_active' => true, 'max_leads' => $max, 'role_id' => 1])->save();
         return $u;
     }
 
@@ -45,7 +47,7 @@ class LeadAssignmentWorkloadTest extends TestCase
         $this->engine->bumpWorkload(1, $s);
         $a = StaffAvailability::where('staff_id', $s->id)->first();
         $this->assertSame(1, (int) $a->current_leads_count);
-        $this->assertSame('offline', $a->status);
+        $this->assertSame('online', $a->status);   // a new availability row starts available (offline only when HR attendance drives availability)
 
         $this->engine->bumpWorkload(1, $s);
         $a = $a->fresh();

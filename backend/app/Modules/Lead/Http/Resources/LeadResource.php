@@ -15,7 +15,8 @@ class LeadResource extends JsonResource
             'id'             => $this->id,
             'stage'          => $this->stage,
             'priority'       => $this->priority,
-            'category'       => $this->category,
+            'category'       => $this->category,                 // the primary category
+            'categories'     => $this->categoryNames(),         // every category, primary first
             'source'         => $this->source,
             'source_label'   => $this->source ? $this->source_label : null,
             // other leads from the same contact (the same person enquiring again) — null when not computed (single-lead views)

@@ -14,7 +14,8 @@ class StaffScorer
         User $staff,
         StaffAvailability $availability,
         LeadAssignmentRule $rule,
-        ?LeadAssignment $previousAssignment = null
+        ?LeadAssignment $previousAssignment = null,
+        bool $ignoreAvailability = false   // an admin picked this person by hand: online / away / offline is not asked
     ): float {
         // Hard disqualification — at max leads or offline
         $maxLeads = $staff->max_leads ?? 0;
@@ -28,7 +29,11 @@ class StaffScorer
             'away'    => 50,
             default   => 0,
         };
-        if ($availability->status === 'offline') return 0;
+        if ($ignoreAvailability) {
+            $availScore = 100;
+        } elseif ($availability->status === 'offline') {
+            return 0;
+        }
 
         // Factor 2: Capacity / max leads
         $capScore = 80; // unlimited
@@ -77,18 +82,22 @@ class StaffScorer
         LeadAssignmentRule $rule,
         ?LeadAssignment $previousAssignment = null,
         array $excludeStaffIds = [],
-        array $onlyStaffIds = []   // optional: limit the pool (reply routing → "hand over to these people")
+        array $onlyStaffIds = [],   // optional: limit the pool (reply routing → "hand over to these people")
+        bool $ignoreAvailability = false
     ): Collection {
         $staffList = User::where('company_id', $company->id)
             ->where('is_active', true)
             ->whereNotIn('id', $excludeStaffIds)
             ->when($onlyStaffIds, fn ($q) => $q->whereIn('id', $onlyStaffIds))
-            ->whereHas('role', fn($q) => $q->whereJsonContains('permissions', 'leads.manage'))
-            ->get();
+            // normally: roles that can manage leads. A hand-picked pool only needs people who can open leads.
+            ->when(!$ignoreAvailability, fn ($q) => $q->whereHas('role', fn ($r) => $r->whereJsonContains('permissions', 'leads.manage')))
+            ->when($ignoreAvailability, fn ($q) => $q->with('role'))
+            ->get()
+            ->when($ignoreAvailability, fn ($c) => $c->filter(fn (User $u) => $u->hasAnyPermission(['leads.view', 'leads.manage'])));
 
-        return $staffList->map(function (User $staff) use ($rule, $previousAssignment, $company) {
+        return $staffList->map(function (User $staff) use ($rule, $previousAssignment, $company, $ignoreAvailability) {
             $availability = StaffAvailability::ensureExists($company->id, $staff->id);
-            $score = $this->score($staff, $availability, $rule, $previousAssignment);
+            $score = $this->score($staff, $availability, $rule, $previousAssignment, $ignoreAvailability);
             return (object) ['staff' => $staff, 'availability' => $availability, 'score' => $score];
         })
         ->filter(fn($r) => $r->score > 0)

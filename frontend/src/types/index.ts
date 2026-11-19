@@ -206,7 +206,8 @@ export interface Lead {
   id: number
   stage: LeadStage
   priority: LeadPriority
-  category: string | null
+  category: string | null          // the primary category
+  categories?: string[]            // every category of the lead, primary first
   source: LeadSource
   source_label?: string
   repeat_count?: number | null   // other leads from the same contact

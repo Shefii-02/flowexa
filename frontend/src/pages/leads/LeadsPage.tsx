@@ -74,6 +74,10 @@ export default function LeadsPage() {
   const [perPage, setPerPage] = useState(20)
   const [bulkStage, setBulkStage] = useState('')
   const [bulkPriority, setBulkPriority] = useState('')
+  const [bulkCats, setBulkCats] = useState<string[]>([])            // categories to apply to every selected lead
+  const [bulkCatMode, setBulkCatMode] = useState<'add' | 'replace' | 'remove' | 'clear'>('add')
+  const [catMenu, setCatMenu] = useState(false)
+  const [catSearch, setCatSearch] = useState('')
   const [bulkUpdating, setBulkUpdating] = useState(false)
   const [switchTarget, setSwitchTarget] = useState('')
   const [switching, setSwitching] = useState(false)
@@ -282,12 +286,18 @@ export default function LeadsPage() {
   const toggleSelectAll = () => setSelectedIds((s) => s.size === list.length ? new Set() : new Set(list.map((l) => l.id)))
 
   const handleBulkStatus = async () => {
-    if (!bulkStage && !bulkPriority) { toast.error('Pick a stage or a priority to apply.'); return }
+    const catChange = bulkCatMode === 'clear' || bulkCats.length > 0
+    if (!bulkStage && !bulkPriority && !catChange) { toast.error('Pick a stage, priority or categories to apply.'); return }
     setBulkUpdating(true)
     try {
-      const { data } = await leadApi.bulkStatus([...selectedIds], { stage: bulkStage || undefined, priority: bulkPriority || undefined })
+      const { data } = await leadApi.bulkStatus([...selectedIds], {
+        stage: bulkStage || undefined, priority: bulkPriority || undefined,
+        categories: bulkCatMode !== 'clear' && bulkCats.length ? bulkCats : undefined,
+        category_mode: bulkCatMode !== 'clear' && bulkCats.length ? bulkCatMode : undefined,
+        clear_category: bulkCatMode === 'clear' ? true : undefined,
+      })
       toast.success(data.message ?? 'Leads updated.')
-      setBulkStage(''); setBulkPriority(''); setSelectedIds(new Set()); load()
+      setBulkStage(''); setBulkPriority(''); setBulkCats([]); setBulkCatMode('add'); setCatMenu(false); setSelectedIds(new Set()); load()
     } catch (e) { toast.error(getError(e)) }
     finally { setBulkUpdating(false) }
   }
@@ -308,8 +318,9 @@ export default function LeadsPage() {
     try {
       if (!poolRules && needsStaff(poolScope) && poolIds.length === 0) { toast.error('Pick at least one employee.'); setAutoAssigning(false); return }
       const { data } = await leadApi.autoAssign(autoStrategy, [...selectedIds], poolRules ? undefined : { staff_scope: poolScope, staff_ids: needsStaff(poolScope) ? poolIds : [] })
-      toast.success(data.message ?? 'Leads auto-assigned.')
-      setShowAutoAssign(false); setSelectedIds(new Set()); load()
+      // a run that placed nobody is a failure the admin needs to read (the reasons are in the message), not a green tick
+      if (data.assigned === 0) { toast.error(data.message ?? 'No leads were assigned.', { duration: 10000 }); load() }
+      else { toast.success(data.message ?? 'Leads auto-assigned.', { duration: data.skipped ? 8000 : 4000 }); setShowAutoAssign(false); setSelectedIds(new Set()); load() }
     } catch (e) { toast.error(getError(e)) }
     finally { setAutoAssigning(false) }
   }
@@ -452,7 +463,7 @@ export default function LeadsPage() {
             <label className="flex items-start gap-2 text-sm cursor-pointer"><input type="radio" className="mt-0.5" checked={poolRules} onChange={() => setPoolRules(true)} />
               <span><b>Follow my routing rules</b> — category / campaign rules and the default pool from Assignment Rules</span></label>
             <label className="flex items-start gap-2 text-sm cursor-pointer"><input type="radio" className="mt-0.5" checked={!poolRules} onChange={() => setPoolRules(false)} />
-              <span><b>Choose now</b> — all staff, attendance-online staff, or selected staff (ignores the routing rules for this run)</span></label>
+              <span><b>Choose now</b> — all staff, attendance-online staff, or the staff you pick. They get the leads even if they are marked offline (their lead limit still applies); the routing rules are ignored for this run</span></label>
             {!poolRules && <StaffScopePicker scope={poolScope} staffIds={poolIds} staff={counsellors} onChange={(s, ids) => { setPoolScope(s); setPoolIds(ids) }} />}
           </div>
           <div className="flex justify-end gap-2 pt-2">
@@ -510,7 +521,37 @@ export default function LeadsPage() {
                 <option value="">Set priority…</option>
                 {Object.entries(priorityConfig).map(([k, p]) => <option key={k} value={k}>{p.label}</option>)}
               </select>
-              <Button size="sm" onClick={handleBulkStatus} loading={bulkUpdating} disabled={!bulkStage && !bulkPriority}>Apply status</Button>
+              <div className="relative">
+                <button type="button" onClick={() => setCatMenu(o => !o)}
+                  className={`text-sm border rounded-lg px-2 py-1.5 bg-white ${bulkCats.length || bulkCatMode === 'clear' ? 'border-brand-400 text-brand-700' : 'border-gray-200'}`}>
+                  {bulkCatMode === 'clear' ? '✕ Remove all categories' : bulkCats.length ? `📂 ${bulkCats.length} categor${bulkCats.length > 1 ? 'ies' : 'y'} · ${bulkCatMode}` : '📂 Set categories…'} ▾
+                </button>
+                {catMenu && (
+                  <div className="absolute z-30 mt-1 w-72 rounded-xl border border-gray-200 bg-white shadow-lg p-3 space-y-2">
+                    <div className="flex gap-1 text-xs">
+                      {([['add', 'Add'], ['replace', 'Replace'], ['remove', 'Remove']] as const).map(([m, l]) => (
+                        <button key={m} type="button" onClick={() => setBulkCatMode(m)} className={`flex-1 rounded-md py-1 ${bulkCatMode === m ? 'bg-brand-600 text-white' : 'bg-gray-100 text-gray-600'}`}>{l}</button>
+                      ))}
+                    </div>
+                    <p className="text-[11px] text-gray-400">{bulkCatMode === 'add' ? 'Adds these to what each lead already has.' : bulkCatMode === 'replace' ? 'Each lead keeps exactly these categories.' : bulkCatMode === 'remove' ? 'Takes these off each lead.' : 'Takes every category off each lead.'}</p>
+                    <input className="w-full border border-gray-200 rounded-lg px-2 py-1 text-xs" placeholder="Search categories…" value={catSearch} onChange={e => setCatSearch(e.target.value)} />
+                    <div className="max-h-48 overflow-y-auto divide-y divide-gray-50">
+                      {categories.filter(c => c.toLowerCase().includes(catSearch.toLowerCase())).map(c => (
+                        <label key={c} className="flex items-center gap-2 px-1 py-1.5 text-sm cursor-pointer hover:bg-gray-50">
+                          <input type="checkbox" checked={bulkCats.includes(c)} onChange={() => { setBulkCatMode(m => m === 'clear' ? 'add' : m); setBulkCats(cs => cs.includes(c) ? cs.filter(x => x !== c) : [...cs, c]) }} />{c}
+                        </label>
+                      ))}
+                      {categories.length === 0 && <p className="text-xs text-gray-400 py-2">No categories yet.</p>}
+                    </div>
+                    <div className="flex items-center justify-between text-xs">
+                      <button type="button" className="text-red-500 hover:underline" onClick={() => { setBulkCats([]); setBulkCatMode('clear') }}>✕ Remove all categories</button>
+                      <button type="button" className="text-gray-400 hover:underline" onClick={() => { setBulkCats([]); setBulkCatMode('add') }}>Reset</button>
+                      <button type="button" className="text-brand-600 hover:underline" onClick={() => setCatMenu(false)}>Done</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+              <Button size="sm" onClick={handleBulkStatus} loading={bulkUpdating} disabled={!bulkStage && !bulkPriority && !bulkCats.length && bulkCatMode !== 'clear'}>Apply to {selectedIds.size}</Button>
               {canRecall && <Button size="sm" variant="secondary" onClick={() => setShowRecallSelected(true)}>↩ Recall selected</Button>}
               <Button size="sm" variant="danger" onClick={() => setShowBulkDelete(true)}>Delete selected</Button>
               <button onClick={() => setSelectedIds(new Set())} className="text-xs text-gray-400 hover:underline ml-auto">Clear selection</button>
@@ -553,7 +594,8 @@ export default function LeadsPage() {
                               </select>
                             </td>
                             <td><span className={`badge ${pc.badge}`}>{pc.label}</span></td>
-                            <td className="text-xs text-gray-600">{l.category || '—'}</td>
+                            <td className="text-xs text-gray-600">{(l.categories?.length ? l.categories : l.category ? [l.category] : []).length
+                          ? <div className="flex flex-wrap gap-1">{(l.categories?.length ? l.categories : [l.category as string]).map((c) => <span key={c} className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px]">{c}</span>)}</div> : '—'}</td>
                             <td className="text-xs">
                               {l.source ? (
                                 <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-gray-700" title={l.origin_label ?? ''}>

@@ -52,7 +52,7 @@ class LeadAssignmentEngine
 
         // Category / campaign routing: matching leads go only to the employees (and, optionally,
         // the method) set on a routing rule. An explicit pool from the caller (WA Cloud) wins.
-        $routing = LeadRoutingRule::matchFor($company->id, $lead?->category, $campaignId ?? $lead?->campaign_id);
+        $routing = LeadRoutingRule::matchFor($company->id, $lead?->categoryNames(), $campaignId ?? $lead?->campaign_id);
         if ($routing && $routing->strategy && !$strategyOverride) {
             $rule->strategy = $routing->strategy;   // in-memory only
         }
@@ -94,7 +94,7 @@ class LeadAssignmentEngine
 
         return DB::transaction(function () use (
             $company, $contact, $campaignId, $sourceType, $sourceRef,
-            $assignmentType, $rule, $dupCheck, $lead, $onlyStaffIds, $strategyOverride, $routing
+            $assignmentType, $rule, $dupCheck, $lead, $onlyStaffIds, $strategyOverride, $routing, $poolOverride
         ) {
             $resolvedType = $rule->notification_mode === 'uber' ? 'notification' : $assignmentType;
 
@@ -151,13 +151,20 @@ class LeadAssignmentEngine
             // instant-assigns via whichever strategy the rule uses (round robin or the weighted
             // algorithm), falling back to the AI agent only if nobody is available at all.
             if ($rule->notification_mode === 'auto') {
+                // An admin who picked the pool by hand (the Auto assign button) means those people — online status is not asked.
+                // Capacity, an active account and access to leads still apply.
+                $ignoreAvailability = $poolOverride !== false;
                 $staff = ($rule->strategy ?? 'algorithm') === 'round_robin'
-                    ? $this->roundRobinPick($company, [], $onlyStaffIds ?? [])
-                    : ($this->scorer->rankStaff($company, $rule, $dupCheck['previous_assignment'] ?? null, [], $onlyStaffIds ?? [])->first()->staff ?? null);
+                    ? $this->roundRobinPick($company, [], $onlyStaffIds ?? [], $ignoreAvailability)
+                    : ($this->scorer->rankStaff($company, $rule, $dupCheck['previous_assignment'] ?? null, [], $onlyStaffIds ?? [], $ignoreAvailability)->first()->staff ?? null);
 
                 if ($staff) {
                     $this->assignToStaff($assignment, $staff, $rule);
+                } elseif ($strategyOverride) {
+                    // manual run: leave the lead exactly as it was (the transaction rolls back) — never quietly hand it to the AI agent
+                    throw new NoEligibleStaffException('No staff could take this lead.');
                 } else {
+                    $assignment->update(['transfer_reason' => 'No staff were available (offline, away, at capacity or outside the chosen staff) — AI agent engaged.']);
                     $this->startAiAgent($assignment, $company, $contact);
                 }
                 return $assignment;
@@ -252,8 +259,20 @@ class LeadAssignmentEngine
     }
 
     /** Least-loaded available staff member, then longest-idle (round-robin) — optionally skipping candidates already tried for this assignment. */
-    public function roundRobinPick(Company $company, array $excludeStaffIds = [], array $onlyStaffIds = []): ?User
+    public function roundRobinPick(Company $company, array $excludeStaffIds = [], array $onlyStaffIds = [], bool $ignoreAvailability = false): ?User
     {
+        if ($ignoreAvailability) {
+            return $this->pickIgnoringAvailability($company, $excludeStaffIds, $onlyStaffIds);
+        }
+
+        // Round robin reads staff_availability rows — but a staff member who has never been routed to has none yet, so they
+        // were invisible and every lead fell through to the AI agent. Give anyone who can hold leads a row first.
+        User::where('company_id', $company->id)->where('is_active', true)
+            ->when($onlyStaffIds, fn ($q) => $q->whereIn('id', $onlyStaffIds))
+            ->whereDoesntHave('availability')
+            ->whereHas('role', fn ($r) => $r->whereJsonContains('permissions', 'leads.manage'))
+            ->limit(500)->get()->each(fn (User $u) => StaffAvailability::ensureExists($company->id, $u->id));
+
         $candidate = StaffAvailability::query()
             ->where('company_id', $company->id)
             ->where('is_available', true)
@@ -268,6 +287,30 @@ class LeadAssignmentEngine
             ->first();
 
         return $candidate?->staff;
+    }
+
+    /**
+     * Round robin over exactly the people asked for, whether or not they are marked online: active, able to open leads and under
+     * their lead cap, fewest leads today first, then the one idle longest. Used when an admin picks the staff by hand.
+     */
+    private function pickIgnoringAvailability(Company $company, array $excludeStaffIds, array $onlyStaffIds): ?User
+    {
+        $users = User::where('company_id', $company->id)->where('is_active', true)
+            ->when($excludeStaffIds, fn ($q) => $q->whereNotIn('id', $excludeStaffIds))
+            ->when($onlyStaffIds, fn ($q) => $q->whereIn('id', $onlyStaffIds))
+            ->with('role')->orderBy('id')->get()
+            ->filter(fn (User $u) => $u->hasAnyPermission(['leads.view', 'leads.manage']));
+        if ($users->isEmpty()) {
+            return null;
+        }
+
+        foreach ($users as $u) { StaffAvailability::ensureExists($company->id, $u->id); }
+        $rows = StaffAvailability::whereIn('staff_id', $users->pluck('id'))->lockForUpdate()->get()->keyBy('staff_id');   // a concurrent lead waits, then sees the bumped count
+
+        return $users
+            ->filter(fn (User $u) => !($u->max_leads > 0 && (int) ($rows[$u->id]->current_leads_count ?? 0) >= $u->max_leads))
+            ->sortBy(fn (User $u) => [(int) ($rows[$u->id]->today_leads_count ?? 0), $rows[$u->id]->last_seen_at?->getTimestamp() ?? 0, $u->id])
+            ->first();
     }
 
     /**

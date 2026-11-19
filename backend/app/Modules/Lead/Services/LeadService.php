@@ -135,19 +135,59 @@ class LeadService
             ->whereNotIn('stage', ['enrolled', 'lost'])
             ->with('contact')->get();
 
-        $assigned = 0; $skipped = 0;
-        foreach ($leads as $lead) {
+        $assigned = 0; $skipped = 0; $noOne = false;
+        foreach ($leads as $i => $lead) {
             if (!$lead->contact) { $skipped++; continue; }
             try {
-                if ($lead->assigned_to) { $this->releaseLead($lead, 'auto_reassign'); $lead->refresh(); }
-                $a = $engine->assign($company, $lead->contact, $lead->source ?: 'organic', $lead->campaign_id, null, 'manual', $lead, null, $strategy, $pool);
-                $a->staff_id ? $assigned++ : $skipped++;   // no staff available → left for the AI agent
+                // release + assign are ONE step: if nobody can take the lead, its current owner keeps it
+                \Illuminate\Support\Facades\DB::transaction(function () use ($lead, $engine, $company, $strategy, $pool, &$assigned, &$skipped) {
+                    if ($lead->assigned_to) { $this->releaseLead($lead, 'auto_reassign'); $lead->refresh(); }
+                    $a = $engine->assign($company, $lead->contact, $lead->source ?: 'organic', $lead->campaign_id, null, 'manual', $lead, null, $strategy, $pool);
+                    $a->staff_id ? $assigned++ : $skipped++;
+                });
+            } catch (\App\Services\LeadAssignment\NoEligibleStaffException) {
+                $skipped++; $noOne = true;
+                if ($pool !== false) {            // a hand-picked pool is the same for every lead — if nobody can take this one, nobody can take the rest
+                    $skipped += $leads->count() - $i - 1;
+                    break;
+                }
             } catch (\Throwable $e) {
                 \Illuminate\Support\Facades\Log::warning('Lead auto-assign (button) failed: ' . $e->getMessage(), ['lead_id' => $lead->id]);
                 $skipped++;
             }
         }
-        return ['assigned' => $assigned, 'skipped' => $skipped];
+
+        return ['assigned' => $assigned, 'skipped' => $skipped, 'reasons' => $noOne ? $this->whyNoStaff($companyId, $pool) : []];
+    }
+
+    /**
+     * Plain-language reasons the people in this pool could not take a lead — shown when an Auto assign run finds nobody.
+     * @param array|false|null $pool false = the routing rules decide (availability applies), null = everyone, array = exactly these
+     * @return string[]
+     */
+    private function whyNoStaff(int $companyId, array|bool|null $pool): array
+    {
+        if (is_array($pool) && $pool === [\App\Services\LeadAssignment\StaffPoolResolver::NOBODY]) {
+            return ['Nobody in the chosen pool is clocked in right now (attendance-based). Choose "All staff" or "Selected staff", or ask them to clock in.'];
+        }
+        $users = \App\Models\User::where('company_id', $companyId)->where('is_active', true)->with('role')
+            ->when(is_array($pool), fn ($q) => $q->whereIn('id', $pool))->orderBy('name')->limit(60)->get();
+        if ($users->isEmpty()) {
+            return ['No active staff match the chosen pool.'];
+        }
+        $avail = \App\Models\StaffAvailability::whereIn('staff_id', $users->pluck('id'))->get()->keyBy('staff_id');
+        $out = [];
+        foreach ($users as $u) {
+            $a = $avail[$u->id] ?? null;
+            if (!$u->hasAnyPermission(['leads.view', 'leads.manage'])) {
+                $out[] = "{$u->name} — their role cannot open leads (add the Leads permission)";
+            } elseif ($u->max_leads > 0 && $a && $a->current_leads_count >= $u->max_leads) {
+                $out[] = "{$u->name} — already at their lead limit ({$a->current_leads_count}/{$u->max_leads})";
+            } elseif ($pool === false && $a && !$a->isEffectivelyAvailable()) {
+                $out[] = "{$u->name} — marked " . ($a->status !== 'online' ? $a->status : 'unavailable') . ' (not available)';
+            }
+        }
+        return array_slice($out, 0, 8) ?: ['Nobody in the pool could take the leads.'];
     }
 
     /** Open leads that are assigned to someone but nobody has touched yet (still "New", no follow-up, no logged activity). */
@@ -250,13 +290,39 @@ class LeadService
     }
 
     /** Set the stage and/or priority of many leads at once (same side effects as editing one: events, enrolled/lost dates, auto-sale). Returns how many changed. */
-    public function bulkStatus(int $companyId, array $leadIds, ?string $stage, ?string $priority): int
+    /**
+     * Change stage / priority and/or categories of many leads. $categories are applied per $categoryMode:
+     * add (keep what they have), replace (exactly these), remove (take these away) or clear (take all away).
+     */
+    public function bulkStatus(int $companyId, array $leadIds, ?string $stage, ?string $priority, array $categories = [], string $categoryMode = 'add'): int
     {
+        $categorizer = app(\App\Services\LeadCategorizer::class);
+        $wantsCategories = $categories !== [] || $categoryMode === 'clear';
         $changed = 0;
         foreach (array_unique($leadIds) as $id) {
             $lead = $this->leadRepository->findById((int) $id, $companyId);
-            if (!$lead || (($stage === null || $lead->stage === $stage) && ($priority === null || $lead->priority === $priority))) { continue; }   // missing, or nothing would change
-            $this->leadRepository->update($lead, new \App\Modules\Lead\DTOs\UpdateLeadDTO(stage: $stage, priority: $priority));
+            if (!$lead) { continue; }
+
+            $changesRest = ($stage !== null && $lead->stage !== $stage) || ($priority !== null && $lead->priority !== $priority);
+            $before = $lead->categoryNames();
+            $after = !$wantsCategories ? $before : match ($categoryMode) {
+                'replace' => $categorizer->planReplace($lead, $categories),
+                'remove'  => $categorizer->planRemove($lead, $categories),
+                'clear'   => [],
+                default   => $categorizer->planAdd($lead, $categories),
+            };
+            $changesCategories = $wantsCategories && array_map('mb_strtolower', $before) !== array_map('mb_strtolower', $after);
+            if (!$changesRest && !$changesCategories) { continue; }   // nothing would change
+
+            if ($changesRest) {
+                // normal update path: stage events, enrolled / lost dates, auto-sale
+                $this->leadRepository->update($lead, new \App\Modules\Lead\DTOs\UpdateLeadDTO(stage: $stage, priority: $priority));
+                $lead = $lead->fresh();
+            }
+            if ($changesCategories) {
+                $categorizer->apply($lead, $after);
+                $this->leadRepository->logEvent($lead, 'category_changed', ['from' => $before, 'to' => $after]);
+            }
             $this->leadRepository->pushCrmOutbox($lead->fresh(), 'updated');
             $changed++;
         }
@@ -312,7 +378,7 @@ class LeadService
                 $lead->contact?->email,
                 $lead->stage,
                 $lead->priority,
-                $lead->category,
+                implode(', ', $lead->categoryNames()),
                 $lead->source,
                 $lead->assignedTo?->name,
                 $lead->notes,

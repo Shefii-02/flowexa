@@ -28,8 +28,11 @@ class LeadEngineRoutingTest extends TestCase
         Queue::fake();
         Schema::create('users', function (Blueprint $t) {
             $t->id(); $t->unsignedBigInteger('company_id'); $t->string('name')->default('x'); $t->boolean('is_active')->default(true);
-            $t->unsignedSmallInteger('max_leads')->default(50); $t->timestamps(); $t->softDeletes();
+            $t->unsignedSmallInteger('max_leads')->default(50); $t->unsignedBigInteger('role_id')->nullable(); $t->timestamps(); $t->softDeletes();
         });
+        Schema::create('roles', function (Blueprint $t) { $t->id(); $t->string('name')->nullable(); $t->json('permissions')->nullable(); $t->string('access_main')->nullable(); $t->json('access_subs')->nullable(); $t->timestamps(); });
+        Schema::create('staff_access_sections', function (Blueprint $t) { $t->id(); $t->unsignedBigInteger('user_id'); $t->string('section_key'); $t->boolean('is_main')->default(false); $t->timestamps(); });
+        \Illuminate\Support\Facades\DB::table('roles')->insert(['id' => 1, 'name' => 'sales', 'permissions' => json_encode(['leads.view', 'leads.manage'])]);
         Schema::create('staff_availability', function (Blueprint $t) {
             $t->id(); $t->unsignedBigInteger('company_id'); $t->unsignedBigInteger('staff_id')->unique();
             $t->boolean('is_online')->default(false); $t->boolean('is_available')->default(true); $t->timestamp('last_seen_at')->nullable();
@@ -87,7 +90,7 @@ class LeadEngineRoutingTest extends TestCase
     private function staff(string $name): User
     {
         $u = new User();
-        $u->forceFill(['company_id' => 1, 'name' => $name, 'is_active' => true])->save();
+        $u->forceFill(['company_id' => 1, 'name' => $name, 'is_active' => true, 'role_id' => 1])->save();
         \App\Models\StaffAvailability::create(['company_id' => 1, 'staff_id' => $u->id, 'status' => 'online', 'is_available' => true]);
         return $u;
     }
@@ -248,5 +251,70 @@ class LeadEngineRoutingTest extends TestCase
             $this->assertSame('round_robin', $asg->routing_strategy, 'the weighted method is replaced by round robin');
         }
         $this->assertEqualsCanonicalizing([$a->id, $a->id, $b->id, $b->id], $got, 'spread one by one across every available staff member');
+    }
+
+    private function manual(array|bool|null $pool, string $method = 'round_robin'): \App\Models\LeadAssignment
+    {
+        $company = (new Company())->forceFill(['id' => 1]);
+        $contact = new Contact(); $contact->forceFill(['company_id' => 1])->save();
+        return $this->engine->assign($company, $contact, 'organic', null, null, 'manual', (new Lead())->forceFill(['category' => null]), null, $method, $pool);
+    }
+
+    private function setStatus(User $u, string $status, bool $available): void
+    {
+        \App\Models\StaffAvailability::where('staff_id', $u->id)->update(['status' => $status, 'is_available' => $available]);
+    }
+
+    public function test_a_hand_picked_pool_gets_the_leads_even_when_marked_offline(): void
+    {
+        $a = $this->staff('A'); $b = $this->staff('B'); $c = $this->staff('C');
+        foreach ([$a, $b, $c] as $u) { $this->setStatus($u, 'offline', false); }
+        foreach (['round_robin', 'algorithm'] as $method) {
+            $got = [];
+            foreach (range(1, 6) as $_) { $got[] = (int) $this->manual([$a->id, $b->id], $method)->staff_id; }
+            $this->assertNotContains(0, $got, "$method: leads were assigned");
+            $this->assertNotContains($c->id, $got, "$method: only the picked people");
+            $this->assertCount(2, array_unique($got), "$method: spread over both");
+        }
+    }
+
+    public function test_the_rules_mode_still_respects_availability(): void
+    {
+        $a = $this->staff('A');
+        $this->setStatus($a, 'offline', false);
+        $this->expectException(\App\Services\LeadAssignment\NoEligibleStaffException::class);
+        $this->manual(false);   // false = follow the rules → availability applies → nobody
+    }
+
+    public function test_a_pick_with_nobody_eligible_leaves_nothing_behind(): void
+    {
+        $a = $this->staff('A');
+        \App\Models\User::where('id', $a->id)->update(['max_leads' => 1]);
+        \App\Models\StaffAvailability::where('staff_id', $a->id)->update(['current_leads_count' => 1]);   // at the cap
+        $before = [\App\Models\LeadAssignment::count()];
+        try {
+            $this->manual([$a->id]);
+            $this->fail('expected NoEligibleStaffException');
+        } catch (\App\Services\LeadAssignment\NoEligibleStaffException) {
+        }
+        $this->assertSame($before[0], \App\Models\LeadAssignment::count(), 'no assignment row (and so no AI hand-off) was left behind');
+        $this->assertSame(0, (int) \Illuminate\Support\Facades\DB::table('contacts')->sum('total_leads_count'), 'the contact counter was rolled back');
+    }
+
+    public function test_the_lead_cap_still_applies_to_a_hand_picked_pool(): void
+    {
+        $a = $this->staff('A'); $b = $this->staff('B');
+        \App\Models\User::where('id', $a->id)->update(['max_leads' => 1]);
+        \App\Models\StaffAvailability::where('staff_id', $a->id)->update(['current_leads_count' => 1]);
+        foreach (range(1, 3) as $_) { $this->assertSame($b->id, (int) $this->manual([$a->id, $b->id])->staff_id); }
+    }
+
+    public function test_round_robin_sees_staff_who_have_never_had_an_availability_row(): void
+    {
+        $a = $this->staff('A');
+        \App\Models\StaffAvailability::where('staff_id', $a->id)->delete();     // a brand-new staff member: no row yet
+        $picked = $this->engine->roundRobinPick((new Company())->forceFill(['id' => 1]));
+        $this->assertSame($a->id, $picked?->id, 'found, and given an (online) availability row on the way');
+        $this->assertSame('online', \App\Models\StaffAvailability::where('staff_id', $a->id)->value('status'));
     }
 }

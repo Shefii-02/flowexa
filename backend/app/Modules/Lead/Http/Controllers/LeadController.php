@@ -113,7 +113,8 @@ class LeadController extends Controller
             return response()->json(['message' => '"' . \App\Support\Modules::ASSIGN_METHODS[$d['strategy']] . '" assignment is not part of your plan.', 'error_code' => 'plan_feature_disabled'], 403);
         }
         $r = $this->leadService->autoAssign($company->id, $d['lead_ids'] ?? [], $d['strategy'], $d['staff_scope'] ?? null, $d['staff_ids'] ?? null);
-        return response()->json(['message' => "{$r['assigned']} lead(s) auto-assigned" . ($r['skipped'] ? ", {$r['skipped']} left (no available staff)." : '.'), ...$r]);
+        $why = $r['assigned'] === 0 && $r['reasons'] ? ' Why: ' . implode('; ', $r['reasons']) : '';
+        return response()->json(['message' => "{$r['assigned']} lead(s) auto-assigned" . ($r['skipped'] ? ", {$r['skipped']} left unassigned (no staff could take them)." : '.') . $why, ...$r]);
     }
 
     /** POST /leads/recall — take assigned-but-pending leads back (many at once). preview=true only counts. */
@@ -159,12 +160,30 @@ class LeadController extends Controller
         return response()->json(['message' => "{$count} lead(s) deleted.", 'count' => $count]);
     }
 
-    /** POST /leads/bulk-status — change stage and/or priority of the selected leads. */
+    /** POST /leads/bulk-status — change stage, priority and/or category (or clear it) of the selected leads. */
     public function bulkStatus(\App\Modules\Lead\Http\Requests\BulkStatusRequest $request): JsonResponse
     {
         $d = $request->validated();
-        $count = $this->leadService->bulkStatus(auth()->user()->company_id, $d['lead_ids'], $d['stage'] ?? null, $d['priority'] ?? null);
+        // the older single-category form maps onto the new one: category → replace with it, clear_category → remove them all
+        $cats = $d['categories'] ?? (isset($d['category']) ? [$d['category']] : []);
+        $mode = !empty($d['clear_category']) ? 'clear' : (isset($d['category']) && empty($d['categories']) ? 'replace' : ($d['category_mode'] ?? 'add'));
+        $count = $this->leadService->bulkStatus(auth()->user()->company_id, $d['lead_ids'], $d['stage'] ?? null, $d['priority'] ?? null, $cats, $mode);
         return response()->json(['message' => "{$count} lead(s) updated.", 'count' => $count]);
+    }
+
+    /** PUT /leads/{lead}/categories { categories: [names] } — set every category of one lead (the first becomes the primary). */
+    public function setCategories(Request $request, int $lead): JsonResponse
+    {
+        $d = $request->validate([
+            'categories'   => ['present', 'array', 'max:30'],
+            'categories.*' => ['string', 'max:120', \Illuminate\Validation\Rule::exists('lead_categories', 'name')->where('company_id', auth()->user()->company_id)],
+        ]);
+        $l = $this->leadService->show($lead, auth()->user()->company_id, auth()->id(), $this->canViewAll());
+        [$before, $after] = app(\App\Services\LeadCategorizer::class)->replace($l, $d['categories']);
+        if ($before !== $after) {
+            app(\App\Modules\Lead\Repositories\Interfaces\LeadRepositoryInterface::class)->logEvent($l, 'category_changed', ['from' => $before, 'to' => $after]);
+        }
+        return response()->json(['message' => 'Categories saved.', 'category' => $l->fresh()->category, 'categories' => $after]);
     }
 
     public function crmSync(int $lead): JsonResponse

@@ -47,6 +47,63 @@ class Lead extends Model
     public function events(): HasMany       { return $this->hasMany(LeadEvent::class)->latest(); }
     /** Routing/notification history from the assignment engine — see LeadAssignment::lead_id. */
     public function verifiedBy(): BelongsTo { return $this->belongsTo(User::class, 'verified_by'); }
+    private static ?bool $linksTable = null;
+
+    /** The multi-category table exists (false for the moment between deploying this code and running the migration — nothing may break then). */
+    public static function forgetLinksMemo(): void { self::$linksTable = null; }
+
+    public static function linksAvailable(): bool
+    {
+        return self::$linksTable ??= \Illuminate\Support\Facades\Schema::hasTable('lead_category_links');
+    }
+
+    public function categoryLinks(): HasMany { return $this->hasMany(LeadCategoryLink::class)->orderBy('id'); }
+
+    /** @return string[] every category of this lead — the primary (leads.category) first */
+    public function categoryNames(): array
+    {
+        if (!$this->exists || !self::linksAvailable()) {
+            return $this->category ? [$this->category] : [];
+        }
+        $names = $this->relationLoaded('categoryLinks') ? $this->categoryLinks->pluck('name')->all() : $this->categoryLinks()->pluck('name')->all();
+        if ($this->category) {
+            $names = array_merge([$this->category], array_values(array_filter($names, fn ($n) => mb_strtolower($n) !== mb_strtolower($this->category))));
+        }
+        return array_values(array_unique($names));
+    }
+
+    /** Leads that have this category among their categories (primary or not). */
+    public function scopeInCategory($query, string $name)
+    {
+        if (!self::linksAvailable()) {
+            return $query->where('leads.category', $name);
+        }
+        return $query->whereExists(fn ($q) => $q->selectRaw('1')->from('lead_category_links')
+            ->whereColumn('lead_category_links.lead_id', 'leads.id')->where('lead_category_links.name', $name));
+    }
+
+    /**
+     * Keep lead_category_links in step with the single-category writes the rest of the app still does (flows, imports, the
+     * edit form, create): setting leads.category to X makes X one of the lead's categories, and swaps out the old primary.
+     */
+    protected static function booted(): void
+    {
+        static::saved(function (Lead $lead) {
+            $created = $lead->wasRecentlyCreated;
+            if (!self::linksAvailable() || (!$created && !$lead->wasChanged('category'))) {
+                return;
+            }
+            $old = $created ? null : $lead->getOriginal('category');
+            $new = $lead->category !== null && trim((string) $lead->category) !== '' ? trim((string) $lead->category) : null;
+            if ($old !== null && $old !== $new) {
+                LeadCategoryLink::where('lead_id', $lead->id)->where('name', $old)->delete();
+            }
+            if ($new !== null) {
+                LeadCategoryLink::firstOrCreate(['lead_id' => $lead->id, 'name' => $new], ['company_id' => $lead->company_id]);
+            }
+        });
+    }
+
     public function assignments(): HasMany  { return $this->hasMany(LeadAssignment::class); }
 
     // ── Scopes ────────────────────────────────────────────────────────────────

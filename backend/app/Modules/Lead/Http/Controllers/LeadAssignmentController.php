@@ -527,10 +527,14 @@ class LeadAssignmentController extends Controller
         $user  = Auth::user();
         $avail = StaffAvailability::ensureExists($user->company_id, $user->id);
 
-        $newAvail = !$avail->is_available;
+        // flip what they currently ARE (available = flagged available AND online), not just the flag — otherwise a row
+        // that is flagged available but still "offline" needed two presses to come online
+        $newAvail = !$avail->isEffectivelyAvailable();
         $avail->update([
             'is_available' => $newAvail,
+            'is_online'    => $newAvail,
             'status'       => $newAvail ? 'online' : 'away',
+            'last_seen_at' => now(),
         ]);
 
         return response()->json(['data' => $avail->fresh()]);

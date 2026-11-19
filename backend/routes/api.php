@@ -796,6 +796,7 @@ Route::prefix('v1')->group(function () {
             Route::post('/bulk-assign', [LeadController::class, 'bulkAssign'])->middleware('permission:leads.manage')->name('bulk-assign');
             Route::get('/{lead}/activities',  [\App\Modules\Lead\Http\Controllers\LeadActivityController::class, 'index'])->middleware('permission:leads.view')->whereNumber('lead')->name('activities.index');
             Route::post('/{lead}/activities', [\App\Modules\Lead\Http\Controllers\LeadActivityController::class, 'store'])->middleware('permission:leads.view')->whereNumber('lead')->name('activities.store');
+            Route::put('/{lead}/categories',  [LeadController::class, 'setCategories'])->middleware('permission:leads.manage')->whereNumber('lead')->name('categories');
             Route::put('/{lead}/cost',        [\App\Modules\Lead\Http\Controllers\LeadActivityController::class, 'cost'])->middleware('permission:leads.manage')->whereNumber('lead')->name('cost');
             Route::post('/recall', [LeadController::class, 'recall'])->middleware('permission:leads.recall')->name('recall');
             Route::post('/auto-assign', [LeadController::class, 'autoAssign'])->middleware('permission:leads.manage')->name('auto-assign');
