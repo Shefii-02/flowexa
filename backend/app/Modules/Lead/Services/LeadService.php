@@ -128,6 +128,20 @@ class LeadService
         return $this->leadRepository->deleteBulk($companyId, $dto->leadIds);
     }
 
+    /** Set the stage and/or priority of many leads at once (same side effects as editing one: events, enrolled/lost dates, auto-sale). Returns how many changed. */
+    public function bulkStatus(int $companyId, array $leadIds, ?string $stage, ?string $priority): int
+    {
+        $changed = 0;
+        foreach (array_unique($leadIds) as $id) {
+            $lead = $this->leadRepository->findById((int) $id, $companyId);
+            if (!$lead || (($stage === null || $lead->stage === $stage) && ($priority === null || $lead->priority === $priority))) { continue; }   // missing, or nothing would change
+            $this->leadRepository->update($lead, new \App\Modules\Lead\DTOs\UpdateLeadDTO(stage: $stage, priority: $priority));
+            $this->leadRepository->pushCrmOutbox($lead->fresh(), 'updated');
+            $changed++;
+        }
+        return $changed;
+    }
+
     public function crmSync(int $id, int $companyId): void
     {
         $lead = $this->leadRepository->findById($id, $companyId);

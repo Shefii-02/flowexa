@@ -114,6 +114,14 @@ class LeadController extends Controller
         return response()->json(['message' => "{$count} lead(s) deleted.", 'count' => $count]);
     }
 
+    /** POST /leads/bulk-status — change stage and/or priority of the selected leads. */
+    public function bulkStatus(\App\Modules\Lead\Http\Requests\BulkStatusRequest $request): JsonResponse
+    {
+        $d = $request->validated();
+        $count = $this->leadService->bulkStatus(auth()->user()->company_id, $d['lead_ids'], $d['stage'] ?? null, $d['priority'] ?? null);
+        return response()->json(['message' => "{$count} lead(s) updated.", 'count' => $count]);
+    }
+
     public function crmSync(int $lead): JsonResponse
     {
         $this->leadService->crmSync($lead, auth()->user()->company_id);

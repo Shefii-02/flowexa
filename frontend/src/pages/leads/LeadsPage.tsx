@@ -9,6 +9,7 @@ import { fetchLeadsThunk, fetchLeadAnalyticsThunk, updateLeadInList } from '@/st
 import { leadApi, staffApi, leadImportExportApi, contactApi, leadCategoryApi } from '@/api'
 import StaffPicker from './components/StaffPicker'
 import { Button, Modal, Drawer, ConfirmModal, Badge, EmptyState, Pagination, TableSkeleton, StatCard } from '@/components/ui'
+import DateRangePicker from '@/components/ui/DateRangePicker'
 import { fmt, formatPhone, getError, downloadBlob, stageConfig, priorityConfig } from '@/utils'
 import toast from 'react-hot-toast'
 import type { Lead, LeadStage } from '@/types'
@@ -67,6 +68,11 @@ export default function LeadsPage() {
 
   // Row selection — pick specific leads (any stage, any assignee) and switch them to someone else
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
+  // how many leads per page, and the stage / priority to apply to the ticked leads
+  const [perPage, setPerPage] = useState(20)
+  const [bulkStage, setBulkStage] = useState('')
+  const [bulkPriority, setBulkPriority] = useState('')
+  const [bulkUpdating, setBulkUpdating] = useState(false)
   const [switchTarget, setSwitchTarget] = useState('')
   const [switching, setSwitching] = useState(false)
   const [showBulkDelete, setShowBulkDelete] = useState(false)
@@ -84,8 +90,8 @@ export default function LeadsPage() {
   }
 
   const load = useCallback(() => {
-    dispatch(fetchLeadsThunk({ page, per_page: 20, ...filters }))
-  }, [dispatch, page, stage, sourceFilter, assignedFilter, search, createdFrom, createdTo, closedFrom, closedTo]) // eslint-disable-line react-hooks/exhaustive-deps
+    dispatch(fetchLeadsThunk({ page, per_page: perPage, ...filters }))
+  }, [dispatch, page, perPage, stage, sourceFilter, assignedFilter, search, createdFrom, createdTo, closedFrom, closedTo]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { load() }, [load])
   useEffect(() => { dispatch(fetchLeadAnalyticsThunk()) }, [dispatch])
@@ -224,6 +230,17 @@ export default function LeadsPage() {
   })
   const toggleSelectAll = () => setSelectedIds((s) => s.size === list.length ? new Set() : new Set(list.map((l) => l.id)))
 
+  const handleBulkStatus = async () => {
+    if (!bulkStage && !bulkPriority) { toast.error('Pick a stage or a priority to apply.'); return }
+    setBulkUpdating(true)
+    try {
+      const { data } = await leadApi.bulkStatus([...selectedIds], { stage: bulkStage || undefined, priority: bulkPriority || undefined })
+      toast.success(data.message ?? 'Leads updated.')
+      setBulkStage(''); setBulkPriority(''); setSelectedIds(new Set()); load()
+    } catch (e) { toast.error(getError(e)) }
+    finally { setBulkUpdating(false) }
+  }
+
   const handleBulkSwitch = async () => {
     if (!switchTarget) { toast.error('Pick an employee to move them to.'); return }
     setSwitching(true)
@@ -318,28 +335,10 @@ export default function LeadsPage() {
             Open as page →
           </Link>
         )}
-        <label className="text-xs text-gray-500">Created from
-          <input type="date" value={createdFrom} onChange={(e) => { setCreatedFrom(e.target.value); setPage(1) }}
-            className="block mt-1 text-sm border border-gray-200 rounded-lg px-2 py-1.5" />
-        </label>
-        <label className="text-xs text-gray-500">Created to
-          <input type="date" value={createdTo} onChange={(e) => { setCreatedTo(e.target.value); setPage(1) }}
-            className="block mt-1 text-sm border border-gray-200 rounded-lg px-2 py-1.5" />
-        </label>
-        <label className="text-xs text-gray-500">Closed from
-          <input type="date" value={closedFrom} onChange={(e) => { setClosedFrom(e.target.value); setPage(1) }}
-            className="block mt-1 text-sm border border-gray-200 rounded-lg px-2 py-1.5" />
-        </label>
-        <label className="text-xs text-gray-500">Closed to
-          <input type="date" value={closedTo} onChange={(e) => { setClosedTo(e.target.value); setPage(1) }}
-            className="block mt-1 text-sm border border-gray-200 rounded-lg px-2 py-1.5" />
-        </label>
-        {(createdFrom || createdTo || closedFrom || closedTo) && (
-          <button className="text-xs text-gray-400 hover:underline mb-1.5"
-            onClick={() => { setCreatedFrom(''); setCreatedTo(''); setClosedFrom(''); setClosedTo('') }}>
-            Clear dates
-          </button>
-        )}
+        <DateRangePicker label="Created between" from={createdFrom} to={createdTo}
+          onChange={(f, t) => { setCreatedFrom(f); setCreatedTo(t); setPage(1) }} />
+        <DateRangePicker label="Closed between" from={closedFrom} to={closedTo}
+          onChange={(f, t) => { setClosedFrom(f); setClosedTo(t); setPage(1) }} />
       </div>
 
       {/* Table view */}
@@ -351,13 +350,22 @@ export default function LeadsPage() {
               <span className="text-sm font-medium text-brand-800 shrink-0">{selectedIds.size} selected</span>
               <div className="w-56"><StaffPicker staff={counsellors} value={switchTarget} onChange={setSwitchTarget} placeholder="Switch to employee…" /></div>
               <Button size="sm" onClick={handleBulkSwitch} loading={switching} disabled={!switchTarget}>Move selected</Button>
+              <select className="text-sm border border-gray-200 rounded-lg px-2 py-1.5 bg-white" value={bulkStage} onChange={(e) => setBulkStage(e.target.value)}>
+                <option value="">Set stage…</option>
+                {STAGES.map((st) => <option key={st} value={st}>{stageConfig[st].label}</option>)}
+              </select>
+              <select className="text-sm border border-gray-200 rounded-lg px-2 py-1.5 bg-white" value={bulkPriority} onChange={(e) => setBulkPriority(e.target.value)}>
+                <option value="">Set priority…</option>
+                {Object.entries(priorityConfig).map(([k, p]) => <option key={k} value={k}>{p.label}</option>)}
+              </select>
+              <Button size="sm" onClick={handleBulkStatus} loading={bulkUpdating} disabled={!bulkStage && !bulkPriority}>Apply status</Button>
               <Button size="sm" variant="danger" onClick={() => setShowBulkDelete(true)}>Delete selected</Button>
               <button onClick={() => setSelectedIds(new Set())} className="text-xs text-gray-400 hover:underline ml-auto">Clear selection</button>
             </div>
           )}
 
           <div className="card">
-            {loading ? <TableSkeleton rows={8} cols={6} /> : list.length === 0 ? (
+            {loading ? <TableSkeleton rows={8} cols={7} /> : list.length === 0 ? (
               <EmptyState icon="🎯" title="No leads yet" desc="Leads are auto-created when contacts reply to your flow" />
             ) : (
               <>
@@ -365,7 +373,7 @@ export default function LeadsPage() {
                   <table className="table">
                     <thead><tr>
                       <th className="w-8"><input type="checkbox" checked={selectedIds.size === list.length} onChange={toggleSelectAll} /></th>
-                      <th>Contact</th><th>Stage</th><th>Priority</th><th>Category</th><th>Assigned to</th><th>Actions</th>
+                      <th>Contact</th><th>Stage</th><th>Priority</th><th>Category</th><th>Source</th><th>Assigned to</th><th>Actions</th>
                     </tr></thead>
                     <tbody>
                       {list.map((l) => {
@@ -376,6 +384,10 @@ export default function LeadsPage() {
                             <td>
                               <p className="font-medium text-gray-900">{l.contact?.name || '—'}</p>
                               <p className="text-xs text-gray-400 font-mono">{formatPhone(l.contact?.phone || '')}</p>
+                              {!!l.repeat_count && l.repeat_count > 0 && (
+                                <button type="button" title="Same person enquired again — click to see all their leads"
+                                  onClick={() => { setSearch(l.contact?.phone || ''); setPage(1) }}
+                                  className="mt-0.5 rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 hover:bg-amber-100">🔁 {l.repeat_count} more lead{l.repeat_count > 1 ? 's' : ''}</button>)}
                             </td>
                             <td>
                               <select
@@ -388,14 +400,14 @@ export default function LeadsPage() {
                               </select>
                             </td>
                             <td><span className={`badge ${pc.badge}`}>{pc.label}</span></td>
-                            <td className="text-xs text-gray-600">
-                              {l.category || '—'}
-                              {l.source && (
-                                <p className="text-[11px] text-gray-400 mt-0.5" title={l.origin_label ?? ''}>
-                                  {sources[l.source]?.icon ?? ''} {l.source_label ?? l.source}
-                                  {l.origin_label ? ` · ${l.origin_label}` : ''}
-                                </p>
-                              )}
+                            <td className="text-xs text-gray-600">{l.category || '—'}</td>
+                            <td className="text-xs">
+                              {l.source ? (
+                                <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-gray-700" title={l.origin_label ?? ''}>
+                                  {sources[l.source]?.icon ?? '•'} {l.source_label ?? sources[l.source]?.label ?? l.source}
+                                </span>
+                              ) : <span className="text-gray-300">Unknown</span>}
+                              {l.origin_label && <p className="mt-0.5 max-w-[140px] truncate text-[11px] text-gray-400">{l.origin_label}</p>}
                             </td>
                             <td className="text-xs text-gray-600">{l.assigned_to?.name || <span className="text-gray-300">Unassigned</span>}</td>
                             <td>
@@ -410,7 +422,14 @@ export default function LeadsPage() {
                     </tbody>
                   </table>
                 </div>
-                <Pagination page={page} lastPage={Math.ceil(total / 20)} total={total} perPage={20} onChange={setPage} />
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <label className="flex items-center gap-2 text-xs text-gray-500">Leads per page
+                    <select className="text-sm border border-gray-200 rounded-lg px-2 py-1" value={perPage} onChange={(e) => { setPerPage(+e.target.value); setPage(1) }}>
+                      {[10, 20, 50, 100].map((n) => <option key={n} value={n}>{n}</option>)}
+                    </select>
+                  </label>
+                  <div className="flex-1"><Pagination page={page} lastPage={Math.ceil(total / perPage)} total={total} perPage={perPage} onChange={setPage} /></div>
+                </div>
               </>
             )}
           </div>

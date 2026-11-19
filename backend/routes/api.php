@@ -775,6 +775,7 @@ Route::prefix('v1')->group(function () {
             Route::post('/{lead}/crm-sync', [LeadController::class, 'crmSync'])->middleware('permission:lead_assignment.manage')->name('crm-sync');
 
             Route::delete('/{lead}', [LeadController::class, 'destroy'])->middleware('permission:leads.manage')->name('destroy');
+            Route::post('/bulk-status', [LeadController::class, 'bulkStatus'])->middleware('permission:leads.manage')->name('bulk-status');
             Route::post('/bulk-delete', [LeadController::class, 'bulkDelete'])->middleware('permission:leads.manage')->name('bulk-delete');
 
             Route::get('/{lead}/notes',    [LeadNoteController::class, 'index'])->name('notes.index');

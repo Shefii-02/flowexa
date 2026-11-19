@@ -262,6 +262,7 @@ export const leadApi = {
   bulkReassign: (fromUserId: number, toUserId: number, includeClosed = false) =>
     api.post('/leads/bulk-reassign', { from_user_id: fromUserId, to_user_id: toUserId, include_closed: includeClosed }),
   bulkDelete: (leadIds: number[]) => api.post('/leads/bulk-delete', { lead_ids: leadIds }),
+  bulkStatus: (leadIds: number[], d: { stage?: string; priority?: string }) => api.post('/leads/bulk-status', { lead_ids: leadIds, ...d }),
   delete: (id: number) => api.delete(`/leads/${id}`),
   crmSync: (id: number) => api.post(`/leads/${id}/crm-sync`),
   analytics: () => api.get('/leads/analytics'),

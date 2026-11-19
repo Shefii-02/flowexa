@@ -17,7 +17,9 @@ class LeadResource extends JsonResource
             'priority'       => $this->priority,
             'category'       => $this->category,
             'source'         => $this->source,
-            'source_label'   => $this->source_label,
+            'source_label'   => $this->source ? $this->source_label : null,
+            // other leads from the same contact (the same person enquiring again) — null when not computed (single-lead views)
+            'repeat_count'   => isset($this->contact_leads_count) ? max(0, (int) $this->contact_leads_count - 1) : null,
             'origin_type'    => $this->origin_type,
             'origin_label'   => $this->origin_label,
             'notes'          => $this->notes,

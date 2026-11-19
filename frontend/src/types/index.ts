@@ -209,6 +209,7 @@ export interface Lead {
   category: string | null
   source: LeadSource
   source_label?: string
+  repeat_count?: number | null   // other leads from the same contact
   // "Lead Origin" — which specific number/session/account/campaign within `source` (a company can
   // run several WhatsApp Cloud numbers, WA Chat sessions, Instagram accounts and ad campaigns).
   origin_type?: string | null

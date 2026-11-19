@@ -30,6 +30,7 @@ class LeadRepository implements LeadRepositoryInterface
 
         return $this->applyFilters(
             Lead::with(['contact:id,name,phone,email,wa_id', 'assignedTo:id,name,email,department'])
+                ->withCount('siblings as contact_leads_count')
                 ->where('company_id', $companyId)
                 ->when(!$viewAll, fn($q) => $q->where(function ($qq) use ($userId, $scopedOrigin) {
                     $qq->where('assigned_to', $userId);

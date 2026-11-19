@@ -41,6 +41,8 @@ class Lead extends Model
     public function waOpenCampaign(): BelongsTo { return $this->belongsTo(\App\Modules\WaChat\Models\MessageSenderJob::class, 'wa_open_campaign_id'); }
     public function listing(): BelongsTo    { return $this->belongsTo(Listing::class); }
     public function sale(): \Illuminate\Database\Eloquent\Relations\HasOne { return $this->hasOne(ListingSale::class); }
+    /** Every lead (this one included) for the same contact — used for the "repeat enquiry" count. */
+    public function siblings(): HasMany    { return $this->hasMany(Lead::class, 'contact_id', 'contact_id'); }
     public function events(): HasMany       { return $this->hasMany(LeadEvent::class)->latest(); }
     /** Routing/notification history from the assignment engine — see LeadAssignment::lead_id. */
     public function assignments(): HasMany  { return $this->hasMany(LeadAssignment::class); }
