@@ -83,7 +83,7 @@ export default function CalendarPage() {
   const load = async () => {
     setLoading(true)
     try {
-      const r = await api.get('/crm/calendar-events', filter === 'upcoming' ? { params: { from: new Date().toISOString() } } : {})
+      const r = await api.get('/tasks/calendar-events', filter === 'upcoming' ? { params: { from: new Date().toISOString() } } : {})
       setEvents(r.data.events ?? [])
     } catch (e) { toast.error(getError(e)) }
     finally { setLoading(false) }
@@ -117,7 +117,7 @@ export default function CalendarPage() {
     if (!editor.title.trim()) { toast.error('Give it a title.'); return }
     setSaving(true)
     try {
-      await api.post('/crm/calendar-events', {
+      await api.post('/tasks/calendar-events', {
         title: editor.title, description: editor.description || null, location: editor.location || null,
         type: editor.type, starts_at: new Date(editor.starts_at).toISOString(), ends_at: new Date(editor.ends_at).toISOString(),
         contact_id: selectedContact?.id ?? editor.contact_id, assigned_to: editor.assigned_to ? Number(editor.assigned_to) : null,
@@ -132,7 +132,7 @@ export default function CalendarPage() {
   const doReschedule = async () => {
     if (!reschedule) return
     try {
-      await api.patch(`/crm/calendar-events/${reschedule.id}`, {
+      await api.patch(`/tasks/calendar-events/${reschedule.id}`, {
         starts_at: new Date(reschedule.starts_at).toISOString(), ends_at: new Date(reschedule.ends_at).toISOString(),
       })
       toast.success('Rescheduled.'); setReschedule(null); void load()
@@ -140,16 +140,16 @@ export default function CalendarPage() {
   }
 
   const markComplete = async (id: number) => {
-    try { await api.post(`/crm/calendar-events/${id}/complete`); toast.success('Marked completed.'); void load() }
+    try { await api.post(`/tasks/calendar-events/${id}/complete`); toast.success('Marked completed.'); void load() }
     catch (e) { toast.error(getError(e)) }
   }
   const markNoShow = async (id: number) => {
-    try { await api.post(`/crm/calendar-events/${id}/no-show`); toast.success('Marked as no-show.'); void load() }
+    try { await api.post(`/tasks/calendar-events/${id}/no-show`); toast.success('Marked as no-show.'); void load() }
     catch (e) { toast.error(getError(e)) }
   }
   const doCancel = async () => {
     if (!cancelId) return
-    try { await api.delete(`/crm/calendar-events/${cancelId}`); toast.success('Cancelled.'); setCancelId(null); void load() }
+    try { await api.delete(`/tasks/calendar-events/${cancelId}`); toast.success('Cancelled.'); setCancelId(null); void load() }
     catch (e) { toast.error(getError(e)) }
   }
 

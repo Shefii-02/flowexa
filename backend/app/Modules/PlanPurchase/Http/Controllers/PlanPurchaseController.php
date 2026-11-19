@@ -163,6 +163,7 @@ class PlanPurchaseController extends Controller
             'lead_assign_methods' => ['nullable', 'array'], 'lead_assign_methods.*' => ['string', \Illuminate\Validation\Rule::in(array_keys(\App\Support\Modules::ASSIGN_METHODS))],
             'google_sheets_enabled' => ['nullable', 'boolean'], 'google_drive_enabled' => ['nullable', 'boolean'],
             'calendar_enabled' => ['nullable', 'boolean'], 'email_integration_enabled' => ['nullable', 'boolean'],
+            'apply_to_existing' => ['nullable', 'boolean'],
             'is_active' => ['nullable', 'boolean'], 'is_public' => ['nullable', 'boolean'], 'archived' => ['nullable', 'boolean'], 'is_popular' => ['nullable', 'boolean'], 'sort_order' => ['nullable', 'integer'],
         ];
     }
@@ -189,9 +190,25 @@ class PlanPurchaseController extends Controller
     public function superAdminUpdatePlan(Request $request, int $id): JsonResponse
     {
         $plan = Plan::findOrFail($id);
-        $plan->update($this->visibility($request->validate($this->planRules(true))));
+        $d = $request->validate($this->planRules(true));
+        $applyToExisting = $d['apply_to_existing'] ?? true;
+        unset($d['apply_to_existing']);
+
+        \Illuminate\Support\Facades\DB::transaction(function () use ($plan, $d, $applyToExisting) {
+            // "No" = companies already on this plan keep exactly what they bought: they are moved onto a hidden copy of the plan as it is now,
+            // then the live plan is edited, so only new purchases get the changes.
+            if (!$applyToExisting && $plan->companies()->exists()) {
+                $legacy = $plan->replicate();
+                $legacy->archived_at = now();
+                $legacy->is_public = false;
+                $legacy->save();
+                \App\Models\Company::where('plan_id', $plan->id)->update(['plan_id' => $legacy->id]);
+                \App\Models\CompanyPlan::where('plan_id', $plan->id)->where('status', 'active')->update(['plan_id' => $legacy->id]);
+            }
+            $plan->update($this->visibility($d));
+        });
         \App\Support\Entitlements::forget();
-        return response()->json(['plan' => $plan->fresh()]);
+        return response()->json(['plan' => $plan->fresh(), 'applied_to_existing' => (bool) $applyToExisting]);
     }
 
     /** Soft delete: the plan disappears from every pricing list, but companies already on it keep working until they change plan. */

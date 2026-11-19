@@ -31,7 +31,7 @@ export default function CalendarIntegrationPage() {
           Booking appointments and followups, rescheduling, and marking them complete or no-show
           all happen from the CRM Calendar — it works whether or not Google is connected above.
         </p>
-        <Link to="/crm/calendar"><Button>Go to Calendar →</Button></Link>
+        <Link to="/tasks/calendar"><Button>Go to Calendar →</Button></Link>
       </div>
     </div>
   )

@@ -408,9 +408,13 @@ export default function App() {
 
               {/* Advanced CRM */}
               <Route path="crm/deals" element={<DealsPage />} />
-              <Route path="crm/tasks" element={<CrmTasksPage key="tasks" mode="tasks" />} />
-              <Route path="crm/followups" element={<CrmTasksPage key="followups" mode="followups" />} />
-              <Route path="crm/calendar" element={<CalendarPage />} />
+              <Route path="tasks" element={<CrmTasksPage key="tasks" mode="tasks" />} />
+              <Route path="tasks/followups" element={<CrmTasksPage key="followups" mode="followups" />} />
+              <Route path="tasks/calendar" element={<CalendarPage />} />
+              {/* old CRM URLs */}
+              <Route path="crm/tasks" element={<Navigate to="/tasks" replace />} />
+              <Route path="crm/followups" element={<Navigate to="/tasks/followups" replace />} />
+              <Route path="crm/calendar" element={<Navigate to="/tasks/calendar" replace />} />
               <Route path="crm/segments" element={<SegmentsPage />} />
 
               {/* HR */}

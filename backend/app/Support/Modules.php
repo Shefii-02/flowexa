@@ -25,6 +25,7 @@ class Modules
         'ai_agent'      => ['AI Agent',       '🤖', 'whatsapp', 'AI replies, knowledge base and automations',         ['wa-agent', 'meta-ai']],
         // ── Sales ───────────────────────────────────────────────────────────────────
         'crm'           => ['CRM',            '🗂️', 'sales', 'Contacts, labels, deals, tasks and segments',            ['crm']],   // contacts & labels APIs are shared infrastructure (campaigns, inbox) so only the UI hides them
+        'tasks'         => ['Tasks',          '📋', 'sales', 'Tasks, follow-ups and calendar',                         ['tasks']],
         'leads'         => ['Leads',          '🎯', 'sales', 'Lead capture, categories and assignment',               ['leads', 'lead-categories', 'lead-assignments', 'lead-assignment-rules']],
         // ── Business ────────────────────────────────────────────────────────────────
         'hr'            => ['HR',             '👥', 'business', 'Attendance, payroll, leave and incentives',          ['hr']],

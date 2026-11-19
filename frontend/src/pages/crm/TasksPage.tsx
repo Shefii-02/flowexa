@@ -72,7 +72,7 @@ export default function TasksPage({ mode = 'tasks' }: { mode?: 'tasks' | 'follow
 
   const load = useCallback(() => {
     setLoading(true)
-    api.get('/crm/tasks', { params: { tab, ...(scope === 'all' ? {} : { [scope]: 1 }) } })
+    api.get('/tasks', { params: { tab, ...(scope === 'all' ? {} : { [scope]: 1 }) } })
       .then(r => { setTasks(Array.isArray(r.data?.data) ? r.data.data : []); setMonitor(!!r.data?.monitor) })
       .finally(() => setLoading(false))
   }, [scope, tab])
@@ -94,11 +94,11 @@ export default function TasksPage({ mode = 'tasks' }: { mode?: 'tasks' | 'follow
   }, [tasks])
 
   const toggle = async (id: number) => {
-    try { await api.post(`/crm/tasks/${id}/toggle`); load() } catch { toast.error('Could not update the task.') }
+    try { await api.post(`/tasks/${id}/toggle`); load() } catch { toast.error('Could not update the task.') }
   }
   const remove = async (id: number) => {
     if (!confirm('Delete this task?')) return
-    try { await api.delete(`/crm/tasks/${id}`); toast.success('Task deleted.'); load() }
+    try { await api.delete(`/tasks/${id}`); toast.success('Task deleted.'); load() }
     catch (e: any) { toast.error(e?.response?.data?.message ?? 'Could not delete the task.') }
   }
 
@@ -128,8 +128,8 @@ export default function TasksPage({ mode = 'tasks' }: { mode?: 'tasks' | 'follow
         lead_id: form.type === 'followup' ? (lead?.id ?? null) : null,
         ...(!editId && form.type === 'followup' ? { sync_todo: syncTodo } : {}),
       }
-      if (editId) await api.patch(`/crm/tasks/${editId}`, payload)
-      else await api.post('/crm/tasks', payload)
+      if (editId) await api.patch(`/tasks/${editId}`, payload)
+      else await api.post('/tasks', payload)
       toast.success(editId ? 'Updated.' : form.type === 'followup' ? (syncTodo ? 'Follow-up created and added to your to-do list.' : 'Follow-up created.') : 'Task created.')
       setModal(false); load()
     } catch (e: any) { toast.error(e?.response?.data?.message ?? 'Could not save task.') }

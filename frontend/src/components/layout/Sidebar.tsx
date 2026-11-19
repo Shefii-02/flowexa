@@ -64,7 +64,7 @@ function useEntitled(path: string | undefined): boolean {
   const has = useModule(module ?? '')
   return !module || has
 }
-const SECTION_MODULES: Record<string, string> = { accounts: 'finance', crm: 'crm', leads: 'leads', hr: 'hr' }
+const SECTION_MODULES: Record<string, string> = { accounts: 'finance', crm: 'crm', tasks: 'tasks', leads: 'leads', hr: 'hr' }
 
 // ── Section header ─────────────────────────────────────────────────────────────
 // `id` ties the caption to a hideable menu section; `hideWhenFlat` drops it in expanded mode, where the group
@@ -689,7 +689,7 @@ const SidebarInner = () => {
               id="crm"
               icon="🗂️"
               label="CRM"
-              basePaths={['/crm/contacts', '/crm/labels', '/crm/blacklist', '/crm/deals', '/crm/tasks', '/crm/followups', '/crm/calendar', '/crm/segments']}
+              basePaths={['/crm/contacts', '/crm/labels', '/crm/blacklist', '/crm/deals', '/crm/segments']}
 
             >
               {/* <NestedAccordion icon="🟢" label="Basic CRM" basePaths={['/contacts', '/labels', '/blacklist']}>
@@ -702,15 +702,20 @@ const SidebarInner = () => {
               <SubLink to="/crm/contacts" icon="👥" label="Contacts" />
               <SubLink to="/crm/labels" icon="🏷️" label="Labels" />
               <SubLink to="/crm/deals" icon="💼" label="Deals Pipeline" />
-              <SubLink to="/crm/tasks" icon="📋" label="Tasks" />
-              <SubLink to="/crm/followups" icon="🔁" label="Follow-ups" />
-              <SubLink to="/crm/calendar" icon="📅" label="Calendar" />
               <SubLink to="/crm/segments" icon="🧩" label="Segments" />
               <SubLink to="/crm/blacklist" icon="🚫" label="Blacklist" />
               {/* </NestedAccordion> */}
             </NestedAccordion>
 
 
+
+            {/* ── TASKS ── */}
+            <SectionHeader label="Tasks" id="tasks" hideWhenFlat />
+            <NestedAccordion id="tasks" icon="📋" label="Tasks" basePaths={['/tasks']}>
+              <SubLink to="/tasks" icon="📋" label="Tasks" />
+              <SubLink to="/tasks/followups" icon="🔁" label="Follow-ups" />
+              <SubLink to="/tasks/calendar" icon="📅" label="Calendar" />
+            </NestedAccordion>
 
             {/* ── LEADS ── */}
             <SectionHeader label="Leads" id="leads" hideWhenFlat />

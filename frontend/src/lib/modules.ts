@@ -5,7 +5,7 @@ export const PATH_MODULES: [prefix: string, module: string][] = [
   ['/sticky-notes', 'sticky_notes'], ['/todo', 'todo'], ['/settings/integrations', 'integrations'],
   ['/wa-chat', 'wa_chat'], ['/wa-cloud', 'wa_cloud'], ['/phone-numbers', 'wa_cloud'], ['/flow', 'wa_cloud'],
   ['/ai-agent', 'ai_agent'], ['/wa-agent', 'ai_agent'],
-  ['/crm/leads', 'leads'], ['/crm', 'crm'],
+  ['/tasks', 'tasks'], ['/crm/leads', 'leads'], ['/crm', 'crm'],
   ['/hr', 'hr'], ['/accounts', 'finance'],
   ['/instagram', 'social_dm'], ['/messenger', 'social_dm'], ['/website-widget', 'web_widgets'], ['/meta-ads', 'meta_ads'],
 ]

@@ -114,7 +114,12 @@ export default function SuperAdminPlans() {
     setShowModal(true)
   }
 
-  const handleSave = async () => {
+  // editing a plan that companies already use: ask whether they get the changes too
+  const [askApply, setAskApply] = useState(false)
+  const requestSave = () => { if (editPlan && (editPlan.companies_count ?? 0) > 0) setAskApply(true); else handleSave() }
+
+  const handleSave = async (applyToExisting: boolean = true) => {
+    setAskApply(false)
     setSaving(true)
     const payload: Record<string, unknown> = {
       name: form.name, price: +form.price, price_yearly: form.price_yearly ? +form.price_yearly : null,
@@ -125,6 +130,7 @@ export default function SuperAdminPlans() {
       modules: form.modules, lead_assign_methods: form.lead_assign_methods, ...form.integrations,
       // every permission ticked = the default (stored as null, so permissions added later are allowed too)
       complimentary: form.complimentary.filter(c => !form.modules.includes(c.module)),
+      ...(editPlan ? { apply_to_existing: applyToExisting } : {}),
       permissions: allPermKeys.every(k => form.permissions.includes(k)) ? null : form.permissions.filter(k => allPermKeys.includes(k)),
     }
     LIMIT_KEYS.forEach(k => { payload[k] = form.limits[k] === '' || form.limits[k] === undefined ? null : +form.limits[k] })
@@ -144,6 +150,8 @@ export default function SuperAdminPlans() {
   const live = plans.filter(p => !p.deleted_at)
   const removed = plans.filter(p => p.deleted_at)
   const leadsOn = form.modules.includes('leads')
+  // features whose permissions can be set: included ones and complimentary ones
+  const permMods = mods.filter(m => (form.modules.includes(m.key) || form.complimentary.some(c => c.module === m.key)) && permCat[m.key]?.length)
 
   return (
     <div className="space-y-5">
@@ -198,8 +206,17 @@ export default function SuperAdminPlans() {
               <Button size="sm" variant="secondary" onClick={() => restore(p)}>Restore</Button></div>))}</div>}
         </div>)}
 
+      <Modal open={askApply} onClose={() => setAskApply(false)} title="Apply changes to existing companies?" size="md"
+        footer={<><Button variant="secondary" onClick={() => setAskApply(false)}>Cancel</Button>
+          <Button variant="secondary" onClick={() => handleSave(false)}>No — new purchases only</Button>
+          <Button onClick={() => handleSave(true)}>Yes — update everyone</Button></>}>
+        <p className="text-sm text-gray-600"><b>{editPlan?.companies_count}</b> {editPlan?.companies_count === 1 ? 'company is' : 'companies are'} already on <b>{editPlan?.name}</b>.</p>
+        <p className="mt-2 text-sm text-gray-600"><b>Yes</b> — they get the new features, complimentary features and limits straight away.</p>
+        <p className="mt-1 text-sm text-gray-600"><b>No</b> — they keep the plan exactly as it is today (moved onto a hidden copy); only people who buy it from now on get your changes.</p>
+      </Modal>
+
       <Modal open={showModal} onClose={() => setShowModal(false)} title={editPlan ? `Edit plan — ${editPlan.name}` : 'Create plan'} size="lg"
-        footer={<><Button variant="secondary" onClick={() => setShowModal(false)}>Cancel</Button><Button onClick={handleSave} loading={saving}>Save plan</Button></>}>
+        footer={<><Button variant="secondary" onClick={() => setShowModal(false)}>Cancel</Button><Button onClick={requestSave} loading={saving}>Save plan</Button></>}>
         <div className="space-y-6">
           <Section n={1} title="Basic information">
             <div className="grid grid-cols-2 gap-3">
@@ -229,40 +246,6 @@ export default function SuperAdminPlans() {
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                   {g.items.map(m => <Toggle key={m.key} on={form.modules.includes(m.key)} onChange={() => set('modules', flip(form.modules, m.key))} label={`${m.icon} ${m.label}`} sub={m.description} />)}
                 </div></div>))}
-            {/* permissions inside each included feature */}
-            {mods.some(m => form.modules.includes(m.key) && permCat[m.key]?.length) && (
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Permissions inside features</p>
-                  <button type="button" className="text-xs text-brand-600 hover:underline" onClick={() => set('permissions', allPermKeys)}>Reset all to defaults</button>
-                </div>
-                <p className="text-[11px] text-gray-400">Roles in a company on this plan can only be given the ticked permissions. Saved with the plan.</p>
-                {mods.filter(m => form.modules.includes(m.key) && permCat[m.key]?.length).map(m => {
-                  const keys = permCat[m.key].map(x => x.key)
-                  const on = keys.filter(k => form.permissions.includes(k)).length
-                  return (
-                    <details key={m.key} className="rounded-xl border border-gray-200 bg-white">
-                      <summary className="flex cursor-pointer items-center justify-between gap-2 p-2.5 text-sm font-medium text-gray-800">
-                        <span>{m.icon} {m.label}</span>
-                        <span className={`text-xs font-normal ${on === keys.length ? 'text-gray-400' : 'text-amber-600'}`}>{on} of {keys.length} allowed</span>
-                      </summary>
-                      <div className="space-y-1 border-t border-gray-100 p-2.5">
-                        <div className="mb-1 flex gap-3 text-xs">
-                          <button type="button" className="text-brand-600 hover:underline" onClick={() => set('permissions', Array.from(new Set([...form.permissions, ...keys])))}>Select all</button>
-                          <button type="button" className="text-brand-600 hover:underline" onClick={() => set('permissions', form.permissions.filter(k => !keys.includes(k)))}>Clear</button>
-                          <button type="button" className="text-gray-500 hover:underline" onClick={() => set('permissions', Array.from(new Set([...form.permissions, ...keys])))}>Reset to default</button>
-                        </div>
-                        <div className="grid gap-1 sm:grid-cols-2">
-                          {permCat[m.key].map(pm => (
-                            <label key={pm.key} className="flex items-center gap-2 text-sm text-gray-700">
-                              <input type="checkbox" checked={form.permissions.includes(pm.key)} onChange={() => set('permissions', flip(form.permissions, pm.key))} />
-                              <span>{pm.label} <span className="text-[10px] text-gray-400">{pm.type}</span></span>
-                            </label>))}
-                        </div>
-                      </div>
-                    </details>)
-                })}
-              </div>)}
             {form.modules.includes('integrations') && (
               <div><p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-gray-400">Integrations allowed</p>
                 <div className="grid grid-cols-2 gap-2">{INTEGRATIONS.map(i => <Toggle key={i.key} on={!!form.integrations[i.key]} onChange={v => set('integrations', { ...form.integrations, [i.key]: v })} label={i.label} />)}</div></div>)}
@@ -303,8 +286,45 @@ export default function SuperAdminPlans() {
             })}
           </Section>
 
+          {permMods.length > 0 && (
+            <Section n={5} title="Permissions inside features" sub="Roles in a company on this plan can only be given the ticked permissions.">
+            {mods.some(m => form.modules.includes(m.key) && permCat[m.key]?.length) && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Permissions inside features</p>
+                  <button type="button" className="text-xs text-brand-600 hover:underline" onClick={() => set('permissions', allPermKeys)}>Reset all to defaults</button>
+                </div>
+                <p className="text-[11px] text-gray-400">Roles in a company on this plan can only be given the ticked permissions. Saved with the plan.</p>
+                {permMods.map(m => {
+                  const keys = permCat[m.key].map(x => x.key)
+                  const on = keys.filter(k => form.permissions.includes(k)).length
+                  return (
+                    <details key={m.key} className="rounded-xl border border-gray-200 bg-white">
+                      <summary className="flex cursor-pointer items-center justify-between gap-2 p-2.5 text-sm font-medium text-gray-800">
+                        <span>{m.icon} {m.label}{!form.modules.includes(m.key) && <span className="ml-1.5 rounded-full bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">complimentary</span>}</span>
+                        <span className={`text-xs font-normal ${on === keys.length ? 'text-gray-400' : 'text-amber-600'}`}>{on} of {keys.length} allowed</span>
+                      </summary>
+                      <div className="space-y-1 border-t border-gray-100 p-2.5">
+                        <div className="mb-1 flex gap-3 text-xs">
+                          <button type="button" className="text-brand-600 hover:underline" onClick={() => set('permissions', Array.from(new Set([...form.permissions, ...keys])))}>Select all</button>
+                          <button type="button" className="text-brand-600 hover:underline" onClick={() => set('permissions', form.permissions.filter(k => !keys.includes(k)))}>Clear</button>
+                          <button type="button" className="text-gray-500 hover:underline" onClick={() => set('permissions', Array.from(new Set([...form.permissions, ...keys])))}>Reset to default</button>
+                        </div>
+                        <div className="grid gap-1 sm:grid-cols-2">
+                          {permCat[m.key].map(pm => (
+                            <label key={pm.key} className="flex items-center gap-2 text-sm text-gray-700">
+                              <input type="checkbox" checked={form.permissions.includes(pm.key)} onChange={() => set('permissions', flip(form.permissions, pm.key))} />
+                              <span>{pm.label} <span className="text-[10px] text-gray-400">{pm.type}</span></span>
+                            </label>))}
+                        </div>
+                      </div>
+                    </details>)
+                })}
+              </div>)}
+            </Section>)}
+
           {leadsOn && (
-            <Section n={5} title="Lead assign methods" sub="Which assignment modes this plan can switch on.">
+            <Section n={6} title="Lead assign methods" sub="Which assignment modes this plan can switch on.">
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 {methods.map(m => <Toggle key={m.key} on={form.lead_assign_methods.includes(m.key)} onChange={() => set('lead_assign_methods', flip(form.lead_assign_methods, m.key))} label={m.label} />)}
               </div>

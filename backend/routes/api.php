@@ -689,6 +689,22 @@ Route::prefix('v1')->group(function () {
         });
 
         // ── Advanced CRM — Deals / Tasks / Segments ──────────────────────────
+        // Tasks module — its own URL prefix so the Tasks plan feature is gated separately from CRM (same controller as crm/tasks, which stays for the To-do page and sticky notes).
+        Route::prefix('tasks')->middleware(['company.active'])->group(function () {
+            // Calendar / appointments live in the Tasks section too (same controller as crm/calendar-events).
+            Route::get('calendar-events',                [\App\Modules\Calendar\Http\Controllers\CalendarController::class, 'index']);
+            Route::post('calendar-events',               [\App\Modules\Calendar\Http\Controllers\CalendarController::class, 'store'])->middleware('plan.feature:calendar');
+            Route::patch('calendar-events/{id}',         [\App\Modules\Calendar\Http\Controllers\CalendarController::class, 'update']);
+            Route::post('calendar-events/{id}/complete', [\App\Modules\Calendar\Http\Controllers\CalendarController::class, 'complete']);
+            Route::post('calendar-events/{id}/no-show',  [\App\Modules\Calendar\Http\Controllers\CalendarController::class, 'noShow']);
+            Route::delete('calendar-events/{id}',        [\App\Modules\Calendar\Http\Controllers\CalendarController::class, 'destroy']);
+            Route::get('/',              [TaskController::class, 'index']);
+            Route::post('/',             [TaskController::class, 'store']);
+            Route::patch('{id}',         [TaskController::class, 'update']);
+            Route::post('{id}/toggle',   [TaskController::class, 'toggle']);
+            Route::delete('{id}',        [TaskController::class, 'destroy']);
+        });
+
         Route::prefix('crm')->middleware(['company.active'])->group(function () {
             Route::get('deals/board',        [DealController::class, 'board']);
             Route::get('deals',              [DealController::class, 'index']);
