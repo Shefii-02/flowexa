@@ -15,13 +15,18 @@ class HeldLeadController extends Controller
 
     private function filters(Request $r): array
     {
-        return $r->validate(['status' => ['nullable', 'in:held,moved,discarded,all'], 'source' => ['nullable', 'string', 'max:30'], 'search' => ['nullable', 'string', 'max:100'], 'per_page' => ['nullable', 'integer', 'min:5', 'max:100']]);
+        return $r->validate(['status' => ['nullable', 'in:held,moved,discarded,all'], 'source' => ['nullable', 'string', 'max:30'], 'search' => ['nullable', 'string', 'max:100'], 'account' => ['nullable', 'regex:/^[a-z_]{3,30}:\d{1,12}$/'], 'per_page' => ['nullable', 'integer', 'min:5', 'max:100']]);
     }
 
     private function base(array $f)
     {
         return HeldLead::where('company_id', auth()->user()->company_id)
             ->when($f['source'] ?? null, fn ($q, $s) => $q->where('source', $s))
+            ->when($f['account'] ?? null, function ($q, $a) {
+                [$type, $id] = explode(':', $a);
+                // a Meta ad campaign is the lead's ORIGIN; every other account type is the account it came through
+                $type === 'ad_campaign' ? $q->where('origin_type', 'ad_campaign')->where('origin_id', (int) $id) : $q->where('account_type', $type)->where('account_id', (int) $id);
+            })
             ->when($f['search'] ?? null, fn ($q, $s) => $q->whereHas('contact', fn ($c) => $c->where('name', 'like', "%{$s}%")->orWhere('phone', 'like', "%{$s}%")));
     }
 
@@ -39,7 +44,7 @@ class HeldLeadController extends Controller
         $page->getCollection()->transform(fn (HeldLead $h) => [
             'id' => $h->id, 'source' => $h->source, 'status' => $h->status, 'hits' => $h->hits,
             'contact' => ['id' => $h->contact?->id, 'name' => $h->contact?->name, 'phone' => $h->contact?->phone, 'phone_is_real' => $h->contact?->phoneLooksReal()],
-            'origin_label' => $h->origin_label, 'category' => $h->category, 'notes' => $h->notes,
+            'origin_label' => $h->origin_label, 'held_reason' => $h->held_reason ?? 'source_off', 'account_type' => $h->account_type, 'account_id' => $h->account_id, 'category' => $h->category, 'notes' => $h->notes,
             'first_captured_at' => $h->first_captured_at?->toIso8601String(), 'last_captured_at' => $h->last_captured_at?->toIso8601String(),
             'lead_id' => $h->lead_id, 'result_note' => $h->result_note, 'handled_by' => $h->handler?->name, 'handled_at' => $h->handled_at?->toIso8601String(),
         ]);

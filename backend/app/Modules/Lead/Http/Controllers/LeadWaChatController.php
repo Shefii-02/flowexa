@@ -63,15 +63,17 @@ class LeadWaChatController extends Controller
             $contact->forceFill(['wa_id' => $chatId])->saveQuietly();   // next time we go straight to this chat
         }
 
-        // is there a real number behind a privacy id?
-        $resolved = null; $conflict = null;
+        // is there a real number behind a privacy id? The server finds it AND saves it (the same resolver the inbound job and the hourly
+        // sweep use) — the page only shows the result. A number somebody else already holds is reported, never overwritten.
+        $resolved = null; $conflict = null; $saved = null;
         if ($chatId && str_ends_with($chatId, '@lid') && !$contact->phoneLooksReal()) {
-            $resolved = $this->resolvePhone($u->company->wa_chat_token, $session, $chatId);
-            if ($resolved === preg_replace('/\D+/', '', (string) $contact->phone)) { $resolved = null; }   // it IS the saved number already
-            if ($resolved) {
-                $other = Contact::withTrashed()->where('company_id', $u->company_id)->where('id', '!=', $contact->id)
-                    ->where(fn ($q) => $q->where('phone', $resolved)->when(Contact::aliasesAvailable(), fn ($w) => $w->orWhereJsonContains('phone_aliases', $resolved)))->first();
-                $conflict = $other ? ['id' => $other->id, 'name' => $other->name ?: $other->phone, 'deleted' => $other->trashed()] : null;
+            $r = app(\App\Modules\WaChat\Services\RealNumberResolver::class)->resolve($contact, $session);
+            if ($r['outcome'] === 'saved') {
+                $saved = $r['phone'];
+                $contact->refresh();
+            } elseif ($r['outcome'] === 'conflict') {
+                $resolved = $r['phone'];
+                $conflict = isset($r['other_id']) ? ['id' => $r['other_id'], 'name' => $r['other_name'], 'deleted' => $r['other_deleted']] : null;
             }
         }
 
@@ -82,7 +84,8 @@ class LeadWaChatController extends Controller
             'messages'       => $found ? $found[2]['messages'] : [],
             'total'          => $found ? $found[2]['total'] : 0,
             'phone_is_real'  => $contact->phoneLooksReal(),
-            'resolved_phone' => $resolved,
+            'resolved_phone' => $resolved,      // only set when someone else already has that number
+            'real_number_saved' => $saved,      // the real number was just found and saved on the contact
             'phone_conflict' => $conflict,
         ]);
     }

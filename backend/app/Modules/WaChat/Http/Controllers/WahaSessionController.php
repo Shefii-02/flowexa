@@ -739,6 +739,9 @@ class WahaSessionController extends Controller
                     }
 
                     // What is this conversation about — lead enquiry, technical, billing …? Labelled in the background (shadow mode: a label only).
+                    // A privacy-id (@lid) contact has no real number yet — look it up in the background, right away, not only when a lead is opened.
+                    \App\Jobs\ResolveContactRealNumber::schedule($session->company_id, $session->id, (string) $from, $phone);
+
                     \App\Jobs\ClassifyConversationTopic::schedule($session->company_id, $session->id, (string) $from, $phone, (string) $body);
 
                     // Settings → WA Chat → "Save to CRM contacts" toggle (default on).

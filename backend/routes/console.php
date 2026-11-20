@@ -26,6 +26,8 @@ Schedule::command('wa-chat:check-health')->everyFiveMinutes()->withoutOverlappin
 
 // WA Chat gateway webhooks — re-point any hook still saved as http:// (the gateway refuses the https redirect) or with an old URL.
 Schedule::command('wa-chat:repair-webhooks')->hourly()->withoutOverlapping();
+// contacts that only have a WhatsApp privacy id (@lid): find their real number (also done right when they first write in)
+Schedule::command('wa-chat:resolve-real-numbers')->hourly()->withoutOverlapping();
 
 // Subscriptions — expire trials + lapsed paid plans past their grace window
 Schedule::command('accounts:post-reversals')->dailyAt('00:10')->withoutOverlapping();

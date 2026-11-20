@@ -158,7 +158,7 @@ export default function AttendancePage() {
   const done = !!t?.clock_out_at
 
   return (
-    <div className="p-6 max-w-2xl mx-auto space-y-5">
+    <div className="p-6 mx-auto space-y-5">
       {camera && <SelfieCapture onDone={f => camera.resolve(f)} />}
       <div>
         <h1 className="page-title">🕒 My Attendance</h1>

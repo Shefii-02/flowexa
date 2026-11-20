@@ -221,15 +221,11 @@ export default function LeadDetailPage() {
   }
   // WhatsApp Chat leads (or a contact with no real number) read their chat live from the chat gateway by chat id
   const waFirst = !!lead && (lead.source === 'wa_chat' || lead.contact?.phone_is_real === false)
-  const fillRealNumber = useCallback(async (phone: string) => {
-    const id = lead?.contact?.id
-    if (!id || phone.replace(/\D/g, '') === (lead?.contact?.phone ?? '').replace(/\D/g, '')) return   // already saved — never loop
-    try {
-      await contactApi.update(id, { phone })
-      toast.success(`Real number found: ${formatPhone(phone)} — saved on the contact.`)
-      load()
-    } catch { /* a number someone else holds is reported in the chat card — nothing to do here */ }
-  }, [lead?.contact?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+  // The server already saved the number (at lead creation, hourly, or just now on opening) — this only announces it and refreshes the page.
+  const fillRealNumber = useCallback((phone: string) => {
+    toast.success(`Real number found: ${formatPhone(phone)} — saved on the contact.`)
+    load()
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const saveContact = async () => {
     if (!lead?.contact) return

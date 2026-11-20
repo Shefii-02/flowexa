@@ -68,7 +68,7 @@ class ContactService
      * a number) getting its real one. The old identifier is kept as an alias so the next message from that same chat still lands on
      * this contact (and its lead) instead of creating a duplicate; a wa_id that belonged to the old number is dropped.
      */
-    private function changePhone(Contact $contact, string $raw, int $companyId): void
+    public function changePhone(Contact $contact, string $raw, int $companyId): void
     {
         $digits = preg_replace('/\D+/', '', $raw);
         if (strlen($digits) < 7 || strlen($digits) > 15) {

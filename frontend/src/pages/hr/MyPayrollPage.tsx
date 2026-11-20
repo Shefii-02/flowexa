@@ -38,7 +38,7 @@ export default function MyPayrollPage() {
   if (loading) return <div className="p-6 text-center text-gray-400">Loading…</div>
 
   return (
-    <div className="p-6 max-w-2xl mx-auto space-y-5">
+    <div className="p-6 mx-auto space-y-5">
       <div>
         <h1 className="page-title">💰 My Payroll</h1>
         <p className="page-sub">Your released payslips</p>

@@ -42,7 +42,7 @@ function useChats(contactId: number | undefined, phone: string) {
 
 type WaChat = {
   available: boolean; chat_id: string | null; session: { id: number; name: string } | null; messages: any[]; total: number
-  phone_is_real: boolean; resolved_phone: string | null; phone_conflict: { id: number; name: string; deleted: boolean } | null
+  phone_is_real: boolean; resolved_phone: string | null; real_number_saved?: string | null; phone_conflict: { id: number; name: string; deleted: boolean } | null
 }
 
 /**
@@ -65,9 +65,10 @@ export function useWaChat(leadId: number | undefined, enabled: boolean, limit = 
 
   const d = state.data
   useEffect(() => {
-    if (!d || reported.current || d.phone_is_real || !d.resolved_phone || d.phone_conflict) return
+    // the SERVER found and saved the real number just now (it also does this when the lead is created, and hourly) — the page only announces it
+    if (!d || reported.current || !d.real_number_saved) return
     reported.current = true
-    onNumberFound?.(d.resolved_phone)
+    onNumberFound?.(d.real_number_saved)
   }, [d, onNumberFound])
   return state
 }

@@ -11,7 +11,7 @@ import type { SourceRow } from './components/LeadSourcesPanel'
 type Row = {
   id: number; source: string; status: 'held' | 'moved' | 'discarded'; hits: number
   contact: { id: number; name: string | null; phone: string; phone_is_real: boolean }
-  origin_label: string | null; category: string | null; notes: string | null
+  origin_label: string | null; category: string | null; notes: string | null; held_reason?: 'source_off' | 'account_off' | 'campaign_off'; account_type?: string | null; account_id?: number | null
   first_captured_at: string | null; last_captured_at: string | null; lead_id: number | null; result_note: string | null; handled_by: string | null; handled_at: string | null
 }
 const PER = 25
@@ -21,6 +21,7 @@ export default function HeldLeadsPage() {
   const [params, setParams] = useSearchParams()
   const [status, setStatus] = useState<'held' | 'moved' | 'discarded'>('held')
   const [source, setSource] = useState(params.get('source') ?? '')
+  const [account, setAccount] = useState(params.get('account') ?? '')   // "type:id" — one WA session / number / page / widget / ad account
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const [rows, setRows] = useState<Row[]>([])
@@ -32,7 +33,7 @@ export default function HeldLeadsPage() {
   const [busy, setBusy] = useState(false)
 
   useEffect(() => { leadChannelApi.list().then(r => setSources(r.data.data ?? [])).catch(() => {}) }, [])
-  const filters = useCallback(() => ({ status, source: source || undefined, search: search || undefined }), [status, source, search])
+  const filters = useCallback(() => ({ status, source: source || undefined, account: account || undefined, search: search || undefined }), [status, source, account, search])
   const load = useCallback(() => {
     setLoading(true)
     heldLeadApi.list({ ...filters(), page, per_page: PER })
@@ -40,8 +41,8 @@ export default function HeldLeadsPage() {
       .catch(e => toast.error(getError(e))).finally(() => setLoading(false))
   }, [filters, page])
   useEffect(() => { if (allowed) load() }, [allowed, load])
-  useEffect(() => { setPage(1); setPicked(new Set()) }, [status, source, search])
-  useEffect(() => { source ? setParams({ source }, { replace: true }) : setParams({}, { replace: true }) }, [source]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { setPage(1); setPicked(new Set()) }, [status, source, account, search])
+  useEffect(() => { const n: Record<string, string> = {}; if (source) n.source = source; if (account) n.account = account; setParams(n, { replace: true }) }, [source, account]) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!allowed) return <div className="p-8"><EmptyState icon="🔒" title="No access" desc="You need permission to manage leads to see held leads." /></div>
 
@@ -57,7 +58,7 @@ export default function HeldLeadsPage() {
     try { const { data } = await (kind === 'move' ? heldLeadApi.move(body) : heldLeadApi.discard(body)); toast.success(data.message); setPicked(new Set()); load() }
     catch (e) { toast.error(getError(e)) } finally { setBusy(false) }
   }
-  const matching = { all_matching: true, source: source || undefined, search: search || undefined }
+  const matching = { all_matching: true, source: source || undefined, account: account || undefined, search: search || undefined }
 
   return (
     <div className="space-y-5">
@@ -75,7 +76,8 @@ export default function HeldLeadsPage() {
         <div className="flex border border-gray-200 rounded-lg overflow-hidden text-sm">
           {(['held', 'moved', 'discarded'] as const).map(s => <button key={s} onClick={() => setStatus(s)} className={`px-3 py-1.5 ${status === s ? 'bg-brand-600 text-white' : 'bg-white text-gray-600'}`}>{s === 'held' ? 'Waiting' : s === 'moved' ? 'Moved' : 'Discarded'}</button>)}
         </div>
-        <select className="select !w-auto text-sm" value={source} onChange={e => setSource(e.target.value)}>
+        {account && <button className="rounded-full bg-brand-50 px-3 py-1 text-xs text-brand-700" onClick={() => setAccount('')}>One account only ✕</button>}
+        <select className="select !w-auto text-sm" value={source} onChange={e => { setSource(e.target.value); setAccount('') }}>
           <option value="">All sources</option>
           {sources.map(s => <option key={s.source} value={s.source}>{s.icon} {s.label}</option>)}
         </select>
@@ -107,7 +109,7 @@ export default function HeldLeadsPage() {
                 <tr key={r.id} className={picked.has(r.id) ? 'bg-brand-50/40' : ''}>
                   {held && <td><input type="checkbox" checked={picked.has(r.id)} onChange={() => toggle(r.id)} /></td>}
                   <td><p className="font-medium text-gray-900">{r.contact.name && r.contact.name !== r.contact.phone ? r.contact.name : '—'}</p><p className="text-xs text-gray-400 font-mono">{phoneLabel(r.contact)}</p></td>
-                  <td className="text-sm whitespace-nowrap">{icon(r.source)} {label(r.source)}{r.origin_label && <span className="block text-xs text-gray-400">{r.origin_label}</span>}</td>
+                  <td className="text-sm whitespace-nowrap">{icon(r.source)} {label(r.source)}{r.origin_label && <span className="block text-xs text-gray-400">{r.origin_label}</span>}{r.held_reason === 'account_off' && <span className="block text-[10px] text-amber-600">held: this account is off</span>}{r.held_reason === 'campaign_off' && <span className="block text-[10px] text-amber-600">held: this campaign is off</span>}</td>
                   <td className="text-xs text-gray-500 whitespace-nowrap">{r.first_captured_at ? fmt.datetime(r.first_captured_at) : '—'}</td>
                   <td className="text-xs text-gray-500 whitespace-nowrap">{r.last_captured_at ? fmt.relative(r.last_captured_at) : '—'}</td>
                   <td className="text-right text-sm">{r.hits}</td>

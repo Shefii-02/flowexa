@@ -220,7 +220,7 @@ class MetaLeadService
                 ]))->save();
             }
 
-            $crmLead = $this->attachCrmLead($contact->id, $account->company_id, $metaLead, $campaign?->id, $campaign?->name);
+            $crmLead = $this->attachCrmLead($contact->id, $account->company_id, $metaLead, $campaign?->id, $campaign?->name, (int) $account->id);
 
             $metaLead->update([
                 'contact_id'     => $contact->id,
@@ -234,7 +234,7 @@ class MetaLeadService
     }
 
     /** Reuse an active CRM lead for this contact, else create one attributed to Meta Ads. */
-    private function attachCrmLead(int $contactId, int $companyId, MetaLead $metaLead, ?int $campaignId, ?string $campaignName): ?Lead
+    private function attachCrmLead(int $contactId, int $companyId, MetaLead $metaLead, ?int $campaignId, ?string $campaignName, ?int $accountId = null): ?Lead
     {
         $existing = Lead::where('company_id', $companyId)
             ->where('contact_id', $contactId)
@@ -249,6 +249,7 @@ class MetaLeadService
 
         if (\App\Services\LeadSourceGate::intercept($companyId, $contactId, 'meta_ads', [
             'origin_type' => ($campaignName ?: $metaLead->form?->name) ? 'ad_campaign' : null, 'origin_id' => $campaignId, 'origin_label' => $campaignName ?: $metaLead->form?->name, 'notes' => $note,
+            'account_type' => 'meta_ads_account', 'account_id' => $accountId,   // the ad account can be switched off separately from the campaign
         ])) {
             return null;   // held — the Meta lead itself is still stored; staff move it into Leads later
         }
