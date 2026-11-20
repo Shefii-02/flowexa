@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ChevronDown, CornerUpLeft, Loader2, MessageSquare, Smile, Trash2 } from 'lucide-react';
-import { sessionApi, type Chat } from '../../api/api';
+import { messageApi, sessionApi, type Chat } from '../../api/api';
 import { getMediaSrc, senderKey, type ChatMessageView } from '../../utils/chatMessages';
 import MessageBody from './MessageBody';
 
@@ -18,6 +18,11 @@ const senderColor = (name: string): string => {
 /** Message types whose bytes can be fetched on demand even when the list carried no media info for them. */
 const FETCHABLE_TYPES = new Set(['image', 'video', 'audio', 'voice', 'document', 'sticker']);
 const TYPE_ICON: Record<string, string> = { audio: '🎤', voice: '🎤', image: '🖼️', sticker: '🖼️', video: '🎬', document: '📄' };
+/** What we say to the customer when we could not open what they sent — by what it was. */
+const resendText = (type: string): string => {
+  const what = type === 'voice' || type === 'audio' ? 'voice message' : type === 'document' ? 'document' : type === 'video' ? 'video' : type === 'sticker' ? 'sticker' : 'photo';
+  return `Hi, we could not open the ${what} you sent. Could you please send it again? Thank you!`;
+};
 const TYPE_LABEL: Record<string, string> = { audio: 'Voice message', voice: 'Voice message', image: 'Photo', sticker: 'Sticker', video: 'Video', document: 'Document' };
 
 /** base64 / data: payload → object URL, so a big file is not held as a giant string in the DOM. */
@@ -81,13 +86,16 @@ function ChatThread({
   const [mediaFetch, setMediaFetch] = useState<Record<string, 'loading' | 'failed'>>({});
   // WHY a file could not be loaded, per message — so the bubble can say what to do instead of just "unavailable".
   const [mediaWhy, setMediaWhy] = useState<Record<string, string>>({});
+  // 'old' / 'undeliverable' → only the customer can fix it (ask them to resend); 'unreachable' → just try again.
+  const [mediaKind, setMediaKind] = useState<Record<string, 'old' | 'undeliverable' | 'unreachable'>>({});
+  const [resendState, setResendState] = useState<Record<string, 'sending' | 'sent' | 'error'>>({});
   // Media fetched on demand, by message id → object URL, so a voice note / photo / video / document shows in the bubble itself.
   const [loadedMedia, setLoadedMedia] = useState<Record<string, string>>({});
   const loadedRef = useRef<Record<string, string>>({});
   loadedRef.current = loadedMedia;
   // Another chat (or leaving this one) → release every object URL loaded for the old chat, so a long session does not keep growing.
   useEffect(() => {
-    setLoadedMedia({}); setMediaFetch({}); setMediaWhy({});
+    setLoadedMedia({}); setMediaFetch({}); setMediaWhy({}); setMediaKind({}); setResendState({});
     return () => { Object.values(loadedRef.current).forEach(u => { if (u.startsWith('blob:')) URL.revokeObjectURL(u); }); };
   }, [activeChat.id, sessionId]);
 
@@ -97,6 +105,7 @@ function ChatThread({
       if (!sessionId || !messageId) return;
       setMediaFetch(prev => ({ ...prev, [messageId]: 'loading' }));
       let why = 'The gateway could not be reached. Try again.';
+      let kind: 'old' | 'undeliverable' | 'unreachable' = 'unreachable';
       try {
         let url: string | null = null;
         try {
@@ -107,6 +116,7 @@ function ChatThread({
           const history = await sessionApi.getChatHistory(sessionId, activeChat.id, 100, true);
           const hit = history.find(h => h.id === messageId);
           url = hit?.media ? dataToBlobUrl(hit.media) : null;
+          kind = hit ? 'undeliverable' : 'old';
           why = !hit
             ? 'The gateway did not save this file and it is older than the last 100 messages WhatsApp can list. Ask the customer to send it again.'
             : 'The gateway did not save this file and WhatsApp could not deliver it (expired, failed to decrypt, or media download is switched off on the gateway). Ask the customer to send it again.';
@@ -116,12 +126,28 @@ function ChatThread({
         setMediaFetch(prev => { const next = { ...prev }; delete next[messageId]; return next; });
       } catch {
         setMediaWhy(prev => ({ ...prev, [messageId]: why }));
+        setMediaKind(prev => ({ ...prev, [messageId]: kind }));
         // Nothing anywhere has the bytes (URL-based send, media download disabled on the gateway, expired on WhatsApp): say so on the bubble.
         setMediaFetch(prev => ({ ...prev, [messageId]: 'failed' }));
       }
     },
     [sessionId, activeChat.id],
   );
+
+  // "Ask customer to resend": a polite WhatsApp message, sent only after the agent has seen the exact words and confirmed.
+  const askToResend = useCallback(async (message: ChatMessageView) => {
+    const key = message.waMessageId;
+    if (!sessionId || !key) return;
+    const text = resendText(message.type);
+    if (!window.confirm(`Send this to the customer?\n\n"${text}"`)) return;
+    setResendState(prev => ({ ...prev, [key]: 'sending' }));
+    try {
+      await messageApi.sendText(sessionId, activeChat.id, text);
+      setResendState(prev => ({ ...prev, [key]: 'sent' }));
+    } catch {
+      setResendState(prev => ({ ...prev, [key]: 'error' }));
+    }
+  }, [sessionId, activeChat.id]);
 
   // Scroll-to-bottom button visibility. The main scroll-position memory is owned by
   // useChatScrollPosition, which doesn't expose its pin state (intentionally — that would re-render
@@ -307,6 +333,28 @@ function ChatThread({
                 </button>
                 {fetchState === 'failed' && msg.waMessageId && mediaWhy[msg.waMessageId] && (
                   <div style={{ fontSize: 11, color: '#6b7280', marginTop: 4, maxWidth: 260 }}>{mediaWhy[msg.waMessageId]}</div>
+                )}
+                {fetchState === 'failed' && msg.waMessageId && (
+                  <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
+                    {mediaKind[msg.waMessageId] === 'unreachable' && (
+                      <button type="button" className="message-media-omitted" onClick={() => void downloadMedia(msg)}>
+                        {t('chats.media.tryAgain', { defaultValue: 'Try again' })}
+                      </button>
+                    )}
+                    {mediaKind[msg.waMessageId] !== 'unreachable' && msg.direction === 'incoming' && (
+                      <button
+                        type="button"
+                        className="message-media-omitted"
+                        onClick={() => void askToResend(msg)}
+                        disabled={resendState[msg.waMessageId] === 'sending' || resendState[msg.waMessageId] === 'sent'}
+                      >
+                        {resendState[msg.waMessageId] === 'sending' ? <Loader2 size={14} className="animate-spin" />
+                          : resendState[msg.waMessageId] === 'sent' ? t('chats.media.resendAsked', { defaultValue: 'Asked the customer to resend ✓' })
+                          : resendState[msg.waMessageId] === 'error' ? t('chats.media.resendFailed', { defaultValue: 'Could not send — tap to retry' })
+                          : t('chats.media.askResend', { defaultValue: 'Ask customer to resend' })}
+                      </button>
+                    )}
+                  </div>
                 )}
                 </>
               );
