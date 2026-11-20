@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type RefObject } from 'react';
+import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ChevronDown, CornerUpLeft, Loader2, MessageSquare, Smile, Trash2 } from 'lucide-react';
 import { sessionApi, type Chat } from '../../api/api';
@@ -14,6 +14,26 @@ const senderColor = (name: string): string => {
   for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) | 0;
   return SENDER_COLORS[Math.abs(hash) % SENDER_COLORS.length];
 };
+
+/** Message types whose bytes can be fetched on demand even when the list carried no media info for them. */
+const FETCHABLE_TYPES = new Set(['image', 'video', 'audio', 'voice', 'document', 'sticker']);
+const TYPE_ICON: Record<string, string> = { audio: '🎤', voice: '🎤', image: '🖼️', sticker: '🖼️', video: '🎬', document: '📄' };
+const TYPE_LABEL: Record<string, string> = { audio: 'Voice message', voice: 'Voice message', image: 'Photo', sticker: 'Sticker', video: 'Video', document: 'Document' };
+
+/** base64 / data: payload → object URL, so a big file is not held as a giant string in the DOM. */
+function dataToBlobUrl(media: { mimetype?: string; data?: string }): string | null {
+  if (!media.data) return null;
+  if (media.data.startsWith('http')) return media.data;
+  try {
+    const b64 = media.data.startsWith('data:') ? media.data.slice(media.data.indexOf(',') + 1) : media.data;
+    const bin = atob(b64);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return URL.createObjectURL(new Blob([bytes], { type: media.mimetype || 'application/octet-stream' }));
+  } catch {
+    return null;
+  }
+}
 
 interface ChatThreadProps {
   /** Needed to fetch a message's media on demand; null before a session is chosen. */
@@ -59,32 +79,38 @@ function ChatThread({
   // overwrite the first, after which whichever settled first cleared the other's state — re-enabling
   // a button whose fetch was still open, and landing a failure marker on the wrong bubble.
   const [mediaFetch, setMediaFetch] = useState<Record<string, 'loading' | 'failed'>>({});
+  // Media fetched on demand, by message id → object URL, so a voice note / photo / video / document shows in the bubble itself.
+  const [loadedMedia, setLoadedMedia] = useState<Record<string, string>>({});
+  const loadedRef = useRef<Record<string, string>>({});
+  loadedRef.current = loadedMedia;
+  // Another chat (or leaving this one) → release every object URL loaded for the old chat, so a long session does not keep growing.
+  useEffect(() => {
+    setLoadedMedia({}); setMediaFetch({});
+    return () => { Object.values(loadedRef.current).forEach(u => { if (u.startsWith('blob:')) URL.revokeObjectURL(u); }); };
+  }, [activeChat.id, sessionId]);
+
   const downloadMedia = useCallback(
     async (message: ChatMessageView) => {
       const messageId = message.waMessageId;
       if (!sessionId || !messageId) return;
       setMediaFetch(prev => ({ ...prev, [messageId]: 'loading' }));
-      let objectUrl: string | null = null;
       try {
-        const blob = await sessionApi.getMessageMediaBlob(sessionId, activeChat.id, messageId);
-        objectUrl = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = objectUrl;
-        // The stored filename when there is one; the message id is a unique fallback that keeps two
-        // downloads from the same thread apart.
-        link.download = message.metadata?.media?.filename || messageId;
-        link.click();
-        setMediaFetch(prev => {
-          const next = { ...prev };
-          delete next[messageId];
-          return next;
-        });
+        let url: string | null = null;
+        try {
+          // 1) the copy the gateway stored when the message arrived
+          url = URL.createObjectURL(await sessionApi.getMessageMediaBlob(sessionId, activeChat.id, messageId));
+        } catch {
+          // 2) the gateway never kept it (arrived while it was not capturing, or over its size limit) — ask WhatsApp itself
+          const history = await sessionApi.getChatHistory(sessionId, activeChat.id, 100, true);
+          const hit = history.find(h => h.id === messageId);
+          url = hit?.media ? dataToBlobUrl(hit.media) : null;
+        }
+        if (!url) throw new Error('no media');
+        setLoadedMedia(prev => ({ ...prev, [messageId]: url! }));
+        setMediaFetch(prev => { const next = { ...prev }; delete next[messageId]; return next; });
       } catch {
-        // 404 covers every "there are no bytes" case the route documents (URL-based send, media
-        // download disabled, over the inbound cap). Say so on the bubble rather than failing mutely.
+        // Nothing anywhere has the bytes (URL-based send, media download disabled on the gateway, expired on WhatsApp): say so on the bubble.
         setMediaFetch(prev => ({ ...prev, [messageId]: 'failed' }));
-      } finally {
-        if (objectUrl) URL.revokeObjectURL(objectUrl);
       }
     },
     [sessionId, activeChat.id],
@@ -244,27 +270,37 @@ function ChatThread({
                 </div>
               );
             }
-            if (!mediaInfo) return null;
-            if (mediaInfo.omitted) {
-              // Not a plain label: the bytes exist behind the per-message media route, so this is the
-              // only handle the viewer has on them.
+            // A voice note / file whose media info never reached the page used to draw NOTHING. It now always shows a
+            // tappable placeholder, and tapping fetches the bytes (stored copy first, then WhatsApp history).
+            const canFetch = FETCHABLE_TYPES.has(msg.type) && !!msg.waMessageId;
+            if (!mediaInfo && !canFetch) return null;
+            const loadedSrc = msg.waMessageId ? loadedMedia[msg.waMessageId] : undefined;
+            if ((!mediaInfo || mediaInfo.omitted) && !loadedSrc) {
               const fetchState = msg.waMessageId ? mediaFetch[msg.waMessageId] : undefined;
+              const isVoice = msg.type === 'voice' || msg.type === 'audio';
+              const label = fetchState === 'failed'
+                ? t('chats.status.mediaUnavailable', { defaultValue: 'Media not available' })
+                : isVoice ? t('chats.media.playVoice', { defaultValue: 'Play voice message' })
+                : msg.type === 'document' ? (mediaInfo?.filename || t('chats.media.openDocument', { defaultValue: 'Open document' }))
+                : t('chats.media.load', { defaultValue: 'Load {{what}}', what: (TYPE_LABEL[msg.type] ?? 'file').toLowerCase() });
               return (
                 <button
                   type="button"
                   className="message-media-omitted"
                   onClick={() => void downloadMedia(msg)}
                   disabled={!sessionId || !msg.waMessageId || fetchState === 'loading'}
+                  title={fetchState === 'failed' ? t('chats.media.failedHint', { defaultValue: 'The gateway no longer has this file. Ask the customer to send it again.' }) : undefined}
                 >
                   {fetchState === 'loading' ? (
                     <Loader2 size={14} className="animate-spin" />
                   ) : (
-                    <>📎 {t(fetchState === 'failed' ? 'chats.status.mediaUnavailable' : 'chats.media.omitted')}</>
+                    <>{TYPE_ICON[msg.type] ?? '📎'} {label}</>
                   )}
                 </button>
               );
             }
-            const mediaSrc = getMediaSrc(mediaInfo);
+            const shown = mediaInfo ?? { mimetype: '' };
+            const mediaSrc = loadedSrc ?? getMediaSrc(shown as Parameters<typeof getMediaSrc>[0]);
             if (!mediaSrc) return null;
 
             switch (msg.type) {
@@ -274,7 +310,7 @@ function ChatThread({
                   <div className="message-media-image">
                     <img
                       src={mediaSrc}
-                      alt={mediaInfo.filename || t('chats.media.image')}
+                      alt={mediaInfo?.filename || t('chats.media.image')}
                       className="chat-image-media"
                       onLoad={onMediaLoad}
                       onClick={() => onOpenImage(msg.id)}
@@ -291,21 +327,21 @@ function ChatThread({
               case 'voice':
                 return (
                   <div className="message-media-audio">
-                    <audio src={mediaSrc} controls className="chat-audio-media" />
+                    <audio src={mediaSrc} controls autoPlay={!!loadedSrc} className="chat-audio-media" />
                   </div>
                 );
               case 'document':
               default: {
-                const ext = (mediaInfo.filename || '').split('.').pop()?.toLowerCase() ?? '';
+                const ext = (mediaInfo?.filename || '').split('.').pop()?.toLowerCase() ?? '';
                 const fileIcon = ext === 'pdf' ? '📄' : ['doc', 'docx'].includes(ext) ? '📝' : ['xls', 'xlsx'].includes(ext) ? '📊' : ['zip', 'rar', '7z'].includes(ext) ? '🗜️' : ext === 'txt' ? '📃' : '📎';
-                const sizeBytes = (mediaInfo as unknown as Record<string, number>).filesize;
+                const sizeBytes = (mediaInfo as unknown as Record<string, number> | undefined)?.filesize;
                 const sizeLabel = sizeBytes ? (sizeBytes >= 1048576 ? `${(sizeBytes / 1048576).toFixed(1)} MB` : `${(sizeBytes / 1024).toFixed(0)} KB`) : '';
                 return (
                   <div className="message-media-document">
-                    <a href={mediaSrc} download={mediaInfo.filename || 'document'} className="chat-document-media" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', background: 'rgba(0,0,0,0.04)', borderRadius: 8, textDecoration: 'none', color: 'inherit' }}>
+                    <a href={mediaSrc} download={mediaInfo?.filename || 'document'} className="chat-document-media" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', background: 'rgba(0,0,0,0.04)', borderRadius: 8, textDecoration: 'none', color: 'inherit' }}>
                       <span style={{ fontSize: 28 }}>{fileIcon}</span>
                       <div>
-                        <div style={{ fontSize: 13, fontWeight: 500, lineHeight: 1.3 }}>{mediaInfo.filename || t('chats.downloadDocument')}</div>
+                        <div style={{ fontSize: 13, fontWeight: 500, lineHeight: 1.3 }}>{mediaInfo?.filename || t('chats.downloadDocument')}</div>
                         {sizeLabel && <div style={{ fontSize: 11, color: '#6b7280', marginTop: 2 }}>{sizeLabel}</div>}
                       </div>
                     </a>
