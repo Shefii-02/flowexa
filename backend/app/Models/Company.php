@@ -236,6 +236,16 @@ class Company extends Model
         return (bool) ($this->settings["crm_auto_save_{$channel}"] ?? true);
     }
 
+    // ── Conversation topics (WA Chat: lead enquiry / technical / billing …) ────────
+    // enabled   label conversations (rules first, free). Default on — it only stores a label, nothing is routed or created from it.
+    // use_ai    ask the AI model when the rules are unsure (uses the company's own AI key; costs tokens). Default off.
+    // ai_daily_cap  most AI classifications per day for this company.
+    public function topicSettings(): array
+    {
+        $s = (array) ($this->settings['topic_classifier'] ?? []);
+        return ['enabled' => (bool) ($s['enabled'] ?? true), 'use_ai' => (bool) ($s['use_ai'] ?? false), 'ai_daily_cap' => max(0, (int) ($s['ai_daily_cap'] ?? 200))];
+    }
+
     // ── Response type (Settings → Response Type) ───────────────────────────────
     // Whether inbound messages on the given channel ('wa_chat' | 'wa_cloud') should be
     // answered by the given generator ('ai_agent' | 'chat_bot' — 'chat_bot' is WA Cloud's

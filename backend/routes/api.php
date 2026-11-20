@@ -1772,6 +1772,13 @@ Route::prefix('v1')->middleware(['jwt.auth', 'module.gate'])->group(function () 
 
     // WA Groups proxy (calls WAHA)
     Route::prefix('waha')->middleware('wa_chat.valid')->group(function () {
+        // What WA Chat conversations are about (lead enquiry / technical / …) — settings route first so it is not read as {id}
+        $topics = \App\Modules\WaChat\Http\Controllers\ConversationTopicController::class;
+        Route::get('topics/settings',                     [$topics, 'settings'])->middleware('permission:wa_chat.chats.view');
+        Route::put('topics/settings',                     [$topics, 'saveSettings'])->middleware('permission:wa_chat.chats.manage');
+        Route::get('topics',                              [$topics, 'index'])->middleware('permission:wa_chat.chats.view');
+        Route::put('topics/{id}',                         [$topics, 'update'])->whereNumber('id')->middleware('permission:wa_chat.chats.manage');
+
         Route::get('groups',                              [WahaSessionController::class, 'groups']);
         Route::post('groups',                             [WahaSessionController::class, 'createGroup']);
         Route::post('groups/join',                        [WahaSessionController::class, 'joinGroup']);

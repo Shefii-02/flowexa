@@ -738,6 +738,9 @@ class WahaSessionController extends Controller
                         Log::error('Webhook lead attribution error: ' . $e->getMessage());
                     }
 
+                    // What is this conversation about — lead enquiry, technical, billing …? Labelled in the background (shadow mode: a label only).
+                    \App\Jobs\ClassifyConversationTopic::schedule($session->company_id, $session->id, (string) $from, $phone, (string) $body);
+
                     // Settings → WA Chat → "Save to CRM contacts" toggle (default on).
                     // Saves/creates the contact and records this message's arrival time on it —
                     // independent of lead attribution above, which skips contacts that already
