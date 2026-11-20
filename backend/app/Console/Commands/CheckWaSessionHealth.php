@@ -5,6 +5,7 @@ namespace App\Console\Commands;
 use App\Models\Company;
 use App\Modules\WaChat\Models\WahaSession;
 use App\Modules\WaChat\Models\WahaWebhook;
+use App\Modules\WaChat\Services\WaSessionReconciler;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Http;
 
@@ -31,6 +32,7 @@ class CheckWaSessionHealth extends Command
 
         $checked = 0;
         $transitioned = 0;
+        $removed = 0;
 
         foreach ($companies as $company) {
             $sessions = WahaSession::where('company_id', $company->id)->get();
@@ -58,6 +60,12 @@ class CheckWaSessionHealth extends Command
             foreach ($sessions as $session) {
                 $checked++;
                 $live = $rows->get($session->session_name);
+                // Deleted at the gateway (its own dashboard / API): the gateway sends no event for that, so confirm and drop the local record.
+                if (!$live && WaSessionReconciler::confirmedGone($session->session_name)) {
+                    WaSessionReconciler::removeLocal($session);
+                    $removed++;
+                    continue;
+                }
                 // A session missing from the gateway's own list (deleted there, or the row's
                 // session_name never matched) is treated the same as disconnected, not skipped.
                 $rawLiveStatus = $live ? (string) ($live['status'] ?? 'unknown') : 'disconnected';
@@ -77,7 +85,7 @@ class CheckWaSessionHealth extends Command
             }
         }
 
-        $this->info("Checked {$checked} session(s) across {$companies->count()} company(ies); {$transitioned} newly disconnected.");
+        $this->info("Checked {$checked} session(s) across {$companies->count()} company(ies); {$transitioned} newly disconnected; {$removed} removed (deleted at the gateway).");
         return self::SUCCESS;
     }
 

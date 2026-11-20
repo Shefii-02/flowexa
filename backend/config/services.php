@@ -73,6 +73,8 @@ return [
     // WAHA_API_KEY that doesn't match this per-company-token model — they need the same fix if
     // those features are also failing to send.
     'open_wa' => [
+        // WA Chat files (voice replies, invoices, exports…) are hosted by the Node gateway and shared from there; set false to keep them on this server's disk.
+        'files_on_node' => (bool) env('WA_FILES_ON_NODE', true),
         'base_url' => rtrim(env('WA_CHAT_API_ORIGIN', 'http://localhost:2785'), '/') . '/api',
         // Node gateway ADMIN key — used ONLY to mint / scope / revoke each
         // company's own key (Company.wa_chat_token). Resolution order:

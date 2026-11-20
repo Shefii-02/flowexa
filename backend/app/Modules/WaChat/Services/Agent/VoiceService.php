@@ -93,11 +93,9 @@ class VoiceService
         return null;
     }
 
-    /** Writes synthesized audio to public storage and returns a fetchable URL for it. */
+    /** Hosts synthesized audio (on the Node gateway; this server's disk only as a fallback) and returns a fetchable URL for it. */
     public function storePublicly(string $bytes, int $companyId, string $ext = 'mp3'): string
     {
-        $path = "voice-replies/{$companyId}/" . Str::uuid() . ".{$ext}";
-        Storage::disk('public')->put($path, $bytes);
-        return Storage::disk('public')->url($path);
+        return \App\Support\NodeFileStore::put($bytes, $companyId, 'voice-replies', "reply.{$ext}");
     }
 }

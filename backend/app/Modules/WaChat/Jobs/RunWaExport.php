@@ -39,12 +39,11 @@ class RunWaExport implements ShouldQueue
 
         try {
             [$csv, $rowCount, $slug] = $this->build($job);
-            $path = "exports/{$job->id}_{$slug}_" . now()->format('Ymd_His') . '.csv';
-            Storage::disk('public')->put($path, $csv);
+            $url = \App\Support\NodeFileStore::put($csv, (int) $job->company_id, 'exports', "{$job->id}_{$slug}.csv", 'text/csv');
 
             $job->update([
                 'status'    => 'done',
-                'file_url'  => Storage::disk('public')->url($path),
+                'file_url'  => $url,
                 'row_count' => $rowCount,
             ]);
         } catch (Throwable $e) {

@@ -81,12 +81,7 @@ class WaExportController extends Controller
     {
         $job = WaExportJob::where('company_id', auth()->user()->company_id)->findOrFail($id);
 
-        if ($job->file_url) {
-            $file = basename(parse_url($job->file_url, PHP_URL_PATH) ?: '');
-            if ($file !== '') {
-                Storage::disk('public')->delete("exports/{$file}");
-            }
-        }
+        \App\Support\NodeFileStore::delete($job->file_url);   // wherever it was hosted (the Node gateway, or this server's disk for older exports)
 
         $job->delete();
 

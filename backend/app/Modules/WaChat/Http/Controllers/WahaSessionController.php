@@ -7,6 +7,7 @@ use App\Models\Company;
 use App\Models\Contact;
 use App\Models\MessageLog;
 use App\Modules\WaChat\Models\WahaSession;
+use App\Modules\WaChat\Models\WahaWebhook;
 use App\Modules\WaChat\Services\AutomationEngine;
 use App\Modules\WaChat\Services\Agent\AgentInbound;
 use App\Modules\WaChat\Services\Agent\ConversationalAgentService;
@@ -92,6 +93,7 @@ class WahaSessionController extends Controller
 
     public function index(): JsonResponse
     {
+        \App\Modules\WaChat\Services\WaSessionReconciler::reconcileCompany(auth()->user()->company);   // sessions deleted at the gateway drop out
         $allowed = auth()->user()->allowedAccountIds('wa_session');
 
         $sessions = WahaSession::where('company_id', auth()->user()->company_id)
@@ -336,29 +338,59 @@ class WahaSessionController extends Controller
         return response()->json(['message' => 'Session force-killed.']);
     }
 
-    public function destroy(int $id): JsonResponse
+    /**
+     * DELETE /waha/sessions/{id}[?force=1]
+     *
+     * The session is removed on the chat gateway (ADMIN key) AND here. The gateway's answer is checked: Laravel's HTTP client does not
+     * throw on 401 / 403 / 5xx, so a refused delete used to look like success — the gateway kept the session, this row was dropped, and
+     * the next sessions listing re-imported it from the gateway ("deleted but still in the database"). Now:
+     *   · 2xx, or 404 (already gone)  → delete here too
+     *   · anything else → one retry after force-killing a wedged engine; if it still refuses, nothing is deleted here and the caller is told
+     *     why (502). `force=1` removes only the local record anyway, and says the gateway still has the session.
+     */
+    public function destroy(Request $request, int $id): JsonResponse
     {
         $user    = auth()->user();
         $session = WahaSession::where('company_id', $user->company_id)->findOrFail($id);
+        $url     = "{$this->wahaBase()}/api/sessions/{$session->session_name}";
 
-        // Delete on the gateway with the ADMIN key, then drop the id from this
-        // company's key allowlist. Best-effort: a gateway timeout/error must not
-        // leave this row stuck in waha_sessions forever, still absorbing status
-        // updates from stray session.status webhooks/health polls — the local
-        // row goes regardless of whether the gateway call succeeds.
+        $status = null; $detail = null;
         try {
-            Http::withHeaders($this->adminHeaders())
-                ->timeout(10)
-                ->delete("{$this->wahaBase()}/api/sessions/{$session->session_name}");
+            $res = Http::withHeaders($this->adminHeaders())->timeout(10)->delete($url);
+            $status = $res->status();
+            if (!($res->successful() || $status === 404)) {
+                // a wedged engine can refuse a normal delete — kill it, then try once more
+                Http::withHeaders($this->adminHeaders())->timeout(10)->post("{$url}/force-kill");
+                $res = Http::withHeaders($this->adminHeaders())->timeout(10)->delete($url);
+                $status = $res->status();
+            }
+            $detail = $res->successful() || $status === 404 ? null : mb_substr((string) $res->body(), 0, 300);
         } catch (\Throwable $e) {
-            Log::error("WA Chat gateway delete failed for session {$session->session_name}: " . $e->getMessage());
+            $status = 0; $detail = $e->getMessage();
+        }
+        $goneOnGateway = $status !== null && (($status >= 200 && $status < 300) || $status === 404);
+
+        if (!$goneOnGateway) {
+            Log::error("WA Chat gateway delete refused for session {$session->session_name}: HTTP {$status} {$detail}");
+            if (!$request->boolean('force')) {
+                return response()->json([
+                    'message'        => 'The chat gateway did not delete this session' . ($status ? " (HTTP {$status})" : ' (it could not be reached)') . ', so it was kept here. Try again, or remove only the local record.',
+                    'error_code'     => 'gateway_delete_failed',
+                    'gateway_status' => $status,
+                    'can_force'      => true,
+                ], 502);
+            }
         }
 
+        // the session's webhook subscriptions go with it (the FK only nulls session_id, leaving orphan rows)
+        WahaWebhook::where('session_id', $session->id)->delete();
         $session->delete();
-
         app(WaChatTokenService::class)->syncSessions($user->company);
 
-        return response()->json(['message' => 'Session deleted.']);
+        return response()->json([
+            'message'         => $goneOnGateway ? 'Session deleted.' : 'Local record removed — the gateway still has this session.',
+            'gateway_deleted' => $goneOnGateway,
+        ]);
     }
 
     public function update(Request $request, int $id): JsonResponse

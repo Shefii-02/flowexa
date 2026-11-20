@@ -500,8 +500,7 @@ class WaOtpServiceController extends Controller
         if ($request->hasFile('file')) {
             $file     = $request->file('file');
             $filename = $request->filename ?: $file->getClientOriginalName();
-            $path     = $file->store("invoices/{$companyId}", 'public');
-            $fileUrl  = \Illuminate\Support\Facades\Storage::disk('public')->url($path);
+            $fileUrl  = \App\Support\NodeFileStore::put((string) file_get_contents($file->getRealPath()), (int) $companyId, 'invoices', $filename, $file->getMimeType());
         }
 
         if (!$fileUrl) {

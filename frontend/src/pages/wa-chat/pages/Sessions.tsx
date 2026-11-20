@@ -298,26 +298,19 @@ export function Sessions() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleDelete = async (id: string) => {
+  const handleDelete = async (id: string, force = false) => {
     const session = sessions.find(s => s.id === id);
     try {
-      await sessionApi.delete(id);
-      // The engine-side delete above only removes the WA Chat session — it knows nothing about the
-      // mirrored waha_sessions row created alongside it at session-create time (see
-      // useSessionCreateForm.ts, and the same session_name match used by handleSyncContacts above —
-      // matched by session.id, the gateway UUID waha_sessions.session_name actually stores, not
-      // session.name, a separate human-chosen slug that never equals it).
-      // Clean that row up too, best-effort: the session is already gone either way, so a failure here
-      // must not surface as a failed delete.
-      if (session) {
-        try {
-          const list = await api.get('/waha/sessions');
-          const rows: Array<{ id: number; session_name: string }> = list.data?.data ?? list.data ?? [];
-          const match = rows.find(r => r.session_name === session.id);
-          if (match) await api.delete(`/waha/sessions/${match.id}`);
-        } catch (cleanupErr) {
-          console.error('Failed to clean up waha_sessions row:', cleanupErr);
-        }
+      // One call that does everything: Laravel deletes it on the chat gateway (admin key), checks the gateway really did, and only then
+      // removes the local record. (The old flow deleted straight on the gateway with the company key, then tried a best-effort local
+      // cleanup that swallowed its errors — so a refused delete still looked successful and the session came back from the gateway.)
+      const list = await api.get('/waha/sessions');
+      const rows: Array<{ id: number; session_name: string }> = list.data?.data ?? list.data ?? [];
+      const match = rows.find(r => r.session_name === id);
+      if (match) {
+        await api.delete(`/waha/sessions/${match.id}`, { params: force ? { force: 1 } : undefined });
+      } else {
+        await sessionApi.delete(id)   // created on the gateway directly — no local record to clean up
       }
       // Functional removal (no stale `sessions` capture), then invalidate the prefix.
       setSessions(current => current.filter(s => s.id !== id));
@@ -329,9 +322,15 @@ export function Sessions() {
           : t('sessions.delete.successDescGeneric'),
       );
     } catch (err) {
-      const msg = err instanceof Error ? err.message : t('sessions.delete.errorDefault');
+      const data = (err as { response?: { data?: { message?: string; can_force?: boolean } } })?.response?.data
+      const msg = data?.message ?? (err instanceof Error ? err.message : t('sessions.delete.errorDefault'));
       console.error('Failed to delete:', err);
       toast.error(t('sessions.delete.errorTitle'), msg);
+      // the gateway refused: offer to remove just the local record (the session may then come back from the gateway)
+      if (data?.can_force && !force && window.confirm(`${msg}\n\nRemove only the local record anyway?`)) {
+        await handleDelete(id, true);
+        return;
+      }
     } finally {
       setDeleteConfirmId(null);
     }
