@@ -232,6 +232,8 @@ export interface Lead {
     name: string | null
     phone: string
     email: string | null
+    wa_id?: string | null
+    phone_is_real?: boolean   // false = an @lid WhatsApp id, not a dialable number
     labels: ContactLabel[]
   }
   assigned_to: {
@@ -241,6 +243,7 @@ export interface Lead {
     department: string | null
   } | null
   assigned_by: string | null
+  referred_by?: { id: number; name: string | null; phone: string; phone_is_real?: boolean } | null
   flow_node: { id: number; title: string } | null
   campaign: { id: number; name: string } | null
   events?: LeadEvent[]

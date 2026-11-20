@@ -699,6 +699,8 @@ class WahaSessionController extends Controller
                             $session->company_id,
                             $name,
                             $phone,
+                            null,
+                            (string) $from,
                         );
                     } catch (\Throwable $e) {
                         Log::error('Webhook lead attribution error: ' . $e->getMessage());
@@ -711,10 +713,7 @@ class WahaSessionController extends Controller
                     try {
                         $company = Company::find($session->company_id);
                         if ($company && $company->crmAutoSaveEnabled('wa_chat') && $phone !== '') {
-                            Contact::firstOrCreate(
-                                ['company_id' => $session->company_id, 'phone' => $phone],
-                                ['name' => $phone, 'source' => 'wa_chat'],
-                            )->update(['last_message_at' => now()]);
+                            Contact::forPhone($session->company_id, $phone, ['name' => $phone, 'source' => 'wa_chat'], (string) $from)->update(['last_message_at' => now()]);
                         }
                     } catch (\Throwable $e) {
                         Log::error('Webhook CRM contact save error: ' . $e->getMessage());
@@ -768,6 +767,7 @@ class WahaSessionController extends Controller
                                 text: (string) $body,
                                 type: (string) $type,
                                 fromGroup: str_ends_with((string) $from, '@g.us'),
+                                chatId: (string) $from,
                             ));
                         }
                     } catch (\Throwable $e) {

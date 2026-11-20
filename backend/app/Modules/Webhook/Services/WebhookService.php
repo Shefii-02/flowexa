@@ -1707,6 +1707,12 @@ class WebhookService
             return ['lead_id' => $existing->id, 'created' => false];
         }
 
+        if (\App\Services\LeadSourceGate::intercept($company->id, $contact->id, 'flow', [
+            'flow_node_id' => $node->id, 'category' => $node->lead_category, 'origin_type' => 'flow_node', 'origin_id' => $node->id, 'origin_label' => $node->title,
+        ])) {
+            return ['lead_id' => null, 'created' => false, 'held' => true];
+        }
+
         $dto = CreateLeadDTO::fromFlow(
             contactId: $contact->id,
             flowNodeId: $node->id,

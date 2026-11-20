@@ -300,7 +300,7 @@ class RagOrchestrator
                 ->whereNotIn('stage', ['enrolled', 'lost', 'disqualified'])
                 ->exists();
 
-            if (!$hasOpenLead) {
+            if (!$hasOpenLead && !\App\Services\LeadSourceGate::intercept($companyId, $contact->id, 'wa_chat', ['origin_type' => $session ? 'wa_session' : null, 'origin_id' => $session?->id, 'origin_label' => $originLabel, 'notes' => 'Auto-created by AI Agent on first WhatsApp message.'])) {
                 Lead::create([
                     'company_id'   => $companyId,
                     'contact_id'   => $contact->id,

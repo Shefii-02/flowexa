@@ -25,6 +25,7 @@ export default function LeadCallLog({ leadId, cost, onChanged }: { leadId: numbe
   useEffect(() => { setCostVal(cost == null ? '' : String(cost)) }, [cost])
 
   const save = async () => {
+    if (f.stage === 'lost' && !f.notes.trim()) { toast.error('Write in the notes why this lead is being closed as lost.'); return }
     setBusy(true)
     try {
       await leadActivityApi.log(leadId, {
@@ -57,7 +58,7 @@ export default function LeadCallLog({ leadId, cost, onChanged }: { leadId: numbe
         <input type="number" min={0} step="0.5" className={sel} placeholder="Minutes on call" value={f.minutes} onChange={e => setF({ ...f, minutes: e.target.value })} />
         <select className={sel} value={f.stage} onChange={e => setF({ ...f, stage: e.target.value })}>{STAGES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
       </div>
-      <textarea className="textarea w-full" rows={2} placeholder="What was discussed?" value={f.notes} onChange={e => setF({ ...f, notes: e.target.value })} />
+      <textarea className="textarea w-full" rows={2} placeholder={f.stage === 'lost' || f.stage === 'enrolled' ? 'What happened? (saved as the reason)' : 'What was discussed?'} value={f.notes} onChange={e => setF({ ...f, notes: e.target.value })} />
       <div className="flex items-end gap-3 flex-wrap">
         <label className="text-xs text-gray-500">Next follow-up (optional)
           <input type="datetime-local" className={`block mt-1 ${sel}`} value={f.next} onChange={e => setF({ ...f, next: e.target.value })} />

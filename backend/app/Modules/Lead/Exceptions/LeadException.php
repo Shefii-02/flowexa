@@ -13,6 +13,7 @@ class LeadException extends Exception
 
     public static function notFound(): self           { return new self('Lead not found.', 404, 'lead_not_found'); }
     public static function forbidden(): self          { return new self('You can only access your own leads.', 403, 'forbidden'); }
+    public static function reasonRequired(string $what): self { return new self("A note is required to {$what}. Say why, then try again.", 422, 'reason_required'); }
     public static function duplicateLead(): self      { return new self('An active lead already exists for this contact.', 422, 'duplicate_lead'); }
     public static function counsellorNotFound(): self { return new self('Counsellor not found in this company.', 422, 'counsellor_not_found'); }
     public static function counsellorAtCapacity(string $name, int $max): self {

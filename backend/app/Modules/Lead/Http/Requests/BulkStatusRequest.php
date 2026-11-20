@@ -19,6 +19,7 @@ class BulkStatusRequest extends FormRequest
             // at least one change must be asked for: stage, priority, categories (add / replace / remove them) or clear all categories
             'stage'      => ['required_without_all:priority,category,categories,clear_category', 'nullable', 'in:new,contacted,follow_up,enrolled,lost'],
             'priority'   => ['required_without_all:stage,category,categories,clear_category', 'nullable', 'in:low,medium,high'],
+            'reason'     => ['nullable', 'string', 'max:500'],   // one note for the whole selection when it closes or reopens leads
             // existing lead categories of this company (leads store the NAME, so a typo would create a ghost category)
             'categories'   => ['required_without_all:stage,priority,category,clear_category', 'nullable', 'array', 'min:1', 'max:30'],
             'categories.*' => ['string', 'max:120', Rule::exists('lead_categories', 'name')->where('company_id', auth()->user()?->company_id)],

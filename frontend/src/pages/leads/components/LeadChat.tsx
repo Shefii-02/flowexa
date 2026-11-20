@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { conversationApi } from '@/api'
-import { getError } from '@/utils'
+import { conversationApi, leadApi } from '@/api'
+import { getError, formatPhone } from '@/utils'
 
 // Chat on a lead's page: a small preview card (latest messages) and a drawer with the contact's chats listing + the thread.
 // Everything here is read-only and passes peek=1, so looking at a chat never clears the agents' unread count.
@@ -40,37 +40,85 @@ function useChats(contactId: number | undefined, phone: string) {
   return state
 }
 
+type WaChat = {
+  available: boolean; chat_id: string | null; session: { id: number; name: string } | null; messages: any[]; total: number
+  phone_is_real: boolean; resolved_phone: string | null; phone_conflict: { id: number; name: string; deleted: boolean } | null
+}
+
+/**
+ * A WhatsApp Chat (open-wa) lead's conversation, read live from the chat gateway by its real chat id (e.g. 88630978687215@lid) —
+ * the contact's "phone" can't be used for that: for a privacy id it's just digits that aren't a number. When the gateway can say which
+ * real number the id belongs to, it is saved on the contact automatically (once).
+ */
+export function useWaChat(leadId: number | undefined, enabled: boolean, limit = 100, onNumberFound?: (phone: string) => void) {
+  const [state, setState] = useState<{ loading: boolean; data: WaChat | null; error?: string }>({ loading: enabled, data: null })
+  const reported = useRef(false)
+  useEffect(() => {
+    if (!enabled || !leadId) { setState({ loading: false, data: null }); return }
+    let off = false
+    setState(s => ({ loading: s.data === null, data: s.data }))
+    leadApi.waChat(leadId, limit)
+      .then(r => { if (!off) setState({ loading: false, data: r.data }) })
+      .catch(e => { if (!off) setState({ loading: false, data: null, error: getError(e) }) })
+    return () => { off = true }
+  }, [leadId, enabled, limit])
+
+  const d = state.data
+  useEffect(() => {
+    if (!d || reported.current || d.phone_is_real || !d.resolved_phone || d.phone_conflict) return
+    reported.current = true
+    onNumberFound?.(d.resolved_phone)
+  }, [d, onNumberFound])
+  return state
+}
+
 /** The inline preview on the lead page. */
-export function LeadChatCard({ contactId, phone, name, onOpen }: { contactId?: number; phone: string; name?: string | null; onOpen: () => void }) {
+export function LeadChatCard({ contactId, phone, name, onOpen, leadId, waFirst = false, onNumberFound, onReviewConflict }: {
+  contactId?: number; phone: string; name?: string | null; onOpen: () => void
+  leadId?: number; waFirst?: boolean; onNumberFound?: (phone: string) => void; onReviewConflict?: (otherContactId: number) => void
+}) {
+  const wa = useWaChat(leadId, waFirst, 100, onNumberFound)
   const chats = useChats(contactId, phone)
   const [msgs, setMsgs] = useState<any[] | null>(null)
   const first = chats.convs[0]
+  const useWa = waFirst && !!wa.data?.available
 
   useEffect(() => {
+    if (useWa) return
     if (!first) { setMsgs(chats.loading ? null : []); return }
     let off = false
     conversationApi.messages(first.id, { limit: 20, peek: 1 })
       .then(r => { if (!off) setMsgs((r.data?.messages ?? []).slice(-6)) })
       .catch(() => { if (!off) setMsgs([]) })
     return () => { off = true }
-  }, [first?.id, chats.loading])
+  }, [first?.id, chats.loading, useWa])
 
-  const unread = chats.convs.reduce((n, c) => n + (c.unread_count || 0), 0)
+  const shown = useWa ? wa.data!.messages.slice(-6) : msgs
+  const unread = useWa ? 0 : chats.convs.reduce((n, c) => n + (c.unread_count || 0), 0)
+  const loading = waFirst && wa.loading ? true : (!useWa && (chats.loading || msgs === null))
+  const label = name || phone
   return (
     <div className="card p-5">
       <div className="flex items-center justify-between mb-3">
         <p className="text-sm font-semibold text-gray-800">
-          Chat {chats.convs.length > 0 && <span className="text-xs font-normal text-gray-400">· {chats.convs.length} chat{chats.convs.length > 1 ? 's' : ''}</span>}
+          Chat {useWa && <span className="text-xs font-normal text-gray-400">· WhatsApp Chat{wa.data?.session ? ` · ${wa.data.session.name}` : ''}</span>}
+          {!useWa && chats.convs.length > 0 && <span className="text-xs font-normal text-gray-400">· {chats.convs.length} chat{chats.convs.length > 1 ? 's' : ''}</span>}
           {unread > 0 && <span className="ml-2 px-1.5 py-0.5 rounded-full bg-green-500 text-white text-[10px] font-bold">{unread} unread</span>}
         </p>
-        <button className="text-xs text-brand-600 hover:underline" onClick={onOpen} disabled={chats.convs.length === 0}>Open chats ›</button>
+        <button className="text-xs text-brand-600 hover:underline" onClick={onOpen} disabled={!useWa && chats.convs.length === 0}>Open chats ›</button>
       </div>
-      {chats.error ? <p className="text-xs text-red-500">{chats.error}</p>
-        : chats.loading || msgs === null ? <p className="text-xs text-gray-400">Loading…</p>
-        : msgs.length === 0 ? <p className="text-xs text-gray-400">No chat with {name || phone} yet.</p>
+      {wa.data?.phone_conflict && (
+        <p className="mb-2 rounded-md bg-amber-50 border border-amber-200 px-2 py-1.5 text-[11px] text-amber-800">
+          WhatsApp says this contact's real number is {formatPhone(wa.data.resolved_phone || '')}, but it already belongs to {wa.data.phone_conflict.deleted ? 'a deleted contact' : 'another contact'} — {wa.data.phone_conflict.name} (#{wa.data.phone_conflict.id}).
+          {!wa.data.phone_conflict.deleted && onReviewConflict && <button className="ml-1 font-medium underline" onClick={() => onReviewConflict(wa.data!.phone_conflict!.id)}>Compare both &amp; merge</button>}
+        </p>
+      )}
+      {chats.error && !useWa ? <p className="text-xs text-red-500">{chats.error}</p>
+        : loading || shown === null ? <p className="text-xs text-gray-400">Loading…</p>
+        : shown.length === 0 ? <p className="text-xs text-gray-400">No chat with {label} yet.</p>
         : (
           <button onClick={onOpen} className="w-full text-left rounded-lg p-2 flex flex-col gap-1.5" style={{ background: '#efeae2' }} title="Open the chats">
-            {msgs.map((m: any) => <Bubble key={m.id} m={m} />)}
+            {shown.map((m: any) => <Bubble key={m.id} m={m} />)}
           </button>
         )}
     </div>
@@ -78,7 +126,9 @@ export function LeadChatCard({ contactId, phone, name, onOpen }: { contactId?: n
 }
 
 /** Slide-over: the contact's chats listing on top, the selected thread below (older messages on request). */
-export function LeadChatDrawer({ open, contactId, phone, name, onClose }: { open: boolean; contactId?: number; phone: string; name?: string | null; onClose: () => void }) {
+export function LeadChatDrawer({ open, contactId, phone, name, onClose, leadId, waFirst = false }: { open: boolean; contactId?: number; phone: string; name?: string | null; onClose: () => void; leadId?: number; waFirst?: boolean }) {
+  const [waLimit, setWaLimit] = useState(100)
+  const wa = useWaChat(leadId, open && waFirst, waLimit)
   const chats = useChats(open ? contactId : undefined, open ? phone : '__closed__')
   const [activeId, setActiveId] = useState<number | null>(null)
   const [msgs, setMsgs] = useState<any[]>([])
@@ -110,6 +160,31 @@ export function LeadChatDrawer({ open, contactId, phone, name, onClose }: { open
   }, [activeId, msgs])
 
   if (!open) return null
+  if (waFirst && (wa.loading || wa.data?.available)) {
+    const d = wa.data
+    return (
+      <div className="fixed inset-0 bg-black/30 z-[70] flex justify-end" onClick={onClose}>
+        <div className="bg-white w-full max-w-lg h-full flex flex-col shadow-2xl" onClick={e => e.stopPropagation()}>
+          <div className="px-5 py-4 border-b border-gray-100 flex items-start gap-3">
+            <div className="flex-1 min-w-0">
+              <div className="font-semibold text-gray-900 truncate">{name || phone}</div>
+              <div className="text-xs text-gray-400 font-mono truncate">{d?.chat_id ?? ''}{d?.session ? ` · ${d.session.name}` : ''}</div>
+            </div>
+            <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">×</button>
+          </div>
+          <div className="flex-1 overflow-auto p-4" style={{ background: '#efeae2' }}>
+            {wa.loading && !d ? <p className="text-sm text-gray-500">Loading…</p> : (
+              <div className="flex flex-col gap-1.5">
+                {d && d.total > d.messages.length && <button onClick={() => setWaLimit(l => Math.min(200, l + 100))} className="self-center text-xs text-brand-600 hover:underline mb-1">↑ Load older messages</button>}
+                {(d?.messages ?? []).map((m: any) => <Bubble key={m.id} m={m} />)}
+              </div>
+            )}
+          </div>
+          <div className="px-5 py-2 border-t border-gray-100 text-[11px] text-gray-400">Live from the WhatsApp Chat gateway — read-only.</div>
+        </div>
+      </div>
+    )
+  }
   return (
     <div className="fixed inset-0 bg-black/30 z-[70] flex justify-end" onClick={onClose}>
       <div className="bg-white w-full max-w-lg h-full flex flex-col shadow-2xl" onClick={e => e.stopPropagation()}>

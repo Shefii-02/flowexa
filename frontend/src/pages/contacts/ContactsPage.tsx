@@ -11,6 +11,7 @@ import {
 } from '@/components/ui'
 import { fmt, formatPhone, getError, downloadBlob, stageConfig, priorityConfig } from '@/utils'
 import toast from 'react-hot-toast'
+import ContactMergePanel from '@/pages/leads/components/ContactMergePanel'
 
 // ── Label CRUD Modal ──────────────────────────────────────────────────────
 function LabelManager({ labels, onRefresh }: { labels: any[], onRefresh: () => void }) {
@@ -466,6 +467,7 @@ export default function ContactsPage() {
   const [showImport,  setShowImport]  = useState(false)
   const [viewContact, setViewContact] = useState<any>(null)
   const [editContact, setEditContact] = useState<any>(null)
+  const [mergeOther, setMergeOther] = useState<number | null>(null)   // existing contact that already owns the number being entered
   const [delContact,  setDelContact]  = useState<any>(null)
   const [blacklistContact, setBlacklistContact] = useState<any>(null)
   const [saving,    setSaving]    = useState(false)
@@ -552,7 +554,12 @@ export default function ContactsPage() {
       setEditContact(null)
       resetContactForm()
       loadContacts()
-    } catch (e) { toast.error(getError(e)) }
+    } catch (e) {
+      // the number belongs to another contact → show both side by side (merge, or write a different number)
+      const d = (e as { response?: { data?: { error_code?: string; other_contact_id?: number; other_deleted?: boolean } } })?.response?.data
+      if (d?.error_code === 'phone_taken' && d.other_contact_id && !d.other_deleted) setMergeOther(d.other_contact_id)
+      else toast.error(getError(e))
+    }
     finally     { setSaving(false) }
   }
 
@@ -821,6 +828,9 @@ export default function ContactsPage() {
       >
         <div className="space-y-3">
           <Input label="Phone *" placeholder="918086544828" value={form.phone} onChange={e => set('phone', e.target.value)} required />
+          {editContact && editContact.phone_is_real === false && (
+            <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5 -mt-1">This is a WhatsApp privacy ID, not a dialable number. Type the person's real number (with country code) to fix it — if it already belongs to another contact you can compare and merge.</p>
+          )}
           <Input label="Name" placeholder="Priya Nair" value={form.name} onChange={e => set('name', e.target.value)} />
           <Input label="Email" type="email" value={form.email} onChange={e => set('email', e.target.value)} />
           <div>
@@ -846,6 +856,9 @@ export default function ContactsPage() {
           </label>
         </div>
       </Modal>
+
+      {editContact && <ContactMergePanel contactId={editContact.id} otherId={mergeOther} onClose={() => setMergeOther(null)}
+        onRewrite={() => {}} onMerged={() => { setMergeOther(null); setEditContact(null); resetContactForm(); loadContacts() }} />}
 
       {/* Import Modal — the choices made here (labels, duplicate handling) drive the import */}
       <Modal open={showImport} onClose={closeImport} title="Import contacts" size="md"

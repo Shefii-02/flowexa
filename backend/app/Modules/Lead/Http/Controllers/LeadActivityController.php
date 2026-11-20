@@ -49,6 +49,11 @@ class LeadActivityController extends Controller
         $l = $this->lead($lead);
         $user = auth()->user();
         $kind = $d['kind'] ?? 'call';
+        if (!empty($d['stage'])) {
+            // closing or reopening from the call form needs the same note — the call's notes are it
+            try { \App\Modules\Lead\Services\LeadService::assertStageNote($l->stage, $d['stage'], $d['notes'] ?? null); }
+            catch (\App\Modules\Lead\Exceptions\LeadException $e) { throw \Illuminate\Validation\ValidationException::withMessages(['notes' => $e->getMessage()]); }
+        }
 
         $activity = DB::transaction(function () use ($l, $user, $d, $kind) {
             \App\Models\Lead::whereKey($l->id)->lockForUpdate()->first();   // two calls logged at once must not both count as the first
@@ -64,7 +69,7 @@ class LeadActivityController extends Controller
             $stage = $d['stage'] ?? null;
             if (!$stage && $l->stage === 'new' && in_array($d['outcome'] ?? null, LeadActivity::REACHED, true)) { $stage = 'contacted'; }
             if (!$stage && !empty($d['next_follow_up_at']) && in_array($l->stage, ['new', 'contacted'], true)) { $stage = 'follow_up'; }
-            $this->repo->update($l, new UpdateLeadDTO(stage: $stage && $stage !== $l->stage ? $stage : null, followedUpAt: $a->happened_at));
+            $this->repo->update($l, new UpdateLeadDTO(stage: $stage && $stage !== $l->stage ? $stage : null, followedUpAt: $a->happened_at, reason: $d['notes'] ?? null));
             $this->repo->logEvent($l, $kind . '_logged', ['activity_id' => $a->id, 'outcome' => $a->outcome, 'first' => $first, 'notes' => $a->notes]);
             return $a;
         });

@@ -13,6 +13,7 @@ readonly class UpdateLeadDTO
         public ?string $followedUpAt = null,
         public ?int    $listingId    = null,
         public ?float  $saleValue    = null,
+        public ?string $reason       = null,   // the note given when closing / reopening
     ) {}
 
     public static function fromRequest(array $data): self
@@ -25,6 +26,7 @@ readonly class UpdateLeadDTO
             followedUpAt:$data['followed_up_at']?? null,
             listingId:   isset($data['listing_id']) ? (int) $data['listing_id'] : null,
             saleValue:   isset($data['sale_value']) ? (float) $data['sale_value'] : null,
+            reason:      isset($data['reason']) && trim((string) $data['reason']) !== '' ? trim((string) $data['reason']) : null,
         );
     }
 }

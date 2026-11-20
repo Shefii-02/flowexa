@@ -47,6 +47,15 @@ class LeadIntake
             ]))->save();
         }
 
+        // a new lead from a switched-off source is held for staff instead of created (an open lead continues as usual)
+        $hasOpen = Lead::where('company_id', $company->id)->where('contact_id', $contact->id)->whereNotIn('stage', ['enrolled', 'lost'])->exists();
+        if (!$hasOpen && \App\Services\LeadSourceGate::intercept($company->id, $contact->id, $this->sourceType($source), [
+            'origin_type' => $originType, 'origin_id' => $originId, 'origin_label' => $originLabel,
+            'notes' => ucfirst(str_replace('_', ' ', $source)) . ' · ' . collect($fields)->except(['name', 'phone', 'email'])->map(fn ($v, $k) => "$k: " . (is_bool($v) ? ($v ? 'yes' : 'no') : $v))->implode(', '),
+        ])) {
+            return ['contact' => $contact, 'lead' => null, 'assigned' => false, 'held' => true];
+        }
+
         $lead = $this->createLead($company->id, $contact->id, $fields, $source, $originType, $originId, $originLabel);
 
         $assigned = false;

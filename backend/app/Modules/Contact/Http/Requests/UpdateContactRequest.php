@@ -16,6 +16,7 @@ class UpdateContactRequest extends FormRequest
         return [
             'name'          => ['nullable', 'string', 'max:100'],
             'email'         => ['nullable', 'email', 'max:150'],
+            'phone'         => ['nullable', 'string', 'max:30'],   // digits are extracted and checked in the service (7–15, not already taken)
             'custom_fields' => ['nullable', 'array'],
             'opted_in'      => ['nullable', 'boolean'],
             'assigned_to'   => ['nullable', 'integer', 'exists:users,id'],

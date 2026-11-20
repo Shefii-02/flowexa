@@ -51,6 +51,9 @@ class ContactService
         $contact = $this->contactRepository->findById($id, $companyId);
         if (!$contact) throw ContactException::notFound();
 
+        if ($dto->phone !== null) {
+            $this->changePhone($contact, $dto->phone, $companyId);   // checked first: a refused number saves nothing else either
+        }
         $contact = $this->contactRepository->update($contact, $dto);
 
         if ($dto->assignedTo !== null) {
@@ -58,6 +61,43 @@ class ContactService
         }
 
         return $contact;
+    }
+
+    /**
+     * Replace a contact's phone — typically a WhatsApp Chat contact that arrived with a private "@lid" id (so its "phone" was never
+     * a number) getting its real one. The old identifier is kept as an alias so the next message from that same chat still lands on
+     * this contact (and its lead) instead of creating a duplicate; a wa_id that belonged to the old number is dropped.
+     */
+    private function changePhone(Contact $contact, string $raw, int $companyId): void
+    {
+        $digits = preg_replace('/\D+/', '', $raw);
+        if (strlen($digits) < 7 || strlen($digits) > 15) {
+            throw ContactException::phoneInvalid();
+        }
+        if ($digits === (string) $contact->phone) {
+            return;
+        }
+
+        $other = Contact::withTrashed()->where('company_id', $companyId)->where('id', '!=', $contact->id)
+            ->where(function ($q) use ($digits) {
+                $q->where('phone', $digits);
+                if (Contact::aliasesAvailable()) { $q->orWhereJsonContains('phone_aliases', $digits); }
+            })->first();
+        if ($other) {
+            throw ContactException::phoneTaken($other->name ?: (string) $other->phone, (int) $other->id, $other->trashed());
+        }
+
+        $changes = ['phone' => $digits];
+        if (Contact::aliasesAvailable()) {
+            // only an identifier that was NOT a real number needs remembering (a typo or a swapped real number should not keep matching)
+            $aliases = (array) ($contact->phone_aliases ?? []);
+            if (!$contact->phoneLooksReal() && $contact->phone !== null && $contact->phone !== '') { $aliases[] = (string) $contact->phone; }
+            $changes['phone_aliases'] = array_slice(array_values(array_unique($aliases)), -10) ?: null;
+        }
+        if (str_ends_with((string) $contact->wa_id, '@c.us')) {
+            $changes['wa_id'] = null;   // that chat id was the old number — sending must follow the new one
+        }
+        $contact->update($changes);
     }
 
     // ─── Assign staff ─────────────────────────────────────────────────────────

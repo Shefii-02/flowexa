@@ -1,6 +1,11 @@
 // One lead, on its own page — pipeline progress, activity feed, and a full edit form.
-import { useEffect, useState, type ReactNode } from 'react'
+import { usePermission } from '@/store'
+import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import LeadCallLog from './components/LeadCallLog'
+import ContactMergePanel from './components/ContactMergePanel'
+import LeadChannelChats from './components/LeadChannelChats'
+import LeadReferrer from './components/LeadReferrer'
+import { useStageNote } from './components/StageReason'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { leadApi, leadCategoryApi, staffApi, contactApi, labelApi } from '@/api'
 import { catalogApi } from '@/pages/wa-agent/catalog/api'
@@ -8,7 +13,7 @@ import { LeadChatCard, LeadChatDrawer } from './components/LeadChat'
 import SideDrawer from './components/SideDrawer'
 import AssignStaffDrawer from './components/AssignStaffDrawer'
 import { Button, ConfirmModal, Badge, Spinner } from '@/components/ui'
-import { fmt, formatPhone, getError, stageConfig, priorityConfig } from '@/utils'
+import { fmt, formatPhone, phoneLabel, getError, stageConfig, priorityConfig } from '@/utils'
 import toast from 'react-hot-toast'
 import type { Lead, LeadStage } from '@/types'
 
@@ -33,6 +38,7 @@ export default function LeadDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
 
+  const canManage = usePermission('leads.manage')
   const [lead, setLead] = useState<Lead | null>(null)
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState(false)
@@ -53,8 +59,9 @@ export default function LeadDetailPage() {
   const [contactEditing, setContactEditing] = useState(false)
   const [chatOpen, setChatOpen] = useState(false)   // drawer with the contact's chats
   const [assignOpen, setAssignOpen] = useState(false) // drawer with the staff list
-  const [contactForm, setContactForm] = useState({ name: '', email: '' })
+  const [contactForm, setContactForm] = useState({ name: '', email: '', phone: '' })
   const [contactSaving, setContactSaving] = useState(false)
+  const [mergeOther, setMergeOther] = useState<number | null>(null)   // the existing contact that already has the number being entered
   const [listings, setListings] = useState<any[]>([])
   const [counsellors, setCounsellors] = useState<any[]>([])
 
@@ -94,11 +101,14 @@ export default function LeadDetailPage() {
     staffApi.performance().then((r) => setCounsellors(r.data.performance ?? [])).catch(() => {})
   }, [])
 
+  const { askNote, noteModal } = useStageNote()
   const handleStageChange = async (stage: LeadStage) => {
     if (!lead || lead.stage === stage) return
+    const note = await askNote(lead.stage, stage)   // closing as lost / reopening asks for a note first
+    if (note === null) return
     setStageUpdating(true)
     try {
-      const { data } = await leadApi.update(lead.id, { stage })
+      const { data } = await leadApi.update(lead.id, { stage, reason: note || undefined })
       setLead(data.lead)
       toast.success(`Stage → ${stageConfig[stage].label}`)
     } catch (e) { toast.error(getError(e)) }
@@ -209,14 +219,32 @@ export default function LeadDetailPage() {
     } catch (e) { toast.error(getError(e)) }
     finally { setChipBusy(false) }
   }
+  // WhatsApp Chat leads (or a contact with no real number) read their chat live from the chat gateway by chat id
+  const waFirst = !!lead && (lead.source === 'wa_chat' || lead.contact?.phone_is_real === false)
+  const fillRealNumber = useCallback(async (phone: string) => {
+    const id = lead?.contact?.id
+    if (!id || phone.replace(/\D/g, '') === (lead?.contact?.phone ?? '').replace(/\D/g, '')) return   // already saved — never loop
+    try {
+      await contactApi.update(id, { phone })
+      toast.success(`Real number found: ${formatPhone(phone)} — saved on the contact.`)
+      load()
+    } catch { /* a number someone else holds is reported in the chat card — nothing to do here */ }
+  }, [lead?.contact?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const saveContact = async () => {
     if (!lead?.contact) return
     setContactSaving(true)
     try {
-      await contactApi.update(lead.contact.id, { name: contactForm.name.trim() || null, email: contactForm.email.trim() || null })
-      setLead({ ...lead, contact: { ...lead.contact, name: contactForm.name.trim() || null, email: contactForm.email.trim() || null } } as Lead)
+      const phone = contactForm.phone.trim()
+      await contactApi.update(lead.contact.id, { name: contactForm.name.trim() || null, email: contactForm.email.trim() || null, ...(phone ? { phone } : {}) })
       setContactEditing(false); toast.success('Contact updated.')
-    } catch (e) { toast.error(getError(e)) }
+      load()   // the phone may have changed (and with it "is this a real number")
+    } catch (e) {
+      // that number belongs to another contact → show both side by side so staff choose (merge, or write a different number)
+      const d = (e as { response?: { data?: { error_code?: string; other_contact_id?: number; other_deleted?: boolean } } })?.response?.data
+      if (d?.error_code === 'phone_taken' && d.other_contact_id && !d.other_deleted) setMergeOther(d.other_contact_id)
+      else toast.error(getError(e))
+    }
     finally { setContactSaving(false) }
   }
 
@@ -274,7 +302,7 @@ export default function LeadDetailPage() {
         <span className="w-14 h-14 rounded-2xl bg-brand-100 text-brand-700 flex items-center justify-center text-xl font-bold">{initial}</span>
         <div className="min-w-0 flex-1">
           <h1 className="text-xl font-semibold text-gray-900 truncate">{lead.contact?.name || 'Unnamed contact'}</h1>
-          <p className="text-sm text-gray-500 font-mono">{formatPhone(lead.contact?.phone || '')}{lead.contact?.email ? ` · ${lead.contact.email}` : ''}</p>
+          <p className="text-sm text-gray-500 font-mono">{phoneLabel(lead.contact)}{lead.contact?.email ? ` · ${lead.contact.email}` : ''}</p>
           <div className="mt-2 flex flex-wrap items-center gap-1.5">
             <span className={`badge ${stageConfig[lead.stage].badge}`}>{stageConfig[lead.stage].label}</span>
             <span className={`badge ${priorityConfig[lead.priority].badge}`}>{priorityConfig[lead.priority].label} priority</span>
@@ -325,8 +353,11 @@ export default function LeadDetailPage() {
 
           {/* Chat preview */}
           {lead.contact?.phone && (
-            <LeadChatCard contactId={lead.contact.id} phone={lead.contact.phone} name={lead.contact.name} onOpen={() => setChatOpen(true)} />
+            <LeadChatCard contactId={lead.contact.id} phone={lead.contact.phone} name={lead.contact.name} onOpen={() => setChatOpen(true)} leadId={lead.id} waFirst={waFirst} onNumberFound={fillRealNumber} onReviewConflict={(id) => setMergeOther(id)} />
           )}
+
+          <LeadChannelChats leadId={lead.id} source={lead.source} />
+          <LeadReferrer lead={lead} canEdit={canManage} onChanged={load} />
 
           {/* Lead information (read-only — "Edit lead" opens the drawer) */}
           <div className="card p-5">
@@ -458,12 +489,12 @@ export default function LeadDetailPage() {
               <p className="text-sm font-semibold text-gray-800">Contact details</p>
               {lead.contact && (
                 <button className="text-xs text-brand-600 hover:underline"
-                  onClick={() => { setContactForm({ name: lead.contact?.name ?? '', email: lead.contact?.email ?? '' }); setContactEditing(true) }}>Edit</button>
+                  onClick={() => { setContactForm({ name: lead.contact?.name ?? '', email: lead.contact?.email ?? '', phone: '' }); setContactEditing(true) }}>Edit</button>
               )}
             </div>
             <div className="space-y-2.5">
               <Field label="Name">{lead.contact?.name || '—'}</Field>
-              <Field label="Phone"><span className="font-mono">{formatPhone(lead.contact?.phone || '')}</span></Field>
+              <Field label="Phone"><span className="font-mono">{phoneLabel(lead.contact)}</span></Field>
               <Field label="Email">{lead.contact?.email || '—'}</Field>
             </div>
           </div>
@@ -471,7 +502,7 @@ export default function LeadDetailPage() {
       </div>
 
       {lead.contact?.phone && (
-        <LeadChatDrawer open={chatOpen} contactId={lead.contact.id} phone={lead.contact.phone} name={lead.contact.name} onClose={() => setChatOpen(false)} />
+        <LeadChatDrawer open={chatOpen} contactId={lead.contact.id} phone={lead.contact.phone} name={lead.contact.name} leadId={lead.id} waFirst={waFirst} onClose={() => setChatOpen(false)} />
       )}
 
       <AssignStaffDrawer open={assignOpen} staff={counsellors} currentId={lead.assigned_to?.id} currentName={lead.assigned_to?.name}
@@ -538,15 +569,29 @@ export default function LeadDetailPage() {
       </SideDrawer>
 
       {/* Edit contact */}
-      <SideDrawer open={contactEditing} onClose={() => setContactEditing(false)} title="Edit contact" subtitle={lead.contact?.phone ? formatPhone(lead.contact.phone) : undefined}
+      <SideDrawer open={contactEditing} onClose={() => setContactEditing(false)} title="Edit contact" subtitle={lead.contact?.phone ? phoneLabel(lead.contact) : undefined}
         footer={<><Button variant="secondary" onClick={() => setContactEditing(false)}>Cancel</Button><Button onClick={saveContact} loading={contactSaving}>Save</Button></>}>
         <div className="p-5 space-y-4 text-sm">
           <div><span className="label">Name</span><input className="input w-full mt-1" value={contactForm.name} maxLength={100} autoFocus onChange={(e) => setContactForm((f) => ({ ...f, name: e.target.value }))} /></div>
           <div><span className="label">Email</span><input type="email" className="input w-full mt-1" value={contactForm.email} maxLength={150} onChange={(e) => setContactForm((f) => ({ ...f, email: e.target.value }))} /></div>
-          <div><span className="label">Phone</span><p className="font-mono text-gray-500 mt-1">{formatPhone(lead.contact?.phone || '')}</p><p className="text-xs text-gray-400">The phone number identifies the contact, so it can't be changed here.</p></div>
+          <div>
+            <span className="label">Phone</span>
+            {lead.contact?.phone_is_real === false && (
+              <p className="mt-1 mb-1 rounded-md bg-amber-50 border border-amber-200 px-2 py-1.5 text-xs text-amber-800">
+                This contact came from WhatsApp with a private ID, not a phone number ({phoneLabel(lead.contact)}). Enter their real number below — their chat stays linked.
+              </p>
+            )}
+            <input type="tel" inputMode="tel" className="input w-full mt-1 font-mono" value={contactForm.phone} maxLength={20}
+              placeholder={lead.contact?.phone_is_real === false ? 'e.g. 919876543210 (country code first)' : formatPhone(lead.contact?.phone || '')}
+              onChange={(e) => setContactForm((f) => ({ ...f, phone: e.target.value }))} />
+            <p className="text-xs text-gray-400 mt-1">{lead.contact?.phone_is_real === false ? 'Digits with the country code, 7–15 digits.' : 'Leave empty to keep the current number. Changing it replaces the number this contact is reached on.'}</p>
+          </div>
         </div>
       </SideDrawer>
 
+      {noteModal}
+      {lead.contact && <ContactMergePanel contactId={lead.contact.id} otherId={mergeOther} onClose={() => setMergeOther(null)} onRewrite={() => setContactEditing(true)}
+        onMerged={() => { setMergeOther(null); setContactEditing(false); load() }} />}
       <ConfirmModal open={showDelete} title="Delete this lead?"
         message={`This permanently removes the lead for ${lead.contact?.name || 'this contact'}. The contact itself is kept.`}
         confirmLabel="Delete" confirmVariant="danger" loading={deleting}

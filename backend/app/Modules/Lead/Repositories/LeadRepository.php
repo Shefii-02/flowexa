@@ -101,6 +101,7 @@ class LeadRepository implements LeadRepositoryInterface
         return Lead::with([
             'categoryLinks',
             'contact.labels',
+            'referrer:id,name,phone,wa_id',
             'assignedTo:id,name,email,department',
             'assignedBy:id,name',
             'flowNode:id,title,type',
@@ -167,6 +168,10 @@ class LeadRepository implements LeadRepositoryInterface
         if (isset($data['stage']) && $data['stage'] === 'lost') {
             $data['lost_at'] = now();
         }
+        if (isset($data['stage']) && $data['stage'] !== $oldStage) {
+            // the note of the move: kept on the lead while it is closed, gone when it is reopened (the timeline keeps every one)
+            $data['close_reason'] = in_array($data['stage'], ['enrolled', 'lost'], true) ? $dto->reason : null;
+        }
         if (isset($data['stage']) && $data['stage'] !== $oldStage && $lead->verified_at) {
             $data['verified_at'] = null;   // converted / closed outcome changed — it has to be verified again
             $data['verified_by'] = null;
@@ -175,7 +180,7 @@ class LeadRepository implements LeadRepositoryInterface
         $lead->update($data);
 
         if ($dto->stage && $dto->stage !== $oldStage) {
-            $this->logEvent($lead, 'stage_changed', ['from' => $oldStage, 'to' => $dto->stage]);
+            $this->logEvent($lead, 'stage_changed', array_filter(['from' => $oldStage, 'to' => $dto->stage, 'reason' => $dto->reason], fn ($v) => $v !== null));
         }
 
         // Auto-record a sale when the lead converts: stage just became "enrolled",

@@ -36,6 +36,14 @@ export const formatPhone = (phone: string) => {
   return `+${clean}`
 }
 
+/** A phone for display: a real number formatted; a WhatsApp privacy id (not a number) labelled as what it is. */
+export const phoneLabel = (c?: { phone?: string | null; phone_is_real?: boolean } | null) => {
+  const p = c?.phone ?? ''
+  if (!p) return ''
+  if (c?.phone_is_real === false) return `No number · WA ID …${p.replace(/\D/g, '').slice(-4)}`
+  return formatPhone(p)
+}
+
 // ── Stage config ──────────────────────────────────────────────────────────────
 export const stageConfig: Record<string, { label: string; color: string; badge: string }> = {
   new:        { label: 'New',        color: 'text-blue-600',  badge: 'badge-blue' },

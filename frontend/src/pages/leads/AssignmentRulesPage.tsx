@@ -5,6 +5,7 @@ import { useAssignMethods } from '@/store'
 import StaffScopePicker, { needsStaff, type StaffOpt, type StaffScope } from './components/StaffScopePicker'
 import toast from 'react-hot-toast'
 import RoutingRulesPanel from './components/RoutingRulesPanel'
+import LeadSourcesPanel from './components/LeadSourcesPanel'
 import VerticalTabs, { type VTab } from '@/components/layout/VerticalTabs'
 
 
@@ -62,6 +63,7 @@ export default function AssignmentRulesPage() {
   const notifying = rule.notification_mode === 'uber' || rule.notification_mode === 'hybrid'
   const tabs: VTab[] = [
     { id: 'routing',    icon: '🧭', label: 'Routing',                   desc: 'How the next lead picks its staff member' },
+    { id: 'sources',    icon: '🔌', label: 'Lead sources',              desc: 'Switch incoming channels on or off' },
     { id: 'routing-rules', icon: '🎯', label: 'Category & campaign routing', desc: 'Send chosen leads only to chosen staff' },
     { id: 'weights',    icon: '⚖️', label: 'Algorithm weights',         desc: 'How agents are scored', hidden: !algo, badge: totalWeight === 100 ? undefined : '⚠' },
     { id: 'sla',        icon: '⏱️', label: 'Response SLA & AI handoff', desc: 'Reply time limits and when AI takes over' },
@@ -157,6 +159,7 @@ export default function AssignmentRulesPage() {
         )}
       </section>
             )}
+            {id === 'sources' && <LeadSourcesPanel />}
             {id === 'routing-rules' && <RoutingRulesPanel />}
             {id === 'weights' && algo && (
               <section className={card}>

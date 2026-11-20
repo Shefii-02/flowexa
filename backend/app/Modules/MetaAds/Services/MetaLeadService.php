@@ -247,6 +247,12 @@ class MetaLeadService
             . ($campaignName ? " · campaign: {$campaignName}" : '')
             . ($metaLead->form?->name ? " · form: {$metaLead->form->name}" : '');
 
+        if (\App\Services\LeadSourceGate::intercept($companyId, $contactId, 'meta_ads', [
+            'origin_type' => ($campaignName ?: $metaLead->form?->name) ? 'ad_campaign' : null, 'origin_id' => $campaignId, 'origin_label' => $campaignName ?: $metaLead->form?->name, 'notes' => $note,
+        ])) {
+            return null;   // held — the Meta lead itself is still stored; staff move it into Leads later
+        }
+
         // A company can run several ad campaigns at once — record which one this lead came from.
         $originLabel = $campaignName ?: $metaLead->form?->name;
 

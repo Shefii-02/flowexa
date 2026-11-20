@@ -8,11 +8,12 @@ import { useAppDispatch, useAppSelector } from '@/store'
 import { fetchLeadsThunk, fetchLeadAnalyticsThunk, updateLeadInList } from '@/store/slices'
 import { leadApi, staffApi, leadImportExportApi, contactApi, leadCategoryApi } from '@/api'
 import StaffPicker from './components/StaffPicker'
+import { useStageNote, stageNoteRule } from './components/StageReason'
 import StaffScopePicker, { needsStaff, type StaffScope } from './components/StaffScopePicker'
 import { Button, Modal, Drawer, ConfirmModal, Badge, EmptyState, Pagination, TableSkeleton, StatCard } from '@/components/ui'
 import DateRangePicker from '@/components/ui/DateRangePicker'
 import { useAssignMethods, usePermission } from '@/store'
-import { fmt, formatPhone, getError, downloadBlob, stageConfig, priorityConfig } from '@/utils'
+import { fmt, formatPhone, phoneLabel, getError, downloadBlob, stageConfig, priorityConfig } from '@/utils'
 import toast from 'react-hot-toast'
 import type { Lead, LeadStage } from '@/types'
 
@@ -147,11 +148,14 @@ export default function LeadsPage() {
     leadApi.sources().then((r) => setSources(r.data.sources ?? {})).catch(() => {})
   }, [])
 
+  const { askNote, noteModal } = useStageNote()
   const handleStageUpdate = async (lead: Lead, newStage: LeadStage) => {
     if (lead.stage === newStage) return
+    const note = await askNote(lead.stage, newStage)
+    if (note === null) return
     setStageUpdating(lead.id)
     try {
-      const { data } = await leadApi.update(lead.id, { stage: newStage })
+      const { data } = await leadApi.update(lead.id, { stage: newStage, reason: note || undefined })
       dispatch(updateLeadInList(data.lead))
       toast.success(`Stage → ${stageConfig[newStage].label}`)
     } catch (e) { toast.error(getError(e)) }
@@ -288,10 +292,17 @@ export default function LeadsPage() {
   const handleBulkStatus = async () => {
     const catChange = bulkCatMode === 'clear' || bulkCats.length > 0
     if (!bulkStage && !bulkPriority && !catChange) { toast.error('Pick a stage, priority or categories to apply.'); return }
+    // one note for the whole selection when it closes or reopens leads: ask with the first lead that needs one
+    let note: string | null | undefined
+    if (bulkStage) {
+      const picked = list.filter((l) => selectedIds.has(l.id))
+      const trigger = picked.find((l) => stageNoteRule(l.stage, bulkStage) === 'required') ?? picked.find((l) => stageNoteRule(l.stage, bulkStage) === 'optional')
+      if (trigger) { note = await askNote(trigger.stage, bulkStage, picked.length); if (note === null) return }
+    }
     setBulkUpdating(true)
     try {
       const { data } = await leadApi.bulkStatus([...selectedIds], {
-        stage: bulkStage || undefined, priority: bulkPriority || undefined,
+        stage: bulkStage || undefined, reason: note || undefined, priority: bulkPriority || undefined,
         categories: bulkCatMode !== 'clear' && bulkCats.length ? bulkCats : undefined,
         category_mode: bulkCatMode !== 'clear' && bulkCats.length ? bulkCatMode : undefined,
         clear_category: bulkCatMode === 'clear' ? true : undefined,
@@ -370,9 +381,11 @@ export default function LeadsPage() {
     const newStage = over.id as LeadStage
     const lead = STAGES.flatMap((st) => cols[st].items).find((l) => l.id === Number(active.id))
     if (!lead || lead.stage === newStage) return
+    const note = await askNote(lead.stage, newStage)   // dropping a card on "Lost" (or out of Won / Lost) asks why first
+    if (note === null) return
     setStageUpdating(lead.id)
     try {
-      const { data } = await leadApi.update(lead.id, { stage: newStage })
+      const { data } = await leadApi.update(lead.id, { stage: newStage, reason: note || undefined })
       dispatch(updateLeadInList(data.lead))
       // move the card between columns without reloading the board
       setCols((c) => ({
@@ -499,6 +512,7 @@ export default function LeadsPage() {
           </div>
         </div>
       </Modal>
+      {noteModal}
       <ConfirmModal open={showRecallSelected} title={`Recall ${selectedIds.size} selected lead(s)?`}
         message="They will be taken back from their staff and become unassigned."
         confirmLabel="Recall" confirmVariant="danger" loading={recalling}
@@ -577,7 +591,7 @@ export default function LeadsPage() {
                             <td><input type="checkbox" checked={selectedIds.has(l.id)} onChange={() => toggleSelect(l.id)} /></td>
                             <td>
                               <p className="font-medium text-gray-900">{l.contact?.name || '—'}</p>
-                              <p className="text-xs text-gray-400 font-mono">{formatPhone(l.contact?.phone || '')}</p>
+                              <p className="text-xs text-gray-400 font-mono">{phoneLabel(l.contact)}</p>
                               {!!l.repeat_count && l.repeat_count > 0 && (
                                 <button type="button" title="Same person enquired again — click to see all their leads"
                                   onClick={() => { setSearch(l.contact?.phone || ''); setPage(1) }}

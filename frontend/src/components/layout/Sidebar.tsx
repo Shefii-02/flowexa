@@ -341,6 +341,7 @@ const SidebarInner = () => {
 
   // ── Permission hooks (all at top level) ──────────────────────────────────────
   const canVerifyLeads = usePermission('leads.verify')
+  const canManageLeads = usePermission('leads.manage')
   const canMonitorSales = usePermission('hr.sales_activity.view')
   const canViewDash = usePermission('dashboard.view')
   const canAccManage = usePermission('accounts.manage')
@@ -731,6 +732,7 @@ const SidebarInner = () => {
               <SubLink to="/crm/leads/by-staff" icon="👤" label="Leads by Staff" />
               <SubLink to="/crm/leads/logs" icon="📜" label="Lead Logs" />
               {canVerifyLeads && <SubLink to="/crm/leads/verification" icon="✅" label="Verify Leads" />}
+              {canManageLeads && <SubLink to="/crm/leads/held" icon="⏸" label="Held Leads" />}
 
               {/* Basic — at-a-glance metrics */}
               {/* <NestedAccordion icon="🟢" label="Basic" basePaths={['/leads/summary']}>

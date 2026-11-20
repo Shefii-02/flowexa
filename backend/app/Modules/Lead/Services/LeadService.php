@@ -84,7 +84,34 @@ class LeadService
     public function update(int $id, int $companyId, int $userId, bool $viewAll, UpdateLeadDTO $dto): Lead
     {
         $lead = $this->show($id, $companyId, $userId, $viewAll);
+        if ($dto->stage !== null) {
+            self::assertStageNote($lead->stage, $dto->stage, $dto->reason);
+        }
         return $this->leadRepository->update($lead, $dto);
+    }
+
+    private const CLOSED_STAGES = ['enrolled', 'lost'];
+
+    /**
+     * Does moving a lead from one stage to another need a note?
+     *   'required'  closing it as Lost, reopening a closed lead, or changing a closed lead's outcome
+     *   'optional'  converting it (a note is asked for but may be skipped)
+     *   null        any ordinary pipeline move
+     */
+    public static function stageNoteRule(?string $from, string $to): ?string
+    {
+        if ($from === $to) { return null; }
+        $wasClosed = in_array($from, self::CLOSED_STAGES, true);
+        if ($to === 'lost' || $wasClosed) { return 'required'; }
+        return $to === 'enrolled' ? 'optional' : null;
+    }
+
+    /** Throws 422 when a required note is missing. */
+    public static function assertStageNote(?string $from, string $to, ?string $reason): void
+    {
+        if (self::stageNoteRule($from, $to) === 'required' && trim((string) $reason) === '') {
+            throw LeadException::reasonRequired(in_array($from, self::CLOSED_STAGES, true) ? ($to === 'lost' || in_array($to, self::CLOSED_STAGES, true) ? 'change the outcome of a closed lead' : 'reopen this lead') : 'close this lead as lost');
+        }
     }
 
     public function assign(int $id, int $companyId, AssignLeadDTO $dto): Lead
@@ -294,8 +321,15 @@ class LeadService
      * Change stage / priority and/or categories of many leads. $categories are applied per $categoryMode:
      * add (keep what they have), replace (exactly these), remove (take these away) or clear (take all away).
      */
-    public function bulkStatus(int $companyId, array $leadIds, ?string $stage, ?string $priority, array $categories = [], string $categoryMode = 'add'): int
+    public function bulkStatus(int $companyId, array $leadIds, ?string $stage, ?string $priority, array $categories = [], string $categoryMode = 'add', ?string $reason = null): int
     {
+        if ($stage !== null && trim((string) $reason) === '') {
+            // check the whole selection first — nothing is changed if any lead needs a note that was not given
+            foreach (array_unique($leadIds) as $id) {
+                $l = $this->leadRepository->findById((int) $id, $companyId);
+                if ($l) { self::assertStageNote($l->stage, $stage, null); }
+            }
+        }
         $categorizer = app(\App\Services\LeadCategorizer::class);
         $wantsCategories = $categories !== [] || $categoryMode === 'clear';
         $changed = 0;
@@ -316,7 +350,7 @@ class LeadService
 
             if ($changesRest) {
                 // normal update path: stage events, enrolled / lost dates, auto-sale
-                $this->leadRepository->update($lead, new \App\Modules\Lead\DTOs\UpdateLeadDTO(stage: $stage, priority: $priority));
+                $this->leadRepository->update($lead, new \App\Modules\Lead\DTOs\UpdateLeadDTO(stage: $stage, priority: $priority, reason: $reason));
                 $lead = $lead->fresh();
             }
             if ($changesCategories) {

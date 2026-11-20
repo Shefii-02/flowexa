@@ -18,6 +18,8 @@ readonly class AgentInbound
         public bool    $fromGroup = false,
         /** WA Cloud reply routing: answer with THIS AI agent (playbook) instead of resolving one by session. */
         public ?int    $playbookId = null,
+        /** open-wa: the real chat id the message came from ("…@lid" / "…@c.us"). */
+        public ?string $chatId = null,
     ) {}
 
     public function hasText(): bool

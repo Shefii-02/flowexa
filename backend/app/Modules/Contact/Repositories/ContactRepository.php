@@ -99,9 +99,14 @@ class ContactRepository implements ContactRepositoryInterface
             'name'          => $dto->name,
             'email'         => $dto->email,
             'custom_fields' => $dto->customFields,
-            'opted_in'      => $dto->optedIn,
-            'opted_out_at' => $dto->optedIn ? null : now(),
         ], fn($v) => !is_null($v));
+
+        // Opt-in status changes only when the caller actually sent it. It used to default to "opted in", so editing a contact's
+        // name or email silently re-subscribed someone who had opted out.
+        if (!is_null($dto->optedIn)) {
+            $data['opted_in']     = $dto->optedIn;
+            $data['opted_out_at'] = $dto->optedIn ? null : now();
+        }
 
         $contact->update($data);
         return $contact->fresh(['labels', 'currentAssignment.staff']);

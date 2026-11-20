@@ -11,6 +11,7 @@ class ContactException extends Exception
         string               $message,
         private readonly int $statusCode  = 400,
         private readonly ?string $errorCode = null,
+        private readonly array $extra = [],   // extra fields for the JSON error (e.g. the other contact's id)
     ) {
         parent::__construct($message);
     }
@@ -23,6 +24,16 @@ class ContactException extends Exception
     public static function phoneDuplicate(string $phone): self
     {
         return new self("A contact with phone {$phone} already exists.", 422, 'phone_duplicate');
+    }
+
+    public static function phoneInvalid(): self
+    {
+        return new self('Enter a valid phone number with the country code (7 to 15 digits, e.g. 919876543210).', 422, 'phone_invalid');
+    }
+
+    public static function phoneTaken(string $name, int $id, bool $deleted = false): self
+    {
+        return new self("That number already belongs to " . ($deleted ? 'a deleted contact' : 'another contact') . " — {$name} (#{$id})." . ($deleted ? ' Use a different number.' : ' Use a different number, or merge the two contacts.'), 422, 'phone_taken', ['other_contact_id' => $id, 'other_deleted' => $deleted]);
     }
 
     public static function alreadyOptedOut(): self
@@ -55,6 +66,6 @@ class ContactException extends Exception
         return response()->json([
             'message'    => $this->getMessage(),
             'error_code' => $this->errorCode,
-        ], $this->statusCode);
+        ] + $this->extra, $this->statusCode);
     }
 }

@@ -223,18 +223,38 @@ class WahaContactController extends Controller
     {
         $waId = $this->waContactId($waContact);
         $phone = $this->waContactPhone($waContact);
+        $name = $this->waContactName($waContact);
         if ($waId === null && $phone === null) return null;
 
-        $match = $waId !== null
-            ? ['company_id' => $companyId, 'wa_id' => $waId]
-            : ['company_id' => $companyId, 'phone' => $phone];
+        // match on the stable WhatsApp id first, then on the phone (or an identifier the contact used to have)
+        $existing = ($waId !== null ? Contact::where('company_id', $companyId)->where('wa_id', $waId)->first() : null)
+            ?? ($phone !== null ? Contact::findByPhone($companyId, $phone) : null);
 
-        return Contact::updateOrCreate($match, array_filter([
-            'company_id' => $companyId,
-            'wa_id'      => $waId,
-            'phone'      => $phone,
-            'name'       => $this->waContactName($waContact),
-        ], fn ($v) => $v !== null));
+        if (!$existing) {
+            return Contact::create(array_filter(['company_id' => $companyId, 'wa_id' => $waId, 'phone' => $phone, 'name' => $name], fn ($v) => $v !== null));
+        }
+
+        // Syncing must only FILL GAPS. It used to overwrite phone and name on every run, silently undoing what staff had
+        // typed in (e.g. the real number of a contact that only had a private "@lid" id).
+        $changes = [];
+        if ($waId !== null && !$existing->wa_id) {
+            $changes['wa_id'] = $waId;
+        }
+        $incomingDigits = (string) preg_replace('/\D+/', '', (string) $phone);
+        $incomingIsReal = $phone !== null && !str_contains((string) $waId, '@lid') && strlen($incomingDigits) >= 7 && strlen($incomingDigits) <= 14;
+        if ($incomingIsReal && $phone !== $existing->phone && !$existing->phoneLooksReal()
+            && !Contact::withTrashed()->where('company_id', $companyId)->where('id', '!=', $existing->id)->where('phone', $phone)->exists()) {
+            $changes['phone'] = $phone;
+        }
+        $nameIsPlaceholder = $existing->name === null || trim((string) $existing->name) === ''
+            || preg_replace('/\D+/', '', (string) $existing->name) === preg_replace('/\D+/', '', (string) $existing->phone);
+        if ($name !== null && $nameIsPlaceholder) {
+            $changes['name'] = $name;
+        }
+        if ($changes) {
+            $existing->update($changes);
+        }
+        return $existing->fresh();
     }
 
     // ── Labels (WhatsApp Business only — see docs.open-wa.org/api-reference/labels) ────

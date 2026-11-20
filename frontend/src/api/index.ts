@@ -63,6 +63,12 @@ export const contactApi = {
   show: (id: number) => api.get(`/contacts/${id}`),
   create: (d: Record<string, unknown>) => api.post('/contacts', d),
   update: (id: number, d: Record<string, unknown>) => api.put(`/contacts/${id}`, d),
+  /** The leads this contact has referred. */
+  referrals: (id: number) => api.get(`/contacts/${id}/referrals`),
+  /** Two contacts side by side (e.g. an @lid contact and the existing one that owns the real number). */
+  compare: (id: number, otherId: number) => api.get(`/contacts/${id}/compare/${otherId}`),
+  /** Fold this contact into another: leads, chats, tasks, labels… move over and this one is removed. */
+  merge: (id: number, intoContactId: number) => api.post(`/contacts/${id}/merge`, { into_contact_id: intoContactId }),
   blacklist: (phone: string, reason?: string) => api.post('/blacklist', { phone, reason }),
   leads: (id: number) => api.get(`/contacts/${id}/leads`),
   campaigns: (id: number) => api.get(`/contacts/${id}/campaigns`),
@@ -251,6 +257,17 @@ export const flowNodeApi = {
 
 }
 
+// ── Lead sources (switch incoming channels on / off) and the leads held while one is off ─
+export const leadChannelApi = {
+  list: () => api.get('/lead-assignment-rules/sources'),
+  set: (source: string, enabled: boolean) => api.put('/lead-assignment-rules/sources', { source, enabled }),
+}
+export const heldLeadApi = {
+  list: (p?: Record<string, unknown>) => api.get('/leads/held', { params: p }),
+  move: (d: Record<string, unknown>) => api.post('/leads/held/move', d),
+  discard: (d: Record<string, unknown>) => api.post('/leads/held/discard', d),
+}
+
 // ── Lead verification (converted / closed leads) ─
 export const leadVerificationApi = {
   list: (p?: Record<string, unknown>) => api.get('/leads/verification', { params: p }),
@@ -288,8 +305,14 @@ export const leadApi = {
   bulkReassign: (fromUserId: number, toUserId: number, includeClosed = false) =>
     api.post('/leads/bulk-reassign', { from_user_id: fromUserId, to_user_id: toUserId, include_closed: includeClosed }),
   bulkDelete: (leadIds: number[]) => api.post('/leads/bulk-delete', { lead_ids: leadIds }),
+  /** Instagram + website-widget threads for the lead (channel + conversation → their messages). */
+  chats: (id: number, p?: Record<string, unknown>) => api.get(`/leads/${id}/chats`, { params: p }),
+  /** Referred by: { contact_id } | { name, phone } | { contact_id: null } to clear */
+  setReferrer: (id: number, d: Record<string, unknown>) => api.put(`/leads/${id}/referrer`, d),
+  /** The lead's WhatsApp Chat conversation, read live from the chat gateway (+ the real number behind an @lid id, when it can be resolved). */
+  waChat: (id: number, limit = 100) => api.get(`/leads/${id}/wa-chat`, { params: { limit } }),
   setCategories: (id: number, categories: string[]) => api.put(`/leads/${id}/categories`, { categories }),
-  bulkStatus: (leadIds: number[], d: { stage?: string; priority?: string; category?: string; clear_category?: boolean; categories?: string[]; category_mode?: 'add' | 'replace' | 'remove' }) => api.post('/leads/bulk-status', { lead_ids: leadIds, ...d }),
+  bulkStatus: (leadIds: number[], d: { stage?: string; reason?: string; priority?: string; category?: string; clear_category?: boolean; categories?: string[]; category_mode?: 'add' | 'replace' | 'remove' }) => api.post('/leads/bulk-status', { lead_ids: leadIds, ...d }),
   delete: (id: number) => api.delete(`/leads/${id}`),
   crmSync: (id: number) => api.post(`/leads/${id}/crm-sync`),
   analytics: () => api.get('/leads/analytics'),

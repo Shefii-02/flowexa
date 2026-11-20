@@ -761,6 +761,9 @@ Route::prefix('v1')->group(function () {
             Route::get('/analytics',  [LeadController::class, 'analytics'])->middleware('permission:leads.view')->name('analytics');
             Route::get('/logs',       [LeadController::class, 'logs'])->middleware('permission:leads.view')->name('logs');
             // verification of converted / closed leads — fixed paths, registered before any /{lead} route
+            Route::get('/held',          [\App\Modules\Lead\Http\Controllers\HeldLeadController::class, 'index'])->middleware('permission:leads.manage')->name('held.index');
+            Route::post('/held/move',    [\App\Modules\Lead\Http\Controllers\HeldLeadController::class, 'move'])->middleware('permission:leads.manage')->name('held.move');
+            Route::post('/held/discard', [\App\Modules\Lead\Http\Controllers\HeldLeadController::class, 'discard'])->middleware('permission:leads.manage')->name('held.discard');
             Route::get('/verification',          [\App\Modules\Lead\Http\Controllers\LeadVerificationController::class, 'index'])->middleware('permission:leads.verify')->name('verification.index');
             Route::post('/verification/approve', [\App\Modules\Lead\Http\Controllers\LeadVerificationController::class, 'approve'])->middleware('permission:leads.verify')->name('verification.approve');
             Route::post('/verification/revoke',  [\App\Modules\Lead\Http\Controllers\LeadVerificationController::class, 'revoke'])->middleware('permission:leads.verify')->name('verification.revoke');
@@ -794,6 +797,9 @@ Route::prefix('v1')->group(function () {
             Route::post('/{lead}/assign', [LeadController::class, 'assign'])->middleware('permission:leads.manage')->name('assign');
 
             Route::post('/bulk-assign', [LeadController::class, 'bulkAssign'])->middleware('permission:leads.manage')->name('bulk-assign');
+            Route::put('/{lead}/referrer',    [\App\Modules\Lead\Http\Controllers\LeadReferralController::class, 'set'])->middleware('permission:leads.manage')->whereNumber('lead')->name('referrer');
+            Route::get('/{lead}/chats',       [\App\Modules\Lead\Http\Controllers\LeadChannelChatController::class, 'show'])->middleware('permission:leads.view')->whereNumber('lead')->name('chats');
+            Route::get('/{lead}/wa-chat',     [\App\Modules\Lead\Http\Controllers\LeadWaChatController::class, 'show'])->middleware('permission:leads.view')->whereNumber('lead')->name('wa-chat');
             Route::get('/{lead}/activities',  [\App\Modules\Lead\Http\Controllers\LeadActivityController::class, 'index'])->middleware('permission:leads.view')->whereNumber('lead')->name('activities.index');
             Route::post('/{lead}/activities', [\App\Modules\Lead\Http\Controllers\LeadActivityController::class, 'store'])->middleware('permission:leads.view')->whereNumber('lead')->name('activities.store');
             Route::put('/{lead}/categories',  [LeadController::class, 'setCategories'])->middleware('permission:leads.manage')->whereNumber('lead')->name('categories');
@@ -834,6 +840,8 @@ Route::prefix('v1')->group(function () {
             Route::get('/',  [LeadAssignmentController::class, 'getRule'])->name('show');
             Route::post('/', [LeadAssignmentController::class, 'saveRule'])->name('save');
             Route::post('/run-now',        [LeadAssignmentController::class, 'runNow'])->name('run-now');
+            Route::get('/sources',         [\App\Modules\Lead\Http\Controllers\LeadSourceController::class, 'index'])->name('sources.index');
+            Route::put('/sources',         [\App\Modules\Lead\Http\Controllers\LeadSourceController::class, 'update'])->name('sources.update');
             Route::get('/routing',         [LeadAssignmentController::class, 'routingIndex'])->name('routing.index');
             Route::post('/routing',        [LeadAssignmentController::class, 'routingStore'])->name('routing.store');
             Route::put('/routing/{id}',    [LeadAssignmentController::class, 'routingUpdate'])->name('routing.update');
@@ -998,6 +1006,8 @@ Route::prefix('v1')->group(function () {
                 Route::get('/{contact}',           [ContactController::class, 'show'])->name('show');
                 Route::get('/{contact}/leads',     [ContactController::class, 'leads'])->name('leads');
                 Route::get('/{contact}/campaigns', [ContactController::class, 'campaigns'])->name('campaigns');
+                Route::get('/{contact}/referrals', [\App\Modules\Lead\Http\Controllers\LeadReferralController::class, 'referrals'])->whereNumber('contact')->name('referrals');
+                Route::get('/{contact}/compare/{other}', [ContactController::class, 'compare'])->whereNumber(['contact', 'other'])->name('compare');
             });
 
             // Below previously checked contacts.import/create/edit/delete — none of those keys
@@ -1014,6 +1024,9 @@ Route::prefix('v1')->group(function () {
             Route::put('/{contact}', [ContactController::class, 'update'])
                 ->middleware('permission:contacts.manage')
                 ->name('update');
+
+            Route::post('/{contact}/merge', [ContactController::class, 'merge'])
+                ->middleware('permission:contacts.manage')->whereNumber('contact')->name('merge');
 
             Route::patch('/{contact}/opt-out', [ContactController::class, 'optOut'])
                 ->middleware('permission:contacts.manage')

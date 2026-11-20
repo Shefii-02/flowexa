@@ -32,6 +32,7 @@ class LeadResource extends JsonResource
             'created_at'     => $this->created_at->toIso8601String(),
             // Opportunity — the catalog item + amount this lead converts on. Set both and reach
             // "enrolled" to auto-record a sale and post the counsellor's incentive.
+            'referred_by' => $this->whenLoaded('referrer', fn () => \App\Modules\Lead\Http\Controllers\LeadReferralController::shape($this->referrer)),
             'listing_id'  => $this->listing_id,
             'sale_value'  => $this->sale_value !== null ? (float) $this->sale_value : null,
             'cost'        => $this->cost !== null ? (float) $this->cost : null,   // what the lead cost to get (feeds cost per converted lead)
@@ -53,6 +54,7 @@ class LeadResource extends JsonResource
                 // (e.g. the mobile app's Mine/Unassigned chat-list tabs) must match on this first
                 // and fall back to `phone` only when it's absent.
                 'wa_id' => $this->contact->wa_id,
+                'phone_is_real' => $this->contact->phoneLooksReal(),   // false = an @lid id, not a dialable number
                 'labels'=> $this->contact->relationLoaded('labels')
                     ? $this->contact->labels->map(fn($l) => ['id' => $l->id, 'name' => $l->name, 'color' => $l->color])
                     : [],

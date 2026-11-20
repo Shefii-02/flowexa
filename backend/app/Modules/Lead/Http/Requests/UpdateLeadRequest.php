@@ -14,6 +14,8 @@ class UpdateLeadRequest extends FormRequest
     public function rules(): array {
         return [
             'stage'          => ['sometimes', 'in:new,contacted,follow_up,enrolled,lost'],
+            'reason'         => ['nullable', 'string', 'max:500'],   // why — required when closing as lost or reopening a closed lead
+
             'priority'       => ['sometimes', 'in:low,medium,high'],
             'category'       => ['nullable', 'string', 'max:100'],
             'notes'          => ['nullable', 'string', 'max:1000'],

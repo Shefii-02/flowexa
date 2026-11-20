@@ -19,7 +19,7 @@ class Lead extends Model
         'flow_node_id', 'campaign_id', 'wa_open_campaign_id', 'stage', 'priority', 'category',
         'source', 'origin_type', 'origin_id', 'origin_label',
         'notes', 'crm_id', 'followed_up_at', 'enrolled_at', 'lost_at', 'assigned_at',
-        'listing_id', 'sale_value', 'cost', 'verified_at', 'verified_by',
+        'listing_id', 'sale_value', 'cost', 'verified_at', 'verified_by', 'close_reason', 'referred_by_contact_id',
     ];
 
     protected $casts = [
@@ -34,6 +34,8 @@ class Lead extends Model
     // ── Relationships ─────────────────────────────────────────────────────────
     public function company(): BelongsTo    { return $this->belongsTo(Company::class); }
     public function contact(): BelongsTo    { return $this->belongsTo(Contact::class); }
+    /** The contact who referred this lead (a customer, partner…) */
+    public function referrer(): BelongsTo   { return $this->belongsTo(Contact::class, 'referred_by_contact_id'); }
     public function assignedTo(): BelongsTo { return $this->belongsTo(User::class, 'assigned_to'); }
     public function assignedBy(): BelongsTo { return $this->belongsTo(User::class, 'assigned_by'); }
     public function flowNode(): BelongsTo   { return $this->belongsTo(FlowNode::class, 'flow_node_id'); }

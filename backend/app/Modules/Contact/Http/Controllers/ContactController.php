@@ -248,4 +248,25 @@ class ContactController extends Controller
 
         return Storage::download($path, 'contacts.csv');
     }
+
+    // ─── GET /contacts/{contact}/compare/{other} — both contacts side by side ──
+    public function compare(int $contact, int $other): JsonResponse
+    {
+        $cid = auth()->user()->company_id;
+        $a = \App\Models\Contact::withTrashed()->where('company_id', $cid)->findOrFail($contact);
+        $b = \App\Models\Contact::withTrashed()->where('company_id', $cid)->findOrFail($other);
+        $svc = app(\App\Modules\Contact\Services\ContactMergeService::class);
+        return response()->json(['this' => $svc->summary($a), 'other' => $svc->summary($b)]);
+    }
+
+    // ─── POST /contacts/{contact}/merge { into_contact_id } — fold this contact into another ──
+    public function merge(\Illuminate\Http\Request $request, int $contact): JsonResponse
+    {
+        $d = $request->validate(['into_contact_id' => ['required', 'integer']]);
+        $cid = auth()->user()->company_id;
+        $from = \App\Models\Contact::where('company_id', $cid)->findOrFail($contact);
+        $into = \App\Models\Contact::where('company_id', $cid)->findOrFail($d['into_contact_id']);
+        $r = app(\App\Modules\Contact\Services\ContactMergeService::class)->merge($from, $into, $cid);
+        return response()->json(['message' => "Merged into {$into->name}. Everything they had now sits on the other contact.", 'moved' => $r['moved'], 'into_contact_id' => $into->id]);
+    }
 }

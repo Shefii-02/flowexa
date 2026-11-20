@@ -52,10 +52,7 @@ class HumanHandoffService
         $rule = LeadAssignmentRule::where('company_id', $company->id)->first()
             ?? LeadAssignmentRule::create(LeadAssignmentRule::defaultForCompany($company->id));
 
-        $contact = Contact::firstOrCreate(
-            ['company_id' => $company->id, 'phone' => $phone],
-            ['name' => $phone, 'source' => $waSessionId ? 'wa_chat' : 'whatsapp_cloud']
-        );
+        $contact = Contact::forPhone($company->id, $phone, ['name' => $phone, 'source' => $waSessionId ? 'wa_chat' : 'whatsapp_cloud']);
 
         if ($this->assignmentEngine->withinWorkingHours($company, $rule)) {
             $this->createTaskAndNotify(

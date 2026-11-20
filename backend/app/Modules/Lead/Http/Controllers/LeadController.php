@@ -167,7 +167,7 @@ class LeadController extends Controller
         // the older single-category form maps onto the new one: category → replace with it, clear_category → remove them all
         $cats = $d['categories'] ?? (isset($d['category']) ? [$d['category']] : []);
         $mode = !empty($d['clear_category']) ? 'clear' : (isset($d['category']) && empty($d['categories']) ? 'replace' : ($d['category_mode'] ?? 'add'));
-        $count = $this->leadService->bulkStatus(auth()->user()->company_id, $d['lead_ids'], $d['stage'] ?? null, $d['priority'] ?? null, $cats, $mode);
+        $count = $this->leadService->bulkStatus(auth()->user()->company_id, $d['lead_ids'], $d['stage'] ?? null, $d['priority'] ?? null, $cats, $mode, isset($d['reason']) ? trim($d['reason']) : null);
         return response()->json(['message' => "{$count} lead(s) updated.", 'count' => $count]);
     }
 

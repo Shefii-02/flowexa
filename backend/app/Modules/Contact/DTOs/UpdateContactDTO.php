@@ -10,8 +10,9 @@ readonly class UpdateContactDTO
         public ?string $name         = null,
         public ?string $email        = null,
         public ?array  $customFields = null,
-        public ?bool   $optedIn      = true,
+        public ?bool   $optedIn      = null,    // null = not sent → opt-in status is left alone
         public ?int    $assignedTo   = null,
+        public ?string $phone        = null,
     ) {}
 
     public static function fromRequest(array $data): self
@@ -20,8 +21,9 @@ readonly class UpdateContactDTO
             name: $data['name']          ?? null,
             email: $data['email']         ?? null,
             customFields: $data['custom_fields'] ?? null,
-            optedIn: isset($data['opted_in']) ? (bool) $data['opted_in'] : true,
+            optedIn: array_key_exists('opted_in', $data) && $data['opted_in'] !== null ? (bool) $data['opted_in'] : null,
             assignedTo: isset($data['assigned_to']) ? (int) $data['assigned_to'] : null,
+            phone: isset($data['phone']) && trim((string) $data['phone']) !== '' ? (string) $data['phone'] : null,
         );
     }
 }

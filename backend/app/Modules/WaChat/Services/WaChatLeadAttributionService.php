@@ -26,9 +26,10 @@ class WaChatLeadAttributionService
 
     // ── open-wa: origin = which WA session received it, campaign = message_sender_jobs ──
     /** @return bool true if this reply resulted in a new lead being created. */
-    public function handleInboundMessage(int $companyId, string $sessionRef, string $phone, ?Carbon $receivedAt = null): bool
+    public function handleInboundMessage(int $companyId, string $sessionRef, string $phone, ?Carbon $receivedAt = null, ?string $chatId = null): bool
     {
         return $this->attribute(
+            chatId:         $chatId,
             companyId:      $companyId,
             phone:          $phone,
             receivedAt:     $receivedAt ?? now(),
@@ -63,15 +64,13 @@ class WaChatLeadAttributionService
         string $campaignField,
         \Closure $resolveOrigin,
         \Closure $resolveCampaign,
+        ?string $chatId = null,   // the real WhatsApp chat id ("…@lid" / "…@c.us") when the channel has one
     ): bool {
         if ($phone === '') {
             return false;
         }
 
-        $contact = Contact::firstOrCreate(
-            ['company_id' => $companyId, 'phone' => $phone],
-            ['name' => $phone, 'source' => $source],
-        );
+        $contact = Contact::forPhone($companyId, $phone, ['name' => $phone, 'source' => $source], $chatId);
 
         // A lead already open for this contact (not enrolled/lost) means this reply is
         // a continuation of an existing conversation — nothing new to create. A contact
@@ -88,6 +87,13 @@ class WaChatLeadAttributionService
 
         [$originType, $originId, $originLabel] = $resolveOrigin();
         $campaignId = $resolveCampaign($receivedAt);
+
+        // source switched off in Assignment Rules → keep the contact in Held leads instead of creating the lead
+        if (\App\Services\LeadSourceGate::intercept($companyId, $contact->id, $source, [
+            'origin_type' => $originType, 'origin_id' => $originId, 'origin_label' => $originLabel, $campaignField => $campaignId,
+        ])) {
+            return false;
+        }
 
         $lead = Lead::create([
             'company_id'   => $companyId,

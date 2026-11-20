@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { leadApi, staffApi } from '@/api'
 import StaffPicker from './components/StaffPicker'
+import { useStageNote } from './components/StageReason'
 import { Button, ConfirmModal, Badge, EmptyState, Spinner, StatCard } from '@/components/ui'
 import { type StaffInsight, StatusDot, Chips, MethodChips, METHOD_LABEL, when } from './components/staffInsights'
 import { fmt, formatPhone, getError, stageConfig, priorityConfig } from '@/utils'
@@ -65,11 +66,14 @@ export default function StaffLeadsPage() {
   const toggleSelect = (id: number) => setSelectedIds((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
   const toggleSelectAll = () => setSelectedIds((s) => s.size === visible.length ? new Set() : new Set(visible.map((l) => l.id)))
 
+  const { askNote, noteModal } = useStageNote()
   const handleStageUpdate = async (lead: Lead, newStage: LeadStage) => {
     if (lead.stage === newStage) return
+    const note = await askNote(lead.stage, newStage)
+    if (note === null) return
     setStageUpdating(lead.id)
     try {
-      const { data } = await leadApi.update(lead.id, { stage: newStage })
+      const { data } = await leadApi.update(lead.id, { stage: newStage, reason: note || undefined })
       setLeads((ls) => ls.map((l) => l.id === lead.id ? data.lead : l))
       toast.success(`Stage → ${stageConfig[newStage].label}`)
     } catch (e) { toast.error(getError(e)) }
@@ -259,6 +263,7 @@ export default function StaffLeadsPage() {
         </div>
       )}
 
+      {noteModal}
       <ConfirmModal open={showBulkDelete} title={`Delete ${selectedIds.size} lead(s)?`}
         message="This permanently removes the selected leads. Their contacts are kept."
         confirmLabel="Delete all" confirmVariant="danger" loading={bulkDeleting}

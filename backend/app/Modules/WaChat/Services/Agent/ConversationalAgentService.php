@@ -331,17 +331,14 @@ class ConversationalAgentService
         $source = $in->channel === 'open_wa' ? 'wa_chat' : 'whatsapp_cloud';
         [$originType, $originId, $originLabel] = $this->resolveOrigin($in);
 
-        $contact = Contact::firstOrCreate(
-            ['company_id' => $in->companyId, 'phone' => $in->phone],
-            ['name' => $in->phone, 'source' => $source],
-        );
+        $contact = Contact::forPhone($in->companyId, $in->phone, ['name' => $in->phone, 'source' => $source], $in->chatId);
 
         $hasOpenLead = Lead::where('company_id', $in->companyId)
             ->where('contact_id', $contact->id)
             ->whereNotIn('stage', ['enrolled', 'lost', 'disqualified'])
             ->exists();
 
-        if (!$hasOpenLead) {
+        if (!$hasOpenLead && !\App\Services\LeadSourceGate::intercept($in->companyId, $contact->id, $source, ['origin_type' => $originType, 'origin_id' => $originId, 'origin_label' => $originLabel, 'notes' => 'Auto-created by AI Agent on first WhatsApp message.'])) {
             Lead::create([
                 'company_id'   => $in->companyId,
                 'contact_id'   => $contact->id,

@@ -20,6 +20,8 @@ class ContactResource extends JsonResource
             // The originating WhatsApp id (@c.us or @lid) — lets any consumer address this contact
             // directly instead of re-deriving a chat id from `phone` (which an @lid chat never had).
             'wa_id'           => $this->wa_id,
+            // false for a WhatsApp Chat contact that only has a private id ("@lid") — its "phone" is not dialable; staff can enter the real one
+            'phone_is_real'   => $this->phoneLooksReal(),
             'custom_fields'   => $this->custom_fields,
             'opted_in'        => $this->opted_in,
             'opted_out_at'    => $this->opted_out_at?->toIso8601String(),
