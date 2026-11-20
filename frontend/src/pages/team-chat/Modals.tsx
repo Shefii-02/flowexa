@@ -13,6 +13,69 @@ function Shell({ title, onClose, children, wide }: { title: string; onClose: () 
     </div>
   )
 }
+/**
+ * Delete a conversation. Three scopes:
+ *  · Clear chat        — my history disappears, the conversation stays in my list (only me)
+ *  · Delete for me     — also leaves my list; it returns by itself when someone writes again (only me)
+ *  · Delete for everyone — gone for every member; needs the team_chat.delete permission (`canDeleteAll`) and asks what to do with the
+ *    shared photos / videos / voice notes / files.
+ * `admin` = the moderator view of all conversations, where only "for everyone" applies.
+ */
+export type DeleteScope = 'clear' | 'me' | 'everyone'
+export function DeleteChatModal({ chatId, name, group, admin, canDeleteAll, onClose, onDeleted }: { chatId: number; name: string; group: boolean; admin?: boolean; canDeleteAll?: boolean; onClose: () => void; onDeleted: (scope: DeleteScope) => void }) {
+  const [scope, setScope] = useState<DeleteScope>(admin ? 'everyone' : 'clear')
+  const [media, setMedia] = useState<'delete' | 'keep'>('delete'); const [busy, setBusy] = useState(false)
+  const go = async () => {
+    setBusy(true)
+    try {
+      if (scope === 'everyone') {
+        const r = await http.delete(admin ? `/team-chat/admin/chats/${chatId}` : `/team-chat/chats/${chatId}`, { params: { delete_media: media === 'delete' ? 1 : 0 } })
+        const n = r.data?.files ?? 0
+        toast.success(media === 'delete' && n > 0 ? `Deleted for everyone, and ${n} file${n > 1 ? 's' : ''} removed (${r.data.mb} MB freed)` : 'Deleted for everyone')
+      } else {
+        await http.post(`/team-chat/chats/${chatId}/${scope === 'clear' ? 'clear' : 'hide'}`)
+        toast.success(scope === 'clear' ? 'Chat cleared' : 'Conversation deleted for you')
+      }
+      onDeleted(scope)
+    } catch (e) { toast.error(errMsg(e)) } finally { setBusy(false) }
+  }
+  const opt = (v: DeleteScope, title: string, hint: string, tone: string) => (
+    <label className={`flex cursor-pointer items-start gap-2 rounded-xl border p-3 ${scope === v ? tone : 'border-gray-200'}`}>
+      <input type="radio" checked={scope === v} onChange={() => setScope(v)} className="mt-1" />
+      <span><b>{title}</b><br /><span className="text-xs text-gray-500">{hint}</span></span>
+    </label>
+  )
+  return (
+    <Shell title={admin ? (group ? 'Delete group' : 'Delete chat') : 'Delete or clear'} onClose={onClose}>
+      <div className="space-y-4 p-5 text-sm text-gray-700">
+        <p><b>{name}</b></p>
+        <div className="space-y-2">
+          {!admin && opt('clear', 'Clear chat', 'Removes the messages for you only. The conversation stays in your list.', 'border-sky-300 bg-sky-50')}
+          {!admin && opt('me', 'Delete for me', `Removes it from your list and clears your history. ${group ? 'You stay in the group; ' : ''}it comes back if someone writes again. Nobody else is affected.`, 'border-sky-300 bg-sky-50')}
+          {(admin || canDeleteAll) && opt('everyone', 'Delete for everyone', `Deletes the conversation and all its messages for ${group ? 'every member' : 'both of you'}. This cannot be undone.`, 'border-red-300 bg-red-50')}
+        </div>
+        {scope === 'everyone' && (
+          <div className="space-y-2">
+            <div className="text-xs font-bold uppercase tracking-wide text-gray-500">Photos, videos, voice notes &amp; files shared here</div>
+            <label className={`flex cursor-pointer items-start gap-2 rounded-xl border p-3 ${media === 'delete' ? 'border-red-300 bg-red-50' : 'border-gray-200'}`}>
+              <input type="radio" checked={media === 'delete'} onChange={() => setMedia('delete')} className="mt-1 accent-red-500" />
+              <span><b>Delete them too</b><br /><span className="text-xs text-gray-500">Removes the files from the Media Library and frees the storage.</span></span>
+            </label>
+            <label className={`flex cursor-pointer items-start gap-2 rounded-xl border p-3 ${media === 'keep' ? 'border-sky-300 bg-sky-50' : 'border-gray-200'}`}>
+              <input type="radio" checked={media === 'keep'} onChange={() => setMedia('keep')} className="mt-1 accent-sky-500" />
+              <span><b>Keep the media</b><br /><span className="text-xs text-gray-500">Only messages are deleted; the files stay in Media Library → Team chat (admins only) and keep using storage.</span></span>
+            </label>
+          </div>
+        )}
+        <div className="flex justify-end gap-2 pt-1">
+          <button onClick={onClose} className="rounded-xl px-4 py-2 font-medium text-gray-600 hover:bg-gray-100">Cancel</button>
+          <button onClick={go} disabled={busy} className={`rounded-xl px-4 py-2 font-semibold text-white disabled:opacity-50 ${scope === 'everyone' ? 'bg-red-600 hover:bg-red-700' : 'bg-sky-600 hover:bg-sky-700'}`}>
+            {busy ? 'Working…' : scope === 'clear' ? 'Clear chat' : scope === 'me' ? 'Delete for me' : 'Delete for everyone'}</button>
+        </div>
+      </div>
+    </Shell>
+  )
+}
 const Av = ({ n }: { n: string }) => <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-sky-100 text-sm font-bold text-sky-700">{(n.trim()[0] ?? '?').toUpperCase()}</div>
 
 function UserPicker({ users, selected, onToggle, exclude = [], single }: { users: Member[]; selected: number[]; onToggle: (id: number) => void; exclude?: number[]; single?: boolean }) {
@@ -59,9 +122,9 @@ export function NewGroupModal({ onClose, onCreated }: { onClose: () => void; onC
   )
 }
 
-export function GroupInfoModal({ chatId, myId, onClose, onChanged, onLeft }: { chatId: number; myId: number; onClose: () => void; onChanged: () => void; onLeft: () => void }) {
+export function GroupInfoModal({ chatId, myId, canDelete, onClose, onChanged, onLeft }: { canDelete?: boolean; chatId: number; myId: number; onClose: () => void; onChanged: () => void; onLeft: () => void }) {
   const [info, setInfo] = useState<ChatInfo | null>(null); const [adding, setAdding] = useState(false)
-  const [users, setUsers] = useState<Member[]>([]); const [sel, setSel] = useState<number[]>([])
+  const [users, setUsers] = useState<Member[]>([]); const [sel, setSel] = useState<number[]>([]); const [deleting, setDeleting] = useState(false)
   const load = () => getInfo(chatId).then(setInfo).catch(e => toast.error(errMsg(e)))
   useEffect(() => { load() }, [chatId]) // eslint-disable-line react-hooks/exhaustive-deps
   const act = async (fn: () => Promise<unknown>, after?: () => void) => { try { await fn(); await load(); onChanged(); after?.() } catch (e) { toast.error(errMsg(e)) } }
@@ -131,11 +194,12 @@ export function GroupInfoModal({ chatId, myId, onClose, onChanged, onLeft }: { c
             )}
             <div className="mt-4 space-y-1 border-t border-sky-100 pt-3">
               <button onClick={() => window.confirm('Leave this group?') && act(() => http.delete(`/team-chat/chats/${chatId}/members/${myId}`), onLeft)} className="w-full rounded-xl px-3 py-2 text-left text-sm font-medium text-red-600 hover:bg-red-50">⎋ Leave group</button>
-              {admin && <button onClick={() => window.confirm('Delete this group and all its messages for everyone?') && act(() => http.delete(`/team-chat/chats/${chatId}`), onLeft)} className="w-full rounded-xl px-3 py-2 text-left text-sm font-medium text-red-600 hover:bg-red-50">🗑 Delete group</button>}
+              <button onClick={() => setDeleting(true)} className="w-full rounded-xl px-3 py-2 text-left text-sm font-medium text-red-600 hover:bg-red-50">🗑 Delete / clear chat…</button>
             </div>
           </>
         )}
       </div>
+      {deleting && <DeleteChatModal chatId={chatId} name={info.name ?? 'this group'} group canDeleteAll={canDelete} onClose={() => setDeleting(false)} onDeleted={onLeft} />}
     </Shell>
   )
 }

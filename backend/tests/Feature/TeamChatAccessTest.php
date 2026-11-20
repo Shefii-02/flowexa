@@ -28,7 +28,7 @@ class TeamChatAccessTest extends TestCase
     public function test_the_three_permissions_exist_and_belong_to_the_feature(): void
     {
         $keys = array_column(PermissionsSeeder::PERMISSIONS, 'key');
-        foreach (['team_chat.view', 'team_chat.groups', 'team_chat.moderate'] as $k) {
+        foreach (['team_chat.view', 'team_chat.groups', 'team_chat.moderate', 'team_chat.delete'] as $k) {
             $this->assertContains($k, $keys);
             $this->assertSame('team_chat', Modules::permissionModule($k));
         }
@@ -59,6 +59,8 @@ class TeamChatAccessTest extends TestCase
         $r = (new PermissionsSeeder())->rolePermissions(array_column(PermissionsSeeder::PERMISSIONS, 'key'));
         $this->assertContains('team_chat.view', $r['counsellor']);
         $this->assertNotContains('team_chat.moderate', $r['counsellor']);
+        $this->assertNotContains('team_chat.delete', $r['counsellor'], 'deleting a conversation is opt-in');
+        $this->assertContains('team_chat.delete', $r['team_lead']);
         $this->assertContains('team_chat.moderate', $r['team_lead']);
         $this->assertContains('team_chat.view', $r['team_lead'], 'the .view suffix puts it in every viewer set');
     }

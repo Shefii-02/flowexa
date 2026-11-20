@@ -25,6 +25,8 @@ class MediaLibrary extends Model
         'size',
         'mime_type',
         'uploaded_by',
+        'source',
+        'source_id',
     ];
 
     public function company(): BelongsTo

@@ -562,6 +562,8 @@ Route::prefix('v1')->group(function () {
             Route::get('chats/{id}',                     [$c, 'show']);
             Route::patch('chats/{id}',                   [$c, 'update']);
             Route::delete('chats/{id}',                  [$c, 'destroy']);
+            Route::post('chats/{id}/clear',              [$c, 'clear']);   // clear chat — for me only
+            Route::post('chats/{id}/hide',               [$c, 'hide']);    // delete conversation — for me only
             Route::post('chats/{id}/members',            [$c, 'addMembers']);
             Route::delete('chats/{id}/members/{userId}', [$c, 'removeMember']);
             Route::post('chats/{id}/members/{userId}/role', [$c, 'setRole']);
@@ -588,12 +590,14 @@ Route::prefix('v1')->group(function () {
             // Company moderation (owner / staff managers): reports + every group, including ones they have left
             Route::get('admin/reports',                  [$c, 'reports']);
             Route::post('admin/reports/{id}/resolve',    [$c, 'resolveReport']);
+            Route::get('admin/storage',                  [$c, 'adminStorage']);
             Route::get('admin/chats',                    [$c, 'adminChats']);
             Route::get('admin/chats/{id}/messages',      [$c, 'adminMessages']);
             Route::get('admin/groups',                   [$c, 'adminGroups']);
             Route::get('admin/groups/{id}',              [$c, 'adminGroup']);
             Route::delete('admin/groups/{id}/members/{userId}', [$c, 'adminRemoveMember']);
             Route::delete('admin/groups/{id}',           [$c, 'adminDeleteGroup']);
+            Route::delete('admin/chats/{id}',            [$c, 'adminDeleteGroup']);
         });
 
         // ── HR — Attendance / Breaks / Leave (mobile app + web) ──────────────

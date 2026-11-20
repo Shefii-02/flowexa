@@ -21,14 +21,22 @@ class MediaLibraryController extends Controller
      * the usage figure never drifts from failed ops or rounding. Returns the
      * fresh used/limit pair (MB).
      */
+    /** Used / limit / free / percent (+ what the space is used by) — shared with team chat, whose files live in this library. */
     private function recalcStorage(Company $company): array
     {
-        $usedBytes = (int) MediaLibrary::where('company_id', $company->id)->sum('size');
-        $usedMb    = round($usedBytes / 1048576, 2);
-        $company->forceFill(['waha_media_used_mb' => $usedMb])->saveQuietly();
+        return \App\Support\MediaStorage::summary($company, true);
+    }
 
-        // base allowance (set per company) plus whatever storage add-ons the company has bought
-        return ['used_mb' => $usedMb, 'limit_mb' => (int) ($company->waha_media_limit_mb ?? 500) + \App\Support\PlanLimits::mediaBonusMb($company->id)];
+    /** A file from a private source (team chat) may only be touched by someone who can open its folder. */
+    private function guardPrivate(MediaLibrary $media, \App\Models\User $user): ?JsonResponse
+    {
+        if ($media->source !== 'upload' && $media->folder_id) {
+            $folder = MediaFolder::find($media->folder_id);
+            if ($folder && !$folder->canAccess($user)) {
+                return response()->json(['message' => 'You do not have access to this file.'], 403);
+            }
+        }
+        return null;
     }
 
     private function systemFolderFromMime(string $mime): string
@@ -75,6 +83,7 @@ class MediaLibraryController extends Controller
 
         // Filter by folder if requested
         if ($request->filled('folder_id')) {
+            abort_unless(in_array($request->integer('folder_id'), $accessibleFolderIds, true) || !MediaFolder::where('company_id', $companyId)->whereKey($request->integer('folder_id'))->exists(), 403, 'You do not have access to this folder.');
             $query->where('folder_id', $request->integer('folder_id'));
         } else {
             // Respect permissions: only show files in accessible folders (or uncategorised)
@@ -173,6 +182,7 @@ class MediaLibraryController extends Controller
     public function rename(Request $request, int $id): JsonResponse
     {
         $media = MediaLibrary::where('company_id', auth()->user()->company_id)->findOrFail($id);
+        if ($deny = $this->guardPrivate($media, auth()->user())) return $deny;
         $media->update(['display_name' => $request->validate(['name' => 'required|string|max:255'])['name']]);
         return response()->json(['message' => 'Renamed.', 'data' => $media]);
     }
@@ -182,6 +192,7 @@ class MediaLibraryController extends Controller
     {
         $user   = auth()->user();
         $media  = MediaLibrary::where('company_id', $user->company_id)->findOrFail($id);
+        if ($deny = $this->guardPrivate($media, $user)) return $deny;
 
         $validated = $request->validate(['folder_id' => 'nullable|integer']);
 
@@ -206,6 +217,7 @@ class MediaLibraryController extends Controller
     {
         $user      = auth()->user();
         $media     = MediaLibrary::where('company_id', $user->company_id)->findOrFail($id);
+        if ($deny = $this->guardPrivate($media, $user)) return $deny;
         $company   = $user->company;
         $sizeMb    = $media->size / 1048576;
 
@@ -258,6 +270,8 @@ class MediaLibraryController extends Controller
     {
         $user  = auth()->user();
         $media = MediaLibrary::where('company_id', $user->company_id)->findOrFail($id);
+        if ($deny = $this->guardPrivate($media, $user)) return $deny;
+        \App\Modules\TeamChat\Support\TeamChatFiles::released($media);   // a chat message that carried it becomes a plain note
         Storage::disk('public')->delete($media->path);
         $media->delete();
         return response()->json([
@@ -299,7 +313,8 @@ class MediaLibraryController extends Controller
 
         $files = MediaLibrary::where('company_id', $user->company_id)
             ->whereIn('id', $validated['ids'])
-            ->get();
+            ->get()
+            ->reject(fn ($f) => $this->guardPrivate($f, $user) !== null);   // private (team chat) files stay out of reach
 
         foreach ($files as $media) {
             $media->update([
@@ -328,7 +343,8 @@ class MediaLibraryController extends Controller
 
         $files = MediaLibrary::where('company_id', $user->company_id)
             ->whereIn('id', $validated['ids'])
-            ->get();
+            ->get()
+            ->reject(fn ($f) => $this->guardPrivate($f, $user) !== null);   // private (team chat) files stay out of reach
 
         $totalMb = $files->sum('size') / 1048576;
         $storage = $this->recalcStorage($company);
@@ -380,9 +396,12 @@ class MediaLibraryController extends Controller
 
         $files = MediaLibrary::where('company_id', $user->company_id)
             ->whereIn('id', $validated['ids'])
-            ->get();
+            ->get()
+            ->reject(fn ($f) => $this->guardPrivate($f, $user) !== null);   // private (team chat) files stay out of reach
 
         foreach ($files as $media) {
+            if ($this->guardPrivate($media, $user)) { continue; }   // private files (team chat) are skipped for people who cannot open that folder
+            \App\Modules\TeamChat\Support\TeamChatFiles::released($media);
             Storage::disk('public')->delete($media->path);
             $media->delete();
         }

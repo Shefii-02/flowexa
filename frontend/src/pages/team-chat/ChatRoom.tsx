@@ -33,9 +33,9 @@ function Attachment({ m }: { m: Msg }) {
   return null
 }
 
-type Props = { chatId: number; myId: number; admin?: boolean; title: string; onChanged: () => void; onOpenInfo: () => void }
+type Props = { chatId: number; myId: number; admin?: boolean; title: string; onChanged: () => void; onOpenInfo: () => void; onDelete?: () => void }
 
-export default function ChatRoom({ chatId, myId, admin = false, title, onChanged, onOpenInfo }: Props) {
+export default function ChatRoom({ chatId, myId, admin = false, title, onChanged, onOpenInfo, onDelete }: Props) {
   const [info, setInfo] = useState<ChatInfo | null>(null)
   const [msgs, setMsgs] = useState<Msg[]>([])
   const [loading, setLoading] = useState(true)
@@ -196,6 +196,7 @@ export default function ChatRoom({ chatId, myId, admin = false, title, onChanged
           <div className="min-w-0"><div className="truncate font-semibold text-gray-900">{title}</div><div className={`truncate text-xs ${typingNames.length ? 'text-sky-600 font-medium' : 'text-gray-500'}`}>{sub}</div></div>
         </button>
         {admin && <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-800">👁 Admin</span>}
+        {onDelete && <button onClick={onDelete} title="Delete or clear" className="rounded-full p-2 text-gray-400 hover:bg-red-50 hover:text-red-600">🗑</button>}
       </div>
 
       <div ref={listRef} onScroll={onScroll} className="flex-1 space-y-1 overflow-y-auto px-4 py-4" onClick={() => setMenu(null)}>

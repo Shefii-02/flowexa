@@ -58,8 +58,10 @@ class TeamChatController extends Controller
     }
 
     /** Excludes messages the caller deleted "for me". */
-    private function notHidden($q, string $col = 'id')
+    /** Messages I have not hidden one by one ("delete for me") and that come after the last time I cleared this chat. */
+    private function notHidden($q, string $col = 'id', ?int $floor = null)
     {
+        if ($floor) { $q->where($col, '>', $floor); }
         return $q->whereNotExists(fn ($e) => $e->select(DB::raw(1))->from('team_chat_hides as h')->whereColumn('h.message_id', $col)->where('h.user_id', $this->uid()));
     }
 
@@ -119,7 +121,8 @@ class TeamChatController extends Controller
         $q = trim((string) $r->query('q', ''));
 
         $base = DB::table('team_chat_members as m')->join('team_chats as c', 'c.id', '=', 'm.chat_id')
-            ->where('m.user_id', $uid)->whereNull('m.left_at')->where('c.company_id', $this->cid());
+            ->where('m.user_id', $uid)->whereNull('m.left_at')->where('c.company_id', $this->cid())
+            ->where(fn ($h) => $h->where('m.hidden', false)->orWhereColumn('c.last_message_id', '>', 'm.cleared_before_id'));   // "delete for me": back when a newer message arrives
         if ($q !== '') {
             $like = '%' . str_replace(['%', '_'], ['\\%', '\\_'], $q) . '%';
             // group name, or — for a direct chat — the other person's name
@@ -136,7 +139,7 @@ class TeamChatController extends Controller
         // One extra row tells us whether another page exists without a COUNT(*).
         $fetched = (clone $base)->orderByRaw('COALESCE(c.last_message_at, c.created_at) DESC')->orderByDesc('c.id')
             ->offset(($page - 1) * $perPage)->limit($perPage + 1)
-            ->get(['c.*', 'm.last_read_message_id', 'm.muted', 'm.muted_until', 'm.role as my_role']);
+            ->get(['c.*', 'm.last_read_message_id', 'm.cleared_before_id', 'm.muted', 'm.muted_until', 'm.role as my_role']);
         $hasMore = $fetched->count() > $perPage;
         $rows = $fetched->take($perPage)->values();
 
@@ -179,6 +182,7 @@ class TeamChatController extends Controller
 
         $data = $rows->map(function ($c) use ($unread, $last, $counts, $others, $mentionUnread, $lastSenders) {
             $o = $others[$c->id] ?? null; $l = $last[$c->last_message_id] ?? null;
+            if ($l && (int) $c->last_message_id <= (int) $c->cleared_before_id) { $l = null; }   // I cleared this chat — no old preview
             return [
                 'id' => $c->id, 'type' => $c->type,
                 'name' => $c->type === 'direct' ? ($o->name ?? 'Chat') : $c->name,
@@ -187,7 +191,7 @@ class TeamChatController extends Controller
                 'members_count' => (int) ($counts[$c->id] ?? 0), 'muted' => $this->mutedNow($c), 'muted_until' => $c->muted ? $c->muted_until : null, 'my_role' => $c->my_role,
                 'unread' => (int) ($unread[$c->id] ?? 0), 'unread_mentions' => (int) ($mentionUnread[$c->id] ?? 0),
                 'last_sender' => $l && $l->sender_id ? ($lastSenders[$l->sender_id] ?? null) : null, 'last_sender_id' => $l->sender_id ?? null,
-                'last_message' => $l ? $this->preview($l) : null, 'last_message_at' => $c->last_message_at ? \Illuminate\Support\Carbon::parse($c->last_message_at)->toIso8601String() : null,
+                'last_message' => $l ? $this->preview($l) : null, 'last_message_at' => $c->last_message_at && $l ? \Illuminate\Support\Carbon::parse($c->last_message_at)->toIso8601String() : null,
             ];
         });
         return response()->json(['data' => $data, 'page' => $page, 'has_more' => $hasMore, 'unread_total' => $unreadTotal, 'counts' => $tabCounts]);
@@ -217,6 +221,7 @@ class TeamChatController extends Controller
                 return response()->json(['id' => $id], 201);
             }
             DB::table('team_chat_members')->where('chat_id', $chat->id)->update(['left_at' => null]);
+            DB::table('team_chat_members')->where('chat_id', $chat->id)->where('user_id', $uid)->update(['hidden' => false]);   // starting a chat again brings it back
             return response()->json(['id' => $chat->id]);
         }
 
@@ -329,21 +334,45 @@ class TeamChatController extends Controller
         return response()->json(['ok' => true]);
     }
 
-    /** DELETE /team-chat/chats/{id} — admin deletes the whole group. */
-    public function destroy(int $id): JsonResponse
+    /** DELETE /team-chat/chats/{id}?delete_media=1|0 — delete a 1:1 chat or a group for everyone. Needs the team_chat.delete permission (and membership). */
+    public function destroy(Request $r, int $id): JsonResponse
     {
-        $me = $this->member($id); $this->adminOnly($me);
+        $this->member($id);   // 1:1 or group — you must be in it
+        abort_unless(auth()->user()->hasPermission('team_chat.delete'), 403, 'You do not have permission to delete chats.');
+        $this->emit($id, 'removed');   // every member's app drops it from the list
+        // the app asks first: delete the files this chat shared too (frees storage), or keep them in the Media Library
+        $files = \App\Modules\TeamChat\Support\TeamChatFiles::purgeChat($id, $r->boolean('delete_media', true));
         DB::table('team_chats')->where('id', $id)->delete();
-        return response()->json(['ok' => true]);
+        return response()->json(['ok' => true] + $files);
+    }
+
+    /**
+     * POST /team-chat/chats/{id}/clear — "Clear chat": every message so far disappears for ME only; the conversation stays in my list and
+     * later messages show. POST /team-chat/chats/{id}/hide — "Delete for me": same, and the conversation also leaves my list until a newer
+     * message arrives. Nobody else sees any change, and no permission is needed — it is only my own view.
+     */
+    public function clear(int $id): JsonResponse { return $this->forgetForMe($id, false); }
+    public function hide(int $id): JsonResponse  { return $this->forgetForMe($id, true); }
+
+    private function forgetForMe(int $id, bool $hide): JsonResponse
+    {
+        $this->member($id);
+        $newest = (int) DB::table('team_chat_messages')->where('chat_id', $id)->max('id');
+        DB::table('team_chat_members')->where('chat_id', $id)->where('user_id', $this->uid())->update([
+            'cleared_before_id' => $newest, 'last_read_message_id' => $newest, 'last_delivered_message_id' => $newest, 'hidden' => $hide, 'updated_at' => now(),
+        ]);
+        // my other devices / tabs refresh (nobody else is told)
+        StaffRealtime::toStaffMany([$this->uid()], 'team_chat', ['chat_id' => $id, 'kind' => $hide ? 'hidden' : 'cleared', 'by' => $this->uid()]);
+        return response()->json(['ok' => true, 'hidden' => $hide, 'cleared_before_id' => $newest]);
     }
 
     /** GET /team-chat/chats/{id}/media?type=media|docs|audio|links&before_id=&limit= — the chat's shared files, newest first. */
     public function media(Request $r, int $id): JsonResponse
     {
-        $this->member($id);
+        $me = $this->member($id); $floor = (int) $me->cleared_before_id;
         $type = $r->query('type', 'media');
         $q = DB::table('team_chat_messages as m')->leftJoin('users as u', 'u.id', '=', 'm.sender_id')
-            ->where('m.chat_id', $id)->whereNull('m.deleted_at')
+            ->where('m.chat_id', $id)->whereNull('m.deleted_at')->where('m.id', '>', $floor)
             ->when($r->filled('before_id'), fn ($x) => $x->where('m.id', '<', (int) $r->query('before_id')))
             ->orderByDesc('m.id')->limit(min(max((int) $r->query('limit', 60), 1), 200));
         match ($type) {
@@ -360,7 +389,7 @@ class TeamChatController extends Controller
                     'mime' => $m->attachment_mime, 'duration' => $m->duration_seconds, 'sender_name' => $m->sender_name, 'created_at' => $m->created_at,
                     'links' => $links, 'body' => $type === 'links' ? $m->body : null];
         })->values();
-        $counts = DB::table('team_chat_messages')->where('chat_id', $id)->whereNull('deleted_at')
+        $counts = DB::table('team_chat_messages')->where('chat_id', $id)->whereNull('deleted_at')->where('id', '>', $floor)
             ->selectRaw("SUM(type IN ('image','video')) as media, SUM(type = 'file') as docs, SUM(type = 'audio') as audio, SUM(type = 'text' AND body REGEXP 'https?://') as links")->first();
         return response()->json(['data' => $data, 'counts' => ['media' => (int) $counts->media, 'docs' => (int) $counts->docs, 'audio' => (int) $counts->audio, 'links' => (int) $counts->links]]);
     }
@@ -372,7 +401,7 @@ class TeamChatController extends Controller
         $rows = DB::table('team_chat_messages as msg')->join('team_chat_members as m', function ($j) use ($uid) {
                 $j->on('m.chat_id', '=', 'msg.chat_id')->where('m.user_id', $uid)->whereNull('m.left_at');
             })->join('team_chats as c', 'c.id', '=', 'msg.chat_id')->leftJoin('users as u', 'u.id', '=', 'msg.sender_id')
-            ->where('c.company_id', $this->cid())->whereNull('msg.deleted_at')->whereRaw('JSON_CONTAINS(msg.mentions, CAST(? AS JSON))', [(string) $uid])
+            ->where('c.company_id', $this->cid())->whereNull('msg.deleted_at')->whereColumn('msg.id', '>', 'm.cleared_before_id')->whereRaw('JSON_CONTAINS(msg.mentions, CAST(? AS JSON))', [(string) $uid])
             ->orderByDesc('msg.id')->limit(50)
             ->get(['msg.id', 'msg.chat_id', 'msg.body', 'msg.created_at', 'm.last_read_message_id', 'c.name as chat_name', 'c.type as chat_type', 'u.name as sender_name']);
         return response()->json(['data' => $rows->map(fn ($x) => [
@@ -390,7 +419,7 @@ class TeamChatController extends Controller
         $rows = DB::table('team_chat_messages as msg')->join('team_chat_members as m', function ($j) use ($uid) {
                 $j->on('m.chat_id', '=', 'msg.chat_id')->where('m.user_id', $uid)->whereNull('m.left_at');
             })->join('team_chats as c', 'c.id', '=', 'msg.chat_id')->leftJoin('users as u', 'u.id', '=', 'msg.sender_id')
-            ->where('c.company_id', $this->cid())->whereNull('msg.deleted_at')->where('msg.type', '!=', 'system')
+            ->where('c.company_id', $this->cid())->whereNull('msg.deleted_at')->whereColumn('msg.id', '>', 'm.cleared_before_id')->where('msg.type', '!=', 'system')
             ->where(fn ($w) => $w->where('msg.body', 'like', $like)->orWhere('msg.attachment_name', 'like', $like)->orWhere('msg.contact_name', 'like', $like))
             ->orderByDesc('msg.id')->limit(40)
             ->get(['msg.id', 'msg.chat_id', 'msg.type', 'msg.body', 'msg.attachment_name', 'msg.contact_name', 'msg.created_at', 'c.name as chat_name', 'c.type as chat_type', 'c.direct_key', 'u.name as sender_name']);
@@ -444,9 +473,9 @@ class TeamChatController extends Controller
     /** GET /team-chat/chats/{id}/messages?after_id=&before_id=&limit=40&q= */
     public function messages(Request $r, int $id): JsonResponse
     {
-        $this->member($id);
+        $me = $this->member($id);
         $limit = min(max((int) $r->query('limit', 40), 1), 100);
-        $q = $this->notHidden(DB::table('team_chat_messages')->where('chat_id', $id));
+        $q = $this->notHidden(DB::table('team_chat_messages')->where('chat_id', $id), 'id', (int) $me->cleared_before_id);
         if ($r->filled('q')) { $q->whereNull('deleted_at')->where('body', 'like', '%' . $r->query('q') . '%'); }
         if ($r->filled('around_id')) {
             $mid = (int) $r->query('around_id');
@@ -465,9 +494,9 @@ class TeamChatController extends Controller
     /** Edited / deleted messages change after the app last saw them, so the app also asks for these ids. */
     public function byIds(Request $r, int $id): JsonResponse
     {
-        $this->member($id);
+        $me = $this->member($id);
         $ids = array_filter(array_map('intval', explode(',', (string) $r->query('ids'))));
-        return response()->json(['data' => $this->format($this->notHidden(DB::table('team_chat_messages')->where('chat_id', $id)->whereIn('id', $ids))->orderBy('id')->get(), $id)]);
+        return response()->json(['data' => $this->format($this->notHidden(DB::table('team_chat_messages')->where('chat_id', $id)->whereIn('id', $ids), 'id', (int) $me->cleared_before_id)->orderBy('id')->get(), $id)]);
     }
 
     private function format($rows, int $chatId): array
@@ -529,10 +558,15 @@ class TeamChatController extends Controller
 
         $type = $isLocation ? 'location' : ($isContact ? 'contact' : 'text');
         $url = $name = $size = $mime = null;
+        $stored = null;
         if ($r->hasFile('file')) {
             $f = $r->file('file');
-            $path = $f->store('team-chat/' . $this->cid(), 'public');
-            $url = Storage::disk('public')->url($path); $name = $f->getClientOriginalName(); $size = $f->getSize(); $mime = (string) $f->getMimeType();
+            // shares the company's Media Library storage — refuse (before saving anything) when it is full
+            if ($full = \App\Support\MediaStorage::refusal(auth()->user()->company, (int) $f->getSize())) {
+                return response()->json(['message' => $full, 'error_code' => 'storage_full'], 422);
+            }
+            $stored = \App\Modules\TeamChat\Support\TeamChatFiles::store(auth()->user()->company, $id, $f);
+            $url = $stored['url']; $name = $stored['name']; $size = $stored['size']; $mime = $stored['mime'];
             $type = match (true) {
                 str_starts_with($mime, 'image/') => 'image', str_starts_with($mime, 'video/') => 'video',
                 str_starts_with($mime, 'audio/') || in_array($f->getClientOriginalExtension(), ['m4a', 'aac', 'mp3', 'ogg', 'opus', 'wav', 'webm'], true) => 'audio',
@@ -553,6 +587,7 @@ class TeamChatController extends Controller
             'location_label' => $d['location_label'] ?? null, 'contact_name' => $d['contact_name'] ?? null, 'contact_phone' => $d['contact_phone'] ?? null,
             'reply_to_id' => $d['reply_to_id'] ?? null, 'mentions' => $mentions ? json_encode($mentions) : null, 'client_id' => $d['client_id'] ?? null, 'created_at' => now(), 'updated_at' => now(),
         ]);
+        if ($stored) { \App\Modules\TeamChat\Support\TeamChatFiles::link($this->cid(), $id, $mid, $this->uid(), $stored); }
         DB::table('team_chats')->where('id', $id)->update(['last_message_id' => $mid, 'last_message_at' => now()]);
         DB::table('team_chat_members')->where('chat_id', $id)->where('user_id', $this->uid())->update(['last_read_message_id' => $mid]);
         $row = DB::table('team_chat_messages')->where('id', $mid)->first();
@@ -686,7 +721,7 @@ class TeamChatController extends Controller
         $rows = DB::table('team_chat_stars as st')->join('team_chat_messages as msg', 'msg.id', '=', 'st.message_id')
             ->join('team_chat_members as m', fn ($j) => $j->on('m.chat_id', '=', 'msg.chat_id')->where('m.user_id', $uid)->whereNull('m.left_at'))
             ->join('team_chats as c', 'c.id', '=', 'msg.chat_id')->leftJoin('users as u', 'u.id', '=', 'msg.sender_id')
-            ->where('st.user_id', $uid)->where('c.company_id', $this->cid())->whereNull('msg.deleted_at')
+            ->where('st.user_id', $uid)->where('c.company_id', $this->cid())->whereNull('msg.deleted_at')->whereColumn('msg.id', '>', 'm.cleared_before_id')
             ->when($r->filled('chat_id'), fn ($q) => $q->where('msg.chat_id', (int) $r->query('chat_id')))
             ->whereNotExists(fn ($e) => $e->select(DB::raw(1))->from('team_chat_hides as h')->whereColumn('h.message_id', 'msg.id')->where('h.user_id', $uid))
             ->orderByDesc('st.created_at')->limit(100)
@@ -725,9 +760,9 @@ class TeamChatController extends Controller
     /** GET /team-chat/chats/{id}/pins — pinned messages, newest pin first. */
     public function pins(int $id): JsonResponse
     {
-        $this->member($id);
+        $me = $this->member($id);
         $ids = DB::table('team_chat_pins')->where('chat_id', $id)->orderByDesc('pinned_at')->pluck('message_id');
-        $rows = $this->notHidden(DB::table('team_chat_messages')->where('chat_id', $id)->whereIn('id', $ids)->whereNull('deleted_at'));
+        $rows = $this->notHidden(DB::table('team_chat_messages')->where('chat_id', $id)->whereIn('id', $ids)->whereNull('deleted_at'), 'id', (int) $me->cleared_before_id);
         $by = $rows->get()->keyBy('id');
         $ordered = $ids->map(fn ($i) => $by[$i] ?? null)->filter()->values();
         return response()->json(['data' => $this->format($ordered, $id)]);
@@ -848,13 +883,36 @@ class TeamChatController extends Controller
         return response()->json(['ok' => true]);
     }
 
-    /** DELETE /team-chat/admin/groups/{id} — moderator deletes any group. */
-    public function adminDeleteGroup(int $id): JsonResponse
+    /** DELETE /team-chat/admin/chats/{id} (and /admin/groups/{id}) — a moderator deletes any conversation, 1:1 or group; needs team_chat.delete too. */
+    public function adminDeleteGroup(Request $r, int $id): JsonResponse
     {
         $this->moderatorOnly();
-        abort_unless(DB::table('team_chats')->where('id', $id)->where('company_id', $this->cid())->where('type', 'group')->exists(), 404);
+        abort_unless(auth()->user()->hasPermission('team_chat.delete'), 403, 'You do not have permission to delete chats.');
+        abort_unless(DB::table('team_chats')->where('id', $id)->where('company_id', $this->cid())->exists(), 404);
+        $this->emit($id, 'removed');
+        $files = \App\Modules\TeamChat\Support\TeamChatFiles::purgeChat($id, $r->boolean('delete_media', true));
         DB::table('team_chats')->where('id', $id)->delete();
-        return response()->json(['ok' => true]);
+        return response()->json(['ok' => true] + $files);
+    }
+
+    /** GET /team-chat/admin/storage — how much of the company's storage team chat uses, by kind, by conversation and by person. */
+    public function adminStorage(): JsonResponse
+    {
+        $this->moderatorOnly();
+        $company = auth()->user()->company;
+        $mb = fn ($b) => round(((int) $b) / 1048576, 2);
+        $chat = fn () => \App\Modules\WaChat\Models\MediaLibrary::where('company_id', $this->cid())->where('source', 'team_chat');
+
+        $byChat = $chat()->selectRaw('folder_id, SUM(size) bytes, COUNT(*) n')->groupBy('folder_id')->orderByDesc('bytes')->limit(15)->get();
+        $names = \App\Modules\WaChat\Models\MediaFolder::whereIn('id', $byChat->pluck('folder_id'))->pluck('name', 'id');
+        $byUser = $chat()->selectRaw('uploaded_by, SUM(size) bytes, COUNT(*) n')->groupBy('uploaded_by')->orderByDesc('bytes')->limit(15)->get();
+        $users = DB::table('users')->whereIn('id', $byUser->pluck('uploaded_by'))->pluck('name', 'id');
+
+        return response()->json([
+            'storage'   => \App\Support\MediaStorage::summary($company, true),
+            'by_chat'   => $byChat->map(fn ($r) => ['name' => $names[$r->folder_id] ?? 'Unknown chat', 'mb' => $mb($r->bytes), 'files' => (int) $r->n]),
+            'by_person' => $byUser->map(fn ($r) => ['name' => $users[$r->uploaded_by] ?? 'Unknown', 'mb' => $mb($r->bytes), 'files' => (int) $r->n]),
+        ]);
     }
 
     /** GET /team-chat/admin/chats?q=&type=&page= — EVERY conversation in the company (direct + groups), read-only, for company admins. */

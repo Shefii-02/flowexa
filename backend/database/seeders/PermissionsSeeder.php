@@ -134,6 +134,7 @@ class PermissionsSeeder extends Seeder
         // Team chat (internal staff chat) — a plan feature; the plan decides if it exists, these decide who may use it
         ['key' => 'team_chat.view',     'label' => 'Use team chat',                 'group' => 'Team chat', 'type' => 'viewer', 'sort_order' => 205],
         ['key' => 'team_chat.groups',   'label' => 'Create & manage chat groups',   'group' => 'Team chat', 'type' => 'manage', 'sort_order' => 206],
+        ['key' => 'team_chat.delete',   'label' => 'Delete chats & groups (for everyone)', 'group' => 'Team chat', 'type' => 'manage', 'sort_order' => 208],
         ['key' => 'team_chat.moderate', 'label' => 'Moderate team chat (reports, all groups)', 'group' => 'Team chat', 'type' => 'manage', 'sort_order' => 207],
         // WA Chat — Chats
         ['key' => 'wa_chat.chats.view',   'label' => 'View WA Chats',         'group' => 'WA Chat — Chats',              'type' => 'viewer', 'sort_order' => 220],
@@ -196,7 +197,7 @@ class PermissionsSeeder extends Seeder
                 'flow_builder.manage', 'inbox.manage', 'leads.manage',
                 'surveys.manage', 'templates.manage',
                 'wa_chat.sessions.manage', 'wa_chat.chats.manage',
-                'team_chat.groups', 'team_chat.moderate',
+                'team_chat.groups', 'team_chat.moderate', 'team_chat.delete',
                 'wa_chat.message_sender.manage',
                 'wa_agent.automations.manage', 'wa_agent.leads.manage',
                 'staff.manage', 'devices.manage',

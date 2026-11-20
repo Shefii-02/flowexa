@@ -5,7 +5,7 @@ import { api as http } from '@/api/client'
 import { useAppSelector } from '@/store'
 import { subscribeStaffEvent } from '@/socket/staffSocket'
 import ChatRoom from './ChatRoom'
-import { GroupInfoModal, NewChatModal, NewGroupModal } from './Modals'
+import { DeleteChatModal, GroupInfoModal, NewChatModal, NewGroupModal } from './Modals'
 import { command, dayOf, errMsg, listAllChatsAdmin, listChats, tcPost, timeOf, type Chat } from './teamChatApi'
 
 type Tab = 'all' | 'direct' | 'group' | 'unread' | 'admin'
@@ -19,6 +19,9 @@ function Avatar({ name, group, src, size = 44 }: { name: string; group?: boolean
 /** Internal team chat: 1:1 + groups, realtime over the staff socket. Company admins also get an "All conversations" (read-only) tab. */
 export default function TeamChatPage() {
   const me = useAppSelector(s => s.auth.user)
+  const canDelete = !!me && (me.role?.name === 'superadmin' || (me.permissions ?? []).includes('team_chat.delete'))   // deleting a conversation needs this permission — nothing else grants it
+  const [toDelete, setToDelete] = useState<Chat | null>(null)
+  const [roomKey, setRoomKey] = useState(0)   // remount the open room after "Clear chat" so the old messages disappear
   const isAdmin = !!me && (me.role?.name === 'owner' || me.role?.name === 'superadmin' || (me.permissions ?? []).includes('staff.manage'))
   const [params, setParams] = useSearchParams()
   const [tab, setTab] = useState<Tab>('all')
@@ -31,6 +34,7 @@ export default function TeamChatPage() {
   const [modal, setModal] = useState<null | 'chat' | 'group' | 'info'>(null)
   const sel = Number(params.get('c')) || null
   const gen = useRef(0)
+  const selRef = useRef<number | null>(null); selRef.current = sel
 
   const load = useCallback(async (pg = 1, append = false) => {
     const g = ++gen.current
@@ -53,6 +57,7 @@ export default function TeamChatPage() {
     let t: ReturnType<typeof setTimeout> | undefined
     const off = subscribeStaffEvent<any>('team_chat', e => {
       clearTimeout(t); t = setTimeout(() => load(1), 400)
+      if ((e.kind === 'removed' || e.kind === 'hidden') && e.chat_id === selRef.current) { const n = new URLSearchParams(window.location.search); n.delete('c'); setParams(n, { replace: true }); if (e.kind === 'removed') toast('This conversation was deleted') }
       if (e.kind === 'message' && e.by !== me?.id) command('chat:delivered', { chat_id: e.chat_id }, () => tcPost(`/chats/${e.chat_id}/delivered`)).catch(() => {})
     }, c => { connected = c })
     const poll = setInterval(() => { if (!connected) load(1) }, 30000)
@@ -101,8 +106,9 @@ export default function TeamChatPage() {
           {chats.map(c => {
             const active = c.id === sel
             return (
-              <button key={c.id} onClick={() => open(c.id)} className={`mb-1 flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-left transition ${active ? 'bg-sky-100 ring-1 ring-sky-200' : 'hover:bg-sky-50'}`}>
+              <button key={c.id} onClick={() => open(c.id)} className={`group mb-1 flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-left transition ${active ? 'bg-sky-100 ring-1 ring-sky-200' : 'hover:bg-sky-50'}`}>
                 <Avatar name={c.name} group={c.type === 'group'} src={c.avatar} />
+                {(canDelete || tab !== 'admin') && <span role="button" title="Delete or clear" onClick={e => { e.stopPropagation(); setToDelete(c) }} className="order-last hidden rounded-full p-1.5 text-gray-300 hover:bg-red-50 hover:text-red-600 group-hover:block">🗑</span>}
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1.5">
                     <span className={`truncate text-sm ${c.unread > 0 ? 'font-extrabold text-gray-900' : 'font-semibold text-gray-800'}`}>{c.name}</span>
@@ -128,8 +134,9 @@ export default function TeamChatPage() {
           <>
             <button onClick={() => open(null)} className="border-b border-sky-100 bg-white px-4 py-2 text-left text-sm text-sky-600 md:hidden">← Back to chats</button>
             <div className="min-h-0 flex-1">
-              <ChatRoom key={`${tab === 'admin' ? 'a' : 'u'}${sel}`} chatId={sel} myId={me.id} admin={tab === 'admin'} title={current?.name ?? 'Chat'}
-                onChanged={() => load(1)} onOpenInfo={() => tab !== 'admin' && setModal('info')} />
+              <ChatRoom key={`${tab === 'admin' ? 'a' : 'u'}${sel}-${roomKey}`} chatId={sel} myId={me.id} admin={tab === 'admin'} title={current?.name ?? 'Chat'}
+                onChanged={() => load(1)} onOpenInfo={() => tab !== 'admin' && setModal('info')}
+                onDelete={tab !== 'admin' || canDelete ? () => current && setToDelete(current) : undefined} />
             </div>
           </>
         ) : (
@@ -142,7 +149,9 @@ export default function TeamChatPage() {
 
       {modal === 'chat' && <NewChatModal onClose={() => setModal(null)} onOpen={id => { setModal(null); setTab('all'); load(1); open(id) }} />}
       {modal === 'group' && <NewGroupModal onClose={() => setModal(null)} onCreated={id => { setModal(null); setTab('all'); load(1); open(id) }} />}
-      {modal === 'info' && sel && me && <GroupInfoModal chatId={sel} myId={me.id} onClose={() => setModal(null)} onChanged={() => load(1)} onLeft={() => { setModal(null); open(null); load(1) }} />}
+      {toDelete && <DeleteChatModal chatId={toDelete.id} name={toDelete.name} group={toDelete.type === 'group'} admin={tab === 'admin'} canDeleteAll={canDelete} onClose={() => setToDelete(null)}
+        onDeleted={scope => { setToDelete(null); if (scope === 'clear') { load(1); setRoomKey(k => k + 1) } else { if (toDelete.id === sel) open(null); load(1) } }} />}
+      {modal === 'info' && sel && me && <GroupInfoModal canDelete={canDelete} chatId={sel} myId={me.id} onClose={() => setModal(null)} onChanged={() => load(1)} onLeft={() => { setModal(null); open(null); load(1) }} />}
     </div>
   )
 }

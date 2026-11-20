@@ -28,8 +28,15 @@ interface MediaFolder {
   slug: string
   permissions: Role[] | null
   is_system: boolean
+  parent_id?: number | null      // a sub-folder of …  (Team chat → one folder per conversation)
+  team_chat_id?: number | null
   file_count: number
   created_at: string
+}
+
+interface StorageInfo {
+  used_mb: number; limit_mb: number; percent?: number; near_limit?: boolean; full?: boolean
+  breakdown?: { library: { mb: number; files: number }; team_chat: { mb: number; count: number; photos: number; videos: number; voice: number; files: number } }
 }
 
 interface MediaFile {
@@ -327,7 +334,7 @@ export default function WaMediaLibrary() {
   const [deleteConfirm,  setDeleteConfirm]  = useState<{ type: 'file' | 'folder'; id: number; name: string } | null>(null)
   const [contextMenu,    setContextMenu]    = useState<{ fileId: number } | null>(null)
   const [folderPicker,   setFolderPicker]   = useState<{ fileId: number; mode: 'copy' | 'move' } | null>(null)
-  const [storage,        setStorage]        = useState<{ used_mb: number; limit_mb: number }>({ used_mb: 0, limit_mb: 500 })
+  const [storage,        setStorage]        = useState<StorageInfo>({ used_mb: 0, limit_mb: 500 })
   // Multi-select: ids of files ticked for a bulk move / copy / delete.
   const [selected,       setSelected]       = useState<Set<number>>(new Set())
   const [bulkPicker,     setBulkPicker]     = useState<'copy' | 'move' | null>(null)
@@ -537,8 +544,10 @@ export default function WaMediaLibrary() {
   const limitMb      = storage.limit_mb
   const usagePct     = limitMb > 0 ? Math.min(100, Math.round((usedMb / limitMb) * 100)) : 0
 
-  const systemFolders = folders.filter(f => f.is_system)
-  const customFolders = folders.filter(f => !f.is_system)
+  const systemFolders = folders.filter(f => f.is_system && !f.parent_id)
+  const childFolders  = (parent: number) => folders.filter(f => f.parent_id === parent)
+  const chatMb        = storage.breakdown?.team_chat.mb ?? 0
+  const customFolders = folders.filter(f => !f.is_system && !f.parent_id)
 
   if (loading) return (
     <div style={{ margin: '-24px', display: 'flex', justifyContent: 'center', alignItems: 'center', height: 'calc(100vh - 52px)' }}>
@@ -569,6 +578,13 @@ export default function WaMediaLibrary() {
           <div style={{ height: 4, background: '#e5e7eb', borderRadius: 4, overflow: 'hidden' }}>
             <div style={{ height: '100%', background: usagePct > 90 ? '#ef4444' : usagePct > 70 ? '#f59e0b' : '#6366f1', width: `${usagePct}%`, borderRadius: 4 }} />
           </div>
+          {usagePct >= 90 && <div style={{ fontSize: 10, color: '#dc2626', marginTop: 4 }}>{storage.full ? 'Storage is full — uploads and team chat files are blocked.' : 'Almost full — free up space or buy more storage.'}</div>}
+          {storage.breakdown && (
+            <div style={{ fontSize: 10, color: '#9ca3af', marginTop: 4, lineHeight: 1.5 }}>
+              Library files {storage.breakdown.library.mb.toFixed(1)} MB
+              {chatMb > 0 && <><br />Team chat {chatMb.toFixed(1)} MB <span title="photos / videos / voice notes / documents">({storage.breakdown.team_chat.photos.toFixed(1)} photos · {storage.breakdown.team_chat.videos.toFixed(1)} video · {storage.breakdown.team_chat.voice.toFixed(1)} voice · {storage.breakdown.team_chat.files.toFixed(1)} docs)</span></>}
+            </div>
+          )}
         </div>
 
         {/* All Files shortcut */}
@@ -585,15 +601,24 @@ export default function WaMediaLibrary() {
             <div style={{ padding: '8px 16px 4px', fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
               Auto-sorted
             </div>
-            {systemFolders.map(folder => (
-              <button key={folder.id}
+            {systemFolders.map(folder => (<div key={folder.id}>
+              <button
                 onClick={() => setActiveFolderId(folder.id)}
                 style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '8px 16px', background: activeFolderId === folder.id ? '#eef2ff' : 'none', border: 'none', cursor: 'pointer', color: activeFolderId === folder.id ? '#4338ca' : '#374151', fontWeight: activeFolderId === folder.id ? 600 : 400, fontSize: 13 }}>
                 <SystemFolderIcon slug={folder.slug} />
                 <span style={{ flex: 1, textAlign: 'left' }}>{folder.name}</span>
-                <span style={{ fontSize: 10, color: '#9ca3af' }}>{folder.file_count}</span>
+                <span style={{ fontSize: 10, color: '#9ca3af' }}>{folder.file_count + childFolders(folder.id).reduce((n, c) => n + c.file_count, 0)}</span>
               </button>
-            ))}
+              {/* one sub-folder per team chat conversation */}
+              {childFolders(folder.id).map(sub => (
+                <button key={sub.id} onClick={() => setActiveFolderId(sub.id)}
+                  style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '6px 16px 6px 36px', background: activeFolderId === sub.id ? '#eef2ff' : 'none', border: 'none', cursor: 'pointer', color: activeFolderId === sub.id ? '#4338ca' : '#4b5563', fontWeight: activeFolderId === sub.id ? 600 : 400, fontSize: 12 }}>
+                  <FolderOpen size={13} style={{ color: '#9ca3af', flexShrink: 0 }} />
+                  <span style={{ flex: 1, textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sub.name}</span>
+                  <span style={{ fontSize: 10, color: '#9ca3af' }}>{sub.file_count}</span>
+                </button>
+              ))}
+            </div>))}
           </div>
         )}
 

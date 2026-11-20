@@ -13,7 +13,7 @@ class MediaFolder extends Model
     protected $table = 'media_folders';
 
     protected $fillable = [
-        'company_id', 'name', 'slug', 'permissions', 'is_system', 'created_by',
+        'company_id', 'parent_id', 'team_chat_id', 'name', 'slug', 'permissions', 'is_system', 'created_by',
     ];
 
     protected $casts = [
@@ -28,6 +28,10 @@ class MediaFolder extends Model
     /** Returns true when the given user may view this folder and its contents. */
     public function canAccess(User $user): bool
     {
+        // Team chat files are private conversations: only the owner and chat moderators may browse them here.
+        if ($this->is_system && ($this->slug === 'team-chat' || $this->team_chat_id)) {
+            return $user->isSuperAdmin() || $user->isOwner() || $user->hasPermission('team_chat.moderate');
+        }
         if (empty($this->permissions)) return true;
         $roleName = $user->role?->name ?? '';
         return in_array($roleName, $this->permissions, true);
@@ -35,6 +39,6 @@ class MediaFolder extends Model
 
     public static function systemSlugs(): array
     {
-        return ['images', 'videos', 'audio', 'documents'];
+        return ['images', 'videos', 'audio', 'documents', 'team-chat'];
     }
 }
