@@ -32,13 +32,14 @@ class MetaAdsService
     // ── Connect ad account ────────────────────────────────────────────────
     public function connectAdAccount(int $companyId, array $data): MetaAdAccount
     {
-        Log::alert("MetaAdsService: Connecting ad account for company {$companyId} with data: " . json_encode($data));
+        // never log the access token — it is the keys to the company's ad spend
+        Log::info("MetaAdsService: connecting ad account {$data['ad_account_id']} for company {$companyId}");
         // Validate token by fetching account info
         $info = $this->get("/{$data['ad_account_id']}", $data['access_token'], [
             'fields' => 'name,currency,timezone_name,account_status,business',
         ]);
 
-        Log::info("MetaAdsService: Fetched account info for {$data['ad_account_id']}: " . json_encode($info));
+        Log::info("MetaAdsService: fetched account info for {$data['ad_account_id']}");
 
         if (!isset($info['name'])) {
             throw new \Exception('Invalid ad account or access token. Please check your credentials.');
@@ -54,7 +55,9 @@ class MetaAdsService
                 'page_id'         => $data['page_id'] ?? null,
                 'page_name'       => $data['page_name'] ?? null,
                 'access_token'    => $data['access_token'],
-                'business_id'     => $info['business']['id'] ?? null,
+                // always stored on the app's clock: a date that arrives as UTC would otherwise be saved 5½ h early on an India server
+                'token_expires_at' => !empty($data['token_expires_at']) ? \Illuminate\Support\Carbon::parse($data['token_expires_at'])->setTimezone(config('app.timezone')) : null,
+                'business_id'     => $info['business']['id'] ?? ($data['business_id'] ?? null),
                 'currency'        => $info['currency'] ?? 'INR',
                 'timezone'        => $info['timezone_name'] ?? 'Asia/Kolkata',
                 'account_status'  => $this->accountStatus($info['account_status'] ?? 1),

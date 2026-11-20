@@ -1329,6 +1329,8 @@ Route::prefix('v1')->group(function () {
             Route::middleware('permission:meta_ads.manage')->group(function () {
                 // Ad accounts
                 Route::post('accounts',                 [MetaAdAccountController::class, 'store']);
+                Route::post('accounts/discover',        [MetaAdAccountController::class, 'discover'])->middleware('throttle:20,1');
+                Route::post('accounts/connect-selected', [MetaAdAccountController::class, 'connectSelected'])->middleware('throttle:20,1');
                 Route::put('accounts/{id}',             [MetaAdAccountController::class, 'update']);
                 Route::delete('accounts/{id}',          [MetaAdAccountController::class, 'destroy']);
                 Route::post('accounts/{id}/set-default', [MetaAdAccountController::class, 'setDefault']);

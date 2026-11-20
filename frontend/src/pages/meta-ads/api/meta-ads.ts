@@ -18,6 +18,10 @@ export const metaAdsApi = {
   removeAccount: (id: number) => api.delete(`/meta-ads/accounts/${id}`),
   setDefault: (id: number) => api.post(`/meta-ads/accounts/${id}/set-default`),
   verifyAccount: (id: number) => api.get(`/meta-ads/accounts/${id}/verify`),
+  /** "Continue with Facebook" / "find my accounts": what can this login or pasted token connect? The token stays on the server; the answer carries a handle. */
+  discoverAccounts: (userAccessToken: string) => api.post('/meta-ads/accounts/discover', { user_access_token: userAccessToken }),
+  /** Connect the ad accounts that were ticked (handle from discoverAccounts). Also refreshes the token of one already connected. */
+  connectSelected: (d: { handle: string; ad_account_ids: string[]; page_id?: string | null }) => api.post('/meta-ads/accounts/connect-selected', d),
 
   // Audience templates (system starter presets)
   audienceTemplates: () => api.get('/meta-ads/audience-templates'),

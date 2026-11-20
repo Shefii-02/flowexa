@@ -3,10 +3,21 @@ import { useLimit } from '@/lib/planUsage'
 import LimitBadge from '@/components/plan/LimitBadge'
 import { useEffect, useState } from 'react'
 
-import { Button, Input, Modal, Badge, EmptyState, ConfirmModal } from '@/components/ui'
+import { Button, Badge, EmptyState, ConfirmModal } from '@/components/ui'
+import ConnectAdAccountModal from './ConnectAdAccountModal'
 import { getError } from '@/utils'
 import toast from 'react-hot-toast'
 import { metaAdsApi } from '../api/meta-ads'
+
+/** How long the saved token has left — Meta tokens last about 60 days, then ads and lead capture stop until it is renewed. */
+export function tokenState(expires: string | null | undefined): { text: string; tone: 'red' | 'amber' | 'gray' } | null {
+  if (!expires) return null
+  const ms = new Date(expires).getTime() - Date.now()
+  if (ms <= 0) return { text: 'Token expired — renew to resume syncing', tone: 'red' }      // even if it ran out only hours ago
+  const days = Math.ceil(ms / 86_400_000)
+  if (days <= 14) return { text: `Token expires in ${days} day${days === 1 ? '' : 's'}`, tone: 'amber' }
+  return { text: `Token valid until ${new Date(expires).toLocaleDateString()}`, tone: 'gray' }
+}
 
 export default function AdAccountPage() {
   const planLim = useLimit('meta_ads_accounts')
@@ -15,21 +26,10 @@ export default function AdAccountPage() {
   const [showModal,setShowModal]= useState(false)
   const [delItem,  setDelItem]  = useState<any>(null)
   const [verifying,setVerifying]= useState<number|null>(null)
-  const [saving,   setSaving]   = useState(false)
-  const [form, setForm] = useState({ ad_account_id: '', access_token: '', page_id: '', page_name: '' })
-  const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }))
+  const [renew,    setRenew]    = useState<any>(null)     // an already connected ad account whose token is being renewed
 
   const load = () => { setLoading(true); metaAdsApi.accounts().then(r => setAccounts(r.data.accounts)).finally(() => setLoading(false)) }
   useEffect(() => { load() }, [])
-
-  const handleSave = async () => {
-    setSaving(true)
-    try {
-      await metaAdsApi.connectAccount(form)
-      toast.success('Ad account connected.'); setShowModal(false); load()
-    } catch (e) { toast.error(getError(e)) }
-    finally     { setSaving(false) }
-  }
 
   const handleVerify = async (id: number) => {
     setVerifying(id)
@@ -83,11 +83,13 @@ export default function AdAccountPage() {
                 {a.page_name && <p className="text-xs text-gray-500">Page: {a.page_name}</p>}
                 <p className="text-xs text-gray-400">{a.currency} · {a.timezone}</p>
                 {a.last_synced_at && <p className="text-xs text-gray-400">Last verified {new Date(a.last_synced_at).toLocaleDateString()}</p>}
+                {(() => { const t = tokenState(a.token_expires_at); return t && <p className={`text-xs ${t.tone === 'red' ? 'font-medium text-red-600' : t.tone === 'amber' ? 'font-medium text-amber-600' : 'text-gray-400'}`}>{t.text}</p> })()}
               </div>
               <div className="flex gap-2 flex-wrap justify-end">
                 <button onClick={() => handleVerify(a.id)} disabled={verifying === a.id} className="text-xs text-blue-600 hover:underline">
                   {verifying === a.id ? 'Verifying...' : 'Verify'}
                 </button>
+                <button onClick={() => setRenew(a)} className="text-xs text-blue-600 hover:underline">Renew token</button>
                 {!a.is_default && <button onClick={() => handleSetDefault(a.id)} className="text-xs text-brand-600 hover:underline">Set default</button>}
                 <button onClick={() => setDelItem(a)} className="text-xs text-red-500 hover:underline">Disconnect</button>
               </div>
@@ -96,21 +98,8 @@ export default function AdAccountPage() {
         </div>
       )}
 
-      <Modal open={showModal} onClose={() => setShowModal(false)} title="Connect Meta Ad Account" size="md"
-        footer={<><Button variant="secondary" onClick={() => setShowModal(false)}>Cancel</Button><Button onClick={handleSave} loading={saving}>Connect</Button></>}>
-        <div className="space-y-4">
-          <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-xs text-amber-700">
-            <p className="font-medium mb-1">Where to find these:</p>
-            <p>1. Go to <strong>Meta Business Suite → Settings → Ad Accounts</strong></p>
-            <p>2. Copy your Ad Account ID (format: act_XXXXXXXXXX)</p>
-            <p>3. Generate a long-lived access token with <code>ads_management</code> permission</p>
-          </div>
-          <Input label="Ad Account ID *" placeholder="act_1234567890" value={form.ad_account_id} onChange={e => set('ad_account_id', e.target.value)} />
-          <Input label="Access Token *" type="password" placeholder="EAAxxxxxxxx..." value={form.access_token} onChange={e => set('access_token', e.target.value)} />
-          <Input label="Facebook Page ID (optional)" placeholder="123456789" value={form.page_id} onChange={e => set('page_id', e.target.value)} />
-          <Input label="Page Name (optional)" placeholder="My Business Page" value={form.page_name} onChange={e => set('page_name', e.target.value)} />
-        </div>
-      </Modal>
+      <ConnectAdAccountModal open={showModal} onClose={() => setShowModal(false)} onConnected={load} />
+      <ConnectAdAccountModal open={!!renew} refresh={renew ? { ad_account_id: renew.ad_account_id, name: renew.ad_account_name } : null} onClose={() => setRenew(null)} onConnected={load} />
 
       <ConfirmModal open={!!delItem} title="Disconnect ad account?"
         message={`Disconnect "${delItem?.ad_account_name || delItem?.ad_account_id}"? Campaigns in this account will remain on Meta but won't sync here.`}
