@@ -552,7 +552,7 @@ Route::prefix('v1')->group(function () {
         });
 
         // ── Team chat (internal 1:1 + groups; mobile "Chats" tab) ────────────
-        Route::prefix('team-chat')->middleware(['company.active'])->group(function () {
+        Route::prefix('team-chat')->middleware(['company.active', 'permission:team_chat.view'])->group(function () {
             $c = \App\Modules\TeamChat\Http\Controllers\TeamChatController::class;
             Route::get('users',                          [$c, 'users']);
             Route::get('mentions',                       [$c, 'mentions']);
@@ -1621,6 +1621,19 @@ Route::prefix('v1')->group(function () {
             'company_id' => $u?->company_id, 'name' => $u?->name,
         ]);
     })->middleware('throttle:600,1');
+
+    // ── Server-to-server: may this staff member use team chat? (plan/add-on feature + role permissions — one source of truth for the chat-server) ──
+    Route::post('/internal/team-chat-access', function (\Illuminate\Http\Request $request) {
+        $key = (string) config('services.internal.key');
+        abort_unless($key !== '' && hash_equals($key, (string) $request->header('X-Internal-Key')), 401);
+        $d = $request->validate(['user_id' => ['required', 'integer']]);
+        $u = \App\Models\User::with('company', 'role')->find($d['user_id']);
+        return response()->json([
+            'use'      => (bool) ($u && \App\Modules\TeamChat\Support\TeamChatAccess::canUse($u)),
+            'groups'   => (bool) ($u && \App\Modules\TeamChat\Support\TeamChatAccess::canGroups($u)),
+            'moderate' => (bool) ($u && \App\Modules\TeamChat\Support\TeamChatAccess::canModerate($u)),
+        ]);
+    })->middleware('throttle:1200,1');
 
     // ── Server-to-server: chat-server asks Laravel to push-notify a team-chat message it just stored ──
     Route::post('/internal/team-chat-push', function (\Illuminate\Http\Request $request) {

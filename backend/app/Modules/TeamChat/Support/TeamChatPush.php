@@ -35,6 +35,8 @@ class TeamChatPush
             $members = DB::table('team_chat_members')->where('chat_id', $chatId)->whereNull('left_at')->where('user_id', '!=', $senderId)->get(['user_id', 'muted', 'muted_until']);
             $svc = app(FirebasePushService::class);
             foreach ($members as $m) {
+                $rcpt = \App\Models\User::with('company', 'role')->find($m->user_id);
+                if (!$rcpt || !TeamChatAccess::canUse($rcpt)) { continue; }   // plan / permission no longer covers them
                 $mentioned = in_array((int) $m->user_id, $mentions, true);
                 $mutedNow = $m->muted && (!$m->muted_until || strtotime((string) $m->muted_until) > time());
                 if ($mutedNow && !$mentioned) { continue; }

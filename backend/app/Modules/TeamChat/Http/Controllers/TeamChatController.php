@@ -72,7 +72,7 @@ class TeamChatController extends Controller
     private function isModerator(): bool
     {
         $u = auth()->user();
-        return $u->isOwner() || $u->hasPermission('staff.manage');
+        return $u->isOwner() || $u->hasPermission('team_chat.moderate');
     }
 
     private function moderatorOnly(): void { abort_unless($this->isModerator(), 403, 'Only company admins can do this.'); }
@@ -100,8 +100,12 @@ class TeamChatController extends Controller
     /** GET /team-chat/users — everyone in the company the caller can start a chat with. */
     public function users(): JsonResponse
     {
-        return response()->json(['data' => DB::table('users')->where('company_id', $this->cid())->where('is_active', true)
-            ->where('id', '!=', $this->uid())->orderBy('name')->get(['id', 'name', 'avatar', 'department'])]);
+        // only colleagues who can actually use team chat (their role holds team_chat.view) — a chat with someone who cannot open it is a dead end
+        $rows = \App\Models\User::with('company', 'role')->where('company_id', $this->cid())->where('is_active', true)
+            ->where('id', '!=', $this->uid())->orderBy('name')->get()
+            ->filter(fn ($u) => \App\Modules\TeamChat\Support\TeamChatAccess::canUse($u))
+            ->map(fn ($u) => ['id' => $u->id, 'name' => $u->name, 'avatar' => $u->avatar, 'department' => $u->department])->values();
+        return response()->json(['data' => $rows]);
     }
 
     // ── Chats ────────────────────────────────────────────────────────────────
@@ -195,6 +199,7 @@ class TeamChatController extends Controller
     public function create(Request $r): JsonResponse
     {
         $cid = $this->cid(); $uid = $this->uid();
+        abort_if($r->input('type') === 'group' && !auth()->user()->hasPermission('team_chat.groups'), 403, 'You do not have permission to create groups.');
         $d = $r->validate(['type' => 'required|in:direct,group', 'user_id' => 'required_if:type,direct|integer',
             'name' => 'required_if:type,group|string|max:80', 'member_ids' => 'array', 'member_ids.*' => 'integer']);
         $valid = fn (array $ids) => DB::table('users')->where('company_id', $cid)->where('is_active', true)->whereIn('id', $ids)->pluck('id')->all();

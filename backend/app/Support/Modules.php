@@ -18,6 +18,7 @@ class Modules
         'short_links'   => ['Short links',    '🔗', 'common', 'Branded short links with click tracking',            ['short-links']],
         'sticky_notes'  => ['Sticky notes',   '📝', 'common', 'Personal sticky notes',                                ['sticky-notes']],
         'todo'          => ['To-do list',     '✅', 'common', 'Personal to-do list',                                  ['todos']],
+        'team_chat'     => ['Team chat',      '💬', 'common', 'Internal 1:1 and group chat between staff',            ['team-chat']],
         'integrations'  => ['Integrations',   '🔌', 'common', 'Google Sheets, Drive, Calendar and email',             ['google', 'email']],
         // ── WhatsApp ────────────────────────────────────────────────────────────────
         'wa_chat'       => ['WA Chat',        '💬', 'whatsapp', 'WhatsApp sessions, inbox and campaigns',             ['waha', 'wa-chat-templates', 'wa-export']],
@@ -64,7 +65,7 @@ class Modules
         'wa_chat' => 'wa_chat', 'wa_agent' => 'ai_agent', 'wa_cloud' => 'wa_cloud', 'surveys' => 'wa_cloud', 'phone_numbers' => 'wa_cloud',
         'leads' => 'leads', 'lead_assignment' => 'leads', 'hr' => 'hr', 'accounts' => 'finance', 'instagram' => 'social_dm',
         'calendar' => 'tasks',   // Tasks, follow-ups and calendar
-        'widget_chat' => 'web_widgets', 'meta_ads' => 'meta_ads', 'integrations' => 'integrations',
+        'team_chat' => 'team_chat', 'widget_chat' => 'web_widgets', 'meta_ads' => 'meta_ads', 'integrations' => 'integrations',
     ];
 
     /** The feature a permission belongs to, or null for a core permission. */

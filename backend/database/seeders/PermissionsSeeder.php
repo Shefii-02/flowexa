@@ -131,6 +131,10 @@ class PermissionsSeeder extends Seeder
         // staff member only sees sessions — and leads sourced from them — that they've
         // been explicitly granted access to (see StaffAccountAccess).
         ['key' => 'wa_chat.sessions.view_all', 'label' => 'View every WA Chat session', 'group' => 'WA Chat — Sessions', 'type' => 'viewer', 'sort_order' => 212],
+        // Team chat (internal staff chat) — a plan feature; the plan decides if it exists, these decide who may use it
+        ['key' => 'team_chat.view',     'label' => 'Use team chat',                 'group' => 'Team chat', 'type' => 'viewer', 'sort_order' => 205],
+        ['key' => 'team_chat.groups',   'label' => 'Create & manage chat groups',   'group' => 'Team chat', 'type' => 'manage', 'sort_order' => 206],
+        ['key' => 'team_chat.moderate', 'label' => 'Moderate team chat (reports, all groups)', 'group' => 'Team chat', 'type' => 'manage', 'sort_order' => 207],
         // WA Chat — Chats
         ['key' => 'wa_chat.chats.view',   'label' => 'View WA Chats',         'group' => 'WA Chat — Chats',              'type' => 'viewer', 'sort_order' => 220],
         ['key' => 'wa_chat.chats.manage', 'label' => 'Manage WA Chats',       'group' => 'WA Chat — Chats',              'type' => 'manage', 'sort_order' => 221],
@@ -192,6 +196,7 @@ class PermissionsSeeder extends Seeder
                 'flow_builder.manage', 'inbox.manage', 'leads.manage',
                 'surveys.manage', 'templates.manage',
                 'wa_chat.sessions.manage', 'wa_chat.chats.manage',
+                'team_chat.groups', 'team_chat.moderate',
                 'wa_chat.message_sender.manage',
                 'wa_agent.automations.manage', 'wa_agent.leads.manage',
                 'staff.manage', 'devices.manage',
@@ -207,6 +212,7 @@ class PermissionsSeeder extends Seeder
 
             'counsellor' => [
                 'dashboard.view', 'contacts.view', 'contacts.manage',
+                'team_chat.view', 'team_chat.groups',
                 'leads.view', 'leads.manage',
                 'inbox.view', 'inbox.manage',
                 'wa_chat.chats.view', 'wa_chat.chats.manage',
