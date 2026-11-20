@@ -79,19 +79,7 @@ class LeadSourceController extends Controller
         abort_unless(MetaAdAccount::where('company_id', $company->id)->whereKey($d['account_id'])->exists(), 404, 'That ad account was not found.');
 
         $type = LeadSourceGate::CAMPAIGN_TYPES['meta_ads'];
-        $q = MetaCampaign::where('company_id', $company->id)->where('meta_ad_account_id', $d['account_id']);
-        if (filled($d['search'] ?? null)) {
-            $like = '%' . str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], trim($d['search'])) . '%';      // a typed % or _ is just a character
-            $q->where(fn ($w) => $w->where('name', 'like', $like)->orWhere('meta_campaign_id', 'like', $like));
-        }
-        $state = $d['state'] ?? 'all';
-        if ($state === 'off') {
-            $q->whereExists(fn ($e) => $e->selectRaw('1')->from('lead_account_switches as sw')->whereColumn('sw.origin_id', 'meta_campaigns.id')
-                ->where('sw.company_id', $company->id)->where('sw.origin_type', $type)->where('sw.is_enabled', 0));
-        } elseif ($state === 'held') {
-            $q->whereExists(fn ($e) => $e->selectRaw('1')->from('held_leads as h')->whereColumn('h.origin_id', 'meta_campaigns.id')
-                ->where('h.company_id', $company->id)->where('h.origin_type', $type)->where('h.status', 'held'));
-        }
+        $q = $this->campaignQuery($company, (int) $d['account_id'], $d['search'] ?? null, $d['state'] ?? 'all');
 
         $page = $q->orderByDesc('id')->paginate((int) ($d['per_page'] ?? 20));
         $ids = $page->getCollection()->pluck('id');
@@ -101,6 +89,78 @@ class LeadSourceController extends Controller
         return response()->json([
             'data' => $page->getCollection()->map(fn ($c) => $this->campaignRow($c, !isset($off[$c->id]), (int) ($held[$c->id] ?? 0)))->values(),
             'total' => $page->total(), 'page' => $page->currentPage(), 'last_page' => $page->lastPage(), 'has_more' => $page->hasMorePages(),
+        ]);
+    }
+
+    /** The campaigns of one ad account, narrowed by the search text and the all / off / held filter — shared by the list and the bulk switch. */
+    private function campaignQuery(\App\Models\Company $company, int $accountId, ?string $search, string $state)
+    {
+        $type = LeadSourceGate::CAMPAIGN_TYPES['meta_ads'];
+        $q = MetaCampaign::where('company_id', $company->id)->where('meta_ad_account_id', $accountId);
+        if (filled($search)) {
+            $like = '%' . str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], trim($search)) . '%';      // a typed % or _ is just a character
+            $q->where(fn ($w) => $w->where('name', 'like', $like)->orWhere('meta_campaign_id', 'like', $like));
+        }
+        if ($state === 'off') {
+            $q->whereExists(fn ($e) => $e->selectRaw('1')->from('lead_account_switches as sw')->whereColumn('sw.origin_id', 'meta_campaigns.id')
+                ->where('sw.company_id', $company->id)->where('sw.origin_type', $type)->where('sw.is_enabled', 0));
+        } elseif ($state === 'held') {
+            $q->whereExists(fn ($e) => $e->selectRaw('1')->from('held_leads as h')->whereColumn('h.origin_id', 'meta_campaigns.id')
+                ->where('h.company_id', $company->id)->where('h.origin_type', $type)->where('h.status', 'held'));
+        }
+        return $q;
+    }
+
+    /** Most campaigns one bulk switch may change at once — a deliberate, reviewable batch, not "everything the company has ever synced". */
+    public const BULK_CAP = 2000;
+
+    /**
+     * PUT /lead-assignment-rules/sources/campaigns/bulk
+     *   { account_id, enabled, ids: [campaign ids] }                        — the ticked ones
+     *   { account_id, enabled, all_matching: true, search?, state? }        — everything the current search / filter shows
+     * Idempotent: only campaigns whose state really changes are written, and the answer says how many that was.
+     */
+    public function bulkCampaigns(Request $request): JsonResponse
+    {
+        $d = $request->validate(['account_id' => ['required', 'integer', 'min:1'], 'enabled' => ['required', 'boolean'],
+            'ids' => ['nullable', 'array', 'max:500'], 'ids.*' => ['integer', 'min:1'], 'all_matching' => ['nullable', 'boolean'],
+            'search' => ['nullable', 'string', 'max:100'], 'state' => ['nullable', 'in:all,off,held']]);
+        abort_if(empty($d['ids']) && empty($d['all_matching']), 422, 'Pick at least one campaign.');
+
+        $company = auth()->user()->company;
+        if (!LeadSourceGate::available($company, 'meta_ads')) {
+            return response()->json(['message' => 'Meta Ads is not included in your plan (or its complimentary period has ended), so its campaigns cannot be switched.', 'error_code' => 'plan_feature_disabled'], 403);
+        }
+        abort_unless(MetaAdAccount::where('company_id', $company->id)->whereKey($d['account_id'])->exists(), 404, 'That ad account was not found.');
+
+        $q = $this->campaignQuery($company, (int) $d['account_id'], $d['search'] ?? null, $d['state'] ?? 'all');
+        if (empty($d['all_matching'])) { $q->whereIn('id', $d['ids']); }      // ids from any other account or company simply do not match
+        if ($q->count() > self::BULK_CAP) {
+            return response()->json(['message' => 'That is more than ' . self::BULK_CAP . ' campaigns at once. Narrow the search or the filter first.', 'error_code' => 'bulk_too_large'], 422);
+        }
+        $ids = $q->pluck('id');
+
+        $type = LeadSourceGate::CAMPAIGN_TYPES['meta_ads'];
+        $target = (bool) $d['enabled'];
+        $alreadyOff = DB::table('lead_account_switches')->where('company_id', $company->id)->where('origin_type', $type)->whereIn('origin_id', $ids)->where('is_enabled', 0)->pluck('origin_id')->flip();
+        $change = $ids->filter(fn ($id) => $target ? isset($alreadyOff[$id]) : !isset($alreadyOff[$id]))->values();      // only what really changes
+
+        DB::transaction(function () use ($change, $company, $type, $target) {
+            foreach ($change->chunk(500) as $chunk) {
+                DB::table('lead_account_switches')->upsert(
+                    $chunk->map(fn ($id) => ['company_id' => $company->id, 'origin_type' => $type, 'origin_id' => (int) $id, 'is_enabled' => $target, 'updated_by' => auth()->id(), 'created_at' => now(), 'updated_at' => now()])->all(),
+                    ['company_id', 'origin_type', 'origin_id'], ['is_enabled', 'updated_by', 'updated_at'],
+                );
+            }
+        });
+        LeadSourceGate::forgetMemo();
+
+        $n = $change->count();
+        return response()->json([
+            'changed' => $n, 'matched' => $ids->count(),
+            'message' => $n === 0 ? 'Nothing to change — those campaigns were already ' . ($target ? 'on.' : 'off.')
+                : "{$n} campaign" . ($n === 1 ? ' is' : 's are') . ' now ' . ($target ? 'ON — new leads are created as they arrive.' : 'OFF — new leads wait in Held leads until staff move them.'),
+            'data' => $this->rows(),
         ]);
     }
 

@@ -24,6 +24,8 @@ export default function MetaCampaignSwitches({ source, accountId, accountOn, ava
   const [more, setMore] = useState(false)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState<number | null>(null)
+  const [picked, setPicked] = useState<Set<number>>(new Set())
+  const [bulkBusy, setBulkBusy] = useState(false)
   const gen = useRef(0)
 
   useEffect(() => { const t = setTimeout(() => setDebounced(q.trim()), 300); return () => clearTimeout(t) }, [q])
@@ -39,7 +41,7 @@ export default function MetaCampaignSwitches({ source, accountId, accountOn, ava
     } catch (e) { if (g === gen.current) toast.error(getError(e)) } finally { if (g === gen.current) setLoading(false) }
   }, [accountId, debounced, state])
 
-  useEffect(() => { void load(1, false) }, [load])
+  useEffect(() => { setPicked(new Set()); void load(1, false) }, [load])   // a new search / filter starts a new selection
 
   const toggle = async (c: SourceCampaign) => {
     setBusy(c.id)
@@ -51,6 +53,24 @@ export default function MetaCampaignSwitches({ source, accountId, accountOn, ava
       if (state === 'off' && next.enabled) setTotal(t => Math.max(0, t - 1))
       onChanged(res.data.data); toast.success(res.data.message)
     } catch (e) { toast.error(getError(e)) } finally { setBusy(null) }
+  }
+
+  const pageIds = items.map(c => c.id)
+  const allOnPage = pageIds.length > 0 && pageIds.every(id => picked.has(id))
+  const scope = [debounced && `matching “${debounced}”`, state === 'off' ? 'that are off' : state === 'held' ? 'with held leads' : ''].filter(Boolean).join(' ')
+
+  /** Switch the ticked campaigns, or everything the current search / filter shows — after the user has seen the exact count. */
+  const bulk = async (enabled: boolean, allMatching: boolean) => {
+    const n = allMatching ? total : picked.size
+    if (n === 0) return
+    const what = allMatching ? `ALL ${n} campaign${n === 1 ? '' : 's'}${scope ? ' ' + scope : ' of this ad account'}` : `${n} selected campaign${n === 1 ? '' : 's'}`
+    if (!window.confirm(`Switch ${what} ${enabled ? 'ON' : 'OFF'}?\n\n${enabled ? 'Their new leads will be created as they arrive.' : 'Their new leads will wait in Held leads until staff move them.'}`)) return
+    setBulkBusy(true)
+    try {
+      const res = await leadChannelApi.bulkCampaigns({ account_id: accountId, enabled, ...(allMatching ? { all_matching: true, search: debounced || undefined, state } : { ids: [...picked] }) })
+      toast.success(res.data.message); onChanged(res.data.data)
+      setPicked(new Set()); await load(1, false)
+    } catch (e) { toast.error(getError(e)) } finally { setBulkBusy(false) }
   }
 
   const chip = (s: State, label: string, n?: number) => (
@@ -70,11 +90,35 @@ export default function MetaCampaignSwitches({ source, accountId, accountOn, ava
         </div>
       </div>
 
+      {items.length > 0 && (
+        <div className="mt-2 flex flex-wrap items-center gap-2 rounded-md bg-white px-2 py-1 ring-1 ring-gray-100">
+          <label className="flex items-center gap-1.5 text-[11px] text-gray-500">
+            <input type="checkbox" checked={allOnPage} onChange={() => setPicked(allOnPage ? new Set() : new Set(pageIds))} disabled={!available} /> Select this page
+          </label>
+          {picked.size > 0 ? (
+            <>
+              <span className="text-[11px] font-medium text-gray-700">{picked.size} selected</span>
+              <button type="button" disabled={bulkBusy} onClick={() => void bulk(false, false)} className="rounded bg-gray-700 px-2 py-0.5 text-[11px] font-medium text-white disabled:opacity-50">Switch off</button>
+              <button type="button" disabled={bulkBusy} onClick={() => void bulk(true, false)} className="rounded bg-green-600 px-2 py-0.5 text-[11px] font-medium text-white disabled:opacity-50">Switch on</button>
+              <button type="button" onClick={() => setPicked(new Set())} className="text-[11px] text-gray-400 hover:underline">Clear</button>
+            </>
+          ) : (
+            <span className="ml-auto flex items-center gap-2 text-[11px] text-gray-400">
+              All {total}{scope ? ' ' + scope : ''}:
+              <button type="button" disabled={!available || bulkBusy} onClick={() => void bulk(false, true)} className="font-medium text-gray-700 hover:underline disabled:opacity-40">switch off</button>
+              <button type="button" disabled={!available || bulkBusy} onClick={() => void bulk(true, true)} className="font-medium text-green-700 hover:underline disabled:opacity-40">switch on</button>
+            </span>
+          )}
+        </div>
+      )}
+
       <div className="mt-2">
         {loading && items.length === 0 ? <div className="flex justify-center py-3"><Spinner /></div>
           : items.length === 0 ? <p className="px-1 py-3 text-center text-xs text-gray-400">{debounced || state !== 'all' ? 'No campaigns match.' : 'No campaigns yet.'}</p>
           : items.map(c => (
-            <div key={c.id} className="flex flex-wrap items-center gap-3 px-1 py-1.5">
+            <div key={c.id} className={`flex flex-wrap items-center gap-3 px-1 py-1.5 ${picked.has(c.id) ? 'rounded bg-brand-50/50' : ''}`}>
+              <input type="checkbox" aria-label={`Select ${c.label}`} checked={picked.has(c.id)} disabled={!available}
+                onChange={() => setPicked(p => { const n = new Set(p); n.has(c.id) ? n.delete(c.id) : n.add(c.id); return n })} />
               <div className="min-w-0 flex-1">
                 <p className="truncate text-xs text-gray-800">{c.label}</p>
                 <p className="text-[11px] text-gray-400">{c.sub ?? ''}{!accountOn && ' · the whole account is off'}{accountOn && !c.enabled && <span className="text-amber-600"> · OFF — new contacts are held</span>}</p>

@@ -847,6 +847,7 @@ Route::prefix('v1')->group(function () {
             Route::get('/sources',         [\App\Modules\Lead\Http\Controllers\LeadSourceController::class, 'index'])->name('sources.index');
             Route::put('/sources',         [\App\Modules\Lead\Http\Controllers\LeadSourceController::class, 'update'])->name('sources.update');
             Route::get('/sources/campaigns', [\App\Modules\Lead\Http\Controllers\LeadSourceController::class, 'campaigns'])->name('sources.campaigns.index');
+            Route::put('/sources/campaigns/bulk', [\App\Modules\Lead\Http\Controllers\LeadSourceController::class, 'bulkCampaigns'])->name('sources.campaigns.bulk');
             Route::put('/sources/campaigns', [\App\Modules\Lead\Http\Controllers\LeadSourceController::class, 'updateCampaign'])->name('sources.campaigns.update');
             Route::put('/sources/accounts', [\App\Modules\Lead\Http\Controllers\LeadSourceController::class, 'updateAccount'])->name('sources.accounts.update');
             Route::get('/routing',         [LeadAssignmentController::class, 'routingIndex'])->name('routing.index');

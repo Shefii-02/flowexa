@@ -264,6 +264,8 @@ export const leadChannelApi = {
   /** Switch ONE account of a source (a WA Chat session, a WhatsApp Cloud number, an Instagram account, a widget, an ad account). */
   /** The campaigns of one Meta ad account — searchable and paged (state: all | off | held). */
   campaigns: (p: Record<string, unknown>) => api.get('/lead-assignment-rules/sources/campaigns', { params: p }),
+  /** Switch many campaigns at once: the ticked ones ({ids}) or everything the current search / filter shows ({all_matching, search, state}). */
+  bulkCampaigns: (body: Record<string, unknown>) => api.put('/lead-assignment-rules/sources/campaigns/bulk', body),
   /** Switch ONE Meta ad campaign by hand — its new leads are held while it is off. */
   setCampaign: (campaignId: number, enabled: boolean) => api.put('/lead-assignment-rules/sources/campaigns', { campaign_id: campaignId, enabled }),
   setAccount: (source: string, accountId: number, enabled: boolean) => api.put('/lead-assignment-rules/sources/accounts', { source, account_id: accountId, enabled }),
