@@ -79,13 +79,15 @@ function ChatThread({
   // overwrite the first, after which whichever settled first cleared the other's state — re-enabling
   // a button whose fetch was still open, and landing a failure marker on the wrong bubble.
   const [mediaFetch, setMediaFetch] = useState<Record<string, 'loading' | 'failed'>>({});
+  // WHY a file could not be loaded, per message — so the bubble can say what to do instead of just "unavailable".
+  const [mediaWhy, setMediaWhy] = useState<Record<string, string>>({});
   // Media fetched on demand, by message id → object URL, so a voice note / photo / video / document shows in the bubble itself.
   const [loadedMedia, setLoadedMedia] = useState<Record<string, string>>({});
   const loadedRef = useRef<Record<string, string>>({});
   loadedRef.current = loadedMedia;
   // Another chat (or leaving this one) → release every object URL loaded for the old chat, so a long session does not keep growing.
   useEffect(() => {
-    setLoadedMedia({}); setMediaFetch({});
+    setLoadedMedia({}); setMediaFetch({}); setMediaWhy({});
     return () => { Object.values(loadedRef.current).forEach(u => { if (u.startsWith('blob:')) URL.revokeObjectURL(u); }); };
   }, [activeChat.id, sessionId]);
 
@@ -94,6 +96,7 @@ function ChatThread({
       const messageId = message.waMessageId;
       if (!sessionId || !messageId) return;
       setMediaFetch(prev => ({ ...prev, [messageId]: 'loading' }));
+      let why = 'The gateway could not be reached. Try again.';
       try {
         let url: string | null = null;
         try {
@@ -104,11 +107,15 @@ function ChatThread({
           const history = await sessionApi.getChatHistory(sessionId, activeChat.id, 100, true);
           const hit = history.find(h => h.id === messageId);
           url = hit?.media ? dataToBlobUrl(hit.media) : null;
+          why = !hit
+            ? 'The gateway did not save this file and it is older than the last 100 messages WhatsApp can list. Ask the customer to send it again.'
+            : 'The gateway did not save this file and WhatsApp could not deliver it (expired, failed to decrypt, or media download is switched off on the gateway). Ask the customer to send it again.';
         }
         if (!url) throw new Error('no media');
         setLoadedMedia(prev => ({ ...prev, [messageId]: url! }));
         setMediaFetch(prev => { const next = { ...prev }; delete next[messageId]; return next; });
       } catch {
+        setMediaWhy(prev => ({ ...prev, [messageId]: why }));
         // Nothing anywhere has the bytes (URL-based send, media download disabled on the gateway, expired on WhatsApp): say so on the bubble.
         setMediaFetch(prev => ({ ...prev, [messageId]: 'failed' }));
       }
@@ -284,12 +291,13 @@ function ChatThread({
                 : msg.type === 'document' ? (mediaInfo?.filename || t('chats.media.openDocument', { defaultValue: 'Open document' }))
                 : t('chats.media.load', { defaultValue: 'Load {{what}}', what: (TYPE_LABEL[msg.type] ?? 'file').toLowerCase() });
               return (
+                <>
                 <button
                   type="button"
                   className="message-media-omitted"
                   onClick={() => void downloadMedia(msg)}
                   disabled={!sessionId || !msg.waMessageId || fetchState === 'loading'}
-                  title={fetchState === 'failed' ? t('chats.media.failedHint', { defaultValue: 'The gateway no longer has this file. Ask the customer to send it again.' }) : undefined}
+                  title={fetchState === 'failed' ? (msg.waMessageId && mediaWhy[msg.waMessageId]) || undefined : undefined}
                 >
                   {fetchState === 'loading' ? (
                     <Loader2 size={14} className="animate-spin" />
@@ -297,6 +305,10 @@ function ChatThread({
                     <>{TYPE_ICON[msg.type] ?? '📎'} {label}</>
                   )}
                 </button>
+                {fetchState === 'failed' && msg.waMessageId && mediaWhy[msg.waMessageId] && (
+                  <div style={{ fontSize: 11, color: '#6b7280', marginTop: 4, maxWidth: 260 }}>{mediaWhy[msg.waMessageId]}</div>
+                )}
+                </>
               );
             }
             const shown = mediaInfo ?? { mimetype: '' };
