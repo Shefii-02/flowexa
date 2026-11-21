@@ -1,7 +1,7 @@
 // Which sidebar URL belongs to which plan module — the browser-side twin of backend App\Support\Modules.
 // The server enforces the same split on the API, so a hidden page can never be reached by typing its URL either.
 export const PATH_MODULES: [prefix: string, module: string][] = [
-  ['/media-library', 'media_library'], ['/short-links', 'short_links'], ['/crm/short-links', 'short_links'],
+  ['/media-library', 'media_library'], ['/wa-chat/media-library', 'media_library'], ['/short-links', 'short_links'], ['/crm/short-links', 'short_links'],
   ['/sticky-notes', 'sticky_notes'], ['/todo', 'todo'], ['/settings/integrations', 'integrations'],
   ['/wa-chat', 'wa_chat'], ['/wa-cloud', 'wa_cloud'], ['/phone-numbers', 'wa_cloud'], ['/flow', 'wa_cloud'],
   ['/ai-agent', 'ai_agent'], ['/wa-agent', 'ai_agent'],

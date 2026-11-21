@@ -75,6 +75,11 @@ class MessageSenderController extends Controller
             'session_id.exists' => 'That session no longer exists — pick a currently active one.',
         ]);
 
+        // Each delivered message is paid from the wallet — a campaign that cannot be covered is refused up front, not half-sent.
+        if ($why = app(\App\Modules\WaChat\Services\WaChatBilling::class)->refusal(auth()->user()->company, (int) $data['total'])) {
+            return response()->json(['message' => $why, 'code' => 'insufficient_balance'], 402);
+        }
+
         // Plan caps for WA Chat campaigns: how many in total / this month, and how many recipients in one.
         if ($ctx = \App\Support\PlanLimits::context(auth()->user())) {
             [$companyId, $plan] = $ctx;
@@ -182,6 +187,10 @@ class MessageSenderController extends Controller
             'session_id.exists' => 'That session no longer exists — pick a currently active one.',
             'phone.regex'       => 'Enter a valid test phone number.',
         ]);
+
+        if ($why = app(\App\Modules\WaChat\Services\WaChatBilling::class)->refusal(auth()->user()->company)) {
+            return response()->json(['message' => $why, 'code' => 'insufficient_balance'], 402);
+        }
 
         $company = auth()->user()->company;
         $apiKey  = $company?->wa_chat_token ?? '';
@@ -499,6 +508,9 @@ class MessageSenderController extends Controller
     {
         $job = MessageSenderJob::where('company_id', auth()->user()->company_id)
             ->whereIn('status', ['pending', 'scheduled'])->findOrFail($id);
+        if ($why = app(\App\Modules\WaChat\Services\WaChatBilling::class)->refusal(auth()->user()->company, max(1, (int) $job->total))) {
+            return response()->json(['message' => $why, 'code' => 'insufficient_balance'], 402);
+        }
         $job->update(['status' => 'running', 'started_at' => $job->started_at ?? now()]);
         Log::info("MessageSenderController: campaign #{$id} launched, dispatching");
         dispatch(new ProcessMessageSenderJob($job->id));

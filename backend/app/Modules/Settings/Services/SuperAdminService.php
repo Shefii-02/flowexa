@@ -217,6 +217,11 @@ class SuperAdminService
             $update['wa_config'] = $data['wa_config'];
         }
 
+        // WA Chat (open-wa) messages: charged per delivered message from the wallet, or included in the plan (not charged).
+        foreach (['wa_chat_billing', 'wa_chat_credits_per_message'] as $f) {
+            if (array_key_exists($f, $data)) { $update[$f] = $data[$f]; }
+        }
+
         foreach (['trial_ends_at', 'plan_expires_at', 'wa_chat_token_expires_at'] as $f) {
             if (array_key_exists($f, $data)) {
                 $update[$f] = $data[$f] ? \Carbon\Carbon::parse($data[$f]) : null;

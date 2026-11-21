@@ -369,7 +369,7 @@ export default function App() {
               <Route path="plan-purchase" element={<PlanPurchasePage />} />
               <Route path="crm/blacklist" element={<BlacklistPage />} />
               <Route path="media-library" element={<SharedMediaLibraryPage />} />   {/* one library for every module */}
-              <Route path="wa-chat/media-library" element={<Navigate to="/media-library" replace />} />   {/* old URL */}
+              <Route path="wa-chat/media-library" element={<SharedMediaLibraryPage scope="wa-chat" />} />   {/* the same library, opened on WA Chat's folders — has its own entry in the WA Chat sidebar */}
               <Route path="short-links" element={<ShortLinksPage />} />
               <Route path="crm/short-links" element={<Navigate to="/short-links" replace />} />   {/* old URL */}
               {/* Accounts — one page per route under /accounts/… (files: src/pages/accounts/<area>/<Page>.tsx) */}

@@ -201,6 +201,7 @@ function BlocksEditor({
           setPickerIdx(null);
         }}
         title="Pick from Media Library"
+        purpose="wa_template"
       />
     </div>
   );
@@ -438,6 +439,7 @@ export default function WaChatTemplatesPage() {
         onSelect={url => { setForm(f => ({ ...f, header_content: url })); setHeaderPickerOpen(false); }}
         accept={form.header_type === 'image' ? 'image' : form.header_type === 'video' ? 'video' : form.header_type === 'document' ? 'document' : 'any'}
         title="Select Header Media"
+        purpose="wa_template"
       />
 
       {/* Delete confirm */}

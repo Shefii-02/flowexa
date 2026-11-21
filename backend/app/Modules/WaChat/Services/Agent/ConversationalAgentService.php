@@ -300,7 +300,7 @@ class ConversationalAgentService
             $company = Company::find($in->companyId);
             $audio   = $company ? $this->voiceService->synthesize($reply, $company) : null;
             if ($audio !== null) {
-                $url = $this->voiceService->storePublicly($audio, $in->companyId);
+                $url = $this->voiceService->storePublicly($audio, $in->companyId, 'mp3', true);
                 $sentAsVoice = $gateway->sendAudio($in->companyId, $in->sessionRef, $in->phone, $url);
             }
         }

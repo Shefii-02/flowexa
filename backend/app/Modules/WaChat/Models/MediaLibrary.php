@@ -50,10 +50,24 @@ class MediaLibrary extends Model
     // reflects the CURRENT domain from path+disk, with no migration/backfill needed for old rows.
     public function getUrlAttribute(): ?string
     {
+        // hosted by the Node gateway: the stored URL IS the address (there is no path on this server's disk)
+        if ($this->disk === 'node') {
+            return $this->attributes['url'] ?? null;
+        }
         if (!$this->path) {
             return $this->attributes['url'] ?? null;
         }
         return Storage::disk($this->disk ?: 'public')->url($this->path);
+    }
+
+    /** Remove the stored bytes wherever they live (Node gateway or this server's disk). The row itself is the caller's to delete. */
+    public function deleteStoredFile(): void
+    {
+        if ($this->disk === 'node') {
+            \App\Support\NodeFileStore::delete($this->attributes['url'] ?? null);
+        } elseif ($this->path) {
+            Storage::disk($this->disk ?: 'public')->delete($this->path);
+        }
     }
 
     public function getFileUrlAttribute(): ?string

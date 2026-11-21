@@ -1118,6 +1118,7 @@ Route::prefix('v1')->group(function () {
             Route::get('/',             [WalletController::class, 'index'])->name('index');
             Route::get('/transactions', [WalletController::class, 'transactions'])->name('transactions');
             Route::get('/packages',     [WalletController::class, 'packages'])->name('packages');
+            Route::get('/billing',      [WalletController::class, 'billing'])->name('billing');   // how each channel is paid + this month's WA Chat usage
 
             // Settings (owner/admin)
             Route::put('/settings', [WalletController::class, 'updateSettings'])

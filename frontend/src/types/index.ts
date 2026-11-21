@@ -63,6 +63,8 @@ export interface Company {
   plan: Plan | null
   wallet: Wallet | null
   wa_config : string
+  wa_chat_billing?: 'wallet' | 'included'
+  wa_chat_credits_per_message?: number
   plan_expires_at: string | null
   created_at: string
   updated_at: string

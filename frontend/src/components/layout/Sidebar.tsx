@@ -397,6 +397,7 @@ const SidebarInner = () => {
   const walletBal = user?.company?.wallet?.balance ?? 0
   const isLow = user?.company?.wallet?.is_low ?? false
   const waConfig = user?.company?.wa_config ?? 'wallet'
+  const walletInUse = waConfig === 'wallet' || (user?.company?.wa_chat_billing ?? 'wallet') === 'wallet'   // WA Cloud on the wallet, or WA Chat charged per message
 
   // ── Accordion state ───────────────────────────────────────────────────────────
   // Only ONE top-level accordion open at a time
@@ -461,7 +462,7 @@ const SidebarInner = () => {
       </div>
 
       {/* Wallet badge */}
-      {!isSuperAdmin && waConfig === 'wallet' && canViewBill && (
+      {!isSuperAdmin && walletInUse && canViewBill && (
         <div
           onClick={() => navigate('/plan-purchase?section=wallet')}
           className={cn(
@@ -524,6 +525,8 @@ const SidebarInner = () => {
               {/* {canViewTpls &&  */}
               <SubLink to="/wa-chat/templates" icon="📋" label="Templates" />
               {/* } */}
+              {/* the files and media WA Chat uses, in folders (the same shared library, opened on WA Chat's folders) */}
+              <SubLink to="/wa-chat/media-library" icon="🖼️" label="Media Library" />
               {/* {canViewApiKeys &&  */}
               <SubLink to="/wa-chat/api-services" icon="🔑" label="API Services" />
               {/* } */}

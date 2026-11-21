@@ -13,8 +13,9 @@ class WidgetController extends Controller
     public function index(): JsonResponse
     {
         $widgets = ChatWidget::where('company_id', auth()->user()->company_id)->get();
+        $live = $this->liveCounts($widgets->pluck('id')->all());
         return response()->json([
-            'widgets'   => $widgets->map(fn ($w) => $this->present($w)),
+            'widgets'   => $widgets->map(fn ($w) => $this->present($w, $live[$w->id] ?? ['chats' => 0, 'leads' => 0])),
             'ai_configured' => $this->aiConfigured(),
         ]);
     }
@@ -80,9 +81,32 @@ class WidgetController extends Controller
         return $data;
     }
 
-    private function present(ChatWidget $w): array
+    /**
+     * The "N chats · N leads" a widget shows, counted from the real conversations with the SAME rule the chats inbox lists by (a message,
+     * or the visitor left details / became a lead / is in a live chat). The stored conversations_count / leads_count columns only ever go
+     * up when a conversation is created — they counted visitors who never typed, so the page promised more chats than the inbox could show.
+     * @param int[] $widgetIds
+     * @return array<int,array{chats:int,leads:int}>
+     */
+    private function liveCounts(array $widgetIds): array
     {
+        if (!$widgetIds) { return []; }
+        $rows = \Illuminate\Support\Facades\DB::table('widget_conversations as wc')->whereIn('wc.chat_widget_id', $widgetIds)
+            ->whereRaw("(EXISTS (SELECT 1 FROM widget_messages x WHERE x.widget_conversation_id = wc.id)
+                         OR (wc.visitor_phone IS NOT NULL AND wc.visitor_phone <> '') OR wc.lead_id IS NOT NULL OR wc.contact_id IS NOT NULL
+                         OR wc.live_status IN ('waiting', 'live'))")
+            ->selectRaw("wc.chat_widget_id, COUNT(*) AS chats,
+                         SUM(CASE WHEN wc.lead_id IS NOT NULL AND EXISTS (SELECT 1 FROM leads l WHERE l.id = wc.lead_id AND l.deleted_at IS NULL) THEN 1 ELSE 0 END) AS leads")
+            ->groupBy('wc.chat_widget_id')->get();
+        return $rows->mapWithKeys(fn ($r) => [(int) $r->chat_widget_id => ['chats' => (int) $r->chats, 'leads' => (int) $r->leads]])->all();
+    }
+
+    private function present(ChatWidget $w, ?array $live = null): array
+    {
+        $live ??= $this->liveCounts([$w->id])[$w->id] ?? ['chats' => 0, 'leads' => 0];
         return array_merge($w->toArray(), [
+            'conversations_count' => $live['chats'],
+            'leads_count'         => $live['leads'],
             'embed_snippet' => $this->snippet($w),
             'script_url'    => $this->secureUrl("/api/v1/public/widget/{$w->public_key}.js"),
         ]);

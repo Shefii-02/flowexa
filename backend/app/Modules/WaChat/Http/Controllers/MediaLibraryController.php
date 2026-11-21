@@ -39,6 +39,27 @@ class MediaLibraryController extends Controller
         return null;
     }
 
+    /**
+     * A new, independent stored copy of a file (so deleting one never breaks the other). Node-hosted files are read back and re-hosted;
+     * files on this server's disk are copied on the disk. Null when the original cannot be read.
+     * @return array{filename:string,url:string,disk:string,path:string}|null
+     */
+    private function cloneFile(MediaLibrary $media, int $companyId, string $slug): ?array
+    {
+        $ext = pathinfo((string) $media->filename, PATHINFO_EXTENSION);
+        if ($media->disk === 'node') {
+            $bytes = \App\Support\NodeFileStore::read((string) $media->url);
+            if ($bytes === null) { return null; }
+            $s = \App\Support\NodeFileStore::store($bytes, $companyId, 'library', 'copy' . ($ext ? ".{$ext}" : ''), $media->mime_type);
+            return ['filename' => basename($s['path']), 'url' => $s['url'], 'disk' => $s['disk'], 'path' => $s['path']];
+        }
+        $newName = Str::uuid() . ($ext ? ".{$ext}" : '');
+        $newPath = "media/{$companyId}/{$slug}/{$newName}";
+        if (!Storage::disk('public')->exists((string) $media->path)) { return null; }
+        Storage::disk('public')->copy($media->path, $newPath);
+        return ['filename' => $newName, 'url' => Storage::disk('public')->url($newPath), 'disk' => 'public', 'path' => $newPath];
+    }
+
     private function systemFolderFromMime(string $mime): string
     {
         if (str_starts_with($mime, 'image/'))  return 'images';
@@ -106,6 +127,7 @@ class MediaLibraryController extends Controller
         $request->validate([
             'file'      => 'required|file|max:' . (self::MAX_FILE_MB * 1024),
             'folder_id' => 'nullable|integer',
+            'purpose'   => 'nullable|in:' . implode(',', array_keys(\App\Modules\WaChat\Services\WaChatMediaFolders::PURPOSES)),   // what it is for: lands in the matching WA Chat folder
         ]);
 
         $user      = auth()->user();
@@ -145,16 +167,20 @@ class MediaLibraryController extends Controller
             }
         }
 
+        // an upload that says what it is for goes into that WA Chat folder
+        if (!$targetFolder && $request->filled('purpose')) {
+            $targetFolder = \App\Modules\WaChat\Services\WaChatMediaFolders::folderFor($companyId, $request->input('purpose'));
+        }
         // If no valid custom folder, use or create the system folder
         if (!$targetFolder) {
             $targetFolder = $this->ensureSystemFolder($companyId, $slug);
         }
 
-        $filename = Str::uuid() . '.' . $file->getClientOriginalExtension();
-        $path     = "media/{$companyId}/{$targetFolder->slug}/{$filename}";
-
-        Storage::disk('public')->put($path, file_get_contents($file->getRealPath()));
-        $url = Storage::disk('public')->url($path);
+        // hosted by the Node gateway and shared from there (this server's disk only when the gateway cannot take it)
+        $stored   = \App\Support\NodeFileStore::store((string) file_get_contents($file->getRealPath()), (int) $companyId, 'library', $file->getClientOriginalName(), $mime);
+        $url      = $stored['url'];
+        $path     = $stored['path'];
+        $filename = basename($path) ?: (Str::uuid() . '.' . $file->getClientOriginalExtension());
 
         $media = MediaLibrary::create([
             'company_id'    => $companyId,
@@ -164,7 +190,7 @@ class MediaLibraryController extends Controller
             'original_name' => $file->getClientOriginalName(),
             'display_name'  => $file->getClientOriginalName(),
             'url'           => $url,
-            'disk'          => 'public',
+            'disk'          => $stored['disk'],
             'path'          => $path,
             'size'          => $sizeBytes,
             'mime_type'     => $mime,
@@ -238,22 +264,21 @@ class MediaLibraryController extends Controller
 
         $folder  = $targetFolderId ? MediaFolder::find($targetFolderId) : null;
         $slug    = $folder?->slug ?? $media->folder ?? 'documents';
-        $ext     = pathinfo($media->filename, PATHINFO_EXTENSION);
-        $newName = Str::uuid() . ($ext ? ".{$ext}" : '');
-        $newPath = "media/{$user->company_id}/{$slug}/{$newName}";
-
-        Storage::disk('public')->copy($media->path, $newPath);
+        $cloned = $this->cloneFile($media, (int) $user->company_id, $slug);
+        if ($cloned === null) {
+            return response()->json(['message' => 'Could not copy that file — its stored copy could not be read.'], 502);
+        }
 
         $copy = MediaLibrary::create([
             'company_id'    => $user->company_id,
             'folder'        => $slug,
             'folder_id'     => $targetFolderId,
-            'filename'      => $newName,
+            'filename'      => $cloned['filename'],
             'original_name' => $media->original_name,
             'display_name'  => 'Copy of ' . $media->display_name,
-            'url'           => Storage::disk('public')->url($newPath),
-            'disk'          => 'public',
-            'path'          => $newPath,
+            'url'           => $cloned['url'],
+            'disk'          => $cloned['disk'],
+            'path'          => $cloned['path'],
             'size'          => $media->size,
             'mime_type'     => $media->mime_type,
             'uploaded_by'   => $user->id,
@@ -272,7 +297,7 @@ class MediaLibraryController extends Controller
         $media = MediaLibrary::where('company_id', $user->company_id)->findOrFail($id);
         if ($deny = $this->guardPrivate($media, $user)) return $deny;
         \App\Modules\TeamChat\Support\TeamChatFiles::released($media);   // a chat message that carried it becomes a plain note
-        Storage::disk('public')->delete($media->path);
+        $media->deleteStoredFile();
         $media->delete();
         return response()->json([
             'message' => 'Deleted.',
@@ -352,34 +377,34 @@ class MediaLibraryController extends Controller
             return response()->json(['message' => "Storage limit ({$storage['limit_mb']} MB) reached — cannot copy."], 422);
         }
 
+        $copied = 0; $skipped = 0;
         foreach ($files as $media) {
             $folderId = $targetFolder ? $targetFolder->id : $media->folder_id;
             $folder   = $folderId ? MediaFolder::find($folderId) : null;
             $slug     = $folder?->slug ?? $media->folder ?? 'documents';
-            $ext      = pathinfo($media->filename, PATHINFO_EXTENSION);
-            $newName  = Str::uuid() . ($ext ? ".{$ext}" : '');
-            $newPath  = "media/{$user->company_id}/{$slug}/{$newName}";
-
-            Storage::disk('public')->copy($media->path, $newPath);
+            $cloned = $this->cloneFile($media, (int) $user->company_id, $slug);
+            if ($cloned === null) { $skipped++; continue; }   // its stored copy cannot be read — skip it rather than fail the whole batch
 
             MediaLibrary::create([
                 'company_id'    => $user->company_id,
                 'folder'        => $slug,
                 'folder_id'     => $folderId,
-                'filename'      => $newName,
+                'filename'      => $cloned['filename'],
                 'original_name' => $media->original_name,
                 'display_name'  => 'Copy of ' . $media->display_name,
-                'url'           => Storage::disk('public')->url($newPath),
-                'disk'          => 'public',
-                'path'          => $newPath,
+                'url'           => $cloned['url'],
+                'disk'          => $cloned['disk'],
+                'path'          => $cloned['path'],
                 'size'          => $media->size,
                 'mime_type'     => $media->mime_type,
                 'uploaded_by'   => $user->id,
             ]);
+            $copied++;
         }
 
         return response()->json([
-            'message' => $files->count() . ' file(s) copied.',
+            'message' => $copied . ' file(s) copied.' . ($skipped ? " {$skipped} could not be copied (their stored file could not be read)." : ''),
+            'copied'  => $copied, 'skipped' => $skipped,
             'storage' => $this->recalcStorage($company),
         ], 201);
     }
@@ -402,7 +427,7 @@ class MediaLibraryController extends Controller
         foreach ($files as $media) {
             if ($this->guardPrivate($media, $user)) { continue; }   // private files (team chat) are skipped for people who cannot open that folder
             \App\Modules\TeamChat\Support\TeamChatFiles::released($media);
-            Storage::disk('public')->delete($media->path);
+            $media->deleteStoredFile();
             $media->delete();
         }
 

@@ -40,6 +40,8 @@ class SuperAdminCompanyConfigResource extends JsonResource
             'storage_used_bytes'  => $this->storage_used_bytes,
 
             'wa_config'              => $this->wa_config ?? 'wallet',
+            'wa_chat_billing'        => $this->wa_chat_billing ?? 'wallet',
+            'wa_chat_credits_per_message' => (int) ($this->wa_chat_credits_per_message ?? 1),
             'wa_phone_id'            => $this->wa_phone_id,
             'wa_business_id'         => $this->wa_business_id,
             'meta_app_id'            => $this->meta_app_id,

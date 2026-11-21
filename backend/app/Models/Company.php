@@ -25,6 +25,8 @@ class Company extends Model
         'logo',
         'status',
         'wa_config',
+        'wa_chat_billing',
+        'wa_chat_credits_per_message',
         'suspended_reason',
         'trial_ends_at',
         'plan_expires_at',

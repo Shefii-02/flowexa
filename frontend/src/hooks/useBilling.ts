@@ -10,5 +10,7 @@ import { useAppSelector } from '@/store/hooks'
 export const useBilling = () => {
   const user = useAppSelector((state) => state.auth.user)
   const waConfig = user?.company?.wa_config ?? 'wallet'
-  return { waConfig, usesWallet: waConfig === 'wallet', ownAccount: waConfig !== 'wallet' }
+  // WA Chat (open-wa) messages are billed separately from WA Cloud: a company on its own Meta account can still pay per WA Chat message from the wallet.
+  const waChatWallet = (user?.company?.wa_chat_billing ?? 'wallet') === 'wallet'
+  return { waConfig, usesWallet: waConfig === 'wallet' || waChatWallet, waChatWallet, cloudUsesWallet: waConfig === 'wallet', ownAccount: waConfig !== 'wallet' }
 }

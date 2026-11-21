@@ -826,6 +826,16 @@ class WahaSessionController extends Controller
             }
         }
 
+        // Delivery confirmed → one wallet charge for the message (WhatsApp may repeat or upgrade the ack, delivered → read; only the first one charges).
+        if ($session && $event === 'message.ack' && in_array($payload['status'] ?? null, ['delivered', 'read'], true) && ($payload['id'] ?? $payload['messageId'] ?? null)) {
+            try {
+                $company = Company::find($session->company_id);
+                if ($company) { app(\App\Modules\WaChat\Services\WaChatBilling::class)->chargeDelivered($company, $name, (string) ($payload['id'] ?? $payload['messageId'])); }
+            } catch (\Throwable $e) {
+                Log::error('Webhook WA Chat billing error: ' . $e->getMessage());   // never fail the webhook over billing
+            }
+        }
+
         // Outbound audit log — mirrors the inbound write above so the same message_logs table
         // (and any future per-channel usage stats) sees both directions of a WA Chat conversation,
         // regardless of whether the send was triggered by the AI agent, a chatbot/flow, or a human

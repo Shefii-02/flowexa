@@ -8,17 +8,28 @@ import { PermissionGate } from '@/components/ui/PermissionGate'
 import { nodeChatApi, widgetApi, type ChatWidget, type InboxTab } from '../api'
 import InboxList from './InboxList'
 import ChatPane from './ChatPane'
-import { MAX_PANES, loadPanes, savePanes } from './util'
+import { MAX_PANES, loadPanes, resolveWidget, savePanes } from './util'
 
 function Workspace() {
-  // ?widget=ID narrows the list to one widget's conversations (the "Conversations" link on the widgets page)
+  // ?widget=… narrows the list to one widget's conversations (the "Conversations" link on the widgets page). It can be the widget's number,
+  // its key (wgt_…) or its name as a slug — resolved here; while that is being looked up, or if nothing matches, we never fall back to "all".
   const [params, setParams] = useSearchParams()
-  const widgetId = Number(params.get('widget')) || 0
-  const [widgetName, setWidgetName] = useState('')
+  const widgetParam = (params.get('widget') ?? '').trim()
+  const [widgetState, setWidgetState] = useState<'none' | 'loading' | 'found' | 'missing'>(widgetParam ? 'loading' : 'none')
+  const [widget, setWidget] = useState<{ id: number; name: string } | null>(null)
   useEffect(() => {
-    if (!widgetId) { setWidgetName(''); return }
-    widgetApi.list().then(r => setWidgetName(((r.data.widgets ?? r.data.data ?? r.data) as ChatWidget[]).find(w => w.id === widgetId)?.name ?? '')).catch(() => {})
-  }, [widgetId])
+    if (!widgetParam) { setWidgetState('none'); setWidget(null); return }
+    let off = false
+    setWidgetState('loading')
+    widgetApi.list().then(r => {
+      if (off) return
+      const hit = resolveWidget(widgetParam, (r.data.widgets ?? r.data.data ?? r.data) as ChatWidget[])
+      if (hit) { setWidget({ id: hit.id, name: hit.name }); setWidgetState('found') } else { setWidget(null); setWidgetState('missing') }
+    }).catch(() => { if (!off) { setWidget(null); setWidgetState('missing') } })
+    return () => { off = true }
+  }, [widgetParam])
+  const widgetId = widget?.id ?? 0
+  const widgetName = widget?.name ?? ''
   const [open, setOpen] = useState<number[]>(loadPanes)
   const [expanded, setExpanded] = useState<number | null>(null)
   const [me, setMe] = useState({ muted: false, handling: 0, limit: 5 })
@@ -60,8 +71,10 @@ function Workspace() {
       <div className="flex items-center gap-3 flex-wrap">
         <Link to="/website-widget" className="icon-btn" title="Back to widgets">←</Link>
         <div className="flex-1 min-w-0">
-          <h1 className="page-title">{widgetId ? `${widgetName || 'Widget'} — conversations` : 'Website chats'}</h1>
-          <p className="page-sub">{widgetId
+          <h1 className="page-title">{widgetId ? `${widgetName || 'Widget'} — conversations` : widgetParam ? 'Website chats' : 'Website chats'}</h1>
+          <p className="page-sub">{widgetState === 'missing'
+            ? <>No widget matches “{widgetParam}”. <button className="underline" onClick={() => setParams({})}>Show all widgets</button></>
+            : widgetId
             ? <>Only this widget's chats. <button className="underline" onClick={() => setParams({})}>Show all widgets</button></>
             : <>Live conversations from your website widget — open up to {MAX_PANES} side by side.</>}</p>
         </div>
@@ -78,7 +91,9 @@ function Workspace() {
 
       <div className="flex-1 min-h-0 flex gap-3">
         <div className={`${mobileList ? 'flex' : 'hidden'} md:flex w-full md:w-[330px] shrink-0 min-h-0`}>
-          <InboxList widgetId={widgetId || undefined} openIds={open} muted={me.muted} refreshKey={refreshKey} onOpen={openChat} onCounts={setCounts} onSocket={setSocketUp} onForbidden={() => setForbidden(true)} />
+          {widgetState === 'loading' ? <div className="flex-1 grid place-items-center text-sm text-gray-400 bg-white rounded-2xl border border-gray-200">Loading widget…</div>
+            : widgetState === 'missing' ? <div className="flex-1 grid place-items-center text-center p-6 text-sm text-gray-500 bg-white rounded-2xl border border-gray-200"><div>This link points to a widget that does not exist (or was removed).<br /><button className="mt-2 underline text-brand-600" onClick={() => setParams({})}>Show chats from all widgets</button></div></div>
+            : <InboxList widgetId={widgetId || undefined} openIds={open} muted={me.muted} refreshKey={refreshKey} onOpen={openChat} onCounts={setCounts} onSocket={setSocketUp} onForbidden={() => setForbidden(true)} />}
         </div>
         <div className={`${mobileList ? 'hidden' : 'flex'} md:flex flex-1 min-w-0 min-h-0 gap-3 overflow-x-auto`}>
           {shown.length === 0 ? (

@@ -72,6 +72,13 @@ class ProcessMessageSenderJob implements ShouldQueue
             return;
         }
 
+        // A scheduled campaign starts later, when the wallet may no longer cover it — stop it cleanly instead of sending for free.
+        if ($job->status !== 'running' && ($company = \App\Models\Company::find($job->company_id)) && ($why = app(\App\Modules\WaChat\Services\WaChatBilling::class)->refusal($company, max(1, (int) $job->total)))) {
+            Log::warning("ProcessMessageSenderJob #{$this->jobId}: not started — {$why}");
+            $job->update(['status' => 'paused']);
+            return;
+        }
+
         $job->update(['status' => 'running', 'started_at' => $job->started_at ?? now()]);
 
         $company    = $job->company;

@@ -18,7 +18,9 @@ export interface QuotableMessage {
 
 /** The subset of a staged attachment the composer needs in order to send it. */
 export interface ComposerAttachment {
-  base64: string;
+  /** the file's bytes — empty when the file is already hosted and `url` is sent instead (a Media Library pick) */
+  base64?: string;
+  url?: string;
   mimetype: string;
   filename?: string;
 }
@@ -55,10 +57,11 @@ export function buildMediaSendPayload(
   attachment: ComposerAttachment,
   caption: string | undefined,
   replyingTo: QuotableMessage | null | undefined,
-): { base64: string; mimetype: string; filename?: string; caption?: string; quotedMessageId?: string } {
+): { base64?: string; url?: string; mimetype: string; filename?: string; caption?: string; quotedMessageId?: string } {
   const quotedMessageId = quotedIdOf(replyingTo);
   return {
-    base64: attachment.base64,
+    // a hosted file goes by its link (the gateway fetches it) — the browser never has to download and re-upload it
+    ...(attachment.url && !attachment.base64 ? { url: attachment.url } : { base64: attachment.base64 }),
     mimetype: attachment.mimetype,
     filename: attachment.filename,
     caption,
@@ -77,7 +80,7 @@ export function buildOptimisticMetadata(
   if (!attachment && !replyingTo) return undefined;
   return {
     ...(attachment
-      ? { media: { mimetype: attachment.mimetype, filename: attachment.filename, data: attachment.base64 } }
+      ? { media: { mimetype: attachment.mimetype, filename: attachment.filename, data: attachment.base64 || attachment.url || '' } }
       : {}),
     ...(replyingTo ? { quotedMessage: { id: quotedIdOf(replyingTo)!, body: quotedPreviewBody(replyingTo) } } : {}),
   };

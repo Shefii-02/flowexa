@@ -9,6 +9,8 @@ import { useAppSelector, usePermission } from '@/store'
 import { fmt } from '@/utils'
 import toast from 'react-hot-toast'
 import { useMediaGate } from '@/hooks/useMediaGate'
+import FolderTree from './FolderTree'
+import { buildTree, canHaveChildren, pathTo, moveTargets } from './folderTreeUtils'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -93,15 +95,21 @@ function formatBytes(b: number): string {
 
 interface FolderModalProps {
   editing?: MediaFolder | null
+  /** create the new folder INSIDE this one */
+  parent?: { id: number; name: string } | null
+  /** every folder — the Location list when editing offers the ones this folder can move into */
+  allFolders?: MediaFolder[]
   onClose: () => void
   onSaved: () => void
 }
 
-function FolderModal({ editing, onClose, onSaved }: FolderModalProps) {
+function FolderModal({ editing, parent, allFolders = [], onClose, onSaved }: FolderModalProps) {
   const [name, setName]               = useState(editing?.name ?? '')
   const [permissions, setPermissions] = useState<Role[]>(editing?.permissions ?? [])
   const [saving, setSaving]           = useState(false)
   const [allAccess, setAllAccess]     = useState(!(editing?.permissions?.length))
+  const [location, setLocation]       = useState<string>(editing?.parent_id ? String(editing.parent_id) : '')   // '' = top level
+  const targets                       = editing ? moveTargets(allFolders, editing) : []
 
   const toggleRole = (r: Role) =>
     setPermissions(prev => prev.includes(r) ? prev.filter(x => x !== r) : [...prev, r])
@@ -113,6 +121,9 @@ function FolderModal({ editing, onClose, onSaved }: FolderModalProps) {
       const payload = {
         name: name.trim(),
         permissions: allAccess ? null : permissions.length ? permissions : null,
+        ...(!editing && parent ? { parent_id: parent.id } : {}),
+        // only sent when the folder was actually moved
+        ...(editing && location !== (editing.parent_id ? String(editing.parent_id) : '') ? { parent_id: location ? Number(location) : null } : {}),
       }
       if (editing) {
         await api.patch(`/media-library/folders/${editing.id}`, payload)
@@ -134,7 +145,7 @@ function FolderModal({ editing, onClose, onSaved }: FolderModalProps) {
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <div style={{ background: '#fff', borderRadius: 16, padding: 24, width: 400, boxShadow: '0 20px 60px rgba(0,0,0,0.15)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-          <h3 style={{ fontWeight: 700, fontSize: 16, margin: 0 }}>{editing ? 'Edit Folder' : 'New Folder'}</h3>
+          <h3 style={{ fontWeight: 700, fontSize: 16, margin: 0 }}>{editing ? 'Edit Folder' : parent ? 'New folder inside' : 'New Folder'}{!editing && parent && <span style={{ color: '#6366f1' }}> “{parent.name}”</span>}</h3>
           <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9ca3af' }}><X size={18} /></button>
         </div>
 
@@ -149,6 +160,18 @@ function FolderModal({ editing, onClose, onSaved }: FolderModalProps) {
             style={{ width: '100%', padding: '9px 12px', border: '1px solid #e5e7eb', borderRadius: 8, fontSize: 14, boxSizing: 'border-box' }}
           />
         </div>
+
+        {/* Location — move this folder into another one */}
+        {editing && !editing.is_system && (
+          <div style={{ marginBottom: 16 }}>
+            <label htmlFor="folder-location" style={{ fontSize: 13, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 6 }}>Location</label>
+            <select id="folder-location" value={location} onChange={e => setLocation(e.target.value)}
+              style={{ width: '100%', padding: '9px 12px', border: '1px solid #e5e7eb', borderRadius: 8, fontSize: 14, boxSizing: 'border-box', background: '#fff' }}>
+              <option value="">Top level</option>
+              {targets.map(({ folder: f, depth }) => <option key={f.id} value={f.id}>{'\u00A0\u00A0'.repeat(depth - 1)}{f.name}</option>)}
+            </select>
+          </div>
+        )}
 
         {/* Access permissions */}
         <div style={{ marginBottom: 20 }}>
@@ -313,7 +336,7 @@ function FolderPickerModal({ title, folders, onClose, onConfirm }: FolderPickerM
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 
-export default function WaMediaLibrary() {
+export default function WaMediaLibrary({ scope }: { scope?: 'wa-chat' } = {}) {
   const { gate, cropModal } = useMediaGate()
   const user       = useAppSelector(s => s.auth.user)
   // Role names are stored capitalised ("Admin", "Manager") and superadmin is
@@ -329,6 +352,8 @@ export default function WaMediaLibrary() {
   const [filesLoading,   setFilesLoading]   = useState(false)
   const [uploading,      setUploading]      = useState(false)
   const [showFolderModal,setShowFolderModal]= useState(false)
+  const [newFolderParent, setNewFolderParent] = useState<{ id: number; name: string } | null>(null)   // set → the folder being created goes inside this one
+  const startedInScope = useRef(false)
   const [editingFolder,  setEditingFolder]  = useState<MediaFolder | null>(null)
   const [renaming,       setRenaming]       = useState<{ id: number; name: string } | null>(null)
   const [deleteConfirm,  setDeleteConfirm]  = useState<{ type: 'file' | 'folder'; id: number; name: string } | null>(null)
@@ -348,7 +373,14 @@ export default function WaMediaLibrary() {
   const loadFolders = useCallback(async () => {
     try {
       const res = await api.get('/media-library/folders')
-      setFolders(res.data?.data ?? [])
+      const list: MediaFolder[] = res.data?.data ?? []
+      setFolders(list)
+      // the WA Chat version of the page opens on the WA Chat folder
+      if (scope === 'wa-chat' && !startedInScope.current) {
+        startedInScope.current = true
+        const root = list.find(f => f.slug === 'wa-chat')
+        if (root) setActiveFolderId(root.id)
+      }
     } catch { /* silent */ }
   }, [])
 
@@ -544,10 +576,12 @@ export default function WaMediaLibrary() {
   const limitMb      = storage.limit_mb
   const usagePct     = limitMb > 0 ? Math.min(100, Math.round((usedMb / limitMb) * 100)) : 0
 
-  const systemFolders = folders.filter(f => f.is_system && !f.parent_id)
-  const childFolders  = (parent: number) => folders.filter(f => f.parent_id === parent)
+  const tree          = buildTree(folders)
+  const systemRoots   = tree.filter(n => n.folder.is_system)
+  const customRoots   = tree.filter(n => !n.folder.is_system)
+  const folderPath    = pathTo(folders, activeFolderId)
+  const activeDepth    = folderPath.length
   const chatMb        = storage.breakdown?.team_chat.mb ?? 0
-  const customFolders = folders.filter(f => !f.is_system && !f.parent_id)
 
   if (loading) return (
     <div style={{ margin: '-24px', display: 'flex', justifyContent: 'center', alignItems: 'center', height: 'calc(100vh - 52px)' }}>
@@ -595,68 +629,24 @@ export default function WaMediaLibrary() {
           All Files
         </button>
 
-        {/* System folders */}
-        {systemFolders.length > 0 && (
-          <div>
-            <div style={{ padding: '8px 16px 4px', fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-              Auto-sorted
-            </div>
-            {systemFolders.map(folder => (<div key={folder.id}>
-              <button
-                onClick={() => setActiveFolderId(folder.id)}
-                style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '8px 16px', background: activeFolderId === folder.id ? '#eef2ff' : 'none', border: 'none', cursor: 'pointer', color: activeFolderId === folder.id ? '#4338ca' : '#374151', fontWeight: activeFolderId === folder.id ? 600 : 400, fontSize: 13 }}>
-                <SystemFolderIcon slug={folder.slug} />
-                <span style={{ flex: 1, textAlign: 'left' }}>{folder.name}</span>
-                <span style={{ fontSize: 10, color: '#9ca3af' }}>{folder.file_count + childFolders(folder.id).reduce((n, c) => n + c.file_count, 0)}</span>
-              </button>
-              {/* one sub-folder per team chat conversation */}
-              {childFolders(folder.id).map(sub => (
-                <button key={sub.id} onClick={() => setActiveFolderId(sub.id)}
-                  style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '6px 16px 6px 36px', background: activeFolderId === sub.id ? '#eef2ff' : 'none', border: 'none', cursor: 'pointer', color: activeFolderId === sub.id ? '#4338ca' : '#4b5563', fontWeight: activeFolderId === sub.id ? 600 : 400, fontSize: 12 }}>
-                  <FolderOpen size={13} style={{ color: '#9ca3af', flexShrink: 0 }} />
-                  <span style={{ flex: 1, textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sub.name}</span>
-                  <span style={{ fontSize: 10, color: '#9ca3af' }}>{sub.file_count}</span>
-                </button>
-              ))}
-            </div>))}
-          </div>
-        )}
-
-        {/* Custom folders */}
+        {/* Folders — system ones first, then yours; folders can contain folders */}
         <div style={{ flex: 1, overflowY: 'auto' }}>
-          {customFolders.length > 0 && (
+          {systemRoots.length > 0 && (
+            <div>
+              <div style={{ padding: '8px 16px 4px', fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Auto-sorted</div>
+              <FolderTree nodes={systemRoots} all={folders} activeId={activeFolderId} onSelect={setActiveFolderId}
+                onEdit={f => { setEditingFolder(f); setNewFolderParent(null); setShowFolderModal(true) }}
+                onDelete={f => setDeleteConfirm({ type: 'folder', id: f.id, name: f.name })}
+                onAddInside={f => { setEditingFolder(null); setNewFolderParent({ id: f.id, name: f.name }); setShowFolderModal(true) }} />
+            </div>
+          )}
+          {customRoots.length > 0 && (
             <div style={{ marginTop: 8 }}>
-              <div style={{ padding: '8px 16px 4px', fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-                My Folders
-              </div>
-              {customFolders.map(folder => (
-                <div key={folder.id} style={{ position: 'relative', display: 'flex', alignItems: 'center', paddingRight: 4 }}>
-                  <button
-                    onClick={() => setActiveFolderId(folder.id)}
-                    style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, padding: '8px 8px 8px 16px', background: activeFolderId === folder.id ? '#eef2ff' : 'none', border: 'none', cursor: 'pointer', color: activeFolderId === folder.id ? '#4338ca' : '#374151', fontWeight: activeFolderId === folder.id ? 600 : 400, fontSize: 13, textAlign: 'left' }}>
-                    <FolderIcon folder={folder} active={activeFolderId === folder.id} />
-                    <span style={{ flex: 1 }}>{folder.name}</span>
-                    {folder.permissions && folder.permissions.length > 0 && (
-                      <span title={`Restricted: ${folder.permissions.join(', ')}`}>
-                        <Lock size={11} style={{ color: '#6366f1', flexShrink: 0 }} />
-                      </span>
-                    )}
-                    <span style={{ fontSize: 10, color: '#9ca3af' }}>{folder.file_count}</span>
-                  </button>
-                  {/* {isAdmin && ( */}
-                    <div style={{ display: 'flex', gap: 2, opacity: 0.6 }}>
-                      <button onClick={() => { setEditingFolder(folder); setShowFolderModal(true) }}
-                        title="Edit folder" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, color: '#6b7280' }}>
-                        <Pencil size={11} />
-                      </button>
-                      <button onClick={() => setDeleteConfirm({ type: 'folder', id: folder.id, name: folder.name })}
-                        title="Delete folder" style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, color: '#ef4444' }}>
-                        <Trash2 size={11} />
-                      </button>
-                    </div>
-                  {/* )} */}
-                </div>
-              ))}
+              <div style={{ padding: '8px 16px 4px', fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.08em' }}>My Folders</div>
+              <FolderTree nodes={customRoots} all={folders} activeId={activeFolderId} onSelect={setActiveFolderId}
+                onEdit={f => { setEditingFolder(f); setNewFolderParent(null); setShowFolderModal(true) }}
+                onDelete={f => setDeleteConfirm({ type: 'folder', id: f.id, name: f.name })}
+                onAddInside={f => { setEditingFolder(null); setNewFolderParent({ id: f.id, name: f.name }); setShowFolderModal(true) }} />
             </div>
           )}
         </div>
@@ -665,7 +655,7 @@ export default function WaMediaLibrary() {
         {/* {isAdmin && ( */}
           <div style={{ padding: 12, borderTop: '1px solid #e5e7eb' }}>
             <button
-              onClick={() => { setEditingFolder(null); setShowFolderModal(true) }}
+              onClick={() => { setEditingFolder(null); setNewFolderParent(null); setShowFolderModal(true) }}
               style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '8px', background: '#eef2ff', color: '#4338ca', border: '1px dashed #818cf8', borderRadius: 8, cursor: 'pointer', fontSize: 12, fontWeight: 600 }}>
               <FolderPlus size={14} /> New Folder
             </button>
@@ -680,21 +670,33 @@ export default function WaMediaLibrary() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 20px', borderBottom: '1px solid #e5e7eb', background: '#fff' }}>
           <div style={{ flex: 1 }}>
             <h2 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: '#111827' }}>
-              {activeFolder ? (
-                <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  {activeFolder.is_system ? <SystemFolderIcon slug={activeFolder.slug} /> : <FolderOpen size={15} color="#6366f1" />}
-                  {activeFolder.name}
-                  {activeFolder.permissions && activeFolder.permissions.length > 0 && (
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, background: '#eef2ff', color: '#4338ca', borderRadius: 20, padding: '2px 8px' }}>
-                      <Lock size={10} /> {activeFolder.permissions.join(', ')}
-                    </span>
-                  )}
-                </span>
-              ) : 'All Files'}
+              <span style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }} aria-label="Folder path">
+                {scope === 'wa-chat' && <span title="WA Chat media">💬</span>}
+                <button type="button" onClick={() => setActiveFolderId(null)} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', font: 'inherit', color: activeFolder ? '#6b7280' : '#111827' }}>
+                  {scope === 'wa-chat' ? 'WA Chat media' : 'All Files'}
+                </button>
+                {folderPath.map((f, i) => (
+                  <span key={f.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ color: '#d1d5db' }}>›</span>
+                    <button type="button" onClick={() => setActiveFolderId(f.id)} style={{ background: 'none', border: 'none', padding: 0, cursor: i === folderPath.length - 1 ? 'default' : 'pointer', font: 'inherit', color: i === folderPath.length - 1 ? '#111827' : '#6b7280' }}>{f.name}</button>
+                  </span>
+                ))}
+                {activeFolder?.permissions && activeFolder.permissions.length > 0 && (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, background: '#eef2ff', color: '#4338ca', borderRadius: 20, padding: '2px 8px' }}>
+                    <Lock size={10} /> {activeFolder.permissions.join(', ')}
+                  </span>
+                )}
+              </span>
             </h2>
             <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 2 }}>{files.length} file{files.length !== 1 ? 's' : ''}</div>
           </div>
 
+          {activeFolder && canHaveChildren(activeFolder, activeDepth) && (
+            <button type="button" onClick={() => { setEditingFolder(null); setNewFolderParent({ id: activeFolder.id, name: activeFolder.name }); setShowFolderModal(true) }}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 12px', background: '#fff', color: '#4338ca', border: '1px solid #c7d2fe', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>
+              <FolderPlus size={14} /> New folder here
+            </button>
+          )}
           <label style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px', background: uploading ? '#f3f4f6' : '#6366f1', color: uploading ? '#9ca3af' : '#fff', borderRadius: 8, cursor: uploading ? 'not-allowed' : 'pointer', fontSize: 13, fontWeight: 600 }}>
             {uploading ? <Loader2 size={14} className="animate-spin" /> : <Upload size={14} />}
             {uploading ? 'Uploading…' : 'Upload'}
@@ -876,7 +878,9 @@ export default function WaMediaLibrary() {
       {showFolderModal && (
         <FolderModal
           editing={editingFolder}
-          onClose={() => { setShowFolderModal(false); setEditingFolder(null) }}
+          parent={newFolderParent}
+          allFolders={folders}
+          onClose={() => { setShowFolderModal(false); setEditingFolder(null); setNewFolderParent(null) }}
           onSaved={() => { loadFolders(); loadFiles(activeFolderId) }}
         />
       )}

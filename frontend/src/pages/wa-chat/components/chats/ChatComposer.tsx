@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { Loader2, Paperclip, Send, Smile, X } from 'lucide-react';
+import { FolderOpen, Loader2, Paperclip, Send, Smile, X } from 'lucide-react';
+import api from '@/api/client';
+import MediaPickerModal from '@/components/MediaPickerModal';
 import { messageApi, type Chat, type MessageType } from '../../api/api';
 import { mergeOrAppend, type ChatMessageView } from '../../utils/chatMessages';
 import { promoteChatWithSnippet } from '../../utils/chatList';
@@ -29,7 +31,10 @@ const MEDIA_UPLOAD_MAX_BYTES = 18 * 1024 * 1024;
 
 /** A picked-but-unsent file, staged until send, removal, or a move to another chat. */
 export interface StagedAttachment {
-  file: File;
+  /** the picked file — absent for one chosen from the Media Library, which is sent by `url` */
+  file?: File;
+  url?: string;
+  size?: number;
   base64: string;
   mimetype: string;
   filename: string;
@@ -77,6 +82,7 @@ function ChatComposer({
   const [sending, setSending] = useState<boolean>(false);
 
   const [showEmojiPicker, setShowEmojiPicker] = useState<boolean>(false);
+  const [showLibrary, setShowLibrary] = useState<boolean>(false);
   // Monotonic token invalidating an in-flight attachment FileReader: picking a second file (or
   // removing the attachment) before `onload` fires must win over the late-arriving bytes —
   // otherwise the slower read overwrites the newer pick. Same pattern as composeImageReadSeq.
@@ -165,6 +171,15 @@ function ChatComposer({
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
+  // A file chosen from the Media Library is already hosted, so it is sent by its link — nothing is downloaded or uploaded again.
+  const handleLibraryPick = (url: string, f: { mime_type: string | null; display_name: string | null; original_name: string; size: number }) => {
+    const mimetype = f.mime_type || 'application/octet-stream';
+    attachmentReadSeq.current += 1;
+    setPreviewUrl(mimetype.startsWith('image/') ? url : null);
+    setAttachment({ url, base64: '', mimetype, filename: f.display_name || f.original_name, size: f.size });
+    setShowLibrary(false);
+  };
+
   const triggerFileSelect = () => {
     fileInputRef.current?.click();
   };
@@ -241,6 +256,15 @@ function ChatComposer({
         result = await messageApi.sendText(selectedSessionId, activeChat.id, textToSend);
       }
 
+      // A file picked from this device is also kept in WA Chat → Chat files. Best effort and after the send, so a full
+      // library, a plan without the Media Library or a slow upload never delays or fails the message itself.
+      if (currentAttachment?.file) {
+        const fd = new FormData();
+        fd.append('file', currentAttachment.file);
+        fd.append('purpose', 'wa_chat');
+        api.post('/media-library/upload', fd, { headers: { 'Content-Type': 'multipart/form-data' } }).catch(() => {});
+      }
+
       // Race guard: the realtime `message.sent` echo can arrive before this response and already
       // append the message by its real WA id (the dedup at receive time misses because the
       // optimistic placeholder still carries the temp id). If so, fold the placeholder INTO the
@@ -280,6 +304,7 @@ function ChatComposer({
   return (
     <>
       {cropModal}
+      <MediaPickerModal open={showLibrary} onClose={() => setShowLibrary(false)} onSelect={handleLibraryPick} purpose="wa_chat" title="Attach from Media Library" />
       {/* Attachment preview banner */}
       {attachment && (
         <div className="attachment-preview-banner">
@@ -290,7 +315,7 @@ function ChatComposer({
           )}
           <div className="preview-file-info">
             <span className="preview-filename">{attachment.filename}</span>
-            <span className="preview-filesize">({(attachment.file.size / 1024).toFixed(1)} KB)</span>
+            <span className="preview-filesize">({((attachment.file?.size ?? attachment.size ?? 0) / 1024).toFixed(1)} KB)</span>
           </div>
           <button className="btn-remove-attachment" onClick={handleRemoveAttachment}>
             <X size={18} />
@@ -344,6 +369,17 @@ function ChatComposer({
             title={t('chats.attachTitle')}
           >
             <Paperclip size={20} />
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShowLibrary(true)}
+            disabled={!canWrite || sending}
+            className="btn-input-accessory"
+            title="Attach from Media Library"
+            aria-label="Attach from Media Library"
+          >
+            <FolderOpen size={20} />
           </button>
 
           <button

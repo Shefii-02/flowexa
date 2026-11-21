@@ -94,8 +94,12 @@ class VoiceService
     }
 
     /** Hosts synthesized audio (on the Node gateway; this server's disk only as a fallback) and returns a fetchable URL for it. */
-    public function storePublicly(string $bytes, int $companyId, string $ext = 'mp3'): string
+    public function storePublicly(string $bytes, int $companyId, string $ext = 'mp3', bool $listInLibrary = false): string
     {
+        // WA Chat's own replies are also listed under WA Chat → Chat files (only while the company has storage left)
+        if ($listInLibrary) {
+            return \App\Modules\WaChat\Services\WaChatMediaFolders::hostAndRegister($bytes, $companyId, null, 'wa_chat', "voice-reply.{$ext}", $ext === 'mp3' ? 'audio/mpeg' : "audio/{$ext}", true);
+        }
         return \App\Support\NodeFileStore::put($bytes, $companyId, 'voice-replies', "reply.{$ext}");
     }
 }

@@ -114,7 +114,7 @@ export default function DashboardPage() {
   const mainSection  = (user as any)?.access_sections?.[0] as string | undefined
   const sectionLabel = ({ company_admin: 'Company Admin', administrators: 'Administrators', sales: 'Sales Team',
     marketing: 'Marketing Team', hr: 'HR Team', accounts: 'Accounts Team' } as Record<string, string>)[mainSection ?? '']
-  const waConfig     = user?.company?.wa_config ?? 'wallet'
+  const waConfig     = (user?.company?.wa_config ?? 'wallet') === 'wallet' || (user?.company?.wa_chat_billing ?? 'wallet') === 'wallet' ? 'wallet' : 'own_account'   // 'wallet' = the wallet is in use (WA Cloud or WA Chat)
 
   const [overview,  setOverview]  = useState<Overview | null>(null)
   const [campaigns, setCampaigns] = useState<CampaignData | null>(null)

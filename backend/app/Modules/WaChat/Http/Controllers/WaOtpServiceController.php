@@ -376,6 +376,9 @@ class WaOtpServiceController extends Controller
 
     public function testSend(Request $request): JsonResponse
     {
+        if ($why = app(\App\Modules\WaChat\Services\WaChatBilling::class)->refusal(auth()->user()->company)) {
+            return response()->json(['message' => $why, 'code' => 'insufficient_balance'], 402);   // each delivered message is paid from the wallet
+        }
         $request->validate([
             'phone'     => 'required|string',
             'service'   => 'nullable|string|max:100',
@@ -423,6 +426,9 @@ class WaOtpServiceController extends Controller
     /** Send a utility / transactional message to a phone number from the dashboard. */
     public function utilityMessageSend(Request $request): JsonResponse
     {
+        if ($why = app(\App\Modules\WaChat\Services\WaChatBilling::class)->refusal(auth()->user()->company)) {
+            return response()->json(['message' => $why, 'code' => 'insufficient_balance'], 402);   // each delivered message is paid from the wallet
+        }
         $request->validate([
             'phone'      => 'required|string',
             'service'    => 'nullable|string|max:100',
@@ -477,6 +483,9 @@ class WaOtpServiceController extends Controller
     /** Share an invoice / document file to a customer's WhatsApp number from the dashboard. */
     public function invoiceShare(Request $request): JsonResponse
     {
+        if ($why = app(\App\Modules\WaChat\Services\WaChatBilling::class)->refusal(auth()->user()->company)) {
+            return response()->json(['message' => $why, 'code' => 'insufficient_balance'], 402);   // each delivered message is paid from the wallet
+        }
         $request->validate([
             'phone'      => 'required|string',
             'service'    => 'nullable|string|max:100',
@@ -500,7 +509,7 @@ class WaOtpServiceController extends Controller
         if ($request->hasFile('file')) {
             $file     = $request->file('file');
             $filename = $request->filename ?: $file->getClientOriginalName();
-            $fileUrl  = \App\Support\NodeFileStore::put((string) file_get_contents($file->getRealPath()), (int) $companyId, 'invoices', $filename, $file->getMimeType());
+            $fileUrl  = \App\Modules\WaChat\Services\WaChatMediaFolders::hostAndRegister((string) file_get_contents($file->getRealPath()), (int) $companyId, auth()->id(), 'wa_document', $filename, $file->getMimeType());   // hosted on the file server and listed under WA Chat → Documents & invoices
         }
 
         if (!$fileUrl) {

@@ -246,6 +246,8 @@ class SuperAdminController extends Controller
             'storage_limit_bytes'      => ['sometimes', 'integer', 'min:0'],
 
             'wa_config'                => ['sometimes', \Illuminate\Validation\Rule::in(['wallet', 'own_account'])],
+            'wa_chat_billing'          => ['sometimes', \Illuminate\Validation\Rule::in(['wallet', 'included'])],
+            'wa_chat_credits_per_message' => ['sometimes', 'integer', 'min:0', 'max:20'],
             'wa_phone_id'              => ['sometimes', 'nullable', 'string', 'max:100'],
             'wa_business_id'           => ['sometimes', 'nullable', 'string', 'max:100'],
             'meta_app_id'              => ['sometimes', 'nullable', 'string', 'max:100'],

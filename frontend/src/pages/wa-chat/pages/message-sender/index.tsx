@@ -945,6 +945,7 @@ export function MessageSender() {
     if (!file) return
     const fd = new FormData()
     fd.append('file', file)
+    fd.append('purpose', 'wa_campaign')   // → WA Chat › Campaigns in the Media Library
     try {
       // Without this override, the api client's default 'Content-Type: application/json' header
       // wins over FormData's own multipart boundary, so the file field never actually reaches
@@ -960,6 +961,7 @@ export function MessageSender() {
     if (!file) return
     const fd = new FormData()
     fd.append('file', file)
+    fd.append('purpose', 'wa_campaign')   // → WA Chat › Campaigns in the Media Library
     setSingleUploading(true)
     try {
       const res = await api.post('/media-library/upload', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
@@ -975,6 +977,7 @@ export function MessageSender() {
     if (!file) return
     const fd = new FormData()
     fd.append('file', file)
+    fd.append('purpose', 'wa_campaign')   // → WA Chat › Campaigns in the Media Library
     setTestMediaUploading(true)
     try {
       const res = await api.post('/media-library/upload', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
@@ -1025,6 +1028,7 @@ export function MessageSender() {
         try {
           const fd = new FormData()
           fd.append('file', new File([blob], `voice-note-${Date.now()}.ogg`, { type: 'audio/ogg; codecs=opus' }))
+          fd.append('purpose', 'wa_campaign')
           // See handleMediaUpload: without this override the api client's default JSON
           // Content-Type header wins over FormData's multipart boundary and the upload 422s.
           const res = await api.post('/media-library/upload', fd, { headers: { 'Content-Type': 'multipart/form-data' } })

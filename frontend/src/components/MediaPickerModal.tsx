@@ -18,6 +18,7 @@ import {
 import api from '@/api/client'
 import toast from 'react-hot-toast'
 import { useMediaGate } from '@/hooks/useMediaGate'
+import { buildTree, flattenTree } from '@/pages/media-library/folderTreeUtils'
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -50,6 +51,8 @@ interface MediaPickerModalProps {
   accept?: 'image' | 'video' | 'audio' | 'document' | 'any'
   /** Title shown in the modal header */
   title?: string
+  /** What a file uploaded from this picker is for — files it uploads are filed in the matching Media Library folder (wa_campaign / wa_template / wa_chat / wa_document) */
+  purpose?: 'wa_campaign' | 'wa_template' | 'wa_chat' | 'wa_document'
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -98,6 +101,7 @@ export default function MediaPickerModal({
   onSelect,
   accept = 'any',
   title = 'Select from Media Library',
+  purpose,
 }: MediaPickerModalProps) {
   const [folders,        setFolders]        = useState<MediaFolder[]>([])
   const [files,          setFiles]          = useState<MediaFile[]>([])
@@ -163,6 +167,7 @@ export default function MediaPickerModal({
     try {
       const fd = new FormData()
       fd.append('file', file)
+      if (purpose) fd.append('purpose', purpose)
       if (activeFolderId) fd.append('folder_id', String(activeFolderId))
       const res = await api.post('/media-library/upload', fd, {
         headers: { 'Content-Type': 'multipart/form-data' },
@@ -189,8 +194,10 @@ export default function MediaPickerModal({
 
   if (!open) return null
 
-  const systemFolders = folders.filter(f => f.is_system)
-  const customFolders = folders.filter(f => !f.is_system)
+  // nested folders (WA Chat → Campaigns → …) listed in tree order, indented by depth
+  const roots         = buildTree(folders.map(f => ({ ...f, parent_id: (f as MediaFolder & { parent_id?: number | null }).parent_id ?? null })))
+  const systemFolders = flattenTree(roots.filter(n => n.folder.is_system))
+  const customFolders = flattenTree(roots.filter(n => !n.folder.is_system))
 
   return (
     <div
@@ -248,10 +255,10 @@ export default function MediaPickerModal({
             {systemFolders.length > 0 && (
               <>
                 <div style={{ padding: '8px 14px 3px', fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Auto-sorted</div>
-                {systemFolders.map(f => (
+                {systemFolders.map(({ folder: f, depth }) => (
                   <button key={f.id}
                     onClick={() => setActiveFolderId(f.id)}
-                    style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '7px 14px', background: activeFolderId === f.id ? '#eef2ff' : 'none', border: 'none', cursor: 'pointer', color: activeFolderId === f.id ? '#4338ca' : '#374151', fontWeight: activeFolderId === f.id ? 600 : 400, fontSize: 13 }}>
+                    style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: `7px 14px 7px ${14 + (depth - 1) * 14}px`, background: activeFolderId === f.id ? '#eef2ff' : 'none', border: 'none', cursor: 'pointer', color: activeFolderId === f.id ? '#4338ca' : '#374151', fontWeight: activeFolderId === f.id ? 600 : 400, fontSize: 13 }}>
                     <SystemIcon slug={f.slug} />
                     <span style={{ flex: 1, textAlign: 'left' }}>{f.name}</span>
                     <span style={{ fontSize: 10, color: '#9ca3af' }}>{f.file_count}</span>
@@ -263,10 +270,10 @@ export default function MediaPickerModal({
             {customFolders.length > 0 && (
               <>
                 <div style={{ padding: '8px 14px 3px', fontSize: 10, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.08em' }}>My Folders</div>
-                {customFolders.map(f => (
+                {customFolders.map(({ folder: f, depth }) => (
                   <button key={f.id}
                     onClick={() => setActiveFolderId(f.id)}
-                    style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '7px 14px', background: activeFolderId === f.id ? '#eef2ff' : 'none', border: 'none', cursor: 'pointer', color: activeFolderId === f.id ? '#4338ca' : '#374151', fontWeight: activeFolderId === f.id ? 600 : 400, fontSize: 13 }}>
+                    style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: `7px 14px 7px ${14 + (depth - 1) * 14}px`, background: activeFolderId === f.id ? '#eef2ff' : 'none', border: 'none', cursor: 'pointer', color: activeFolderId === f.id ? '#4338ca' : '#374151', fontWeight: activeFolderId === f.id ? 600 : 400, fontSize: 13 }}>
                     {activeFolderId === f.id ? <FolderOpen size={14} color="#6366f1" /> : <Folder size={14} color="#9ca3af" />}
                     <span style={{ flex: 1, textAlign: 'left', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{f.name}</span>
                     <span style={{ fontSize: 10, color: '#9ca3af', flexShrink: 0 }}>{f.file_count}</span>

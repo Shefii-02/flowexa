@@ -1,6 +1,6 @@
 // src/pages/wallet/WalletPage.tsx
 import { useEffect, useState } from 'react'
-import { walletApi } from '@/api'
+import { walletApi, type WalletBilling } from '@/api'
 import { Button, Modal, StatCard, Badge, Pagination, Spinner } from '@/components/ui'
 import { fmt, getError, normalizePhone } from '@/utils'
 import toast from 'react-hot-toast'
@@ -53,6 +53,8 @@ export default function WalletPage({ embedded = false }: { embedded?: boolean })
     } finally { setLoading(false) }
   }
 
+  const [billing, setBilling] = useState<WalletBilling | null>(null)
+  useEffect(() => { walletApi.billing().then(r => setBilling(r.data.data)).catch(() => {}) }, [])
   useEffect(() => { load() }, [])
   useEffect(() => {
     walletApi.transactions({ page: txPage, per_page: 15 }).then((r) => { setTxs(r.data.data); setTxTotal(r.data.total) })
@@ -144,6 +146,8 @@ export default function WalletPage({ embedded = false }: { embedded?: boolean })
         <StatCard label="Low balance alert" value={fmt.number(wallet?.low_balance_alert ?? 200)} sub="threshold" icon="⚠️" />
       </div>
 
+      {billing && <BillingCard b={billing} />}
+
       {wallet?.is_low && (
         <div className="bg-red-50 border border-red-200 rounded-xl px-5 py-3 flex items-center gap-2">
           <span>⚠️</span>
@@ -217,6 +221,40 @@ export default function WalletPage({ embedded = false }: { embedded?: boolean })
             <Pagination page={txPage} lastPage={Math.ceil(txTotal / 15)} total={txTotal} perPage={15} onChange={setTxPage} />
           </>
         )}
+      </div>
+    </div>
+  )
+}
+
+
+const SOURCE_LABEL: Record<string, string> = { chat: 'Chat', campaign: 'Campaigns', api: 'API / OTP', test: 'Test messages' }
+
+/** How each channel is paid for, and what WA Chat has cost this month. */
+export function BillingCard({ b }: { b: WalletBilling }) {
+  const chat = b.wa_chat
+  return (
+    <div className="card" data-testid="billing-card">
+      <div className="card-header"><h2 className="font-semibold text-gray-900">How your messages are billed</h2></div>
+      <div className="p-5 grid gap-4 md:grid-cols-2 text-sm">
+        <div>
+          <p className="font-medium text-gray-900">💬 WA Chat</p>
+          {chat.mode === 'wallet' ? (
+            <>
+              <p className="text-gray-600 mt-1">{chat.credits_per_message} credit{chat.credits_per_message === 1 ? '' : 's'} from your wallet for every message that is <b>delivered</b> — chat, campaigns, test messages and API.</p>
+              <p className="text-gray-900 mt-2">This month: <b>{chat.credits_this_month}</b> credits used</p>
+              {chat.this_month.length > 0 && (
+                <ul className="mt-1 text-gray-600">
+                  {chat.this_month.map(r => <li key={r.source}>{SOURCE_LABEL[r.source] ?? r.source}: {r.messages} message{r.messages === 1 ? '' : 's'} · {r.credits} credit{r.credits === 1 ? '' : 's'}</li>)}
+                </ul>
+              )}
+              {chat.unbilled_this_month > 0 && <p className="mt-2 text-amber-700">⚠️ {chat.unbilled_this_month} message{chat.unbilled_this_month === 1 ? ' was' : 's were'} delivered while the wallet was empty.</p>}
+            </>
+          ) : <p className="text-gray-600 mt-1">Included in your plan — WA Chat messages are not charged.</p>}
+        </div>
+        <div>
+          <p className="font-medium text-gray-900">☁️ WhatsApp Cloud</p>
+          <p className="text-gray-600 mt-1">{b.wa_cloud.mode === 'own_account' ? 'Billed by Meta to your own WhatsApp Business account — your wallet is not used.' : '1 credit from your wallet for every message sent.'}</p>
+        </div>
       </div>
     </div>
   )

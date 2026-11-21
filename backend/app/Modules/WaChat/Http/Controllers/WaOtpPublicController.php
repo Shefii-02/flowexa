@@ -215,6 +215,7 @@ class WaOtpPublicController extends Controller
         if (!$service) return response()->json(['error' => 'Invalid or missing API token.'], 401);
         if (!$this->checkOrigin($request, $service)) return response()->json(['error' => 'Origin not allowed.'], 403);
         if (!$this->checkPackage($request, $service)) return response()->json(['error' => 'App package not allowed.'], 403);
+        if ($why = $this->billingRefusal($service)) return response()->json(['error' => $why, 'code' => 'insufficient_balance'], 402);   // each delivered message is paid from the wallet
 
         $data = $request->validate([
             'phone'        => 'required|string|max:20',
@@ -315,6 +316,7 @@ class WaOtpPublicController extends Controller
         if (!$service) return response()->json(['error' => 'Invalid or missing API token.'], 401);
         if (!$this->checkOrigin($request, $service)) return response()->json(['error' => 'Origin not allowed.'], 403);
         if (!$this->checkPackage($request, $service)) return response()->json(['error' => 'App package not allowed.'], 403);
+        if ($why = $this->billingRefusal($service)) return response()->json(['error' => $why, 'code' => 'insufficient_balance'], 402);   // each delivered message is paid from the wallet
 
         $data = $request->validate([
             'phone'     => 'required|string|max:20',
@@ -369,6 +371,7 @@ class WaOtpPublicController extends Controller
         if (!$service) return response()->json(['error' => 'Invalid or missing API token.'], 401);
         if (!$this->checkOrigin($request, $service)) return response()->json(['error' => 'Origin not allowed.'], 403);
         if (!$this->checkPackage($request, $service)) return response()->json(['error' => 'App package not allowed.'], 403);
+        if ($why = $this->billingRefusal($service)) return response()->json(['error' => $why, 'code' => 'insufficient_balance'], 402);   // each delivered message is paid from the wallet
 
         $data = $request->validate([
             'phone'     => 'required|string|max:20',
@@ -407,6 +410,7 @@ class WaOtpPublicController extends Controller
         if (!$service) return response()->json(['error' => 'Invalid or missing API token.'], 401);
         if (!$this->checkOrigin($request, $service)) return response()->json(['error' => 'Origin not allowed.'], 403);
         if (!$this->checkPackage($request, $service)) return response()->json(['error' => 'App package not allowed.'], 403);
+        if ($why = $this->billingRefusal($service)) return response()->json(['error' => $why, 'code' => 'insufficient_balance'], 402);   // each delivered message is paid from the wallet
 
         $data = $request->validate([
             'phone'    => 'required|string|max:20',
@@ -433,5 +437,11 @@ class WaOtpPublicController extends Controller
         return $sent
             ? response()->json(['success' => true, 'phone' => $phone, 'ms' => $ms])
             : response()->json(['error' => 'Delivery failed. Check channel settings.', 'reason' => $this->deliveryFailure], 422);
+    }
+
+    private function billingRefusal($service): ?string
+    {
+        $company = \App\Models\Company::find($service->company_id);
+        return $company ? app(\App\Modules\WaChat\Services\WaChatBilling::class)->refusal($company) : null;
     }
 }

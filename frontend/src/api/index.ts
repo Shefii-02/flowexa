@@ -115,10 +115,16 @@ export const flowApi = {
 }
 
 // ── Wallet ────────────────────────────────────────────────────────────────────
+export interface WalletBilling {
+  wa_chat: { mode: 'wallet' | 'included'; credits_per_message: number; this_month: { source: string; messages: number; credits: number; unbilled: number }[]; credits_this_month: number; unbilled_this_month: number }
+  wa_cloud: { mode: 'wallet' | 'own_account' }
+}
+
 export const walletApi = {
   index: () => api.get('/wallet'),
   transactions: (p?: Record<string, unknown>) => api.get('/wallet/transactions', { params: p }),
   packages: () => api.get('/wallet/packages'),
+  billing: () => api.get<{ data: WalletBilling }>('/wallet/billing'),
   updateSettings: (d: Record<string, unknown>) => api.put('/wallet/settings', d),
   createOrder: (pkg: number, couponCode?: string | null) => api.post('/wallet/create-order', { package: pkg, coupon_code: couponCode || undefined }),
   quote: (pkg: number, couponCode: string) => api.post<CouponQuote>('/wallet/coupon/quote', { package: pkg, coupon_code: couponCode }),

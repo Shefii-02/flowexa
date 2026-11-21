@@ -52,6 +52,9 @@ class CompanyResource extends JsonResource
             'wa_last_verified_at'     => $this->last_verified_at?->toIso8601String(),
             'webhook_verify_token' => $this->wa_webhook_token,
             'wa_config' => $this->wa_config,
+            // how WA Chat (open-wa) messages are paid: 'wallet' (per delivered message) or 'included'
+            'wa_chat_billing' => $this->wa_chat_billing ?? 'wallet',
+            'wa_chat_credits_per_message' => (int) ($this->wa_chat_credits_per_message ?? 1),
             // Which modules this company may use (plan + purchased add-ons) — the sidebar and route guards read this.
             'entitlements' => \App\Support\Entitlements::forCompany($this->resource),
             'plan' => $this->whenLoaded('plan', fn() => [

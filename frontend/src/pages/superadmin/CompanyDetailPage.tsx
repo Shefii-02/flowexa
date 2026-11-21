@@ -95,6 +95,8 @@ export default function CompanyDetailPage() {
     wa_chat_token_expires_at: c.wa_chat_token_expires_at ? String(c.wa_chat_token_expires_at).slice(0, 10) : '',
     waha_enabled: !!c.waha_enabled,
     waha_max_sessions: c.waha_max_sessions ?? 0,
+    wa_chat_billing: c.wa_chat_billing === 'included' ? 'included' : 'wallet',
+    wa_chat_credits_per_message: c.wa_chat_credits_per_message ?? 1,
     waha_max_webhooks: c.waha_max_webhooks ?? 0,
     waha_media_limit_mb: c.waha_media_limit_mb ?? 0,
     settings_json: JSON.stringify(c.settings ?? {}, null, 2),
@@ -169,6 +171,8 @@ export default function CompanyDetailPage() {
       wa_chat_token_expires_at: form.wa_chat_token_expires_at || null,
       waha_enabled: form.waha_enabled,
       waha_max_sessions: Number(form.waha_max_sessions) || 0,
+      wa_chat_billing: form.wa_chat_billing,
+      wa_chat_credits_per_message: Math.max(0, Math.min(20, Math.round(Number(form.wa_chat_credits_per_message) || 0))),
       waha_max_webhooks: Number(form.waha_max_webhooks) || 0,
       waha_media_limit_mb: Number(form.waha_media_limit_mb) || 0,
     }
@@ -380,6 +384,19 @@ export default function CompanyDetailPage() {
         <label className="flex items-center gap-2 text-sm text-gray-700">
           <input type="checkbox" checked={form.wa_auth_enabled} onChange={(e) => set('wa_auth_enabled', e.target.checked)} /> WA Chat auth enabled
         </label>
+        <div className="sm:col-span-2">
+          <label className="label">Message billing</label>
+          <select className="input" value={form.wa_chat_billing} onChange={(e) => set('wa_chat_billing', e.target.value)}>
+            <option value="wallet">Wallet — credits are taken for every delivered message (chat, campaigns, test messages, API)</option>
+            <option value="included">Included in the plan — WA Chat messages are not charged</option>
+          </select>
+          <p className="text-xs text-gray-400 mt-1">
+            A message is charged once, when WhatsApp confirms it was delivered. Campaigns, test messages and API sends are refused when the wallet cannot cover them; live chat messages are never blocked, but a delivery with an empty wallet is recorded as unbilled. WhatsApp Cloud has its own setting above.
+          </p>
+        </div>
+        {form.wa_chat_billing === 'wallet' && (
+          <Input label="Credits per delivered message" type="number" min={0} max={20} value={form.wa_chat_credits_per_message} onChange={(e) => set('wa_chat_credits_per_message', e.target.value)} />
+        )}
         <Input label="Max sessions" type="number" min={0} value={form.waha_max_sessions} onChange={(e) => set('waha_max_sessions', e.target.value)} />
         <Input label="Max webhooks" type="number" min={0} value={form.waha_max_webhooks} onChange={(e) => set('waha_max_webhooks', e.target.value)} />
         <Input label="Media limit (MB)" type="number" min={0} value={form.waha_media_limit_mb} onChange={(e) => set('waha_media_limit_mb', e.target.value)} />
