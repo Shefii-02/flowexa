@@ -20,6 +20,7 @@ import toast from 'react-hot-toast'
 import FormattedTextarea from './FormattedTextarea'
 import SendingOptionsCard, { SendingOpts, SenderLimits, FALLBACK_LIMITS, defaultOpts, sendingOptionsError, toSendingOptionsPayload, estimateMinutes } from './SendingOptionsCard'
 import MediaPickerModal from '@/components/MediaPickerModal'
+import WaChatCostNote from '@/components/WaChatCostNote'
 import { useMediaGate } from '@/hooks/useMediaGate'
 import { MEDIA_RULES, ruleForBlockType } from '@/utils/mediaRules'
 
@@ -1761,6 +1762,8 @@ export function MessageSender() {
           </button>
         </div>
       )}
+
+      {pageTab === 'sender' && selectedRecipients.length > 0 && <WaChatCostNote messages={selectedRecipients.length} />}
 
       {/* ─── SENDER TAB ─────────────────────────────────────────────── */}
       {pageTab === 'sender' && (

@@ -41,7 +41,7 @@ class PrebuiltTemplateController extends Controller
         $data = $this->validated($request);
         $data['variables'] = PrebuiltTemplate::extractVariables($data['content']);
 
-        $template = PrebuiltTemplate::create($data);
+        $template = PrebuiltTemplate::create($data)->refresh();   // reload so the DB defaults (both channels ticked) are in the response
 
         return response()->json(['message' => 'Template created.', 'data' => $template], 201);
     }
@@ -77,7 +77,7 @@ class PrebuiltTemplateController extends Controller
     {
         $required = $ignoreId === null ? 'required' : 'sometimes';
 
-        return $request->validate([
+        $validated = $request->validate([
             'name'     => [
                 $required, 'string', 'max:150',
                 Rule::unique('prebuilt_templates', 'name')
@@ -88,6 +88,18 @@ class PrebuiltTemplateController extends Controller
             'content'  => [$required, 'string', 'max:4000'],
             'language' => ['sometimes', 'string', 'max:10'],
             'status'   => ['sometimes', 'in:active,inactive'],
+            // which channel(s) the template may be used on — a company's WA Chat / WA Cloud API only lists the ones ticked for it
+            'for_wa_chat'  => ['sometimes', 'boolean'],
+            'for_wa_cloud' => ['sometimes', 'boolean'],
         ]);
+
+        $chat  = $request->has('for_wa_chat') ? $request->boolean('for_wa_chat') : null;
+        $cloud = $request->has('for_wa_cloud') ? $request->boolean('for_wa_cloud') : null;
+        $existing = $ignoreId ? PrebuiltTemplate::find($ignoreId) : null;
+        if (!(($chat ?? $existing?->for_wa_chat ?? true) || ($cloud ?? $existing?->for_wa_cloud ?? true))) {
+            throw \Illuminate\Validation\ValidationException::withMessages(['for_wa_chat' => 'Tick at least one channel — WA Chat or WA Cloud — or the template is not available anywhere.']);
+        }
+
+        return $validated;
     }
 }

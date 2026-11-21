@@ -18,7 +18,7 @@ const DURATION_TYPES = [
   { value: 'yearly', label: 'Yearly (12 months)' }, { value: '12month', label: '12 Months' }, { value: 'custom', label: 'Custom' }, { value: 'unlimited', label: 'Unlimited' },
 ]
 
-type LimitField = { key: string; label: string; hint?: string }
+type LimitField = { key: string; label: string; hint?: string; placeholder?: string }
 /** Limits shown under each feature. `module` = the feature toggle that gates the block (null = always shown). */
 const LIMIT_BLOCKS: { id: string; title: string; icon: string; module: string | null; fields: LimitField[] }[] = [
   { id: 'common', title: 'Common', icon: '🧰', module: null, fields: [
@@ -28,6 +28,7 @@ const LIMIT_BLOCKS: { id: string; title: string; icon: string; module: string | 
   { id: 'todo', title: 'To-do list', icon: '✅', module: 'todo', fields: [ { key: 'max_todos_per_user', label: 'Open items per user', hint: 'completed items are not counted' } ] },
   { id: 'wa_chat', title: 'WA Chat', icon: '💬', module: 'wa_chat', fields: [
     { key: 'max_wa_sessions', label: 'WhatsApp sessions' },
+    { key: 'wa_chat_credits_per_message', label: 'Wallet credits per delivered campaign / API message', placeholder: '1', hint: 'taken from the wallet when WhatsApp confirms delivery — blank = 1, 0 = free. Normal chat messages are always free.' },
     { key: 'max_chat_campaigns_per_month', label: 'Campaigns per month' },
     { key: 'max_chat_campaign_recipients', label: 'Max recipients per campaign', hint: 'how many numbers one campaign may send to' },
     { key: 'max_chat_campaigns', label: 'Campaigns in total' } ] },
@@ -333,7 +334,7 @@ export default function SuperAdminPlans() {
                 <div key={b.id} className={off ? 'opacity-40' : ''}>
                   <p className="mb-1.5 text-sm font-semibold text-gray-800">{b.icon} {b.title}{off && <span className="ml-2 text-xs font-normal text-gray-500">feature is off</span>}{comp && <span className="ml-2 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">complimentary — limits apply while it is free</span>}</p>
                   <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-                    {b.fields.map(f => <div key={f.key}><Input label={f.label} type="number" min={0} disabled={off} placeholder="unlimited" value={form.limits[f.key] ?? ''} onChange={e => setLimit(f.key, e.target.value)} />{f.hint && <p className="mt-1 text-[11px] text-gray-400">{f.hint}</p>}</div>)}
+                    {b.fields.map(f => <div key={f.key}><Input label={f.label} type="number" min={0} disabled={off} placeholder={f.placeholder ?? 'unlimited'} value={form.limits[f.key] ?? ''} onChange={e => setLimit(f.key, e.target.value)} />{f.hint && <p className="mt-1 text-[11px] text-gray-400">{f.hint}</p>}</div>)}
                   </div>
                 </div>)
             })}

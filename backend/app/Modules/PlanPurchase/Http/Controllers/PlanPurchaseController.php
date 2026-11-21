@@ -153,7 +153,7 @@ class PlanPurchaseController extends Controller
             'max_contacts' => $int(), 'max_labels' => $int(),
             'max_leads_per_month' => $int(), 'max_lead_categories' => $int(),
             'max_instagram_accounts' => $int(), 'max_instagram_automations' => $int(), 'max_instagram_dms_monthly' => $int(),
-            'max_meta_ads_accounts' => $int(), 'max_website_widgets' => $int(), 'max_short_links' => $int(), 'max_sticky_notes_per_user' => $int(), 'max_todos_per_user' => $int(), 'max_media_storage_mb' => $int(),
+            'max_meta_ads_accounts' => $int(), 'max_website_widgets' => $int(), 'max_short_links' => $int(), 'max_sticky_notes_per_user' => $int(), 'max_todos_per_user' => $int(), 'max_media_storage_mb' => $int(), 'wa_chat_credits_per_message' => ['nullable', 'integer', 'min:0', 'max:20'],
             'throttle_per_minute' => [$req, 'integer', 'min:10', 'max:1000'],
             'features' => ['nullable', 'array'], 'features.*' => ['string', 'max:150'],
             'modules' => ['nullable', 'array'], 'modules.*' => ['string', \Illuminate\Validation\Rule::in(\App\Support\Modules::keys())],

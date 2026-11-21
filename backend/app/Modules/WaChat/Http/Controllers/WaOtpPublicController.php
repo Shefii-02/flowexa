@@ -9,6 +9,8 @@ use App\Modules\WaChat\Models\WaOtpService;
 use App\Modules\WaChat\Models\WaOtpCode;
 use App\Modules\WaChat\Models\WaOtpLog;
 use App\Modules\WaChat\Services\OpenWaMessageService;
+use App\Modules\WaChat\Support\ApiAccess;
+use App\Modules\WaChat\Support\ApiTemplateVariables;
 use App\Modules\WaChat\Support\OtpDeliveryFailure;
 use App\Modules\WaChat\Support\OtpSession;
 use Illuminate\Http\JsonResponse;
@@ -46,8 +48,11 @@ class WaOtpPublicController extends Controller
             ->where('is_active', true)
             ->with('prebuiltTemplate:id,name,type,language,content');
 
+        $templateId = $request->input('template_id');
         $name = $request->input('service');
-        if (is_string($name) && $name !== '') {
+        if ($templateId !== null && $templateId !== '') {
+            $query->whereKey((int) $templateId);                       // template_id = the id shown on the config card — exact, never a silent fallback
+        } elseif (is_string($name) && $name !== '') {
             $query->where('name', $name);
         } else {
             $query->orderBy('sort_order')->orderBy('id');
@@ -97,12 +102,41 @@ class WaOtpPublicController extends Controller
         return $out;
     }
 
+    /** `template_id` was sent but is not an active config of this kind in this company → the 404 to return. */
+    private function unknownTemplate(Request $request, ?WaApiConfig $config): ?JsonResponse
+    {
+        $tid = $request->input('template_id');
+        if ($tid === null || $tid === '' || $config) { return null; }
+        return response()->json(['error' => "Template {$tid} was not found for this API (use the id shown on the template's card).", 'code' => 'template_not_found'], 404);
+    }
+
+    /** The caller's `variables` must cover every {{token}} the template needs, each with a usable value. Null = they match. */
+    private function variablesMismatch(string $template, Request $request, ?WaApiConfig $config): ?JsonResponse
+    {
+        $check = ApiTemplateVariables::check($template, (array) $request->input('variables', []));
+        if ($check['ok']) { return null; }
+        return response()->json(ApiTemplateVariables::failure($check, $config?->id, $config?->prebuiltTemplate?->name ?? $config?->name), 422);
+    }
+
+    /** Extra response fields: which template was used, and any variables the template does not use (ignored, reported so a typo is easy to spot). */
+    private function templateInfo(Request $request, ?WaApiConfig $config, string $template): array
+    {
+        $ignored = ApiTemplateVariables::check($template, (array) $request->input('variables', []))['ignored'];
+        return ($config ? ['template_id' => $config->id] : []) + ($ignored ? ['ignored_variables' => $ignored] : []);
+    }
+
+    /** OTP body text before the values are filled in: config template → legacy column → hard default. */
+    private function otpTemplateText(WaOtpService $service, ?WaApiConfig $config): string
+    {
+        return $config?->prebuiltTemplate?->content
+            ?? $service->otp_message_template
+            ?? 'Your OTP code is: {{otp}}. Valid for {{expiry}} minutes.';
+    }
+
     /** OTP body for a send/resend: config template → legacy column → hard default. */
     private function otpMessage(WaOtpService $service, ?WaApiConfig $config, string $otp, int $expiry, array $variables = []): string
     {
-        $template = $config?->prebuiltTemplate?->content
-            ?? $service->otp_message_template
-            ?? 'Your OTP code is: {{otp}}. Valid for {{expiry}} minutes.';
+        $template = $this->otpTemplateText($service, $config);
 
         return $this->fillPlaceholders($template, array_merge($variables, $this->companyTokens($service), [
             'otp'    => $otp,
@@ -111,15 +145,26 @@ class WaOtpPublicController extends Controller
         ]));
     }
 
-    private function checkOrigin(Request $request, WaOtpService $service): bool
+    /**
+     * Who may call, and how often (see ApiAccess): signature (if required) → allowed IPs → website / curl rules → the per-minute limit.
+     * Null = the call may go ahead.
+     */
+    private function accessDenied(Request $request, WaOtpService $service): ?JsonResponse
     {
-        $domains = $service->allowed_domains ?? [];
-        if (empty($domains)) return true;
-        $origin = $request->header('Origin', '');
-        foreach ($domains as $d) {
-            if (str_ends_with($origin, trim($d, '/'))) return true;
+        if ($d = ApiAccess::check($request, $service)) {
+            return response()->json(['error' => $d[2], 'code' => $d[1]], $d[0]);
         }
-        return false;
+        if ($t = ApiAccess::throttle($service)) {
+            return response()->json(['error' => $t[2], 'code' => $t[1], 'retry_after' => $t[3]], $t[0])->header('Retry-After', (string) $t[3]);
+        }
+        return null;
+    }
+
+    /** Messages to one number per hour — checked only once a request is valid and about to send. */
+    private function phoneLimited(WaOtpService $service, string $phone): ?JsonResponse
+    {
+        $t = ApiAccess::throttlePhone($service, $phone);
+        return $t ? response()->json(['error' => $t[2], 'code' => $t[1], 'retry_after' => $t[3]], $t[0])->header('Retry-After', (string) $t[3]) : null;
     }
 
     private function checkPackage(Request $request, WaOtpService $service): bool
@@ -148,13 +193,13 @@ class WaOtpPublicController extends Controller
 
     private function dispatchText(WaOtpService $service, string $phone, string $message, ?string $sessionId = null): bool
     {
-        return $this->deliver($service, $sessionId, fn (string $sid) => app(OpenWaMessageService::class)
+        return $this->deliver($service, $sessionId, fn (string $sid) => app(OpenWaMessageService::class)->billedAs('api')
             ->sendText($sid, $this->apiKey($service), $this->chatId($phone), $message));
     }
 
     private function dispatchFile(WaOtpService $service, string $phone, string $fileUrl, string $filename, string $caption, ?string $sessionId = null): bool
     {
-        return $this->deliver($service, $sessionId, fn (string $sid) => app(OpenWaMessageService::class)
+        return $this->deliver($service, $sessionId, fn (string $sid) => app(OpenWaMessageService::class)->billedAs('api')
             ->sendMedia($sid, $this->apiKey($service), $this->chatId($phone), 'document', array_filter([
                 'url'      => $fileUrl,
                 'filename' => $filename,
@@ -202,7 +247,7 @@ class WaOtpPublicController extends Controller
             'session_id'  => $config?->session_id ?: ($service->session_id ?: null),
             'phone'       => $phone,
             'action'      => $action,
-            'ip_address'  => $request->ip(),
+            'ip_address'  => ApiAccess::clientIp($request),
             'domain'      => $request->header('Origin', ''),
             'response_ms' => $responseMs,
         ]);
@@ -213,7 +258,7 @@ class WaOtpPublicController extends Controller
         $start = microtime(true);
         $service = $this->resolveService($request, $waChatToken);
         if (!$service) return response()->json(['error' => 'Invalid or missing API token.'], 401);
-        if (!$this->checkOrigin($request, $service)) return response()->json(['error' => 'Origin not allowed.'], 403);
+        if ($denied = $this->accessDenied($request, $service)) return $denied;
         if (!$this->checkPackage($request, $service)) return response()->json(['error' => 'App package not allowed.'], 403);
         if ($why = $this->billingRefusal($service)) return response()->json(['error' => $why, 'code' => 'insufficient_balance'], 402);   // each delivered message is paid from the wallet
 
@@ -221,11 +266,15 @@ class WaOtpPublicController extends Controller
             'phone'        => 'required|string|max:20',
             'reference_id' => 'nullable|string|max:100',
             'service'      => 'nullable|string|max:100',
+            'template_id'  => 'nullable|integer',
             'variables'    => 'nullable|array',
         ]);
         $phone = $data['phone'];
 
         $config  = $this->resolveConfig($request, $service, 'auth');
+        if ($r = $this->unknownTemplate($request, $config)) return $r;
+        if ($r = $this->variablesMismatch($this->otpTemplateText($service, $config), $request, $config)) return $r;   // before anything is created or expired
+        if ($r = $this->phoneLimited($service, $phone)) return $r;
         $length  = $config?->otp_length ?? $service->otp_length ?? 6;
         $expiryM = $config?->otp_expiry_minutes ?? $service->otp_expiry_minutes ?? 10;
 
@@ -243,7 +292,7 @@ class WaOtpPublicController extends Controller
             'phone'        => $phone,
             'otp_code'     => $otp,
             'reference_id' => $data['reference_id'] ?? null,
-            'ip_address'   => $request->ip(),
+            'ip_address'   => ApiAccess::clientIp($request),
             'domain'       => $request->header('Origin', ''),
             'status'       => 'pending',
             'attempts'     => 0,
@@ -261,7 +310,7 @@ class WaOtpPublicController extends Controller
         }
 
         $this->logAction($service, $phone, 'sent', $request, (int)((microtime(true) - $start) * 1000), $config);
-        return response()->json(['success' => true, 'expires_at' => $expires->toISOString(), 'reference_id' => $code->reference_id]);
+        return response()->json(['success' => true, 'expires_at' => $expires->toISOString(), 'reference_id' => $code->reference_id] + $this->templateInfo($request, $config, $this->otpTemplateText($service, $config)));
     }
 
     public function publicVerify(Request $request, string $waChatToken): JsonResponse
@@ -269,13 +318,14 @@ class WaOtpPublicController extends Controller
         $start = microtime(true);
         $service = $this->resolveService($request, $waChatToken);
         if (!$service) return response()->json(['error' => 'Invalid or missing API token.'], 401);
-        if (!$this->checkOrigin($request, $service)) return response()->json(['error' => 'Origin not allowed.'], 403);
+        if ($denied = $this->accessDenied($request, $service)) return $denied;
         if (!$this->checkPackage($request, $service)) return response()->json(['error' => 'App package not allowed.'], 403);
 
         $data = $request->validate([
-            'phone'   => 'required|string|max:20',
-            'otp'     => 'required|string|max:10',
-            'service' => 'nullable|string|max:100',
+            'phone'       => 'required|string|max:20',
+            'otp'         => 'required|string|max:10',
+            'service'     => 'nullable|string|max:100',
+            'template_id' => 'nullable|integer',
         ]);
 
         $code = WaOtpCode::where('service_id', $service->id)
@@ -314,22 +364,27 @@ class WaOtpPublicController extends Controller
         $start = microtime(true);
         $service = $this->resolveService($request, $waChatToken);
         if (!$service) return response()->json(['error' => 'Invalid or missing API token.'], 401);
-        if (!$this->checkOrigin($request, $service)) return response()->json(['error' => 'Origin not allowed.'], 403);
+        if ($denied = $this->accessDenied($request, $service)) return $denied;
         if (!$this->checkPackage($request, $service)) return response()->json(['error' => 'App package not allowed.'], 403);
         if ($why = $this->billingRefusal($service)) return response()->json(['error' => $why, 'code' => 'insufficient_balance'], 402);   // each delivered message is paid from the wallet
 
         $data = $request->validate([
-            'phone'     => 'required|string|max:20',
-            'service'   => 'nullable|string|max:100',
-            'variables' => 'nullable|array',
+            'phone'       => 'required|string|max:20',
+            'service'     => 'nullable|string|max:100',
+            'template_id' => 'nullable|integer',
+            'variables'   => 'nullable|array',
         ]);
         $phone = $data['phone'];
 
-        // Expire old codes
+        $config  = $this->resolveConfig($request, $service, 'auth');
+        if ($r = $this->unknownTemplate($request, $config)) return $r;
+        if ($r = $this->variablesMismatch($this->otpTemplateText($service, $config), $request, $config)) return $r;   // before anything is created or expired
+        if ($r = $this->phoneLimited($service, $phone)) return $r;
+
+        // Expire old codes — only now that the request is known to be valid and will actually send a new one
         WaOtpCode::where('service_id', $service->id)->where('phone', $phone)->where('status', 'pending')
             ->update(['status' => 'expired']);
 
-        $config  = $this->resolveConfig($request, $service, 'auth');
         $length  = $config?->otp_length ?? $service->otp_length ?? 6;
         $expiryM = $config?->otp_expiry_minutes ?? $service->otp_expiry_minutes ?? 10;
 
@@ -342,7 +397,7 @@ class WaOtpPublicController extends Controller
             'config_id'  => $config?->id,
             'phone'      => $phone,
             'otp_code'   => $otp,
-            'ip_address' => $request->ip(),
+            'ip_address' => ApiAccess::clientIp($request),
             'domain'     => $request->header('Origin', ''),
             'status'     => 'pending',
             'attempts'   => 0,
@@ -360,7 +415,7 @@ class WaOtpPublicController extends Controller
         }
 
         $this->logAction($service, $phone, 'resend', $request, (int)((microtime(true) - $start) * 1000), $config);
-        return response()->json(['success' => true, 'expires_at' => $expires->toISOString()]);
+        return response()->json(['success' => true, 'expires_at' => $expires->toISOString()] + $this->templateInfo($request, $config, $this->otpTemplateText($service, $config)));
     }
 
     // ── Public Utility Message Send ────────────────────────────────────────────
@@ -369,23 +424,28 @@ class WaOtpPublicController extends Controller
         $start = microtime(true);
         $service = $this->resolveService($request, $waChatToken);
         if (!$service) return response()->json(['error' => 'Invalid or missing API token.'], 401);
-        if (!$this->checkOrigin($request, $service)) return response()->json(['error' => 'Origin not allowed.'], 403);
+        if ($denied = $this->accessDenied($request, $service)) return $denied;
         if (!$this->checkPackage($request, $service)) return response()->json(['error' => 'App package not allowed.'], 403);
         if ($why = $this->billingRefusal($service)) return response()->json(['error' => $why, 'code' => 'insufficient_balance'], 402);   // each delivered message is paid from the wallet
 
         $data = $request->validate([
-            'phone'     => 'required|string|max:20',
-            'message'   => 'nullable|string|max:2000',
-            'service'   => 'nullable|string|max:100',
-            'variables' => 'nullable|array',
+            'phone'       => 'required|string|max:20',
+            'message'     => 'nullable|string|max:2000',
+            'service'     => 'nullable|string|max:100',
+            'template_id' => 'nullable|integer',
+            'variables'   => 'nullable|array',
         ]);
 
         $config  = $this->resolveConfig($request, $service, 'utility');
+        if ($r = $this->unknownTemplate($request, $config)) return $r;
         $message = $data['message'] ?? $config?->resolveContent();
 
         if (!$message) {
             return response()->json(['error' => 'No message content — pass "message" or configure a utility service.'], 422);
         }
+        if ($r = $this->variablesMismatch($message, $request, $config)) return $r;
+        if ($r = $this->phoneLimited($service, $data['phone'])) return $r;
+        $rawTemplate = $message;   // the text with its {{tokens}} — what the response compares the caller's variables against
 
         $message = $this->fillPlaceholders($message, array_merge(
             $this->requestVariables($request),
@@ -398,7 +458,7 @@ class WaOtpPublicController extends Controller
         $this->logAction($service, $phone, 'utility', $request, $ms, $config);
 
         return $sent
-            ? response()->json(['success' => true, 'phone' => $phone, 'ms' => $ms])
+            ? response()->json(['success' => true, 'phone' => $phone, 'ms' => $ms] + $this->templateInfo($request, $config, $rawTemplate))
             : response()->json(['error' => 'Delivery failed. Check channel settings.', 'reason' => $this->deliveryFailure], 422);
     }
 
@@ -408,7 +468,7 @@ class WaOtpPublicController extends Controller
         $start = microtime(true);
         $service = $this->resolveService($request, $waChatToken);
         if (!$service) return response()->json(['error' => 'Invalid or missing API token.'], 401);
-        if (!$this->checkOrigin($request, $service)) return response()->json(['error' => 'Origin not allowed.'], 403);
+        if ($denied = $this->accessDenied($request, $service)) return $denied;
         if (!$this->checkPackage($request, $service)) return response()->json(['error' => 'App package not allowed.'], 403);
         if ($why = $this->billingRefusal($service)) return response()->json(['error' => $why, 'code' => 'insufficient_balance'], 402);   // each delivered message is paid from the wallet
 
@@ -418,9 +478,12 @@ class WaOtpPublicController extends Controller
             'filename' => 'nullable|string|max:200',
             'caption'  => 'nullable|string|max:500',
             'service'  => 'nullable|string|max:100',
+            'template_id' => 'nullable|integer',
         ]);
 
         $config   = $this->resolveConfig($request, $service, 'invoice');
+        if ($r = $this->unknownTemplate($request, $config)) return $r;
+        if ($r = $this->phoneLimited($service, $data['phone'])) return $r;
         $fileUrl  = $data['file_url'] ?? $config?->file_url;
         $filename = $data['filename'] ?? $config?->filename ?? 'document.pdf';
         $caption  = $data['caption'] ?? $config?->caption ?? '';

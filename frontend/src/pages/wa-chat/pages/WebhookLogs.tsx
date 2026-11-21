@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import laravel from '@/api/client';
 import { useTranslation } from 'react-i18next';
 import { ArrowDownLeft, ArrowUpRight, ChevronDown, ChevronRight, Loader2 } from 'lucide-react';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
@@ -24,7 +26,54 @@ function OriginBadge({ origin }: { origin?: string | null }) {
   return <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${style}`}>{ORIGIN_LABEL[origin] ?? origin}</span>;
 }
 
-function MessageRow({ message }: { message: ChatMessage }) {
+/** What Laravel recorded about an outgoing message: when WhatsApp confirmed it, and what it cost from the wallet. */
+export interface DeliveryInfo {
+  status: string | null; sent_at: string | null; delivered_at: string | null; read_at: string | null; failure: string | null
+  billed_as: 'campaign' | 'api' | 'test' | null; credits: number; charge: 'pending' | 'charged' | 'unbilled' | null
+}
+
+const STATUS_STYLE: Record<string, string> = {
+  pending: 'bg-gray-100 text-gray-600', sent: 'bg-sky-100 text-sky-700', delivered: 'bg-emerald-100 text-emerald-700',
+  read: 'bg-indigo-100 text-indigo-700', failed: 'bg-red-100 text-red-700',
+};
+const STATUS_LABEL: Record<string, string> = { pending: 'Pending', sent: 'Sent', delivered: 'Delivered', read: 'Read', failed: 'Failed' };
+const BILLED_LABEL: Record<string, string> = { campaign: 'campaign', api: 'API', test: 'test' };
+
+export function StatusBadge({ status }: { status?: string | null }) {
+  if (!status) return null;
+  return <span data-testid="delivery-status" className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_STYLE[status] ?? 'bg-gray-100 text-gray-700'}`}>{STATUS_LABEL[status] ?? status}</span>;
+}
+
+const clock = (iso?: string | null) => (iso ? new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : null);
+/** "2.0 s" between two moments — how long WhatsApp took to confirm. */
+function took(from?: string | null, to?: string | null) {
+  if (!from || !to) return null;
+  const ms = new Date(to).getTime() - new Date(from).getTime();
+  if (!Number.isFinite(ms) || ms < 0) return null;
+  return ms < 60_000 ? `${(ms / 1000).toFixed(1)} s` : `${Math.round(ms / 60_000)} min`;
+}
+
+export function DeliveryLine({ message, info }: { message: ChatMessage; info?: DeliveryInfo }) {
+  const sent = info?.sent_at ?? message.createdAt;
+  const parts = [
+    clock(sent) && `Sent ${clock(sent)}`,
+    clock(info?.delivered_at) && `Delivered ${clock(info?.delivered_at)}${took(sent, info?.delivered_at) ? ` (+${took(sent, info?.delivered_at)})` : ''}`,
+    clock(info?.read_at) && `Read ${clock(info?.read_at)}`,
+  ].filter(Boolean);
+  const cost = !info?.billed_as ? null
+    : info.charge === 'charged' ? `💳 −${info.credits} credit${info.credits === 1 ? '' : 's'} (${BILLED_LABEL[info.billed_as]})`
+    : info.charge === 'pending' ? `💳 charged on delivery (${BILLED_LABEL[info.billed_as]})`
+    : `💳 not charged — wallet was empty (${BILLED_LABEL[info.billed_as]})`;
+  return (
+    <p data-testid="delivery-line" className="text-xs text-gray-500 mt-1 flex flex-wrap gap-x-3 gap-y-0.5">
+      {parts.map(p => <span key={p as string}>{p}</span>)}
+      {message.status === 'failed' && info?.failure && <span className="text-red-600">{info.failure}</span>}
+      {cost && <span className="text-amber-700">{cost}</span>}
+    </p>
+  );
+}
+
+function MessageRow({ message, info }: { message: ChatMessage; info?: DeliveryInfo }) {
   const isOutgoing = message.direction === 'outgoing';
   return (
     <div className="flex items-start gap-3 px-4 py-3 border-b border-gray-100 last:border-0">
@@ -37,9 +86,11 @@ function MessageRow({ message }: { message: ChatMessage }) {
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-sm font-medium text-gray-900">{message.chatName || message.chatId}</span>
           {isOutgoing && <OriginBadge origin={message.origin} />}
+          {isOutgoing && <StatusBadge status={info?.status && ['delivered', 'read', 'failed'].includes(info.status) ? info.status : message.status} />}
           <span className="text-xs text-gray-400 ml-auto">{new Date(message.createdAt).toLocaleString()}</span>
         </div>
         <p className="text-sm text-gray-600 truncate mt-0.5">{message.body || `[${message.type}]`}</p>
+        {isOutgoing && <DeliveryLine message={message} info={info} />}
       </div>
     </div>
   );
@@ -129,6 +180,15 @@ export function WebhookLogs() {
   );
   const messages = messagesData?.messages ?? [];
 
+  // when WhatsApp confirmed each outgoing message, and what it cost (kept by Laravel from the delivery webhook)
+  const outgoingIds = messages.filter(m => m.direction === 'outgoing').map(m => m.waMessageId ?? m.id).slice(0, 200);
+  const { data: delivery = {} } = useQuery({
+    queryKey: ['wa-chat', 'message-delivery', selectedSessionId, outgoingIds.join(',')],
+    queryFn: async () => (await laravel.post<{ data: Record<string, DeliveryInfo> }>('/waha/message-delivery', { ids: outgoingIds })).data.data,
+    enabled: tab === 'messages' && outgoingIds.length > 0,
+    staleTime: 10_000,
+  });
+
   if (loadingSessions) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -189,7 +249,7 @@ export function WebhookLogs() {
           ) : messages.length === 0 ? (
             <p className="px-4 py-8 text-center text-sm text-gray-500">No messages yet.</p>
           ) : (
-            messages.map(message => <MessageRow key={message.id} message={message} />)
+            messages.map(message => <MessageRow key={message.id} message={message} info={delivery[message.waMessageId ?? message.id]} />)
           )
         ) : loadingDeliveries ? (
           <div className="flex items-center justify-center py-12">

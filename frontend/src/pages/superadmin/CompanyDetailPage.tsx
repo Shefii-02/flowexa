@@ -96,7 +96,7 @@ export default function CompanyDetailPage() {
     waha_enabled: !!c.waha_enabled,
     waha_max_sessions: c.waha_max_sessions ?? 0,
     wa_chat_billing: c.wa_chat_billing === 'included' ? 'included' : 'wallet',
-    wa_chat_credits_per_message: c.wa_chat_credits_per_message ?? 1,
+    wa_chat_credits_per_message: c.wa_chat_credits_per_message ?? '',   // blank = follow the plan
     waha_max_webhooks: c.waha_max_webhooks ?? 0,
     waha_media_limit_mb: c.waha_media_limit_mb ?? 0,
     settings_json: JSON.stringify(c.settings ?? {}, null, 2),
@@ -172,7 +172,7 @@ export default function CompanyDetailPage() {
       waha_enabled: form.waha_enabled,
       waha_max_sessions: Number(form.waha_max_sessions) || 0,
       wa_chat_billing: form.wa_chat_billing,
-      wa_chat_credits_per_message: Math.max(0, Math.min(20, Math.round(Number(form.wa_chat_credits_per_message) || 0))),
+      wa_chat_credits_per_message: form.wa_chat_credits_per_message === '' || form.wa_chat_credits_per_message === null ? null : Math.max(0, Math.min(20, Math.round(Number(form.wa_chat_credits_per_message) || 0))),
       waha_max_webhooks: Number(form.waha_max_webhooks) || 0,
       waha_media_limit_mb: Number(form.waha_media_limit_mb) || 0,
     }
@@ -387,15 +387,18 @@ export default function CompanyDetailPage() {
         <div className="sm:col-span-2">
           <label className="label">Message billing</label>
           <select className="input" value={form.wa_chat_billing} onChange={(e) => set('wa_chat_billing', e.target.value)}>
-            <option value="wallet">Wallet — credits are taken for every delivered message (chat, campaigns, test messages, API)</option>
-            <option value="included">Included in the plan — WA Chat messages are not charged</option>
+            <option value="wallet">Wallet — credits are taken for every delivered campaign, API and test message</option>
+            <option value="included">Included in the plan — WA Chat campaign and API messages are not charged</option>
           </select>
           <p className="text-xs text-gray-400 mt-1">
-            A message is charged once, when WhatsApp confirms it was delivered. Campaigns, test messages and API sends are refused when the wallet cannot cover them; live chat messages are never blocked, but a delivery with an empty wallet is recorded as unbilled. WhatsApp Cloud has its own setting above.
+            Charged once per message, when WhatsApp confirms it was delivered. Normal chat messages are always free. Campaigns, test messages and API sends are refused when the wallet cannot cover them. WhatsApp Cloud has its own setting above.
           </p>
         </div>
         {form.wa_chat_billing === 'wallet' && (
-          <Input label="Credits per delivered message" type="number" min={0} max={20} value={form.wa_chat_credits_per_message} onChange={(e) => set('wa_chat_credits_per_message', e.target.value)} />
+          <div>
+            <Input label="Credits per delivered message" type="number" min={0} max={20} placeholder={`Follow plan (${cfg.wa_chat_plan_credits_per_message ?? 1})`} value={form.wa_chat_credits_per_message} onChange={(e) => set('wa_chat_credits_per_message', e.target.value)} />
+            <p className="mt-1 text-[11px] text-gray-400">Leave blank to use the plan's rate ({cfg.wa_chat_plan_credits_per_message ?? 1}). 0 = free for this company.</p>
+          </div>
         )}
         <Input label="Max sessions" type="number" min={0} value={form.waha_max_sessions} onChange={(e) => set('waha_max_sessions', e.target.value)} />
         <Input label="Max webhooks" type="number" min={0} value={form.waha_max_webhooks} onChange={(e) => set('waha_max_webhooks', e.target.value)} />

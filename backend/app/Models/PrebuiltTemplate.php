@@ -23,15 +23,25 @@ class PrebuiltTemplate extends Model
         'variables',
         'language',
         'status',
+        'for_wa_chat',
+        'for_wa_cloud',
     ];
 
     protected $casts = [
         'variables' => 'array',
+        'for_wa_chat' => 'boolean',
+        'for_wa_cloud' => 'boolean',
     ];
 
     public function scopeActive($query)
     {
         return $query->where('status', 'active');
+    }
+
+    /** Templates the superadmin ticked for a channel: 'wa_chat' or 'wa_cloud'. */
+    public function scopeForChannel($query, string $channel)
+    {
+        return $query->where($channel === 'wa_cloud' ? 'for_wa_cloud' : 'for_wa_chat', true);
     }
 
     public function scopeType($query, string $type)

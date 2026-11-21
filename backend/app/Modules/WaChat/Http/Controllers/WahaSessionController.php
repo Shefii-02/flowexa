@@ -826,6 +826,22 @@ class WahaSessionController extends Controller
             }
         }
 
+        // Keep WHEN WhatsApp confirmed each message: the gateway stores a status but not the moment it changed (shown on Webhook Logs).
+        if ($session && $event === 'message.ack' && in_array($payload['status'] ?? null, ['sent', 'delivered', 'read', 'failed'], true) && ($payload['id'] ?? $payload['messageId'] ?? null)) {
+            try {
+                $st  = $payload['status'];
+                $row = MessageLog::where('company_id', $session->company_id)->where('channel', 'wa_chat')->where('direction', 'outbound')->where('wa_message_id', (string) ($payload['id'] ?? $payload['messageId']))->first();
+                if ($row && !($row->status === 'read' && $st !== 'read')) {          // a late "delivered" never moves a message back from "read"
+                    $row->status = $st;
+                    if (in_array($st, ['delivered', 'read'], true) && !$row->delivered_at) { $row->delivered_at = now(); }
+                    if ($st === 'read' && !$row->read_at) { $row->read_at = now(); }
+                    $row->save();
+                }
+            } catch (\Throwable $e) {
+                Log::error('Webhook delivery-time write error: ' . $e->getMessage());
+            }
+        }
+
         // Delivery confirmed → one wallet charge for the message (WhatsApp may repeat or upgrade the ack, delivered → read; only the first one charges).
         if ($session && $event === 'message.ack' && in_array($payload['status'] ?? null, ['delivered', 'read'], true) && ($payload['id'] ?? $payload['messageId'] ?? null)) {
             try {

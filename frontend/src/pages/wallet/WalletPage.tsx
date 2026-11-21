@@ -227,7 +227,7 @@ export default function WalletPage({ embedded = false }: { embedded?: boolean })
 }
 
 
-const SOURCE_LABEL: Record<string, string> = { chat: 'Chat', campaign: 'Campaigns', api: 'API / OTP', test: 'Test messages' }
+const SOURCE_LABEL: Record<string, string> = { campaign: 'Campaigns', api: 'API / OTP', test: 'Test messages' }
 
 /** How each channel is paid for, and what WA Chat has cost this month. */
 export function BillingCard({ b }: { b: WalletBilling }) {
@@ -240,7 +240,7 @@ export function BillingCard({ b }: { b: WalletBilling }) {
           <p className="font-medium text-gray-900">💬 WA Chat</p>
           {chat.mode === 'wallet' ? (
             <>
-              <p className="text-gray-600 mt-1">{chat.credits_per_message} credit{chat.credits_per_message === 1 ? '' : 's'} from your wallet for every message that is <b>delivered</b> — chat, campaigns, test messages and API.</p>
+              <p className="text-gray-600 mt-1">{chat.credits_per_message} credit{chat.credits_per_message === 1 ? '' : 's'} from your wallet for every <b>delivered</b> campaign, API/OTP and test message. Normal chat messages are free.</p>
               <p className="text-gray-900 mt-2">This month: <b>{chat.credits_this_month}</b> credits used</p>
               {chat.this_month.length > 0 && (
                 <ul className="mt-1 text-gray-600">
@@ -249,7 +249,7 @@ export function BillingCard({ b }: { b: WalletBilling }) {
               )}
               {chat.unbilled_this_month > 0 && <p className="mt-2 text-amber-700">⚠️ {chat.unbilled_this_month} message{chat.unbilled_this_month === 1 ? ' was' : 's were'} delivered while the wallet was empty.</p>}
             </>
-          ) : <p className="text-gray-600 mt-1">Included in your plan — WA Chat messages are not charged.</p>}
+          ) : <p className="text-gray-600 mt-1">Included in your plan — WA Chat campaign and API messages are not charged.</p>}
         </div>
         <div>
           <p className="font-medium text-gray-900">☁️ WhatsApp Cloud</p>

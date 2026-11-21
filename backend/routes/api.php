@@ -1811,6 +1811,9 @@ Route::prefix('v1')->middleware(['jwt.auth', 'module.gate'])->group(function () 
         Route::put('group/settings',                      [WahaSessionController::class, 'updateGroupSettings']);
     });
 
+    // When WhatsApp confirmed each message (+ what it cost) — for the Webhook Logs page
+    Route::post('waha/message-delivery', [\App\Modules\WaChat\Http\Controllers\MessageDeliveryController::class, 'show'])->middleware('wa_chat.valid');
+
     // Webhook configs
     Route::prefix('waha/webhooks')->middleware('wa_chat.valid')->group(function () {
         Route::get('/',          [WahaWebhookConfigController::class, 'index']);
@@ -1869,6 +1872,7 @@ Route::prefix('v1')->middleware(['jwt.auth', 'module.gate'])->group(function () 
         Route::get('/',                      [WaOtpServiceController::class, 'show']);
         Route::post('/',                     [WaOtpServiceController::class, 'storeOrUpdate']);
         Route::post('/reset-token',          [WaOtpServiceController::class, 'resetToken']);
+        Route::post('/signing-secret',       [WaOtpServiceController::class, 'signingSecret']);
         Route::post('/stop-token',           [WaOtpServiceController::class, 'stopToken']);
         Route::post('/test-send',            [WaOtpServiceController::class, 'testSend']);
         Route::get('/logs',                  [WaOtpServiceController::class, 'logs']);

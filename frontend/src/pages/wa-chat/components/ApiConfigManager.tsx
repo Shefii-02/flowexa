@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Loader2, FileText, Plus, Trash2, X, BarChart3 } from 'lucide-react';
 import { api } from '@/api/client';
+import { requiredVariables } from '../utils/apiTemplates';
 
 type GwSession = {
   id: string;
@@ -38,7 +39,7 @@ type ApiConfig = {
   filename: string | null;
   caption: string | null;
   is_active: boolean;
-  prebuilt_template?: { id: number; name: string; type: string; language: string } | null;
+  prebuilt_template?: { id: number; name: string; type: string; language: string; content?: string } | null;
 };
 
 type KindConfig = {
@@ -403,6 +404,11 @@ export function ApiConfigManager({ kind }: { kind: ConfigKind }) {
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6, flexWrap: 'wrap' }}>
                       <span style={{ fontWeight: 600 }}>{c.name}</span>
+                      <button type="button" title="The id to pass as template_id in the API — click to copy" data-testid="template-id"
+                        onClick={() => navigator.clipboard?.writeText(String(c.id))}
+                        style={{ fontSize: 11, padding: '1px 7px', borderRadius: 10, background: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0', cursor: 'pointer' }}>
+                        template_id {c.id}
+                      </button>
                       {c.prebuilt_template
                         ? <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 10, background: '#eef2ff', color: '#4338ca' }}>{c.prebuilt_template.name} · {c.prebuilt_template.language}</span>
                         : c.custom_content
@@ -412,6 +418,12 @@ export function ApiConfigManager({ kind }: { kind: ConfigKind }) {
                         : null}
                       {!c.is_active && <span style={{ fontSize: 11, color: '#ef4444' }}>inactive</span>}
                     </div>
+                    {kind !== 'invoice' && (() => {
+                      const vars = requiredVariables(c.prebuilt_template?.content ?? c.custom_content);
+                      return <div data-testid="required-vars" style={{ fontSize: 11, color: '#6b7280', marginBottom: 6 }}>
+                        {vars.length ? <>Send in <code>variables</code>: {vars.map(v => <code key={v} style={{ marginRight: 4, background: '#f3f4f6', padding: '0 4px', borderRadius: 4 }}>{v}</code>)}</> : 'No variables needed.'}
+                      </div>;
+                    })()}
                     <div style={{ fontSize: 12, color: '#6b7280', display: 'flex', gap: 12, flexWrap: 'wrap' }}>
                       {kind === 'auth' && <>
                         <span>Length: {c.otp_length ?? 6}</span>

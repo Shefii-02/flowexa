@@ -73,6 +73,10 @@ return [
     // WAHA_API_KEY that doesn't match this per-company-token model — they need the same fix if
     // those features are also failing to send.
     'open_wa' => [
+        // How many reverse proxies / load balancers sit between the internet and this app (0 = none, 1 = e.g. nginx, 2 = Cloudflare + nginx).
+        // The WA Chat API's IP allowlist reads the caller's address from X-Forwarded-For counting from the RIGHT by this many hops, because
+        // everything to the left is written by the caller and cannot be trusted. Wrong value = wrong IP seen: check Settings → API Service → "Your IP".
+        'client_ip_hops' => (int) env('API_CLIENT_IP_HOPS', 1),
         // WA Chat files (voice replies, invoices, exports…) are hosted by the Node gateway and shared from there; set false to keep them on this server's disk.
         'files_on_node' => (bool) env('WA_FILES_ON_NODE', true),
         'base_url' => rtrim(env('WA_CHAT_API_ORIGIN', 'http://localhost:2785'), '/') . '/api',

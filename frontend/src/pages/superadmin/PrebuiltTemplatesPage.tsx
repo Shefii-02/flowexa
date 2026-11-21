@@ -12,6 +12,8 @@ interface Template {
   language: string
   status: string
   content: string
+  for_wa_chat?: boolean
+  for_wa_cloud?: boolean
   variables: string[] | null
   updated_at: string
 }
@@ -19,7 +21,7 @@ interface Template {
 const TYPES = ['auth', 'utility', 'other']
 const LANGS = ['en', 'ml', 'ar', 'hi']
 
-const emptyForm = { name: '', type: 'utility', language: 'en', status: 'active', content: '' }
+const emptyForm = { name: '', type: 'utility', language: 'en', status: 'active', content: '', for_wa_chat: true, for_wa_cloud: true }
 
 export default function PrebuiltTemplatesPage() {
   const [rows, setRows]   = useState<Template[]>([])
@@ -57,11 +59,12 @@ export default function PrebuiltTemplatesPage() {
   const openCreate = () => { setEditItem(null); setForm(emptyForm); setShowModal(true) }
   const openEdit = (t: Template) => {
     setEditItem(t)
-    setForm({ name: t.name, type: t.type, language: t.language, status: t.status, content: t.content })
+    setForm({ name: t.name, type: t.type, language: t.language, status: t.status, content: t.content, for_wa_chat: t.for_wa_chat !== false, for_wa_cloud: t.for_wa_cloud !== false })
     setShowModal(true)
   }
 
   const handleSave = async () => {
+    if (!form.for_wa_chat && !form.for_wa_cloud) { toast.error('Tick at least one channel — WA Chat or WA Cloud.'); return }
     setSaving(true)
     try {
       if (editItem) { await prebuiltTemplateApi.update(editItem.id, form); toast.success('Template updated.') }
@@ -111,6 +114,7 @@ export default function PrebuiltTemplatesPage() {
                 <th className="px-4 py-2">Name</th>
                 <th className="px-4 py-2">Type</th>
                 <th className="px-4 py-2">Lang</th>
+                <th className="px-4 py-2">Used for</th>
                 <th className="px-4 py-2">Content</th>
                 <th className="px-4 py-2">Status</th>
                 <th className="px-4 py-2 text-right">Actions</th>
@@ -122,6 +126,10 @@ export default function PrebuiltTemplatesPage() {
                   <td className="px-4 py-2 font-medium text-gray-900 whitespace-nowrap">{t.name}</td>
                   <td className="px-4 py-2"><Badge variant={t.type === 'auth' ? 'purple' : t.type === 'utility' ? 'blue' : 'gray'}>{t.type}</Badge></td>
                   <td className="px-4 py-2 text-gray-500">{t.language}</td>
+                  <td className="px-4 py-2 whitespace-nowrap" data-testid={`channels-${t.id}`}>
+                    {t.for_wa_chat !== false && <Badge variant="green">WA Chat</Badge>}{' '}
+                    {t.for_wa_cloud !== false && <Badge variant="blue">WA Cloud</Badge>}
+                  </td>
                   <td className="px-4 py-2 text-gray-500 max-w-md truncate">{t.content}</td>
                   <td className="px-4 py-2">
                     <Badge variant={t.status === 'active' ? 'green' : 'gray'}>{t.status}</Badge>
@@ -150,6 +158,14 @@ export default function PrebuiltTemplatesPage() {
               options={LANGS.map(l => ({ value: l, label: l }))} className="flex-1" />
             <Select label="Status" value={form.status} onChange={e => set('status', e.target.value)}
               options={[{ value: 'active', label: 'active' }, { value: 'inactive', label: 'inactive' }]} className="flex-1" />
+          </div>
+          <div>
+            <label className="label">Available for *</label>
+            <div className="flex gap-6">
+              <label className="flex items-center gap-2 text-sm"><input type="checkbox" data-testid="for-wa-chat" checked={form.for_wa_chat} onChange={e => set('for_wa_chat', e.target.checked)} /> WA Chat</label>
+              <label className="flex items-center gap-2 text-sm"><input type="checkbox" data-testid="for-wa-cloud" checked={form.for_wa_cloud} onChange={e => set('for_wa_cloud', e.target.checked)} /> WA Cloud</label>
+            </div>
+            <p className="text-xs text-gray-400 mt-1">A company&apos;s WA Chat API only lists templates ticked for WA Chat; its WA Cloud API only those ticked for WA Cloud. A config already using a template keeps working if you untick it later.</p>
           </div>
           <div>
             <label className="label">Content *</label>

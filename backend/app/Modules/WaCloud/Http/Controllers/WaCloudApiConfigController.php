@@ -212,7 +212,7 @@ class WaCloudApiConfigController extends Controller
 
     public function prebuiltTemplates(Request $request): JsonResponse
     {
-        $templates = PrebuiltTemplate::active()
+        $templates = PrebuiltTemplate::active()->forChannel('wa_cloud')   // only what the superadmin ticked for WA Cloud
             ->when($request->filled('type'), fn ($q) => $q->where('type', $request->string('type')))
             ->orderBy('name')->orderBy('language')
             ->get(['id', 'name', 'type', 'language', 'content', 'variables']);
@@ -380,8 +380,8 @@ class WaCloudApiConfigController extends Controller
             if ($value === null || $value === '') {
                 return;
             }
-            if (!PrebuiltTemplate::active()->where('type', $type)->whereKey($value)->exists()) {
-                $fail("The selected template is not a valid active {$type} template.");
+            if (!PrebuiltTemplate::active()->forChannel('wa_cloud')->where('type', $type)->whereKey($value)->exists()) {
+                $fail("The selected template is not an active {$type} template available for WA Cloud.");
             }
         };
     }

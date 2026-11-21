@@ -3,77 +3,94 @@
 namespace App\Modules\WaChat\Services;
 
 use App\Models\Company;
-use App\Models\MessageLog;
 use App\Models\Wallet;
 use App\Modules\Wallet\Exceptions\WalletException;
 use App\Modules\Wallet\Services\WalletService;
-use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Pays for WA Chat (open-wa) messages from the company's wallet — one charge per message, taken when WhatsApp says it was DELIVERED.
- * Every WA Chat message — live chat, campaign, test message, API/OTP — leaves through the same gateway and is confirmed by the same
- * `message.ack` webhook, so that single event is where the money moves. WA Cloud is not handled here: it follows companies.wa_config.
+ * Pays for WA Chat (open-wa) CAMPAIGN, API/OTP and TEST messages from the company's wallet — one charge per message, taken when
+ * WhatsApp confirms it was DELIVERED. Normal chat messages (typed by staff, AI and chatbot replies) are free and never touch this.
+ *
+ * How a message becomes billable: the Laravel-run sends (campaign job, API/OTP, test) tag themselves with OpenWaMessageService::billedAs()
+ * and register the gateway's message id here as "pending". The gateway's `message.ack` webhook then settles it. A message nobody
+ * registered — i.e. live chat — is simply not found, so it is not charged. WA Cloud is separate and follows companies.wa_config.
+ *
+ * The credit rate comes from the company's PLAN (plans.wa_chat_credits_per_message; blank = 1, 0 = free); a superadmin can override it per company.
  */
 class WaChatBilling
 {
-    public const SOURCES = ['chat', 'campaign', 'api', 'test'];
+    public const SOURCES = ['campaign', 'api', 'test'];
 
     public function __construct(private readonly WalletService $wallet) {}
 
-    /** Is this company charged per WA Chat message? */
+    /** Is this company charged for WA Chat campaign / API / test messages? */
     public function bills(Company $company): bool
     {
         return ($company->wa_chat_billing ?? 'wallet') === 'wallet' && $this->creditsPerMessage($company) > 0;
     }
 
+    /** Credits per delivered message: the company's own override, else its plan's rate, else 1. */
     public function creditsPerMessage(Company $company): int
     {
-        return max(0, (int) ($company->wa_chat_credits_per_message ?? 1));
+        if ($company->wa_chat_credits_per_message !== null) { return max(0, (int) $company->wa_chat_credits_per_message); }
+        return $this->planRate($company);
+    }
+
+    /** What the company's plan charges per delivered message (blank on the plan = 1). */
+    public function planRate(Company $company): int
+    {
+        $plan = $company->plan;
+        return max(0, (int) (($plan && $plan->wa_chat_credits_per_message !== null) ? $plan->wa_chat_credits_per_message : 1));
+    }
+
+    /** Called when a campaign / API / test message has been handed to the gateway: it will be charged once it is delivered. */
+    public function registerPending(int $companyId, ?string $sessionName, string $waMessageId, ?string $phone, string $source): void
+    {
+        if ($waMessageId === '' || !in_array($source, self::SOURCES, true)) { return; }
+        $company = Company::with('plan')->find($companyId);
+        if (!$company || !$this->bills($company)) { return; }
+        DB::table('wa_chat_charges')->insertOrIgnore([
+            'company_id' => $companyId, 'session_name' => $sessionName, 'wa_message_id' => $waMessageId, 'phone' => $phone ? preg_replace('/@.*/', '', $phone) : null,
+            'source' => $source, 'credits' => $this->creditsPerMessage($company), 'status' => 'pending', 'created_at' => now(), 'updated_at' => now(),
+        ]);
     }
 
     /**
-     * Charge one delivered message. Safe to call any number of times for the same message (a repeated webhook, delivered then read):
-     * only the first call charges. Returns the credits taken (0 = nothing charged).
+     * Settle a delivered message. Safe to call any number of times for the same message (a repeated webhook, delivered then read):
+     * only the call that moves the row out of "pending" charges. Returns the credits taken (0 = nothing charged).
      */
-    public function chargeDelivered(Company $company, ?string $sessionName, string $waMessageId, string $source = 'chat'): int
+    public function chargeDelivered(Company $company, ?string $sessionName, string $waMessageId): int
     {
-        if (!$this->bills($company) || $waMessageId === '') { return 0; }
+        if ($waMessageId === '') { return 0; }
 
-        // Only 1:1 messages we logged on send are billed — a group message has no log row and is not charged.
-        $log = MessageLog::where('company_id', $company->id)->where('channel', 'wa_chat')->where('direction', 'outbound')->where('wa_message_id', $waMessageId)->first();
-        if (!$log) { return 0; }
+        // Claim the row: exactly one caller flips pending → charging, everyone else (and live chat, which has no row) gets 0 here.
+        $claimed = DB::table('wa_chat_charges')->where('company_id', $company->id)->where('wa_message_id', $waMessageId)->where('status', 'pending')->update(['status' => 'charging', 'updated_at' => now()]);
+        if ($claimed !== 1) { return 0; }
 
-        $credits = $this->creditsPerMessage($company);
-        // a message a campaign sent is recorded per recipient by the campaign job — that is how a campaign's messages are told apart from live chat
-        if ($source === 'chat' && \App\Modules\WaChat\Models\WahaMessageLog::where('company_id', $company->id)->where('waha_message_id', $waMessageId)->exists()) { $source = 'campaign'; }
+        $row     = DB::table('wa_chat_charges')->where('company_id', $company->id)->where('wa_message_id', $waMessageId)->first();
+        $credits = (int) $row->credits;
 
         try {
-            return DB::transaction(function () use ($company, $sessionName, $waMessageId, $source, $log, $credits) {
-                // The unique (company, message) key decides who charges: a second delivery event hits the duplicate and stops.
-                $charge = DB::table('wa_chat_charges')->insertGetId([
-                    'company_id' => $company->id, 'session_name' => $sessionName, 'wa_message_id' => $waMessageId, 'phone' => $log->phone,
-                    'source' => in_array($source, self::SOURCES, true) ? $source : 'chat', 'credits' => $credits, 'status' => 'charged', 'created_at' => now(), 'updated_at' => now(),
-                ]);
-
+            return DB::transaction(function () use ($company, $row, $credits, $waMessageId) {
                 $wallet = Wallet::where('company_id', $company->id)->lockForUpdate()->first();
                 if (!$wallet || $wallet->balance < $credits) {
-                    // Delivered with no credit left (e.g. a live chat message — those cannot be stopped in advance). Recorded, not lost.
-                    DB::table('wa_chat_charges')->where('id', $charge)->update(['status' => 'unbilled']);
-                    Log::warning("WaChatBilling: company {$company->id} message {$waMessageId} delivered with an empty wallet");
+                    // Delivered after the wallet ran out (a big campaign, or deliveries that lagged behind the up-front check). Recorded, not lost.
+                    DB::table('wa_chat_charges')->where('id', $row->id)->update(['status' => 'unbilled', 'updated_at' => now()]);
+                    Log::warning("WaChatBilling: company {$company->id} {$row->source} message {$waMessageId} delivered with too little wallet credit");
                     return 0;
                 }
 
-                $this->wallet->debit($company->id, $credits, "WA Chat message to {$log->phone}", $waMessageId, 'wa_chat_message');
+                $label = ['campaign' => 'WA Chat campaign message', 'api' => 'WA Chat API message', 'test' => 'WA Chat test message'][$row->source] ?? 'WA Chat message';
+                $this->wallet->debit($company->id, $credits, "{$label} to {$row->phone}", $waMessageId, 'wa_chat_message');
                 $tx = \App\Models\WalletTransaction::where('company_id', $company->id)->where('reference_type', 'wa_chat_message')->where('reference_id', $waMessageId)->latest('id')->value('id');
-                DB::table('wa_chat_charges')->where('id', $charge)->update(['wallet_transaction_id' => $tx]);
+                DB::table('wa_chat_charges')->where('id', $row->id)->update(['status' => 'charged', 'wallet_transaction_id' => $tx, 'updated_at' => now()]);
+                \App\Models\MessageLog::where('company_id', $company->id)->where('channel', 'wa_chat')->where('direction', 'outbound')->where('wa_message_id', $waMessageId)->update(['cost' => min(255, $credits)]);   // Message Logs show what it cost
                 return $credits;
             });
-        } catch (QueryException $e) {
-            if (str_contains($e->getMessage(), 'Duplicate') || str_contains($e->getMessage(), 'UNIQUE') || ($e->errorInfo[1] ?? null) === 1062) { return 0; }   // already charged
-            throw $e;
         } catch (WalletException $e) {
+            DB::table('wa_chat_charges')->where('id', $row->id)->update(['status' => 'unbilled', 'updated_at' => now()]);
             Log::warning('WaChatBilling: ' . $e->getMessage());
             return 0;
         }
@@ -91,6 +108,6 @@ class WaChatBilling
         if ($have >= $need) { return null; }
         return $messages > 1
             ? "Not enough wallet credits: this sends {$messages} messages ({$need} credits) and the wallet has {$have}. Recharge the wallet and try again."
-            : "Your wallet is out of credits ({$have} left, {$need} needed). Recharge the wallet to send WA Chat messages.";
+            : "Your wallet is out of credits ({$have} left, {$need} needed). Recharge the wallet to send WA Chat campaign and API messages.";
     }
 }

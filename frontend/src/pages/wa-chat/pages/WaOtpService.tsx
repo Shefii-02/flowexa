@@ -7,6 +7,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { PageHeader } from '../components/PageHeader';
 import { ApiConfigManager } from '../components/ApiConfigManager';
 import { useCurrentUser } from '@/store';
+import WaChatCostNote from '@/components/WaChatCostNote';
+import { curlFor, curlSignedFor, endpointFor, missingVariablesMessage, requiredVariables, type DocConfig } from '../utils/apiTemplates';
 
 type OtpService = {
   id: number;
@@ -15,6 +17,13 @@ type OtpService = {
   api_token_created_at: string | null;
   allowed_domains: string[] | null;
   allowed_packages: string[] | null;
+  allow_non_browser?: boolean;
+  allowed_ips?: string[] | null;
+  require_signature?: boolean;
+  signing_secret?: string | null;
+  rate_per_minute?: number;
+  max_per_phone_hour?: number;
+  client_ip?: string;      // the address we see for this browser
   session_id: string | null;
 };
 
@@ -35,7 +44,7 @@ type Tab = typeof TABS[number];
 function useOtpService() {
   return useQuery<OtpService>({
     queryKey: ['otp-service'],
-    queryFn: () => api.get('/otp-service').then(r => r.data?.data),
+    queryFn: () => api.get('/otp-service').then(r => ({ ...(r.data?.data ?? {}), client_ip: r.data?.client_ip }) as OtpService),
   });
 }
 
@@ -90,6 +99,37 @@ function CodeBlock({ code, language = 'bash' }: { code: string; language?: strin
   );
 }
 
+/** The company's templates, each with the exact request to copy — terminal (cURL) or Postman (import → Raw text). */
+function YourTemplates({ baseUrl, token, signed }: { baseUrl: string; token: string; signed?: boolean }) {
+  const auth = useConfigs('auth'); const util = useConfigs('utility'); const inv = useConfigs('invoice');
+  const all: DocConfig[] = [
+    ...(auth.data ?? []).map(c => ({ id: c.id, name: c.name, kind: 'auth' as const, content: c.prebuilt_template?.content ?? c.custom_content })),
+    ...(util.data ?? []).map(c => ({ id: c.id, name: c.name, kind: 'utility' as const, content: c.prebuilt_template?.content ?? c.custom_content })),
+    ...(inv.data ?? []).map(c => ({ id: c.id, name: c.name, kind: 'invoice' as const, content: null })),
+  ];
+  const [open, setOpen] = useState<number | null>(null);
+  if (all.length === 0) return <div style={{ fontSize: 12, color: '#6b7280', marginBottom: 20 }}>Create a template on the Auth OTP API / Utility / Invoice Share tab and it appears here with a ready-to-run request.</div>;
+  return (
+    <div data-testid="your-templates" style={{ border: '1px solid #e5e7eb', borderRadius: 10, marginBottom: 24, overflow: 'hidden' }}>
+      <div style={{ padding: '10px 14px', fontWeight: 600, fontSize: 13, background: '#f9fafb' }}>Your templates — ids and variables</div>
+      {all.map(c => {
+        const vars = requiredVariables(c.content);
+        return (
+          <div key={`${c.kind}-${c.id}`} style={{ borderTop: '1px solid #f1f5f9' }}>
+            <button type="button" onClick={() => setOpen(open === c.id ? null : c.id)} style={{ display: 'flex', width: '100%', gap: 10, alignItems: 'center', padding: '9px 14px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', fontSize: 13 }}>
+              <code style={{ background: '#ecfdf5', color: '#047857', padding: '1px 7px', borderRadius: 10 }}>template_id {c.id}</code>
+              <b>{c.name}</b>
+              <span style={{ color: '#6b7280', fontSize: 11 }}>{c.kind === 'auth' ? 'Auth OTP' : c.kind === 'utility' ? 'Utility' : 'Invoice'} · POST {endpointFor(c.kind)}</span>
+              <span style={{ marginLeft: 'auto', color: '#6b7280', fontSize: 11 }}>{c.kind === 'invoice' ? 'no variables' : vars.length ? `variables: ${vars.join(', ')}` : 'no variables'}</span>
+            </button>
+            {open === c.id && <div style={{ padding: '0 14px 10px' }}><CodeBlock language="cURL — terminal, or import into Postman (Import → Raw text)" code={signed ? curlSignedFor(c, baseUrl, token) : curlFor(c, baseUrl, token)} /></div>}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function WaOtpServicePage() {
   const [activeTab, setActiveTab] = useState<Tab>('Auth OTP API');
   const [confirmResetOpen, setConfirmResetOpen] = useState(false);
@@ -107,6 +147,11 @@ export default function WaOtpServicePage() {
   const [settingsForm, setSettingsForm] = useState({
     allowed_domains: '',
     allowed_packages: '',
+    allow_non_browser: true,
+    allowed_ips: '',
+    require_signature: false,
+    rate_per_minute: 120,
+    max_per_phone_hour: 20,
   });
   const [formLoaded, setFormLoaded] = useState(false);
 
@@ -114,6 +159,11 @@ export default function WaOtpServicePage() {
     setSettingsForm({
       allowed_domains: (service.allowed_domains ?? []).join('\n'),
       allowed_packages: (service.allowed_packages ?? []).join('\n'),
+      allow_non_browser: service.allow_non_browser ?? true,
+      allowed_ips: (service.allowed_ips ?? []).join('\n'),
+      require_signature: service.require_signature ?? false,
+      rate_per_minute: service.rate_per_minute ?? 120,
+      max_per_phone_hour: service.max_per_phone_hour ?? 20,
     });
     setFormLoaded(true);
   }
@@ -122,7 +172,17 @@ export default function WaOtpServicePage() {
     mutationFn: () => api.post('/otp-service', {
       allowed_domains: settingsForm.allowed_domains.split('\n').map(s => s.trim()).filter(Boolean),
       allowed_packages: settingsForm.allowed_packages.split('\n').map(s => s.trim()).filter(Boolean),
+      allow_non_browser: settingsForm.allow_non_browser,
+      allowed_ips: settingsForm.allowed_ips.split('\n').map(s => s.trim()).filter(Boolean),
+      require_signature: settingsForm.require_signature,
+      rate_per_minute: Math.max(0, Math.round(Number(settingsForm.rate_per_minute) || 0)),
+      max_per_phone_hour: Math.max(0, Math.round(Number(settingsForm.max_per_phone_hour) || 0)),
     }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['otp-service'] }),
+  });
+
+  const newSigningSecret = useMutation({
+    mutationFn: () => api.post('/otp-service/signing-secret'),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['otp-service'] }),
   });
 
@@ -150,6 +210,7 @@ export default function WaOtpServicePage() {
   const [testVars, setTestVars] = useState<Record<string, string>>({});
   const [testResult, setTestResult] = useState<{ success: boolean; otp?: string; message?: string; ms?: number; error?: string } | null>(null);
   const [testLoading, setTestLoading] = useState(false);
+  const [testShowErrors, setTestShowErrors] = useState(false);   // after a send attempt, mark the variables that are still empty
 
   const testKind = testType === 'otp' ? 'auth' : testType;
   const { data: testConfigs = [] } = useConfigs(testKind);
@@ -171,8 +232,16 @@ export default function WaOtpServicePage() {
       .filter(name => !AUTO_TOKENS.includes(name.toLowerCase())),
   )];
 
+  // every {{variable}} must have a value — the API refuses the call otherwise, so the test refuses it here, in the same words
+  const missingTestVars = testVarNames.filter(n => !(testVars[n] ?? '').trim());
+
   const runTestSend = async () => {
     if (!testPhone.trim()) return;
+    if (testType !== 'invoice' && missingTestVars.length) {
+      setTestShowErrors(true);
+      setTestResult({ success: false, error: missingVariablesMessage(missingTestVars, selectedConfig?.name) });
+      return;
+    }
     setTestLoading(true);
     setTestResult(null);
     try {
@@ -302,6 +371,8 @@ export default function WaOtpServicePage() {
     <div style={{ padding: 24 }}>
       <PageHeader title="Api Service" subtitle="WhatsApp OTP, Utility & Invoice Share APIs for your apps and platforms" />
 
+      <div style={{ marginBottom: 16 }}><WaChatCostNote /></div>
+
       {/* Tabs */}
       <div style={{ display: 'flex', borderBottom: '1px solid var(--border, #e5e7eb)', marginBottom: 24, overflowX: 'auto' }}>
         {TABS.map(t => <button key={t} style={tabStyle(t)} onClick={() => setActiveTab(t)}>{t}</button>)}
@@ -355,7 +426,7 @@ export default function WaOtpServicePage() {
               <div>
                 <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 6 }}>Config</div>
                 {testConfigs.length > 0 ? (
-                  <select value={testService} onChange={e => { setTestService(e.target.value); setTestVars({}); setTestResult(null); }} style={inputStyle}>
+                  <select value={testService} onChange={e => { setTestService(e.target.value); setTestVars({}); setTestResult(null); setTestShowErrors(false); }} style={inputStyle}>
                     <option value="">First active config</option>
                     {testConfigs.map(c => (
                       <option key={c.id} value={c.name}>{c.name}{c.is_active ? '' : ' (inactive)'}</option>
@@ -385,9 +456,11 @@ export default function WaOtpServicePage() {
                     {testVarNames.map(name => (
                       <div key={name} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         <code style={{ fontSize: 11, background: '#f3f4f6', padding: '2px 6px', borderRadius: 5, whiteSpace: 'nowrap' }}>{`{{${name}}}`}</code>
-                        <input value={testVars[name] ?? ''} placeholder={`value for ${name}`}
-                          onChange={e => setTestVars(v => ({ ...v, [name]: e.target.value }))}
-                          style={{ ...inputStyle, flex: 1 }} />
+                        <input value={testVars[name] ?? ''} placeholder={`value for ${name} (required)`} data-testid={`var-${name}`}
+                          aria-invalid={testShowErrors && !(testVars[name] ?? '').trim()}
+                          onChange={e => { setTestVars(v => ({ ...v, [name]: e.target.value })); setTestResult(null); }}
+                          style={{ ...inputStyle, flex: 1, ...(testShowErrors && !(testVars[name] ?? '').trim() ? { borderColor: '#ef4444', background: '#fef2f2' } : {}) }} />
+                        {testShowErrors && !(testVars[name] ?? '').trim() && <span data-testid={`var-error-${name}`} style={{ fontSize: 11, color: '#dc2626', whiteSpace: 'nowrap' }}>missing</span>}
                       </div>
                     ))}
                   </div>
@@ -456,13 +529,42 @@ export default function WaOtpServicePage() {
             Optionally restrict by domain (<code>Origin</code> header) or app package (<code>X-App-Package</code> header).
           </div>
 
-          {/* service field */}
-          <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 10, padding: 14, marginBottom: 24, fontSize: 13, color: '#1e40af' }}>
-            <b>Choosing a config:</b> pass <code>"service": "&lt;config name&gt;"</code> in the body to select one of your
-            named configs from the <b>Auth OTP API</b> / <b>Utility</b> / <b>Invoice Share</b> tabs. Omit it to use the
-            first active config of that type. OTP length, expiry, attempt cap, template and session all come from the config.
-            Exceeding the config&apos;s attempt cap on <code>/verify</code> returns <code>429</code>.
+          {/* Who may call */}
+          <div data-testid="access-summary" style={{ background: service?.allow_non_browser === false ? '#fef2f2' : '#f0fdf4', border: `1px solid ${service?.allow_non_browser === false ? '#fecaca' : '#bbf7d0'}`, borderRadius: 10, padding: 14, marginBottom: 16, fontSize: 13, color: '#374151' }}>
+            <b>Who can call this API (set on the Settings tab)</b>
+            <ul style={{ margin: '6px 0 0 18px', padding: 0 }}>
+              <li>Websites: {(service?.allowed_domains ?? []).length ? <>only <code>{(service?.allowed_domains ?? []).join(', ')}</code> (and their subdomains) when called from a browser</> : 'any website'}.</li>
+              <li>curl / Postman / terminal / server-to-server: <b>{service?.allow_non_browser === false ? 'NOT allowed (403 cli_not_allowed)' : 'allowed'}</b>.</li>
+              <li>IP addresses: {(service?.allowed_ips ?? []).length ? <>only <code>{(service?.allowed_ips ?? []).join(', ')}</code></> : 'any'}.</li>
+              <li>Signed requests: <b>{service?.require_signature ? 'REQUIRED (X-Timestamp + X-Signature)' : 'not required'}</b>.</li>
+              <li>Limits: {service?.rate_per_minute ? `${service.rate_per_minute} calls/minute` : 'no per-minute limit'}, {service?.max_per_phone_hour ? `${service.max_per_phone_hour} messages per number per hour` : 'no per-number limit'}.</li>
+              <li>Every message sent through this API costs wallet credits once WhatsApp confirms delivery.</li>
+            </ul>
           </div>
+
+          {/* Request fields */}
+          <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 10, padding: 14, marginBottom: 16, fontSize: 13, color: '#1e40af' }}>
+            <b>What you pass</b>
+            <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse', marginTop: 8 }}>
+              <tbody>
+                {[
+                  ['phone', 'Receiver number — country code + digits, e.g. 919876543210.'],
+                  ['template_id', 'The id on your template card (Auth OTP API / Utility / Invoice Share tabs → “template_id 12”). Exact match; an unknown id returns 404.'],
+                  ['variables', 'An object with one value for every {{placeholder}} in that template. The OTP code, expiry and company name are filled automatically.'],
+                ].map(([k, v]) => (
+                  <tr key={k}><td style={{ padding: '4px 12px 4px 0', verticalAlign: 'top' }}><code>{k}</code></td><td style={{ padding: '4px 0' }}>{v}</td></tr>
+                ))}
+              </tbody>
+            </table>
+            <div style={{ marginTop: 8 }}>
+              <b>Every variable needs a value.</b> If one is missing, empty, a list/object, or longer than 1000 characters, the message is <u>not</u> sent and you get <code>422 variables_mismatch</code> saying exactly which variable is wrong; names are matched ignoring case.
+              Extra variables the template does not use are ignored and returned as <code>ignored_variables</code> so a typo is easy to spot.
+              Older calls that pass <code>service</code> (the config name) still work; <code>template_id</code> is preferred.
+            </div>
+          </div>
+
+          {/* Your templates, with a ready-made request each */}
+          <YourTemplates baseUrl={baseUrl} token={token} signed={service?.require_signature} />
 
           {/* 1. OTP Send */}
           <div style={{ marginBottom: 32 }}>
@@ -476,9 +578,9 @@ export default function WaOtpServicePage() {
   -H "Content-Type: application/json" \\
   -d '{
     "phone": "919876543210",
-    "service": "login",
+    "template_id": 12,
     "reference_id": "txn_abc123",
-    "variables": { "text": "John Doe" }
+    "variables": { "name": "John Doe" }
   }'`} />
             <CodeBlock language="JavaScript (fetch)" code={`const res = await fetch('${baseUrl}/otp/send', {
   method: 'POST',
@@ -488,15 +590,15 @@ export default function WaOtpServicePage() {
   },
   body: JSON.stringify({
     phone: '919876543210',
-    service: 'login',
+    template_id: 12,
     reference_id: 'txn_abc123',
-    variables: { text: 'John Doe' },
+    variables: { name: 'John Doe' },
   }),
 });
 const data = await res.json();
 // { success: true, expires_at: "2026-...", reference_id: "txn_abc123" }`} />
             <div style={{ fontSize: 12, background: '#f8fafc', padding: '10px 14px', borderRadius: 8, color: '#475569' }}>
-              <b>Fields:</b> <code>phone</code> (required) — country code, digits only. <code>service</code> (optional) — config name.
+              <b>Fields:</b> <code>phone</code> (required) — receiver, country code + digits. <code>template_id</code> (optional) — your Auth template card id (or <code>service</code>, the config name).
               <code>reference_id</code> (optional). <code>variables</code> (optional) — an object keyed by the template&apos;s
               placeholder names; each <code>{'{{name}}'}</code> in the message is replaced by its value. The OTP code
               (<code>{'{{code}}'}</code>/<code>{'{{otp}}'}</code>) and <code>{'{{expiry}}'}</code> are filled automatically.
@@ -539,8 +641,8 @@ const data = await res.json();
   -H "Content-Type: application/json" \\
   -d '{
     "phone": "919876543210",
-    "service": "order-shipped",
-    "variables": { "text": "1234", "date": "Tomorrow" }
+    "template_id": 14,
+    "variables": { "order_id": "1234", "eta": "Tomorrow" }
   }'`} />
             <CodeBlock language="Python (requests)" code={`import requests
 
@@ -554,7 +656,7 @@ response = requests.post(
 )
 print(response.json())  # {'success': True, 'phone': '919876543210', 'ms': 342}`} />
             <div style={{ fontSize: 12, background: '#f8fafc', padding: '10px 14px', borderRadius: 8, color: '#475569' }}>
-              <b>Fields:</b> <code>phone</code> (required). One of <code>message</code> (raw text, max 2000) or <code>service</code> (config name).
+              <b>Fields:</b> <code>phone</code> (required). One of <code>message</code> (raw text, max 2000) or <code>template_id</code> (your Utility template card id; <code>service</code> = config name also works).
               <code>variables</code> (optional) — object keyed by placeholder name, fills <code>{'{{name}}'}</code> in the template.
             </div>
           </div>
@@ -590,6 +692,85 @@ await axios.post('${baseUrl}/api-service/invoice-share', {
             </div>
           </div>
 
+          {/* Security */}
+          <div data-testid="security-guide" style={{ border: '1px solid #c7d2fe', borderRadius: 10, padding: 16, marginBottom: 24 }}>
+            <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 6 }}>Securing your integration</div>
+            <div style={{ fontSize: 13, color: '#475569', marginBottom: 12 }}>
+              The website and curl rules read headers the caller writes, so anyone holding your token can fake them — they stop accidents, not attackers. These controls cannot be faked:
+            </div>
+            <ul style={{ fontSize: 13, color: '#475569', margin: '0 0 12px 18px', padding: 0, lineHeight: 1.7 }}>
+              <li><b>Allowed IP addresses</b> — only your server&apos;s network address may call. Set it in Settings.</li>
+              <li><b>Signed requests</b> — each call carries an HMAC made with a secret that is never sent, so a stolen token is useless on its own. A signature works once, for 5 minutes.</li>
+              <li><b>Limits</b> — calls per minute and messages per number per hour cap the damage (and the wallet drain) if the token ever leaks.</li>
+              <li>Keep the token and signing secret on your <b>server</b> — never in a website, mobile app or public repository.</li>
+            </ul>
+            <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>How to sign (when “Require signed requests” is on)</div>
+            <div style={{ fontSize: 12, color: '#475569', marginBottom: 8 }}>
+              Send <code>X-Timestamp</code> (unix seconds) and <code>X-Signature</code> = hex <code>HMAC-SHA256(signing_secret, timestamp + &quot;.&quot; + raw_body)</code>. Sign the exact bytes you send as the body.
+            </div>
+            <CodeBlock language="Node.js" code={`const crypto = require('crypto');
+
+const body = JSON.stringify({ phone: '919876543210', template_id: 14, variables: { order_id: '1234', status: 'shipped' } });
+const ts = Math.floor(Date.now() / 1000).toString();
+const signature = crypto.createHmac('sha256', process.env.SIGNING_SECRET).update(ts + '.' + body).digest('hex');
+
+await fetch('${baseUrl}/api-service/utility-send', {
+  method: 'POST',
+  headers: {
+    'Authorization': 'Bearer ${token}',
+    'Content-Type': 'application/json',
+    'X-Timestamp': ts,
+    'X-Signature': signature,
+  },
+  body,            // the same string that was signed
+});`} />
+            <CodeBlock language="Python" code={`import hashlib, hmac, json, os, time, requests
+
+body = json.dumps({'phone': '919876543210', 'template_id': 14, 'variables': {'order_id': '1234', 'status': 'shipped'}})
+ts = str(int(time.time()))
+signature = hmac.new(os.environ['SIGNING_SECRET'].encode(), f'{ts}.{body}'.encode(), hashlib.sha256).hexdigest()
+
+requests.post('${baseUrl}/api-service/utility-send', data=body, headers={
+    'Authorization': 'Bearer ${token}', 'Content-Type': 'application/json',
+    'X-Timestamp': ts, 'X-Signature': signature,
+})`} />
+            <CodeBlock language="PHP" code={`$body = json_encode(['phone' => '919876543210', 'template_id' => 14, 'variables' => ['order_id' => '1234', 'status' => 'shipped']]);
+$ts   = (string) time();
+$sig  = hash_hmac('sha256', $ts . '.' . $body, getenv('SIGNING_SECRET'));
+
+$ch = curl_init('${baseUrl}/api-service/utility-send');
+curl_setopt_array($ch, [CURLOPT_POST => true, CURLOPT_POSTFIELDS => $body, CURLOPT_RETURNTRANSFER => true, CURLOPT_HTTPHEADER => [
+    'Authorization: Bearer ${token}', 'Content-Type: application/json', "X-Timestamp: $ts", "X-Signature: $sig",
+]]);
+echo curl_exec($ch);`} />
+            <CodeBlock language="Terminal (bash + openssl)" code={`SIGNING_SECRET="<your-signing-secret>"
+BODY='{"phone":"919876543210","template_id":14,"variables":{"order_id":"1234","status":"shipped"}}'
+TS=$(date +%s)
+SIG=$(printf '%s' "$TS.$BODY" | openssl dgst -sha256 -hmac "$SIGNING_SECRET" | sed 's/^.* //')
+
+curl -X POST ${baseUrl}/api-service/utility-send \\
+  -H "Authorization: Bearer ${token}" -H "Content-Type: application/json" \\
+  -H "X-Timestamp: $TS" -H "X-Signature: $SIG" -d "$BODY"`} />
+          </div>
+
+          {/* Example error */}
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ fontWeight: 600, marginBottom: 6, fontSize: 13 }}>Example: variables do not match</div>
+            <CodeBlock language="422 response" code={`{
+  "error": "The variables \\"order_id\\", \\"status\\" are missing for this template (Order update).",
+  "code": "variables_mismatch",
+  "template_id": 14,
+  "template_name": "Order update",
+  "expected": ["name", "order_id", "status"],
+  "missing": ["order_id", "status"],
+  "invalid": {},
+  "errors": {
+    "variables.order_id": ["The variable \\"order_id\\" is missing for this template (Order update)."],
+    "variables.status":   ["The variable \\"status\\" is missing for this template (Order update)."]
+  }
+}`} />
+          </div>
+
           {/* Error codes */}
           <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 10, padding: 16 }}>
             <div style={{ fontWeight: 600, marginBottom: 10 }}>Error Codes</div>
@@ -601,9 +782,17 @@ await axios.post('${baseUrl}/api-service/invoice-share', {
               <tbody>
                 {[
                   ['401', 'Invalid or missing Bearer token'],
-                  ['403', 'Origin or app package not in allowed list'],
-                  ['422', 'Validation error or no WA session configured'],
-                  ['500', 'WAHA delivery failure or server error'],
+                  ['401 bad_signature / stale_timestamp / replayed_request', 'Signed requests are required and the signature is missing, wrong, older than 5 minutes, or already used'],
+                  ['402 insufficient_balance', 'Wallet has too few credits — recharge it'],
+                  ['403 ip_not_allowed', 'Your IP address is not on the allowed list'],
+                  ['429 rate_limited / phone_limit', 'Too many calls per minute, or too many messages to one number this hour (see the Retry-After header)'],
+                  ['403 origin_not_allowed', 'The website is not in your allowed list'],
+                  ['403 cli_not_allowed', 'curl / Postman / terminal calls are switched off in Settings'],
+                  ['403', 'App package not in the allowed list'],
+                  ['404 template_not_found', 'template_id is not one of your active templates for this endpoint'],
+                  ['422 variables_mismatch', 'A variable the template needs is missing, empty or not text/number — the response names it, lists missing + expected, and has an errors entry per variable'],
+                  ['422', 'Validation error, no WhatsApp session selected, or delivery refused'],
+                  ['500', 'Gateway delivery failure or server error'],
                 ].map(([code, msg]) => (
                   <tr key={code} style={{ borderBottom: '1px solid #f1f5f9' }}>
                     <td style={{ padding: '6px 12px 6px 0' }}><code style={{ background: '#fee2e2', color: '#dc2626', padding: '1px 5px', borderRadius: 4 }}>{code}</code></td>
@@ -666,8 +855,81 @@ await axios.post('${baseUrl}/api-service/invoice-share', {
                 onChange={e => setSettingsForm(s => ({ ...s, allowed_domains: e.target.value }))}
                 placeholder={'https://yourapp.com\nhttps://staging.yourapp.com'}
                 rows={3} style={{ ...inputStyle, resize: 'vertical' }} />
-              <div style={{ fontSize: 12, color: '#6b7280', marginTop: 4 }}>Leave blank to allow all origins. Checked against the <code>Origin</code> HTTP header.</div>
+              <div style={{ fontSize: 12, color: '#6b7280', marginTop: 4 }}>Leave blank to allow all websites. A browser call is checked against the <code>Origin</code> header: the site or any subdomain of it passes (<code>app.yourapp.com</code> for <code>yourapp.com</code>), look-alikes such as <code>evilyourapp.com</code> do not.</div>
             </label>
+            <label style={{ display: 'flex', gap: 10, alignItems: 'flex-start', border: '1px solid #e5e7eb', borderRadius: 10, padding: 14, cursor: 'pointer' }}>
+              <input type="checkbox" data-testid="allow-non-browser" checked={settingsForm.allow_non_browser}
+                onChange={e => setSettingsForm(s => ({ ...s, allow_non_browser: e.target.checked }))} style={{ marginTop: 3 }} />
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 600 }}>Allow curl, Postman, terminal and server-to-server calls</div>
+                <div style={{ fontSize: 12, color: '#6b7280', marginTop: 4 }}>
+                  On: your own backend, scripts and API tools can call the API with the token. Off: only calls made from a website (browser) are accepted — curl, Postman, Insomnia, HTTPie and calls with no <code>Origin</code> are refused with <code>403 cli_not_allowed</code>.
+                  This only stops casual use: anyone holding the token can fake these headers. For real protection use the IP list and signed requests below.
+                </div>
+              </div>
+            </label>
+
+            {/* ── Real security: things the caller cannot fake ── */}
+            <div style={{ border: '1px solid #c7d2fe', background: '#eef2ff', borderRadius: 10, padding: 14, fontSize: 12, color: '#3730a3' }}>
+              <b>Stronger protection.</b> The website and curl rules above rely on headers the caller writes, so anyone with your token can fake them.
+              The three controls below cannot be faked — use them for a server-to-server integration.
+            </div>
+
+            <label>
+              <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 6 }}>Allowed IP addresses (one per line)</div>
+              <textarea data-testid="allowed-ips" value={settingsForm.allowed_ips}
+                onChange={e => setSettingsForm(s => ({ ...s, allowed_ips: e.target.value }))}
+                placeholder={'203.0.113.7\n198.51.100.0/24'} rows={3} style={{ ...inputStyle, resize: 'vertical' }} />
+              <div style={{ fontSize: 12, color: '#6b7280', marginTop: 4 }}>
+                Only these network addresses may call the API (single IPs or ranges like <code>198.51.100.0/24</code>); leave blank to allow any. Applies to every call, signed or not.
+                {service?.client_ip && <> We currently see your address as <code data-testid="client-ip">{service.client_ip}</code>{' '}
+                  <button type="button" onClick={() => setSettingsForm(s => s.allowed_ips.split('\n').map(x => x.trim()).includes(service.client_ip!) ? s : { ...s, allowed_ips: (s.allowed_ips.trim() ? s.allowed_ips.trim() + '\n' : '') + service.client_ip })}
+                    style={{ background: 'none', border: 'none', color: '#2563eb', cursor: 'pointer', fontSize: 12, padding: 0, textDecoration: 'underline' }}>add it</button>
+                  — if that is a proxy address, not yours, ask your developer to set <code>API_CLIENT_IP_HOPS</code>.</>}
+              </div>
+            </label>
+
+            <div style={{ border: '1px solid #e5e7eb', borderRadius: 10, padding: 14 }}>
+              <label style={{ display: 'flex', gap: 10, alignItems: 'flex-start', cursor: 'pointer' }}>
+                <input type="checkbox" data-testid="require-signature" checked={settingsForm.require_signature}
+                  onChange={e => setSettingsForm(s => ({ ...s, require_signature: e.target.checked }))} style={{ marginTop: 3 }} />
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 600 }}>Require signed requests</div>
+                  <div style={{ fontSize: 12, color: '#6b7280', marginTop: 4 }}>
+                    Every call must carry <code>X-Timestamp</code> and <code>X-Signature</code> — an HMAC of the request made with a secret that is never sent. A leaked token alone becomes useless;
+                    each signature works once and only for 5 minutes. Calls that are validly signed skip the website / curl rules. Code samples are on the <b>API Docs</b> tab.
+                  </div>
+                </div>
+              </label>
+              {settingsForm.require_signature && (
+                <div style={{ marginTop: 12, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }} data-testid="signing-secret-box">
+                  <Shield size={14} color="#2563eb" />
+                  {service?.signing_secret
+                    ? <code style={{ flex: 1, minWidth: 180, fontSize: 12, color: '#1d4ed8', wordBreak: 'break-all' }} data-testid="signing-secret">{service.signing_secret}</code>
+                    : <span style={{ flex: 1, fontSize: 12, color: '#6b7280' }}>A signing secret is created when you save.</span>}
+                  {service?.signing_secret && <button type="button" onClick={() => navigator.clipboard.writeText(service.signing_secret!)}
+                    style={{ padding: '3px 9px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 11 }}>Copy</button>}
+                  {service?.signing_secret && <button type="button" data-testid="regen-secret" onClick={() => { if (window.confirm('Generate a new signing secret? Integrations using the old one stop working until you update them.')) newSigningSecret.mutate(); }}
+                    style={{ padding: '3px 9px', background: 'none', border: '1px solid #bfdbfe', borderRadius: 6, cursor: 'pointer', fontSize: 11, color: '#2563eb' }}>Regenerate</button>}
+                </div>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+              <label style={{ flex: 1, minWidth: 200 }}>
+                <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 6 }}>Calls per minute</div>
+                <input type="number" min={0} max={10000} data-testid="rate-per-minute" value={settingsForm.rate_per_minute}
+                  onChange={e => setSettingsForm(s => ({ ...s, rate_per_minute: Number(e.target.value) }))} style={inputStyle} />
+                <div style={{ fontSize: 12, color: '#6b7280', marginTop: 4 }}>For the whole API. 0 = unlimited. Stops a leaked token draining your wallet.</div>
+              </label>
+              <label style={{ flex: 1, minWidth: 200 }}>
+                <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 6 }}>Messages per number per hour</div>
+                <input type="number" min={0} max={1000} data-testid="max-per-phone" value={settingsForm.max_per_phone_hour}
+                  onChange={e => setSettingsForm(s => ({ ...s, max_per_phone_hour: Number(e.target.value) }))} style={inputStyle} />
+                <div style={{ fontSize: 12, color: '#6b7280', marginTop: 4 }}>To any one phone number. 0 = unlimited. Stops someone being OTP-bombed.</div>
+              </label>
+            </div>
+
             <label>
               <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 6 }}>Allowed App Packages (one per line)</div>
               <textarea value={settingsForm.allowed_packages}

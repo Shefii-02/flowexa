@@ -29,10 +29,13 @@ class WaOtpServiceController extends Controller
     /** Why the last dispatchText/dispatchFile failed — shown to the person using the dashboard test. */
     private ?string $deliveryFailure = null;
 
+    /** What a send from this dashboard is billed as — 'api' for the utility / invoice services, 'test' for the Test Send tab. */
+    private string $billAs = 'api';
+
     /** Send a plain-text message via the WA Chat (open-wa) gateway. Returns response time in ms or null on failure. */
     private function dispatchText(WaOtpService $service, string $phone, string $message, ?string $sessionId = null): ?int
     {
-        return $this->handOff($service, $sessionId, fn (string $sid, string $chatId) => app(OpenWaMessageService::class)
+        return $this->handOff($service, $sessionId, fn (string $sid, string $chatId) => app(OpenWaMessageService::class)->billedAs($this->billAs)
             ->sendText($sid, $this->apiKey($service), $chatId, $message), $phone);
     }
 
@@ -62,7 +65,7 @@ class WaOtpServiceController extends Controller
     /** Send a document/file via the WA Chat (open-wa) gateway. Returns ms or null on failure. */
     private function dispatchFile(WaOtpService $service, string $phone, string $fileUrl, string $filename, string $caption, ?string $sessionId = null): ?int
     {
-        return $this->handOff($service, $sessionId, fn (string $sid, string $chatId) => app(OpenWaMessageService::class)
+        return $this->handOff($service, $sessionId, fn (string $sid, string $chatId) => app(OpenWaMessageService::class)->billedAs($this->billAs)
             ->sendMedia($sid, $this->apiKey($service), $chatId, 'document', array_filter([
                 'url'      => $fileUrl,
                 'filename' => $filename,
@@ -77,7 +80,11 @@ class WaOtpServiceController extends Controller
         $service = WaOtpService::where('company_id', auth()->user()->company_id)->first();
         // `api_token` is $hidden on the model; the company manages its own token
         // here, so surface it (and only here) for display / copy.
-        return response()->json(['data' => $service?->makeVisible('api_token')]);
+        return response()->json([
+            'data'      => $service?->makeVisible(['api_token', 'signing_secret']),
+            // the address we see for this browser — lets the admin check the IP allowlist (and the proxy-hops setting) against reality
+            'client_ip' => \App\Modules\WaChat\Support\ApiAccess::clientIp(request()),
+        ]);
     }
 
     public function storeOrUpdate(Request $request): JsonResponse
@@ -86,11 +93,39 @@ class WaOtpServiceController extends Controller
             'is_active'        => 'boolean',
             'allowed_domains'  => 'nullable|array',
             'allowed_packages' => 'nullable|array',
+            'allow_non_browser' => 'boolean',   // curl / Postman / terminal / server-to-server calls
+            'allowed_ips'      => 'nullable|array|max:50',
+            'allowed_ips.*'    => 'string|max:64',
+            'require_signature' => 'boolean',
+            'rate_per_minute'  => 'integer|min:0|max:10000',     // 0 = unlimited
+            'max_per_phone_hour' => 'integer|min:0|max:1000',    // 0 = unlimited
         ]);
+
+        foreach ((array) ($data['allowed_ips'] ?? []) as $i => $entry) {
+            if (!\App\Modules\WaChat\Support\ApiAccess::validIpEntry($entry)) {
+                throw \Illuminate\Validation\ValidationException::withMessages(["allowed_ips.{$i}" => "\"{$entry}\" is not a valid IP address or range (use 203.0.113.7 or 203.0.113.0/24)."]);
+            }
+        }
+        if (array_key_exists('allowed_ips', $data)) { $data['allowed_ips'] = array_values(array_unique(array_map('trim', (array) $data['allowed_ips']))); }
 
         $companyId = auth()->user()->company_id;
         $service = WaOtpService::updateOrCreate(['company_id' => $companyId], $data);
-        return response()->json(['message' => 'OTP service saved.', 'data' => $service->makeVisible('api_token')]);
+        // signed requests need a secret — make one the moment the requirement is switched on
+        if ($service->require_signature && !$service->signing_secret) { $service->update(['signing_secret' => $this->newSecret()]); }
+        return response()->json(['message' => 'OTP service saved.', 'data' => $service->fresh()->makeVisible(['api_token', 'signing_secret'])]);
+    }
+
+    /** POST /otp-service/signing-secret — make (or replace) the secret that signs requests. Anything signed with the old one stops working. */
+    public function signingSecret(): JsonResponse
+    {
+        $service = WaOtpService::firstOrCreate(['company_id' => auth()->user()->company_id]);
+        $service->update(['signing_secret' => $this->newSecret()]);
+        return response()->json(['message' => 'Signing secret generated.', 'data' => $service->fresh()->makeVisible(['api_token', 'signing_secret'])]);
+    }
+
+    private function newSecret(): string
+    {
+        return bin2hex(random_bytes(24));
     }
 
     public function resetToken(): JsonResponse
@@ -206,7 +241,7 @@ class WaOtpServiceController extends Controller
      */
     public function prebuiltTemplates(Request $request): JsonResponse
     {
-        $templates = PrebuiltTemplate::active()
+        $templates = PrebuiltTemplate::active()->forChannel('wa_chat')   // only what the superadmin ticked for WA Chat
             ->when($request->filled('type'), fn ($q) => $q->where('type', $request->string('type')))
             ->orderBy('name')
             ->orderBy('language')
@@ -359,15 +394,23 @@ class WaOtpServiceController extends Controller
     }
 
     /** A Rule closure: the id must be an active prebuilt_templates row of the given type. */
+    /** The variables sent must cover every {{token}} the template needs, each with a usable value (the public API makes the same check). Null = they match. */
+    private function variablesMismatch(string $template, Request $request, ?WaApiConfig $config = null): ?JsonResponse
+    {
+        $check = \App\Modules\WaChat\Support\ApiTemplateVariables::check($template, (array) $request->input('variables', []));
+        if ($check['ok']) { return null; }
+        return response()->json(['success' => false] + \App\Modules\WaChat\Support\ApiTemplateVariables::failure($check, $config?->id, $config?->prebuiltTemplate?->name ?? $config?->name), 422);
+    }
+
     private function templateExistsRule(string $type): \Closure
     {
         return function (string $attribute, $value, \Closure $fail) use ($type) {
             if ($value === null || $value === '') {
                 return;
             }
-            $ok = PrebuiltTemplate::active()->where('type', $type)->whereKey($value)->exists();
+            $ok = PrebuiltTemplate::active()->forChannel('wa_chat')->where('type', $type)->whereKey($value)->exists();
             if (!$ok) {
-                $fail("The selected template is not a valid active {$type} template.");
+                $fail("The selected template is not an active {$type} template available for WA Chat.");
             }
         };
     }
@@ -376,6 +419,7 @@ class WaOtpServiceController extends Controller
 
     public function testSend(Request $request): JsonResponse
     {
+        $this->billAs = 'test';
         if ($why = app(\App\Modules\WaChat\Services\WaChatBilling::class)->refusal(auth()->user()->company)) {
             return response()->json(['message' => $why, 'code' => 'insufficient_balance'], 402);   // each delivered message is paid from the wallet
         }
@@ -394,6 +438,7 @@ class WaOtpServiceController extends Controller
         $expiry   = $config?->otp_expiry_minutes ?? 10;
         $otp      = str_pad((string) random_int(0, (int) pow(10, $length) - 1), $length, '0', STR_PAD_LEFT);
         $template = $config?->prebuiltTemplate?->content ?? 'Your OTP is {{otp}}. Valid for {{expiry}} minutes.';
+        if ($bad = $this->variablesMismatch($template, $request, $config)) { return $bad; }   // same check the public API makes
         $message  = $this->fillPlaceholders($template, array_merge(
             $this->testVariables($request),
             ['otp' => $otp, 'code' => $otp, 'expiry' => $expiry],
@@ -443,6 +488,7 @@ class WaOtpServiceController extends Controller
 
         $company = auth()->user()->company;
         $message = $request->message ?: $config?->resolveContent();
+        if ($message && ($bad = $this->variablesMismatch($message, $request, $config))) { return $bad; }
         if ($message) {
             $message = $this->fillPlaceholders($message, array_merge($this->testVariables($request), [
                 'company'        => $company->name ?? 'Us',

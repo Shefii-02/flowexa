@@ -22,7 +22,7 @@ class Plan extends Model
         'max_leads_per_month', 'max_lead_categories', 'max_roles',
         'max_instagram_accounts', 'max_instagram_automations', 'max_instagram_dms_monthly', 'max_meta_ads_accounts', 'max_website_widgets',
         'google_sheets_enabled', 'google_drive_enabled', 'calendar_enabled', 'email_integration_enabled',
-        'is_public', 'archived_at', 'modules', 'permissions', 'complimentary', 'billing_options', 'lead_assign_methods', 'max_media_storage_mb', 'max_campaigns_per_month', 'max_chat_campaigns', 'max_chat_campaigns_per_month', 'max_chat_campaign_recipients', 'max_surveys', 'max_short_links', 'max_sticky_notes_per_user', 'max_todos_per_user', 'sort_order', 'is_popular',
+        'is_public', 'archived_at', 'modules', 'permissions', 'complimentary', 'billing_options', 'lead_assign_methods', 'max_media_storage_mb', 'wa_chat_credits_per_message', 'max_campaigns_per_month', 'max_chat_campaigns', 'max_chat_campaigns_per_month', 'max_chat_campaign_recipients', 'max_surveys', 'max_short_links', 'max_sticky_notes_per_user', 'max_todos_per_user', 'sort_order', 'is_popular',
     ];
 
     protected $appends = ['yearly_price', 'sections', 'billing_periods'];
@@ -38,6 +38,7 @@ class Plan extends Model
         'is_public'             => 'boolean',
         'archived_at'           => 'datetime',
         'max_media_storage_mb'  => 'integer',
+        'wa_chat_credits_per_message' => 'integer',
         'max_sticky_notes_per_user' => 'integer',
         'max_todos_per_user'    => 'integer',
         'max_campaigns_per_month' => 'integer',

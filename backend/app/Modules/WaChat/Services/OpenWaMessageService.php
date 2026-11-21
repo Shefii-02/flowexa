@@ -16,9 +16,23 @@ class OpenWaMessageService
 {
     private string $baseUrl;
 
+    /** Set by billedAs(): what the messages sent through this instance are paid for as (campaign | api | test). Unset = free (normal chat). */
+    private ?string $billSource = null;
+
     public function __construct(?string $baseUrl = null)
     {
         $this->baseUrl = rtrim($baseUrl ?? config('services.open_wa.base_url'), '/');
+    }
+
+    /**
+     * A copy of this service whose sends are billed to the company's wallet once they are delivered (see WaChatBilling).
+     * Only campaign / api / test sends use it — a message sent without it is a normal chat message and costs nothing.
+     */
+    public function billedAs(string $source): static
+    {
+        $c = clone $this;
+        $c->billSource = $source;
+        return $c;
     }
 
     private function post(string $sessionId, string $apiKey, string $path, array $body, int $timeout = 30): Response
@@ -44,6 +58,19 @@ class OpenWaMessageService
             'successful' => $response->successful(),
             'body'       => $response->body(),
         ]);
+
+        // A billable send is registered the moment the gateway accepts it; the delivery webhook settles the charge.
+        if ($this->billSource !== null && $response->successful()) {
+            try {
+                $messageId = $response->json('messageId') ?? $response->json('data.messageId') ?? $response->json('id') ?? $response->json('data.id');
+                $companyId = \App\Modules\WaChat\Models\WahaSession::where('session_name', $sessionId)->value('company_id');
+                if ($messageId && $companyId) {
+                    app(WaChatBilling::class)->registerPending((int) $companyId, $sessionId, (string) $messageId, $body['chatId'] ?? null, $this->billSource);
+                }
+            } catch (\Throwable $e) {
+                Log::warning('OpenWaMessageService: could not register a billable message: ' . $e->getMessage());   // never fail the send over billing
+            }
+        }
 
         return $response;
     }
