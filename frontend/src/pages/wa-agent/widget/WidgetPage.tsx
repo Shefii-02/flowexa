@@ -231,10 +231,10 @@ export default function WidgetPage() {
               {editor.url_mode !== 'all' && (
                 <>
                   <Textarea label={editor.url_mode === 'only' ? 'Show only on (one per line)' : 'Hide on (one per line)'} rows={3} value={editor.url_patterns}
-                    placeholder={'/\n/pricing\n/blog/*'} onChange={e => setEditor({ ...editor, url_patterns: e.target.value })} />
+                    placeholder={'teamzo.io\nexample.com/pricing\n/blog/*'} onChange={e => setEditor({ ...editor, url_patterns: e.target.value })} />
                   <p className="text-[11px] text-gray-500">
                     Paths of your site. <code>/</code> = home page only · <code>/pricing</code> = that page and its sub-pages · <code>*</code> = wildcard (<code>/app/*</code>, <code>/superadmin*</code>).
-                    Full URLs work too (the domain is ignored). Works with single-page apps — it follows in-site navigation.
+                    Add a website to limit a rule to that site: <code>teamzo.io</code> = its home page only · <code>teamzo.io/*</code> = every page · <code>https://example.com/pricing</code> · <code>*.example.com/blog/*</code>. A rule without a website applies on every site the widget is installed on. Works with single-page apps — it follows in-site navigation.
                   </p>
                   {editor.url_patterns.trim() === '' && <p className="text-[11px] text-amber-600">No pages listed yet — the widget will show everywhere until you add one.</p>}
                 </>

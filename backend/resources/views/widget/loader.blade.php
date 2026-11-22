@@ -546,26 +546,32 @@
   // ── Page rules: show everywhere, only on listed URLs, or everywhere except listed URLs ──
   // A pattern is a path ("/", "/pricing", "/app/*") or a full URL (host is ignored). "/" matches the home page only;
   // any other plain path also matches its sub-pages; "*" is a wildcard. Query string and #hash are ignored.
-  function normPath(p) {
-    p = String(p == null ? "" : p).trim();
-    if (!p) return null;
-    if (/^[a-z][a-z0-9+.-]*:\/\//i.test(p)) {
-      var bare = /^[a-z][a-z0-9+.-]*:\/\/[^\/?#]+\/?$/i.test(p);   // "https://teamzo.io" with no path → the whole site
-      try { p = new URL(p).pathname + (/\*$/.test(p) ? "*" : ""); } catch (e) {}
-      if (bare) return "/*";
-    }
-    else if (/^(www\.)?[a-z0-9-]+(\.[a-z0-9-]+)*\.(com|io|in|net|org|co|app|dev|ai|me|info|biz)(\/|$)/i.test(p)) {   // "teamzo.io/pricing" typed without https://
-      p = p.replace(/^[^\/]+/, "");
-      if (!p) return "/*";   // just the domain ("teamzo.io") means the whole site, not only its home page
-    }
-    p = p.split("#")[0].split("?")[0];
+  function cleanPath(p) {
+    p = String(p == null ? "" : p).split("#")[0].split("?")[0];
     if (p.charAt(0) !== "/") p = "/" + p;
     if (p.length > 1) p = p.replace(/\/+$/, "");
     return p || "/";
   }
+  // A rule is a path ("/pricing"), or a website + path ("example.com/pricing", "https://example.com/pricing"). With a website it only
+  // applies on that site (www. is ignored, "*.example.com" covers sub-domains); a bare "example.com" is that site's home page.
+  var DOMAIN_RE = /^(\*\.)?(www\.)?[a-z0-9-]+(\.[a-z0-9-]+)*\.(com|io|in|net|org|co|app|dev|ai|me|info|biz|uk|us|ae|sa|ca|au|de|fr|shop|store|online|site|tech|xyz)(:\d+)?(\/|$)/i;
+  function parseRule(p) {
+    p = String(p == null ? "" : p).trim();
+    if (!p) return null;
+    var host = null, path = p, star = /\*$/.test(p);
+    if (/^[a-z][a-z0-9+.-]*:\/\//i.test(p)) { try { var u = new URL(p.replace(/\*+$/, "")); host = u.hostname; path = u.pathname + (star ? "*" : ""); } catch (e) { return null; } }
+    else if (DOMAIN_RE.test(p)) { host = p.replace(/\/.*$/, "").replace(/:\d+$/, ""); path = p.slice(p.indexOf("/") < 0 ? p.length : p.indexOf("/")); }
+    if (host) host = host.toLowerCase().replace(/^www\./, "");
+    return { host: host, path: cleanPath(path) };
+  }
+  function hostMatches(ruleHost, h) {
+    if (!ruleHost) return true;   // a path-only rule applies on every site the script runs on
+    h = String(h || "").toLowerCase().replace(/^www\./, "");
+    if (ruleHost.indexOf("*") > -1) return new RegExp("^" + ruleHost.split("*").map(function (x) { return x.replace(/[.+?^${}()|[\]\\]/g, "\\$&"); }).join(".*") + "$").test(h);
+    return ruleHost === h;
+  }
   function pathMatches(pattern, path) {
-    pattern = normPath(pattern); path = normPath(path);
-    if (!pattern || !path) return false;
+    pattern = cleanPath(pattern); path = cleanPath(path);
     if (pattern.indexOf("*") > -1) {
       var re = new RegExp("^" + pattern.split("*").map(function (x) { return x.replace(/[.+?^${}()|[\]\\]/g, "\\$&"); }).join(".*") + "$");
       return re.test(path);
@@ -573,11 +579,15 @@
     if (pattern === "/") return path === "/";
     return path === pattern || path.indexOf(pattern + "/") === 0;
   }
+  function ruleHits(rule) {
+    var r = parseRule(rule);
+    return !!r && hostMatches(r.host, location.hostname) && pathMatches(r.path, location.pathname);
+  }
   function shouldShow() {
     var mode = (cfg.branding && cfg.branding.url_mode) || "all";
     var list = (cfg.branding && cfg.branding.url_patterns) || [];
     if (mode === "all" || !list.length) return true;
-    var hit = list.some(function (pt) { return pathMatches(pt, location.pathname); });
+    var hit = list.some(ruleHits);
     return mode === "only" ? hit : !hit;
   }
   function applyVisibility() {
