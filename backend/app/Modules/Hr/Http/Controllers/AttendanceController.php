@@ -10,6 +10,7 @@ use App\Modules\Hr\Models\HrBreakType;
 use App\Modules\Hr\Models\HrSetting;
 use App\Modules\Hr\Models\HrStaffProfile;
 use App\Modules\Hr\Support\AttendancePhotoStorage;
+use App\Modules\Hr\Support\AttendanceSheet;
 use App\Modules\Hr\Support\AttendanceService;
 use App\Modules\Hr\Support\Geo;
 use App\Modules\Hr\Support\HrNotifier;
@@ -24,6 +25,7 @@ class AttendanceController extends Controller
         private readonly AttendanceService $svc,
         private readonly AttendancePhotoStorage $photos,
         private readonly HrNotifier $notifier,
+        private readonly AttendanceSheet $sheet,
     ) {}
 
     private function companyId(): int
@@ -406,6 +408,17 @@ class AttendanceController extends Controller
             'source' => $source,
         ]);
 
+        // one row per punch in the company's Google Sheet (when switched on) — queued, never blocks the punch
+        $this->sheet->record(auth()->user(), 'Clock in', [
+            'at' => $now, 'work_mode' => $workMode, 'source' => $source,
+            'timing' => $isFirstSession
+                ? ($status['color'] === 'danger' ? "{$status['late_minutes']} min late"
+                    : ($status['late_minutes'] > 0 ? "{$status['late_minutes']} min after start (within grace)" : 'On time'))
+                : 'Back on the clock',
+            'note' => $data['note'] ?? null, 'distance' => $geo['distance'], 'outside' => (bool) $geo['out_of_geofence'],
+            'radius_reason' => $geo['out_of_geofence'] ? ($data['radius_reason'] ?? null) : null, 'photo' => $photoUrl,
+        ]);
+
         $this->svc->syncAvailability($settings, $companyId, $userId, 'working');
 
         if ($isFirstSession && $status['requires_note']) {
@@ -491,6 +504,13 @@ class AttendanceController extends Controller
             'clock_out_photo_url' => $photoUrl,
             'clock_out_radius_reason' => $geo['out_of_geofence'] ? ($data['radius_reason'] ?? null) : null,
             'clock_out_note' => $data['note'] ?? null,
+        ]);
+
+        $this->sheet->record(auth()->user(), 'Clock out', [
+            'at' => $now, 'work_mode' => $att->work_mode, 'source' => $this->punchSource($request, []),
+            'timing' => $earlyLeave > 0 ? "{$earlyLeave} min early" : ($overtime > 0 ? "{$overtime} min overtime" : 'On time'),
+            'note' => $data['note'] ?? null, 'distance' => $geo['distance'], 'outside' => (bool) $geo['out_of_geofence'],
+            'radius_reason' => $geo['out_of_geofence'] ? ($data['radius_reason'] ?? null) : null, 'photo' => $photoUrl,
         ]);
 
         $this->svc->recomputeTotals($att);
@@ -689,6 +709,14 @@ class AttendanceController extends Controller
             'start_photo_url' => $photoUrl,
         ]);
 
+        $this->sheet->record(auth()->user(), 'Break start', [
+            'at' => $session->start_at, 'work_mode' => $att->work_mode, 'source' => $this->punchSource($request, []),
+            'timing' => $type ? "{$type->name}" . ($type->max_minutes ? " (up to {$type->max_minutes} min)" : '') : 'Break',
+            'distance' => $geo['distance'], 'outside' => (bool) $geo['out_of_geofence'],
+            'radius_reason' => $geo['out_of_geofence'] ? ($data['radius_reason'] ?? null) : null,
+            'break_type' => $type?->name, 'photo' => $photoUrl,
+        ]);
+
         $this->svc->syncAvailability($settings, $companyId, $userId, 'on_break');
 
         return response()->json(['data' => $session->load('breakType')], 201);
@@ -743,6 +771,14 @@ class AttendanceController extends Controller
         ]);
 
         $this->svc->recomputeTotals($att);
+        $this->sheet->record(auth()->user(), 'Break end', [
+            'at' => $now, 'work_mode' => $att->work_mode, 'source' => $this->punchSource($request, []),
+            'timing' => $overBy > 0 ? "{$minutes} min ({$overBy} min over the limit)" : "{$minutes} min",
+            'note' => $data['note'] ?? null, 'distance' => $geo['distance'], 'outside' => (bool) $geo['out_of_geofence'],
+            'radius_reason' => $geo['out_of_geofence'] ? ($data['radius_reason'] ?? null) : null,
+            'break_type' => $type?->name, 'photo' => $photoUrl,
+        ]);
+
         $this->svc->syncAvailability($settings, $companyId, $userId, 'working');
 
         if ($overBy > 0) {

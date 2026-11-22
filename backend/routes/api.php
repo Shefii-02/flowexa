@@ -845,6 +845,8 @@ Route::prefix('v1')->group(function () {
             Route::get('/',  [LeadAssignmentController::class, 'getRule'])->name('show');
             Route::post('/', [LeadAssignmentController::class, 'saveRule'])->name('save');
             Route::post('/run-now',        [LeadAssignmentController::class, 'runNow'])->name('run-now');
+            Route::get('/sheet',           [\App\Modules\Lead\Http\Controllers\LeadSourceController::class, 'sheet'])->name('sheet.show');
+            Route::put('/sheet',           [\App\Modules\Lead\Http\Controllers\LeadSourceController::class, 'updateSheet'])->name('sheet.update');
             Route::get('/sources',         [\App\Modules\Lead\Http\Controllers\LeadSourceController::class, 'index'])->name('sources.index');
             Route::put('/sources',         [\App\Modules\Lead\Http\Controllers\LeadSourceController::class, 'update'])->name('sources.update');
             Route::get('/sources/campaigns', [\App\Modules\Lead\Http\Controllers\LeadSourceController::class, 'campaigns'])->name('sources.campaigns.index');

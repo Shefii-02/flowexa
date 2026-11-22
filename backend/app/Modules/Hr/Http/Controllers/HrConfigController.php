@@ -7,6 +7,8 @@ use App\Modules\Hr\Models\HrBreakType;
 use App\Modules\Hr\Models\HrLeaveType;
 use App\Modules\Hr\Models\HrSetting;
 use App\Modules\Hr\Models\HrStaffProfile;
+use App\Modules\Hr\Support\AttendancePhotoStorage;
+use App\Modules\Hr\Support\AttendanceSheet;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -30,7 +32,12 @@ class HrConfigController extends Controller
 
     public function showSettings(): JsonResponse
     {
-        return response()->json(['data' => HrSetting::forCompany($this->companyId())]);
+        $company = auth()->user()->company;
+        return response()->json([
+            'data'    => HrSetting::forCompany($this->companyId()),
+            // what the "Selfie storage" choice can use for this company — the screen greys out Drive with the reason
+            'storage' => app(AttendancePhotoStorage::class)->options($company) + ['google_sheet' => app(AttendanceSheet::class)->options($company)],
+        ]);
     }
 
     public function updateSettings(Request $request): JsonResponse
@@ -60,6 +67,8 @@ class HrConfigController extends Controller
             'selfie_required_clock_out'   => 'boolean',
             'selfie_required_break_start' => 'boolean',
             'selfie_required_break_end'   => 'boolean',
+            'selfie_storage'              => 'nullable|in:media_library,google_drive',
+            'attendance_sheet_enabled'    => 'boolean',
             'late_clockin_notify_user_ids'   => 'nullable|array',
             'late_clockin_notify_user_ids.*' => 'integer',
             'late_clockout_notify_user_ids'  => 'nullable|array',
@@ -70,10 +79,36 @@ class HrConfigController extends Controller
             'leave_request_notify_user_ids.*' => 'integer',
         ]);
 
+        // Google Drive can only be chosen when the plan includes it AND a Google account is connected — say which one is missing.
+        if (($data['selfie_storage'] ?? null) === 'google_drive') {
+            $drive = app(AttendancePhotoStorage::class)->options(auth()->user()->company)['google_drive'];
+            if (!$drive['available']) {
+                throw \Illuminate\Validation\ValidationException::withMessages(['selfie_storage' => $drive['reason']]);
+            }
+        }
+        if (array_key_exists('selfie_storage', $data) && $data['selfie_storage'] === null) { unset($data['selfie_storage']); }
+
+        // Also keep attendance in a Google Sheet: needs Google Sheets in the plan + a connected account. The sheet is created right away so its link can be shown.
+        $sheetIntegration = null;
+        if (!empty($data['attendance_sheet_enabled'])) {
+            $opt = app(AttendanceSheet::class)->options(auth()->user()->company);
+            if (!$opt['available']) {
+                throw \Illuminate\Validation\ValidationException::withMessages(['attendance_sheet_enabled' => $opt['reason']]);
+            }
+            $sheetIntegration = \App\Models\GoogleIntegration::where('company_id', $this->companyId())->where('is_active', true)->first();
+        }
+
         $settings = HrSetting::forCompany($this->companyId());
         $settings->update($data);
+        if ($sheetIntegration) {
+            try { app(AttendanceSheet::class)->ensureSheet($settings->fresh(), $sheetIntegration); }
+            catch (\Throwable $e) {
+                $settings->update(['attendance_sheet_enabled' => false]);
+                throw \Illuminate\Validation\ValidationException::withMessages(['attendance_sheet_enabled' => 'Could not create the Google Sheet: ' . $e->getMessage()]);
+            }
+        }
 
-        return response()->json(['data' => $settings]);
+        return response()->json(['data' => $settings->fresh()]);
     }
 
     // ── Break types ───────────────────────────────────────────────────────

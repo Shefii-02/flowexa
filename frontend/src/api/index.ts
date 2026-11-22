@@ -263,6 +263,13 @@ export const flowNodeApi = {
 
 }
 
+/** Assignment Rules → Lead sheet: also append every new lead to a Google Sheet as it arrives. */
+export interface LeadSheetState { enabled: boolean; url: string | null; available: boolean; in_plan: boolean; connected: boolean; email: string | null; reason: string | null }
+export const leadSheetApi = {
+  get: () => api.get<{ data: LeadSheetState }>('/lead-assignment-rules/sheet'),
+  set: (enabled: boolean) => api.put<{ message: string; data: LeadSheetState }>('/lead-assignment-rules/sheet', { enabled }),
+}
+
 // ── Lead sources (switch incoming channels on / off) and the leads held while one is off ─
 export const leadChannelApi = {
   list: () => api.get('/lead-assignment-rules/sources'),

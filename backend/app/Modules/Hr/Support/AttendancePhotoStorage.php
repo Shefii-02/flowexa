@@ -6,6 +6,7 @@ use App\Models\Company;
 use App\Models\GoogleIntegration;
 use App\Models\User;
 use App\Modules\Google\GoogleClient;
+use App\Modules\Hr\Models\HrSetting;
 use App\Modules\WaChat\Models\MediaFolder;
 use App\Modules\WaChat\Models\MediaLibrary;
 use App\Support\NodeFileStore;
@@ -16,10 +17,11 @@ use Illuminate\Support\Str;
 /**
  * Stores an attendance selfie (clock in/out, break start/end) and returns its public URL.
  *
- *  1. Google Drive — when the company's plan includes Google Drive AND a Google account is connected: a dedicated
+ *  The company picks one in HR → Office Details → Selfie verification (hr_settings.selfie_storage):
+ *  1. google_drive — needs the plan to include Google Drive AND a connected Google account: a dedicated
  *     "HR Attendance" root folder with one subfolder per calendar day (checked-or-created on every upload, never cached — a cached id
  *     goes stale if somebody renames or trashes the folder on the Google side). Everyone's photos for a day land in that day's folder.
- *  2. Media Library — otherwise: the same layout as real library folders, "HR Attendance" → one folder per day ("2026-11-21"),
+ *  2. media_library — (also the fallback if Drive is chosen but unavailable or failing): the same layout as real library folders, "HR Attendance" → one folder per day ("2026-11-21"),
  *     created when the first photo of the day arrives, so the photos are browsable, searchable and deletable in the library.
  *     The file itself is hosted on the Node file host (this server's disk only if that is unreachable).
  *
@@ -37,23 +39,46 @@ class AttendancePhotoStorage
         $day  = now()->toDateString();
         $name = $this->filename($user, $action, $file);
 
-        if ($integration = $this->driveFor($user->company)) {
-            try {
-                return $this->storeOnDrive($integration, $file, $name, $day);
-            } catch (\Throwable $e) {
-                Log::warning("HR attendance photo: Google Drive upload failed for company {$user->company_id} — using the Media Library instead: " . $e->getMessage());
+        // WHERE photos go is the company's choice (HR → Office Details → Selfie verification → Selfie storage).
+        if (HrSetting::forCompany((int) $user->company_id)->selfie_storage === 'google_drive') {
+            $integration = $this->driveFor($user->company);
+            if ($integration) {
+                try {
+                    return $this->storeOnDrive($integration, $file, $name, $day);
+                } catch (\Throwable $e) {
+                    Log::warning("HR attendance photo: Google Drive upload failed for company {$user->company_id} — using the Media Library instead: " . $e->getMessage());
+                }
+            } else {
+                Log::warning("HR attendance photo: company {$user->company_id} chose Google Drive but it is not available (plan or connection) — using the Media Library instead");
             }
         }
 
         return $this->storeInLibrary($user, $file, $name, $day);
     }
 
+    /**
+     * What the "Selfie storage" setting can use for a company. Drive needs the plan AND a connected Google account.
+     *
+     * @return array{media_library: array{available: bool}, google_drive: array{available: bool, in_plan: bool, connected: bool, email: ?string, reason: ?string}}
+     */
+    public function options(?Company $company): array
+    {
+        $inPlan = !$company?->plan || (bool) $company->plan->google_drive_enabled;
+        $integration = $company ? GoogleIntegration::where('company_id', $company->id)->where('is_active', true)->first() : null;
+        $reason = !$inPlan
+            ? 'Google Drive is not included in your plan.'
+            : (!$integration ? 'Connect a Google account first (Settings → Integrations → Google).' : null);
+
+        return [
+            'media_library' => ['available' => true],
+            'google_drive'  => ['available' => $reason === null, 'in_plan' => $inPlan, 'connected' => (bool) $integration, 'email' => $integration?->google_email, 'reason' => $reason],
+        ];
+    }
+
     /** The Google connection to use — only when Drive is part of the plan AND a connected account is active. */
     public function driveFor(?Company $company): ?GoogleIntegration
     {
-        if (!$company) { return null; }
-        $plan = $company->plan;
-        if ($plan && !$plan->google_drive_enabled) { return null; }
+        if (!$this->options($company)['google_drive']['available']) { return null; }
 
         return GoogleIntegration::where('company_id', $company->id)->where('is_active', true)->first();
     }

@@ -10,6 +10,7 @@ const TABS = [
   { key: 'hours', label: 'Working hours' },
   { key: 'geofence', label: 'Geofence & timing' },
   { key: 'selfie', label: 'Selfie verification' },
+  { key: 'storage', label: 'Storage & Sheets' },
   { key: 'alerts', label: 'Alerts' },
   { key: 'payroll', label: 'Payroll rules' },
 ] as const
@@ -19,8 +20,10 @@ export default function HrOfficeDetailsPage() {
   const [tab, setTab] = useState<TabKey>('hours')
   const [s, setS] = useState<any>(null)
   const [hours, setHours] = useState<any[]>([])
+  // what the storage choices can use for this company (Drive needs the plan + a connected Google account; the sheet needs Sheets + a connection)
+  const [storage, setStorage] = useState<any>(null)
   useEffect(() => {
-    api.get('/hr/settings').then(r => setS(r.data?.data)).catch(() => {})
+    api.get('/hr/settings').then(r => { setS(r.data?.data); setStorage(r.data?.storage ?? null) }).catch(() => {})
     api.get('/working-hours').then(r => setHours((r.data?.hours ?? []).map((h: any) => ({ weekday: h.weekday, is_open: !!h.is_open, start_time: String(h.start_time).slice(0, 5), end_time: String(h.end_time).slice(0, 5) })))).catch(() => {})
   }, [])
   const setF = (k: string, v: unknown) => setS((p: any) => ({ ...p, [k]: v }))
@@ -28,7 +31,7 @@ export default function HrOfficeDetailsPage() {
   const save = async () => {
     try {
       await api.put('/working-hours', { hours })
-      await api.put('/hr/settings', {
+      const saved = await api.put('/hr/settings', {
         office_lat: s.office_lat ? Number(s.office_lat) : null,
         office_lng: s.office_lng ? Number(s.office_lng) : null,
         geofence_radius_m: Number(s.geofence_radius_m),
@@ -50,11 +53,14 @@ export default function HrOfficeDetailsPage() {
         selfie_required_clock_out: !!s.selfie_required_clock_out,
         selfie_required_break_start: !!s.selfie_required_break_start,
         selfie_required_break_end: !!s.selfie_required_break_end,
+        selfie_storage: s.selfie_storage ?? 'media_library',
+        attendance_sheet_enabled: !!s.attendance_sheet_enabled,
         late_clockin_notify_user_ids: s.late_clockin_notify_user_ids ?? [],
         late_clockout_notify_user_ids: s.late_clockout_notify_user_ids ?? [],
         break_overrun_notify_user_ids: s.break_overrun_notify_user_ids ?? [],
         leave_request_notify_user_ids: s.leave_request_notify_user_ids ?? [],
       })
+      if (saved.data?.data) setS((p: any) => ({ ...p, ...saved.data.data }))   // picks up the new sheet link
       toast.success('Saved')
     } catch (e) { toast.error(err(e)) }
   }
@@ -124,7 +130,7 @@ export default function HrOfficeDetailsPage() {
           {tab === 'selfie' && (
             <div className="bg-white border border-gray-200 rounded-xl p-4 space-y-2">
               <h3 className="text-sm font-semibold text-gray-700">Selfie verification</h3>
-              <p className="text-xs text-gray-400">Require a front-camera photo for specific punches. Photos go to Google Drive if connected, otherwise the local Media Library.</p>
+              <p className="text-xs text-gray-400">Require a front-camera photo for specific punches. Where the photos are kept is set on the <button type="button" className="text-blue-600 underline" onClick={() => setTab('storage')}>Storage &amp; Sheets</button> tab.</p>
               {[
                 ['selfie_required_clock_in', 'Clock-in selfie'],
                 ['selfie_required_clock_out', 'Clock-out selfie'],
@@ -133,6 +139,35 @@ export default function HrOfficeDetailsPage() {
               ].map(([k, label]) => (
                 <label key={k} className="flex items-center gap-2 text-sm"><input type="checkbox" checked={!!s[k]} onChange={e => setF(k, e.target.checked)} /> {label}</label>
               ))}
+            </div>
+          )}
+
+          {tab === 'storage' && (
+            <div className="space-y-4" data-testid="storage-tab">
+              <div className="bg-white border border-gray-200 rounded-xl p-4 space-y-3">
+                <h3 className="text-sm font-semibold text-gray-700">Where selfie photos are stored</h3>
+                <p className="text-xs text-gray-400">Either way each day gets its own folder (<code>HR Attendance → 2026-11-22</code>) holding everyone's photos for that day.</p>
+                {([
+                  ['media_library', 'Media Library', 'Folders inside Teamzo (Media Library → HR Attendance). Only owners and admins can open them. Counts toward your media storage.', null],
+                  ['google_drive', 'Google Drive', 'Your connected Google Drive. Does not use Teamzo storage.', storage?.google_drive?.available === false ? storage.google_drive.reason : null],
+                ] as const).map(([val, title, desc, blocked]) => (
+                  <label key={val} className={`flex gap-3 rounded-lg border p-3 text-sm ${(s.selfie_storage ?? 'media_library') === val ? 'border-blue-300 bg-blue-50' : 'border-gray-200'} ${blocked ? 'opacity-60' : 'cursor-pointer'}`}>
+                    <input type="radio" name="selfie_storage" data-testid={`storage-${val}`} disabled={!!blocked} checked={(s.selfie_storage ?? 'media_library') === val} onChange={() => setF('selfie_storage', val)} className="mt-1" />
+                    <span><b>{title}</b><span className="block text-xs text-gray-500">{desc}</span>{blocked && <span data-testid={`storage-${val}-reason`} className="block text-xs text-amber-700 mt-1">🔒 {blocked}</span>}</span>
+                  </label>
+                ))}
+                <p className="text-xs text-gray-400">If Google Drive is chosen but fails, the photo is kept in the Media Library so a clock-in is never blocked.</p>
+              </div>
+              <div className="bg-white border border-gray-200 rounded-xl p-4 space-y-2">
+                <h3 className="text-sm font-semibold text-gray-700">Also save attendance to a Google Sheet</h3>
+                <p className="text-xs text-gray-400">Every clock in, clock out, break start and break end is saved in Teamzo as always and also added as a row to your sheet as it happens (date, time, staff, event, late / early / over-limit, reason, work mode, distance, photo link). Earlier punches are not added.</p>
+                <label className={`flex items-center gap-2 text-sm ${storage?.google_sheet?.available === false && !s.attendance_sheet_enabled ? 'opacity-60' : ''}`}>
+                  <input type="checkbox" data-testid="sheet-enabled" disabled={storage?.google_sheet?.available === false && !s.attendance_sheet_enabled} checked={!!s.attendance_sheet_enabled} onChange={e => setF('attendance_sheet_enabled', e.target.checked)} /> Save attendance to a Google Sheet
+                </label>
+                {storage?.google_sheet?.available === false && <p data-testid="sheet-reason" className="text-xs text-amber-700">🔒 {storage.google_sheet.reason}</p>}
+                {s.attendance_sheet_enabled && s.attendance_sheet_url && <a data-testid="sheet-link" href={s.attendance_sheet_url} target="_blank" rel="noreferrer" className="text-sm text-blue-600 hover:underline">Open the attendance sheet ↗</a>}
+                {s.attendance_sheet_enabled && !s.attendance_sheet_url && <p className="text-xs text-gray-400">The sheet is created when you save.</p>}
+              </div>
             </div>
           )}
 

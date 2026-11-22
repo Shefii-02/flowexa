@@ -251,4 +251,45 @@ class LeadSourceController extends Controller
         }
         return $out;
     }
+
+    /** GET /lead-assignment-rules/sheet — the "also save new leads to a Google Sheet" switch, its link, and whether it can be turned on */
+    public function sheet(): JsonResponse
+    {
+        return response()->json(['data' => $this->sheetState()]);
+    }
+
+    /** PUT /lead-assignment-rules/sheet { enabled } */
+    public function updateSheet(Request $request): JsonResponse
+    {
+        $enabled = (bool) $request->validate(['enabled' => ['required', 'boolean']])['enabled'];
+        $company = auth()->user()->company;
+        $sheets  = app(\App\Services\LeadSheet::class);
+
+        if ($enabled) {
+            $opt = $sheets->options($company);
+            if (!$opt['available']) {
+                return response()->json(['message' => $opt['reason'], 'errors' => ['enabled' => [$opt['reason']]]], 422);
+            }
+            $integration = \App\Models\GoogleIntegration::where('company_id', $company->id)->where('is_active', true)->first();
+            try {
+                $sheets->ensureSheet($company->id, $integration);   // created now, so the link can be shown straight away
+            } catch (\Throwable $e) {
+                return response()->json(['message' => 'Could not create the Google Sheet: ' . $e->getMessage()], 422);
+            }
+        }
+        DB::table('lead_sheet_settings')->updateOrInsert(['company_id' => $company->id], ['is_enabled' => $enabled, 'updated_by' => auth()->id(), 'updated_at' => now(), 'created_at' => now()]);
+
+        return response()->json([
+            'message' => $enabled ? 'ON — every new lead is also added to the sheet as it arrives (leads that came before are not added).' : 'OFF — new leads are saved in Teamzo only.',
+            'data'    => $this->sheetState(),
+        ]);
+    }
+
+    private function sheetState(): array
+    {
+        $company = auth()->user()->company;
+        $sheets  = app(\App\Services\LeadSheet::class);
+        $s = $sheets->settings($company->id);
+        return ['enabled' => (bool) $s->is_enabled, 'url' => $s->sheet_url] + $sheets->options($company);
+    }
 }

@@ -17,7 +17,7 @@ class HrSetting extends Model
         'require_late_note', 'late_note_mode', 'require_early_leave_note', 'overtime_needs_approval',
         'overtime_multiplier', 'late_penalty_amount', 'payroll_working_days', 'deduct_unpaid_leave', 'deduct_absent_days', 'auto_availability', 'leave_auto_approve', 'reopen_auto_approve', 'timezone',
         'selfie_required_clock_in', 'selfie_required_clock_out',
-        'selfie_required_break_start', 'selfie_required_break_end',
+        'selfie_required_break_start', 'selfie_required_break_end', 'selfie_storage', 'attendance_sheet_enabled', 'attendance_sheet_id', 'attendance_sheet_url',
         'late_clockin_notify_user_ids', 'late_clockout_notify_user_ids',
         'break_overrun_notify_user_ids', 'leave_request_notify_user_ids',
     ];
@@ -27,6 +27,7 @@ class HrSetting extends Model
         'office_lng'              => 'float',
         'geofence_radius_m'       => 'integer',
         'geofence_mandatory'      => 'boolean',
+        'attendance_sheet_enabled' => 'boolean',
         'early_window_minutes'    => 'integer',
         'grace_minutes'           => 'integer',
         'clock_out_early_window_minutes' => 'integer',

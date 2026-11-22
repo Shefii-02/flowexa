@@ -6,6 +6,7 @@ import StaffScopePicker, { needsStaff, type StaffOpt, type StaffScope } from './
 import toast from 'react-hot-toast'
 import RoutingRulesPanel from './components/RoutingRulesPanel'
 import LeadSourcesPanel from './components/LeadSourcesPanel'
+import LeadSheetPanel from './components/LeadSheetPanel'
 import VerticalTabs, { type VTab } from '@/components/layout/VerticalTabs'
 
 
@@ -159,7 +160,7 @@ export default function AssignmentRulesPage() {
         )}
       </section>
             )}
-            {id === 'sources' && <LeadSourcesPanel />}
+            {id === 'sources' && <><LeadSourcesPanel /><LeadSheetPanel /></>}
             {id === 'routing-rules' && <RoutingRulesPanel />}
             {id === 'weights' && algo && (
               <section className={card}>
