@@ -41,7 +41,7 @@ export default function StaffAccessPage() {
   const load = useCallback((id: number) => {
     setBusy(true)
     staffAccessApi.show(id)
-      .then((r) => { setPortal(r.data.portal_access); setMobile(r.data.mobile_access); setMain(r.data.main ?? null); setSubs(r.data.subs ?? []); setRolePerms(r.data.role_permissions ?? []); setAllPerms(r.data.all_permissions ?? []); setScreens(r.data.mobile_screens ?? null); setScreensMeta({ tab_labels: r.data.tab_labels ?? {}, profile_item_labels: r.data.profile_item_labels ?? {}, catalogue: r.data.catalogue ?? [] }) })
+      .then((r) => { setPortal(r.data.portal_access); setMobile(r.data.mobile_access); setMain(r.data.main ?? null); setSubs(r.data.subs ?? []); setRolePerms(r.data.role_permissions ?? []); setAllPerms(r.data.all_permissions ?? []); setScreens(r.data.mobile_screens ?? null); setScreensMeta({ tab_labels: r.data.tab_labels ?? {}, profile_item_labels: r.data.profile_item_labels ?? {}, catalogue: r.data.catalogue ?? [], web_sections: r.data.web_sections ?? [] }) })
       .catch((e) => toast.error(getError(e)))
       .finally(() => setBusy(false))
   }, [])
@@ -132,7 +132,7 @@ export default function StaffAccessPage() {
                 )
               })()}
 
-              {mobile && screensMeta && <MobileScreensCard name={selected.name} value={screens} meta={screensMeta} onChange={setScreens} />}
+              {(mobile || portal) && screensMeta && <MobileScreensCard name={selected.name} value={screens} meta={screensMeta} onChange={setScreens} />}
 
               <div className="flex justify-end"><Button loading={saving} onClick={save}>Save access</Button></div>
 

@@ -42,7 +42,8 @@ class StaffAccessController extends Controller
             'mobile_screens' => $user->mobile_screens,
             'tab_labels' => \App\Http\Controllers\MobileAppConfigController::TABS,
             'profile_item_labels' => \App\Http\Controllers\MobileAppConfigController::PROFILE_ITEMS,
-            'catalogue' => app(\App\Http\Controllers\MobileModulesController::class)->catalogue(),
+            'catalogue' => app(\App\Http\Controllers\MobileModulesController::class)->allowedCatalogue(),   // only what the superadmin allows
+            'web_sections' => app(\App\Http\Controllers\MobileModulesController::class)->allowedWebSections(),
             'main'          => $rows->firstWhere('is_main', true)?->section_key,
             'subs'          => $rows->where('is_main', false)->pluck('section_key')->values(),
             // Role + sections = what this person can actually do (see User::effectivePermissions()).
@@ -66,6 +67,8 @@ class StaffAccessController extends Controller
             'subs'          => ['present', 'array'],
             'subs.*'        => [Rule::in($keys)],
             'mobile_screens'                => ['sometimes', 'nullable', 'array'],
+            'mobile_screens.web_sections'   => ['sometimes', 'nullable', 'array'],
+            'mobile_screens.web_sections.*' => ['string', 'max:50'],
             'mobile_screens.tabs'           => ['required_with:mobile_screens', 'array'],
             'mobile_screens.tabs.*'         => ['boolean'],
             'mobile_screens.profile_items'  => ['required_with:mobile_screens', 'array'],
@@ -82,11 +85,12 @@ class StaffAccessController extends Controller
             $user->update(['portal_access' => $data['portal_access'], 'mobile_access' => $data['mobile_access']]);
             if (array_key_exists('mobile_screens', $data)) {
                 $ms = $data['mobile_screens'];
-                $valid = array_column(app(\App\Http\Controllers\MobileModulesController::class)->catalogue(), 'id');
+                $valid = array_column(app(\App\Http\Controllers\MobileModulesController::class)->allowedCatalogue(), 'id');
                 $user->update(['mobile_screens' => $ms === null ? null : [
                     'tabs' => array_intersect_key(array_map('boolval', $ms['tabs']), \App\Http\Controllers\MobileAppConfigController::TABS),
                     'profile_items' => array_intersect_key(array_map('boolval', $ms['profile_items']), \App\Http\Controllers\MobileAppConfigController::PROFILE_ITEMS),
                     'pages' => array_values(array_intersect(array_unique($ms['pages']), $valid)),
+                    'web_sections' => isset($ms['web_sections']) ? array_values(array_intersect(array_unique($ms['web_sections']), array_column(app(\App\Http\Controllers\MobileModulesController::class)->allowedWebSections(), 'id'))) : null,
                 ]]);
             }
             StaffAccessSection::where('user_id', $user->id)->delete();

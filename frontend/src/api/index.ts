@@ -481,7 +481,7 @@ export const superadminApi = {
   updatePlan: (id: number, d: Record<string, unknown>) => api.put(`/superadmin/plans/${id}`, d),
   users: (p?: Record<string, unknown>) => api.get('/superadmin/users', { params: p }),
   mobileModules: () => api.get('/superadmin/mobile-modules'),
-  updateMobileModules: (hidden: string[]) => api.put('/superadmin/mobile-modules', { hidden }),
+  updateMobileModules: (hidden: string[], web_hidden?: string[]) => api.put('/superadmin/mobile-modules', { hidden, web_hidden }),
   companyPermissions: (id: number) => api.get(`/superadmin/companies/${id}/permissions`),
   updateCompanyRolePermissions: (id: number, roleId: number, permissions: string[]) =>
     api.put(`/superadmin/companies/${id}/roles/${roleId}/permissions`, { permissions }),

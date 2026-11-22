@@ -326,8 +326,10 @@ function DisplayTab() {
 /** How this user's sidebar looks: collapsible accordions or an always-open list, and which sections to show. */
 function SidebarMenuCard() {
   const [cfg, setCfg] = useState<{ accordion: boolean; hidden: string[] } | null>(null)
+  const [locked, setLocked] = useState<string[]>([])   // sections the platform / your company took off your menu
 
   useEffect(() => {
+    api.get('/web-config').then(r => setLocked(r.data.hidden ?? [])).catch(() => {})
     stickyApi.getSettings()
       .then(r => setCfg({ accordion: r.data.settings.sidebar_accordion !== false, hidden: r.data.settings.sidebar_hidden ?? [] }))
       .catch(() => {})
@@ -373,7 +375,7 @@ function SidebarMenuCard() {
           </div>
           <p className="mb-2 text-xs text-gray-500">Untick a section you don’t use to hide it from your menu. This only changes what you see — your access is not affected.</p>
           <div className="grid gap-1 sm:grid-cols-2">
-            {SIDEBAR_SECTIONS.map(sec => (
+            {SIDEBAR_SECTIONS.filter(sec => !locked.includes(sec.id)).map(sec => (
               <label key={sec.id} className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-gray-700 hover:bg-gray-50">
                 <input type="checkbox" checked={shown(sec.id)}
                   onChange={e => save({ ...cfg, hidden: e.target.checked ? cfg.hidden.filter(h => h !== sec.id) : [...cfg.hidden, sec.id] })} />

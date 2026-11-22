@@ -4,12 +4,13 @@ import api from '@/api/client'
 import { Button, Spinner } from '@/components/ui'
 import { getError } from '@/utils'
 
-interface Layout { tabs: Record<string, boolean>; profile_items: Record<string, boolean>; hidden_modules: string[] }
+interface Layout { tabs: Record<string, boolean>; profile_items: Record<string, boolean>; hidden_modules: string[]; hidden_sections: string[] }
 type Audience = 'staff' | 'team_head'
 interface Cfg {
   staff: Layout; team_head: Layout
   tab_labels: Record<string, string>; profile_item_labels: Record<string, string>
   catalogue: { id: string; title: string; group: string }[]
+  web_sections: { id: string; label: string }[]
 }
 
 function Switch({ on, onChange, label }: { on: boolean; onChange: (v: boolean) => void; label: string }) {
@@ -46,6 +47,8 @@ export default function MobileAppTab() {
   const patch = (p: Partial<Layout>) => setCfg({ ...cfg, [who]: { ...cur, ...p } })
   const setTab = (k: string, v: boolean) => patch({ tabs: { ...cur.tabs, [k]: v } })
   const setItem = (k: string, v: boolean) => patch({ profile_items: { ...cur.profile_items, [k]: v } })
+  const setSection = (id: string, shown: boolean) =>
+    patch({ hidden_sections: shown ? (cur.hidden_sections ?? []).filter(h => h !== id) : [...(cur.hidden_sections ?? []), id] })
   const setHidden = (id: string, shown: boolean) =>
     patch({ hidden_modules: shown ? cur.hidden_modules.filter(h => h !== id) : [...cur.hidden_modules, id] })
 
@@ -73,6 +76,14 @@ export default function MobileAppTab() {
             : 'Extra screens for team heads (owner, admin, team lead, HR). A team head is also staff, so they see these AND everything staff see.'}
         </p>
       </div>
+      <div className="card p-5">
+        <h2 className="text-sm font-semibold text-gray-900">Web menu sections</h2>
+        <p className="text-xs text-gray-500 mb-2">Untick a section to hide it from {who === 'staff' ? 'your staff' : 'team heads'} on the web. Only sections the platform allows are listed. Their access is not changed — only the menu.</p>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+          {cfg.web_sections.map(s => <Switch key={s.id} label={s.label} on={!(cur.hidden_sections ?? []).includes(s.id)} onChange={v => setSection(s.id, v)} />)}
+        </div>
+      </div>
+
       <div className="card p-5">
         <h2 className="text-sm font-semibold text-gray-900">Bottom tabs</h2>
         <p className="text-xs text-gray-500 mb-2">Home and Profile are always shown.</p>

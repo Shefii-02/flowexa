@@ -149,6 +149,7 @@ Route::prefix('v1')->group(function () {
     Route::middleware(['jwt.auth', 'module.gate'])->group(function () {
 
         Route::get('mobile-modules/hidden', [\App\Http\Controllers\MobileModulesController::class, 'hidden']);
+        Route::get('web-config', [\App\Http\Controllers\MobileAppConfigController::class, 'web']);   // web menu sections to hide for me
         Route::get('mobile-config', [\App\Http\Controllers\MobileAppConfigController::class, 'show']);   // the company's own mobile layout
 
         Route::prefix('auth')->name('auth.')->group(function () {

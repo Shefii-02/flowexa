@@ -2,6 +2,7 @@
 // Stored on the server (sticky_note_settings) and cached locally so the menu doesn't flash on load.
 import { createContext, useEffect, useState } from 'react'
 import { stickyApi } from '@/api'
+import api from '@/api/client'
 
 export const SIDEBAR_SECTIONS: { id: string; label: string; icon: string }[] = [
   { id: 'wa-chat',      label: 'WA Chat',      icon: '💬' },
@@ -17,8 +18,8 @@ export const SIDEBAR_SECTIONS: { id: string; label: string; icon: string }[] = [
   { id: 'integrations', label: 'Integrations', icon: '🔌' },
 ]
 
-export type SidebarPrefs = { accordion: boolean; hidden: string[] }
-const DEFAULT: SidebarPrefs = { accordion: true, hidden: [] }
+export type SidebarPrefs = { accordion: boolean; hidden: string[]; locked: string[] }   // locked = taken off your menu by the platform / your company
+const DEFAULT: SidebarPrefs = { accordion: true, hidden: [], locked: [] }
 const KEY = 'sidebar_prefs'
 
 export const SidebarPrefsContext = createContext<SidebarPrefs>(DEFAULT)
@@ -38,6 +39,8 @@ export function useSidebarPrefs(): SidebarPrefs {
       return next
     })
     let off = false
+    // sections the superadmin / company took off your menu — hidden whatever your own preference says
+    api.get('/web-config').then(r => { if (!off) apply({ locked: r.data.hidden ?? [] }) }).catch(() => {})
     stickyApi.getSettings().then(r => {
       if (!off) apply({ accordion: r.data.settings.sidebar_accordion !== false, hidden: r.data.settings.sidebar_hidden ?? [] })
     }).catch(() => {})
@@ -52,5 +55,5 @@ export function useSidebarPrefs(): SidebarPrefs {
     return () => { off = true; window.removeEventListener('sticky-settings-changed', onCfg) }
   }, [])
 
-  return prefs
+  return { ...prefs, hidden: [...new Set([...prefs.hidden, ...prefs.locked])] }
 }

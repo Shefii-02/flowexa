@@ -13,6 +13,13 @@ use Illuminate\Support\Facades\DB;
 class MobileModulesController extends Controller
 {
     private const KEY = 'mobile_hidden_modules';
+    private const WEB_KEY = 'web_hidden_sections';
+
+    /** Menu sections of the WEB sidebar a company can show or hide for its staff. Mirrors frontend components/layout/sidebarPrefs.ts. */
+    public const WEB_SECTIONS = [
+        'wa-chat' => 'WA Chat', 'wa-cloud' => 'WA Cloud', 'wa-agent' => 'AI Agent', 'meta-ads' => 'Meta Ads', 'instagram' => 'Instagram',
+        'messenger' => 'Messenger', 'accounts' => 'Accounts', 'crm' => 'CRM', 'leads' => 'Leads', 'hr' => 'HR', 'integrations' => 'Integrations',
+    ];
 
     /** Mirrors unichat_mobile_app/lib/core/nav/app_modules.dart (id => title/group). */
     public function catalogue(): array
@@ -108,6 +115,35 @@ class MobileModulesController extends Controller
         ];
     }
 
+    /** The catalogue minus what the superadmin hid platform-wide — i.e. the features a company may offer its staff in the mobile app. */
+    public function allowedCatalogue(): array
+    {
+        $hidden = $this->hiddenIds();
+
+        return array_values(array_filter($this->catalogue(), fn ($c) => ! in_array($c['id'], $hidden, true)));
+    }
+
+    /** Web sections the superadmin hid platform-wide. */
+    public function webHiddenIds(): array
+    {
+        $raw = DB::table('platform_settings')->where('key', self::WEB_KEY)->value('value');
+        $list = $raw ? json_decode($raw, true) : [];
+
+        return is_array($list) ? array_values($list) : [];
+    }
+
+    /** Web sections a company may offer its staff: the superadmin's allowed ones, as [{id,label}]. */
+    public function allowedWebSections(): array
+    {
+        $hidden = $this->webHiddenIds();
+        $out = [];
+        foreach (self::WEB_SECTIONS as $id => $label) {
+            if (! in_array($id, $hidden, true)) { $out[] = ['id' => $id, 'label' => $label]; }
+        }
+
+        return $out;
+    }
+
     private function hiddenIds(): array
     {
         $raw = DB::table('platform_settings')->where('key', self::KEY)->value('value');
@@ -118,13 +154,16 @@ class MobileModulesController extends Controller
     // GET /superadmin/mobile-modules
     public function show(): JsonResponse
     {
-        return response()->json(['catalogue' => $this->catalogue(), 'hidden' => $this->hiddenIds()]);
+        return response()->json([
+            'catalogue' => $this->catalogue(), 'hidden' => $this->hiddenIds(),
+            'web_sections' => collect(self::WEB_SECTIONS)->map(fn ($l, $id) => ['id' => $id, 'label' => $l])->values(), 'web_hidden' => $this->webHiddenIds(),
+        ]);
     }
 
     // PUT /superadmin/mobile-modules
     public function update(Request $request): JsonResponse
     {
-        $d = $request->validate(['hidden' => ['present', 'array'], 'hidden.*' => ['string', 'max:100']]);
+        $d = $request->validate(['hidden' => ['present', 'array'], 'hidden.*' => ['string', 'max:100'], 'web_hidden' => ['sometimes', 'array'], 'web_hidden.*' => ['string', 'max:100']]);
         $valid = array_column($this->catalogue(), 'id');
         $hidden = array_values(array_intersect(array_unique($d['hidden']), $valid));
 
@@ -133,7 +172,14 @@ class MobileModulesController extends Controller
             ['value' => json_encode($hidden), 'updated_at' => now(), 'created_at' => now()],
         );
 
-        return response()->json(['hidden' => $hidden]);
+        if (array_key_exists('web_hidden', $d)) {
+            DB::table('platform_settings')->updateOrInsert(
+                ['key' => self::WEB_KEY],
+                ['value' => json_encode(array_values(array_intersect(array_unique($d['web_hidden']), array_keys(self::WEB_SECTIONS)))), 'updated_at' => now(), 'created_at' => now()],
+            );
+        }
+
+        return response()->json(['hidden' => $hidden, 'web_hidden' => $this->webHiddenIds()]);
     }
 
     // GET /mobile-modules/hidden  (any authenticated user — the mobile app)

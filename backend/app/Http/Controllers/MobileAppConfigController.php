@@ -31,7 +31,10 @@ class MobileAppConfigController extends Controller
         foreach (self::TABS as $k => $_) { $tabs[$k] = (bool) ($own['tabs'][$k] ?? true); }
         foreach (self::PROFILE_ITEMS as $k => $_) { $items[$k] = (bool) ($own['profile_items'][$k] ?? true); }
 
-        return ['tabs' => $tabs, 'profile_items' => $items, 'hidden_modules' => array_values((array) ($own['hidden_modules'] ?? []))];
+        return [
+            'tabs' => $tabs, 'profile_items' => $items, 'hidden_modules' => array_values((array) ($own['hidden_modules'] ?? [])),
+            'hidden_sections' => array_values((array) ($own['hidden_sections'] ?? [])),   // WEB menu sections this audience doesn't see
+        ];
     }
 
     private function saved(): array
@@ -57,6 +60,7 @@ class MobileAppConfigController extends Controller
             'tabs' => array_map(fn ($k) => $staff['tabs'][$k] || $head['tabs'][$k], array_combine(array_keys(self::TABS), array_keys(self::TABS))),
             'profile_items' => array_map(fn ($k) => $staff['profile_items'][$k] || $head['profile_items'][$k], array_combine(array_keys(self::PROFILE_ITEMS), array_keys(self::PROFILE_ITEMS))),
             'hidden_modules' => array_values(array_intersect($staff['hidden_modules'], $head['hidden_modules'])),
+            'hidden_sections' => array_values(array_intersect($staff['hidden_sections'], $head['hidden_sections'])),
             'audience' => 'team_head',
         ];
     }
@@ -85,6 +89,20 @@ class MobileAppConfigController extends Controller
         return response()->json($this->withPersonal($this->effective()));
     }
 
+    // GET /web-config — the WEB menu sections to hide for this user: the superadmin's, then the company's (staff / team head), then their own
+    public function web(): JsonResponse
+    {
+        if (auth()->user()->isSuperAdmin()) { return response()->json(['hidden' => []]); }   // the platform owner sees everything
+        $mods = app(MobileModulesController::class);
+        $hidden = array_merge($mods->webHiddenIds(), $this->effective()['hidden_sections']);
+        $mine = auth()->user()->mobile_screens;
+        if (is_array($mine) && isset($mine['web_sections']) && is_array($mine['web_sections'])) {
+            $hidden = array_merge($hidden, array_diff(array_keys(MobileModulesController::WEB_SECTIONS), $mine['web_sections']));
+        }
+
+        return response()->json(['hidden' => array_values(array_unique($hidden))]);
+    }
+
     // GET /settings/mobile-app
     public function edit(): JsonResponse
     {
@@ -93,7 +111,8 @@ class MobileAppConfigController extends Controller
         return response()->json([
             'staff' => $this->layout($saved, 'staff'), 'team_head' => $this->layout($saved, 'team_head'),
             'tab_labels' => self::TABS, 'profile_item_labels' => self::PROFILE_ITEMS,
-            'catalogue' => app(MobileModulesController::class)->catalogue(),
+            'catalogue' => app(MobileModulesController::class)->allowedCatalogue(),   // only what the superadmin allows
+            'web_sections' => app(MobileModulesController::class)->allowedWebSections(),
         ]);
     }
 
@@ -107,10 +126,12 @@ class MobileAppConfigController extends Controller
                 "$a.tabs" => ['required', 'array'], "$a.tabs.*" => ['boolean'],
                 "$a.profile_items" => ['required', 'array'], "$a.profile_items.*" => ['boolean'],
                 "$a.hidden_modules" => ['present', 'array'], "$a.hidden_modules.*" => ['string', 'max:100'],
+                "$a.hidden_sections" => ['sometimes', 'array'], "$a.hidden_sections.*" => ['string', 'max:50'],
             ];
         }
         $d = $request->validate($rules);
-        $valid = array_column(app(MobileModulesController::class)->catalogue(), 'id');
+        $valid = array_column(app(MobileModulesController::class)->allowedCatalogue(), 'id');
+        $validSections = array_column(app(MobileModulesController::class)->allowedWebSections(), 'id');
         $company = auth()->user()->company;
         $settings = (array) ($company->settings ?? []);
         $out = [];
@@ -119,6 +140,7 @@ class MobileAppConfigController extends Controller
                 'tabs' => array_intersect_key(array_map('boolval', $d[$a]['tabs']), self::TABS),
                 'profile_items' => array_intersect_key(array_map('boolval', $d[$a]['profile_items']), self::PROFILE_ITEMS),
                 'hidden_modules' => array_values(array_intersect(array_unique($d[$a]['hidden_modules']), $valid)),
+                'hidden_sections' => array_values(array_intersect(array_unique($d[$a]['hidden_sections'] ?? []), $validSections)),
             ];
         }
         $settings['mobile_app'] = $out;
