@@ -146,7 +146,7 @@ Route::prefix('v1')->group(function () {
     // this actually working for an expired token, not just a still-valid one.
     Route::post('auth/refresh', [AuthController::class, 'refresh'])->name('auth.refresh');
 
-    Route::middleware(['jwt.auth', 'module.gate'])->group(function () {
+    Route::middleware(['jwt.auth', 'module.gate', 'screen.gate'])->group(function () {
 
         Route::get('mobile-modules/hidden', [\App\Http\Controllers\MobileModulesController::class, 'hidden']);
         Route::get('web-config', [\App\Http\Controllers\MobileAppConfigController::class, 'web']);   // web menu sections to hide for me
@@ -781,7 +781,7 @@ Route::prefix('v1')->group(function () {
             Route::get('/dashboard',  [\App\Modules\Analytics\Http\Controllers\SectionDashboardController::class, 'leads'])->middleware('permission:leads.view');   // Leads section dashboard
             Route::get('/',           [LeadController::class, 'index'])->middleware('permission:leads.view')->name('index');
             Route::get('/analytics',  [LeadController::class, 'analytics'])->middleware('permission:leads.view')->name('analytics');
-            Route::get('/logs',       [LeadController::class, 'logs'])->middleware('permission:leads.view')->name('logs');
+            Route::get('/logs',       [LeadController::class, 'logs'])->middleware(['permission:leads.view', 'advanced:leads.manage'])->name('logs');   // Lead Logs is a team-head screen
             // verification of converted / closed leads — fixed paths, registered before any /{lead} route
             Route::get('/held',          [\App\Modules\Lead\Http\Controllers\HeldLeadController::class, 'index'])->middleware('permission:leads.manage')->name('held.index');
             Route::post('/held/move',    [\App\Modules\Lead\Http\Controllers\HeldLeadController::class, 'move'])->middleware('permission:leads.manage')->name('held.move');
@@ -912,9 +912,9 @@ Route::prefix('v1')->group(function () {
             Route::put('vouchers/{id}',    [AccountsController::class, 'updateVoucher'])->middleware($manage);
             Route::delete('vouchers/{id}', [AccountsController::class, 'destroyVoucher'])->middleware($manage);
             Route::get('reports/{name}',   [AccountsController::class, 'report'])->middleware($read);
-            Route::get('gst',              [AccountsController::class, 'gst'])->middleware($read);
+            Route::get('gst',              [AccountsController::class, 'gst'])->middleware([$read, 'permission:accounts.manage']);   // GST is for accounts managers
             Route::post('reconcile',       [AccountsController::class, 'reconcile'])->middleware($manage);
-            Route::get('einvoice',         [AccountsController::class, 'einvoice'])->middleware($read);
+            Route::get('einvoice',         [AccountsController::class, 'einvoice'])->middleware([$read, 'permission:accounts.manage']);
             Route::get('items',            [AccountsController::class, 'items'])->middleware($read);
             Route::post('items',           [AccountsController::class, 'storeItem'])->middleware($manage);
             Route::put('items/{id}',       [AccountsController::class, 'updateItem'])->middleware($manage);
@@ -1749,7 +1749,7 @@ Route::post('v1/frontend-errors', [\App\Http\Controllers\FrontendErrorController
     ->middleware('throttle:30,1');
 
 // ── Protected WA Chat routes ─────────────────────────────────────────────
-Route::prefix('v1')->middleware(['jwt.auth', 'module.gate'])->group(function () {
+Route::prefix('v1')->middleware(['jwt.auth', 'module.gate', 'screen.gate'])->group(function () {
 
     // Gateway API-key status / reconnect — must stay reachable even with an expired
     // token, since reconnecting IS how a company recovers from that exact state.

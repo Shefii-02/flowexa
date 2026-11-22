@@ -40,6 +40,7 @@ class StaffAccessController extends Controller
             'mobile_access' => (bool) $user->mobile_access,
             // null = this person follows the company's mobile layout; otherwise the screens picked for them alone
             'mobile_screens' => $user->mobile_screens,
+            'web_screens' => $user->web_screens,   // null = follows the company's web menu; managed separately from the app
             'tab_labels' => \App\Http\Controllers\MobileAppConfigController::TABS,
             'profile_item_labels' => \App\Http\Controllers\MobileAppConfigController::PROFILE_ITEMS,
             'catalogue' => app(\App\Http\Controllers\MobileModulesController::class)->allowedCatalogue(),   // only what the superadmin allows
@@ -67,8 +68,9 @@ class StaffAccessController extends Controller
             'subs'          => ['present', 'array'],
             'subs.*'        => [Rule::in($keys)],
             'mobile_screens'                => ['sometimes', 'nullable', 'array'],
-            'mobile_screens.web_sections'   => ['sometimes', 'nullable', 'array'],
-            'mobile_screens.web_sections.*' => ['string', 'max:50'],
+            'web_screens'                   => ['sometimes', 'nullable', 'array'],
+            'web_screens.sections'          => ['required_with:web_screens', 'array'],
+            'web_screens.sections.*'        => ['string', 'max:50'],
             'mobile_screens.tabs'           => ['required_with:mobile_screens', 'array'],
             'mobile_screens.tabs.*'         => ['boolean'],
             'mobile_screens.profile_items'  => ['required_with:mobile_screens', 'array'],
@@ -83,6 +85,10 @@ class StaffAccessController extends Controller
 
         DB::transaction(function () use ($user, $data) {
             $user->update(['portal_access' => $data['portal_access'], 'mobile_access' => $data['mobile_access']]);
+            if (array_key_exists('web_screens', $data)) {
+                $ws = $data['web_screens'];
+                $user->update(['web_screens' => $ws === null ? null : ['sections' => array_values(array_intersect(array_unique($ws['sections']), array_column(app(\App\Http\Controllers\MobileModulesController::class)->allowedWebSections(), 'id')))]]);
+            }
             if (array_key_exists('mobile_screens', $data)) {
                 $ms = $data['mobile_screens'];
                 $valid = array_column(app(\App\Http\Controllers\MobileModulesController::class)->allowedCatalogue(), 'id');
@@ -90,7 +96,6 @@ class StaffAccessController extends Controller
                     'tabs' => array_intersect_key(array_map('boolval', $ms['tabs']), \App\Http\Controllers\MobileAppConfigController::TABS),
                     'profile_items' => array_intersect_key(array_map('boolval', $ms['profile_items']), \App\Http\Controllers\MobileAppConfigController::PROFILE_ITEMS),
                     'pages' => array_values(array_intersect(array_unique($ms['pages']), $valid)),
-                    'web_sections' => isset($ms['web_sections']) ? array_values(array_intersect(array_unique($ms['web_sections']), array_column(app(\App\Http\Controllers\MobileModulesController::class)->allowedWebSections(), 'id'))) : null,
                 ]]);
             }
             StaffAccessSection::where('user_id', $user->id)->delete();

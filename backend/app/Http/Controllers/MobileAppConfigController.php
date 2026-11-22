@@ -92,15 +92,21 @@ class MobileAppConfigController extends Controller
     // GET /web-config — the WEB menu sections to hide for this user: the superadmin's, then the company's (staff / team head), then their own
     public function web(): JsonResponse
     {
-        if (auth()->user()->isSuperAdmin()) { return response()->json(['hidden' => []]); }   // the platform owner sees everything
-        $mods = app(MobileModulesController::class);
-        $hidden = array_merge($mods->webHiddenIds(), $this->effective()['hidden_sections']);
-        $mine = auth()->user()->mobile_screens;
-        if (is_array($mine) && isset($mine['web_sections']) && is_array($mine['web_sections'])) {
-            $hidden = array_merge($hidden, array_diff(array_keys(MobileModulesController::WEB_SECTIONS), $mine['web_sections']));
+        return response()->json(['hidden' => self::webHiddenFor(auth()->user())]);
+    }
+
+    /** Web menu sections hidden for [$user]: the superadmin's, then the company's (staff / team head), then their own choice. Used by the sidebar AND the API gate. */
+    public static function webHiddenFor($user): array
+    {
+        if ($user->isSuperAdmin()) { return []; }   // the platform owner sees everything
+        $self = new self();
+        $hidden = array_merge(app(MobileModulesController::class)->webHiddenIds(), $self->effective()['hidden_sections']);
+        $mine = $user->web_screens;
+        if (is_array($mine) && is_array($mine['sections'] ?? null)) {
+            $hidden = array_merge($hidden, array_diff(array_keys(MobileModulesController::WEB_SECTIONS), $mine['sections']));
         }
 
-        return response()->json(['hidden' => array_values(array_unique($hidden))]);
+        return array_values(array_unique($hidden));
     }
 
     // GET /settings/mobile-app

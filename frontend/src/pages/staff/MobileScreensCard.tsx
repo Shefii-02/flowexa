@@ -1,10 +1,9 @@
 import { useMemo } from 'react'
 
-export interface MobileScreens { tabs: Record<string, boolean>; profile_items: Record<string, boolean>; pages: string[]; web_sections: string[] }
+export interface MobileScreens { tabs: Record<string, boolean>; profile_items: Record<string, boolean>; pages: string[] }
 export interface MobileScreensMeta {
   tab_labels: Record<string, string>; profile_item_labels: Record<string, string>
   catalogue: { id: string; title: string; group: string }[]
-  web_sections: { id: string; label: string }[]
 }
 
 /** The default for "pick screens": everything on, so ticking "Choose screens" starts from what they see today. */
@@ -12,7 +11,6 @@ export const allScreens = (m: MobileScreensMeta): MobileScreens => ({
   tabs: Object.fromEntries(Object.keys(m.tab_labels).map(k => [k, true])),
   profile_items: Object.fromEntries(Object.keys(m.profile_item_labels).map(k => [k, true])),
   pages: m.catalogue.map(c => c.id),
-  web_sections: m.web_sections.map(s => s.id),
 })
 
 /** Per-staff mobile screens: follow the company layout (value = null) or pick the tabs, Profile items and pages for this person alone. */
@@ -26,8 +24,6 @@ export default function MobileScreensCard({ name, value, meta, onChange }: {
   }, [meta.catalogue])
 
   const custom = value !== null
-  // an older saved choice has no web list yet — treat that as "all sections" rather than none
-  const webOn = value?.web_sections ?? meta.web_sections.map(s => s.id)
   const set = (patch: Partial<MobileScreens>) => value && onChange({ ...value, ...patch })
   const togglePage = (id: string, on: boolean) => value && set({ pages: on ? [...value.pages, id] : value.pages.filter(p => p !== id) })
   const toggleGroup = (ids: string[], on: boolean) =>
@@ -35,7 +31,7 @@ export default function MobileScreensCard({ name, value, meta, onChange }: {
 
   return (
     <div className="card" data-testid="mobile-screens-card">
-      <div className="card-header"><h3 className="card-title">🖥️📱 Screens</h3><span className="text-xs text-gray-400">What {name} sees on the web and in the app</span></div>
+      <div className="card-header"><h3 className="card-title">📱 App screens</h3><span className="text-xs text-gray-400">What {name} sees in the mobile app</span></div>
       <div className="card-body space-y-4">
         <div className="space-y-1.5 text-sm text-gray-700">
           <label className="flex items-center gap-2"><input type="radio" checked={!custom} onChange={() => onChange(null)} /> Follow the company layout</label>
@@ -45,17 +41,6 @@ export default function MobileScreensCard({ name, value, meta, onChange }: {
         {value && (
           <>
             <p className="text-xs text-gray-500">These can only narrow the company layout — a screen the company has hidden stays hidden.</p>
-            <div>
-              <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 mb-1">Web menu sections</div>
-              <div className="flex flex-wrap gap-x-5 gap-y-1">
-                {meta.web_sections.map(s => (
-                  <label key={s.id} className="flex items-center gap-1.5 text-sm">
-                    <input type="checkbox" checked={webOn.includes(s.id)}
-                      onChange={e => set({ web_sections: e.target.checked ? [...webOn, s.id] : webOn.filter(x => x !== s.id) })} /> {s.label}
-                  </label>
-                ))}
-              </div>
-            </div>
             <div>
               <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 mb-1">Bottom tabs</div>
               <div className="flex flex-wrap gap-x-5 gap-y-1">

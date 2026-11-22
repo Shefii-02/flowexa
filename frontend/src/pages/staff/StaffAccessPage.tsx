@@ -6,6 +6,7 @@ import { staffAccessApi, staffAccountAccessApi } from '@/api'
 import { Button, EmptyState, Spinner } from '@/components/ui'
 import StaffAccountAccessCards, { type AccountRow } from './StaffAccountAccessCards'
 import AccessSectionPicker, { sectionAddedPermissions, type AccessSection } from './AccessSectionPicker'
+import WebScreensCard, { type WebSection } from './WebScreensCard'
 import MobileScreensCard, { type MobileScreens, type MobileScreensMeta } from './MobileScreensCard'
 import { getError } from '@/utils'
 import toast from 'react-hot-toast'
@@ -30,6 +31,8 @@ export default function StaffAccessPage() {
   const [allPerms, setAllPerms] = useState<string[]>([])
   const [screens, setScreens] = useState<MobileScreens | null>(null)
   const [screensMeta, setScreensMeta] = useState<MobileScreensMeta | null>(null)
+  const [webScreens, setWebScreens] = useState<string[] | null>(null)
+  const [webSections, setWebSections] = useState<WebSection[]>([])
 
   useEffect(() => {
     Promise.all([staffAccountAccessApi.options(), staffAccessApi.sections()])
@@ -41,7 +44,7 @@ export default function StaffAccessPage() {
   const load = useCallback((id: number) => {
     setBusy(true)
     staffAccessApi.show(id)
-      .then((r) => { setPortal(r.data.portal_access); setMobile(r.data.mobile_access); setMain(r.data.main ?? null); setSubs(r.data.subs ?? []); setRolePerms(r.data.role_permissions ?? []); setAllPerms(r.data.all_permissions ?? []); setScreens(r.data.mobile_screens ?? null); setScreensMeta({ tab_labels: r.data.tab_labels ?? {}, profile_item_labels: r.data.profile_item_labels ?? {}, catalogue: r.data.catalogue ?? [], web_sections: r.data.web_sections ?? [] }) })
+      .then((r) => { setPortal(r.data.portal_access); setMobile(r.data.mobile_access); setMain(r.data.main ?? null); setSubs(r.data.subs ?? []); setRolePerms(r.data.role_permissions ?? []); setAllPerms(r.data.all_permissions ?? []); setScreens(r.data.mobile_screens ?? null); setScreensMeta({ tab_labels: r.data.tab_labels ?? {}, profile_item_labels: r.data.profile_item_labels ?? {}, catalogue: r.data.catalogue ?? [] }); setWebScreens(r.data.web_screens?.sections ?? null); setWebSections(r.data.web_sections ?? []) })
       .catch((e) => toast.error(getError(e)))
       .finally(() => setBusy(false))
   }, [])
@@ -57,7 +60,7 @@ export default function StaffAccessPage() {
     if (!selectedId) return
     setSaving(true)
     try {
-      await staffAccessApi.update(selectedId, { portal_access: portal, mobile_access: mobile, main, subs, mobile_screens: screens })
+      await staffAccessApi.update(selectedId, { portal_access: portal, mobile_access: mobile, main, subs, mobile_screens: screens, web_screens: webScreens === null ? null : { sections: webScreens } })
       toast.success('Access saved.')
     } catch (e) { toast.error(getError(e)) }
     finally { setSaving(false) }
@@ -132,7 +135,8 @@ export default function StaffAccessPage() {
                 )
               })()}
 
-              {(mobile || portal) && screensMeta && <MobileScreensCard name={selected.name} value={screens} meta={screensMeta} onChange={setScreens} />}
+              {portal && <WebScreensCard name={selected.name} value={webScreens} sections={webSections} onChange={setWebScreens} />}
+              {mobile && screensMeta && <MobileScreensCard name={selected.name} value={screens} meta={screensMeta} onChange={setScreens} />}
 
               <div className="flex justify-end"><Button loading={saving} onClick={save}>Save access</Button></div>
 

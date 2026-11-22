@@ -79,6 +79,8 @@ return Application::configure(basePath: dirname(__DIR__))
             'plan.monthly_limit' => \App\Http\Middleware\PlanMonthlyLimitMiddleware::class,
             'plan.feature'    => \App\Http\Middleware\PlanFeatureMiddleware::class,
             'module.gate'     => \App\Http\Middleware\ModuleGate::class,
+            'screen.gate'     => \App\Http\Middleware\ScreenGate::class,       // web sections hidden by superadmin / company / per-staff
+            'advanced'        => \App\Http\Middleware\AdvancedAccess::class,    // team-head / manage-only endpoints
             'wa_chat.valid'   => \App\Modules\WaChat\Http\Middleware\EnsureWaChatTokenValid::class,
 
             // OTP external API key auth
