@@ -120,6 +120,7 @@ export default function SegmentsPage() {
           <GuideItem label="Min lead score">Only contacts whose score is at least this number.</GuideItem>
           <GuideItem label="Label">Only contacts with this label.</GuideItem>
           <GuideItem label="Opted in">Yes = contacts who agreed to receive your messages; No = those who have not.</GuideItem>
+          <GuideItem label="Has leads">Tick it to keep only contacts who already have at least one lead.</GuideItem>
           <GuideItem label="Messaged in last (days)">Only contacts who wrote to you recently.</GuideItem>
         </div>
         <ul className="list-disc space-y-1 pl-5 text-gray-600">
