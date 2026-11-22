@@ -717,6 +717,7 @@ Route::prefix('v1')->group(function () {
             Route::post('calendar-events/{id}/complete', [\App\Modules\Calendar\Http\Controllers\CalendarController::class, 'complete']);
             Route::post('calendar-events/{id}/no-show',  [\App\Modules\Calendar\Http\Controllers\CalendarController::class, 'noShow']);
             Route::delete('calendar-events/{id}',        [\App\Modules\Calendar\Http\Controllers\CalendarController::class, 'destroy']);
+            Route::get('dashboard',      [\App\Modules\Analytics\Http\Controllers\SectionDashboardController::class, 'tasks']);   // before the {id} routes
             Route::get('/',              [TaskController::class, 'index']);
             Route::post('/',             [TaskController::class, 'store']);
             Route::patch('{id}',         [TaskController::class, 'update']);
@@ -1092,6 +1093,8 @@ Route::prefix('v1')->group(function () {
             Route::get('campaigns',     [AdvancedAnalyticsController::class, 'campaignTrends']);
             Route::get('burn-rate',     [AdvancedAnalyticsController::class, 'burnRate']);
             Route::get('top-leads',     [AdvancedAnalyticsController::class, 'topLeads']);
+            // The "Team" block on the HR / CRM / Lead dashboards — every member, for the company admin or a team head
+            Route::get('team-members',  [\App\Modules\Analytics\Http\Controllers\TeamMembersController::class, 'index']);
         });
 
 
@@ -1313,6 +1316,7 @@ Route::prefix('v1')->group(function () {
 
         Route::prefix('/meta-ads')->name('meta-ads.')->middleware(['company.active', 'permission:meta_ads.view'])->group(function () {
 
+            Route::get('dashboard',                 [\App\Modules\Analytics\Http\Controllers\SectionDashboardController::class, 'metaAds']);
             // ── Read-only ────────────────────────────────────────────────────────
             Route::get('accounts',                  [MetaAdAccountController::class, 'index']);
             Route::get('accounts/{id}/verify',      [MetaAdAccountController::class, 'verify']);
@@ -1486,6 +1490,7 @@ Route::prefix('v1')->group(function () {
 
         // ── Instagram: connected account, keyword auto-DM bot, DM inbox + AI agent ──
         Route::prefix('/instagram')->name('instagram.')->middleware(['company.active', 'permission:instagram.view'])->group(function () {
+            Route::get('dashboard',                [\App\Modules\Analytics\Http\Controllers\SectionDashboardController::class, 'social']);   // ?channel=facebook for Messenger
             Route::get('accounts',                 [\App\Modules\Instagram\Http\Controllers\InstagramAccountController::class, 'index']);
             Route::get('accounts/{id}/setup-status', [\App\Modules\Instagram\Http\Controllers\InstagramSetupController::class, 'status'])->whereNumber('id');
             Route::post('accounts/{id}/resubscribe', [\App\Modules\Instagram\Http\Controllers\InstagramSetupController::class, 'resubscribe'])->whereNumber('id')->middleware('permission:instagram.manage');
@@ -2040,6 +2045,7 @@ Route::prefix('v1')->middleware(['jwt.auth', 'module.gate'])->group(function () 
 
     // WA Agent — AI Agent
     Route::prefix('wa-agent')->middleware('permission:wa_agent.ai.view')->group(function () {
+        Route::get('/dashboard',         [\App\Modules\Analytics\Http\Controllers\SectionDashboardController::class, 'aiAgent']);
         Route::get('/available-models',  [AiAgentController::class, 'availableModels']);
         Route::get('/ai-settings',       [AiAgentController::class, 'aiSettings']);
         Route::get('/sessions',          [AiAgentController::class, 'sessions']);

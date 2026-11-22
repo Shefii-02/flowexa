@@ -385,6 +385,8 @@ export const analyticsApi = {
   wallet: (quiet?: boolean) => api.get('/analytics/wallet', quietCfg(quiet)),
   leads: (quiet?: boolean) => api.get('/analytics/leads', quietCfg(quiet)),
   messages: (quiet?: boolean) => api.get('/analytics/messages', quietCfg(quiet)),
+  // every member's own figures for the HR / CRM / Lead dashboards (company admin or team head only; 403 otherwise)
+  teamMembers: (section: 'hr' | 'crm' | 'leads') => api.get('/analytics/team-members', { params: { section }, _quiet403: true } as any),
 }
 
 // ── Settings ──────────────────────────────────────────────────────────────────

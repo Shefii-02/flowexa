@@ -4,6 +4,7 @@ import {
   XAxis, YAxis, Tooltip, CartesianGrid,
 } from 'recharts'
 import { api } from '@/api/client'
+import TeamMembersPanel from '@/components/dashboard/TeamMembersPanel'
 
 type Summary = {
   range: { from: string; to: string }
@@ -87,6 +88,9 @@ export default function LeadsSummaryPage() {
           <label className="text-xs text-gray-500">To<input type="date" value={to} onChange={e => setTo(e.target.value)} className="block mt-1 text-sm border border-gray-200 rounded-lg px-2 py-1.5" /></label>
         </div>
       </div>
+
+      {/* company admin / team head: every member's leads (renders nothing for anyone else) */}
+      <TeamMembersPanel sections={['leads']} />
 
       {loading || !data ? (
         <div className="text-center py-16 text-gray-400">Loading…</div>

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api } from '@/api/client'
 import toast from 'react-hot-toast'
-import { PageHeader, Modal, hm, err, inp, hhmm, forInput } from './hrShared'
+import { PageHeader, Modal, hm, hmm, err, inp, hhmm, forInput } from './hrShared'
 
 export default function HrAttendanceAdminPage() {
   const [rows, setRows] = useState<any[]>([])
@@ -104,7 +104,7 @@ export default function HrAttendanceAdminPage() {
                   <td className="p-2">{hhmm(r.clock_in_at)}</td>
                   <td className="p-2">{hhmm(r.clock_out_at)}</td>
                   <td className="p-2"><span className={`text-xs px-1.5 py-0.5 rounded ${r.status === 'present' ? 'bg-green-100 text-green-700' : r.status === 'on_leave' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'}`}>{r.status}</span></td>
-                  <td className="p-2 text-amber-600">{r.late_minutes || ''}</td>
+                  <td className="p-2 text-amber-600">{r.late_minutes ? `${hmm(r.late_minutes)} min` : ''}</td>
                   <td className="p-2">{r.overtime_minutes ? `${hm(r.overtime_minutes)} (${r.overtime_status})` : ''}</td>
                   <td className="p-2">{r.worked_minutes ? hm(r.worked_minutes) : ''}</td>
                   <td className="p-2 text-xs text-gray-400 max-w-[180px] truncate">{r.note_message}</td>

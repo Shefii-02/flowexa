@@ -3,6 +3,7 @@ import { api } from '@/api/client'
 import toast from 'react-hot-toast'
 import { getError } from '@/utils'
 import HowItWorks, { GuideItem } from './HowItWorks'
+import TeamMembersPanel from '@/components/dashboard/TeamMembersPanel'
 
 const STAGES = ['new', 'qualified', 'proposal', 'negotiation', 'won', 'lost'] as const
 const STAGE_LABEL: Record<string, string> = {
@@ -154,6 +155,9 @@ export default function DealsPage() {
           <button onClick={openCreate} className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700">+ New Deal</button>
         </div>
       </div>
+      {/* company admin / team head: every member's deals and tasks (renders nothing for anyone else) */}
+      <TeamMembersPanel sections={['crm']} />
+
       <HowItWorks id="deals" title="How deals work">
         <p>A <b>deal</b> is a sale you are working on — a customer, an amount and where it stands. Each deal sits in one column of the pipeline and moves left to right as it progresses.</p>
         <div className="space-y-1.5">

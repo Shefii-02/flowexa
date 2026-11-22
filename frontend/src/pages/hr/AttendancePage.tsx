@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from '@/api/client'
 import toast from 'react-hot-toast'
 import type { BreakType, BreakSession, Attendance } from './hrShared'
+import { hmm } from './hrShared'
 
 type MeResponse = {
   profile: { attendance_type: string; work_mode: string }
@@ -230,8 +231,8 @@ export default function AttendancePage() {
 
             {t && (t.late_minutes > 0 || t.overtime_minutes > 0 || t.early_leave_minutes > 0 || t.break_minutes > 0) && (
               <div className="flex gap-4 text-xs text-gray-500 mt-4 flex-wrap">
-                {t.late_minutes > 0 && <span>⚠️ Late {t.late_minutes}m</span>}
-                {t.early_leave_minutes > 0 && <span>Early out {t.early_leave_minutes}m</span>}
+                {t.late_minutes > 0 && <span>⚠️ Late {hmm(t.late_minutes)} min</span>}
+                {t.early_leave_minutes > 0 && <span>Early out {hmm(t.early_leave_minutes)} min</span>}
                 {t.overtime_minutes > 0 && <span>OT {hm(t.overtime_minutes)} ({t.overtime_status})</span>}
                 {t.break_minutes > 0 && <span>Breaks {t.break_minutes}m</span>}
               </div>
@@ -307,7 +308,7 @@ export default function AttendancePage() {
                           )) : <span className="text-gray-300">—</span>}
                         </td>
                         <td className="p-2">{d.worked_minutes ? hm(d.worked_minutes) : '—'}
-                          {d.late_minutes > 0 && <div className="text-[11px] text-amber-600">Late {d.late_minutes}m</div>}
+                          {d.late_minutes > 0 && <div className="text-[11px] text-amber-600">Late {hmm(d.late_minutes)} min</div>}
                           {d.overtime_minutes > 0 && <div className="text-[11px] text-indigo-500">OT {hm(d.overtime_minutes)}</div>}
                         </td>
                         <td className="p-2">

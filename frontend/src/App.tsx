@@ -109,6 +109,7 @@ import StickyNotesPage from '@/pages/tools/StickyNotesPage'
 import TodoPage from '@/pages/tools/TodoPage'
 import TeamChatPage from '@/pages/team-chat/TeamChatPage'
 import MessengerPagesPage from '@/pages/messenger/MessengerPagesPage'
+import { TasksDashboardPage, MetaAdsDashboardPage, InstagramDashboardPage, MessengerDashboardPage, AiAgentDashboardPage } from '@/pages/section-dashboards'
 import InstagramAutoDmPage from '@/pages/instagram/InstagramAutoDmPage'
 import InstagramReviewDemoPage from '@/pages/instagram/InstagramReviewDemoPage'
 import InstagramDeletionStatusPage from '@/pages/instagram/InstagramDeletionStatusPage'
@@ -305,6 +306,7 @@ export default function App() {
               <Route path="ai-agent" element={<WaAgentShell />}>
 
                 <Route index element={<Navigate to="automations" replace />} />
+                <Route path="dashboard" element={<AiAgentDashboardPage />} />
                 <Route path="automations" element={<WaAgentAutomations />} />
                 <Route path="automation" element={<Navigate to="/ai-agent/automations" replace />} />
                 <Route path="knowledge-base" element={<WaAgentKnowledgeBase />} />
@@ -419,6 +421,7 @@ export default function App() {
 
               {/* Advanced CRM */}
               <Route path="crm/deals" element={<DealsPage />} />
+              <Route path="tasks/dashboard" element={<TasksDashboardPage />} />
               <Route path="tasks" element={<CrmTasksPage key="tasks" mode="tasks" />} />
               <Route path="tasks/followups" element={<CrmTasksPage key="followups" mode="followups" />} />
               <Route path="tasks/calendar" element={<CalendarPage />} />
@@ -469,6 +472,7 @@ export default function App() {
 
               {/* Meta Ads Manager */}
               <Route path="meta-ads" element={<Navigate to="/meta-ads/campaigns" replace />} />
+              <Route path="meta-ads/dashboard" element={<MetaAdsDashboardPage />} />
               <Route path="meta-ads/accounts" element={<AdAccountPage />} />
               <Route path="meta-ads/campaigns" element={<MetaCampaignsPage />} />
               <Route path="meta-ads/campaigns/:campaignId" element={<AdSetPage />} />
@@ -479,9 +483,11 @@ export default function App() {
               <Route path="meta-ads/insights" element={<AdsInsightsDashboard />} />
 
               <Route path="instagram" element={<Navigate to="/instagram/accounts" replace />} />
+              <Route path="instagram/dashboard" element={<InstagramDashboardPage />} />
               <Route path="instagram/accounts" element={<InstagramAccountsPage />} />
               <Route path="instagram/autodm" element={<InstagramAutoDmPage />} />
               <Route path="messenger" element={<Navigate to="/messenger/pages" replace />} />
+              <Route path="messenger/dashboard" element={<MessengerDashboardPage />} />
               <Route path="messenger/pages" element={<MessengerPagesPage />} />
               <Route path="messenger/autodm" element={<InstagramAutoDmPage channel="facebook" />} />
               <Route path="messenger/flows" element={<InstagramFlowsPage channel="facebook" />} />

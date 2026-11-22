@@ -391,7 +391,7 @@ class AttendanceController extends Controller
         // note: geofence danger wins over the timing colour
         $noteColor = $geo['note_color'] ?? $status['color'];
         $noteMsg = $geo['note_message']
-            ?? ($status['late_minutes'] > 0 ? "Clocked in {$status['late_minutes']} min late." : 'On time.');
+            ?? ($status['late_minutes'] > 0 ? 'Clocked in '.self::hm((int) $status['late_minutes']).' min late.' : 'On time.');
 
         if ($isFirstSession) {
             $att->fill([
@@ -438,8 +438,8 @@ class AttendanceController extends Controller
         $this->sheet->record(auth()->user(), 'Clock in', [
             'at' => $now, 'work_mode' => $workMode, 'source' => $source,
             'timing' => $isFirstSession
-                ? ($status['color'] === 'danger' ? "{$status['late_minutes']} min late"
-                    : ($status['late_minutes'] > 0 ? "{$status['late_minutes']} min after start (within grace)" : 'On time'))
+                ? ($status['color'] === 'danger' ? self::hm((int) $status['late_minutes']).' min late'
+                    : ($status['late_minutes'] > 0 ? self::hm((int) $status['late_minutes']).' min after start (within grace)' : 'On time'))
                 : 'Back on the clock',
             'note' => $data['note'] ?? null, 'distance' => $geo['distance'], 'outside' => (bool) $geo['out_of_geofence'],
             'radius_reason' => $geo['out_of_geofence'] ? ($data['radius_reason'] ?? null) : null, 'photo' => $photoUrl,
@@ -452,7 +452,7 @@ class AttendanceController extends Controller
                 $settings->late_clockin_notify_user_ids,
                 'hr_late_clock_in',
                 '⏰ Late clock-in',
-                auth()->user()->name . " clocked in {$status['late_minutes']} min late"
+                auth()->user()->name . " clocked in ".self::hm((int) $status['late_minutes']).' min late'
                     . (!empty($data['note']) ? ": {$data['note']}" : '.'),
                 ['user_id' => $userId, 'attendance_id' => $att->id],
             );
@@ -534,7 +534,7 @@ class AttendanceController extends Controller
 
         $this->sheet->record(auth()->user(), 'Clock out', [
             'at' => $now, 'work_mode' => $att->work_mode, 'source' => $this->punchSource($request, []),
-            'timing' => $earlyLeave > 0 ? "{$earlyLeave} min early" : ($overtime > 0 ? "{$overtime} min overtime" : 'On time'),
+            'timing' => $earlyLeave > 0 ? self::hm((int) $earlyLeave).' min early' : ($overtime > 0 ? self::hm((int) $overtime).' min overtime' : 'On time'),
             'note' => $data['note'] ?? null, 'distance' => $geo['distance'], 'outside' => (bool) $geo['out_of_geofence'],
             'radius_reason' => $geo['out_of_geofence'] ? ($data['radius_reason'] ?? null) : null, 'photo' => $photoUrl,
         ]);

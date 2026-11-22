@@ -611,6 +611,7 @@ const SidebarInner = () => {
               isOpen={openAccordion === 'wa-agent'}
               onToggle={() => toggle('wa-agent')}
             >
+              <SubLink to="/ai-agent/dashboard" icon="📊" label="Dashboard" />
               {/* {canViewKb &&  */}
               <SubLink to="/ai-agent/knowledge-base" icon="📚" label="Knowledge Base" />
               <SubLink to="/ai-agent/catalog" icon="📦" label="Catalog" />
@@ -638,6 +639,7 @@ const SidebarInner = () => {
               isOpen={openAccordion === 'instagram'}
               onToggle={() => toggle('instagram')}
             >
+              <SubLink to="/instagram/dashboard" icon="📊" label="Dashboard" />
               <SubLink to="/instagram/accounts" icon="🔗" label="Accounts" />
               <SubLink to="/instagram/autodm" icon="🚀" label="AutoDM" />
               <SubLink to="/instagram/flows" icon="🧩" label="Flows" />
@@ -655,6 +657,7 @@ const SidebarInner = () => {
               isOpen={openAccordion === 'messenger'}
               onToggle={() => toggle('messenger')}
             >
+              <SubLink to="/messenger/dashboard" icon="📊" label="Dashboard" />
               <SubLink to="/messenger/pages" icon="🔗" label="Pages" />
               <SubLink to="/messenger/autodm" icon="🚀" label="AutoDM" />
               <SubLink to="/messenger/flows" icon="🧩" label="Flows" />
@@ -674,6 +677,7 @@ const SidebarInner = () => {
               isOpen={openAccordion === 'meta-ads'}
               onToggle={() => toggle('meta-ads')}
             >
+              <SubLink to="/meta-ads/dashboard" icon="📊" label="Dashboard" />
               <SubLink to="/meta-ads/accounts" icon="🏦" label="Ad Accounts" />
               <SubLink to="/meta-ads/campaigns" icon="📢" label="Campaigns" />
               <SubLink to="/meta-ads/audiences" icon="🎯" label="Audience Sets" />
@@ -715,6 +719,7 @@ const SidebarInner = () => {
 
             {/* ── TASKS ── */}
             <NestedAccordion id="tasks" icon="📋" label="Tasks" basePaths={['/tasks']}>
+              <SubLink to="/tasks/dashboard" icon="📊" label="Dashboard" />
               <SubLink to="/tasks" icon="📋" label="Tasks" />
               <SubLink to="/tasks/followups" icon="🔁" label="Follow-ups" />
               <SubLink to="/tasks/calendar" icon="📅" label="Calendar" />

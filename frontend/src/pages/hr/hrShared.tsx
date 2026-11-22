@@ -54,6 +54,8 @@ export type DashboardMe = {
 }
 
 export const hm = (m: number) => `${Math.floor(m / 60)}h ${m % 60}m`
+/** Late / early minutes as hours:minutes — 687 → "11:27" */
+export const hmm = (m: number) => `${Math.floor(Math.max(0, m) / 60)}:${String(Math.max(0, m) % 60).padStart(2, '0')}`
 export const err = (e: any) => e.response?.data?.message ?? (Object.values(e.response?.data?.errors ?? {})[0] as string[] | undefined)?.[0] ?? 'Failed'
 export const inp = 'border border-gray-300 rounded-lg px-3 py-2 text-sm'
 export const money = (v: number | null | undefined) => (v == null ? '—' : new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 }).format(Number(v)))

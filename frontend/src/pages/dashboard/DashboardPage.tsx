@@ -6,6 +6,7 @@ import {
 } from 'recharts'
 import { analyticsApi } from '@/api'
 import { Spinner } from '@/components/ui'
+import TeamMembersPanel from '@/components/dashboard/TeamMembersPanel'
 import { useAppSelector, usePermission } from '@/store'
 import { fmt } from '@/utils'
 
@@ -207,6 +208,9 @@ export default function DashboardPage() {
           )}
         </p>
       </div>
+
+      {/* Company admin / team head: every member, per section (HR · CRM · Leads). Renders nothing for anyone else. */}
+      <TeamMembersPanel initial={mainSection === 'sales' ? 'leads' : 'hr'} />
 
       {(() => {
         const sub = (user?.company as any)?.subscription
