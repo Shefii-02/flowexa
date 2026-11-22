@@ -114,6 +114,22 @@ class MediaLibraryController extends Controller
             });
         }
 
+        if ($request->filled('search')) {
+            $term = '%' . addcslashes((string) $request->query('search'), '%_\\') . '%';
+            $query->where(fn ($q) => $q->where('display_name', 'like', $term)->orWhere('original_name', 'like', $term));
+        }
+
+        // Paged mode (mobile app): ?per_page=N&page=P returns one page plus meta, so a big library loads as you scroll.
+        // Without per_page the whole list is returned, as the web app expects.
+        if ($request->filled('per_page')) {
+            $page = $query->paginate(max(5, min(100, $request->integer('per_page'))));
+
+            return response()->json([
+                'data' => $page->items(),
+                'meta' => ['current_page' => $page->currentPage(), 'last_page' => $page->lastPage(), 'total' => $page->total(), 'per_page' => $page->perPage()],
+            ]);
+        }
+
         $files = $query->get();
 
         return response()->json([

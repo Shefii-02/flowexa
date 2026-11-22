@@ -623,6 +623,11 @@ Route::prefix('v1')->group(function () {
             // Home screen aggregate (mobile app + web) — attendance + sales target + streak +
             // rank + leads/pipeline/follow-ups/tasks in one round trip. Self-scoped.
             Route::get('dashboard/me', [\App\Modules\Hr\Http\Controllers\DashboardController::class, 'me']);
+
+            // My documents (ID proof, certificates…) — self service
+            Route::get('documents/me',          [\App\Modules\Hr\Http\Controllers\StaffDocumentController::class, 'index']);
+            Route::post('documents/me',         [\App\Modules\Hr\Http\Controllers\StaffDocumentController::class, 'store']);
+            Route::delete('documents/me/{id}',  [\App\Modules\Hr\Http\Controllers\StaffDocumentController::class, 'destroy'])->whereNumber('id');
             Route::get('dashboard', [\App\Modules\Analytics\Http\Controllers\SectionDashboardController::class, 'hr']);   // HR section dashboard
 
             // Sales activity — daily / monthly calls, follow-ups and conversions vs targets (team leader+ sees everyone; anyone sees themselves)
