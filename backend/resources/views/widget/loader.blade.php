@@ -412,7 +412,7 @@
       return;
     }
     rt.token = t;
-    rt.sock = window.io(SOCKET + "/widget", { transports: ["websocket"], auth: { key: KEY, session_token: t }, reconnectionDelayMax: 30000 });
+    rt.sock = window.io(SOCKET + "/widget", { transports: ["polling", "websocket"], auth: { key: KEY, session_token: t }, reconnectionDelayMax: 30000 });
     rt.sock.on("connect", function () { rt.up = true; if (live.timer) { clearTimeout(live.timer); poll(); } });   // resync after (re)connect
     rt.sock.on("disconnect", function () { rt.up = false; if (live.timer) schedulePoll(); });
     rt.sock.on("connect_error", function () { rt.up = false; });

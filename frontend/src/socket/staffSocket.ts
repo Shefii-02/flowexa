@@ -16,7 +16,7 @@ export function connectStaffSocket(staffId: number, companyId: number): void {
   if (!token) return
 
   socket = io(`${CHAT_URL}/staff`, {
-    transports: ['websocket', 'polling'],   // polling is the fallback when a proxy blocks the websocket upgrade
+    transports: ['polling', 'websocket'],   // connect over long-polling first (always allowed), then upgrade to a websocket — no failed-websocket noise or dropped realtime if a network blocks the upgrade
     reconnectionAttempts: 5,
     reconnectionDelay: 2000,
     auth: { token },
