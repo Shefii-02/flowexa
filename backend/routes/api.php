@@ -149,6 +149,7 @@ Route::prefix('v1')->group(function () {
     Route::middleware(['jwt.auth', 'module.gate'])->group(function () {
 
         Route::get('mobile-modules/hidden', [\App\Http\Controllers\MobileModulesController::class, 'hidden']);
+        Route::get('mobile-config', [\App\Http\Controllers\MobileAppConfigController::class, 'show']);   // the company's own mobile layout
 
         Route::prefix('auth')->name('auth.')->group(function () {
             Route::get('me',       [AuthController::class, 'me'])->name('me');
@@ -332,6 +333,8 @@ Route::prefix('v1')->group(function () {
 
         // ── Company Settings (owner/admin) ───────────────────────────────────────
         Route::prefix('settings')->name('settings.')->middleware('permission:settings.manage')->group(function () {
+            Route::get('mobile-app', [\App\Http\Controllers\MobileAppConfigController::class, 'edit']);
+            Route::put('mobile-app', [\App\Http\Controllers\MobileAppConfigController::class, 'update']);
             Route::get('/',                   [SettingsController::class, 'index'])->name('index');
             Route::put('/',                   [SettingsController::class, 'update'])->name('update');
             Route::post('wa-credentials',     [SettingsController::class, 'updateWaCredentials'])->name('wa-credentials');

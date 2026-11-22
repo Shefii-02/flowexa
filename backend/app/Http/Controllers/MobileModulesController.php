@@ -15,7 +15,7 @@ class MobileModulesController extends Controller
     private const KEY = 'mobile_hidden_modules';
 
     /** Mirrors unichat_mobile_app/lib/core/nav/app_modules.dart (id => title/group). */
-    private function catalogue(): array
+    public function catalogue(): array
     {
         return [
             ['id' => "wa_chat_dashboard", 'title' => "Dashboard", 'group' => "WA Chat"],

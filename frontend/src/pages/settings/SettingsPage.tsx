@@ -12,6 +12,7 @@ import api from '@/api/client'
 import { registerWebPush, webPushSupport } from '@/lib/push'
 import type { Role } from '@/types'
 import WorkingHoursPanel from '@/components/leads/WorkingHoursPanel'
+import MobileAppTab from './MobileAppTab'
 
 // ── Tab definitions ───────────────────────────────────────────────────────────
 
@@ -24,6 +25,7 @@ const TABS = [
   { id: 'devices',     icon: '📱', label: 'Linked Devices', desc: 'Phones and browsers signed in' },
   { id: 'permissions', icon: '🛡️', label: 'Permissions',    desc: 'Roles and what each can do' },
   { id: 'push',        icon: '🔔', label: 'Push',           desc: 'Notification preferences' },
+  { id: 'mobile',      icon: '📱', label: 'Mobile App',     desc: 'Tabs, profile menu and Explore tiles' },
 ] as const
 
 type TabId = (typeof TABS)[number]['id']
@@ -689,7 +691,7 @@ export default function SettingsPage() {
   const isDesktop = useIsDesktop()
   // Superadmins have no company (so no company details or working hours): profile, display, staff, devices, permissions and push only.
   const tabs = useMemo(
-    () => isSuper ? TABS.filter(t => t.id !== 'company' && t.id !== 'hours') : TABS,
+    () => isSuper ? TABS.filter(t => t.id !== 'company' && t.id !== 'hours' && t.id !== 'mobile') : TABS,
     [isSuper],
   )
 
@@ -714,6 +716,7 @@ export default function SettingsPage() {
       {tab === 'permissions'  && <PermissionsTab />}
       {tab === 'hours'        && <WorkingHoursPanel />}
       {tab === 'push'         && <PushTab />}
+      {tab === 'mobile'       && <MobileAppTab />}
     </>
   )
 
