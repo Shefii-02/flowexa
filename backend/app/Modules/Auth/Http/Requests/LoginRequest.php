@@ -15,6 +15,12 @@ class LoginRequest extends FormRequest
         return [
             'email'    => ['required', 'email'],
             'password' => ['required', 'string'],
+            // the phone app registers itself on login (see App\Support\MobileDevices) — optional so older builds and the web keep working
+            'device_uid'  => ['sometimes', 'nullable', 'string', 'max:128'],
+            'device_name' => ['sometimes', 'nullable', 'string', 'max:120'],
+            'platform'    => ['sometimes', 'nullable', 'string', 'max:10'],
+            'app_version' => ['sometimes', 'nullable', 'string', 'max:20'],
+            'push_token'  => ['sometimes', 'nullable', 'string', 'max:255'],
         ];
     }
 

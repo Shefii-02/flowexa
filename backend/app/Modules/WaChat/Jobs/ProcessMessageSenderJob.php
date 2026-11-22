@@ -83,7 +83,7 @@ class ProcessMessageSenderJob implements ShouldQueue
 
         $company    = $job->company;
         $apiKey     = $company?->wa_chat_token ?? '';
-        $wa         = (new OpenWaMessageService())->billedAs('campaign');   // each delivered campaign message is paid from the wallet
+        $wa         = (new OpenWaMessageService())->billedAs('campaign', (int) $job->company_id);   // each delivered campaign message is paid from the wallet
         $payload    = $job->message_payload ?? [];
         $recipients = $this->dedupeRecipients($payload['recipients'] ?? []);
         // A resumed job, or one re-run after a worker crash, starts from the top of the list —

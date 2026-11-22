@@ -35,7 +35,7 @@ class WaOtpServiceController extends Controller
     /** Send a plain-text message via the WA Chat (open-wa) gateway. Returns response time in ms or null on failure. */
     private function dispatchText(WaOtpService $service, string $phone, string $message, ?string $sessionId = null): ?int
     {
-        return $this->handOff($service, $sessionId, fn (string $sid, string $chatId) => app(OpenWaMessageService::class)->billedAs($this->billAs)
+        return $this->handOff($service, $sessionId, fn (string $sid, string $chatId) => app(OpenWaMessageService::class)->billedAs($this->billAs, (int) $service->company_id)
             ->sendText($sid, $this->apiKey($service), $chatId, $message), $phone);
     }
 
@@ -65,7 +65,7 @@ class WaOtpServiceController extends Controller
     /** Send a document/file via the WA Chat (open-wa) gateway. Returns ms or null on failure. */
     private function dispatchFile(WaOtpService $service, string $phone, string $fileUrl, string $filename, string $caption, ?string $sessionId = null): ?int
     {
-        return $this->handOff($service, $sessionId, fn (string $sid, string $chatId) => app(OpenWaMessageService::class)->billedAs($this->billAs)
+        return $this->handOff($service, $sessionId, fn (string $sid, string $chatId) => app(OpenWaMessageService::class)->billedAs($this->billAs, (int) $service->company_id)
             ->sendMedia($sid, $this->apiKey($service), $chatId, 'document', array_filter([
                 'url'      => $fileUrl,
                 'filename' => $filename,

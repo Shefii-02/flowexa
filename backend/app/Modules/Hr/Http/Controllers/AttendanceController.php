@@ -69,6 +69,18 @@ class AttendanceController extends Controller
         ]);
     }
 
+    /** Must this person's punch carry a location? See the `geo_required` note in me(). */
+    private function geoRequired(HrSetting $settings, HrStaffProfile $profile, string $workMode): bool
+    {
+        return (bool) $settings->geofence_mandatory && $settings->hasGeofence() && $profile->isGps() && $workMode === 'wfo';
+    }
+
+    /** Where the punch came from: what the caller says, else the phone app (X-Client: mobile) or the web. */
+    private function punchSource(Request $request, array $data): string
+    {
+        return $data['source'] ?? ($request->header('X-Client') === 'mobile' ? 'mobile' : 'web');
+    }
+
     private function storeSelfie(Request $request, string $action, bool $required): ?string
     {
         if (!$request->hasFile('selfie')) {
@@ -104,7 +116,12 @@ class AttendanceController extends Controller
                 'clock_out_early_window_minutes', 'clock_out_grace_minutes',
                 'selfie_required_clock_in', 'selfie_required_clock_out',
                 'selfie_required_break_start', 'selfie_required_break_end',
-            ]),
+            ]) + [
+                // Does THIS person have to share a location? Only when the company enforces the office radius AND they are GPS-tracked
+                // AND working from the office today. (`geofence_mandatory` alone is a company-wide switch — a work-from-home or
+                // non-GPS colleague must not be blocked by it.)
+                'geo_required' => $this->geoRequired($settings, $profile, (string) ($today?->work_mode ?: $profile->work_mode)),
+            ],
             'schedule' => $this->svc->schedule($settings, $profile, now()),
             'today'    => $today,
             'open_break' => $today?->openBreak(),
@@ -322,6 +339,7 @@ class AttendanceController extends Controller
         ]);
         // Several sessions a day are allowed (split shifts, accidental clock-outs) — only a
         // session that's still open blocks a new clock-in. Lateness is judged on the first one.
+        $source = $this->punchSource($request, $data);
         $isFirstSession = !$att->clock_in_at;
         if (!$isFirstSession && !$att->clock_out_at) {
             throw ValidationException::withMessages(['clock_in' => "You're already clocked in."]);
@@ -358,7 +376,7 @@ class AttendanceController extends Controller
                 'clock_in_radius_reason'  => $geo['out_of_geofence'] ? ($data['radius_reason'] ?? null) : null,
                 'clock_in_status'         => $status['color'],
                 'work_mode'               => $workMode,
-                'source'                  => $data['source'] ?? 'web',
+                'source'                  => $source,
                 'late_minutes'            => $status['late_minutes'],
                 'late_note'               => $data['note'] ?? null,
                 'status'                  => 'present',
@@ -385,7 +403,7 @@ class AttendanceController extends Controller
             'clock_in_photo_url' => $photoUrl,
             'clock_in_radius_reason' => $geo['out_of_geofence'] ? ($data['radius_reason'] ?? null) : null,
             'clock_in_note' => $data['note'] ?? null,
-            'source' => $data['source'] ?? 'web',
+            'source' => $source,
         ]);
 
         $this->svc->syncAvailability($settings, $companyId, $userId, 'working');

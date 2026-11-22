@@ -47,6 +47,22 @@ class AuthController extends Controller
             ], 403);
         }
 
+        // Phone-app sign-ins are tracked per device and capped per user (companies.max_devices_per_user) — the same rule as the QR / PIN
+        // login. Over the cap → 409 + the list of phones to remove, then the app repeats this call. No device id sent = an older app build:
+        // not tracked, exactly as before.
+        if ($isMobile) {
+            $admitted = app(\App\Support\MobileDevices::class)->admit($request, $result->user);
+            if ($admitted instanceof JsonResponse) {
+                return $admitted;
+            }
+            if (is_string($admitted)) {
+                $result = new \App\Modules\Auth\DTOs\AuthResultDTO(
+                    token: \App\Modules\Auth\DTOs\TokenDTO::fromJwt($admitted),
+                    user:  $result->user,
+                );
+            }
+        }
+
         // Web portal sign-ins are tracked per browser and capped per user
         // (companies.max_web_devices_per_user). Over the cap → 409 + the list of browsers to remove.
         if (!$isMobile) {
@@ -63,6 +79,12 @@ class AuthController extends Controller
         return AuthResource::make($result)
             ->response()
             ->setStatusCode(200);
+    }
+
+    // ─── POST /auth/mobile-devices/remove — free a phone slot when the phone-app limit sheet is shown ──
+    public function removeMobileDevice(Request $request): JsonResponse
+    {
+        return app(\App\Support\MobileDevices::class)->remove($request);
     }
 
     // ─── POST /auth/web-sessions/remove — free a browser slot when the limit page is shown ──

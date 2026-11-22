@@ -121,6 +121,7 @@ Route::prefix('v1')->group(function () {
         Route::post('coupons/validate', [\App\Modules\PlanPurchase\Http\Controllers\CouponController::class, 'publicCheck'])->middleware('throttle:20,1')->name('coupons.validate');
         Route::post('demo-requests', [\App\Http\Controllers\DemoRequestController::class, 'store'])->middleware('throttle:5,1')->name('demo-requests.store');
         Route::post('web-sessions/remove', [AuthController::class, 'removeWebSession'])->name('web-sessions.remove');
+        Route::post('mobile-devices/remove', [AuthController::class, 'removeMobileDevice'])->middleware('throttle:20,1')->name('mobile-devices.remove');
     });
 
     // ── Mobile app QR / PIN device login (public — the challenge is the credential) ──

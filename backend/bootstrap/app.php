@@ -17,6 +17,7 @@ return Application::configure(basePath: dirname(__DIR__))
         \App\Modules\WaChat\Console\Commands\ProcessScheduledMessages::class,
         \App\Modules\Google\Console\SyncGoogleSheets::class,
         \App\Modules\WaChat\Console\Commands\ProcessAutomations::class,
+        \App\Modules\WaChat\Console\Commands\CheckWaChatBilling::class,
         \App\Modules\WaChat\Console\Commands\ProcessFollowUps::class,
         \App\Modules\WaChat\Console\Commands\ResetMonthlyUsage::class,
         \App\Console\Commands\UpdateConversationSummaries::class,

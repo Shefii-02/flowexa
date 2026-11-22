@@ -193,13 +193,13 @@ class WaOtpPublicController extends Controller
 
     private function dispatchText(WaOtpService $service, string $phone, string $message, ?string $sessionId = null): bool
     {
-        return $this->deliver($service, $sessionId, fn (string $sid) => app(OpenWaMessageService::class)->billedAs('api')
+        return $this->deliver($service, $sessionId, fn (string $sid) => app(OpenWaMessageService::class)->billedAs('api', (int) $service->company_id)
             ->sendText($sid, $this->apiKey($service), $this->chatId($phone), $message));
     }
 
     private function dispatchFile(WaOtpService $service, string $phone, string $fileUrl, string $filename, string $caption, ?string $sessionId = null): bool
     {
-        return $this->deliver($service, $sessionId, fn (string $sid) => app(OpenWaMessageService::class)->billedAs('api')
+        return $this->deliver($service, $sessionId, fn (string $sid) => app(OpenWaMessageService::class)->billedAs('api', (int) $service->company_id)
             ->sendMedia($sid, $this->apiKey($service), $this->chatId($phone), 'document', array_filter([
                 'url'      => $fileUrl,
                 'filename' => $filename,

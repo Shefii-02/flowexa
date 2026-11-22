@@ -843,10 +843,13 @@ class WahaSessionController extends Controller
         }
 
         // Delivery confirmed → one wallet charge for the message (WhatsApp may repeat or upgrade the ack, delivered → read; only the first one charges).
-        if ($session && $event === 'message.ack' && in_array($payload['status'] ?? null, ['delivered', 'read'], true) && ($payload['id'] ?? $payload['messageId'] ?? null)) {
+        $ackId = (string) ($payload['id'] ?? $payload['messageId'] ?? '');
+        if ($event === 'message.ack' && in_array($payload['status'] ?? null, ['delivered', 'read'], true) && $ackId !== '') {
             try {
-                $company = Company::find($session->company_id);
-                if ($company) { app(\App\Modules\WaChat\Services\WaChatBilling::class)->chargeDelivered($company, $name, (string) ($payload['id'] ?? $payload['messageId'])); }
+                // A session created straight on the gateway has no openwa_sessions row, so find the payer from the charge registered when the message was sent.
+                $payerId = $session?->company_id ?? \Illuminate\Support\Facades\DB::table('wa_chat_charges')->where('session_name', (string) $name)->where('wa_message_id', $ackId)->value('company_id');
+                $company = $payerId ? Company::find($payerId) : null;
+                if ($company) { app(\App\Modules\WaChat\Services\WaChatBilling::class)->chargeDelivered($company, $name, $ackId); }
             } catch (\Throwable $e) {
                 Log::error('Webhook WA Chat billing error: ' . $e->getMessage());   // never fail the webhook over billing
             }

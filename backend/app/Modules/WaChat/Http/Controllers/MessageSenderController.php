@@ -194,7 +194,7 @@ class MessageSenderController extends Controller
 
         $company = auth()->user()->company;
         $apiKey  = $company?->wa_chat_token ?? '';
-        $wa      = (new OpenWaMessageService())->billedAs('test');   // a test message is paid from the wallet too
+        $wa      = (new OpenWaMessageService())->billedAs('test', (int) auth()->user()->company_id);   // a test message is paid from the wallet too
 
         $statusRes  = $wa->getSession($data['session_id'], $apiKey);
         $liveStatus = $statusRes->successful() ? ($statusRes->json('status') ?? 'unknown') : 'unreachable';

@@ -55,6 +55,10 @@ class WaChatBilling
             'company_id' => $companyId, 'session_name' => $sessionName, 'wa_message_id' => $waMessageId, 'phone' => $phone ? preg_replace('/@.*/', '', $phone) : null,
             'source' => $source, 'credits' => $this->creditsPerMessage($company), 'status' => 'pending', 'created_at' => now(), 'updated_at' => now(),
         ]);
+
+        // The delivery report can beat this registration by a moment; if the message is already marked delivered, settle it now.
+        $delivered = \App\Models\MessageLog::where('company_id', $companyId)->where('channel', 'wa_chat')->where('direction', 'outbound')->where('wa_message_id', $waMessageId)->whereNotNull('delivered_at')->exists();
+        if ($delivered) { $this->chargeDelivered($company, $sessionName, $waMessageId); }
     }
 
     /**

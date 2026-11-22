@@ -19,6 +19,9 @@ class OpenWaMessageService
     /** Set by billedAs(): what the messages sent through this instance are paid for as (campaign | api | test). Unset = free (normal chat). */
     private ?string $billSource = null;
 
+    /** The company that pays for those sends. Passed in by the caller — a session created straight on the gateway has no openwa_sessions row to look it up from. */
+    private ?int $billCompanyId = null;
+
     public function __construct(?string $baseUrl = null)
     {
         $this->baseUrl = rtrim($baseUrl ?? config('services.open_wa.base_url'), '/');
@@ -28,10 +31,11 @@ class OpenWaMessageService
      * A copy of this service whose sends are billed to the company's wallet once they are delivered (see WaChatBilling).
      * Only campaign / api / test sends use it — a message sent without it is a normal chat message and costs nothing.
      */
-    public function billedAs(string $source): static
+    public function billedAs(string $source, ?int $companyId = null): static
     {
         $c = clone $this;
         $c->billSource = $source;
+        $c->billCompanyId = $companyId;
         return $c;
     }
 
@@ -63,7 +67,8 @@ class OpenWaMessageService
         if ($this->billSource !== null && $response->successful()) {
             try {
                 $messageId = $response->json('messageId') ?? $response->json('data.messageId') ?? $response->json('id') ?? $response->json('data.id');
-                $companyId = \App\Modules\WaChat\Models\WahaSession::where('session_name', $sessionId)->value('company_id');
+                $companyId = $this->billCompanyId ?? \App\Modules\WaChat\Models\WahaSession::where('session_name', $sessionId)->value('company_id');
+                if (!$companyId) { Log::warning("OpenWaMessageService: billable {$this->billSource} message on session {$sessionId} not registered — no company known"); }
                 if ($messageId && $companyId) {
                     app(WaChatBilling::class)->registerPending((int) $companyId, $sessionId, (string) $messageId, $body['chatId'] ?? null, $this->billSource);
                 }
