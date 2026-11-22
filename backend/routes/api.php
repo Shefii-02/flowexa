@@ -726,6 +726,8 @@ Route::prefix('v1')->group(function () {
 
         Route::prefix('crm')->middleware(['company.active'])->group(function () {
             Route::middleware('permission:contacts.view')->group(function () {   // same access as the Contacts section these live under
+                Route::post('deals/sample',      [DealController::class, 'addSample']);      // before deals/{id}
+                Route::delete('deals/sample',    [DealController::class, 'removeSample']);
                 Route::get('deals/board',        [DealController::class, 'board']);
                 Route::get('deals',              [DealController::class, 'index']);
                 Route::post('deals',             [DealController::class, 'store']);
@@ -751,6 +753,8 @@ Route::prefix('v1')->group(function () {
             Route::delete('calendar-events/{id}',         [\App\Modules\Calendar\Http\Controllers\CalendarController::class, 'destroy']);
 
             Route::middleware('permission:contacts.view')->group(function () {
+                Route::post('segments/sample',   [SegmentController::class, 'addSample']);   // before segments/{id}
+                Route::delete('segments/sample', [SegmentController::class, 'removeSample']);
                 Route::get('segments',           [SegmentController::class, 'index']);
                 Route::post('segments',          [SegmentController::class, 'store']);
                 Route::post('segments/preview',  [SegmentController::class, 'preview']);

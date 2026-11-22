@@ -33,7 +33,7 @@ class AppServiceProvider extends ServiceProvider
         // Every new lead is also appended to the company's Google Sheet when they switched that on (Assignment Rules → Lead sheet).
         \App\Models\Lead::created(fn ($lead) => app(\App\Services\LeadSheet::class)->record($lead));
         \App\Models\CrmDeal::updated(function ($deal) {
-            if ($deal->wasChanged('status') && $deal->status === 'won') {
+            if ($deal->wasChanged('status') && $deal->status === 'won' && $deal->source !== 'sample') {   // a sample deal is never reported to Meta as a real purchase
                 \App\Modules\Instagram\Jobs\SendInstagramConversionEvent::dispatch('purchase', $deal->id);
             }
         });

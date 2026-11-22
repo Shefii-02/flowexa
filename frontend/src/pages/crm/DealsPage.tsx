@@ -48,6 +48,7 @@ export default function DealsPage() {
   const [editId, setEditId] = useState<number | null>(null)
   const [form, setForm] = useState(emptyForm())
   const [saving, setSaving] = useState(false)
+  const [sampleBusy, setSampleBusy] = useState(false)
 
   const load = useCallback(() => {
     setLoading(true)
@@ -64,6 +65,19 @@ export default function DealsPage() {
       .catch(() => api.get('/wa-cloud/inbox-analytics/agents').then(r => setAgents(r.data?.data ?? [])).catch(() => {}))
     api.get('/hr/incentive-rules').then(r => setIncentiveRules(r.data?.data ?? [])).catch(() => {})
   }, [])
+
+  // sample data: a few example deals so the pipeline can be tried before real ones exist (tagged source = "sample"; removing them never touches real deals)
+  const hasSample = columns.some(c => c.deals.some(d => d.source === 'sample'))
+  const hasAnyDeal = columns.some(c => c.count > 0)
+  const sample = async (add: boolean) => {
+    if (!add && !confirm('Remove the sample deals? Your own deals are not touched.')) return
+    setSampleBusy(true)
+    try {
+      const r = add ? await api.post('/crm/deals/sample') : await api.delete('/crm/deals/sample')
+      toast.success(r.data?.message ?? (add ? 'Sample deals added.' : 'Sample deals removed.'))
+      load()
+    } catch (e) { toast.error(getError(e)) } finally { setSampleBusy(false) }
+  }
 
   const totalPipeline = columns.filter(c => !['won', 'lost'].includes(c.stage)).reduce((s, c) => s + c.value, 0)
   const won = columns.find(c => c.stage === 'won')
@@ -132,8 +146,18 @@ export default function DealsPage() {
           <h1 className="page-title">💼 Deals Pipeline</h1>
           <p className="page-sub">Open pipeline: <span className="font-semibold text-gray-700">{money(totalPipeline)}</span> · Won: <span className="font-semibold text-green-700">{money(won?.value ?? 0)}</span></p>
         </div>
-        <button onClick={openCreate} className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700">+ New Deal</button>
+        <div className="flex items-center gap-2">
+          {hasSample
+            ? <button data-testid="sample-remove" disabled={sampleBusy} onClick={() => sample(false)} className="px-3 py-2 border border-gray-300 text-gray-600 rounded-lg text-sm hover:bg-gray-50 disabled:opacity-50">Remove sample data</button>
+            : <button data-testid="sample-add" disabled={sampleBusy} onClick={() => sample(true)} className="px-3 py-2 border border-indigo-300 text-indigo-700 rounded-lg text-sm hover:bg-indigo-50 disabled:opacity-50">{sampleBusy ? 'Adding…' : '✨ Add sample data'}</button>}
+          <button onClick={openCreate} className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700">+ New Deal</button>
+        </div>
       </div>
+      {!loading && !hasAnyDeal && (
+        <div data-testid="sample-hint" className="rounded-xl border border-dashed border-indigo-200 bg-indigo-50/50 px-4 py-3 text-sm text-indigo-800">
+          No deals yet. Click <b>Add sample data</b> to fill the pipeline with a few examples and see how it works — you can remove them any time.
+        </div>
+      )}
 
       {loading ? (
         <div className="text-center py-16 text-gray-400">Loading…</div>

@@ -35,6 +35,7 @@ export default function SegmentsPage() {
   const [form, setForm] = useState(emptyForm())
   const [preview, setPreview] = useState<{ count: number; sample: SampleContact[] } | null>(null)
   const [viewing, setViewing] = useState<Segment | null>(null)
+  const [sampleBusy, setSampleBusy] = useState(false)
 
   const load = useCallback(() => {
     setLoading(true)
@@ -44,6 +45,18 @@ export default function SegmentsPage() {
   useEffect(() => {
     api.get('/labels').then(r => setLabels(Array.isArray(r.data?.labels) ? r.data.labels : Array.isArray(r.data?.data) ? r.data.data : [])).catch(() => {})
   }, [])
+
+  // sample data: a few example smart lists (named "Sample — …"); removing them never touches your own segments
+  const hasSample = segments.some(s => s.name.startsWith('Sample — '))
+  const sample = async (add: boolean) => {
+    if (!add && !confirm('Remove the sample segments? Your own segments are not touched.')) return
+    setSampleBusy(true)
+    try {
+      const r = add ? await api.post('/crm/segments/sample') : await api.delete('/crm/segments/sample')
+      toast.success(r.data?.message ?? (add ? 'Sample segments added.' : 'Sample segments removed.'))
+      load()
+    } catch (e) { toast.error(getError(e)) } finally { setSampleBusy(false) }
+  }
 
   const setFilter = (k: keyof Filters, v: string | boolean) =>
     setForm(p => ({ ...p, filters: { ...p.filters, [k]: v === '' || v === false ? undefined : v } }))
@@ -91,13 +104,18 @@ export default function SegmentsPage() {
           <h1 className="page-title">🧩 Segments</h1>
           <p className="page-sub">Saved smart lists — reusable dynamic contact filters</p>
         </div>
-        <button onClick={openCreate} className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700">+ New Segment</button>
+        <div className="flex items-center gap-2">
+          {hasSample
+            ? <button data-testid="sample-remove" disabled={sampleBusy} onClick={() => sample(false)} className="px-3 py-2 border border-gray-300 text-gray-600 rounded-lg text-sm hover:bg-gray-50 disabled:opacity-50">Remove sample data</button>
+            : <button data-testid="sample-add" disabled={sampleBusy} onClick={() => sample(true)} className="px-3 py-2 border border-indigo-300 text-indigo-700 rounded-lg text-sm hover:bg-indigo-50 disabled:opacity-50">{sampleBusy ? 'Adding…' : '✨ Add sample data'}</button>}
+          <button onClick={openCreate} className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700">+ New Segment</button>
+        </div>
       </div>
 
       {loading ? (
         <div className="text-center py-16 text-gray-400">Loading…</div>
       ) : segments.length === 0 ? (
-        <div className="text-center py-16 text-gray-400"><div className="text-4xl mb-3">🧩</div>No segments yet.</div>
+        <div data-testid="sample-hint" className="text-center py-16 text-gray-400"><div className="text-4xl mb-3">🧩</div>No segments yet.<div className="text-sm mt-1">Click <b className="text-indigo-600">Add sample data</b> above to see a few example smart lists.</div></div>
       ) : (
         <div className="grid sm:grid-cols-2 gap-3">
           {segments.map(s => (

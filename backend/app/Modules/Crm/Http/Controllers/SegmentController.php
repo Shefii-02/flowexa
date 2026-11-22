@@ -47,6 +47,20 @@ class SegmentController extends Controller
         return response()->json(['data' => CrmSegment::create($data)], 201);
     }
 
+    /** POST /crm/segments/sample — add a few example smart lists. */
+    public function addSample(): JsonResponse
+    {
+        $n = \App\Modules\Crm\Support\SampleData::addSegments($this->companyId(), auth()->id());
+        return response()->json(['added' => $n, 'message' => $n ? "Added {$n} sample segments — edit or delete them freely, or use \"Remove sample data\"." : 'Sample segments are already added.']);
+    }
+
+    /** DELETE /crm/segments/sample — remove only the sample segments. */
+    public function removeSample(): JsonResponse
+    {
+        $n = \App\Modules\Crm\Support\SampleData::removeSegments($this->companyId());
+        return response()->json(['removed' => $n, 'message' => $n ? "Removed {$n} sample segments." : 'There are no sample segments to remove.']);
+    }
+
     /** A segment the caller may change: any shared one in the company, or their own private one. Someone else's private segment is "not found". */
     private function writable(int $id): CrmSegment
     {

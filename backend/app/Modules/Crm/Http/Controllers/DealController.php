@@ -67,6 +67,20 @@ class DealController extends Controller
         return response()->json(['data' => $deal->load('contact:id,name,phone', 'owner:id,name')], 201);
     }
 
+    /** POST /crm/deals/sample — add a few example deals across the pipeline (once). */
+    public function addSample(): JsonResponse
+    {
+        $n = \App\Modules\Crm\Support\SampleData::addDeals($this->companyId());
+        return response()->json(['added' => $n, 'message' => $n ? "Added {$n} sample deals — edit or delete them freely, or use \"Remove sample data\"." : 'Sample deals are already added.']);
+    }
+
+    /** DELETE /crm/deals/sample — remove only the sample deals (never a real one). */
+    public function removeSample(): JsonResponse
+    {
+        $n = \App\Modules\Crm\Support\SampleData::removeDeals($this->companyId());
+        return response()->json(['removed' => $n, 'message' => $n ? "Removed {$n} sample deals." : 'There are no sample deals to remove.']);
+    }
+
     public function show(int $id): JsonResponse
     {
         return response()->json(['data' => $this->scoped()->with('contact', 'owner:id,name', 'tasks')->findOrFail($id)]);
