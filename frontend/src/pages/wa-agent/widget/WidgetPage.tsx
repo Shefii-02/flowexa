@@ -12,6 +12,7 @@ import { FlowImportExportModal } from '../../flow/components/FlowImportExportMod
 import ChatReviewPanel from './ChatReviewPanel'
 import { PermissionGate } from '@/components/ui/PermissionGate'
 import { widgetApi, type ChatWidget } from './api'
+import { widgetSlug } from './chats/util'
 
 type WaSession = { id: number; session_name: string; status: string }
 
@@ -187,7 +188,7 @@ export default function WidgetPage() {
                   </p>
                 </div>
                 <div className="flex gap-3 text-xs">
-                  <Link to={`/website-widget/chats?widget=${w.id}`} className="text-brand-600 hover:underline">Conversations</Link>
+                  <Link to={`/website-widget/${widgetSlug(w.name) || w.id}/chats`} className="text-brand-600 hover:underline">Conversations</Link>
                   <button onClick={() => setEditor(toDraft(w))} className="text-gray-500 hover:underline">Edit</button>
                   <button onClick={() => setDeleteId(w.id)} className="text-red-500 hover:underline">Delete</button>
                 </div>

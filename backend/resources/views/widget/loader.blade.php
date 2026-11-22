@@ -549,8 +549,15 @@
   function normPath(p) {
     p = String(p == null ? "" : p).trim();
     if (!p) return null;
-    if (/^[a-z][a-z0-9+.-]*:\/\//i.test(p)) { try { p = new URL(p).pathname + (/\*$/.test(p) ? "*" : ""); } catch (e) {} }
-    else if (/^(www\.)?[a-z0-9-]+(\.[a-z0-9-]+)*\.(com|io|in|net|org|co|app|dev|ai|me|info|biz)(\/|$)/i.test(p)) { p = p.replace(/^[^\/]+/, ""); }   // "teamzo.io/pricing" typed without https://
+    if (/^[a-z][a-z0-9+.-]*:\/\//i.test(p)) {
+      var bare = /^[a-z][a-z0-9+.-]*:\/\/[^\/?#]+\/?$/i.test(p);   // "https://teamzo.io" with no path → the whole site
+      try { p = new URL(p).pathname + (/\*$/.test(p) ? "*" : ""); } catch (e) {}
+      if (bare) return "/*";
+    }
+    else if (/^(www\.)?[a-z0-9-]+(\.[a-z0-9-]+)*\.(com|io|in|net|org|co|app|dev|ai|me|info|biz)(\/|$)/i.test(p)) {   // "teamzo.io/pricing" typed without https://
+      p = p.replace(/^[^\/]+/, "");
+      if (!p) return "/*";   // just the domain ("teamzo.io") means the whole site, not only its home page
+    }
     p = p.split("#")[0].split("?")[0];
     if (p.charAt(0) !== "/") p = "/" + p;
     if (p.length > 1) p = p.replace(/\/+$/, "");

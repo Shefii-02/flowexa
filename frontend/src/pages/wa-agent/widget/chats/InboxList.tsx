@@ -42,6 +42,7 @@ export default function InboxList({ widgetId, openIds, muted, refreshKey, onOpen
   const [page, setPage] = useState(1)
   const [hasMore, setHasMore] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [loadingMore, setLoadingMore] = useState(false)
   const [socketUp, setSocketUp] = useState(false)
   const seenWaiting = useRef<Set<number> | null>(null)
@@ -71,10 +72,12 @@ export default function InboxList({ widgetId, openIds, muted, refreshKey, onOpen
       if (my !== req.current) return
       const all = pages.flatMap(p => p.data.data)
       const last = pages[pages.length - 1].data
+      setLoadError(null)
       setRows(all); setCounts(last.counts); onCounts(last.counts); setHasMore(last.has_more); setPage(upTo)
       if (tab === 'unread' || tab === 'all') alertNew(all)
     } catch (e: any) {
       if (e?.response?.status === 403) onForbidden()
+      else if (my === req.current) setLoadError(e?.response?.data?.message ?? (e?.code === 'ERR_NETWORK' ? 'Could not reach the chat server.' : 'Could not load conversations.'))
     } finally { if (my === req.current) setLoading(false) }
   }, [tab, dq, widgetId, alertNew, onCounts, onForbidden])
 
@@ -134,7 +137,13 @@ export default function InboxList({ widgetId, openIds, muted, refreshKey, onOpen
         {loading && rows.length === 0 && [0, 1, 2, 3].map(i => (
           <div key={i} className="flex gap-3 px-3 py-3 animate-pulse"><div className="w-10 h-10 rounded-full bg-gray-200" /><div className="flex-1 space-y-2"><div className="h-3 bg-gray-200 rounded w-1/2" /><div className="h-3 bg-gray-100 rounded w-3/4" /></div></div>
         ))}
-        {!loading && rows.length === 0 && <p className="p-6 text-sm text-gray-400 text-center">{dq ? 'No chats match your search.' : `No ${tab} chats.`}</p>}
+        {!loading && rows.length === 0 && loadError && (
+          <div className="p-6 text-sm text-center">
+            <p className="text-red-600">{loadError}</p>
+            <button className="mt-2 text-xs text-brand-600 underline" onClick={() => { setLoading(true); void reload(false) }}>Retry</button>
+          </div>
+        )}
+        {!loading && rows.length === 0 && !loadError && <p className="p-6 text-sm text-gray-400 text-center">{dq ? 'No chats match your search.' : `No ${tab} chats.`}</p>}
         {rows.map(r => {
           const isOpen = openIds.includes(r.id)
           return (

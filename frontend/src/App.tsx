@@ -301,6 +301,7 @@ export default function App() {
               <Route path="catalog" element={<Navigate to="/ai-agent/catalog" replace />} />   {/* old URL */}
               <Route path="website-widget" element={<WidgetPage />} />
               <Route path="website-widget/chats" element={<WidgetChatsPage />} />
+              <Route path="website-widget/:widget/chats" element={<WidgetChatsPage />} />   {/* e.g. /website-widget/main-site/chats — the widget's name as a slug (its number or key work too) */}
               {/* AI Agent module */}
               <Route path="wa-agent/*" element={<LegacyAgentRedirect />} />   {/* old URL → /ai-agent/... */}
               <Route path="ai-agent" element={<WaAgentShell />}>
