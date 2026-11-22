@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { api } from '@/api/client'
 import toast from 'react-hot-toast'
 import { getError } from '@/utils'
+import HowItWorks, { GuideItem } from './HowItWorks'
 
 const STAGES = ['new', 'qualified', 'proposal', 'negotiation', 'won', 'lost'] as const
 const STAGE_LABEL: Record<string, string> = {
@@ -153,6 +154,24 @@ export default function DealsPage() {
           <button onClick={openCreate} className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700">+ New Deal</button>
         </div>
       </div>
+      <HowItWorks id="deals" title="How deals work">
+        <p>A <b>deal</b> is a sale you are working on — a customer, an amount and where it stands. Each deal sits in one column of the pipeline and moves left to right as it progresses.</p>
+        <div className="space-y-1.5">
+          <GuideItem label="New">A fresh opportunity — nothing agreed yet.</GuideItem>
+          <GuideItem label="Qualified">You have confirmed they have a real need and a budget.</GuideItem>
+          <GuideItem label="Proposal">A quote or proposal has been sent.</GuideItem>
+          <GuideItem label="Negotiation">Price, terms or timing are being discussed.</GuideItem>
+          <GuideItem label="Won">The customer said yes. The deal closes and counts toward <i>Won</i> at the top.</GuideItem>
+          <GuideItem label="Lost">It did not happen — you are asked for a short reason (optional) so you can learn from it.</GuideItem>
+        </div>
+        <ul className="list-disc space-y-1 pl-5 text-gray-600">
+          <li><b>Add a deal</b> with <i>+ New Deal</i>: give it a title, an amount, the customer (a contact), the owner and the expected close date.</li>
+          <li><b>Move a deal</b> with the stage dropdown on its card. Click the title to edit it, × to delete it.</li>
+          <li>The numbers under each column are how many deals it holds and their total value. <i>Open pipeline</i> counts every deal that is not yet Won or Lost.</li>
+          <li><b>Staff incentive:</b> if a deal has an <i>owner</i> and an <i>incentive rule</i>, moving it to <b>Won</b> adds a pending incentive for that person in HR — a manager approves it there. Moving it back out of Won withdraws it while it is still pending.</li>
+          <li>New here? <b>Add sample data</b> fills the pipeline with examples to try; <b>Remove sample data</b> clears only those.</li>
+        </ul>
+      </HowItWorks>
       {!loading && !hasAnyDeal && (
         <div data-testid="sample-hint" className="rounded-xl border border-dashed border-indigo-200 bg-indigo-50/50 px-4 py-3 text-sm text-indigo-800">
           No deals yet. Click <b>Add sample data</b> to fill the pipeline with a few examples and see how it works — you can remove them any time.

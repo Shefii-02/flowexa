@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { api } from '@/api/client'
 import toast from 'react-hot-toast'
 import { getError } from '@/utils'
+import HowItWorks, { GuideItem } from './HowItWorks'
 
 type Filters = {
   lead_stage?: string
@@ -111,6 +112,24 @@ export default function SegmentsPage() {
           <button onClick={openCreate} className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700">+ New Segment</button>
         </div>
       </div>
+
+      <HowItWorks id="segments" title="How segments work">
+        <p>A <b>segment</b> is a saved filter over your contacts — a smart list that updates itself. You describe who you want once (for example “opted-in contacts who messaged in the last 7 days”) and the segment always shows the people who match <i>right now</i>. The big number on each card is that live count.</p>
+        <div className="space-y-1.5">
+          <GuideItem label="Lead stage">Only contacts at this stage (new, contacted, interested, qualified, converted, lost).</GuideItem>
+          <GuideItem label="Min lead score">Only contacts whose score is at least this number.</GuideItem>
+          <GuideItem label="Label">Only contacts with this label.</GuideItem>
+          <GuideItem label="Opted in">Yes = contacts who agreed to receive your messages; No = those who have not.</GuideItem>
+          <GuideItem label="Messaged in last (days)">Only contacts who wrote to you recently.</GuideItem>
+        </div>
+        <ul className="list-disc space-y-1 pl-5 text-gray-600">
+          <li>Filters you fill in are combined — a contact must match <b>all</b> of them. Leave a filter empty to ignore it.</li>
+          <li>Use <b>Preview</b> while building a segment to see how many contacts match and a sample of them before you save.</li>
+          <li>Press <b>View contacts</b> on a segment to see up to 20 of the people in it. <b>Edit</b> changes its filters or name; <b>Delete</b> removes the segment only — never the contacts.</li>
+          <li>Tick <b>Shared with team</b> so everyone in your company can see and edit it; leave it unticked to keep it private to you.</li>
+          <li>New here? <b>Add sample data</b> creates a few ready-made segments to look at; <b>Remove sample data</b> clears only those.</li>
+        </ul>
+      </HowItWorks>
 
       {loading ? (
         <div className="text-center py-16 text-gray-400">Loading…</div>
