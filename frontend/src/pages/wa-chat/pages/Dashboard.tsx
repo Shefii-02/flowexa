@@ -12,6 +12,7 @@ import {
   useStatsOverviewQuery,
 } from '../hooks/queries';
 import { PageHeader } from '../components/PageHeader';
+import { DashboardExtras } from '../components/DashboardExtras';
 import './Dashboard.css';
 
 // recharts is heavy (~150kB gzip); load the analytics section on demand so it never bloats the
@@ -122,6 +123,8 @@ export function Dashboard() {
       <Suspense fallback={null}>
         <DashboardCharts />
       </Suspense>
+
+      <DashboardExtras />
 
       <section className="sessions-section">
         <div className="section-header">

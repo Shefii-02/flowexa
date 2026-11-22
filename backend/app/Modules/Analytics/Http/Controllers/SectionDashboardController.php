@@ -188,6 +188,150 @@ class SectionDashboardController extends Controller
             ]);
     }
 
+    // ─────────────────────────── CRM ───────────────────────────
+
+    /** GET /crm/dashboard — contacts, the deals pipeline and what was won, whole company for a team head, own deals for everyone else. */
+    public function crm(): JsonResponse
+    {
+        $u = auth()->user()->loadMissing('role');
+        $cid = $this->companyId();
+        $team = TeamMembersController::canSeeTeam($u);
+        $deals = fn () => DB::table('crm_deals')->where('company_id', $cid)->when(!$team, fn ($q) => $q->where('owner_id', $u->id));
+        $month = now()->startOfMonth()->toDateTimeString();
+
+        $open = $deals()->where('status', 'open');
+        $won = $deals()->where('status', 'won')->where('closed_at', '>=', $month);
+        $kpis = [
+            ['label' => 'Contacts', 'value' => DB::table('contacts')->where('company_id', $cid)->whereNull('deleted_at')->count()],
+            ['label' => 'New contacts (30 d)', 'value' => DB::table('contacts')->where('company_id', $cid)->whereNull('deleted_at')->where('created_at', '>=', $this->since())->count()],
+            ['label' => 'Open deals', 'value' => (clone $open)->count()],
+            ['label' => 'Pipeline value', 'value' => round((float) (clone $open)->sum('value'), 2), 'format' => 'money'],
+            ['label' => 'Won this month', 'value' => (clone $won)->count(), 'tone' => 'green'],
+            ['label' => 'Won value', 'value' => round((float) (clone $won)->sum('value'), 2), 'format' => 'money', 'tone' => 'green'],
+            ['label' => 'Lost this month', 'value' => $deals()->where('status', 'lost')->where('closed_at', '>=', $month)->count(), 'tone' => 'red'],
+            ['label' => 'Closing this week', 'value' => (clone $open)->whereBetween('expected_close_date', [today()->toDateString(), today()->addDays(7)->toDateString()])->count(), 'tone' => 'amber'],
+        ];
+
+        $created = $this->daily($deals()->where('created_at', '>=', $this->since())->selectRaw('DATE(created_at) d, COUNT(*) v')->groupBy('d')->get());
+        $wonDaily = $this->daily($deals()->where('status', 'won')->where('closed_at', '>=', $this->since())->selectRaw('DATE(closed_at) d, COUNT(*) v')->groupBy('d')->get());
+
+        $lists = [[
+            'title' => 'Pipeline by stage', 'columns' => ['Stage', 'Deals', 'Value'],
+            'rows' => $deals()->where('status', 'open')->selectRaw('stage, COUNT(*) n, COALESCE(SUM(value),0) v')->groupBy('stage')->orderByDesc('n')->get()
+                ->map(fn ($r) => [ucfirst((string) $r->stage), (int) $r->n, round((float) $r->v, 2)])->all(),
+        ]];
+        if ($team) {
+            $lists[] = [
+                'title' => 'Deals by owner', 'columns' => ['Owner', 'Open', 'Open value', 'Won this month'],
+                'rows' => DB::table('crm_deals as d')->join('users as u', 'u.id', '=', 'd.owner_id')->where('d.company_id', $cid)
+                    ->selectRaw("u.name, SUM(d.status='open') o, COALESCE(SUM(CASE WHEN d.status='open' THEN d.value END),0) ov, SUM(d.status='won' AND d.closed_at >= ?) w", [$month])
+                    ->groupBy('u.id', 'u.name')->orderByDesc('o')->limit(20)->get()
+                    ->map(fn ($r) => [$r->name, (int) $r->o, round((float) $r->ov, 2), (int) $r->w])->all(),
+            ];
+        }
+
+        return $this->respond($team ? 'CRM · whole team' : 'CRM · mine', $kpis, 'Deals created vs won',
+            [['label' => 'Created', 'color' => '#6366f1', 'points' => $created], ['label' => 'Won', 'color' => '#16a34a', 'points' => $wonDaily]], $lists);
+    }
+
+    // ─────────────────────────── Leads ───────────────────────────
+
+    /** GET /leads/dashboard — funnel, sources and conversion; whole company for a team head, only your own leads otherwise. */
+    public function leads(): JsonResponse
+    {
+        $u = auth()->user()->loadMissing('role');
+        $cid = $this->companyId();
+        $team = TeamMembersController::canSeeTeam($u);
+        $leads = fn () => DB::table('leads')->where('company_id', $cid)->whereNull('deleted_at')->when(!$team, fn ($q) => $q->where('assigned_to', $u->id));
+
+        $total = $leads()->count();
+        $enrolled = $leads()->where('stage', 'enrolled')->count();
+        $kpis = [
+            ['label' => 'Total leads', 'value' => $total],
+            ['label' => 'New today', 'value' => $leads()->where('created_at', '>=', today()->toDateTimeString())->count()],
+            ['label' => 'New (30 d)', 'value' => $leads()->where('created_at', '>=', $this->since())->count()],
+            ['label' => 'Active', 'value' => $leads()->whereNotIn('stage', ['enrolled', 'lost'])->count()],
+            ['label' => 'Enrolled', 'value' => $enrolled, 'tone' => 'green'],
+            ['label' => 'Lost', 'value' => $leads()->where('stage', 'lost')->count(), 'tone' => 'red'],
+            ['label' => 'Conversion', 'value' => $total > 0 ? round($enrolled / $total * 100, 1) : 0, 'format' => 'percent', 'tone' => 'green'],
+            ['label' => 'Unassigned', 'value' => $team ? $leads()->whereNull('assigned_to')->count() : 0, 'tone' => 'amber'],
+        ];
+
+        $created = $this->daily($leads()->where('created_at', '>=', $this->since())->selectRaw('DATE(created_at) d, COUNT(*) v')->groupBy('d')->get());
+        $conv = $this->daily($leads()->where('stage', 'enrolled')->where('enrolled_at', '>=', $this->since())->selectRaw('DATE(enrolled_at) d, COUNT(*) v')->groupBy('d')->get());
+
+        $lists = [
+            ['title' => 'By stage', 'columns' => ['Stage', 'Leads'],
+                'rows' => $leads()->selectRaw('stage, COUNT(*) n')->groupBy('stage')->orderByDesc('n')->get()->map(fn ($r) => [ucfirst(str_replace('_', ' ', (string) $r->stage)), (int) $r->n])->all()],
+            ['title' => 'By source', 'columns' => ['Source', 'Leads', 'Enrolled'],
+                'rows' => $leads()->selectRaw("source, COUNT(*) n, SUM(stage='enrolled') e")->groupBy('source')->orderByDesc('n')->limit(10)->get()
+                    ->map(fn ($r) => [ucfirst((string) $r->source), (int) $r->n, (int) $r->e])->all()],
+        ];
+        if ($team) {
+            $lists[] = [
+                'title' => 'By staff', 'columns' => ['Staff', 'Assigned', 'Active', 'Enrolled'],
+                'rows' => DB::table('leads as l')->join('users as u', 'u.id', '=', 'l.assigned_to')->where('l.company_id', $cid)->whereNull('l.deleted_at')
+                    ->selectRaw("u.name, COUNT(*) n, SUM(l.stage NOT IN ('enrolled','lost')) a, SUM(l.stage='enrolled') e")
+                    ->groupBy('u.id', 'u.name')->orderByDesc('n')->limit(20)->get()
+                    ->map(fn ($r) => [$r->name, (int) $r->n, (int) $r->a, (int) $r->e])->all(),
+            ];
+        }
+
+        return $this->respond($team ? 'Leads · whole team' : 'Leads · mine', $kpis, 'New leads vs enrolled',
+            [['label' => 'New leads', 'color' => '#6366f1', 'points' => $created], ['label' => 'Enrolled', 'color' => '#16a34a', 'points' => $conv]], $lists);
+    }
+
+    // ─────────────────────────── HR ───────────────────────────
+
+    /** GET /hr/dashboard — today's attendance, lateness and leave; the whole company for a team head, only yourself otherwise. */
+    public function hr(): JsonResponse
+    {
+        $u = auth()->user()->loadMissing('role');
+        $cid = $this->companyId();
+        $team = TeamMembersController::canSeeTeam($u);
+        $att = fn () => DB::table('hr_attendance')->where('company_id', $cid)->when(!$team, fn ($q) => $q->where('user_id', $u->id));
+        $leave = fn () => DB::table('hr_leave_requests')->where('company_id', $cid)->when(!$team, fn ($q) => $q->where('user_id', $u->id));
+        $today = today()->toDateString();
+        $month = now()->startOfMonth()->toDateString();
+
+        $people = $team ? DB::table('users')->where('company_id', $cid)->where('is_active', true)->count() : 1;
+        $in = $att()->whereDate('work_date', $today)->whereNotNull('clock_in_at');
+        $present = (clone $in)->count();
+        $kpis = [
+            ['label' => $team ? 'Staff' : 'Me', 'value' => $people],
+            ['label' => 'Clocked in today', 'value' => $present, 'tone' => 'green'],
+            ['label' => 'Still working', 'value' => (clone $in)->whereNull('clock_out_at')->count()],
+            ['label' => 'Not in yet', 'value' => max(0, $people - $present - $att()->whereDate('work_date', $today)->where('status', 'on_leave')->count()), 'tone' => 'amber'],
+            ['label' => 'On leave today', 'value' => $att()->whereDate('work_date', $today)->where('status', 'on_leave')->count()],
+            ['label' => 'Late today', 'value' => (clone $in)->where('late_minutes', '>', 0)->count(), 'tone' => 'red'],
+            ['label' => 'Late (this month)', 'value' => $att()->where('work_date', '>=', $month)->where('late_minutes', '>', 0)->count(), 'tone' => 'red'],
+            ['label' => 'Leave pending', 'value' => $leave()->where('status', 'pending')->count(), 'tone' => 'amber'],
+        ];
+
+        $daily = $this->daily($att()->where('work_date', '>=', Carbon::today()->subDays(self::DAYS - 1)->toDateString())->whereNotNull('clock_in_at')
+            ->selectRaw('work_date d, COUNT(*) v')->groupBy('d')->get());
+        $late = $this->daily($att()->where('work_date', '>=', Carbon::today()->subDays(self::DAYS - 1)->toDateString())->where('late_minutes', '>', 0)
+            ->selectRaw('work_date d, COUNT(*) v')->groupBy('d')->get());
+
+        $lists = [[
+            'title' => 'Leave requests', 'columns' => ['Status', 'Requests', 'Days'],
+            'rows' => $leave()->where('created_at', '>=', $this->since())->selectRaw('status, COUNT(*) n, COALESCE(SUM(days),0) d')->groupBy('status')->get()
+                ->map(fn ($r) => [ucfirst((string) $r->status), (int) $r->n, (float) $r->d])->all(),
+        ]];
+        if ($team) {
+            $lists[] = [
+                'title' => 'Most late this month', 'columns' => ['Person', 'Late days', 'Minutes late'],
+                'rows' => DB::table('hr_attendance as a')->join('users as u', 'u.id', '=', 'a.user_id')->where('a.company_id', $cid)
+                    ->where('a.work_date', '>=', $month)->where('a.late_minutes', '>', 0)
+                    ->selectRaw('u.name, COUNT(*) n, SUM(a.late_minutes) m')->groupBy('u.id', 'u.name')->orderByDesc('n')->limit(10)->get()
+                    ->map(fn ($r) => [$r->name, (int) $r->n, (int) $r->m])->all(),
+            ];
+        }
+
+        return $this->respond($team ? 'HR · whole team' : 'HR · mine', $kpis, 'Clock-ins vs late arrivals',
+            [['label' => 'Clocked in', 'color' => '#16a34a', 'points' => $daily], ['label' => 'Late', 'color' => '#ef4444', 'points' => $late]], $lists);
+    }
+
     // ─────────────────────────── AI Agent ───────────────────────────
 
     /** GET /wa-agent/dashboard — agents, conversations they handle and what they produce. */

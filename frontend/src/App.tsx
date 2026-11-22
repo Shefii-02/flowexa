@@ -109,7 +109,7 @@ import StickyNotesPage from '@/pages/tools/StickyNotesPage'
 import TodoPage from '@/pages/tools/TodoPage'
 import TeamChatPage from '@/pages/team-chat/TeamChatPage'
 import MessengerPagesPage from '@/pages/messenger/MessengerPagesPage'
-import { TasksDashboardPage, MetaAdsDashboardPage, InstagramDashboardPage, MessengerDashboardPage, AiAgentDashboardPage } from '@/pages/section-dashboards'
+import { TasksDashboardPage, MetaAdsDashboardPage, InstagramDashboardPage, MessengerDashboardPage, AiAgentDashboardPage, CrmDashboardPage, LeadsDashboardPage, HrDashboardPage } from '@/pages/section-dashboards'
 import InstagramAutoDmPage from '@/pages/instagram/InstagramAutoDmPage'
 import InstagramReviewDemoPage from '@/pages/instagram/InstagramReviewDemoPage'
 import InstagramDeletionStatusPage from '@/pages/instagram/InstagramDeletionStatusPage'
@@ -330,6 +330,9 @@ export default function App() {
               <Route path="staff/roles" element={<RolesPage />} />
               <Route path="staff/access" element={<StaffAccessPage />} />
               <Route path="staff/account-access" element={<Navigate to="/staff/access" replace />} />
+              <Route path="crm/dashboard" element={<CrmDashboardPage />} />
+              <Route path="crm/leads/dashboard" element={<LeadsDashboardPage />} />
+              <Route path="hr/dashboard" element={<HrDashboardPage />} />
               <Route path="crm/contacts" element={<ContactsPage />} />
               <Route path="crm/labels" element={<LabelsPage />} />
               {/* <Route path="flow" element={<FlowPage />} /> */}

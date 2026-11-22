@@ -623,6 +623,7 @@ Route::prefix('v1')->group(function () {
             // Home screen aggregate (mobile app + web) — attendance + sales target + streak +
             // rank + leads/pipeline/follow-ups/tasks in one round trip. Self-scoped.
             Route::get('dashboard/me', [\App\Modules\Hr\Http\Controllers\DashboardController::class, 'me']);
+            Route::get('dashboard', [\App\Modules\Analytics\Http\Controllers\SectionDashboardController::class, 'hr']);   // HR section dashboard
 
             // Sales activity — daily / monthly calls, follow-ups and conversions vs targets (team leader+ sees everyone; anyone sees themselves)
             Route::get('sales-activity/me',            [\App\Modules\Hr\Http\Controllers\SalesActivityController::class, 'me']);
@@ -726,6 +727,7 @@ Route::prefix('v1')->group(function () {
         });
 
         Route::prefix('crm')->middleware(['company.active'])->group(function () {
+            Route::get('dashboard', [\App\Modules\Analytics\Http\Controllers\SectionDashboardController::class, 'crm'])->middleware('permission:contacts.view');   // before any {id} route
             Route::middleware('permission:contacts.view')->group(function () {   // same access as the Contacts section these live under
                 Route::post('deals/sample',      [DealController::class, 'addSample']);      // before deals/{id}
                 Route::delete('deals/sample',    [DealController::class, 'removeSample']);
@@ -767,6 +769,7 @@ Route::prefix('v1')->group(function () {
         Route::prefix('leads')->name('leads.')->group(function () {
 
             // Reads — every action below requires at least leads.view (previously ungated).
+            Route::get('/dashboard',  [\App\Modules\Analytics\Http\Controllers\SectionDashboardController::class, 'leads'])->middleware('permission:leads.view');   // Leads section dashboard
             Route::get('/',           [LeadController::class, 'index'])->middleware('permission:leads.view')->name('index');
             Route::get('/analytics',  [LeadController::class, 'analytics'])->middleware('permission:leads.view')->name('analytics');
             Route::get('/logs',       [LeadController::class, 'logs'])->middleware('permission:leads.view')->name('logs');
@@ -1752,6 +1755,10 @@ Route::prefix('v1')->middleware(['jwt.auth', 'module.gate'])->group(function () 
 
     // Company-scoped WA Chat analytics (aggregates per-session gateway stats)
     Route::get('wa-chat/analytics', [WaChatAnalyticsController::class, 'index'])
+        ->middleware('wa_chat.valid');
+
+    // Extra dashboard blocks: conversation KPIs, wallet, API usage, campaigns, recent activity, team
+    Route::get('wa-chat/dashboard', [\App\Modules\WaChat\Http\Controllers\WaChatDashboardController::class, 'index'])
         ->middleware('wa_chat.valid');
 
     // Sessions

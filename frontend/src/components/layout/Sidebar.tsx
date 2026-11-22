@@ -697,9 +697,10 @@ const SidebarInner = () => {
               id="crm"
               icon="🗂️"
               label="CRM"
-              basePaths={['/crm/contacts', '/crm/labels', '/crm/blacklist', '/crm/deals', '/crm/segments']}
+              basePaths={['/crm/dashboard', '/crm/contacts', '/crm/labels', '/crm/blacklist', '/crm/deals', '/crm/segments']}
 
             >
+              <SubLink to="/crm/dashboard" icon="📊" label="Dashboard" />
               {/* <NestedAccordion icon="🟢" label="Basic CRM" basePaths={['/contacts', '/labels', '/blacklist']}>
                 <SubLink to="/crm/contacts" icon="👥" label="Contacts" />
                 <SubLink to="/crm/labels" icon="🏷️" label="Labels" />
@@ -733,6 +734,7 @@ const SidebarInner = () => {
               basePaths={['/crm/leads']}
 
             >
+              <SubLink to="/crm/leads/dashboard" icon="📊" label="Dashboard" />
               {/* Shared by both views — the lead list itself */}
               <SubLink to="/crm/leads" icon="🎯" label="All Leads" end />
               <SubLink to="/crm/leads/categories" icon="📂" label="Lead Categories" />
@@ -774,6 +776,7 @@ const SidebarInner = () => {
 
             {/* ── HR ── */}
             <NestedAccordion id="hr" icon="👥" label="HR" basePaths={['/hr']}>
+              <SubLink to="/hr/dashboard" icon="📊" label="Dashboard" />
               <SubLink to="/hr/attendance" icon="🕒" label="My Attendance" />
               <SubLink to="/hr/target" icon="🎯" label="My Target" />
               <SubLink to="/hr/sales-activity" icon="📞" label={canMonitorSales ? 'Sales Activity' : 'My Sales Activity'} />

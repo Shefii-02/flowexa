@@ -1,0 +1,22 @@
+.dx-title { font-size: 1rem; font-weight: 700; margin: 0.5rem 0 1rem; }
+.dx-block { margin-bottom: 1.5rem; min-width: 0; }
+.dx-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.5rem; }
+@media (max-width: 900px) { .dx-grid { grid-template-columns: 1fr; gap: 0; } }
+.dx-kv { display: flex; justify-content: space-between; gap: 1rem; padding: 0.5rem 0; border-bottom: 1px solid #0000001a; font-size: 0.875rem; }
+.dx-kv:last-of-type { border-bottom: none; }
+.dx-kv span { color: var(--text-secondary); }
+.dx-kv small { color: var(--text-muted); font-weight: 400; }
+.dx-sub { font-size: 0.8rem; padding-left: 0.75rem; text-transform: capitalize; }
+.dx-chips { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.dx-chip { padding: 0.375rem 0.75rem; border-radius: 9999px; background: var(--bg-light); font-size: 0.8125rem; }
+.dx-chip b { margin-left: 0.25rem; }
+.dx-bad { color: var(--error-text); }
+.dx-good { color: var(--primary-text); }
+.dx-warn { color: var(--warning-text); }
+.dx-empty { color: var(--text-muted); font-size: 0.875rem; }
+.dx-table { width: 100%; font-size: 0.8125rem; border-collapse: collapse; }
+.dx-table th { text-align: left; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-secondary); padding: 0.5rem 0.5rem 0.5rem 0; }
+.dx-table td { padding: 0.5rem 0.5rem 0.5rem 0; border-top: 1px solid #0000001a; }
+.dx-feed { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.625rem; font-size: 0.8125rem; }
+.dx-feed li { display: grid; grid-template-columns: 1.5rem 1fr auto; gap: 0.5rem; align-items: start; }
+.dx-feed small { color: var(--text-muted); white-space: nowrap; }
