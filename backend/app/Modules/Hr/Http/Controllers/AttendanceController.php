@@ -72,6 +72,14 @@ class AttendanceController extends Controller
     }
 
     /** Must this person's punch carry a location? See the `geo_required` note in me(). */
+    /** Minutes as hours:minutes for people: 687 -> "11:27", 45 -> "0:45" (written as "11:27 min"). */
+    public static function hm(int $minutes): string
+    {
+        $m = max(0, $minutes);
+
+        return intdiv($m, 60).':'.str_pad((string) ($m % 60), 2, '0', STR_PAD_LEFT);
+    }
+
     private function geoRequired(HrSetting $settings, HrStaffProfile $profile, string $workMode): bool
     {
         return (bool) $settings->geofence_mandatory && $settings->hasGeofence() && $profile->isGps() && $workMode === 'wfo';
@@ -266,7 +274,10 @@ class AttendanceController extends Controller
             'note_required'        => false,
             'note_optional'        => false,
             'note_message'         => null,
+            'note_kind'            => null,   // new_session = asking why a 2nd clock-in the same day
             'late_minutes'         => 0,
+            // what kind of delay `late_minutes` is, so the app can word it: late | early_leave | overtime | over_break (null = nothing to report)
+            'delay_kind'           => null,
         ];
 
         if ($radiusReasonNeeded) {
@@ -275,17 +286,26 @@ class AttendanceController extends Controller
                 : "You're {$geo['distance']} m from the office (allowed: {$settings->geofence_radius_m} m).";
         }
 
+        $secondSession = $data['action'] === 'clock_in' && $att?->clock_in_at;
+        if ($secondSession) {
+            // a 2nd (3rd…) clock-in the same day: ask WHY a new session is being started
+            $result['note_required'] = true;
+            $result['note_kind'] = 'new_session';
+            $result['note_message'] = 'You already clocked in earlier today. Why are you clocking in again?';
+        }
+
         if ($data['action'] === 'clock_in' && !$att?->clock_in_at) {
             $sched = $this->svc->schedule($settings, $profile, $now);
             $status = $this->svc->clockInStatus($now, $sched['start'], $settings->early_window_minutes, $settings->grace_minutes);
             $result['late_minutes'] = $status['late_minutes'];
+            $result['delay_kind'] = $status['color'] === 'danger' ? 'late' : null;   // inside the grace minutes is not "late"
             $result['late_note_mode'] = $settings->lateNoteMode();
             if ($status['requires_note'] && $settings->lateNoteMode() === 'required') {
                 $result['note_required'] = true;
                 $result['note_message'] = 'A reason is required when clocking in late.';
             } elseif ($status['requires_note'] && $settings->lateNoteMode() === 'optional') {
                 $result['note_optional'] = true;
-                $result['note_message'] = "You're {$status['late_minutes']} min late — you can add a reason (optional).";
+                $result['note_message'] = "You're ".self::hm((int) $status['late_minutes'])." min late — you can add a reason (optional).";
             }
         } elseif ($data['action'] === 'clock_out' && $att?->clock_in_at) {
             $sched = $this->svc->schedule($settings, $profile, $now);
@@ -294,6 +314,7 @@ class AttendanceController extends Controller
             $isEarly = $earlyLeave > $settings->clock_out_early_window_minutes;
             $isLate = $overtime > $settings->clock_out_grace_minutes;
             $result['late_minutes'] = $isEarly ? $earlyLeave : $overtime;
+            $result['delay_kind'] = $isEarly ? 'early_leave' : ($isLate ? 'overtime' : null);
             if (($isEarly || $isLate) && $settings->require_early_leave_note) {
                 $result['note_required'] = true;
                 $result['note_message'] = $isEarly
@@ -308,8 +329,9 @@ class AttendanceController extends Controller
                 $overBy = $minutes - $type->max_minutes;
                 if ($overBy > 0) {
                     $result['late_minutes'] = $overBy;
+                    $result['delay_kind'] = 'over_break';
                     $result['note_required'] = true;
-                    $result['note_message'] = "This break ran {$overBy} min over the limit — add a reason.";
+                    $result['note_message'] = 'This break ran '.self::hm((int) $overBy).' min over the limit — add a reason.';
                 }
             }
         }
@@ -355,6 +377,10 @@ class AttendanceController extends Controller
         $geo = $this->svc->geofence($settings, $profile, $data['lat'] ?? null, $data['lng'] ?? null);
 
         $this->guardMandatoryRadius($settings, $workMode, $geo, $data['radius_reason'] ?? null);
+
+        if (!$isFirstSession && empty(trim((string) ($data['note'] ?? '')))) {
+            throw ValidationException::withMessages(['note' => 'Please tell us why you are clocking in again.']);
+        }
 
         if ($isFirstSession && $status['requires_note'] && $settings->lateNoteMode() === 'required' && empty(trim((string) ($data['note'] ?? '')))) {
             throw ValidationException::withMessages(['note' => 'A reason is required when clocking in late.']);

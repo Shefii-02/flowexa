@@ -125,6 +125,7 @@ export default function AttendancePage() {
   const act = async (path: string, body: Record<string, unknown> = {}) => {
     setBusy(true)
     try {
+      if (path.endsWith('/clock-in') && !!me?.today?.clock_in_at && !note.trim()) { toast.error('Please tell us why you are clocking in again.'); return }
       const action = path.split('/hr/attendance/')[1].replace('/', '_').replace('-', '_') // clock_in | clock_out | break_start | break_end
       const required = !!(me?.settings as any)?.[`selfie_required_${action}`]
       let selfie: File | null = null
@@ -189,6 +190,11 @@ export default function AttendancePage() {
             {(clockedIn || onBreak) && (
               <input value={note} onChange={e => setNote(e.target.value)} placeholder="Note (reason for late / early / overtime)…"
                 className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 mb-3" />
+            )}
+            {/* a 2nd clock-in the same day: the reason for starting another session is required */}
+            {done && !clockedIn && !onBreak && (
+              <input data-testid="again-reason" value={note} onChange={e => setNote(e.target.value)} placeholder="Why are you clocking in again? (required)"
+                className="w-full text-sm border border-amber-300 bg-amber-50 rounded-lg px-3 py-2 mb-3" />
             )}
 
             <label className="flex items-center gap-2 text-xs text-gray-500 mb-3">
