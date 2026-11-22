@@ -120,5 +120,15 @@ function Workspace() {
 }
 
 export default function WidgetChatsPage() {
-  return <PermissionGate permission="widget_chat.handle"><Workspace /></PermissionGate>
+  // A blank page here looked like "the list is not loading" — say plainly when the account just lacks the permission.
+  return (
+    <PermissionGate permission="widget_chat.handle" fallback={
+      <div className="card p-6 text-sm text-gray-600" data-testid="widget-chats-denied">
+        <p className="font-medium text-gray-800 mb-1">You don't have access to website live chats.</p>
+        <p>Ask an admin to give your role the “Handle Website Live Chats” permission (Staff → Roles).</p>
+        <Link to="/website-widget" className="inline-block mt-3 text-brand-600 underline">← Back to widgets</Link>
+      </div>}>
+      <Workspace />
+    </PermissionGate>
+  )
 }
