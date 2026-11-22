@@ -18,7 +18,7 @@ class User extends Authenticatable implements JWTSubject
     protected $fillable = [
         'company_id', 'role_id', 'name', 'email', 'phone',
         'avatar', 'department', 'password', 'is_active',
-        'max_leads', 'last_login_at', 'portal_access', 'mobile_access',
+        'max_leads', 'last_login_at', 'portal_access', 'mobile_access', 'mobile_screens',
     ];
 
     protected $hidden = ['password', 'remember_token'];
@@ -27,6 +27,7 @@ class User extends Authenticatable implements JWTSubject
         'is_active'       => 'boolean',
         'portal_access'   => 'boolean',
         'mobile_access'   => 'boolean',
+        'mobile_screens'  => 'array',
         'last_login_at'   => 'datetime',
         'email_verified_at' => 'datetime',
     ];

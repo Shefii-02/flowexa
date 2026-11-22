@@ -61,10 +61,28 @@ class MobileAppConfigController extends Controller
         ];
     }
 
+    /**
+     * Narrow the company layout down to the screens picked for this one person (Staff Access → Mobile screens). `pages` is an allowlist of
+     * Explore tiles, so anything outside it is hidden; tabs and Profile items can only be switched off here, never on.
+     */
+    private function withPersonal(array $cfg): array
+    {
+        $mine = auth()->user()->mobile_screens;
+        if (! is_array($mine)) { return $cfg; }
+        foreach ($cfg['tabs'] as $k => $on) { $cfg['tabs'][$k] = $on && (bool) ($mine['tabs'][$k] ?? true); }
+        foreach ($cfg['profile_items'] as $k => $on) { $cfg['profile_items'][$k] = $on && (bool) ($mine['profile_items'][$k] ?? true); }
+        $allowed = (array) ($mine['pages'] ?? []);
+        $all = array_column(app(MobileModulesController::class)->catalogue(), 'id');
+        $cfg['hidden_modules'] = array_values(array_unique(array_merge($cfg['hidden_modules'], array_diff($all, $allowed))));
+        $cfg['personal'] = true;
+
+        return $cfg;
+    }
+
     // GET /mobile-config
     public function show(): JsonResponse
     {
-        return response()->json($this->effective());
+        return response()->json($this->withPersonal($this->effective()));
     }
 
     // GET /settings/mobile-app

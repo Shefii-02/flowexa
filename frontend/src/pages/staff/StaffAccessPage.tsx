@@ -6,6 +6,7 @@ import { staffAccessApi, staffAccountAccessApi } from '@/api'
 import { Button, EmptyState, Spinner } from '@/components/ui'
 import StaffAccountAccessCards, { type AccountRow } from './StaffAccountAccessCards'
 import AccessSectionPicker, { sectionAddedPermissions, type AccessSection } from './AccessSectionPicker'
+import MobileScreensCard, { type MobileScreens, type MobileScreensMeta } from './MobileScreensCard'
 import { getError } from '@/utils'
 import toast from 'react-hot-toast'
 
@@ -27,6 +28,8 @@ export default function StaffAccessPage() {
   const [subs, setSubs] = useState<string[]>([])
   const [rolePerms, setRolePerms] = useState<string[]>([])
   const [allPerms, setAllPerms] = useState<string[]>([])
+  const [screens, setScreens] = useState<MobileScreens | null>(null)
+  const [screensMeta, setScreensMeta] = useState<MobileScreensMeta | null>(null)
 
   useEffect(() => {
     Promise.all([staffAccountAccessApi.options(), staffAccessApi.sections()])
@@ -38,7 +41,7 @@ export default function StaffAccessPage() {
   const load = useCallback((id: number) => {
     setBusy(true)
     staffAccessApi.show(id)
-      .then((r) => { setPortal(r.data.portal_access); setMobile(r.data.mobile_access); setMain(r.data.main ?? null); setSubs(r.data.subs ?? []); setRolePerms(r.data.role_permissions ?? []); setAllPerms(r.data.all_permissions ?? []) })
+      .then((r) => { setPortal(r.data.portal_access); setMobile(r.data.mobile_access); setMain(r.data.main ?? null); setSubs(r.data.subs ?? []); setRolePerms(r.data.role_permissions ?? []); setAllPerms(r.data.all_permissions ?? []); setScreens(r.data.mobile_screens ?? null); setScreensMeta({ tab_labels: r.data.tab_labels ?? {}, profile_item_labels: r.data.profile_item_labels ?? {}, catalogue: r.data.catalogue ?? [] }) })
       .catch((e) => toast.error(getError(e)))
       .finally(() => setBusy(false))
   }, [])
@@ -54,7 +57,7 @@ export default function StaffAccessPage() {
     if (!selectedId) return
     setSaving(true)
     try {
-      await staffAccessApi.update(selectedId, { portal_access: portal, mobile_access: mobile, main, subs })
+      await staffAccessApi.update(selectedId, { portal_access: portal, mobile_access: mobile, main, subs, mobile_screens: screens })
       toast.success('Access saved.')
     } catch (e) { toast.error(getError(e)) }
     finally { setSaving(false) }
@@ -128,6 +131,8 @@ export default function StaffAccessPage() {
                   </div>
                 )
               })()}
+
+              {mobile && screensMeta && <MobileScreensCard name={selected.name} value={screens} meta={screensMeta} onChange={setScreens} />}
 
               <div className="flex justify-end"><Button loading={saving} onClick={save}>Save access</Button></div>
 
