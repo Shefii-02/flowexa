@@ -43,8 +43,25 @@ class SectionDashboardController extends Controller
         return Carbon::today()->subDays(self::DAYS - 1)->startOfDay()->toDateTimeString();
     }
 
+    /**
+     * Tiles and lists may carry a `perm` (one permission, or a list of any-of): they are dropped for a user who holds none of them, so each
+     * dashboard shows only the tiles that person's role / sections / extras allow. `perm` itself is never sent to the client.
+     */
+    private function visible(array $items): array
+    {
+        $u = auth()->user();
+
+        return array_values(array_map(
+            fn ($i) => array_diff_key($i, ['perm' => 1]),
+            array_filter($items, fn ($i) => empty($i['perm']) || $u->hasAnyPermission((array) $i['perm'])),
+        ));
+    }
+
     private function respond(string $title, array $kpis, string $seriesTitle, array $lines, array $lists): JsonResponse
     {
+        $kpis = $this->visible($kpis);
+        $lists = $this->visible($lists);
+
         return response()->json([
             'title' => $title, 'range_days' => self::DAYS, 'kpis' => $kpis,
             'series' => ['title' => $seriesTitle, 'lines' => $lines], 'lists' => $lists,
@@ -110,15 +127,15 @@ class SectionDashboardController extends Controller
         $leadRows = fn () => DB::table('meta_leads')->where('company_id', $cid)->where('created_at', '>=', $this->since());
 
         $kpis = [
-            ['label' => 'Spend (30 d)', 'value' => round((float) $t->spend, 2), 'format' => 'money'],
+            ['label' => 'Spend (30 d)', 'perm' => 'meta_ads.view', 'value' => round((float) $t->spend, 2), 'format' => 'money'],
             ['label' => 'Impressions', 'value' => (int) $t->imp],
             ['label' => 'Clicks', 'value' => (int) $t->clk],
-            ['label' => 'CTR', 'value' => $ctr, 'format' => 'percent'],
+            ['label' => 'CTR', 'perm' => 'meta_ads.view', 'value' => $ctr, 'format' => 'percent'],
             ['label' => 'Leads', 'value' => (int) $t->leads, 'tone' => 'green'],
-            ['label' => 'Cost per lead', 'value' => $cpl, 'format' => 'money'],
+            ['label' => 'Cost per lead', 'perm' => 'meta_ads.view', 'value' => $cpl, 'format' => 'money'],
             ['label' => 'Active campaigns', 'value' => (clone $camps())->where('status', 'ACTIVE')->count()],
             ['label' => 'Ad accounts', 'value' => DB::table('meta_ad_accounts')->where('company_id', $cid)->whereNull('deleted_at')->where('is_active', true)->count()],
-            ['label' => 'Leads not processed', 'value' => $leadRows()->whereIn('process_status', ['failed', 'error'])->count(), 'tone' => 'red'],
+            ['label' => 'Leads not processed', 'perm' => 'meta_ads.manage', 'value' => $leadRows()->whereIn('process_status', ['failed', 'error'])->count(), 'tone' => 'red'],
         ];
 
         $spend = $this->daily($ins()->selectRaw('date d, SUM(spend) v')->groupBy('date')->get());
@@ -130,7 +147,7 @@ class SectionDashboardController extends Controller
         return $this->respond('Meta Ads · last 30 days', $kpis, 'Daily spend and leads',
             [['label' => 'Spend', 'color' => '#6366f1', 'points' => $spend], ['label' => 'Leads', 'color' => '#16a34a', 'points' => $leads]],
             [[
-                'title' => 'Top campaigns by spend', 'columns' => ['Campaign', 'Spend', 'Clicks', 'Leads', 'Cost / lead'],
+                'title' => 'Top campaigns by spend', 'perm' => 'meta_ads.view', 'columns' => ['Campaign', 'Spend', 'Clicks', 'Leads', 'Cost / lead'],
                 'rows' => $top->map(fn ($r) => [$names[$r->object_id] ?? "Campaign #{$r->object_id}", round((float) $r->s, 2), (int) $r->c, (int) $r->l, $r->l > 0 ? round($r->s / $r->l, 2) : '—'])->all(),
             ]]);
     }
@@ -156,9 +173,9 @@ class SectionDashboardController extends Controller
             ['label' => 'Needs a person', 'value' => $convs()->where('needs_agent', true)->count(), 'tone' => 'red'],
             ['label' => 'Messages received (30 d)', 'value' => $msgs()->where('m.direction', 'in')->count()],
             ['label' => 'Messages sent (30 d)', 'value' => $msgs()->where('m.direction', 'out')->count()],
-            ['label' => 'Leads captured', 'value' => $convs()->whereNotNull('lead_id')->count(), 'tone' => 'green'],
-            ['label' => 'Flow runs (30 d)', 'value' => $runs()->count()],
-            ['label' => 'Flow runs failed', 'value' => $runs()->where('status', 'failed')->count(), 'tone' => 'red'],
+            ['label' => 'Leads captured', 'perm' => ['leads.view', 'instagram.view'], 'value' => $convs()->whereNotNull('lead_id')->count(), 'tone' => 'green'],
+            ['label' => 'Flow runs (30 d)', 'perm' => 'instagram.manage', 'value' => $runs()->count()],
+            ['label' => 'Flow runs failed', 'perm' => 'instagram.manage', 'value' => $runs()->where('status', 'failed')->count(), 'tone' => 'red'],
         ];
         if ($channel === 'instagram') {
             $kpis[] = ['label' => 'Comment triggers (30 d)', 'value' => DB::table('instagram_comment_events')->where('company_id', $cid)->whereIn('instagram_account_id', $accIds)->where('created_at', '>=', $this->since())->count()];
@@ -181,7 +198,7 @@ class SectionDashboardController extends Controller
                     ], fn ($v) => $v !== null)))->all(),
                 ],
                 [
-                    'title' => 'Top flows', 'columns' => ['Flow', 'Triggered', 'DMs sent', 'Leads'],
+                    'title' => 'Top flows', 'perm' => 'instagram.manage', 'columns' => ['Flow', 'Triggered', 'DMs sent', 'Leads'],
                     'rows' => DB::table('instagram_flows')->where('company_id', $cid)->whereIn('instagram_account_id', $accIds)->whereNull('deleted_at')
                         ->orderByDesc('triggered_count')->limit(8)->get()->map(fn ($f) => [$f->name, (int) $f->triggered_count, (int) $f->dms_sent, (int) $f->leads])->all(),
                 ],
@@ -205,9 +222,9 @@ class SectionDashboardController extends Controller
             ['label' => 'Contacts', 'value' => DB::table('contacts')->where('company_id', $cid)->whereNull('deleted_at')->count()],
             ['label' => 'New contacts (30 d)', 'value' => DB::table('contacts')->where('company_id', $cid)->whereNull('deleted_at')->where('created_at', '>=', $this->since())->count()],
             ['label' => 'Open deals', 'value' => (clone $open)->count()],
-            ['label' => 'Pipeline value', 'value' => round((float) (clone $open)->sum('value'), 2), 'format' => 'money'],
+            ['label' => 'Pipeline value', 'perm' => ['contacts.manage', 'reports.view'], 'value' => round((float) (clone $open)->sum('value'), 2), 'format' => 'money'],
             ['label' => 'Won this month', 'value' => (clone $won)->count(), 'tone' => 'green'],
-            ['label' => 'Won value', 'value' => round((float) (clone $won)->sum('value'), 2), 'format' => 'money', 'tone' => 'green'],
+            ['label' => 'Won value', 'perm' => ['contacts.manage', 'reports.view'], 'value' => round((float) (clone $won)->sum('value'), 2), 'format' => 'money', 'tone' => 'green'],
             ['label' => 'Lost this month', 'value' => $deals()->where('status', 'lost')->where('closed_at', '>=', $month)->count(), 'tone' => 'red'],
             ['label' => 'Closing this week', 'value' => (clone $open)->whereBetween('expected_close_date', [today()->toDateString(), today()->addDays(7)->toDateString()])->count(), 'tone' => 'amber'],
         ];
@@ -254,7 +271,7 @@ class SectionDashboardController extends Controller
             ['label' => 'Enrolled', 'value' => $enrolled, 'tone' => 'green'],
             ['label' => 'Lost', 'value' => $leads()->where('stage', 'lost')->count(), 'tone' => 'red'],
             ['label' => 'Conversion', 'value' => $total > 0 ? round($enrolled / $total * 100, 1) : 0, 'format' => 'percent', 'tone' => 'green'],
-            ['label' => 'Unassigned', 'value' => $team ? $leads()->whereNull('assigned_to')->count() : 0, 'tone' => 'amber'],
+            ['label' => 'Unassigned', 'perm' => 'leads.manage', 'value' => $team ? $leads()->whereNull('assigned_to')->count() : 0, 'tone' => 'amber'],
         ];
 
         $created = $this->daily($leads()->where('created_at', '>=', $this->since())->selectRaw('DATE(created_at) d, COUNT(*) v')->groupBy('d')->get());
@@ -305,7 +322,7 @@ class SectionDashboardController extends Controller
             ['label' => 'On leave today', 'value' => $att()->whereDate('work_date', $today)->where('status', 'on_leave')->count()],
             ['label' => 'Late today', 'value' => (clone $in)->where('late_minutes', '>', 0)->count(), 'tone' => 'red'],
             ['label' => 'Late (this month)', 'value' => $att()->where('work_date', '>=', $month)->where('late_minutes', '>', 0)->count(), 'tone' => 'red'],
-            ['label' => 'Leave pending', 'value' => $leave()->where('status', 'pending')->count(), 'tone' => 'amber'],
+            ['label' => 'Leave pending', 'perm' => ['hr.leave.approve', 'hr.manage'], 'value' => $leave()->where('status', 'pending')->count(), 'tone' => 'amber'],
         ];
 
         $daily = $this->daily($att()->where('work_date', '>=', Carbon::today()->subDays(self::DAYS - 1)->toDateString())->whereNotNull('clock_in_at')
@@ -340,15 +357,15 @@ class SectionDashboardController extends Controller
         $cid = $this->companyId();
         $sess = fn () => DB::table('ai_agent_sessions')->where('company_id', $cid);
         $kpis = [
-            ['label' => 'Active agents', 'value' => DB::table('agent_playbooks')->where('company_id', $cid)->where('is_active', true)->count()],
+            ['label' => 'Active agents', 'perm' => 'wa_agent.ai.view', 'value' => DB::table('agent_playbooks')->where('company_id', $cid)->where('is_active', true)->count()],
             ['label' => 'Conversations', 'value' => $sess()->count()],
             ['label' => 'Active (7 d)', 'value' => $sess()->where('last_message_at', '>=', now()->subDays(7)->toDateTimeString())->count()],
             ['label' => 'New (30 d)', 'value' => $sess()->where('created_at', '>=', $this->since())->count()],
-            ['label' => 'Qualified', 'value' => $sess()->where('qualification_status', 'complete')->count(), 'tone' => 'green'],
-            ['label' => 'Handed to a person', 'value' => $sess()->where('qualification_status', 'escalated')->count(), 'tone' => 'amber'],
-            ['label' => 'Knowledge documents', 'value' => DB::table('ai_knowledge_base')->where('company_id', $cid)->count()],
-            ['label' => 'Pipeline runs (30 d)', 'value' => DB::table('ai_pipeline_runs')->where('company_id', $cid)->where('created_at', '>=', $this->since())->count()],
-            ['label' => 'Pipeline runs failed', 'value' => DB::table('ai_pipeline_runs')->where('company_id', $cid)->where('created_at', '>=', $this->since())->where('status', 'failed')->count(), 'tone' => 'red'],
+            ['label' => 'Qualified', 'perm' => 'wa_agent.leads.view', 'value' => $sess()->where('qualification_status', 'complete')->count(), 'tone' => 'green'],
+            ['label' => 'Handed to a person', 'perm' => 'wa_agent.leads.view', 'value' => $sess()->where('qualification_status', 'escalated')->count(), 'tone' => 'amber'],
+            ['label' => 'Knowledge documents', 'perm' => 'wa_agent.knowledge.view', 'value' => DB::table('ai_knowledge_base')->where('company_id', $cid)->count()],
+            ['label' => 'Pipeline runs (30 d)', 'perm' => 'wa_agent.pipelines.view', 'value' => DB::table('ai_pipeline_runs')->where('company_id', $cid)->where('created_at', '>=', $this->since())->count()],
+            ['label' => 'Pipeline runs failed', 'perm' => 'wa_agent.pipelines.view', 'value' => DB::table('ai_pipeline_runs')->where('company_id', $cid)->where('created_at', '>=', $this->since())->where('status', 'failed')->count(), 'tone' => 'red'],
         ];
 
         $started = $this->daily($sess()->where('created_at', '>=', $this->since())->selectRaw('DATE(created_at) d, COUNT(*) v')->groupBy('d')->get());
@@ -359,9 +376,9 @@ class SectionDashboardController extends Controller
         return $this->respond('AI Agent · last 30 days', $kpis, 'New conversations vs qualified',
             [['label' => 'New', 'color' => '#6366f1', 'points' => $started], ['label' => 'Qualified', 'color' => '#16a34a', 'points' => $done]],
             [
-                ['title' => 'Conversations by outcome', 'columns' => ['Outcome', 'Conversations'],
+                ['title' => 'Conversations by outcome', 'perm' => 'wa_agent.leads.view', 'columns' => ['Outcome', 'Conversations'],
                     'rows' => $byStatus->map(fn ($r) => [ucfirst(str_replace('_', ' ', (string) $r->s)), (int) $r->n])->all()],
-                ['title' => 'Agents', 'columns' => ['Agent', 'Function', 'Status'],
+                ['title' => 'Agents', 'perm' => 'wa_agent.ai.view', 'columns' => ['Agent', 'Function', 'Status'],
                     'rows' => DB::table('agent_playbooks')->where('company_id', $cid)->orderByDesc('is_active')->limit(12)->get()
                         ->map(fn ($p) => [$p->agent_name ?: 'Agent', ucfirst(str_replace('_', ' ', (string) $p->function_key)), $p->is_active ? 'Active' : 'Off'])->all()],
             ]);

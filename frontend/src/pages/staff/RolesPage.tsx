@@ -7,6 +7,8 @@ import { getError } from '@/utils'
 import toast from 'react-hot-toast'
 import type { Role, PermissionGroup } from '@/types'
 import PagePermissionMatrix from '@/components/permissions/PagePermissionMatrix'
+import { Drawer } from '@/components/ui'
+import { sectionedGroups } from '@/lib/pagePermissions'
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -40,12 +42,14 @@ const emptyForm = (): FormState => ({
 
 const RoleCard = ({
   role,
+  onView,
   onEdit,
   onDelete,
   onReset,
   resetting,
 }: {
   role: Role
+  onView: (r: Role) => void
   onEdit: (r: Role) => void
   onDelete: (r: Role) => void
   onReset: (r: Role) => void
@@ -66,6 +70,13 @@ const RoleCard = ({
         )}
       </div>
       <div className="flex gap-1 flex-shrink-0">
+        <button
+          onClick={() => onView(role)}
+          className="p-1.5 rounded hover:bg-gray-100 text-gray-500 hover:text-gray-700 text-xs"
+          title="View role"
+        >
+          👁️
+        </button>
         <button
           onClick={() => onEdit(role)}
           className="p-1.5 rounded hover:bg-gray-100 text-gray-500 hover:text-gray-700 text-xs"
@@ -145,7 +156,10 @@ const PermissionMatrix = ({
 
   return (
     <div className="space-y-1 max-h-[50vh] overflow-y-auto pr-1">
-      {groups.map((g) => {
+      {sectionedGroups(groups).map(([section, sectionGroups]) => (
+        <div key={section}>
+          <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 pt-3 pb-1 px-2">{section}</div>
+      {sectionGroups.map((g) => {
         const viewer = g.permissions.find((p) => p.type === 'viewer')
         const manage = g.permissions.find((p) => p.type === 'manage')
         return (
@@ -181,6 +195,8 @@ const PermissionMatrix = ({
           </div>
         )
       })}
+        </div>
+      ))}
     </div>
   )
 }
@@ -193,12 +209,16 @@ const RoleModal = ({
   roles,
   onClose,
   onSaved,
+  readOnly = false,
+  onEdit,
 }: {
   editing: Role | null
   groups: PermissionGroup[]
   roles: Role[]
   onClose: () => void
   onSaved: () => void
+  readOnly?: boolean      // view mode: everything shown, nothing editable
+  onEdit?: () => void     // view mode: switch to editing this role
 }) => {
   const isNew = editing === null
   const isSystem = editing?.is_system ?? false
@@ -221,11 +241,13 @@ const RoleModal = ({
     main: (editing as any)?.access_main ?? null, subs: (editing as any)?.access_subs ?? [] })
   useEffect(() => { staffAccessApi.sections().then((r) => setSections(r.data.sections ?? [])).catch(() => {}) }, [])
 
-  const patch = (partial: Partial<Omit<FormState, 'permission_ids'>>) =>
+  const patch = (partial: Partial<Omit<FormState, 'permission_ids'>>) => {
+    if (readOnly) return
     setForm((f) => ({ ...f, ...partial }))
+  }
 
   const handleCopyFrom = (roleId: string) => {
-    if (!roleId) return
+    if (!roleId || readOnly) return
     const src = roles.find((r) => String(r.id) === roleId)
     if (src) {
       setForm((f) => ({ ...f, permission_ids: new Set(src.permission_ids ?? []) }))
@@ -269,21 +291,31 @@ const RoleModal = ({
     }
   }
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg flex flex-col max-h-[90vh]">
-        {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
-          <h2 className="font-semibold text-gray-900">
-            {isNew ? 'Create role' : `Edit — ${editing?.label || editing?.name}`}
-          </h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 text-lg leading-none">
-            ×
-          </button>
-        </div>
+  const title = isNew ? 'Create role' : readOnly ? `View — ${editing?.label || editing?.name}` : `Edit — ${editing?.label || editing?.name}`
 
-        {/* Body */}
-        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+  return (
+    <Drawer
+      open
+      onClose={onClose}
+      title={title}
+      size="xl"
+      footer={
+        readOnly ? (
+          <>
+            <button onClick={onClose} className="px-4 py-2 text-sm rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50">Close</button>
+            {onEdit && <button onClick={onEdit} className="px-4 py-2 text-sm rounded-lg bg-indigo-600 text-white hover:bg-indigo-700">Edit role</button>}
+          </>
+        ) : (
+          <>
+            <button onClick={onClose} className="px-4 py-2 text-sm rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50">Cancel</button>
+            <button onClick={handleSubmit} disabled={saving} className="px-4 py-2 text-sm rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50">
+              {saving ? 'Saving…' : isNew ? 'Create role' : 'Save changes'}
+            </button>
+          </>
+        )
+      }
+    >
+      <div className="space-y-4">
           {/* Name */}
           {!isSystem && (
             <div>
@@ -291,6 +323,7 @@ const RoleModal = ({
               <input
                 className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
                 value={form.name}
+                readOnly={readOnly}
                 onChange={(e) => patch({ name: e.target.value })}
                 placeholder="e.g. Sales Lead"
               />
@@ -303,6 +336,7 @@ const RoleModal = ({
             <input
               className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400"
               value={form.description}
+              readOnly={readOnly}
               onChange={(e) => patch({ description: e.target.value })}
               placeholder="Optional description"
             />
@@ -339,7 +373,7 @@ const RoleModal = ({
               <div className="space-y-2">
                 <label className="text-xs font-medium text-gray-600">Access sections</label>
                 <p className="text-xs text-gray-400">Choose one main, tick any extra sub sections. Applied to everyone with this role who has no sections of their own.</p>
-                <AccessSectionPicker compact sections={sections} main={acc.main} subs={acc.subs} onChange={setAcc} />
+                <AccessSectionPicker compact sections={sections} main={acc.main} subs={acc.subs} onChange={(n) => !readOnly && setAcc(n)} />
               </div>
 
               <div className="flex items-center justify-between">
@@ -347,6 +381,7 @@ const RoleModal = ({
                 {roles.filter((r) => r.id !== editing?.id).length > 0 && (
                   <select
                     value={copyFrom}
+                    disabled={readOnly}
                     onChange={(e) => handleCopyFrom(e.target.value)}
                     className="text-xs border border-gray-200 rounded px-2 py-1 text-gray-600 focus:outline-none"
                   >
@@ -375,14 +410,15 @@ const RoleModal = ({
                   <PermissionMatrix
                     groups={groups}
                     selected={form.permission_ids}
-                    onChange={(next) => setForm((f) => ({ ...f, permission_ids: next }))}
-                    readOnly={false}
+                    onChange={(next) => !readOnly && setForm((f) => ({ ...f, permission_ids: next }))}
+                    readOnly={readOnly}
                   />
                 ) : (
                   <PagePermissionMatrix
+                    readOnly={readOnly}
                     granted={new Set(groups.flatMap((g) => g.permissions).filter((p) => form.permission_ids.has(p.id)).map((p) => p.key))}
                     labelOf={(k) => groups.flatMap((g) => g.permissions).find((p) => p.key === k)?.label ?? k}
-                    onToggle={(keys, on) => setForm((f) => {
+                    onToggle={(keys, on) => !readOnly && setForm((f) => {
                       const next = new Set(f.permission_ids)
                       const all = groups.flatMap((g) => g.permissions)
                       keys.forEach((k) => { const id = all.find((p) => p.key === k)?.id; if (id) { on ? next.add(id) : next.delete(id) } })
@@ -399,26 +435,8 @@ const RoleModal = ({
               System roles have fixed permissions. Only the description and color can be changed.
             </p>
           )}
-        </div>
-
-        {/* Footer */}
-        <div className="flex justify-end gap-3 px-5 py-3 border-t border-gray-100">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 text-sm rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleSubmit}
-            disabled={saving}
-            className="px-4 py-2 text-sm rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 disabled:opacity-50"
-          >
-            {saving ? 'Saving…' : isNew ? 'Create role' : 'Save changes'}
-          </button>
-        </div>
       </div>
-    </div>
+    </Drawer>
   )
 }
 
@@ -430,6 +448,7 @@ export default function RolesPage() {
   const [groups, setGroups] = useState<PermissionGroup[]>([])
   const [loading, setLoading] = useState(true)
   const [editTarget, setEditTarget] = useState<Role | null | undefined>(undefined) // undefined = closed
+  const [viewTarget, setViewTarget] = useState<Role | null>(null)                    // read-only drawer
   const [deleting, setDeleting] = useState<Role | null>(null)
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null)
   const [resettingId, setResettingId] = useState<number | null>(null)
@@ -523,6 +542,7 @@ export default function RolesPage() {
                   <RoleCard
                     key={r.id}
                     role={r}
+                    onView={setViewTarget}
                     onEdit={setEditTarget}
                     onDelete={(role) => handleDelete(role)}
                     onReset={handleReset}
@@ -623,7 +643,20 @@ export default function RolesPage() {
         </div>
       )}
 
-      {/* Create / Edit modal */}
+      {/* View (read-only) drawer */}
+      {viewTarget && (
+        <RoleModal
+          editing={viewTarget}
+          groups={groups}
+          roles={companyRoles}
+          readOnly
+          onClose={() => setViewTarget(null)}
+          onEdit={() => { setEditTarget(viewTarget); setViewTarget(null) }}
+          onSaved={load}
+        />
+      )}
+
+      {/* Create / Edit drawer */}
       {editTarget !== undefined && (
         <RoleModal
           editing={editTarget}

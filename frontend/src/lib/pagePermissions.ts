@@ -86,3 +86,33 @@ export const PAGE_SECTIONS: PageSection[] = [
 export const PAGE_PERMS: Record<string, string[]> = Object.fromEntries(
   PAGE_SECTIONS.flatMap(s => s.pages).filter(pg => pg.perms.length > 0).map(pg => [pg.path, pg.perms]),
 )
+
+// ── Permissions grouped by the section of the app they belong to ─────────────────────────────────────────────────────────────────
+// Used by the Roles editor and Staff Access to list permissions under "WA Chat", "WA Cloud", "AI Agent" … instead of one long flat list.
+export const PERMISSION_SECTIONS = ['WA Chat', 'WA Cloud', 'AI Agent', 'Instagram & Messenger', 'Meta Ads', 'CRM', 'Leads', 'Accounts', 'HR', 'Website chat', 'Team chat', 'System'] as const
+
+const SECTION_BY_PREFIX: [string, typeof PERMISSION_SECTIONS[number]][] = [
+  ['wa_chat.', 'WA Chat'],
+  ['wa_cloud.', 'WA Cloud'], ['templates.', 'WA Cloud'], ['campaigns.', 'WA Cloud'], ['surveys.', 'WA Cloud'], ['flow_builder.', 'WA Cloud'], ['otp.', 'WA Cloud'],
+  ['phone_numbers.', 'WA Cloud'], ['inbox.', 'WA Cloud'], ['message_logs.', 'WA Cloud'],
+  ['wa_agent.', 'AI Agent'], ['catalog.', 'AI Agent'],
+  ['instagram.', 'Instagram & Messenger'], ['meta_ads.', 'Meta Ads'],
+  ['contacts.', 'CRM'], ['labels.', 'CRM'], ['blacklist.', 'CRM'],
+  ['leads.', 'Leads'], ['lead_assignment.', 'Leads'],
+  ['accounts.', 'Accounts'], ['hr.', 'HR'], ['calendar.', 'HR'],
+  ['widget_chat.', 'Website chat'], ['team_chat.', 'Team chat'],
+]
+
+/** Which section of the app a permission key belongs to (everything else — staff, roles, settings, billing … — is "System"). */
+export const permissionSection = (key: string): typeof PERMISSION_SECTIONS[number] =>
+  SECTION_BY_PREFIX.find(([prefix]) => key.startsWith(prefix))?.[1] ?? 'System'
+
+/** Permission groups arranged as [section, groups[]] in the app's section order. */
+export function sectionedGroups<G extends { group: string; permissions: { key: string }[] }>(groups: G[]): [string, G[]][] {
+  const by = new Map<string, G[]>()
+  groups.forEach(g => {
+    const s = permissionSection(g.permissions[0]?.key ?? '')
+    by.set(s, [...(by.get(s) ?? []), g])
+  })
+  return PERMISSION_SECTIONS.filter(s => by.has(s)).map(s => [s, by.get(s)!])
+}

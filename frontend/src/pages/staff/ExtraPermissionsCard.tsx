@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import PagePermissionMatrix from '@/components/permissions/PagePermissionMatrix'
+import { PERMISSION_SECTIONS, permissionSection } from '@/lib/pagePermissions'
 
 export interface PermDef { key: string; label: string; group: string; type: string }
 
@@ -16,7 +17,8 @@ export default function ExtraPermissionsCard({ name, catalogue, fromRole, fromSe
     const m = new Map<string, PermDef[]>()
     catalogue.filter(p => !q || `${p.label} ${p.key} ${p.group}`.toLowerCase().includes(q.toLowerCase()))
       .forEach(p => m.set(p.group, [...(m.get(p.group) ?? []), p]))
-    return [...m.entries()]
+    // listed under the section of the app they belong to (WA Chat, WA Cloud, AI Agent …), each section's groups together
+    return [...m.entries()].sort((a, b) => PERMISSION_SECTIONS.indexOf(permissionSection(a[1][0].key)) - PERMISSION_SECTIONS.indexOf(permissionSection(b[1][0].key)))
   }, [catalogue, q])
   const role = new Set(fromRole), sec = new Set(fromSections), extra = new Set(value)
   const toggle = (k: string, on: boolean) => onChange(on ? [...value, k] : value.filter(x => x !== k))
@@ -44,7 +46,7 @@ export default function ExtraPermissionsCard({ name, catalogue, fromRole, fromSe
         <div className={`max-h-96 overflow-y-auto space-y-4 pr-1 ${view === 'group' ? '' : 'hidden'}`}>
           {groups.map(([group, perms]) => (
             <div key={group}>
-              <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 mb-1">{group}</div>
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 mb-1">{permissionSection(perms[0].key)} · {group}</div>
               {perms.map(p => {
                 const inherited = role.has(p.key) ? 'role' : sec.has(p.key) ? 'section' : null
                 return (
