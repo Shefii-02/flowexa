@@ -10,8 +10,8 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * GET /home/{workspace} — everything one mobile "workspace" home screen shows, in one call, so the app never has to stitch ten endpoints
- * together (or show an empty screen when one of them is not allowed for the user). Workspaces: sales, hr, administrators, marketing, accounts.
+ * GET /home/{workspace} — everything one mobile "workspace" Home shows, in one call, so the app never has to stitch ten endpoints together
+ * (or show an empty block when one of them is not allowed for the user). Workspaces: sales, hr, administrators, marketing, accounts.
  *
  * Sections the user may not see, or tables a company does not use, come back as empty lists / nulls — never as an error — so a screen always renders.
  * A team head (owner / admin / team lead …) sees the whole company; everyone else sees their own numbers where that makes sense.
@@ -83,8 +83,9 @@ class WorkspaceHomeController extends Controller
                 ->map(fn ($t) => ['id' => $t->id, 'title' => $t->title, 'type' => $t->type, 'due_at' => $t->due_at, 'overdue' => $t->due_at && $t->due_at < $now,
                     'contact' => $t->contact_id ? DB::table('contacts')->where('id', $t->contact_id)->value('name') : null])->all(), []),
             'leads_by_stage' => $stages,
-            // the lead people reached out about most recently — the "Hot leads" list on a sales member's own home
-            'hot_leads' => $this->safe(fn () => DB::table('leads')->leftJoin('contacts as c', 'c.id', '=', 'leads.contact_id')->where('leads.company_id', $cid)->whereNull('leads.deleted_at')->when(!$team, fn ($q) => $q->where('leads.assigned_to', $u->id))->whereNotIn('leads.stage', ['enrolled', 'lost'])
+            // the leads people reached out about most recently — the "Hot leads" list on a sales member's own home
+            'hot_leads' => $this->safe(fn () => DB::table('leads')->leftJoin('contacts as c', 'c.id', '=', 'leads.contact_id')->where('leads.company_id', $cid)->whereNull('leads.deleted_at')
+                ->when(!$team, fn ($q) => $q->where('leads.assigned_to', $u->id))->whereNotIn('leads.stage', ['enrolled', 'lost'])
                 ->orderByDesc('leads.updated_at')->limit(3)->get(['leads.id', 'leads.stage', 'leads.updated_at', 'c.name', 'c.phone'])
                 ->map(fn ($l) => ['id' => $l->id, 'name' => $l->name ?: $l->phone, 'phone' => $l->phone, 'stage' => $l->stage, 'updated_at' => $l->updated_at])->all(), []),
         ];
@@ -92,7 +93,7 @@ class WorkspaceHomeController extends Controller
 
     private function unreadChats(int $cid): int
     {
-        // Inbound WhatsApp (Cloud / Chat) messages in the last day that no one has answered since.
+        // People who messaged on WhatsApp in the last day.
         return (int) DB::table('message_logs')->where('company_id', $cid)->where('direction', 'inbound')->where('created_at', '>=', now()->subDay()->toDateTimeString())->distinct()->count('phone');
     }
 
@@ -106,7 +107,7 @@ class WorkspaceHomeController extends Controller
             $c = json_decode((string) $r->content, true);
             $text = is_array($c) ? ($c['body'] ?? $c['text'] ?? $c['caption'] ?? ($c['text']['body'] ?? null)) : (is_string($c) ? $c : null);
             $out[] = ['phone' => $r->phone, 'name' => DB::table('contacts')->where('company_id', $cid)->where('phone', $r->phone)->value('name') ?: $r->phone,
-                'channel' => $r->channel === 'wa_chat' ? 'WhatsApp' : ($r->channel === 'wa_cloud' ? 'WhatsApp' : ucfirst((string) $r->channel)),
+                'channel' => in_array($r->channel, ['wa_chat', 'wa_cloud'], true) ? 'WhatsApp' : ucfirst((string) $r->channel),
                 'preview' => is_string($text) ? mb_strimwidth($text, 0, 70, '…') : ucfirst((string) $r->type), 'at' => $r->created_at];
             if (count($out) >= 4) { break; }
         }
@@ -125,7 +126,7 @@ class WorkspaceHomeController extends Controller
         $late = $this->safe(fn () => $att()->whereDate('work_date', $today)->whereNotNull('clock_in_at')->where('late_minutes', '>', 0)->count(), 0);
         $onLeave = $this->safe(fn () => $att()->whereDate('work_date', $today)->where('status', 'on_leave')->count(), 0);
         $month = now()->startOfMonth()->toDateString();
-        $daysSoFar = max(1, Carbon::today()->diffInDays(Carbon::parse($month)) + 1);
+        $daysSoFar = max(1, Carbon::parse($month)->diffInDays(Carbon::today()) + 1);
         $monthPresent = $this->safe(fn () => $att()->where('work_date', '>=', $month)->whereNotNull('clock_in_at')->count(), 0);
 
         $leave = fn () => DB::table('hr_leave_requests as l')->join('users as u', 'u.id', '=', 'l.user_id')->leftJoin('hr_leave_types as t', 't.id', '=', 'l.leave_type_id')
