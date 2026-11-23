@@ -33,6 +33,9 @@ class StaffAccessController extends Controller
     {
         $user = User::where('company_id', auth()->user()->company_id)->findOrFail($userId);
         $rows = StaffAccessSection::where('user_id', $user->id)->get();
+        // No sections of their own → they follow the role's defaults (Roles → Access sections), including when the role changes or is edited.
+        $follows = $rows->isEmpty();
+        $role = $user->role;
 
         return response()->json([
             'user_id'       => $user->id,
@@ -45,8 +48,10 @@ class StaffAccessController extends Controller
             'profile_item_labels' => \App\Http\Controllers\MobileAppConfigController::PROFILE_ITEMS,
             'catalogue' => app(\App\Http\Controllers\MobileModulesController::class)->allowedCatalogue(),   // only what the superadmin allows
             'web_sections' => app(\App\Http\Controllers\MobileModulesController::class)->allowedWebSections(),
-            'main'          => $rows->firstWhere('is_main', true)?->section_key,
-            'subs'          => $rows->where('is_main', false)->pluck('section_key')->values(),
+            'follows_role'  => $follows,
+            'role_access'   => ['main' => $role?->access_main, 'subs' => array_values((array) ($role?->access_subs ?? []))],
+            'main'          => $follows ? $role?->access_main : $rows->firstWhere('is_main', true)?->section_key,
+            'subs'          => $follows ? array_values((array) ($role?->access_subs ?? [])) : $rows->where('is_main', false)->pluck('section_key')->values(),
             // Role + sections = what this person can actually do (see User::effectivePermissions()).
             'role_permissions'      => array_values((array) ($user->role?->permissions ?? [])),
             'effective_permissions' => $user->effectivePermissions(),
@@ -64,8 +69,9 @@ class StaffAccessController extends Controller
         $data = $request->validate([
             'portal_access' => ['required', 'boolean'],
             'mobile_access' => ['required', 'boolean'],
-            'main'          => ['nullable', Rule::in($keys)],
-            'subs'          => ['present', 'array'],
+            'follow_role'   => ['sometimes', 'boolean'],   // true = drop their own sections and follow the role's defaults
+            'main'          => ['sometimes', 'nullable', Rule::in($keys)],
+            'subs'          => ['sometimes', 'array'],
             'subs.*'        => [Rule::in($keys)],
             'mobile_screens'                => ['sometimes', 'nullable', 'array'],
             'web_screens'                   => ['sometimes', 'nullable', 'array'],
@@ -99,8 +105,9 @@ class StaffAccessController extends Controller
                 ]]);
             }
             StaffAccessSection::where('user_id', $user->id)->delete();
+            if ($data['follow_role'] ?? false) { return; }   // no rows → the role's sections apply
 
-            $subs = collect($data['subs'])->unique()->reject(fn ($k) => $k === ($data['main'] ?? null));
+            $subs = collect($data['subs'] ?? [])->unique()->reject(fn ($k) => $k === ($data['main'] ?? null));
             if (!empty($data['main'])) {
                 StaffAccessSection::create(['company_id' => $user->company_id, 'user_id' => $user->id, 'section_key' => $data['main'], 'is_main' => true]);
             }

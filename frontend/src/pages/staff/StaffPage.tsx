@@ -2,10 +2,11 @@
 import { useLimit } from '@/lib/planUsage'
 import LimitBadge from '@/components/plan/LimitBadge'
 import { useEffect, useMemo, useState } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
 import { useAppDispatch, useAppSelector, usePermission } from '@/store'
 import { fetchStaffThunk } from '@/store/slices'
 import { staffApi, staffAccessApi, labelApi, deviceApi } from '@/api'
-import AccessSectionPicker, { type AccessSection } from './AccessSectionPicker'
+import { type AccessSection } from './AccessSectionPicker'
 import {
   Button, Input, Select, Modal, ConfirmModal,
   Badge, EmptyState, Pagination, TableSkeleton, Spinner,
@@ -14,7 +15,7 @@ import LinkedDevicesModal, { type DeviceService } from '@/components/devices/Lin
 import { fmt, getError } from '@/utils'
 import toast from 'react-hot-toast'
 
-interface Role { id: number; name: string; label: string }
+interface Role { id: number; name: string; label: string; access_main?: string | null; access_subs?: string[] }
 
 export default function StaffPage() {
   const planLim = useLimit('users')
@@ -26,6 +27,7 @@ export default function StaffPage() {
   const canEdit    = canManage
   const canDelete  = canManage
   const canManageAccess = canManage
+  const navigate = useNavigate()
 
   const [deviceUser, setDeviceUser] = useState<any>(null)
   const deviceService: DeviceService | null = useMemo(() => {
@@ -48,10 +50,8 @@ export default function StaffPage() {
   const [saving,    setSaving]    = useState(false)
   const [deleting,  setDeleting]  = useState(false)
 
-  // Access sections (main + subs) and channels, saved together with the staff record.
+  // Access (sections + web / app) is managed on Staff Access, not here: a new member follows their role's sections until someone customises them.
   const [sections, setSections] = useState<AccessSection[]>([])
-  const [access, setAccess] = useState<{ main: string | null; subs: string[]; portal: boolean; mobile: boolean }>(
-    { main: null, subs: [], portal: true, mobile: true })
   const sectionLabel = (k?: string) => sections.find((s) => s.key === k)
 
   const [form, setForm] = useState({
@@ -59,8 +59,11 @@ export default function StaffPage() {
     role_id: '', department: '', max_leads: '50',
   })
 
-  // Lead capacity only matters for accounts that handle leads (Sales, admins …) — hidden otherwise.
-  const handlesLeads = [access.main, ...access.subs].some((k) => {
+  // Lead capacity only matters for accounts that handle leads (Sales, admins …) — hidden otherwise. Judged from the chosen role's sections
+  // plus any the person already has.
+  const pickedRole = roles.find((r) => String(r.id) === String(form.role_id))
+  const accessKeys = [pickedRole?.access_main, ...(pickedRole?.access_subs ?? []), ...(editUser?.access_sections ?? [])].filter(Boolean) as string[]
+  const handlesLeads = accessKeys.some((k) => {
     const perms = sections.find((s) => s.key === k)?.permissions ?? []
     return perms.includes('*') || perms.includes('leads.view')
   })
@@ -79,14 +82,12 @@ export default function StaffPage() {
 
   const openCreate = () => {
     setEditUser(null)
-    setAccess({ main: null, subs: [], portal: true, mobile: true })
     setForm({ name:'', email:'', password:'', password_confirmation:'', role_id: roles[0]?.id?.toString() || '', department:'', max_leads:'50' })
     setShowModal(true)
   }
 
   const openEdit = (u: any) => {
     setEditUser(u)
-    setAccess({ main: u.access_sections?.[0] ?? null, subs: (u.access_sections ?? []).slice(1), portal: u.portal_access ?? true, mobile: u.mobile_access ?? true })
     setForm({ name: u.name, email: u.email, password:'', password_confirmation:'', role_id: u.role?.id?.toString() || '', department: u.department || '', max_leads: u.max_leads?.toString() || '50' })
     setShowModal(true)
   }
@@ -98,13 +99,13 @@ export default function StaffPage() {
         const payload: any = { name: form.name, role_id: +form.role_id, department: form.department, max_leads: maxLeadsValue }
         if (form.password) { payload.password = form.password; payload.password_confirmation = form.password_confirmation }
         await staffApi.update(editUser.id, payload)
-        await staffAccessApi.update(editUser.id, { portal_access: access.portal, mobile_access: access.mobile, main: access.main, subs: access.subs })
         toast.success('Staff updated.')
       } else {
         const { data } = await staffApi.create({ ...form, role_id: +form.role_id, max_leads: maxLeadsValue })
         const newId = data?.staff?.id ?? data?.data?.id
-        if (newId) await staffAccessApi.update(newId, { portal_access: access.portal, mobile_access: access.mobile, main: access.main, subs: access.subs })
-        toast.success('Staff created.')
+        toast.success('Staff created — set their access next.')
+        setShowModal(false)
+        if (newId && canManageAccess) { navigate(`/staff/access?staff=${newId}`); return }
       }
       setShowModal(false)
       dispatch(fetchStaffThunk({ page, search, per_page: 20 }))
@@ -201,6 +202,7 @@ export default function StaffPage() {
                         {canEdit && (
                           <>
                             <button onClick={() => openEdit(u)} className="text-xs text-blue-600 hover:underline px-1">Edit</button>
+                            {canManageAccess && <Link to={`/staff/access?staff=${u.id}`} className="text-xs text-violet-600 hover:underline px-1">Access</Link>}
                             <button onClick={() => handleToggle(u)} className="text-xs text-gray-500 hover:underline px-1">
                               {u.is_active ? 'Deactivate' : 'Activate'}
                             </button>
@@ -241,18 +243,17 @@ export default function StaffPage() {
           )}
         </div>
 
-        {canManageAccess && (
-          <div className="mt-5 space-y-3">
-            <p className="text-sm font-semibold text-gray-800">Access</p>
-            <div className="flex gap-5 text-sm text-gray-700">
-              <label className="flex items-center gap-2"><input type="checkbox" checked={access.portal} onChange={(e) => setAccess((a) => ({ ...a, portal: e.target.checked }))} /> 🖥️ Web portal</label>
-              <label className="flex items-center gap-2"><input type="checkbox" checked={access.mobile} onChange={(e) => setAccess((a) => ({ ...a, mobile: e.target.checked }))} /> 📱 Mobile app</label>
-            </div>
-            <p className="text-xs text-gray-400">Choose one main section, tick any extra sub sections. They add to what the role allows and decide the home screen they see.</p>
-            <AccessSectionPicker compact sections={sections} main={access.main} subs={access.subs}
-              onChange={(n) => setAccess((a) => ({ ...a, ...n }))} />
-          </div>
-        )}
+        <div className="mt-5 rounded-lg bg-gray-50 border border-gray-200 p-3 text-xs text-gray-600" data-testid="access-moved">
+          <p>
+            <b>Access sections</b> follow the role
+            {pickedRole?.access_main || (pickedRole?.access_subs ?? []).length
+              ? <> ({[pickedRole?.access_main, ...(pickedRole?.access_subs ?? [])].filter(Boolean).map((k) => sectionLabel(k as string)?.label ?? k).join(', ')})</>
+              : null}
+            {' '}and change automatically when the role changes.
+            {canManageAccess && editUser && <> To customise them, or set web / app access and screens, use <Link to={`/staff/access?staff=${editUser.id}`} className="text-brand-600 underline">Staff Access</Link>.</>}
+            {canManageAccess && !editUser && ' After you create the account you land on Staff Access to set web / app access and screens.'}
+          </p>
+        </div>
       </Modal>
 
       {/* Linked devices */}

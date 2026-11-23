@@ -2,6 +2,7 @@
 // Per-staff access: prebuilt access sections (one main + any number of sub sections, layered on top of the
 // staff member's role) and which channels they may use — the web portal and/or the mobile app.
 import { useEffect, useState, useCallback, useMemo } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { staffAccessApi, staffAccountAccessApi } from '@/api'
 import { Button, EmptyState, Spinner } from '@/components/ui'
 import StaffAccountAccessCards, { type AccountRow } from './StaffAccountAccessCards'
@@ -20,13 +21,16 @@ export default function StaffAccessPage() {
   const [sections, setSections] = useState<Section[]>([])
   const [accounts, setAccounts] = useState<Record<string, AccountRow[]>>({})
   const [search, setSearch] = useState('')
-  const [selectedId, setSelectedId] = useState<number | null>(null)
+  const [params] = useSearchParams()
+  const [selectedId, setSelectedId] = useState<number | null>(() => Number(params.get('staff')) || null)   // /staff/access?staff=12 opens that person
   const [busy, setBusy] = useState(false)
   const [saving, setSaving] = useState(false)
   const [portal, setPortal] = useState(true)
   const [mobile, setMobile] = useState(true)
   const [main, setMain] = useState<string | null>(null)
   const [subs, setSubs] = useState<string[]>([])
+  const [followsRole, setFollowsRole] = useState(true)
+  const [roleAccess, setRoleAccess] = useState<{ main: string | null; subs: string[] }>({ main: null, subs: [] })
   const [rolePerms, setRolePerms] = useState<string[]>([])
   const [allPerms, setAllPerms] = useState<string[]>([])
   const [screens, setScreens] = useState<MobileScreens | null>(null)
@@ -44,7 +48,7 @@ export default function StaffAccessPage() {
   const load = useCallback((id: number) => {
     setBusy(true)
     staffAccessApi.show(id)
-      .then((r) => { setPortal(r.data.portal_access); setMobile(r.data.mobile_access); setMain(r.data.main ?? null); setSubs(r.data.subs ?? []); setRolePerms(r.data.role_permissions ?? []); setAllPerms(r.data.all_permissions ?? []); setScreens(r.data.mobile_screens ?? null); setScreensMeta({ tab_labels: r.data.tab_labels ?? {}, profile_item_labels: r.data.profile_item_labels ?? {}, catalogue: r.data.catalogue ?? [] }); setWebScreens(r.data.web_screens?.sections ?? null); setWebSections(r.data.web_sections ?? []) })
+      .then((r) => { setPortal(r.data.portal_access); setMobile(r.data.mobile_access); setMain(r.data.main ?? null); setSubs(r.data.subs ?? []); setFollowsRole(r.data.follows_role !== false); setRoleAccess(r.data.role_access ?? { main: null, subs: [] }); setRolePerms(r.data.role_permissions ?? []); setAllPerms(r.data.all_permissions ?? []); setScreens(r.data.mobile_screens ?? null); setScreensMeta({ tab_labels: r.data.tab_labels ?? {}, profile_item_labels: r.data.profile_item_labels ?? {}, catalogue: r.data.catalogue ?? [] }); setWebScreens(r.data.web_screens?.sections ?? null); setWebSections(r.data.web_sections ?? []) })
       .catch((e) => toast.error(getError(e)))
       .finally(() => setBusy(false))
   }, [])
@@ -60,7 +64,7 @@ export default function StaffAccessPage() {
     if (!selectedId) return
     setSaving(true)
     try {
-      await staffAccessApi.update(selectedId, { portal_access: portal, mobile_access: mobile, main, subs, mobile_screens: screens, web_screens: webScreens === null ? null : { sections: webScreens } })
+      await staffAccessApi.update(selectedId, { portal_access: portal, mobile_access: mobile, ...(followsRole ? { follow_role: true } : { main, subs }), mobile_screens: screens, web_screens: webScreens === null ? null : { sections: webScreens } })
       toast.success('Access saved.')
     } catch (e) { toast.error(getError(e)) }
     finally { setSaving(false) }
@@ -107,8 +111,15 @@ export default function StaffAccessPage() {
 
               <div className="card">
                 <div className="card-header"><h3 className="card-title">Access sections</h3><span className="text-xs text-gray-400">Choose one main, tick any extra sub sections</span></div>
-                <div className="card-body">
-                  <AccessSectionPicker sections={sections} main={main} subs={subs} onChange={(n) => { setMain(n.main); setSubs(n.subs) }} />
+                <div className="card-body space-y-3">
+                  <div className="space-y-1.5 text-sm text-gray-700">
+                    <label className="flex items-center gap-2"><input type="radio" checked={followsRole} onChange={() => { setFollowsRole(true); setMain(roleAccess.main); setSubs(roleAccess.subs) }} />
+                      Follow the role{selected.role ? ` (${selected.role.label})` : ''} — updates automatically when the role or its sections change</label>
+                    <label className="flex items-center gap-2"><input type="radio" checked={!followsRole} onChange={() => setFollowsRole(false)} /> Custom sections for {selected.name}</label>
+                  </div>
+                  <div className={followsRole ? 'opacity-60 pointer-events-none' : ''} aria-disabled={followsRole}>
+                    <AccessSectionPicker sections={sections} main={main} subs={subs} onChange={(n) => { setMain(n.main); setSubs(n.subs) }} />
+                  </div>
                 </div>
               </div>
 
