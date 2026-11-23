@@ -224,7 +224,8 @@ const RoleModal = ({
   const isSystem = editing?.is_system ?? false
 
   const [form, setForm] = useState<FormState>(() => {
-    if (!editing) return emptyForm()
+    // a new role starts with the "open to everyone" pages ticked (untick any to block them); other permissions start empty
+    if (!editing) return { ...emptyForm(), permission_ids: new Set(groups.flatMap((g) => g.permissions).filter((p) => p.key.startsWith('pages.')).map((p) => p.id)) }
     return {
       name: editing.name,
       description: editing.description ?? '',

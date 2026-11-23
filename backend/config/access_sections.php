@@ -5,7 +5,7 @@
  * their effective permissions are their role's permissions PLUS every assigned section's.
  * '*' = every permission in the catalogue. Keys must match PermissionsSeeder.
  */
-return [
+$sections = [
     'company_admin' => [
         'label' => 'Company Admin', 'icon' => '🏢', 'color' => '#6366f1',
         'description' => 'Full access to everything in the company.',
@@ -73,3 +73,17 @@ return [
         ],
     ],
 ];
+
+// The "pages open to everyone" permissions (pages.*) ride along with every section, so someone whose access comes from sections alone still sees them.
+$everyonePages = [
+    'pages.dashboard', 'pages.website_widget', 'pages.media_library', 'pages.short_links', 'pages.wa_chat_media', 'pages.wa_chat_export',
+    'pages.hr_dashboard', 'pages.my_attendance', 'pages.my_target', 'pages.sales_activity', 'pages.my_payroll', 'pages.ask',
+    'pages.sticky_notes', 'pages.todo', 'pages.support', 'pages.setup_guide',
+];
+foreach ($sections as $key => $section) {
+    if (! in_array('*', $section['permissions'], true)) {
+        $sections[$key]['permissions'] = array_values(array_unique(array_merge($section['permissions'], $everyonePages)));
+    }
+}
+
+return $sections;

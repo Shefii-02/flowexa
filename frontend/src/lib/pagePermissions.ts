@@ -8,6 +8,10 @@ export interface PageSection { section: string; pages: PageDef[] }
 const p = (path: string, label: string, ...perms: string[]): PageDef => ({ path, label, perms })
 
 export const PAGE_SECTIONS: PageSection[] = [
+  { section: 'General', pages: [
+    p('/dashboard', 'Dashboard', 'pages.dashboard'), p('/website-widget', 'Website Widget', 'pages.website_widget'),
+    p('/media-library', 'Media Library', 'pages.media_library'), p('/short-links', 'Short Links', 'pages.short_links'),
+  ] },
   { section: 'WA Chat', pages: [
     p('/wa-chat/dashboard', 'Dashboard', 'wa_chat.sessions.view'), p('/wa-chat/sessions', 'Sessions', 'wa_chat.sessions.view'),
     p('/wa-chat/chats', 'Chats', 'wa_chat.chats.view'), p('/wa-chat/message-sender', 'Create Campaign', 'wa_chat.message_sender.view'),
@@ -15,6 +19,7 @@ export const PAGE_SECTIONS: PageSection[] = [
     p('/wa-chat/templates', 'Templates', 'wa_chat.templates.view'), p('/wa-chat/api-services', 'API Services', 'wa_chat.api_keys.view'),
     p('/wa-chat/settings', 'Settings', 'wa_chat.sessions.manage'), p('/wa-chat/automations', 'Agent Automations', 'wa_agent.automations.view'),
     p('/wa-chat/analytics', 'Inbox Analytics', 'wa_chat.chats.view'), p('/wa-chat/logs', 'Audit Log', 'wa_chat.sessions.view'),
+    p('/wa-chat/media-library', 'Media Library', 'pages.wa_chat_media'), p('/wa-chat/export', 'Data Export', 'pages.wa_chat_export'),
   ] },
   { section: 'WA Cloud', pages: [
     p('/wa-cloud/dashboard', 'Dashboard', 'wa_cloud.view'), p('/wa-cloud/templates', 'WA Templates', 'templates.view'), p('/wa-cloud/campaigns', 'Campaign', 'campaigns.view'),
@@ -67,18 +72,19 @@ export const PAGE_SECTIONS: PageSection[] = [
     p('/accounts/reports', 'Reports', 'accounts.read'), p('/accounts/gst', 'GST', 'accounts.manage'), p('/accounts/year-end', 'Year-end', 'accounts.manage'), p('/accounts/settings', 'Settings', 'accounts.manage'),
   ] },
   { section: 'HR', pages: [
-    p('/hr/dashboard', 'Dashboard'), p('/hr/attendance', 'My Attendance'), p('/hr/target', 'My Target'), p('/hr/sales-activity', 'Sales Activity'), p('/hr/payroll', 'My Payroll'),
+    p('/hr/dashboard', 'Dashboard', 'pages.hr_dashboard'), p('/hr/attendance', 'My Attendance', 'pages.my_attendance'), p('/hr/target', 'My Target', 'pages.my_target'),
+    p('/hr/sales-activity', 'Sales Activity', 'pages.sales_activity'), p('/hr/payroll', 'My Payroll', 'pages.my_payroll'),
     p('/hr/admin/attendance', 'Attendance (admin)', 'hr.attendance.view_all', 'hr.manage'), p('/hr/admin/payroll', 'Payroll (admin)', 'hr.manage'), p('/hr/admin/sales', 'Sales (admin)', 'hr.manage'),
     p('/hr/admin/incentives', 'Incentives', 'hr.manage'), p('/hr/admin/leave', 'Leave Requests', 'hr.leave.approve', 'hr.manage'), p('/hr/admin/staff-setup', 'Staff Setup', 'hr.manage'),
     p('/hr/admin/staff-availability', 'Staff Availability', 'staff.view'), p('/hr/admin/break-types', 'Break Types', 'hr.manage'), p('/hr/admin/leave-types', 'Leave Types', 'hr.manage'),
     p('/hr/admin/office', 'Office Details', 'hr.manage'),
   ] },
-  { section: 'My workspace', pages: [p('/ask', 'Ask in portal'), p('/team-chat', 'Team chat', 'team_chat.view'), p('/sticky-notes', 'Sticky notes'), p('/todo', 'To-do list')] },
+  { section: 'My workspace', pages: [p('/ask', 'Ask in portal', 'pages.ask'), p('/team-chat', 'Team chat', 'team_chat.view'), p('/sticky-notes', 'Sticky notes', 'pages.sticky_notes'), p('/todo', 'To-do list', 'pages.todo')] },
   { section: 'Staff', pages: [p('/staff/index', 'Staff', 'staff.view'), p('/staff/roles', 'Roles', 'roles.view'), p('/staff/access', 'Staff Access', 'staff.manage')] },
   { section: 'System', pages: [
     p('/settings/index', 'Settings', 'settings.view'), p('/settings/integrations/google-sheets', 'Google Sheets', 'integrations.view'), p('/settings/integrations/drive', 'Drive', 'integrations.view'),
     p('/settings/integrations/calendar', 'Calendar', 'integrations.view'), p('/settings/integrations/email', 'Email', 'integrations.view'), p('/plan-purchase', 'Plans & Billing', 'plans.view'),
-    p('/support', 'Support'), p('/setup-guide', 'Setup Guide'),
+    p('/support', 'Support', 'pages.support'), p('/setup-guide', 'Setup Guide', 'pages.setup_guide'),
   ] },
 ]
 
@@ -89,9 +95,10 @@ export const PAGE_PERMS: Record<string, string[]> = Object.fromEntries(
 
 // ── Permissions grouped by the section of the app they belong to ─────────────────────────────────────────────────────────────────
 // Used by the Roles editor and Staff Access to list permissions under "WA Chat", "WA Cloud", "AI Agent" … instead of one long flat list.
-export const PERMISSION_SECTIONS = ['WA Chat', 'WA Cloud', 'AI Agent', 'Instagram & Messenger', 'Meta Ads', 'CRM', 'Leads', 'Accounts', 'HR', 'Website chat', 'Team chat', 'System'] as const
+export const PERMISSION_SECTIONS = ['General', 'WA Chat', 'WA Cloud', 'AI Agent', 'Instagram & Messenger', 'Meta Ads', 'CRM', 'Leads', 'Accounts', 'HR', 'Website chat', 'Team chat', 'System'] as const
 
 const SECTION_BY_PREFIX: [string, typeof PERMISSION_SECTIONS[number]][] = [
+  ['pages.hr_', 'HR'], ['pages.my_', 'HR'], ['pages.sales_activity', 'HR'], ['pages.wa_chat_', 'WA Chat'], ['pages.', 'General'],
   ['wa_chat.', 'WA Chat'],
   ['wa_cloud.', 'WA Cloud'], ['templates.', 'WA Cloud'], ['campaigns.', 'WA Cloud'], ['surveys.', 'WA Cloud'], ['flow_builder.', 'WA Cloud'], ['otp.', 'WA Cloud'],
   ['phone_numbers.', 'WA Cloud'], ['inbox.', 'WA Cloud'], ['message_logs.', 'WA Cloud'],

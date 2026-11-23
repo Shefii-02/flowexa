@@ -171,10 +171,35 @@ class PermissionsSeeder extends Seeder
         // viewing/managing OTHER staff members' linked devices.
         ['key' => 'devices.view',   'label' => "View Staff Linked Devices",   'group' => 'Linked Devices', 'type' => 'viewer', 'sort_order' => 320],
         ['key' => 'devices.manage', 'label' => "Manage Staff Linked Devices", 'group' => 'Linked Devices', 'type' => 'manage', 'sort_order' => 321],
+        // Pages every signed-in user could open before — now tick-based per role / person. Every role starts with all of them ticked (see rolePermissions()).
+        ['key' => 'pages.dashboard', 'label' => 'Open page: Dashboard', 'group' => 'Pages open to everyone by default', 'type' => 'viewer', 'sort_order' => 400],
+        ['key' => 'pages.website_widget', 'label' => 'Open page: Website Widget', 'group' => 'Pages open to everyone by default', 'type' => 'viewer', 'sort_order' => 401],
+        ['key' => 'pages.media_library', 'label' => 'Open page: Media Library', 'group' => 'Pages open to everyone by default', 'type' => 'viewer', 'sort_order' => 402],
+        ['key' => 'pages.short_links', 'label' => 'Open page: Short Links', 'group' => 'Pages open to everyone by default', 'type' => 'viewer', 'sort_order' => 403],
+        ['key' => 'pages.wa_chat_media', 'label' => 'Open page: WA Chat — Media Library', 'group' => 'Pages open to everyone by default', 'type' => 'viewer', 'sort_order' => 404],
+        ['key' => 'pages.wa_chat_export', 'label' => 'Open page: WA Chat — Data Export', 'group' => 'Pages open to everyone by default', 'type' => 'viewer', 'sort_order' => 405],
+        ['key' => 'pages.hr_dashboard', 'label' => 'Open page: HR — Dashboard', 'group' => 'Pages open to everyone by default', 'type' => 'viewer', 'sort_order' => 406],
+        ['key' => 'pages.my_attendance', 'label' => 'Open page: HR — My Attendance', 'group' => 'Pages open to everyone by default', 'type' => 'viewer', 'sort_order' => 407],
+        ['key' => 'pages.my_target', 'label' => 'Open page: HR — My Target', 'group' => 'Pages open to everyone by default', 'type' => 'viewer', 'sort_order' => 408],
+        ['key' => 'pages.sales_activity', 'label' => 'Open page: HR — Sales Activity', 'group' => 'Pages open to everyone by default', 'type' => 'viewer', 'sort_order' => 409],
+        ['key' => 'pages.my_payroll', 'label' => 'Open page: HR — My Payroll', 'group' => 'Pages open to everyone by default', 'type' => 'viewer', 'sort_order' => 410],
+        ['key' => 'pages.ask', 'label' => 'Open page: Ask in portal', 'group' => 'Pages open to everyone by default', 'type' => 'viewer', 'sort_order' => 411],
+        ['key' => 'pages.sticky_notes', 'label' => 'Open page: Sticky notes', 'group' => 'Pages open to everyone by default', 'type' => 'viewer', 'sort_order' => 412],
+        ['key' => 'pages.todo', 'label' => 'Open page: To-do list', 'group' => 'Pages open to everyone by default', 'type' => 'viewer', 'sort_order' => 413],
+        ['key' => 'pages.support', 'label' => 'Open page: Support', 'group' => 'Pages open to everyone by default', 'type' => 'viewer', 'sort_order' => 414],
+        ['key' => 'pages.setup_guide', 'label' => 'Open page: Setup Guide', 'group' => 'Pages open to everyone by default', 'type' => 'viewer', 'sort_order' => 415],
     ];
 
     // ── Role permission definitions ───────────────────────────────────────────
     public function rolePermissions(array $allKeys): array
+    {
+        // every system role keeps the "open to everyone" pages — they are narrowed per role / person afterwards, never switched off by default
+        $pages = array_values(array_filter($allKeys, fn ($k) => str_starts_with($k, 'pages.')));
+
+        return array_map(fn ($keys) => array_values(array_unique(array_merge($keys, $pages))), $this->baseRolePermissions($allKeys));
+    }
+
+    private function baseRolePermissions(array $allKeys): array
     {
         $allViewer = array_values(array_filter($allKeys, fn($k) => str_ends_with($k, '.view')));
 

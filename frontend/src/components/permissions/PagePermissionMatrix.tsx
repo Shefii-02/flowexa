@@ -17,10 +17,17 @@ export default function PagePermissionMatrix({ granted, locked = {}, labelOf, on
     ...s, pages: s.pages.filter(pg => !q || `${s.section} ${pg.label} ${pg.perms.join(' ')}`.toLowerCase().includes(q.toLowerCase())),
   })).filter(s => s.pages.length > 0), [q])
 
+  // one permission can open several pages (e.g. every Leads page needs leads.view) — ticking one ticks the others that share it
+  const sharedWith = useMemo(() => {
+    const m = new Map<string, number>()
+    PAGE_SECTIONS.forEach(s => s.pages.forEach(pg => pg.perms[0] && m.set(pg.perms[0], (m.get(pg.perms[0]) ?? 0) + 1)))
+    return m
+  }, [])
   const on = (perms: string[]) => perms.length > 0 && perms.some(k => granted.has(k) || locked[k])
 
   return (
     <div className="space-y-3" data-testid="page-permission-matrix">
+      <p className="text-xs text-gray-500">Each page is opened by one permission. Pages that share a permission switch together — the note beside a page says how many.</p>
       <input className="input" placeholder="Search pages…" value={q} onChange={e => setQ(e.target.value)} />
       <div className="max-h-[50vh] overflow-y-auto pr-1 space-y-4">
         {sections.map(s => {
@@ -42,7 +49,7 @@ export default function PagePermissionMatrix({ granted, locked = {}, labelOf, on
                     <span className="flex-1">{pg.label}</span>
                     {free
                       ? <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100">everyone</span>
-                      : <span className="text-[10px] text-gray-400 truncate max-w-[40%]" title={pg.perms.join(', ')}>{labelOf(pg.perms[0])}{from ? ` · from ${from}` : ''}</span>}
+                      : <span className="text-[10px] text-gray-400 truncate max-w-[40%]" title={pg.perms.join(', ')}>{labelOf(pg.perms[0])}{(sharedWith.get(pg.perms[0]) ?? 0) > 1 ? ` · shared by ${sharedWith.get(pg.perms[0])} pages` : ''}{from ? ` · from ${from}` : ''}</span>}
                   </label>
                 )
               })}
