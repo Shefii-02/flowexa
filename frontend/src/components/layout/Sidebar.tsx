@@ -1,7 +1,8 @@
 // src/components/layout/Sidebar.tsx
 import { useState, useEffect, createContext, useContext } from 'react'
 import { NavLink, useNavigate, useLocation } from 'react-router-dom'
-import { useAppDispatch, useAppSelector, useIsSuperAdmin, useModule, usePermission } from '@/store'
+import { useAppDispatch, useAppSelector, useIsSuperAdmin, useModule, usePermission, usePermissionAny } from '@/store'
+import { PAGE_PERMS } from '@/lib/pagePermissions'
 import { moduleForPath } from '@/lib/modules'
 import { logoutThunk } from '@/store/slices'
 import { cn, fmt } from '@/utils'
@@ -105,8 +106,12 @@ function FlatGroup({ label, extra, children }: { label: string; extra?: React.Re
 }
 
 // ── Flat nav link ──────────────────────────────────────────────────────────────
-function FlatLink({ to, icon, label, end }: { to: string; icon: string; label: string; end?: boolean }) {
-  if (!useEntitled(to)) return null
+/** `section` ties the link to a hideable web section (Staff Access / company / platform settings) — hidden when that section is switched off for you. */
+function FlatLink({ to, icon, label, end, section }: { to: string; icon: string; label: string; end?: boolean; section?: string }) {
+  const prefs = useContext(SidebarPrefsContext)
+  const allowed = usePermissionAny(PAGE_PERMS[to])   // hidden when the person holds none of the permissions that open this page
+  if (!useEntitled(to) || !allowed) return null
+  if (section && prefs.hidden.includes(section)) return null
   return (
     <NavLink
       to={to}
@@ -128,7 +133,8 @@ function FlatLink({ to, icon, label, end }: { to: string; icon: string; label: s
 
 // ── Accordion sub-link ─────────────────────────────────────────────────────────
 function SubLink({ to, icon, label, end }: { to: string; icon: string; label: string; end?: boolean }) {
-  if (!useEntitled(to)) return null
+  const allowed = usePermissionAny(PAGE_PERMS[to])
+  if (!useEntitled(to) || !allowed) return null
   return (
     <NavLink
       to={to}
@@ -496,7 +502,7 @@ const SidebarInner = () => {
           <>
             {/* Dashboard - always visible */}
             {/* {canViewDash &&  */}
-            <FlatLink to="/dashboard" icon="📊" label="Dashboard" end />
+            <FlatLink to="/dashboard" icon="📊" label="Dashboard" end section="dashboard" />
 
             <GroupHeader label="Channels" modules={['wa_chat', 'wa_cloud', 'ai_agent', 'social_dm', 'web_widgets']} />
             {/* ── WA Chat accordion ── */}
@@ -665,7 +671,7 @@ const SidebarInner = () => {
             </Accordion>
 
             {/* Catalog is a top-level item now (📦 Catalog under CRM) */}
-            <FlatLink to="/website-widget" icon="🌐" label="Website Widget" />
+            <FlatLink to="/website-widget" icon="🌐" label="Website Widget" section="website-widget" />
             <GroupHeader label="Marketing" modules={['meta_ads', 'short_links', 'media_library']} />
             {/* ── Meta Ads accordion ── */}
             {/* {canViewMetaAds && ( */}
@@ -688,8 +694,8 @@ const SidebarInner = () => {
             </Accordion>
             {/* )} */}
 
-            <FlatLink to="/media-library" icon="🖼️" label="Media Library" />
-            <FlatLink to="/short-links" icon="🔗" label="Short Links" />
+            <FlatLink to="/media-library" icon="🖼️" label="Media Library" section="media-library" />
+            <FlatLink to="/short-links" icon="🔗" label="Short Links" section="short-links" />
 
             <GroupHeader label="Sales" modules={['crm', 'tasks', 'leads']} />
             {/* ── CRM ── */}
@@ -802,18 +808,18 @@ const SidebarInner = () => {
 
             <SectionHeader label="My workspace" />
             {/* Personal tools — the same things as the floating buttons, as full pages */}
-            <FlatLink to="/ask" icon="✨" label="Ask in portal" />
-            <FlatLink to="/team-chat" icon="💬" label="Team chat" />
-            <FlatLink to="/sticky-notes" icon="📝" label="Sticky notes" />
-            <FlatLink to="/todo" icon="✅" label="To-do list" />
+            <FlatLink to="/ask" icon="✨" label="Ask in portal" section="ask" />
+            <FlatLink to="/team-chat" icon="💬" label="Team chat" section="team-chat" />
+            <FlatLink to="/sticky-notes" icon="📝" label="Sticky notes" section="sticky-notes" />
+            <FlatLink to="/todo" icon="✅" label="To-do list" section="todo" />
             {/* ── STAFF ── */}
             <SectionHeader label="Staff" />
             {/* {canViewStaff &&  */}
-            <FlatLink to="/staff/index" icon="👤" label="Staff" />
+            <FlatLink to="/staff/index" icon="👤" label="Staff" section="staff" />
             {/* Assignment Rules now lives under Leads → Advanced */}
             {/* {canViewRoles &&  */}
-            <FlatLink to="/staff/roles" icon="🎭" label="Roles" />
-            <FlatLink to="/staff/access" icon="🧩" label="Staff Access" />
+            <FlatLink to="/staff/roles" icon="🎭" label="Roles" section="roles" />
+            <FlatLink to="/staff/access" icon="🧩" label="Staff Access" section="staff-access" />
             {/* } */}
 
 
@@ -822,7 +828,7 @@ const SidebarInner = () => {
             <SectionHeader label="System" />
 
 
-            <FlatLink to="/settings/index" icon="⚙️" label="Settings" />
+            <FlatLink to="/settings/index" icon="⚙️" label="Settings" section="settings" />
             <Accordion
               id="integrations"
               icon="🔌"
@@ -837,9 +843,9 @@ const SidebarInner = () => {
               <SubLink to="/settings/integrations/email" icon="✉️" label="Email" />
             </Accordion>
             {/* } */}
-            <FlatLink to="/plan-purchase" icon="💳" label="Plans & Billing" />
+            <FlatLink to="/plan-purchase" icon="💳" label="Plans & Billing" section="billing" />
             {canViewSupport && <FlatLink to="/support" icon="🎧" label="Support" />}
-            <FlatLink to="/setup-guide" icon="🧭" label="Setup Guide" />
+            <FlatLink to="/setup-guide" icon="🧭" label="Setup Guide" section="setup-guide" />
           </>
         )}
 

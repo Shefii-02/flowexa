@@ -17,7 +17,13 @@ return [
         'permissions' => [
             'dashboard.view', 'staff.view', 'staff.manage', 'roles.view', 'roles.manage', 'settings.view', 'settings.manage',
             'devices.view', 'devices.manage', 'integrations.view', 'integrations.manage', 'plans.view', 'wallet.view',
-            'reports.view', 'message_logs.view', 'blacklist.view', 'blacklist.manage',
+            'reports.view', 'message_logs.view', 'message_logs.manage', 'blacklist.view', 'blacklist.manage',
+            // newer permissions
+            'dashboard.manage', 'phone_numbers.view', 'phone_numbers.manage', 'wa_chat.sessions.view', 'wa_chat.sessions.manage', 'wa_chat.sessions.view_all',
+            'wa_chat.api_keys.view', 'wa_chat.api_keys.manage', 'otp.view', 'otp.manage',
+            'team_chat.view', 'team_chat.groups', 'team_chat.moderate', 'team_chat.delete',
+            'widget_chat.review', 'calendar.view_all', 'calendar.manage_all', 'hr.attendance.view_all',
+            'leads.view_all', 'inbox.view_all', 'instagram.view_all', 'meta_ads.view_all',
         ],
     ],
     'sales' => [
@@ -28,6 +34,8 @@ return [
             'inbox.view', 'inbox.manage', 'wa_chat.sessions.view', 'wa_chat.chats.view', 'wa_chat.chats.manage',
             'wa_chat.message_sender.view', 'wa_chat.message_sender.manage', 'templates.view', 'catalog.view',
             'wa_agent.leads.view', 'wa_agent.leads.manage', 'wa_agent.pipelines.view', 'reports.view', 'blacklist.view',
+            // newer permissions
+            'team_chat.view', 'team_chat.groups', 'widget_chat.handle',
         ],
     ],
     'marketing' => [
@@ -39,16 +47,29 @@ return [
             'flow_builder.manage', 'meta_ads.view', 'meta_ads.manage', 'instagram.view', 'instagram.manage', 'otp.view',
             'catalog.view', 'catalog.manage', 'wa_cloud.view', 'wa_agent.automations.view', 'wa_agent.automations.manage',
             'wa_agent.knowledge.view', 'wa_agent.knowledge.manage', 'reports.view',
+            // newer permissions
+            'wa_chat.templates.view', 'wa_chat.templates.manage', 'wa_chat.webhooks.view', 'wa_chat.sessions.view', 'wa_chat.api_keys.view',
+            'wa_cloud.manage', 'otp.manage', 'phone_numbers.view', 'phone_numbers.manage',
+            'wa_agent.ai.view', 'wa_agent.ai.manage', 'wa_agent.pipelines.view', 'wa_agent.pipelines.manage',
+            'meta_ads.view_all', 'instagram.view_all', 'team_chat.view', 'team_chat.groups', 'widget_chat.review',
         ],
     ],
     'hr' => [
         'label' => 'HR Team', 'icon' => '👥', 'color' => '#ec4899',
         'description' => 'Attendance, leave, payroll and staff directory.',
-        'permissions' => ['dashboard.view', 'hr.manage', 'hr.attendance.view_all', 'hr.attendance.edit', 'hr.attendance.view_photos', 'hr.leave.approve', 'staff.view', 'reports.view'],
+        'permissions' => [
+            'dashboard.view', 'hr.manage', 'hr.attendance.view_all', 'hr.attendance.edit', 'hr.attendance.view_photos', 'hr.leave.approve', 'staff.view', 'reports.view',
+            // newer permissions
+            'hr.sales_activity.view', 'hr.sales_activity.manage', 'calendar.view_all', 'team_chat.view', 'team_chat.groups',
+        ],
     ],
     'accounts' => [
         'label' => 'Accounts Team', 'icon' => '🧾', 'color' => '#eab308',
         'description' => 'Books, ledgers, wallet and billing.',
-        'permissions' => ['dashboard.view', 'accounts.read', 'accounts.manage', 'wallet.view', 'wallet.manage', 'plans.view', 'reports.view'],
+        'permissions' => [
+            'dashboard.view', 'accounts.read', 'accounts.manage', 'wallet.view', 'wallet.manage', 'plans.view', 'reports.view',
+            // newer permissions
+            'plans.manage', 'team_chat.view', 'team_chat.groups',
+        ],
     ],
 ];

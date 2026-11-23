@@ -18,7 +18,7 @@ class User extends Authenticatable implements JWTSubject
     protected $fillable = [
         'company_id', 'role_id', 'name', 'email', 'phone',
         'avatar', 'department', 'password', 'is_active',
-        'max_leads', 'last_login_at', 'portal_access', 'mobile_access', 'mobile_screens', 'web_screens',
+        'max_leads', 'last_login_at', 'portal_access', 'mobile_access', 'mobile_screens', 'web_screens', 'extra_permissions',
     ];
 
     protected $hidden = ['password', 'remember_token'];
@@ -29,6 +29,7 @@ class User extends Authenticatable implements JWTSubject
         'mobile_access'   => 'boolean',
         'mobile_screens'  => 'array',
         'web_screens'     => 'array',
+        'extra_permissions' => 'array',
         'last_login_at'   => 'datetime',
         'email_verified_at' => 'datetime',
     ];
@@ -87,6 +88,8 @@ class User extends Authenticatable implements JWTSubject
                 ? array_merge($perms, Permission::pluck('key')->all())
                 : array_merge($perms, $section);
         }
+        // Individual additional access: permissions granted to this one person on top of their role and sections.
+        $perms = array_merge($perms, array_values((array) ($this->extra_permissions ?? [])));
         $perms = array_values(array_unique($perms));
         // The company's plan caps what its roles can use inside each feature (Plan → Included features → permissions).
         if (!$this->isSuperAdmin() && ($plan = $this->company?->plan) && $plan->permissions !== null) {

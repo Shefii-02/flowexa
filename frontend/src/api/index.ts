@@ -53,7 +53,7 @@ export const staffAccountAccessApi = {
 export const staffAccessApi = {
   sections: () => api.get('/staff/access/sections'),
   show: (userId: number) => api.get(`/staff/${userId}/access`),
-  update: (userId: number, d: { portal_access: boolean; mobile_access: boolean; main?: string | null; subs?: string[]; follow_role?: boolean; mobile_screens?: unknown; web_screens?: unknown }) =>
+  update: (userId: number, d: { portal_access: boolean; mobile_access: boolean; main?: string | null; subs?: string[]; follow_role?: boolean; extra_permissions?: string[]; mobile_screens?: unknown; web_screens?: unknown }) =>
     api.put(`/staff/${userId}/access`, d),
 }
 

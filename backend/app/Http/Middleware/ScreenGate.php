@@ -25,6 +25,9 @@ class ScreenGate
         'accounts' => 'accounts', 'crm' => 'crm',
         'leads' => 'leads', 'lead-categories' => 'leads', 'lead-assignments' => 'leads', 'lead-assignment-rules' => 'leads',
         'google' => 'integrations', 'email' => 'integrations',
+        // self-contained pages — safe to close at the API. (Staff, Roles, Settings, Media Library, Billing, Team chat, Sticky notes and To-do are used by other
+        // screens and by the floating widgets, so hiding them removes the menu entry only.)
+        'tasks' => 'tasks', 'short-links' => 'short-links', 'widgets' => 'website-widget',
     ];
 
     public function handle(Request $request, Closure $next): mixed

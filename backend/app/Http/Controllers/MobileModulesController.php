@@ -19,6 +19,10 @@ class MobileModulesController extends Controller
     public const WEB_SECTIONS = [
         'wa-chat' => 'WA Chat', 'wa-cloud' => 'WA Cloud', 'wa-agent' => 'AI Agent', 'meta-ads' => 'Meta Ads', 'instagram' => 'Instagram',
         'messenger' => 'Messenger', 'accounts' => 'Accounts', 'crm' => 'CRM', 'leads' => 'Leads', 'hr' => 'HR', 'integrations' => 'Integrations',
+        // the rest of the sidebar
+        'dashboard' => 'Dashboard', 'website-widget' => 'Website Widget', 'media-library' => 'Media Library', 'short-links' => 'Short Links', 'tasks' => 'Tasks',
+        'ask' => 'Ask in portal', 'team-chat' => 'Team chat', 'sticky-notes' => 'Sticky notes', 'todo' => 'To-do list',
+        'staff' => 'Staff', 'roles' => 'Roles', 'staff-access' => 'Staff Access', 'settings' => 'Settings', 'billing' => 'Plans & Billing', 'setup-guide' => 'Setup Guide',
     ];
 
     /** Mirrors unichat_mobile_app/lib/core/nav/app_modules.dart (id => title/group). */

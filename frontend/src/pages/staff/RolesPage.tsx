@@ -6,6 +6,7 @@ import AccessSectionPicker, { type AccessSection } from './AccessSectionPicker'
 import { getError } from '@/utils'
 import toast from 'react-hot-toast'
 import type { Role, PermissionGroup } from '@/types'
+import PagePermissionMatrix from '@/components/permissions/PagePermissionMatrix'
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -213,6 +214,7 @@ const RoleModal = ({
   })
   const [saving, setSaving] = useState(false)
   const [copyFrom, setCopyFrom] = useState<string>('')
+  const [permView, setPermView] = useState<'group' | 'page'>('group')
   // Default access sections for everyone holding this role (staff can still get their own on top).
   const [sections, setSections] = useState<AccessSection[]>([])
   const [acc, setAcc] = useState<{ main: string | null; subs: string[] }>({
@@ -363,12 +365,31 @@ const RoleModal = ({
                   <span>View</span>
                   <span>Manage</span>
                 </div>
-                <PermissionMatrix
-                  groups={groups}
-                  selected={form.permission_ids}
-                  onChange={(next) => setForm((f) => ({ ...f, permission_ids: next }))}
-                  readOnly={false}
-                />
+                <div className="flex gap-1 mb-2" role="tablist">
+                  {([['group', 'By permission'], ['page', 'By page']] as const).map(([id, label]) => (
+                    <button key={id} type="button" role="tab" aria-selected={permView === id} onClick={() => setPermView(id)}
+                      className={`px-3 py-1 text-xs rounded-full border ${permView === id ? 'bg-indigo-600 text-white border-indigo-600' : 'border-gray-200 text-gray-600'}`}>{label}</button>
+                  ))}
+                </div>
+                {permView === 'group' ? (
+                  <PermissionMatrix
+                    groups={groups}
+                    selected={form.permission_ids}
+                    onChange={(next) => setForm((f) => ({ ...f, permission_ids: next }))}
+                    readOnly={false}
+                  />
+                ) : (
+                  <PagePermissionMatrix
+                    granted={new Set(groups.flatMap((g) => g.permissions).filter((p) => form.permission_ids.has(p.id)).map((p) => p.key))}
+                    labelOf={(k) => groups.flatMap((g) => g.permissions).find((p) => p.key === k)?.label ?? k}
+                    onToggle={(keys, on) => setForm((f) => {
+                      const next = new Set(f.permission_ids)
+                      const all = groups.flatMap((g) => g.permissions)
+                      keys.forEach((k) => { const id = all.find((p) => p.key === k)?.id; if (id) { on ? next.add(id) : next.delete(id) } })
+                      return { ...f, permission_ids: next }
+                    })}
+                  />
+                )}
               </div>
             </>
           )}

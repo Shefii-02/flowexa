@@ -63,7 +63,18 @@ export const usePermission = (permission: string): boolean => {
   const user = useAppSelector((s) => s.auth.user)
   if (!user?.role) return false
   if (isSuperAdminRole(user.role.name)) return true
-  return user.role.permissions.includes(permission)
+  // The effective list (role + access sections + individual extras) when the API sent it; the role's own list otherwise.
+  return (Array.isArray(user.permissions) && user.permissions.length ? user.permissions : user.role.permissions).includes(permission)
+}
+
+/** True when the user holds ANY of [keys] — or when no keys are given (a page open to everyone). */
+export const usePermissionAny = (keys?: string[]): boolean => {
+  const user = useAppSelector((s) => s.auth.user)
+  if (!keys || keys.length === 0) return true
+  if (!user?.role) return false
+  if (isSuperAdminRole(user.role.name)) return true
+  const list = Array.isArray(user.permissions) && user.permissions.length ? user.permissions : user.role.permissions
+  return keys.some((k) => list.includes(k))
 }
 
 /** True when the company's plan (or a purchased add-on) includes this module. Super admins and plan-less trials see everything. */

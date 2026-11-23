@@ -7,6 +7,7 @@ import { staffAccessApi, staffAccountAccessApi } from '@/api'
 import { Button, EmptyState, Spinner } from '@/components/ui'
 import StaffAccountAccessCards, { type AccountRow } from './StaffAccountAccessCards'
 import AccessSectionPicker, { sectionAddedPermissions, type AccessSection } from './AccessSectionPicker'
+import ExtraPermissionsCard, { type PermDef } from './ExtraPermissionsCard'
 import WebScreensCard, { type WebSection } from './WebScreensCard'
 import MobileScreensCard, { type MobileScreens, type MobileScreensMeta } from './MobileScreensCard'
 import { getError } from '@/utils'
@@ -30,6 +31,9 @@ export default function StaffAccessPage() {
   const [main, setMain] = useState<string | null>(null)
   const [subs, setSubs] = useState<string[]>([])
   const [followsRole, setFollowsRole] = useState(true)
+  const [extraPerms, setExtraPerms] = useState<string[]>([])
+  const [sectionPerms, setSectionPerms] = useState<string[]>([])
+  const [permCatalogue, setPermCatalogue] = useState<PermDef[]>([])
   const [roleAccess, setRoleAccess] = useState<{ main: string | null; subs: string[] }>({ main: null, subs: [] })
   const [rolePerms, setRolePerms] = useState<string[]>([])
   const [allPerms, setAllPerms] = useState<string[]>([])
@@ -48,7 +52,7 @@ export default function StaffAccessPage() {
   const load = useCallback((id: number) => {
     setBusy(true)
     staffAccessApi.show(id)
-      .then((r) => { setPortal(r.data.portal_access); setMobile(r.data.mobile_access); setMain(r.data.main ?? null); setSubs(r.data.subs ?? []); setFollowsRole(r.data.follows_role !== false); setRoleAccess(r.data.role_access ?? { main: null, subs: [] }); setRolePerms(r.data.role_permissions ?? []); setAllPerms(r.data.all_permissions ?? []); setScreens(r.data.mobile_screens ?? null); setScreensMeta({ tab_labels: r.data.tab_labels ?? {}, profile_item_labels: r.data.profile_item_labels ?? {}, catalogue: r.data.catalogue ?? [] }); setWebScreens(r.data.web_screens?.sections ?? null); setWebSections(r.data.web_sections ?? []) })
+      .then((r) => { setPortal(r.data.portal_access); setMobile(r.data.mobile_access); setMain(r.data.main ?? null); setSubs(r.data.subs ?? []); setFollowsRole(r.data.follows_role !== false); setExtraPerms(r.data.extra_permissions ?? []); setSectionPerms(r.data.section_permissions ?? []); setPermCatalogue(r.data.permission_catalogue ?? []); setRoleAccess(r.data.role_access ?? { main: null, subs: [] }); setRolePerms(r.data.role_permissions ?? []); setAllPerms(r.data.all_permissions ?? []); setScreens(r.data.mobile_screens ?? null); setScreensMeta({ tab_labels: r.data.tab_labels ?? {}, profile_item_labels: r.data.profile_item_labels ?? {}, catalogue: r.data.catalogue ?? [] }); setWebScreens(r.data.web_screens?.sections ?? null); setWebSections(r.data.web_sections ?? []) })
       .catch((e) => toast.error(getError(e)))
       .finally(() => setBusy(false))
   }, [])
@@ -64,7 +68,7 @@ export default function StaffAccessPage() {
     if (!selectedId) return
     setSaving(true)
     try {
-      await staffAccessApi.update(selectedId, { portal_access: portal, mobile_access: mobile, ...(followsRole ? { follow_role: true } : { main, subs }), mobile_screens: screens, web_screens: webScreens === null ? null : { sections: webScreens } })
+      await staffAccessApi.update(selectedId, { portal_access: portal, mobile_access: mobile, extra_permissions: extraPerms, ...(followsRole ? { follow_role: true } : { main, subs }), mobile_screens: screens, web_screens: webScreens === null ? null : { sections: webScreens } })
       toast.success('Access saved.')
     } catch (e) { toast.error(getError(e)) }
     finally { setSaving(false) }
@@ -122,6 +126,8 @@ export default function StaffAccessPage() {
                   </div>
                 </div>
               </div>
+
+              <ExtraPermissionsCard name={selected.name} catalogue={permCatalogue} fromRole={rolePerms} fromSections={sectionPerms} value={extraPerms} onChange={setExtraPerms} />
 
               {(() => {
                 const keys = [...(main ? [main] : []), ...subs]

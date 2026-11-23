@@ -54,6 +54,10 @@ class StaffAccessController extends Controller
             'subs'          => $follows ? array_values((array) ($role?->access_subs ?? [])) : $rows->where('is_main', false)->pluck('section_key')->values(),
             // Role + sections = what this person can actually do (see User::effectivePermissions()).
             'role_permissions'      => array_values((array) ($user->role?->permissions ?? [])),
+            // permissions this person has from their sections (not from the role) and the extra ones granted to them alone
+            'section_permissions'   => $this->sectionPermissions($user),
+            'extra_permissions'     => array_values((array) ($user->extra_permissions ?? [])),
+            'permission_catalogue'  => \App\Models\Permission::orderBy('group')->orderBy('sort_order')->get(['key', 'label', 'group', 'type'])->all(),
             'effective_permissions' => $user->effectivePermissions(),
             'all_permissions'       => \App\Models\Permission::pluck('key')->all(),
         ]);
@@ -69,6 +73,8 @@ class StaffAccessController extends Controller
         $data = $request->validate([
             'portal_access' => ['required', 'boolean'],
             'mobile_access' => ['required', 'boolean'],
+            'extra_permissions'   => ['sometimes', 'array'],
+            'extra_permissions.*' => ['string', 'max:100'],
             'follow_role'   => ['sometimes', 'boolean'],   // true = drop their own sections and follow the role's defaults
             'main'          => ['sometimes', 'nullable', Rule::in($keys)],
             'subs'          => ['sometimes', 'array'],
@@ -91,6 +97,12 @@ class StaffAccessController extends Controller
 
         DB::transaction(function () use ($user, $data) {
             $user->update(['portal_access' => $data['portal_access'], 'mobile_access' => $data['mobile_access']]);
+            if (array_key_exists('extra_permissions', $data)) {
+                // Only real permissions, and nobody can hand out more than they hold themselves (owners / superadmins excepted).
+                $valid = \App\Models\Permission::pluck('key')->all();
+                $allowed = ($actor->isSuperAdmin() || $actor->isOwner()) ? $valid : array_intersect($valid, $actor->effectivePermissions());
+                $user->update(['extra_permissions' => array_values(array_intersect(array_unique($data['extra_permissions']), $allowed))]);
+            }
             if (array_key_exists('web_screens', $data)) {
                 $ws = $data['web_screens'];
                 $user->update(['web_screens' => $ws === null ? null : ['sections' => array_values(array_intersect(array_unique($ws['sections']), array_column(app(\App\Http\Controllers\MobileModulesController::class)->allowedWebSections(), 'id')))]]);
@@ -117,5 +129,18 @@ class StaffAccessController extends Controller
         });
 
         return response()->json(['message' => 'Access updated.']);
+    }
+
+    /** Permissions that come from this person's access sections (main + subs, or the role's defaults) — not counting the role's own list. */
+    private function sectionPermissions(User $user): array
+    {
+        $all = \App\Models\Permission::pluck('key')->all();
+        $out = [];
+        foreach ($user->accessSectionKeys() as $key) {
+            $p = (array) config("access_sections.$key.permissions", []);
+            $out = array_merge($out, in_array('*', $p, true) ? $all : $p);
+        }
+
+        return array_values(array_unique($out));
     }
 }

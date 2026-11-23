@@ -16,6 +16,15 @@ export const SIDEBAR_SECTIONS: { id: string; label: string; icon: string }[] = [
   { id: 'leads',        label: 'Leads',        icon: '🎯' },
   { id: 'hr',           label: 'HR',           icon: '👥' },
   { id: 'integrations', label: 'Integrations', icon: '🔌' },
+  { id: 'website-widget', label: 'Website Widget', icon: '🌐' },
+  { id: 'media-library', label: 'Media Library', icon: '🖼️' },
+  { id: 'short-links',  label: 'Short Links',  icon: '🔗' },
+  { id: 'tasks',        label: 'Tasks',        icon: '📋' },
+  { id: 'ask',          label: 'Ask in portal', icon: '✨' },
+  { id: 'team-chat',    label: 'Team chat',    icon: '💬' },
+  { id: 'sticky-notes', label: 'Sticky notes', icon: '📝' },
+  { id: 'todo',         label: 'To-do list',   icon: '✅' },
+  { id: 'setup-guide',  label: 'Setup Guide',  icon: '🧭' },
 ]
 
 export type SidebarPrefs = { accordion: boolean; hidden: string[]; locked: string[] }   // locked = taken off your menu by the platform / your company
