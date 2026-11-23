@@ -24,6 +24,7 @@ export default function AccessSectionPicker({ sections, main, subs, onChange, co
               {isMain && <span className="text-[10px] px-1.5 py-0.5 rounded bg-brand-500 text-white">MAIN</span>}
             </div>
             <p className="text-xs text-gray-500 mt-1">{s.description}</p>
+            <p className="text-[11px] text-gray-400 mt-0.5">{s.permissions.includes('*') ? 'Grants every permission' : `Grants ${s.permissions.length} permissions`}</p>
             <div className="flex gap-4 mt-2 text-xs text-gray-700">
               <label className="flex items-center gap-1"><input type="radio" checked={isMain} onChange={() => pickMain(s.key)} onClick={() => isMain && pickMain(s.key)} /> Main</label>
               <label className="flex items-center gap-1"><input type="checkbox" disabled={isMain} checked={isSub} onChange={() => toggleSub(s.key)} /> Sub</label>

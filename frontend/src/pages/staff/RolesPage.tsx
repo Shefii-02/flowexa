@@ -124,11 +124,13 @@ const PermissionMatrix = ({
   selected,
   onChange,
   readOnly,
+  locked = new Set<string>(),
 }: {
   groups: PermissionGroup[]
   selected: Set<number>
   onChange: (next: Set<number>) => void
   readOnly: boolean
+  locked?: Set<string>   // permission keys already granted by the ticked access sections — shown ticked and not editable here
 }) => {
   const toggle = (id: number, type: 'viewer' | 'manage', allInGroup: PermissionGroup['permissions']) => {
     if (readOnly) return
@@ -174,8 +176,8 @@ const PermissionMatrix = ({
                 <input
                   type="checkbox"
                   className="w-3.5 h-3.5 rounded accent-indigo-500"
-                  checked={viewer ? selected.has(viewer.id) : false}
-                  disabled={readOnly || !viewer}
+                  checked={viewer ? selected.has(viewer.id) || locked.has(viewer.key) : false}
+                  disabled={readOnly || !viewer || locked.has(viewer.key)}
                   onChange={() => viewer && toggle(viewer.id, 'viewer', g.permissions)}
                 />
                 <span className="text-xs text-gray-500">View</span>
@@ -185,8 +187,8 @@ const PermissionMatrix = ({
                 <input
                   type="checkbox"
                   className="w-3.5 h-3.5 rounded accent-indigo-500"
-                  checked={manage ? selected.has(manage.id) : false}
-                  disabled={readOnly || !manage}
+                  checked={manage ? selected.has(manage.id) || locked.has(manage.key) : false}
+                  disabled={readOnly || !manage || locked.has(manage.key)}
                   onChange={() => manage && toggle(manage.id, 'manage', g.permissions)}
                 />
                 <span className="text-xs text-gray-500">Manage</span>
@@ -241,6 +243,14 @@ const RoleModal = ({
   const [acc, setAcc] = useState<{ main: string | null; subs: string[] }>({
     main: (editing as any)?.access_main ?? null, subs: (editing as any)?.access_subs ?? [] })
   useEffect(() => { staffAccessApi.sections().then((r) => setSections(r.data.sections ?? [])).catch(() => {}) }, [])
+
+  // Permissions the ticked access sections already grant (their "Grants N permissions") — locked in both permission tabs so nothing is ticked twice.
+  const fromSections = new Set<string>(
+    [acc.main, ...acc.subs].filter(Boolean).flatMap((k) => {
+      const perms = sections.find((s) => s.key === k)?.permissions ?? []
+      return perms.includes('*') ? groups.flatMap((g) => g.permissions).map((p) => p.key) : perms
+    }),
+  )
 
   const patch = (partial: Partial<Omit<FormState, 'permission_ids'>>) => {
     if (readOnly) return
@@ -407,16 +417,21 @@ const RoleModal = ({
                       className={`px-3 py-1 text-xs rounded-full border ${permView === id ? 'bg-indigo-600 text-white border-indigo-600' : 'border-gray-200 text-gray-600'}`}>{label}</button>
                   ))}
                 </div>
+                <p className="text-[11px] text-gray-400 mb-2">
+                  Both tabs edit the same list of permissions — a tick in one shows in the other. Permissions already given by the ticked access sections show ticked and locked.
+                </p>
                 {permView === 'group' ? (
                   <PermissionMatrix
                     groups={groups}
                     selected={form.permission_ids}
                     onChange={(next) => !readOnly && setForm((f) => ({ ...f, permission_ids: next }))}
                     readOnly={readOnly}
+                    locked={fromSections}
                   />
                 ) : (
                   <PagePermissionMatrix
                     readOnly={readOnly}
+                    locked={Object.fromEntries([...fromSections].map((k) => [k, 'section']))}
                     granted={new Set(groups.flatMap((g) => g.permissions).filter((p) => form.permission_ids.has(p.id)).map((p) => p.key))}
                     labelOf={(k) => groups.flatMap((g) => g.permissions).find((p) => p.key === k)?.label ?? k}
                     onToggle={(keys, on) => !readOnly && setForm((f) => {
