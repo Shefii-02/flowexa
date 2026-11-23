@@ -19,7 +19,6 @@ use Illuminate\Support\Facades\Schema;
 class WorkspaceHomeController extends Controller
 {
     private const PERMISSIONS = [
-        'company_admin'  => ['dashboard.view'],   // further limited to team heads in show()
         'sales'          => ['leads.view', 'contacts.view', 'wa_agent.leads.view'],
         'hr'             => ['hr.manage', 'hr.attendance.view_all', 'hr.leave.approve', 'staff.view'],
         'administrators' => ['staff.view', 'staff.manage', 'settings.manage'],
@@ -44,83 +43,9 @@ class WorkspaceHomeController extends Controller
     {
         abort_unless(isset(self::PERMISSIONS[$workspace]), 404);
         $u = auth()->user()->loadMissing('role');
-        abort_unless($workspace !== 'company_admin' || $u->isSuperAdmin() || $u->isOwner() || TeamMembersController::canSeeTeam($u), 403, 'Only the company admin or a team head can open this dashboard.');
         abort_unless($u->isSuperAdmin() || $u->isOwner() || TeamMembersController::canSeeTeam($u) || $u->hasAnyPermission(self::PERMISSIONS[$workspace]), 403, 'This workspace is not available for your account.');
 
-        $method = $workspace === 'company_admin' ? 'companyAdmin' : $workspace;
-
-        return response()->json(['workspace' => $workspace, 'generated_at' => now()->toIso8601String()] + $this->{$method}($u, TeamMembersController::canSeeTeam($u)));
-    }
-
-    // ───────────────────────── Company admin ─────────────────────────
-    /** ?period=today|week|month — the whole-company overview: revenue vs target, headline numbers, what needs attention, pipeline, leaderboard, sources. */
-    private function companyAdmin($u, bool $team): array
-    {
-        $cid = $this->cid();
-        $period = in_array(request('period'), ['today', 'week', 'month'], true) ? request('period') : 'month';
-        $from = match ($period) { 'today' => Carbon::today(), 'week' => now()->startOfWeek(), default => now()->startOfMonth() };
-        $prevFrom = match ($period) { 'today' => Carbon::yesterday(), 'week' => now()->startOfWeek()->subWeek(), default => now()->startOfMonth()->subMonth() };
-        $fromS = $from->toDateTimeString(); $prevS = $prevFrom->toDateTimeString();
-
-        $deals = fn () => DB::table('crm_deals')->where('company_id', $cid);
-        $won = fn () => $deals()->where('status', 'won');
-        $wonNow = $this->safe(fn () => $won()->where('closed_at', '>=', $fromS)->selectRaw('COUNT(*) n, COALESCE(SUM(value),0) v')->first(), null);
-        $wonPrev = $this->safe(fn () => $won()->where('closed_at', '>=', $prevS)->where('closed_at', '<', $fromS)->selectRaw('COALESCE(SUM(value),0) v')->first(), null);
-        $target = (float) $this->safe(fn () => DB::table('hr_staff_profiles')->where('company_id', $cid)->sum('monthly_target'), 0);
-        $revenue = (float) ($wonNow->v ?? 0);
-        $change = ($wonPrev->v ?? 0) > 0 ? round(($revenue - $wonPrev->v) / $wonPrev->v * 100, 1) : null;
-
-        $leads = fn () => DB::table('leads')->where('company_id', $cid)->whereNull('deleted_at');
-        $newLeads = $this->safe(fn () => $leads()->where('created_at', '>=', $fromS)->count(), 0);
-        $prevLeads = $this->safe(fn () => $leads()->where('created_at', '>=', $prevS)->where('created_at', '<', $fromS)->count(), 0);
-        $enrolled = $this->safe(fn () => $leads()->where('stage', 'enrolled')->where('enrolled_at', '>=', $fromS)->count(), 0);
-        $conv = $newLeads > 0 ? round($enrolled / $newLeads * 100, 1) : 0;
-        $openDeals = $this->safe(fn () => $deals()->where('status', 'open')->selectRaw('COUNT(*) n, COALESCE(SUM(value),0) v')->first(), null);
-        $overdue = $this->safe(fn () => DB::table('crm_tasks')->where('company_id', $cid)->where('status', 'open')->where('due_at', '<', now()->toDateTimeString())->count(), 0);
-
-        $staffTotal = DB::table('users')->where('company_id', $cid)->where('is_active', true)->count();
-        $clocked = $this->safe(fn () => DB::table('hr_attendance')->where('company_id', $cid)->whereDate('work_date', today())->whereNotNull('clock_in_at')->count(), 0);
-
-        $unassigned = $this->safe(fn () => $leads()->whereNull('assigned_to')->whereNotIn('stage', ['enrolled', 'lost'])->count(), 0);
-        $idle = $this->safe(fn () => $deals()->where('status', 'open')->where('updated_at', '<', now()->subDays(14)->toDateTimeString())->selectRaw('COUNT(*) n, COALESCE(SUM(value),0) v')->first(), null);
-        $notIn = max(0, $staffTotal - $clocked);
-
-        $attention = [];
-        if ($unassigned > 0) { $attention[] = ['kind' => 'unassigned', 'title' => "$unassigned new lead" . ($unassigned === 1 ? '' : 's') . ' unassigned', 'sub' => 'Waiting for an owner', 'action' => 'Assign', 'route' => '/assignment-queue']; }
-        if (($idle->n ?? 0) > 0) { $attention[] = ['kind' => 'idle', 'title' => "{$idle->n} deal" . ($idle->n == 1 ? '' : 's') . ' idle 14+ days', 'sub' => 'Worth ' . number_format((float) $idle->v), 'action' => 'Review', 'route' => '/deals']; }
-        if ($notIn > 0 && now()->hour >= 10) { $attention[] = ['kind' => 'attendance', 'title' => "$notIn staff not checked in", 'sub' => 'Not clocked in yet today', 'action' => 'View', 'route' => '/hr/attendance-all']; }
-
-        $stageOrder = ['new' => 'New', 'qualified' => 'Qualified', 'proposal' => 'Proposal', 'negotiation' => 'Negotiation', 'won' => 'Won'];
-        $byStage = $this->safe(fn () => $deals()->selectRaw('stage, COUNT(*) n, COALESCE(SUM(value),0) v')->groupBy('stage')->get()->keyBy('stage'), collect());
-        $pipeline = [];
-        foreach ($stageOrder as $k => $label) { $r = $byStage[$k] ?? null; $pipeline[] = ['key' => $k, 'label' => $label, 'deals' => (int) ($r->n ?? 0), 'value' => (float) ($r->v ?? 0)]; }
-
-        $board = $this->safe(fn () => DB::table('crm_deals as d')->join('users as x', 'x.id', '=', 'd.owner_id')->where('d.company_id', $cid)->where('d.status', 'won')->where('d.closed_at', '>=', $fromS)
-            ->selectRaw('x.id, x.name, COALESCE(SUM(d.value),0) v, COUNT(*) n')->groupBy('x.id', 'x.name')->orderByDesc('v')->limit(5)->get(), collect());
-        $bestV = max(1.0, (float) ($board->first()->v ?? 1));
-        $state = $this->safe(fn () => DB::table('hr_attendance')->where('company_id', $cid)->whereDate('work_date', today())->get(['user_id', 'clock_in_at', 'clock_out_at', 'status'])->keyBy('user_id'), collect());
-        $leaderboard = $board->map(fn ($r, $i) => ['rank' => $i + 1, 'id' => $r->id, 'name' => $r->name, 'value' => (float) $r->v, 'deals' => (int) $r->n, 'share' => round($r->v / $bestV, 3),
-            'status' => ($a = $state[$r->id] ?? null) ? ($a->status === 'on_leave' ? 'On leave' : ($a->clock_in_at && !$a->clock_out_at ? 'Online' : ($a->clock_out_at ? 'Out' : 'Away'))) : 'Away'])->values()->all();
-
-        $src = $this->safe(fn () => $leads()->where('created_at', '>=', $fromS)->selectRaw('source, COUNT(*) n')->groupBy('source')->orderByDesc('n')->get(), collect());
-        $srcTotal = max(1, (int) $src->sum('n'));
-
-        return [
-            'period' => $period,
-            'hero' => ['revenue' => $revenue, 'target' => $target, 'pct' => $target > 0 ? round($revenue / $target * 100, 1) : null, 'change_pct' => $change,
-                'days_left' => max(0, now()->endOfMonth()->diffInDays(now())), 'deals_won' => (int) ($wonNow->n ?? 0),
-                'avg_deal' => ($wonNow->n ?? 0) > 0 ? round($revenue / $wonNow->n, 0) : 0, 'staff_active' => $clocked, 'staff_total' => $staffTotal],
-            'kpis' => [
-                'new_leads' => ['value' => $newLeads, 'delta' => $newLeads - $prevLeads],
-                'open_pipeline' => ['value' => (float) ($openDeals->v ?? 0), 'deals' => (int) ($openDeals->n ?? 0)],
-                'conversion' => ['value' => $conv],
-                'overdue_followups' => ['value' => $overdue],
-            ],
-            'needs_attention' => $attention,
-            'pipeline' => $pipeline,
-            'leaderboard' => $leaderboard,
-            'lead_sources' => $src->map(fn ($r) => ['source' => ucfirst((string) $r->source), 'count' => (int) $r->n, 'pct' => (int) round($r->n / $srcTotal * 100)])->values()->all(),
-        ];
+        return response()->json(['workspace' => $workspace, 'generated_at' => now()->toIso8601String()] + $this->{$workspace}($u, TeamMembersController::canSeeTeam($u)));
     }
 
     // ───────────────────────────── Sales ─────────────────────────────
