@@ -10,6 +10,7 @@ import { toast } from 'react-hot-toast'
 import { api } from '@/api/client'
 import { ACCOUNTS_NAV } from '@/pages/accounts/accountsNav'
 import { SidebarPrefsContext, useSidebarPrefs } from './sidebarPrefs'
+import { useWorkspace } from '@/lib/workspace'
 
 // ── WA Session picker ─────────────────────────────────────────────────────────
 type WaSessionItem = { id: string; name: string; status?: string }
@@ -453,11 +454,22 @@ const SidebarInner = () => {
     setTimeout(() => { window.location.href = back }, 800)
   }
 
-  // Sales-team staff get the short lead-first menu; they can flip to the full menu and back (remembered on this browser)
-  const isSalesStaff = (user as any)?.access_sections?.[0] === 'sales'
+  // The sidebar follows the workspace picked in the topbar (same sections as the app). Sales gets the short lead-first menu;
+  // the rest show only the groups their team works in. Company Admin sees everything.
+  const { active: workspace } = useWorkspace()
+  const isSalesStaff = workspace === 'sales'
   const [fullMenu, setFullMenu] = useState(() => { try { return localStorage.getItem('sidebar_full_menu') === '1' } catch { return false } })
   const salesMenu = !isSuperAdmin && isSalesStaff && !fullMenu
   const flipMenu = () => setFullMenu(v => { const n = !v; try { localStorage.setItem('sidebar_full_menu', n ? '1' : '0') } catch { /* private mode */ } return n })
+  const WS_GROUPS: Record<string, string[]> = {
+    company_admin: ['channels', 'marketing', 'sales', 'business', 'workspace', 'staff', 'system'],
+    administrators: ['workspace', 'staff', 'system'],
+    sales: ['channels', 'sales', 'workspace'],
+    marketing: ['channels', 'marketing', 'sales', 'workspace'],
+    hr: ['business', 'workspace', 'staff'],
+    accounts: ['business', 'workspace'],
+  }
+  const show = (g: string) => !workspace || (WS_GROUPS[workspace] ?? WS_GROUPS.company_admin).includes(g) || g === 'system'   // System (settings, billing) is always reachable
 
   if (!sidebarOpen) return null
 
@@ -515,6 +527,7 @@ const SidebarInner = () => {
             {/* {canViewDash &&  */}
             <FlatLink to="/dashboard" icon="📊" label="Dashboard" end section="dashboard" />
 
+            {show('channels') && (<>
             <GroupHeader label="Channels" modules={['wa_chat', 'wa_cloud', 'ai_agent', 'social_dm', 'web_widgets']} />
             {/* ── WA Chat accordion ── */}
             {/* {canViewWaChat && ( */}
@@ -683,6 +696,8 @@ const SidebarInner = () => {
 
             {/* Catalog is a top-level item now (📦 Catalog under CRM) */}
             <FlatLink to="/website-widget" icon="🌐" label="Website Widget" section="website-widget" />
+            </>)}
+            {show('marketing') && (<>
             <GroupHeader label="Marketing" modules={['meta_ads', 'short_links', 'media_library']} />
             {/* ── Meta Ads accordion ── */}
             {/* {canViewMetaAds && ( */}
@@ -708,6 +723,8 @@ const SidebarInner = () => {
             <FlatLink to="/media-library" icon="🖼️" label="Media Library" section="media-library" />
             <FlatLink to="/short-links" icon="🔗" label="Short Links" section="short-links" />
 
+            </>)}
+            {show('sales') && (<>
             <GroupHeader label="Sales" modules={['crm', 'tasks', 'leads']} />
             {/* ── CRM ── */}
             <NestedAccordion
@@ -783,6 +800,8 @@ const SidebarInner = () => {
               </NestedAccordion> */}
             </NestedAccordion>
 
+            </>)}
+            {show('business') && (<>
             <GroupHeader label="Business" modules={['finance', 'hr']} />
             {/* ── ACCOUNTS ── */}
             {canViewAccounts && (
@@ -819,6 +838,8 @@ const SidebarInner = () => {
               </NestedAccordion>
             </NestedAccordion>
 
+            </>)}
+            {show('workspace') && (<>
             <SectionHeader label="My workspace" />
             {/* Personal tools — the same things as the floating buttons, as full pages */}
             <FlatLink to="/ask" icon="✨" label="Ask in portal" section="ask" />
@@ -826,6 +847,8 @@ const SidebarInner = () => {
             <FlatLink to="/sticky-notes" icon="📝" label="Sticky notes" section="sticky-notes" />
             <FlatLink to="/todo" icon="✅" label="To-do list" section="todo" />
             {/* ── STAFF ── */}
+            </>)}
+            {show('staff') && (<>
             <SectionHeader label="Staff" />
             {/* {canViewStaff &&  */}
             <FlatLink to="/staff/index" icon="👤" label="Staff" section="staff" />
@@ -838,6 +861,8 @@ const SidebarInner = () => {
 
 
             {/* ── SYSTEM ── */}
+            </>)}
+            {show('system') && (<>
             <SectionHeader label="System" />
 
 
@@ -859,6 +884,7 @@ const SidebarInner = () => {
             <FlatLink to="/plan-purchase" icon="💳" label="Plans & Billing" section="billing" />
             {canViewSupport && <FlatLink to="/support" icon="🎧" label="Support" />}
             <FlatLink to="/setup-guide" icon="🧭" label="Setup Guide" section="setup-guide" />
+            </>)}
           </>
         )}
 

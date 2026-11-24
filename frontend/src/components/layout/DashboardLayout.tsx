@@ -9,6 +9,7 @@ import { useAppDispatch, useAppSelector, useModule } from '@/store'
 import { toggleSidebar, clearForbidden, clearSessionExpired, clearConnectionError, logoutThunk } from '@/store/slices'
 import { Sidebar } from './Sidebar'
 import { SessionStatusIndicator } from './SessionStatusIndicator'
+import WorkspaceSwitcher from './WorkspaceSwitcher'
 import LeadNotificationPopup from '@/components/leads/LeadNotificationPopup'
 import AiHandoffOfferPopup from '@/components/leads/AiHandoffOfferPopup'
 import PortalAssistant from '@/components/assistant/PortalAssistant'
@@ -78,6 +79,7 @@ export const DashboardLayout = () => {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
             </svg>
           </button>
+          <WorkspaceSwitcher />
           <div className="flex-1" />
           <SessionStatusIndicator />
         </header>

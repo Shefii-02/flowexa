@@ -8,6 +8,7 @@ import { useAppDispatch, useAppSelector } from '@/store'
 import { fetchLeadsThunk, fetchLeadAnalyticsThunk, updateLeadInList } from '@/store/slices'
 import { leadApi, staffApi, leadImportExportApi, contactApi, leadCategoryApi } from '@/api'
 import StaffPicker from './components/StaffPicker'
+import { useWorkspace } from '@/lib/workspace'
 import { useStageNote, stageNoteRule } from './components/StageReason'
 import StaffScopePicker, { needsStaff, type StaffScope } from './components/StaffScopePicker'
 import { Button, Modal, Drawer, ConfirmModal, Badge, EmptyState, Pagination, TableSkeleton, StatCard } from '@/components/ui'
@@ -30,14 +31,17 @@ export default function LeadsPage() {
   const urlStage = urlParams.get('stage') ?? ''
   const urlMine = urlParams.get('mine') === '1'
   const urlTransferred = urlParams.get('transferred') === '1'
+  // In the Sales workspace the list is only the leads assigned to you — everywhere, not just from My Leads
+  const { active: workspace } = useWorkspace()
+  const onlyMine = workspace === 'sales'
 
   const [page,    setPage]    = useState(1)
   const [view,    setView]    = useState<'table'|'kanban'>('table')
   const [stage,   setStage]   = useState(urlStage)
   const [sourceFilter, setSourceFilter] = useState('')
   const [sources, setSources] = useState<Record<string, { label: string; icon: string }>>({})
-  const [assignedFilter, setAssignedFilter] = useState(urlMine && me ? String(me.id) : '')
-  useEffect(() => { setStage(urlStage); setAssignedFilter(urlMine && me ? String(me.id) : ''); setPage(1) }, [urlStage, urlMine, urlTransferred]) // eslint-disable-line react-hooks/exhaustive-deps
+  const [assignedFilter, setAssignedFilter] = useState((urlMine || onlyMine) && me ? String(me.id) : '')
+  useEffect(() => { setStage(urlStage); setAssignedFilter((urlMine || onlyMine) && me ? String(me.id) : ''); setPage(1) }, [urlStage, urlMine, urlTransferred, onlyMine, me?.id]) // eslint-disable-line react-hooks/exhaustive-deps
   const [search,  setSearch]  = useState('')
   const [createdFrom, setCreatedFrom] = useState('')
   const [createdTo,   setCreatedTo]   = useState('')
@@ -475,11 +479,11 @@ export default function LeadsPage() {
           <option value="">All sources</option>
           {Object.entries(sources).map(([k, s]) => <option key={k} value={k}>{s.icon} {s.label}</option>)}
         </select>
-        <select className="select max-w-[200px]" value={assignedFilter} onChange={(e) => { setAssignedFilter(e.target.value); setPage(1) }}>
+        {!onlyMine && <select className="select max-w-[200px]" value={assignedFilter} onChange={(e) => { setAssignedFilter(e.target.value); setPage(1) }}>
           <option value="">Everyone's leads</option>
           {counsellors.map((c) => <option key={c.id} value={c.id}>{c.name} — all stages</option>)}
-        </select>
-        {assignedFilter && (
+        </select>}
+        {assignedFilter && !onlyMine && (
           <Link to={`/crm/leads/staff/${assignedFilter}`} className="text-xs text-brand-600 hover:underline mb-1.5">
             Open as page →
           </Link>

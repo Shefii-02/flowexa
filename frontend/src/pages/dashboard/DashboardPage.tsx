@@ -8,6 +8,7 @@ import { analyticsApi } from '@/api'
 import { Spinner } from '@/components/ui'
 import TeamMembersPanel from '@/components/dashboard/TeamMembersPanel'
 import PackagePanel from '@/components/dashboard/PackagePanel'
+import { useWorkspace } from '@/lib/workspace'
 import { useAppSelector, usePermission } from '@/store'
 import { fmt } from '@/utils'
 
@@ -113,7 +114,8 @@ export default function DashboardPage() {
   const canLeads     = usePermission('leads.view')
   const canWallet    = usePermission('wallet.view')
   const canMessages  = usePermission('message_logs.view') || usePermission('inbox.view') || canViewCamp
-  const mainSection  = (user as any)?.access_sections?.[0] as string | undefined
+  const { active: workspace } = useWorkspace()
+  const mainSection  = workspace ?? ((user as any)?.access_sections?.[0] as string | undefined)   // the section picked in the topbar dropdown
   const sectionLabel = ({ company_admin: 'Company Admin', administrators: 'Administrators', sales: 'Sales Team',
     marketing: 'Marketing Team', hr: 'HR Team', accounts: 'Accounts Team' } as Record<string, string>)[mainSection ?? '']
   const waConfig     = (user?.company?.wa_config ?? 'wallet') === 'wallet' || (user?.company?.wa_chat_billing ?? 'wallet') === 'wallet' ? 'wallet' : 'own_account'   // 'wallet' = the wallet is in use (WA Cloud or WA Chat)
