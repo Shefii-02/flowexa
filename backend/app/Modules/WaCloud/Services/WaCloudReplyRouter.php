@@ -198,6 +198,7 @@ class WaCloudReplyRouter
         $strategy = ($r->strategy ?? 'algorithm') === 'round_robin' ? 'Simple round robin' : 'Weighted algorithm';
         $mode = match ($r->notification_mode) {
             'auto'   => 'instant auto-assign',
+            'silent' => 'instant auto-assign, no notification',
             'uber'   => 'notify one at a time (accept / decline)',
             'hybrid' => 'hybrid notify → accept / decline → cascade',
             default  => (string) $r->notification_mode,

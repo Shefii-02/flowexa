@@ -40,6 +40,7 @@ class LeadAssignmentEngine
         ?array $onlyStaffIds = null,   // limit the candidate pool (WA Cloud reply routing); null = any eligible staff
         ?string $strategyOverride = null,   // manual "Auto assign" button: 'algorithm' | 'round_robin' — assigns instantly, ignores working hours
         array|bool|null $poolOverride = false,   // manual button only: false = follow the routing rules / default pool, null = every available staff member, array = exactly these (see StaffPoolResolver)
+        ?bool $notify = null,   // manual button only: false = no notification to the staff member, true = notify, null = follow the company's mode
     ): LeadAssignment {
         $rule = LeadAssignmentRule::where('company_id', $company->id)->first()
             ?? LeadAssignmentRule::create(LeadAssignmentRule::defaultForCompany($company->id));
@@ -47,7 +48,8 @@ class LeadAssignmentEngine
         if ($strategyOverride) {
             // in-memory only (never saved): the admin picked the method for this click
             $rule->strategy = $strategyOverride;
-            $rule->notification_mode = 'auto';
+            // the button never runs the accept / decline ceremony; whether the person is told follows the ticked option, else the company's mode
+            $rule->notification_mode = ($notify === false || ($notify === null && $rule->notification_mode === 'silent')) ? 'silent' : 'auto';
         }
 
         // Category / campaign routing: matching leads go only to the employees (and, optionally,
@@ -75,7 +77,8 @@ class LeadAssignmentEngine
         }
 
         // "All staff" and "Selected staff (any time)" do not ask whether the person is online; every other choice does.
-        $ignoreByScope = $poolOverride === false && !$callerPool && !$strategyOverride && $this->pools->ignoresAvailability($poolScope);
+        // (the Auto assign button following the routing rules counts too — only a hand-picked pool or a WA Cloud pool has its own say)
+        $ignoreByScope = $poolOverride === false && !$callerPool && $this->pools->ignoresAvailability($poolScope);
 
         $dupCheck = $this->detector->check($company, $contact, $campaignId);
 
@@ -155,7 +158,7 @@ class LeadAssignmentEngine
             // notification_mode "auto" is the only mode that skips the accept/reject ceremony — it
             // instant-assigns via whichever strategy the rule uses (round robin or the weighted
             // algorithm), falling back to the AI agent only if nobody is available at all.
-            if ($rule->notification_mode === 'auto') {
+            if (in_array($rule->notification_mode, ['auto', 'silent'], true)) {
                 // An admin who picked the pool by hand (the Auto assign button) means those people — online status is not asked.
                 // Capacity, an active account and access to leads still apply.
                 $ignoreAvailability = $poolOverride !== false || $ignoreByScope;
@@ -193,7 +196,7 @@ class LeadAssignmentEngine
     public function retryWaiting(Company $company, LeadAssignment $assignment): bool
     {
         $rule = LeadAssignmentRule::where('company_id', $company->id)->first();
-        if (!$rule || $rule->notification_mode !== 'auto' || !$this->withinWorkingHours($company, $rule)) {
+        if (!$rule || !in_array($rule->notification_mode, ['auto', 'silent'], true) || !$this->withinWorkingHours($company, $rule)) {
             return false;
         }
         $lead = $assignment->lead_id ? Lead::find($assignment->lead_id) : null;
@@ -247,7 +250,10 @@ class LeadAssignmentEngine
 
         $this->syncConversationOwner($assignment, $staff->id);
 
-        dispatch(new NotifyStaffNewLead($assignment->id, $staff->id));
+        // "silent" mode: the lead is simply theirs — no push / WhatsApp / in-app alert
+        if ($rule->notification_mode !== 'silent') {
+            dispatch(new NotifyStaffNewLead($assignment->id, $staff->id));
+        }
 
         dispatch(new CheckLeadSla($assignment->id))
             ->delay(now()->addMinutes($assignment->response_sla_minutes));

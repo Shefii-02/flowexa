@@ -186,6 +186,28 @@ class LeadEngineRoutingTest extends TestCase
         $this->assertNotNull($this->staffOf($this->routeAuto()), 'everyone is offline, yet "All staff" still hands the lead out');
     }
 
+    public function test_the_auto_assign_button_following_the_rules_also_skips_the_online_check_for_all_staff(): void
+    {
+        $a = $this->staff('A'); $b = $this->staff('B');
+        $this->setStatus($a, 'offline', false); $this->setStatus($b, 'offline', false);
+        $this->companyPool('all');
+        $this->assertNotNull($this->staffOf($this->route(null)), 'the button (no pool picked) follows the company setting "All staff"');
+    }
+
+    public function test_silent_mode_assigns_directly_but_notifies_nobody(): void
+    {
+        \Illuminate\Support\Facades\Queue::fake();
+        $a = $this->staff('A');
+        $this->companyPool('all');
+        \App\Models\LeadAssignmentRule::where('company_id', 1)->update(['notification_mode' => 'silent']);
+        $this->assertSame($a->id, $this->staffOf($this->routeAuto()));
+        \Illuminate\Support\Facades\Queue::assertNotPushed(\App\Jobs\NotifyStaffNewLead::class);
+
+        \App\Models\LeadAssignmentRule::where('company_id', 1)->update(['notification_mode' => 'auto']);
+        $this->routeAuto();
+        \Illuminate\Support\Facades\Queue::assertPushed(\App\Jobs\NotifyStaffNewLead::class);
+    }
+
     public function test_selected_staff_still_must_be_available(): void
     {
         $a = $this->staff('A'); $b = $this->staff('B');

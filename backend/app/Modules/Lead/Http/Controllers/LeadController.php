@@ -100,6 +100,7 @@ class LeadController extends Controller
             'staff_scope' => ['nullable', 'in:all,online,selected,selected_online,selected_any'],   // omitted = follow the routing rules
             'staff_ids'   => ['nullable', 'array'],
             'staff_ids.*' => ['integer', \Illuminate\Validation\Rule::exists('users', 'id')->where('company_id', auth()->user()->company_id)],
+            'notify'      => ['nullable', 'boolean'],   // false = give the leads without telling the staff; omitted = follow the company's notification mode
         ]);
         if (in_array($d['staff_scope'] ?? null, ['selected', 'selected_online', 'selected_any'], true) && empty($d['staff_ids'])) {
             return response()->json(['message' => 'Pick at least one employee.', 'errors' => ['staff_ids' => ['Pick at least one employee.']]], 422);
@@ -112,8 +113,8 @@ class LeadController extends Controller
         if (!in_array($d['strategy'], \App\Support\Entitlements::forCompany($company)['assign_methods'], true)) {
             return response()->json(['message' => '"' . \App\Support\Modules::ASSIGN_METHODS[$d['strategy']] . '" assignment is not part of your plan.', 'error_code' => 'plan_feature_disabled'], 403);
         }
-        $r = $this->leadService->autoAssign($company->id, $d['lead_ids'] ?? [], $d['strategy'], $d['staff_scope'] ?? null, $d['staff_ids'] ?? null);
-        $why = $r['assigned'] === 0 && $r['reasons'] ? ' Why: ' . implode('; ', $r['reasons']) : '';
+        $r = $this->leadService->autoAssign($company->id, $d['lead_ids'] ?? [], $d['strategy'], $d['staff_scope'] ?? null, $d['staff_ids'] ?? null, array_key_exists('notify', $d) ? $d['notify'] : null);
+        $why = $r['skipped'] > 0 && $r['reasons'] ? ' Why: ' . implode('; ', $r['reasons']) : '';   // also when some were assigned: the rest usually ran into lead limits
         return response()->json(['message' => "{$r['assigned']} lead(s) auto-assigned" . ($r['skipped'] ? ", {$r['skipped']} left unassigned (no staff could take them)." : '.') . $why, ...$r]);
     }
 

@@ -319,8 +319,8 @@ export const leadApi = {
   update: (id: number, d: Record<string, unknown>) => api.put(`/leads/${id}`, d),
   assign: (id: number, userId: number) => api.post(`/leads/${id}/assign`, { user_id: userId }),
   bulkAssign: (leadIds: number[], userIds: number[]) => api.post('/leads/bulk-assign', { lead_ids: leadIds, user_ids: userIds, mode: 'round_robin' }),
-  autoAssign: (strategy: 'algorithm' | 'round_robin', leadIds: number[] = [], pool?: { staff_scope: string; staff_ids: number[] }) =>
-    api.post('/leads/auto-assign', { strategy, lead_ids: leadIds, ...(pool ?? {}) }),
+  autoAssign: (strategy: 'algorithm' | 'round_robin', leadIds: number[] = [], pool?: { staff_scope: string; staff_ids: number[] }, notify?: boolean) =>
+    api.post('/leads/auto-assign', { strategy, lead_ids: leadIds, ...(pool ?? {}), ...(notify === undefined ? {} : { notify }) }),
   recall: (p: { lead_ids?: number[]; only_untouched?: boolean; staff_id?: number | null; older_than_hours?: number | null; preview?: boolean }) =>
     api.post('/leads/recall', p),
   bulkReassign: (fromUserId: number, toUserId: number, includeClosed = false) =>

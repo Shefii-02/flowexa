@@ -150,7 +150,7 @@ class LeadService
      * through the engine with the method the admin picked, assigning instantly.
      * @return array{assigned:int, skipped:int}
      */
-    public function autoAssign(int $companyId, array $leadIds, string $strategy, ?string $staffScope = null, ?array $staffIds = null): array
+    public function autoAssign(int $companyId, array $leadIds, string $strategy, ?string $staffScope = null, ?array $staffIds = null, ?bool $notify = null): array
     {
         // null scope = follow the routing rules; otherwise the chosen pool (all / attendance-online / selected / selected+online) decides who may get leads
         $pool = $staffScope === null ? false : app(\App\Services\LeadAssignment\StaffPoolResolver::class)->resolve($companyId, $staffScope, $staffIds);
@@ -167,9 +167,9 @@ class LeadService
             if (!$lead->contact) { $skipped++; continue; }
             try {
                 // release + assign are ONE step: if nobody can take the lead, its current owner keeps it
-                \Illuminate\Support\Facades\DB::transaction(function () use ($lead, $engine, $company, $strategy, $pool, &$assigned, &$skipped) {
+                \Illuminate\Support\Facades\DB::transaction(function () use ($lead, $engine, $company, $strategy, $pool, $notify, &$assigned, &$skipped) {
                     if ($lead->assigned_to) { $this->releaseLead($lead, 'auto_reassign'); $lead->refresh(); }
-                    $a = $engine->assign($company, $lead->contact, $lead->source ?: 'organic', $lead->campaign_id, null, 'manual', $lead, null, $strategy, $pool);
+                    $a = $engine->assign($company, $lead->contact, $lead->source ?: 'organic', $lead->campaign_id, null, 'manual', $lead, null, $strategy, $pool, $notify);
                     $a->staff_id ? $assigned++ : $skipped++;
                 });
             } catch (\App\Services\LeadAssignment\NoEligibleStaffException) {
@@ -203,6 +203,9 @@ class LeadService
             return ['No active staff match the chosen pool.'];
         }
         $avail = \App\Models\StaffAvailability::whereIn('staff_id', $users->pluck('id'))->get()->keyBy('staff_id');
+        // "All staff" / "Selected staff — without checking attendance" never ask whether someone is online, so offline is not a reason
+        $scope = $pool === false ? \App\Models\LeadAssignmentRule::where('company_id', $companyId)->value('staff_scope') : null;
+        $asksAvailability = $pool === false && !app(\App\Services\LeadAssignment\StaffPoolResolver::class)->ignoresAvailability($scope);
         $out = [];
         foreach ($users as $u) {
             $a = $avail[$u->id] ?? null;
@@ -210,7 +213,7 @@ class LeadService
                 $out[] = "{$u->name} — their role cannot open leads (add the Leads permission)";
             } elseif ($u->max_leads > 0 && $a && $a->current_leads_count >= $u->max_leads) {
                 $out[] = "{$u->name} — already at their lead limit ({$a->current_leads_count}/{$u->max_leads})";
-            } elseif ($pool === false && $a && !$a->isEffectivelyAvailable()) {
+            } elseif ($asksAvailability && $a && !$a->isEffectivelyAvailable()) {
                 $out[] = "{$u->name} — marked " . ($a->status !== 'online' ? $a->status : 'unavailable') . ' (not available)';
             }
         }

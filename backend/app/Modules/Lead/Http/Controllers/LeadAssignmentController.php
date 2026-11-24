@@ -396,7 +396,7 @@ class LeadAssignmentController extends Controller
 
         // The plan decides which assignment methods may be switched on (Plans → Lead assign methods).
         $allowed = \App\Support\Entitlements::forCompany($company)['assign_methods'];
-        $wanted = array_filter([$request->input('strategy'), $request->input('notification_mode') === 'hybrid' ? 'uber' : $request->input('notification_mode')]);
+        $wanted = array_filter([$request->input('strategy'), match ($request->input('notification_mode')) { 'hybrid' => 'uber', 'silent' => 'auto', default => $request->input('notification_mode') }]);   // silent needs the same plan right as auto-assign
         if ($request->boolean('auto_assign_enabled') === false && $request->has('auto_assign_enabled')) { $wanted = ['manual']; }
         foreach ($wanted as $m) {
             if (isset(\App\Support\Modules::ASSIGN_METHODS[$m]) && !in_array($m, $allowed, true)) {

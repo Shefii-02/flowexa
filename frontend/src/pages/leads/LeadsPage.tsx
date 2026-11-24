@@ -107,6 +107,7 @@ export default function LeadsPage() {
   const [showAutoAssign, setShowAutoAssign] = useState(false)
   const [autoStrategy, setAutoStrategy] = useState<'algorithm' | 'round_robin'>('algorithm')
   const [autoAssigning, setAutoAssigning] = useState(false)
+  const [autoNotify, setAutoNotify] = useState(true)   // tell the staff member (push / WhatsApp) — untick to hand the leads over silently
   const [poolRules, setPoolRules] = useState(true)                    // true = follow the routing rules; false = choose who gets them now
   const [poolScope, setPoolScope] = useState<StaffScope>('all')
   const [poolIds, setPoolIds] = useState<number[]>([])
@@ -366,7 +367,7 @@ export default function LeadsPage() {
     setAutoAssigning(true)
     try {
       if (!poolRules && needsStaff(poolScope) && poolIds.length === 0) { toast.error('Pick at least one employee.'); setAutoAssigning(false); return }
-      const { data } = await leadApi.autoAssign(autoStrategy, [...selectedIds], poolRules ? undefined : { staff_scope: poolScope, staff_ids: needsStaff(poolScope) ? poolIds : [] })
+      const { data } = await leadApi.autoAssign(autoStrategy, [...selectedIds], poolRules ? undefined : { staff_scope: poolScope, staff_ids: needsStaff(poolScope) ? poolIds : [] }, autoNotify)
       // a run that placed nobody is a failure the admin needs to read (the reasons are in the message), not a green tick
       if (data.assigned === 0) { toast.error(data.message ?? 'No leads were assigned.', { duration: 10000 }); load() }
       else { toast.success(data.message ?? 'Leads auto-assigned.', { duration: data.skipped ? 8000 : 4000 }); setShowAutoAssign(false); setSelectedIds(new Set()); load() }
@@ -515,6 +516,8 @@ export default function LeadsPage() {
               <span><b>Choose now</b> — all staff, attendance-online staff, or the staff you pick. They get the leads even if they are marked offline (their lead limit still applies); the routing rules are ignored for this run</span></label>
             {!poolRules && <StaffScopePicker scope={poolScope} staffIds={poolIds} staff={counsellors} onChange={(s, ids) => { setPoolScope(s); setPoolIds(ids) }} />}
           </div>
+          <label className="flex items-start gap-2 text-sm cursor-pointer rounded-lg border border-gray-200 p-3"><input type="checkbox" className="mt-0.5" checked={autoNotify} onChange={e => setAutoNotify(e.target.checked)} />
+            <span><b>Notify the staff</b> — send each person a push / WhatsApp alert for the leads they get. Untick to assign without any notification (the leads just appear in their list).</span></label>
           <div className="flex justify-end gap-2 pt-2">
             <Button variant="secondary" onClick={() => setShowAutoAssign(false)}>Cancel</Button>
             <Button onClick={handleAutoAssign} loading={autoAssigning}>Assign now</Button>

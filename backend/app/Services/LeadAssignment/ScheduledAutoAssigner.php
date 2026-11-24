@@ -62,15 +62,19 @@ class ScheduledAutoAssigner
      */
     public function runForCompany(Company $company, int $limit = 200): array
     {
-        $auto = LeadAssignmentRule::where('company_id', $company->id)->value('notification_mode') === 'auto';
+        $auto = in_array(LeadAssignmentRule::where('company_id', $company->id)->value('notification_mode'), ['auto', 'silent'], true);
         $leads = Lead::where('company_id', $company->id)->whereNull('assigned_to')
             ->whereNotIn('stage', ['enrolled', 'lost'])
             ->where(function ($q) use ($auto) {
-                $q->whereDoesntHave('assignments', fn ($a) => $a->whereNotIn('status', ['dropped']));
                 if ($auto) {
-                    $q->orWhere(fn ($w) => $w
-                        ->whereHas('assignments', fn ($a) => $a->where('status', 'ai_handling')->whereNull('staff_id'))
-                        ->whereDoesntHave('assignments', fn ($a) => $a->whereNotIn('status', ['dropped', 'ai_handling'])));
+                    // Direct-assign companies: anything unowned is fair game unless an assignment is genuinely in flight (handed to someone,
+                    // an offer waiting for an answer, or a fresh attempt from the last 15 minutes). Old declined / timed-out / AI-held /
+                    // finished assignment rows no longer hide a lead from the sweep.
+                    $q->whereDoesntHave('assignments', fn ($a) => $a->where(fn ($w) => $w
+                        ->whereIn('status', ['assigned', 'accepted', 'ai_offered'])
+                        ->orWhere(fn ($p) => $p->where('status', 'pending')->where('updated_at', '>=', now()->subMinutes(15)))));
+                } else {
+                    $q->whereDoesntHave('assignments', fn ($a) => $a->whereNotIn('status', ['dropped']));   // notify modes: never double-notify
                 }
             })
             ->with('contact')

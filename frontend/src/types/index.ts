@@ -373,7 +373,7 @@ export interface LeadAssignmentRule {
   weight_workload: number
   sla_minutes: number
   ai_takeover_after_minutes: number
-  notification_mode: 'auto' | 'uber' | 'hybrid'
+  notification_mode: 'auto' | 'uber' | 'hybrid' | 'silent'
   notification_gap_seconds: number
   notification_timeout_seconds: number
   max_notification_rounds: number

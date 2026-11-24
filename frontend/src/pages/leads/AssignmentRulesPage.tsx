@@ -115,6 +115,7 @@ export default function AssignmentRulesPage() {
             <option value="uber" disabled={!can('uber')}>Notify one at a time — staff must Accept/Decline; declines and timeouts move to the next agent{can('uber') ? '' : ' (not in your plan)'}</option>
             <option value="hybrid" disabled={!can('uber')}>Hybrid — same notify → Accept/Decline → cascade flow (kept for older saved rules)</option>
             <option value="auto" disabled={!can('auto')}>Auto-assign — skip the accept/decline step, assign the top pick directly{can('auto') ? '' : ' (not in your plan)'}</option>
+            <option value="silent" disabled={!can('auto')}>Auto-assign without notification — assign the top pick directly and tell nobody{can('auto') ? '' : ' (not in your plan)'}</option>
           </select>
         </div>
         <label className="flex items-center gap-2 text-sm">
