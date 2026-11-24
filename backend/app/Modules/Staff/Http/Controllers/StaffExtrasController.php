@@ -8,7 +8,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use Tymon\JWTAuth\Facades\JWTAuth;
+use PHPOpenSourceSaver\JWTAuth\Facades\JWTAuth;
 use Illuminate\Support\Facades\Storage;
 
 /**
@@ -145,7 +145,7 @@ class StaffExtrasController extends Controller
      */
     public function loginAs(Request $request, int $staff): JsonResponse
     {
-        $me = $request->user();
+        $me = auth()->user();
         if (!$me->isOwner() && !$me->hasPermission('staff.login_as')) return response()->json(['message' => 'You do not have permission to sign in as staff.'], 403);
 
         $target = User::where('company_id', $me->company_id)->with('role')->findOrFail($staff);
