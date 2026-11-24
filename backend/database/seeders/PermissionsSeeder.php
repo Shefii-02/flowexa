@@ -115,6 +115,7 @@ class PermissionsSeeder extends Seeder
         // Staff
         ['key' => 'staff.view',        'label' => 'View Staff',               'group' => 'Staff Management',             'type' => 'viewer', 'sort_order' => 170],
         ['key' => 'staff.manage',      'label' => 'Manage Staff',             'group' => 'Staff Management',             'type' => 'manage', 'sort_order' => 171],
+        ['key' => 'staff.login_as',    'label' => 'Sign in as staff',         'group' => 'Staff Management',             'type' => 'manage', 'sort_order' => 172],
         // Roles
         ['key' => 'roles.view',        'label' => 'View Roles',               'group' => 'Role Management',              'type' => 'viewer', 'sort_order' => 180],
         ['key' => 'roles.manage',      'label' => 'Manage Roles',             'group' => 'Role Management',              'type' => 'manage', 'sort_order' => 181],

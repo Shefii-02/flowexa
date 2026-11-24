@@ -140,18 +140,20 @@ class StaffExtrasController extends Controller
     }
 
     /**
-     * POST /staff/{staff}/login-as — the company owner signs in as one of their staff (to see exactly what that person
+     * POST /staff/{staff}/login-as — the owner (or anyone granted `staff.login_as`) signs in as one of their staff (to see exactly what that person
      * sees, or help them). Returns a token for that user; the web keeps the owner's own token to switch back.
      */
     public function loginAs(Request $request, int $staff): JsonResponse
     {
         $me = $request->user();
-        if (!$me->isOwner()) return response()->json(['message' => 'Only the company owner can sign in as a staff member.'], 403);
+        if (!$me->isOwner() && !$me->hasPermission('staff.login_as')) return response()->json(['message' => 'You do not have permission to sign in as staff.'], 403);
 
         $target = User::where('company_id', $me->company_id)->with('role')->findOrFail($staff);
         if ($target->id === $me->id) return response()->json(['message' => 'That is your own account.'], 422);
         if ($target->isOwner())      return response()->json(['message' => 'You cannot sign in as another owner.'], 422);
         if (!$target->is_active)     return response()->json(['message' => 'Activate this staff member first.'], 422);
+        // no climbing the ladder: someone who can sign in as staff can't sign in as another person who can
+        if (!$me->isOwner() && $target->hasPermission('staff.login_as')) return response()->json(['message' => 'You cannot sign in as this person.'], 403);
 
         Log::info('staff.login_as', ['by' => $me->id, 'as' => $target->id, 'company' => $me->company_id]);
         return response()->json([

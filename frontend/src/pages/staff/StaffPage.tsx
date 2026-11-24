@@ -22,8 +22,8 @@ export default function StaffPage() {
   const dispatch   = useAppDispatch()
   const { list, total, loading } = useAppSelector((s) => s.staff)
   const me = useAppSelector((s) => s.auth.user)
-  const isOwner = me?.role?.name === 'owner'
-  // Owner only: switch into a staff member's account. Their own token is kept so the banner can switch back.
+  const canLoginAs = usePermission('staff.login_as') || me?.role?.name === 'owner'   // the owner always passes; others need the "Sign in as staff" permission
+  // Owner / permitted: switch into a staff member's account. Their own token is kept so the banner can switch back.
   const loginAs = async (u: any) => {
     try {
       const { data } = await staffExtrasApi.loginAs(u.id)
@@ -253,7 +253,7 @@ export default function StaffPage() {
                     <td>
                       <div className="flex gap-1">
                         <button onClick={() => setDeviceUser(u)} className="text-xs text-indigo-600 hover:underline px-1">Devices</button>
-                        {isOwner && u.id !== me?.id && u.role?.name !== 'owner' && u.is_active && (
+                        {canLoginAs && u.id !== me?.id && u.role?.name !== 'owner' && u.is_active && (
                           <button onClick={() => loginAs(u)} className="text-xs text-emerald-600 hover:underline px-1" title="Sign in as this staff member">Login as</button>
                         )}
                         {canEdit && (
