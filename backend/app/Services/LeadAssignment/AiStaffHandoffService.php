@@ -121,5 +121,14 @@ class AiStaffHandoffService
         } catch (\Throwable) {
             // Non-critical — continue
         }
+
+        // the same offer as a mobile push; tapping it (or having the app open) shows the Yes / No card
+        $contact = $assignment->contact;
+        \App\Services\StaffPush::toStaff($staff->id, 'ai_handoff_offers', 'ai_handoff_offer', '🤖 AI Agent offer',
+            ($contact?->name ?: 'A customer') . ' — AI is handling this chat. Want to take over?', [
+                'action' => 'ai_handoff_offer', 'assignment_id' => $assignment->id,
+                'contact_name' => $contact?->name ?? 'Unknown', 'contact_phone' => $contact?->phone ?? '',
+                'conversation_summary' => $contact?->conversation_summary ?? 'AI is handling this conversation.', 'ai_message_count' => 0,
+            ]);
     }
 }

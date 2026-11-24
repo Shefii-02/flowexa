@@ -49,5 +49,11 @@ class NotifyStaffNewLead implements ShouldQueue
         } catch (\Throwable) {
             // Non-critical
         }
+
+        // mobile push: a lead was handed to this person — tapping it opens the lead
+        \App\Services\StaffPush::toStaff($staff->id, 'new_lead_alert', 'lead_assigned', '🎯 New lead assigned',
+            ($contact?->name ?: ($contact?->phone ?: 'A new lead')) . ' has been assigned to you.', [
+                'action' => $assignment->lead_id ? 'open_lead' : 'open_leads', 'lead_id' => $assignment->lead_id, 'assignment_id' => $assignment->id,
+            ]);
     }
 }

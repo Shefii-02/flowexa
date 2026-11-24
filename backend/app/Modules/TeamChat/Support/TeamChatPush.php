@@ -32,7 +32,7 @@ class TeamChatPush
             $sender = (string) DB::table('users')->where('id', $senderId)->value('name');
             $preview = self::preview($msg);
             $mentions = array_map('intval', $mentions ?: ($msg->mentions ? json_decode($msg->mentions, true) : []));
-            $members = DB::table('team_chat_members')->where('chat_id', $chatId)->whereNull('left_at')->where('user_id', '!=', $senderId)->get(['user_id', 'muted', 'muted_until']);
+            $members = DB::table('team_chat_members')->where('chat_id', $chatId)->whereNull('left_at')->where('user_id', '!=', $senderId)->get(['user_id', 'muted', 'muted_until', 'last_read_message_id']);
             $svc = app(FirebasePushService::class);
             foreach ($members as $m) {
                 $rcpt = \App\Models\User::with('company', 'role')->find($m->user_id);
@@ -43,8 +43,12 @@ class TeamChatPush
                 $title = $mentioned ? "{$sender} mentioned you" . ($chat->type === 'group' ? " in {$chat->name}" : '')
                                     : ($chat->type === 'group' ? $chat->name : $sender);
                 $body = $chat->type === 'group' && !$mentioned ? "{$sender}: {$preview}" : $preview;
+                // One notification per conversation: a newer message replaces the older one and says how many are waiting
+                $unread = (int) DB::table('team_chat_messages')->where('chat_id', $chatId)->whereNull('deleted_at')
+                    ->where('id', '>', (int) $m->last_read_message_id)->where(fn ($x) => $x->whereNull('sender_id')->orWhere('sender_id', '!=', $m->user_id))->count();
+                if ($unread > 1) { $title .= " · {$unread} new messages"; }
                 $svc->sendToUser((int) $m->user_id, $mentioned ? 'team_chat_mention' : 'team_chat_message', $title, mb_strimwidth($body, 0, 140, '…'),
-                    ['action' => 'open_team_chat', 'chat_id' => (string) $chatId, 'message_id' => (string) $messageId]);
+                    ['action' => 'open_team_chat', 'chat_id' => (string) $chatId, 'message_id' => (string) $messageId, 'group' => "team_chat_{$chatId}", 'unread' => (string) $unread]);
             }
         } catch (\Throwable $e) {
             Log::debug('team chat push failed: ' . $e->getMessage());

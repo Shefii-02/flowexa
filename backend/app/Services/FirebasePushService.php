@@ -137,8 +137,10 @@ class FirebasePushService
                                 'token'        => $token,
                                 'notification' => ['title' => $title, 'body' => $body],
                                 'data'         => array_merge($data, ['type' => $type]),
-                                'android'      => ['priority' => 'high', 'notification' => ['sound' => 'default', 'click_action' => 'FLUTTER_NOTIFICATION_CLICK']],
-                                'apns'         => ['payload' => ['aps' => ['sound' => 'default', 'badge' => 1]]],
+                                // `group` (e.g. "team_chat_12"): Android keeps ONE notification per group — a newer one replaces the older — and
+                                // iOS stacks them under one thread, so a busy conversation is a single entry, not a pile.
+                                'android'      => ['priority' => 'high', 'notification' => array_filter(['sound' => 'default', 'click_action' => 'FLUTTER_NOTIFICATION_CLICK', 'tag' => $data['group'] ?? null])],
+                                'apns'         => ['payload' => ['aps' => array_filter(['sound' => 'default', 'badge' => 1, 'thread-id' => $data['group'] ?? null])]],
                             ],
                         ]);
 

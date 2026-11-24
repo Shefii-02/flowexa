@@ -54,5 +54,13 @@ class PushLeadNotification implements ShouldQueue
         } catch (\Throwable) {
             // Non-critical
         }
+
+        // mobile push for the same offer — the app shows Accept / Decline
+        \App\Services\StaffPush::toStaff($staff->id, 'new_lead_alert', 'lead_offer', '🎯 New lead offered to you',
+            ($contact?->name ?: ($contact?->phone ?: 'A new lead')) . ' — accept or decline.', [
+                'action' => 'lead_offer', 'assignment_id' => $assignment->id, 'notification_id' => $notification->id,
+                'contact_name' => $contact?->name ?? 'Unknown', 'contact_phone' => $contact?->phone ?? '',
+                'source_type' => $assignment->source_type, 'timeout_seconds' => $rule?->notification_timeout_seconds ?? 60,
+            ]);
     }
 }
