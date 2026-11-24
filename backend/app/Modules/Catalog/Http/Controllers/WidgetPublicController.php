@@ -372,6 +372,7 @@ class WidgetPublicController extends Controller
                 originType: 'widget', originId: $widget->id, originLabel: $widget->name,
             );
             $convo->update(array_filter(['contact_id' => $r['contact']?->id, 'lead_id' => $r['lead']?->id]));
+            \App\Modules\Catalog\WidgetLeadCategories::sync($convo->fresh());   // every category the visitor collected while tapping the flow goes onto the lead
         } catch (\Throwable $e) {
             \Illuminate\Support\Facades\Log::warning('Live chat: saving to CRM failed', ['error' => $e->getMessage()]);
         }

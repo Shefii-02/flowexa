@@ -99,6 +99,9 @@ class WidgetFlowRunner
             }
         }
 
+        // the node the visitor just reached (or the first one): its lead category is kept — and put on their lead when there is one
+        if ($note === '') { WidgetLeadCategories::noteTap($convo, $current); }
+
         return $this->present($base, $convo, $current, $text, $note);
     }
 
