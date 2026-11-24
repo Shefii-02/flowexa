@@ -14,6 +14,10 @@ class FirebasePushService
     // ── Send to specific user ─────────────────────────────────────────────
     public function sendToUser(int $userId, string $type, string $title, string $body, array $data = []): void
     {
+        if ($type !== 'team_chat_message') {   // chat messages show their own unread count — no bell entry (and no extra query per recipient)
+            $company = \App\Models\User::whereKey($userId)->value('company_id');
+            \App\Services\UserNotifier::record([$userId], $company ? (int) $company : null, $type, $title, $body, $data);   // the bell, even with no phone token
+        }
         $tokens = PushToken::where('user_id', $userId)->where('is_active', true)->pluck('fcm_token');
         if ($tokens->isEmpty()) return;
         $this->sendToTokens($tokens->toArray(), $userId, null, $type, $title, $body, $data);
@@ -22,6 +26,7 @@ class FirebasePushService
     // ── Send to all company staff ─────────────────────────────────────────
     public function sendToCompany(int $companyId, string $type, string $title, string $body, array $data = []): void
     {
+        \App\Services\UserNotifier::record(\App\Models\User::where('company_id', $companyId)->where('is_active', true)->limit(500)->pluck('id')->all(), $companyId, $type, $title, $body, $data);
         $tokens = PushToken::where('company_id', $companyId)->where('is_active', true)->pluck('fcm_token');
         if ($tokens->isEmpty()) return;
         $this->sendToTokens($tokens->toArray(), null, $companyId, $type, $title, $body, $data);

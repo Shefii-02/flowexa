@@ -10,6 +10,7 @@ import { toggleSidebar, clearForbidden, clearSessionExpired, clearConnectionErro
 import { Sidebar } from './Sidebar'
 import { SessionStatusIndicator } from './SessionStatusIndicator'
 import WorkspaceSwitcher from './WorkspaceSwitcher'
+import NotificationBell from './NotificationBell'
 import LeadNotificationPopup from '@/components/leads/LeadNotificationPopup'
 import AiHandoffOfferPopup from '@/components/leads/AiHandoffOfferPopup'
 import PortalAssistant from '@/components/assistant/PortalAssistant'
@@ -81,6 +82,7 @@ export const DashboardLayout = () => {
           </button>
           <WorkspaceSwitcher />
           <div className="flex-1" />
+          <NotificationBell />
           <SessionStatusIndicator />
         </header>
 

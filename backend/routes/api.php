@@ -566,6 +566,13 @@ Route::prefix('v1')->group(function () {
 
 
 
+        // ── The signed-in person's own notification inbox (the bell, web + app) ──
+        Route::prefix('notifications')->middleware(['company.active'])->group(function () {
+            Route::get('/',             [\App\Http\Controllers\UserNotificationController::class, 'index']);
+            Route::get('unread-count',  [\App\Http\Controllers\UserNotificationController::class, 'unreadCount']);
+            Route::post('read',         [\App\Http\Controllers\UserNotificationController::class, 'read']);
+        });
+
         // ── Notification preferences (mobile app + web, self-service) ─────────
         Route::prefix('notification-preferences')->middleware(['company.active'])->group(function () {
             Route::get('me', [\App\Http\Controllers\NotificationPreferenceController::class, 'me']);

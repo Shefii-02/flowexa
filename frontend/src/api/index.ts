@@ -1030,4 +1030,9 @@ export const staffExtrasApi = {
   loginAs: (id: number) => api.post(`/staff/${id}/login-as`),
   removeDocument: (id: number, docId: number) => api.delete(`/staff/${id}/documents/${docId}`),
 }
+export const notificationApi = {
+  list: (p?: { category?: string; unread?: boolean; per_page?: number }) => api.get('/notifications', { params: p }),
+  counts: () => api.get('/notifications/unread-count'),
+  read: (ids?: number[]) => api.post('/notifications/read', ids ? { ids } : {}),
+}
 export const companyPackageApi = { get: () => api.get('/company-package') }

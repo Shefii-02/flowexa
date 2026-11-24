@@ -11,6 +11,7 @@ import { api } from '@/api/client'
 import { ACCOUNTS_NAV } from '@/pages/accounts/accountsNav'
 import { SidebarPrefsContext, useSidebarPrefs } from './sidebarPrefs'
 import { useWorkspace } from '@/lib/workspace'
+import { useNotificationCounts } from '@/lib/useNotificationCounts'
 
 // ── WA Session picker ─────────────────────────────────────────────────────────
 type WaSessionItem = { id: string; name: string; status?: string }
@@ -108,7 +109,7 @@ function FlatGroup({ label, extra, children }: { label: string; extra?: React.Re
 
 // ── Flat nav link ──────────────────────────────────────────────────────────────
 /** `section` ties the link to a hideable web section (Staff Access / company / platform settings) — hidden when that section is switched off for you. */
-function FlatLink({ to, icon, label, end, section }: { to: string; icon: string; label: string; end?: boolean; section?: string }) {
+function FlatLink({ to, icon, label, end, section, badge }: { to: string; icon: string; label: string; end?: boolean; section?: string; badge?: number }) {
   const prefs = useContext(SidebarPrefsContext)
   const allowed = usePermissionAny(PAGE_PERMS[to])   // hidden when the person holds none of the permissions that open this page
   if (!useEntitled(to) || !allowed) return null
@@ -128,6 +129,7 @@ function FlatLink({ to, icon, label, end, section }: { to: string; icon: string;
     >
       <span className="text-base leading-none w-5 text-center">{icon}</span>
       <span className="flex-1 text-[13px]">{label}</span>
+      {!!badge && badge > 0 && <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-semibold flex items-center justify-center">{badge > 99 ? '99+' : badge}</span>}
     </NavLink>
   )
 }
@@ -456,6 +458,7 @@ const SidebarInner = () => {
 
   // The sidebar follows the workspace picked in the topbar (same sections as the app). Sales gets the short lead-first menu;
   // the rest show only the groups their team works in. Company Admin sees everything.
+  const { counts: notifCounts } = useNotificationCounts(!isSuperAdmin)   // team-chat unread for the sidebar badge
   const { active: workspace } = useWorkspace()
   const isSalesStaff = workspace === 'sales'
   const [fullMenu, setFullMenu] = useState(() => { try { return localStorage.getItem('sidebar_full_menu') === '1' } catch { return false } })
@@ -844,7 +847,7 @@ const SidebarInner = () => {
             <SectionHeader label="My workspace" />
             {/* Personal tools — the same things as the floating buttons, as full pages */}
             <FlatLink to="/ask" icon="✨" label="Ask in portal" section="ask" />
-            <FlatLink to="/team-chat" icon="💬" label="Team chat" section="team-chat" />
+            <FlatLink to="/team-chat" icon="💬" label="Team chat" section="team-chat" badge={notifCounts.team_chat_unread} />
             <FlatLink to="/sticky-notes" icon="📝" label="Sticky notes" section="sticky-notes" />
             <FlatLink to="/todo" icon="✅" label="To-do list" section="todo" />
             {/* ── STAFF ── */}
