@@ -9,7 +9,7 @@ const p = (path: string, label: string, ...perms: string[]): PageDef => ({ path,
 
 export const PAGE_SECTIONS: PageSection[] = [
   { section: 'General', pages: [
-    p('/dashboard', 'Dashboard', 'pages.dashboard'), p('/website-widget', 'Website Widget', 'pages.website_widget'),
+    p('/dashboard', 'Dashboard', 'pages.dashboard'), p('/website-widget', 'Website Widget', 'pages.website_widget'), p('/website-widget/chats', 'Widget Chats', 'widget_chat.handle'), p('/website-widget/leads', 'Widget Leads', 'widget_chat.handle'), p('/website-widget/analytics', 'Chat analytics & review', 'widget_chat.review'),
     p('/media-library', 'Media Library', 'pages.media_library'), p('/short-links', 'Short Links', 'pages.short_links'),
   ] },
   { section: 'WA Chat', pages: [
@@ -21,10 +21,13 @@ export const PAGE_SECTIONS: PageSection[] = [
     p('/wa-chat/analytics', 'Inbox Analytics', 'wa_chat.chats.view'), p('/wa-chat/logs', 'Audit Log', 'wa_chat.sessions.view'),
     p('/wa-chat/media-library', 'Media Library', 'pages.wa_chat_media'), p('/wa-chat/export', 'Data Export', 'pages.wa_chat_export'),
   ] },
+  { section: 'Flow Builder', pages: [
+    p('/flow-builders', 'Flow Builders', 'flow_builder.view'),
+  ] },
   { section: 'WA Cloud', pages: [
     p('/wa-cloud/dashboard', 'Dashboard', 'wa_cloud.view'), p('/wa-cloud/templates', 'WA Templates', 'templates.view'), p('/wa-cloud/campaigns', 'Campaign', 'campaigns.view'),
     p('/wa-cloud/survey-forms', 'Survey Forms', 'surveys.view'), p('/wa-cloud/api-service', 'API Service', 'otp.view'), p('/wa-cloud/phone-numbers', 'Phone Numbers', 'phone_numbers.view'),
-    p('/wa-cloud/flow-builders', 'Flow Builder', 'flow_builder.view'), p('/wa-cloud/automations', 'Agent Automations', 'wa_agent.automations.view'), p('/wa-cloud/inbox', 'Inbox', 'inbox.view'),
+    p('/wa-cloud/automations', 'Agent Automations', 'wa_agent.automations.view'), p('/wa-cloud/inbox', 'Inbox', 'inbox.view'),
     p('/wa-cloud/settings', 'Settings', 'wa_cloud.manage'), p('/wa-cloud/analytics', 'Inbox Analytics', 'wa_cloud.view'), p('/wa-cloud/message-logs', 'Message Logs', 'message_logs.view'),
     p('/wa-cloud/audit-log', 'Audit Log', 'wa_cloud.view'),
   ] },
@@ -35,12 +38,12 @@ export const PAGE_SECTIONS: PageSection[] = [
   ] },
   { section: 'Instagram', pages: [
     p('/instagram/dashboard', 'Dashboard', 'instagram.view'), p('/instagram/accounts', 'Accounts', 'instagram.manage'), p('/instagram/autodm', 'AutoDM', 'instagram.manage'),
-    p('/instagram/flows', 'Flows', 'instagram.manage'), p('/instagram/automations', 'Auto-DM Rules', 'instagram.manage'), p('/instagram/inbox', 'DM Inbox', 'instagram.view'),
+    p('/instagram/flows', 'Flows', 'instagram.manage'), p('/instagram/automations', 'Auto-DM Rules', 'instagram.manage'), p('/instagram/inbox', 'DM Inbox', 'instagram.view'), p('/instagram/leads', 'Instagram Leads', 'instagram.view'),
     p('/instagram/comments', 'Comments', 'instagram.view'), p('/instagram/insights', 'Insights', 'instagram.view'),
   ] },
   { section: 'Messenger', pages: [
     p('/messenger/dashboard', 'Dashboard', 'instagram.view'), p('/messenger/pages', 'Pages', 'instagram.manage'), p('/messenger/autodm', 'AutoDM', 'instagram.manage'),
-    p('/messenger/flows', 'Flows', 'instagram.manage'), p('/messenger/inbox', 'Inbox', 'instagram.view'),
+    p('/messenger/flows', 'Flows', 'instagram.manage'), p('/messenger/inbox', 'Inbox', 'instagram.view'), p('/messenger/leads', 'Messenger Leads', 'instagram.view'),
   ] },
   { section: 'Meta Ads', pages: [
     p('/meta-ads/dashboard', 'Dashboard', 'meta_ads.view'), p('/meta-ads/accounts', 'Ad Accounts', 'meta_ads.view'), p('/meta-ads/campaigns', 'Campaigns', 'meta_ads.view'),
@@ -95,12 +98,12 @@ export const PAGE_PERMS: Record<string, string[]> = Object.fromEntries(
 
 // ── Permissions grouped by the section of the app they belong to ─────────────────────────────────────────────────────────────────
 // Used by the Roles editor and Staff Access to list permissions under "WA Chat", "WA Cloud", "AI Agent" … instead of one long flat list.
-export const PERMISSION_SECTIONS = ['General', 'WA Chat', 'WA Cloud', 'AI Agent', 'Instagram & Messenger', 'Meta Ads', 'CRM', 'Leads', 'Accounts', 'HR', 'Website chat', 'Team chat', 'System'] as const
+export const PERMISSION_SECTIONS = ['General', 'WA Chat', 'WA Cloud', 'Flow Builder', 'AI Agent', 'Instagram & Messenger', 'Meta Ads', 'CRM', 'Leads', 'Accounts', 'HR', 'Website chat', 'Team chat', 'System'] as const
 
 const SECTION_BY_PREFIX: [string, typeof PERMISSION_SECTIONS[number]][] = [
   ['pages.hr_', 'HR'], ['pages.my_', 'HR'], ['pages.sales_activity', 'HR'], ['pages.wa_chat_', 'WA Chat'], ['pages.', 'General'],
   ['wa_chat.', 'WA Chat'],
-  ['wa_cloud.', 'WA Cloud'], ['templates.', 'WA Cloud'], ['campaigns.', 'WA Cloud'], ['surveys.', 'WA Cloud'], ['flow_builder.', 'WA Cloud'], ['otp.', 'WA Cloud'],
+  ['wa_cloud.', 'WA Cloud'], ['templates.', 'WA Cloud'], ['campaigns.', 'WA Cloud'], ['surveys.', 'WA Cloud'], ['flow_builder.', 'Flow Builder'], ['otp.', 'WA Cloud'],
   ['phone_numbers.', 'WA Cloud'], ['inbox.', 'WA Cloud'], ['message_logs.', 'WA Cloud'],
   ['wa_agent.', 'AI Agent'], ['catalog.', 'AI Agent'],
   ['instagram.', 'Instagram & Messenger'], ['meta_ads.', 'Meta Ads'],

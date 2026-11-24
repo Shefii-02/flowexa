@@ -9,7 +9,6 @@ import api from '@/api/client'
 import { Link } from 'react-router-dom'
 import { flowBuilderApi } from '@/api'
 import { FlowImportExportModal } from '../../flow/components/FlowImportExportModal'
-import ChatReviewPanel from './ChatReviewPanel'
 import { PermissionGate } from '@/components/ui/PermissionGate'
 import { widgetApi, type ChatWidget } from './api'
 import { widgetSlug } from './chats/util'
@@ -166,7 +165,18 @@ export default function WidgetPage() {
           <span className="text-brand-600 text-sm font-medium group-hover:translate-x-0.5 transition">Open →</span>
         </Link>
       </PermissionGate>
-      <PermissionGate permission="widget_chat.review"><ChatReviewPanel /></PermissionGate>
+      <div className="grid sm:grid-cols-2 gap-3">
+        <PermissionGate permission="widget_chat.handle">
+          <Link to="/website-widget/leads" className="card p-4 flex items-center gap-3 hover:shadow-md transition">
+            <span className="text-xl">🎯</span><span className="flex-1"><span className="block font-semibold text-sm">Widget leads</span><span className="block text-xs text-gray-500">Visitors who left their details — move them to the leads table.</span></span><span className="text-brand-600 text-sm">Open →</span>
+          </Link>
+        </PermissionGate>
+        <PermissionGate permission="widget_chat.review">
+          <Link to="/website-widget/analytics" className="card p-4 flex items-center gap-3 hover:shadow-md transition">
+            <span className="text-xl">📊</span><span className="flex-1"><span className="block font-semibold text-sm">Chat analytics &amp; review</span><span className="block text-xs text-gray-500">How the chat is doing, and chats visitors were unhappy with.</span></span><span className="text-brand-600 text-sm">Open →</span>
+          </Link>
+        </PermissionGate>
+      </div>
 
       {loading ? (
         <p className="text-sm text-gray-400">Loading…</p>
@@ -347,7 +357,7 @@ export default function WidgetPage() {
                 </div>
                 <Button variant="secondary" onClick={() => setImportOpen(true)}>Import nodes</Button>
                 {editor.flow_builder_id && (
-                  <Link to={`/wa-cloud/flow/builder/${pid(editor.flow_builder_id)}`} className="text-xs text-brand-600 hover:underline pb-2 whitespace-nowrap">Edit nodes →</Link>
+                  <Link to={`/flow-builders/${pid(editor.flow_builder_id)}`} className="text-xs text-brand-600 hover:underline pb-2 whitespace-nowrap">Edit nodes →</Link>
                 )}
               </div>
             </div>

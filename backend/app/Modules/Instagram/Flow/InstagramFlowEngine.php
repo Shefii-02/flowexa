@@ -725,7 +725,7 @@ class InstagramFlowEngine
                 $collected = $convo->collected ?? [];
                 if (!$convo->lead_id && (!empty($collected['phone']) || !empty($collected['email']))) {
                     $result = $this->leads->capture(
-                        $account->company, $collected + ['name' => $convo->participant_username], 'instagram_dm', "ig:{$convo->id}",
+                        $account->company, $collected + ['name' => $convo->participant_username], $account->channel === 'facebook' ? 'facebook_dm' : 'instagram_dm', "ig:{$convo->id}",
                         originType: 'instagram_account', originId: $account->id,
                         originLabel: $account->username ? "@{$account->username}" : $account->name,
                     );

@@ -67,6 +67,10 @@ export default function NotificationBell() {
     const to = targetFor(n)
     if (to) { setOpen(false); navigate(to) }
   }
+  const clearTab = async () => {
+    if (!window.confirm(`Clear all ${tab === 'lead' ? 'lead ' : tab === 'other' ? 'other ' : ''}notifications? They are removed from your list.`)) return
+    try { await notificationApi.clear({ category: tab }); setItems([]); refresh() } catch (e) { toast.error(getError(e)) }
+  }
   const markAll = async () => { try { await notificationApi.read(); setItems(l => l.map(x => ({ ...x, read_at: x.read_at ?? new Date().toISOString() }))); refresh() } catch (e) { toast.error(getError(e)) } }
 
   return (
@@ -82,6 +86,7 @@ export default function NotificationBell() {
             <p className="font-semibold text-gray-900 text-sm">Notifications</p>
             <span className="flex items-center gap-3">
               <button onClick={() => { const m = !muted; setMuted(m); setTonesMuted(m); if (!m) playTone('general') }} title={muted ? 'Notification sounds are off — click to turn on' : 'Notification sounds are on — click to turn off'} className="text-sm">{muted ? '🔇' : '🔊'}</button>
+              <button onClick={clearTab} disabled={items.length === 0} title="Clear the notifications in this tab" className="text-xs text-gray-500 hover:text-red-600 disabled:text-gray-300">Clear</button>
               <button onClick={markAll} disabled={counts.unread === 0} className="text-xs text-brand-600 hover:underline disabled:text-gray-300 disabled:no-underline">Mark all read</button>
             </span>
           </div>

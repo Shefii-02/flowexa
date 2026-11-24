@@ -110,7 +110,7 @@ export function ScheduleEditor({ mode, rows, timezone, onChange, showChatbot }: 
           The conversational AI agent is off for this number — the Flow Builder ("Chat Bot")
           answers incoming messages automatically: the welcome menu, keyword triggers, list / button
           replies and any AI-agent node you added in a flow.{' '}
-          <Link to="/wa-cloud/flow-builders" className="text-purple-600 hover:underline">Open Flow Builder ›</Link>
+          <Link to="/flow-builders" className="text-purple-600 hover:underline">Open Flow Builder ›</Link>
         </p>
       )}
 

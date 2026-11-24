@@ -57,7 +57,7 @@ class LeadAssignment extends Model
         return match ((string) $source) {
             'wa_chat' => 'wa_chat',
             'website', 'website_widget' => 'website_widget',
-            'instagram', 'instagram_dm' => 'instagram',
+            'instagram', 'instagram_dm', 'facebook', 'facebook_dm' => 'instagram',   // social DMs share the assignment vocabulary
             'whatsapp', 'whatsapp_ai' => 'whatsapp',
             'whatsapp_cloud' => 'meta_api',
             'flow', 'survey_form' => 'flow_builder',

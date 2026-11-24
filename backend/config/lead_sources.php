@@ -24,6 +24,7 @@ return [
     'whatsapp_cloud' => ['label' => 'WhatsApp Cloud API',   'icon' => '☁️'],
     'wa_chat'        => ['label' => 'WA Chat',              'icon' => '💬'],
     'instagram'      => ['label' => 'Instagram',            'icon' => '📸'],
+    'facebook'       => ['label' => 'Facebook Messenger',   'icon' => '💭'],
     'meta_ads'       => ['label' => 'Meta Ads',             'icon' => '📣'],
     'google_ads'     => ['label' => 'Google Ads',           'icon' => '🟢'],
     'survey_form'    => ['label' => 'Survey / Meta Flow',   'icon' => '📋'],

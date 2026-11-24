@@ -10,6 +10,15 @@ export const PATH_MODULES: [prefix: string, module: string][] = [
   ['/instagram', 'social_dm'], ['/messenger', 'social_dm'], ['/website-widget', 'web_widgets'], ['/meta-ads', 'meta_ads'],
 ]
 
+/** Pages that are open when ANY one of several modules is on (the Flow Builder serves WA Cloud, Instagram / Messenger and the website widget). */
+export const ANY_MODULES: [prefix: string, modules: string[]][] = [['/flow-builders', ['wa_cloud', 'social_dm', 'web_widgets']]]
+
+/** The modules a URL accepts (any one is enough), or null when it is not one of the "any of" pages. */
+export function anyModulesForPath(pathname: string): string[] | null {
+  for (const [prefix, mods] of ANY_MODULES) if (pathname === prefix || pathname.startsWith(prefix + '/')) return mods
+  return null
+}
+
 /** The module a URL needs, or null when the page is part of every plan. Longest prefix wins (/crm/leads before /crm). */
 export function moduleForPath(pathname: string): string | null {
   let best: [string, string] | null = null

@@ -111,6 +111,7 @@ class LeadIntake
         return match ($source) {
             'website_widget' => 'website_widget',
             'instagram_dm', 'instagram' => 'instagram',
+            'facebook_dm', 'facebook' => 'facebook',
             'whatsapp' => 'whatsapp',
             default => $source,
         };

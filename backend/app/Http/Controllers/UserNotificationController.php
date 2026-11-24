@@ -60,6 +60,21 @@ class UserNotificationController extends Controller
         return ['unread' => $lead + $other, 'unread_leads' => $lead, 'unread_other' => $other, 'team_chat_unread' => $team, 'badge' => $lead + $other + $team];
     }
 
+    /** POST /notifications/clear { ids?: [], category?: all|lead|other|… } — remove notifications (just these ids, else everything in that tab). Only your own. */
+    public function clear(Request $r): JsonResponse
+    {
+        $d = $r->validate(['ids' => ['nullable', 'array', 'max:500'], 'ids.*' => ['integer'], 'category' => ['nullable', 'in:all,lead,other,team,hr,campaign,billing,system']]);
+        $q = $this->mine();
+        if (!empty($d['ids'])) {
+            $q->whereIn('id', $d['ids']);
+        } else {
+            $cat = $d['category'] ?? 'all';
+            $q->when($cat === 'other', fn ($x) => $x->where('category', '!=', 'lead'))->when(!in_array($cat, ['all', 'other'], true), fn ($x) => $x->where('category', $cat));
+        }
+        $n = $q->delete();
+        return response()->json(['message' => $n === 1 ? '1 notification cleared.' : "{$n} notifications cleared.", 'cleared' => $n] + $this->counts());
+    }
+
     /** POST /notifications/read { ids?: [] } — no ids = mark everything read */
     public function read(Request $r): JsonResponse
     {

@@ -234,13 +234,13 @@ function Canvas() {
   return (
     <div className="relative flex h-[calc(100vh-4rem)] flex-col">
       <div className="flex flex-wrap items-center gap-3 border-b border-gray-100 bg-white px-4 py-2.5">
-        <Link to="/wa-cloud/flow-builders" className="text-sm text-gray-400 hover:text-gray-600">← Flows</Link>
+        <Link to="/flow-builders" className="text-sm text-gray-400 hover:text-gray-600">← Flows</Link>
         <h1 className="page-title !mb-0">{builderName || 'Flow'} <span className="text-sm font-normal text-gray-400">· canvas</span></h1>
         <div className="ml-auto flex items-center gap-2">
           <Button variant="secondary" onClick={() => setShowMsgs(true)}>⚙ Flow messages</Button>
           <Button variant="secondary" onClick={() => setShowHelp(true)}>❓ Help</Button>
           <Button variant="secondary" onClick={tidy}>Auto layout</Button>
-          <Link to={`/wa-cloud/flow/builder/${pid(builderId)}`} className="rounded-xl border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Classic editor</Link>
+          <Link to={`/flow-builders/${pid(builderId)}`} className="rounded-xl border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Classic editor</Link>
         </div>
       </div>
 

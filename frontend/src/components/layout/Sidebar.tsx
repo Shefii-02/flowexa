@@ -1,9 +1,9 @@
 // src/components/layout/Sidebar.tsx
 import { useState, useEffect, createContext, useContext } from 'react'
 import { NavLink, useNavigate, useLocation } from 'react-router-dom'
-import { useAppDispatch, useAppSelector, useIsSuperAdmin, useModule, usePermission, usePermissionAny } from '@/store'
+import { useAppDispatch, useAppSelector, useIsSuperAdmin, useModule, useAnyModule, usePermission, usePermissionAny } from '@/store'
 import { PAGE_PERMS } from '@/lib/pagePermissions'
-import { moduleForPath } from '@/lib/modules'
+import { moduleForPath, anyModulesForPath } from '@/lib/modules'
 import { logoutThunk } from '@/store/slices'
 import { cn, fmt } from '@/utils'
 import { toast } from 'react-hot-toast'
@@ -65,6 +65,9 @@ function WaSessionSelector() {
 function useEntitled(path: string | undefined): boolean {
   const module = path ? moduleForPath(path) : null
   const has = useModule(module ?? '')
+  const anyKeys = path ? anyModulesForPath(path) : null   // e.g. the Flow Builder: any of WA Cloud / Instagram & Messenger / website widget
+  const hasAny = useAnyModule(anyKeys ?? [])
+  if (anyKeys) return hasAny
   return !module || has
 }
 const SECTION_MODULES: Record<string, string> = { accounts: 'finance', crm: 'crm', tasks: 'tasks', leads: 'leads', hr: 'hr' }
@@ -458,6 +461,7 @@ const SidebarInner = () => {
 
   // The sidebar follows the workspace picked in the topbar (same sections as the app). Sales gets the short lead-first menu;
   // the rest show only the groups their team works in. Company Admin sees everything.
+  const sidebarPrefs = useContext(SidebarPrefsContext)
   const { counts: notifCounts } = useNotificationCounts(!isSuperAdmin)   // team-chat unread for the sidebar badge
   const { active: workspace } = useWorkspace()
   const isSalesStaff = workspace === 'sales'
@@ -606,7 +610,6 @@ const SidebarInner = () => {
               <SubLink to="/wa-cloud/api-service" icon="🔑" label="API Service" />
               {/* } */}
               <SubLink to="/wa-cloud/phone-numbers" icon="📱" label="Phone Numbers" />
-              <SubLink to="/wa-cloud/flow-builders" icon="🌿" label="Flow Builder" />
               <SubLink to="/wa-cloud/automations" icon="⚙️" label="Agent Automations" />
               <SubLink to="/wa-cloud/inbox" icon="📥" label="Inbox" />
               <SubLink to="/wa-cloud/settings" icon="⚙️" label="Settings" />
@@ -678,6 +681,7 @@ const SidebarInner = () => {
               <SubLink to="/instagram/flows" icon="🧩" label="Flows" />
               <SubLink to="/instagram/automations" icon="⚡" label="Auto-DM Rules" />
               <SubLink to="/instagram/inbox" icon="💬" label="DM Inbox" />
+              <SubLink to="/instagram/leads" icon="🎯" label="Leads" />
               <SubLink to="/instagram/comments" icon="🗨️" label="Comments" />
               <SubLink to="/instagram/insights" icon="📊" label="Insights" />
             </Accordion>
@@ -695,10 +699,19 @@ const SidebarInner = () => {
               <SubLink to="/messenger/autodm" icon="🚀" label="AutoDM" />
               <SubLink to="/messenger/flows" icon="🧩" label="Flows" />
               <SubLink to="/messenger/inbox" icon="📥" label="Inbox" />
+              <SubLink to="/messenger/leads" icon="🎯" label="Leads" />
             </Accordion>
 
             {/* Catalog is a top-level item now (📦 Catalog under CRM) */}
-            <FlatLink to="/website-widget" icon="🌐" label="Website Widget" section="website-widget" />
+            {!sidebarPrefs.hidden.includes('website-widget') && (
+              <NestedAccordion id="website-widget" icon="🌐" label="Website Widget" basePaths={['/website-widget']}>
+                <SubLink to="/website-widget" icon="🧩" label="Widgets" end />
+                <SubLink to="/website-widget/chats" icon="💬" label="Chats" />
+                <SubLink to="/website-widget/leads" icon="🎯" label="Leads" />
+                <SubLink to="/website-widget/analytics" icon="📊" label="Chat analytics & review" />
+              </NestedAccordion>
+            )}
+            <FlatLink to="/flow-builders" icon="🌿" label="Flow Builders" section="flow-builders" />
             </>)}
             {show('marketing') && (<>
             <GroupHeader label="Marketing" modules={['meta_ads', 'short_links', 'media_library']} />

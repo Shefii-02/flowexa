@@ -85,6 +85,14 @@ export const useModule = (key: string): boolean => {
   return !e || e.all || e.modules.includes(key)
 }
 
+/** True when the plan / add-ons include at least one of these modules (an empty list = no requirement). */
+export const useAnyModule = (keys: string[]): boolean => {
+  const user = useAppSelector((s) => s.auth.user)
+  if (keys.length === 0 || isSuperAdminRole(user?.role?.name)) return true
+  const e = user?.company?.entitlements
+  return !e || e.all || keys.some((k) => e.modules.includes(k))
+}
+
 /** Lead-assignment methods the plan allows (manual, round_robin, algorithm, uber, auto). */
 export const useAssignMethods = (): string[] => {
   const user = useAppSelector((s) => s.auth.user)

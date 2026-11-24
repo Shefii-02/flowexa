@@ -17,6 +17,7 @@ export const SIDEBAR_SECTIONS: { id: string; label: string; icon: string }[] = [
   { id: 'hr',           label: 'HR',           icon: '👥' },
   { id: 'integrations', label: 'Integrations', icon: '🔌' },
   { id: 'website-widget', label: 'Website Widget', icon: '🌐' },
+  { id: 'flow-builders', label: 'Flow Builders', icon: '🌿' },
   { id: 'media-library', label: 'Media Library', icon: '🖼️' },
   { id: 'short-links',  label: 'Short Links',  icon: '🔗' },
   { id: 'tasks',        label: 'Tasks',        icon: '📋' },

@@ -3,9 +3,9 @@ import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import PlanLimitModal from '@/components/plan/PlanLimitModal'
 import { Toaster } from 'react-hot-toast'
 import { useEffect } from 'react'
-import { moduleForPath } from '@/lib/modules'
+import { moduleForPath, anyModulesForPath } from '@/lib/modules'
 import LockedFeature from '@/components/plan/LockedFeature'
-import { useAppDispatch, useAppSelector, useModule } from '@/store'
+import { useAppDispatch, useAppSelector, useModule, useAnyModule } from '@/store'
 import { toggleSidebar, clearForbidden, clearSessionExpired, clearConnectionError, logoutThunk } from '@/store/slices'
 import { Sidebar } from './Sidebar'
 import { SessionStatusIndicator } from './SessionStatusIndicator'
@@ -123,6 +123,9 @@ export const DashboardLayout = () => {
 function ModuleGuard() {
   const { pathname } = useLocation()
   const module = moduleForPath(pathname)
-  const allowed = useModule(module ?? '')
+  const single = useModule(module ?? '')
+  const anyKeys = anyModulesForPath(pathname)
+  const anyAllowed = useAnyModule(anyKeys ?? [])
+  const allowed = anyKeys ? anyAllowed : single
   return module && !allowed ? <LockedFeature module={module} /> : <Outlet />
 }

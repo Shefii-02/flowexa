@@ -29,6 +29,9 @@ import LeadsPage from '@/pages/leads/LeadsPage'
 import StaffLeadsPage from '@/pages/leads/StaffLeadsPage'
 import LeadsByStaffPage from '@/pages/leads/LeadsByStaffPage'
 import LeadVerificationPage from '@/pages/leads/LeadVerificationPage'
+import WidgetLeadsPage from '@/pages/wa-agent/widget/WidgetLeadsPage'
+import WidgetAnalyticsPage from '@/pages/wa-agent/widget/WidgetAnalyticsPage'
+import ChannelLeadsPage from '@/pages/instagram/ChannelLeadsPage'
 import HeldLeadsPage from '@/pages/leads/HeldLeadsPage'
 import DeletedLeadsPage from '@/pages/leads/DeletedLeadsPage'
 import LeadReportsPage from '@/pages/leads/LeadReportsPage'
@@ -230,11 +233,16 @@ function LegacyAgentRedirect() {
   return <Navigate to={pathname.replace(/^\/wa-agent/, '/ai-agent') + search + hash} replace />
 }
 
-/** Old ?builder=7 links open the same builder at /wa-cloud/flow/builder/7 (no id: back to the list). */
+function LegacyBuilderRedirect({ canvas = false }: { canvas?: boolean }) {
+  const { builderId } = useParams()   // the old address carries whatever id form it had (plain number or code) — both open
+  return <Navigate to={`/flow-builders/${builderId}${canvas ? '/canvas' : ''}`} replace />
+}
+
+/** Old ?builder=7 links open the same builder at /flow-builders/7 (no id: back to the list). */
 function LegacyFlowRedirect() {
   const { search } = useLocation()
   const id = Number(new URLSearchParams(search).get('builder'))
-  return <Navigate to={id ? `/wa-cloud/flow/builder/${pid(id)}` : '/wa-cloud/flow-builders'} replace />
+  return <Navigate to={id ? `/flow-builders/${pid(id)}` : '/flow-builders'} replace />
 }
 
 function LegacyTemplateRedirect() {
@@ -305,6 +313,10 @@ export default function App() {
               <Route path="catalog" element={<Navigate to="/ai-agent/catalog" replace />} />   {/* old URL */}
               <Route path="website-widget" element={<WidgetPage />} />
               <Route path="website-widget/chats" element={<WidgetChatsPage />} />
+              <Route path="website-widget/leads" element={<WidgetLeadsPage />} />
+              <Route path="website-widget/analytics" element={<WidgetAnalyticsPage />} />
+              <Route path="instagram/leads" element={<ChannelLeadsPage channel="instagram" />} />
+              <Route path="messenger/leads" element={<ChannelLeadsPage channel="facebook" />} />
               <Route path="website-widget/:widget/chats" element={<WidgetChatsPage />} />   {/* e.g. /website-widget/main-site/chats — the widget's name as a slug (its number or key work too) */}
               {/* AI Agent module */}
               <Route path="wa-agent/*" element={<LegacyAgentRedirect />} />   {/* old URL → /ai-agent/... */}
@@ -341,10 +353,13 @@ export default function App() {
               <Route path="crm/contacts" element={<ContactsPage />} />
               <Route path="crm/labels" element={<LabelsPage />} />
               {/* <Route path="flow" element={<FlowPage />} /> */}
-              <Route path="/wa-cloud/flow-builders" element={<FlowBuildersPage />} />
-              <Route path="/flow-builders" element={<Navigate to="/wa-cloud/flow-builders" replace />} />
-              <Route path="/wa-cloud/flow/builder/:builderId" element={<FlowNodesPage />} />
-              <Route path="/wa-cloud/flow/builder/:builderId/canvas" element={<FlowCanvasPage />} />
+              {/* Flow Builder lives outside WA Cloud now: /flow-builders — the old /wa-cloud/… addresses forward here */}
+              <Route path="/flow-builders" element={<FlowBuildersPage />} />
+              <Route path="/flow-builders/:builderId" element={<FlowNodesPage />} />
+              <Route path="/flow-builders/:builderId/canvas" element={<FlowCanvasPage />} />
+              <Route path="/wa-cloud/flow-builders" element={<Navigate to="/flow-builders" replace />} />
+              <Route path="/wa-cloud/flow/builder/:builderId" element={<LegacyBuilderRedirect />} />
+              <Route path="/wa-cloud/flow/builder/:builderId/canvas" element={<LegacyBuilderRedirect canvas />} />
               {/* old bookmarks: /flow?builder=7 and /wa-cloud/flow?builder=7 -> /wa-cloud/flow/builder/7 */}
               <Route path="/wa-cloud/flow" element={<LegacyFlowRedirect />} />
               <Route path="/flow" element={<LegacyFlowRedirect />} />

@@ -1034,5 +1034,16 @@ export const notificationApi = {
   list: (p?: { category?: string; unread?: boolean; per_page?: number }) => api.get('/notifications', { params: p }),
   counts: () => api.get('/notifications/unread-count'),
   read: (ids?: number[]) => api.post('/notifications/read', ids ? { ids } : {}),
+  clear: (p: { ids?: number[]; category?: string }) => api.post('/notifications/clear', p),
 }
 export const companyPackageApi = { get: () => api.get('/company-package') }
+
+// ── Per-channel "Leads" pages: Instagram, Messenger (same endpoints, ?channel=) and the website widget ─────────
+export const channelLeadsApi = {
+  list: (channel: 'instagram' | 'facebook', p: { tab: string; search?: string; page?: number }) => api.get('/instagram/leads', { params: { channel, ...p } }),
+  move: (channel: 'instagram' | 'facebook', id: number, d: { name?: string; phone: string }) => api.post(`/instagram/leads/${id}/move`, d, { params: { channel } }),
+}
+export const widgetLeadsApi = {
+  list: (p: { tab: string; search?: string; page?: number }) => api.get('/widgets/live/leads', { params: p }),
+  move: (id: number, d: { name?: string; phone?: string }) => api.post(`/widgets/live/leads/${id}/move`, d),
+}

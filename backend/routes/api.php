@@ -572,6 +572,7 @@ Route::prefix('v1')->group(function () {
             Route::get('unread-count',  [\App\Http\Controllers\UserNotificationController::class, 'unreadCount']);
             Route::get('tones',         fn () => response()->json(['data' => \App\Support\NotificationTone::all()]));   // which sound each kind plays (files in public/tones)
             Route::post('read',         [\App\Http\Controllers\UserNotificationController::class, 'read']);
+            Route::post('clear',        [\App\Http\Controllers\UserNotificationController::class, 'clear']);
         });
 
         // ── Notification preferences (mobile app + web, self-service) ─────────
@@ -1493,6 +1494,8 @@ Route::prefix('v1')->group(function () {
             Route::get('/queue',          [$c, 'queue']);
             Route::get('/inbox',          [$c, 'inbox']);
             Route::get('/me',             [$c, 'me']);
+            Route::get('/leads',          [\App\Modules\Catalog\Http\Controllers\WidgetLeadsController::class, 'index']);
+            Route::post('/leads/{id}/move', [\App\Modules\Catalog\Http\Controllers\WidgetLeadsController::class, 'move'])->whereNumber('id');
             Route::get('/analytics',      [$c, 'analytics'])->middleware('permission:widget_chat.review');
             Route::get('/review',         [$c, 'review'])->middleware('permission:widget_chat.review');
             Route::post('/{id}/review',   [$c, 'markReviewed'])->middleware('permission:widget_chat.review');
@@ -1563,10 +1566,12 @@ Route::prefix('v1')->group(function () {
             Route::get('flows',                    [\App\Modules\Instagram\Http\Controllers\InstagramFlowController::class, 'index']);
             Route::get('flows/{id}',               [\App\Modules\Instagram\Http\Controllers\InstagramFlowController::class, 'show']);
             Route::get('flows/{id}/runs',          [\App\Modules\Instagram\Http\Controllers\InstagramFlowController::class, 'runs']);
+            Route::get('leads',                    [\App\Modules\Instagram\Http\Controllers\InstagramLeadsController::class, 'index']);   // Instagram / Messenger "Leads" page (?channel=)
             Route::get('conversations',            [\App\Modules\Instagram\Http\Controllers\InstagramInboxController::class, 'index']);
             Route::get('conversations/{id}',       [\App\Modules\Instagram\Http\Controllers\InstagramInboxController::class, 'show']);
 
             Route::middleware('permission:instagram.manage')->group(function () {
+                Route::post('leads/{id}/move',               [\App\Modules\Instagram\Http\Controllers\InstagramLeadsController::class, 'move'])->whereNumber('id');
                 Route::post('messenger/pages/discover',      [\App\Modules\Instagram\Http\Controllers\MessengerPageController::class, 'discover']);
                 Route::post('messenger/pages',               [\App\Modules\Instagram\Http\Controllers\MessengerPageController::class, 'connect']);
                 Route::post('messenger/pages/{id}/disconnect', [\App\Modules\Instagram\Http\Controllers\MessengerPageController::class, 'disconnect']);

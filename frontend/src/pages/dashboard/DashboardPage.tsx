@@ -692,7 +692,7 @@ export default function DashboardPage() {
           {[
             { icon: '👥', label: 'Import contacts',  to: '/crm/contacts', hide: !canContacts },
             { icon: '📢', label: 'New campaign',      to: '/campaigns',    hide: !canViewCamp },
-            { icon: '🌿', label: 'Flow builder',      to: '/wa-cloud/flow-builders', hide: !canViewFlow },
+            { icon: '🌿', label: 'Flow builder',      to: '/flow-builders', hide: !canViewFlow },
             { icon: '💬', label: 'WA Campaign', to: '/wa-chat/message-sender' },
             { icon: '💳', label: 'Recharge wallet',   to: '/wallet',       hide: waConfig !== 'wallet' || !canWallet },
             { icon: '📊', label: 'WA Chat',           to: '/wa-chat/chats' },
