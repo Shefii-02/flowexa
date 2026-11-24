@@ -7,7 +7,7 @@ import { useAppSelector } from '@/store'
 import { subscribeStaffEvent } from '@/socket/staffSocket'
 import ChatRoom from './ChatRoom'
 import { DeleteChatModal, GroupInfoModal, NewChatModal, NewGroupModal } from './Modals'
-import { command, dayOf, errMsg, listAllChatsAdmin, listChats, tcPost, timeOf, type Chat } from './teamChatApi'
+import { command, dayOf, errMsg, listAllChatsAdmin, listChats, tcGet, tcPost, timeOf, type Chat } from './teamChatApi'
 
 type Tab = 'all' | 'direct' | 'group' | 'unread' | 'admin'
 
@@ -82,6 +82,16 @@ export default function TeamChatPage() {
     ...(isAdmin ? [{ id: 'admin' as Tab, label: '👁 All conversations' }] : []),
   ]
 
+  // the "@ N" badge: open the chat and land on the first unread message that mentions me
+  const [focusMsg, setFocusMsg] = useState<number | null>(null)
+  const openAtMention = async (c: Chat) => {
+    try {
+      const d = await tcGet('/mentions')
+      const hit = ((d.data ?? []) as any[]).filter(x => x.chat_id === c.id && x.unread).sort((a, b) => a.id - b.id)[0]
+      setFocusMsg(hit?.id ?? null)
+    } catch { setFocusMsg(null) }
+    open(c.id)
+  }
   const markRead = (c: Chat) => command('chat:read', { chat_id: c.id }, () => tcPost(`/chats/${c.id}/read`)).then(() => load(1)).catch(() => {})
 
   return (
@@ -122,8 +132,7 @@ export default function TeamChatPage() {
                   </div>
                   <div className="flex items-center gap-2">
                     <span className={`truncate text-xs ${c.unread > 0 ? 'font-medium text-gray-700' : 'text-gray-500'}`}>{tab === 'admin' ? (c.participants ?? []).map(p => p.name).join(', ') : c.last_message ? `${c.type === 'group' && c.last_sender ? c.last_sender + ': ' : ''}${c.last_message}` : c.type === 'group' ? `${c.members_count} members` : 'Say hi 👋'}</span>
-                    {!!c.unread_mentions && <span className="rounded-full bg-blue-700 px-1.5 text-[10px] font-bold text-white">@</span>}
-                    {c.unread > 0 && <span onClick={e => { e.stopPropagation(); markRead(c) }} title="Mark as read" className={`ml-auto flex-shrink-0 rounded-full px-2 py-0.5 text-[11px] font-bold text-white ${c.muted ? 'bg-gray-400' : 'bg-gradient-to-r from-sky-400 to-blue-500'}`}>{c.unread > 99 ? '99+' : c.unread}</span>}
+                    {c.unread > 0 && <span onClick={e => { e.stopPropagation(); c.unread_mentions ? openAtMention(c) : markRead(c) }} title={c.unread_mentions ? `${c.unread} unread — you were mentioned: click to jump to the message` : 'Mark as read'} className={`ml-auto flex-shrink-0 rounded-full px-2 py-0.5 text-[11px] font-bold text-white ${c.unread_mentions ? 'bg-blue-700' : c.muted ? 'bg-gray-400' : 'bg-gradient-to-r from-sky-400 to-blue-500'}`}>{c.unread_mentions ? '@ ' : ''}{c.unread > 99 ? '99+' : c.unread}</span>}
                   </div>
                 </div>
               </button>
@@ -139,7 +148,7 @@ export default function TeamChatPage() {
           <>
             <button onClick={() => open(null)} className="border-b border-sky-100 bg-white px-4 py-2 text-left text-sm text-sky-600 md:hidden">← Back to chats</button>
             <div className="min-h-0 flex-1">
-              <ChatRoom key={`${tab === 'admin' ? 'a' : 'u'}${sel}-${roomKey}`} chatId={sel} myId={me.id} admin={tab === 'admin'} title={current?.name ?? 'Chat'}
+              <ChatRoom key={`${tab === 'admin' ? 'a' : 'u'}${sel}-${roomKey}`} focusId={focusMsg} onFocusDone={() => setFocusMsg(null)} chatId={sel} myId={me.id} admin={tab === 'admin'} title={current?.name ?? 'Chat'}
                 onChanged={() => load(1)} onOpenInfo={() => tab !== 'admin' && setModal('info')}
                 onDelete={tab !== 'admin' || canDelete ? () => current && setToDelete(current) : undefined} />
             </div>

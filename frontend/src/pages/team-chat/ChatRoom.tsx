@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import toast from 'react-hot-toast'
 import { api as http } from '@/api/client'
 import { subscribeStaffEvent } from '@/socket/staffSocket'
-import { adminMessages, command, tcPost, dayOf, emitTyping, errMsg, getInfo, listMessages, timeOf, type ChatInfo, type Msg } from './teamChatApi'
+import { adminMessages, command, tcGet, tcPost, dayOf, emitTyping, errMsg, getInfo, listMessages, timeOf, type ChatInfo, type Msg } from './teamChatApi'
 
 /** Fill the fields some endpoints omit (the admin transcript has no reactions / receipts) so rendering never reads `undefined`. */
 const normalizeMsg = (m: Msg): Msg => ({ ...m, reactions: m.reactions ?? [], seen_by_count: m.seen_by_count ?? 0, delivered_count: m.delivered_count ?? 0, recipients: m.recipients ?? 0, mentions: m.mentions ?? [] })
@@ -33,9 +33,9 @@ function Attachment({ m }: { m: Msg }) {
   return null
 }
 
-type Props = { chatId: number; myId: number; admin?: boolean; title: string; onChanged: () => void; onOpenInfo: () => void; onDelete?: () => void }
+type Props = { chatId: number; myId: number; admin?: boolean; title: string; focusId?: number | null; onFocusDone?: () => void; onChanged: () => void; onOpenInfo: () => void; onDelete?: () => void }
 
-export default function ChatRoom({ chatId, myId, admin = false, title, onChanged, onOpenInfo, onDelete }: Props) {
+export default function ChatRoom({ chatId, myId, admin = false, title, focusId, onFocusDone, onChanged, onOpenInfo, onDelete }: Props) {
   const [info, setInfo] = useState<ChatInfo | null>(null)
   const [msgs, setMsgs] = useState<Msg[]>([])
   const [loading, setLoading] = useState(true)
@@ -52,6 +52,10 @@ export default function ChatRoom({ chatId, myId, admin = false, title, onChanged
   const lastTypingEmit = useRef(0)
   const fileRef = useRef<HTMLInputElement>(null)
   const taRef = useRef<HTMLTextAreaElement>(null)
+  // messages that @mention me and I had not read when I opened the chat (captured BEFORE the chat is marked read) — the "@ N" chip walks through them
+  const [mentionQueue, setMentionQueue] = useState<number[]>([])
+  const [flash, setFlash] = useState<number | null>(null)
+  const noMoreRef = useRef(false); noMoreRef.current = noMore
   // @-mentions: typing "@" lists the group's members (and @all); the open token is the text between the @ and the caret
   const [mention, setMention] = useState<{ q: string; start: number } | null>(null)
   const [mIdx, setMIdx] = useState(0)
@@ -83,6 +87,9 @@ export default function ChatRoom({ chatId, myId, admin = false, title, onChanged
     ;(async () => {
       try {
         if (!admin) setInfo(await getInfo(chatId)); else setInfo(null)
+        if (!admin) {
+          try { const d = await tcGet('/mentions'); if (live) setMentionQueue(((d.data ?? []) as any[]).filter(x => x.chat_id === chatId && x.unread).map(x => x.id as number).sort((a, b) => a - b)) } catch { /* the chip just stays hidden */ }
+        } else setMentionQueue([])
         const rows = admin ? await adminMessages(chatId, { limit: 60 }) : await listMessages(chatId, { limit: 60 })
         if (!live) return
         setMsgs(rows.map(normalizeMsg)); setNoMore(rows.length < 60)
@@ -114,6 +121,25 @@ export default function ChatRoom({ chatId, myId, admin = false, title, onChanged
     const tick = setInterval(() => setTyping(t => Object.fromEntries(Object.entries(t).filter(([, v]) => Date.now() - v.at < 5000))), 3000)
     return () => { off(); offTyping(); clearInterval(tick); clearTimeout(debounce.current) }
   }, [chatId, admin, myId, mergeMsgs, markRead, fetchLatest])
+
+  /** Scroll to a message (loading older pages until it is on screen) and flash it. */
+  const jumpTo = useCallback(async (id: number) => {
+    stickBottom.current = false
+    for (let i = 0; i < 8 && !document.getElementById(`tc-msg-${id}`) && !noMoreRef.current; i++) {
+      const first = listRef.current ? Number(listRef.current.querySelector('[data-mid]')?.getAttribute('data-mid')) : 0
+      if (!first || first < 0) break
+      try {
+        const rows = await (admin ? adminMessages(chatId, { before_id: first, limit: 40 }) : listMessages(chatId, { before_id: first, limit: 40 }))
+        if (rows.length < 40) setNoMore(true)
+        mergeMsgs(rows); await new Promise(r => setTimeout(r, 60))
+      } catch { break }
+    }
+    document.getElementById(`tc-msg-${id}`)?.scrollIntoView({ block: 'center', behavior: 'smooth' })
+    setFlash(id); setTimeout(() => setFlash(f => (f === id ? null : f)), 2200)
+  }, [admin, chatId, mergeMsgs])
+  const nextMention = () => { const [first, ...rest] = mentionQueue; if (first) { setMentionQueue(rest); jumpTo(first) } }
+  // opened from the list's "@ N" badge / a notification: go straight to that message
+  useEffect(() => { if (focusId && !loading) { setMentionQueue(q => q.filter(x => x !== focusId)); setTimeout(() => jumpTo(focusId), 120); onFocusDone?.() } }, [focusId, loading]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // keep pinned to the newest message unless the reader scrolled up
   useLayoutEffect(() => { const el = listRef.current; if (el && stickBottom.current) el.scrollTop = el.scrollHeight }, [msgs])
@@ -178,7 +204,8 @@ export default function ChatRoom({ chatId, myId, admin = false, title, onChanged
       catch (e) { toast.error(errMsg(e)) } finally { setBusy(false) }
       return
     }
-    const picked = [...body.matchAll(/@([^\s@]+(?: [^\s@]+)?)/g)].map(x => [...names.entries()].find(([, n]) => n.toLowerCase() === x[1].toLowerCase())?.[0]).filter(Boolean) as number[]
+    // every member written as "@Name" — by hand or picked — whatever follows it ("@Sona hai" mentions Sona)
+    const picked = (info?.members ?? []).filter(m => m.id !== myId && new RegExp(`(^|\\s)@${m.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\p{L}\\p{N}])`, 'iu').test(body)).map(m => m.id)
     // "@all" mentions every other member of the group (the server keeps only real members)
     const everyone = isGroup && /(^|\s)@all(?![\p{L}\p{N}])/iu.test(body) ? (info?.members ?? []).map(m => m.id).filter(id => id !== myId) : []
     const mentions = [...new Set([...picked, ...everyone])]
@@ -250,11 +277,12 @@ export default function ChatRoom({ chatId, myId, admin = false, title, onChanged
           if (m.type === 'system') return <div key={m.id}>{newDay && <Day label={dayOf(m.created_at)} />}<div className="py-1 text-center"><span className="rounded-full bg-white/80 px-3 py-1 text-xs text-gray-500 shadow-sm">{m.body}</span></div></div>
           const showName = info?.type === 'group' && !m.mine && (!prev || prev.sender_id !== m.sender_id || newDay)
           return (
-            <div key={m.id}>
+            <div key={m.id} id={`tc-msg-${m.id}`} data-mid={m.id} className={flash === m.id ? 'rounded-2xl ring-2 ring-amber-300 transition' : undefined}>
               {newDay && <Day label={dayOf(m.created_at)} />}
               <div className={`group flex ${m.mine && !admin ? 'justify-end' : 'justify-start'}`}>
                 <div className="relative max-w-[78%]">
-                  <div className={`rounded-2xl px-3 py-2 shadow-sm ring-1 ${m.mine && !admin ? 'bg-sky-100 ring-sky-200 rounded-br-md' : 'bg-white ring-gray-100 rounded-bl-md'}`}>
+                  <div className={`rounded-2xl px-3 py-2 shadow-sm ring-1 ${m.mine && !admin ? 'bg-sky-100 ring-sky-200 rounded-br-md' : m.mentions?.includes(myId) ? 'bg-blue-50 ring-blue-300 rounded-bl-md' : 'bg-white ring-gray-100 rounded-bl-md'}`}>
+                    {!m.mine && !admin && m.mentions?.includes(myId) && <div className="mb-0.5 text-[11px] font-bold text-blue-700">@ mentioned you</div>}
                     {(showName || admin) && <div className="mb-0.5 text-xs font-bold text-sky-700">{m.sender_name}</div>}
                     {m.forwarded && <div className="mb-0.5 text-[11px] italic text-gray-400">↪ Forwarded</div>}
                     {m.reply_to && <div className="mb-1 rounded-lg border-l-4 border-sky-400 bg-sky-50 px-2 py-1 text-xs"><b className="text-sky-700">{m.reply_to.sender_name}</b><div className="line-clamp-2 text-gray-600">{m.reply_to.preview}</div></div>}
@@ -298,6 +326,9 @@ export default function ChatRoom({ chatId, myId, admin = false, title, onChanged
         })}
       </div>
 
+      {mentionQueue.length > 0 && (
+        <div className="relative h-0"><button onClick={nextMention} className="absolute -top-12 right-4 z-20 flex items-center gap-1.5 rounded-full bg-blue-700 px-3 py-2 text-sm font-bold text-white shadow-lg hover:bg-blue-800" title="Jump to the message that mentions you">@ {mentionQueue.length}<span className="text-xs font-medium opacity-90">mention{mentionQueue.length > 1 ? 's' : ''}</span></button></div>
+      )}
       {!admin && (
         <div className="border-t border-sky-100 bg-white/80 p-3 backdrop-blur">
           {(reply || editing) && (

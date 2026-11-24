@@ -126,6 +126,8 @@ class FirebasePushService
     // ── Core send method ───────────────────────────────────────────────────
     private function sendToTokens(array $tokens, ?int $userId, ?int $companyId, string $type, string $title, string $body, array $data): void
     {
+        // FCM v1 rejects the WHOLE message when a data value is not a string (an int lead_id, a balance …) — normalise once, here
+        $data = array_map(fn ($v) => is_scalar($v) || $v === null ? (string) $v : json_encode($v), $data);
         $projectId    = config('services.firebase.project_id');
         $accessToken  = $this->getAccessToken();
         $url          = str_replace('{PROJECT_ID}', $projectId, $this->fcmUrl);
@@ -144,7 +146,7 @@ class FirebasePushService
                                 'data'         => array_merge($data, ['type' => $type]),
                                 // `group` (e.g. "team_chat_12"): Android keeps ONE notification per group — a newer one replaces the older — and
                                 // iOS stacks them under one thread, so a busy conversation is a single entry, not a pile.
-                                'android'      => ['priority' => 'high', 'notification' => array_filter(['sound' => 'default', 'click_action' => 'FLUTTER_NOTIFICATION_CLICK', 'tag' => $data['group'] ?? null])],
+                                'android'      => ['priority' => 'high', 'notification' => array_filter(['sound' => 'default', 'tag' => $data['group'] ?? null])],
                                 'apns'         => ['payload' => ['aps' => array_filter(['sound' => 'default', 'badge' => 1, 'thread-id' => $data['group'] ?? null])]],
                             ],
                         ]);
