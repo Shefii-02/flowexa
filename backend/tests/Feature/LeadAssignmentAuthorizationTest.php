@@ -32,7 +32,7 @@ class LeadAssignmentAuthorizationTest extends TestCase
             $t->integer('priority')->default(5); $t->timestamp('accepted_at')->nullable(); $t->timestamp('first_reply_at')->nullable(); $t->integer('response_sla_minutes')->nullable();
             $t->boolean('sla_breached')->default(false); $t->timestamp('sla_breached_at')->nullable(); $t->timestamp('ai_takeover_at')->nullable(); $t->timestamp('ai_offered_at')->nullable();
             $t->timestamp('staff_confirmed_at')->nullable(); $t->string('transfer_reason')->nullable(); $t->unsignedBigInteger('transferred_from')->nullable();
-            $t->text('notes')->nullable(); $t->json('candidate_staff_ids')->nullable(); $t->timestamps();
+            $t->text('notes')->nullable(); $t->json('candidate_staff_ids')->nullable(); $t->boolean('ignore_availability')->default(false); $t->timestamps();
             $t->string('assignment_method')->nullable(); $t->string('previous_status')->nullable(); $t->string('previous_lead_stage')->nullable();
             $t->string('routing_strategy')->nullable(); $t->unsignedBigInteger('routing_rule_id')->nullable();
         });

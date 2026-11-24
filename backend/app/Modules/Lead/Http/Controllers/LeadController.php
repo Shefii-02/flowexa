@@ -97,11 +97,11 @@ class LeadController extends Controller
             'strategy'   => ['required', 'in:algorithm,round_robin'],
             'lead_ids'   => ['nullable', 'array'],
             'lead_ids.*' => ['integer'],
-            'staff_scope' => ['nullable', 'in:all,online,selected,selected_online'],   // omitted = follow the routing rules
+            'staff_scope' => ['nullable', 'in:all,online,selected,selected_online,selected_any'],   // omitted = follow the routing rules
             'staff_ids'   => ['nullable', 'array'],
             'staff_ids.*' => ['integer', \Illuminate\Validation\Rule::exists('users', 'id')->where('company_id', auth()->user()->company_id)],
         ]);
-        if (in_array($d['staff_scope'] ?? null, ['selected', 'selected_online'], true) && empty($d['staff_ids'])) {
+        if (in_array($d['staff_scope'] ?? null, ['selected', 'selected_online', 'selected_any'], true) && empty($d['staff_ids'])) {
             return response()->json(['message' => 'Pick at least one employee.', 'errors' => ['staff_ids' => ['Pick at least one employee.']]], 422);
         }
         if (in_array($d['staff_scope'] ?? null, \App\Services\LeadAssignment\StaffPoolResolver::ATTENDANCE_SCOPES, true)

@@ -13,13 +13,20 @@ use Illuminate\Support\Facades\Schema;
  *   online           everyone clocked in right now (HR attendance)   → their ids
  *   selected         the chosen employees                            → those ids
  *   selected_online  the chosen employees who are clocked in         → the overlap
+ *   selected_any     the chosen employees, online or not             → those ids (attendance is not asked)
+ *
+ * Whether the person is online / available is checked for every scope EXCEPT `all` and `selected_any` (see ignoresAvailability()).
  *
  * "Clocked in" = today's attendance row has a clock-in, no clock-out yet, and no break in progress.
  * An empty result is returned as [NOBODY], never as [] — an empty pool means "no restriction" to the engine.
  */
 class StaffPoolResolver
 {
-    public const SCOPES = ['all', 'online', 'selected', 'selected_online'];
+    public const SCOPES = ['all', 'online', 'selected', 'selected_online', 'selected_any'];
+    /** Scopes that name the staff by hand. */
+    public const SELECTED_SCOPES = ['selected', 'selected_online', 'selected_any'];
+    /** Scopes that hand a lead out without asking whether the person is online / away / clocked in (capacity still applies). */
+    public const IGNORES_AVAILABILITY = ['all', 'selected_any'];
     public const NOBODY = -1;
 
     /** Scopes that depend on HR attendance. */
@@ -47,6 +54,11 @@ class StaffPoolResolver
 
     public static function forgetMemo(): void { self::$hrMemo = []; }
 
+    public function ignoresAvailability(?string $scope): bool
+    {
+        return in_array($scope, self::IGNORES_AVAILABILITY, true);
+    }
+
     /** True when this scope relies on attendance but HR is not available — the engine then falls back to round robin over everyone. */
     public function fallsBackToEveryone(int $companyId, ?string $scope): bool
     {
@@ -68,6 +80,7 @@ class StaffPoolResolver
             'online'          => $this->onlineIds($companyId),
             'selected'        => $selected,
             'selected_online' => array_values(array_intersect($selected, $this->onlineIds($companyId))),
+            'selected_any'    => $selected,
         };
 
         if ($pool === null) {

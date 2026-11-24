@@ -53,24 +53,43 @@ class ScheduledAutoAssigner
         return ($rule->auto_assign_last_run_at ?? now())->copy()->addMinutes($interval);
     }
 
-    /** @return array{routed:int, found:int} */
+    /**
+     * @return array{routed:int, found:int, waiting:int}  waiting = leads that were found but still have nobody to take them
+     *
+     * Two kinds of unassigned lead are picked up: ones never routed at all, and ones the engine already tried but could not place
+     * (nobody online / at capacity / outside working hours → the AI agent held them and the lead stayed ownerless). The second kind
+     * used to be skipped forever, which is why leads piled up unassigned.
+     */
     public function runForCompany(Company $company, int $limit = 200): array
     {
+        $auto = LeadAssignmentRule::where('company_id', $company->id)->value('notification_mode') === 'auto';
         $leads = Lead::where('company_id', $company->id)->whereNull('assigned_to')
             ->whereNotIn('stage', ['enrolled', 'lost'])
-            ->whereDoesntHave('assignments', fn ($q) => $q->whereNotIn('status', ['dropped']))
+            ->where(function ($q) use ($auto) {
+                $q->whereDoesntHave('assignments', fn ($a) => $a->whereNotIn('status', ['dropped']));
+                if ($auto) {
+                    $q->orWhere(fn ($w) => $w
+                        ->whereHas('assignments', fn ($a) => $a->where('status', 'ai_handling')->whereNull('staff_id'))
+                        ->whereDoesntHave('assignments', fn ($a) => $a->whereNotIn('status', ['dropped', 'ai_handling'])));
+                }
+            })
             ->with('contact')
             ->orderBy('created_at')->orderBy('id')   // oldest waiting first
             ->limit($limit)->get();
 
-        $routed = 0;
+        $routed = 0; $waiting = 0;
         foreach ($leads as $lead) {
             if (!$lead->contact) {
                 continue;
             }
             try {
-                $this->engine->assign($company, $lead->contact, $lead->source ?: 'organic', $lead->campaign_id, null, 'auto', $lead);
-                $routed++;
+                $stuck = $auto ? $lead->assignments()->where('status', 'ai_handling')->whereNull('staff_id')->latest('id')->first() : null;
+                if ($stuck) {
+                    $this->engine->retryWaiting($company, $stuck) ? $routed++ : $waiting++;
+                    continue;
+                }
+                $a = $this->engine->assign($company, $lead->contact, $lead->source ?: 'organic', $lead->campaign_id, null, 'auto', $lead);
+                $a->status === 'ai_handling' ? $waiting++ : $routed++;   // handed to the AI agent = nobody could take it yet
             } catch (\Throwable $e) {
                 Log::warning('Scheduled auto-assign failed', ['lead_id' => $lead->id, 'error' => $e->getMessage()]);
             }
@@ -80,6 +99,6 @@ class ScheduledAutoAssigner
             'auto_assign_last_run_at' => now(), 'auto_assign_last_run_count' => $routed,
         ]);
 
-        return ['routed' => $routed, 'found' => $leads->count()];
+        return ['routed' => $routed, 'found' => $leads->count(), 'waiting' => $waiting];
     }
 }

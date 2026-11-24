@@ -1,30 +1,33 @@
-// "Who can receive these leads?" — all staff / attendance-online staff / selected staff (multi-select) / selected staff who are clocked in.
+// "Who can receive these leads?" — all staff / attendance-online staff / selected staff (multi-select) / selected staff who are clocked in /
+// selected staff without any attendance check.
 // Shared by the company-wide Routing section and by every category / campaign routing rule.
 import { useState } from 'react'
 import { useModule } from '@/store'
 
-export type StaffScope = 'all' | 'online' | 'selected' | 'selected_online'
+export type StaffScope = 'all' | 'online' | 'selected' | 'selected_online' | 'selected_any'
 export type StaffOpt = { id: number; name: string; department?: string | null }
 
 export const SCOPE_LABEL: Record<StaffScope, string> = {
   all: 'All staff',
   online: 'Attendance-online staff only',
-  selected: 'Selected staff only',
+  selected: 'Selected staff only (must be available)',
   selected_online: 'Selected staff, only while clocked in',
+  selected_any: 'Selected staff — without checking attendance',
 }
 const SCOPE_HINT: Record<StaffScope, string> = {
-  all: 'Any available employee can receive the lead.',
+  all: 'Every staff member can receive the lead — online / offline and attendance are NOT checked (a person at their lead limit is still skipped).',
   online: 'Only employees who are clocked in right now (HR attendance, not on a break).',
-  selected: 'Only the employees you pick below.',
+  selected: 'Only the employees you pick below, and only if they are available (online or away, not at their lead limit).',
   selected_online: 'Only the employees you pick below, and only while they are clocked in.',
+  selected_any: 'Only the employees you pick below. Whether they are online or clocked in is NOT checked — the lead goes to whoever has the fewest leads today (a person at their lead limit is still skipped).',
 }
 export const needsAttendance = (s: StaffScope) => s === 'online' || s === 'selected_online'
-export const needsStaff = (s: StaffScope) => s === 'selected' || s === 'selected_online'
+export const needsStaff = (s: StaffScope) => s === 'selected' || s === 'selected_online' || s === 'selected_any'
 
 /** one-line summary for lists: "All staff", "Attendance-online staff", or the chosen names */
 export const scopeSummary = (scope: StaffScope, names: string[]) =>
   scope === 'all' ? 'All staff' : scope === 'online' ? 'Attendance-online staff'
-    : `${names.length} selected${scope === 'selected_online' ? ' · only while clocked in' : ''}`
+    : `${names.length} selected${scope === 'selected_online' ? ' · only while clocked in' : scope === 'selected_any' ? ' · attendance not checked' : ''}`
 
 export default function StaffScopePicker({ scope, staffIds, staff, onChange }: {
   scope: StaffScope

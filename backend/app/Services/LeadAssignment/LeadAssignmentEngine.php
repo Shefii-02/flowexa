@@ -57,6 +57,7 @@ class LeadAssignmentEngine
             $rule->strategy = $routing->strategy;   // in-memory only
         }
 
+        $callerPool = (bool) $onlyStaffIds;   // WA Cloud reply routing passes its own pool — that keeps the availability check
         // Who may receive the lead: the matching routing rule's staff choice, else the company-wide one
         // (all / attendance-online / selected / selected + online). A pool the caller passed in (WA Cloud) wins.
         // Attendance-based pool but no HR section → everyone (or the picked staff), assigned round robin — the simple method
@@ -72,6 +73,9 @@ class LeadAssignmentEngine
                 ? $this->pools->resolve($company->id, $routing->staff_scope ?: 'selected', $routing->staff_ids)
                 : $this->pools->resolve($company->id, $rule->staff_scope, $rule->staff_ids);
         }
+
+        // "All staff" and "Selected staff (any time)" do not ask whether the person is online; every other choice does.
+        $ignoreByScope = $poolOverride === false && !$callerPool && !$strategyOverride && $this->pools->ignoresAvailability($poolScope);
 
         $dupCheck = $this->detector->check($company, $contact, $campaignId);
 
@@ -94,7 +98,7 @@ class LeadAssignmentEngine
 
         return DB::transaction(function () use (
             $company, $contact, $campaignId, $sourceType, $sourceRef,
-            $assignmentType, $rule, $dupCheck, $lead, $onlyStaffIds, $strategyOverride, $routing, $poolOverride
+            $assignmentType, $rule, $dupCheck, $lead, $onlyStaffIds, $strategyOverride, $routing, $poolOverride, $ignoreByScope
         ) {
             $resolvedType = $rule->notification_mode === 'uber' ? 'notification' : $assignmentType;
 
@@ -110,6 +114,7 @@ class LeadAssignmentEngine
                 'priority'             => $this->calculatePriority($contact, $dupCheck),
                 'response_sla_minutes' => $rule->sla_minutes,
                 'candidate_staff_ids'  => $onlyStaffIds ?: null,
+                'ignore_availability'  => $ignoreByScope,
                 'routing_strategy'     => $rule->strategy,
                 'routing_rule_id'      => $routing?->id,
                 'notes'                => $dupCheck['is_duplicate'] ? $dupCheck['reason'] : null,
@@ -153,7 +158,7 @@ class LeadAssignmentEngine
             if ($rule->notification_mode === 'auto') {
                 // An admin who picked the pool by hand (the Auto assign button) means those people — online status is not asked.
                 // Capacity, an active account and access to leads still apply.
-                $ignoreAvailability = $poolOverride !== false;
+                $ignoreAvailability = $poolOverride !== false || $ignoreByScope;
                 $staff = ($rule->strategy ?? 'algorithm') === 'round_robin'
                     ? $this->roundRobinPick($company, [], $onlyStaffIds ?? [], $ignoreAvailability)
                     : ($this->scorer->rankStaff($company, $rule, $dupCheck['previous_assignment'] ?? null, [], $onlyStaffIds ?? [], $ignoreAvailability)->first()->staff ?? null);
@@ -177,6 +182,47 @@ class LeadAssignmentEngine
             // and the AI agent takes over.
             dispatch(new SendLeadNotifications($assignment->id, $rule->id));
             return $assignment;
+        });
+    }
+
+    /**
+     * A lead the engine could not place when it arrived — nobody was online, everyone at capacity, or it came in outside working hours,
+     * so the AI agent took it and the lead stayed unassigned. Try again now with the same rules; true = a staff member took it.
+     * (Only for "Auto-assign" mode; the accept/decline modes have their own cascade.)
+     */
+    public function retryWaiting(Company $company, LeadAssignment $assignment): bool
+    {
+        $rule = LeadAssignmentRule::where('company_id', $company->id)->first();
+        if (!$rule || $rule->notification_mode !== 'auto' || !$this->withinWorkingHours($company, $rule)) {
+            return false;
+        }
+        $lead = $assignment->lead_id ? Lead::find($assignment->lead_id) : null;
+        $routing = LeadRoutingRule::matchFor($company->id, $lead?->categoryNames(), $assignment->campaign_id ?? $lead?->campaign_id);
+        if ($routing && $routing->strategy) {
+            $rule->strategy = $routing->strategy;   // in-memory only
+        }
+        $scope = $routing ? ($routing->staff_scope ?: 'selected') : $rule->staff_scope;
+        if ($this->pools->fallsBackToEveryone($company->id, $scope)) {
+            $rule->strategy = 'round_robin';
+        }
+        $pool = $routing
+            ? $this->pools->resolve($company->id, $routing->staff_scope ?: 'selected', $routing->staff_ids)
+            : $this->pools->resolve($company->id, $rule->staff_scope, $rule->staff_ids);
+        $ignore = $this->pools->ignoresAvailability($scope);
+
+        return DB::transaction(function () use ($company, $assignment, $rule, $pool, $ignore) {
+            $staff = ($rule->strategy ?? 'algorithm') === 'round_robin'
+                ? $this->roundRobinPick($company, [], $pool ?? [], $ignore)
+                : ($this->scorer->rankStaff($company, $rule, null, [], $pool ?? [], $ignore)->first()->staff ?? null);
+            if (!$staff) {
+                return false;
+            }
+            $this->assignToStaff($assignment, $staff, $rule);
+            $assignment->update(['transfer_reason' => 'Assigned after waiting — a staff member became available.']);
+            if ($assignment->ai_agent_session_id) {
+                AiAgentSession::find($assignment->ai_agent_session_id)?->update(['status' => 'handed_off']);
+            }
+            return true;
         });
     }
 

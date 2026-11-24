@@ -79,8 +79,9 @@ class LeadEngineRoutingTest extends TestCase
             $t->integer('priority')->default(5); $t->timestamp('accepted_at')->nullable(); $t->timestamp('first_reply_at')->nullable(); $t->integer('response_sla_minutes')->nullable();
             $t->boolean('sla_breached')->default(false); $t->timestamp('sla_breached_at')->nullable(); $t->timestamp('ai_takeover_at')->nullable(); $t->timestamp('ai_offered_at')->nullable();
             $t->timestamp('staff_confirmed_at')->nullable(); $t->string('transfer_reason')->nullable(); $t->unsignedBigInteger('transferred_from')->nullable();
-            $t->text('notes')->nullable(); $t->json('candidate_staff_ids')->nullable(); $t->timestamps();
+            $t->text('notes')->nullable(); $t->json('candidate_staff_ids')->nullable(); $t->boolean('ignore_availability')->default(false); $t->timestamps();
         });
+
 
         $detector = \Mockery::mock(DuplicateLeadDetector::class);
         $detector->shouldReceive('check')->andReturn(['is_duplicate' => false, 'recommended_action' => null, 'previous_staff' => null, 'previous_assignment' => null, 'reason' => null]);
@@ -163,6 +164,43 @@ class LeadEngineRoutingTest extends TestCase
         \App\Models\LeadAssignmentRule::where('company_id', 1)->exists()
             ?: \App\Models\LeadAssignmentRule::create(['company_id' => 1, 'strategy' => 'round_robin', 'notification_mode' => 'auto']);
         \App\Models\LeadAssignmentRule::where('company_id', 1)->update(['staff_scope' => $scope, 'staff_ids' => json_encode($ids)]);
+    }
+
+    /** Like a real inbound lead in Auto-assign mode (no button override), with the working-hours gate wide open. */
+    private function routeAuto(): \App\Models\LeadAssignment
+    {
+        foreach (['company_holidays' => fn ($t) => [$t->id(), $t->unsignedBigInteger('company_id'), $t->date('date'), $t->timestamps()], 'company_working_hours' => fn ($t) => [$t->id(), $t->unsignedBigInteger('company_id'), $t->unsignedTinyInteger('weekday'), $t->boolean('is_open')->default(true), $t->time('start_time')->nullable(), $t->time('end_time')->nullable(), $t->timestamps()]] as $name => $cols) {
+            if (!Schema::hasTable($name)) { Schema::create($name, $cols); }
+        }
+        \App\Models\LeadAssignmentRule::where('company_id', 1)->update(['working_hours_start' => '00:00:00', 'working_hours_end' => '23:59:59', 'working_days' => json_encode([0, 1, 2, 3, 4, 5, 6])]);
+        $company = (new Company())->forceFill(['id' => 1]);
+        $contact = new Contact(); $contact->forceFill(['company_id' => 1])->save();
+        return $this->engine->assign($company, $contact, 'organic', null, null, 'auto', (new Lead())->forceFill(['category' => null, 'campaign_id' => null]));
+    }
+
+    public function test_all_staff_does_not_ask_whether_anyone_is_online(): void
+    {
+        $a = $this->staff('A'); $b = $this->staff('B');
+        $this->setStatus($a, 'offline', false); $this->setStatus($b, 'offline', false);
+        $this->companyPool('all');
+        $this->assertNotNull($this->staffOf($this->routeAuto()), 'everyone is offline, yet "All staff" still hands the lead out');
+    }
+
+    public function test_selected_staff_still_must_be_available(): void
+    {
+        $a = $this->staff('A'); $b = $this->staff('B');
+        $this->setStatus($b, 'offline', false);
+        $this->companyPool('selected', [$b->id]);
+        try { $asg = $this->routeAuto(); } catch (\Throwable) { $asg = null; }   // no ai_agent_sessions table in this test schema
+        $this->assertTrue($asg === null || $asg->staff_id === null, 'an offline selected person is skipped, and nobody else is used');
+    }
+
+    public function test_selected_staff_without_attendance_check_gets_the_lead_even_when_offline(): void
+    {
+        $a = $this->staff('A'); $b = $this->staff('B');
+        $this->setStatus($b, 'offline', false);
+        $this->companyPool('selected_any', [$b->id]);
+        $this->assertSame($b->id, $this->staffOf($this->routeAuto()));
     }
 
     private function staffOf(\App\Models\LeadAssignment $a): ?int { return $a->staff_id ? (int) $a->staff_id : null; }

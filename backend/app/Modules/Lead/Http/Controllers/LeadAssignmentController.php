@@ -406,7 +406,7 @@ class LeadAssignmentController extends Controller
 
         $cid = $company->id;
         $request->validate([
-            'staff_scope'   => ['sometimes', 'in:all,online,selected,selected_online'],
+            'staff_scope'   => ['sometimes', 'in:all,online,selected,selected_online,selected_any'],
             'staff_ids'     => ['sometimes', 'nullable', 'array'],
             'staff_ids.*'   => ['integer', \Illuminate\Validation\Rule::exists('users', 'id')->where('company_id', $cid)],
         ]);
@@ -414,7 +414,7 @@ class LeadAssignmentController extends Controller
             && in_array($request->input('staff_scope'), \App\Services\LeadAssignment\StaffPoolResolver::ATTENDANCE_SCOPES, true) && !app(\App\Services\LeadAssignment\StaffPoolResolver::class)->attendanceAvailable($cid)) {
             return response()->json(['message' => 'Attendance-based assignment needs the HR section, which is not available on your plan.', 'error_code' => 'hr_not_available'], 422);
         }
-        if (in_array($request->input('staff_scope'), ['selected', 'selected_online'], true) && empty($request->input('staff_ids'))) {   // filled() is true for an empty list
+        if (in_array($request->input('staff_scope'), ['selected', 'selected_online', 'selected_any'], true) && empty($request->input('staff_ids'))) {   // filled() is true for an empty list
             return response()->json(['message' => 'Pick at least one employee, or choose "All staff" / "Attendance-online staff".', 'errors' => ['staff_ids' => ['Pick at least one employee.']]], 422);
         }
 
@@ -444,7 +444,8 @@ class LeadAssignmentController extends Controller
         $rule = LeadAssignmentRule::firstOrCreate(['company_id' => $company->id], LeadAssignmentRule::defaultForCompany($company->id));
         abort_unless($rule->auto_assign_enabled, 422, 'Auto-assign is switched off.');
         $r = app(\App\Services\LeadAssignment\ScheduledAutoAssigner::class)->runForCompany($company);
-        return response()->json(['message' => "{$r['routed']} lead(s) routed" . ($r['found'] === 0 ? ' — nothing was waiting.' : '.'), ...$r, 'data' => $this->ruleWithSchedule($rule->fresh())]);
+        $why = $r['waiting'] > 0 ? " {$r['waiting']} lead(s) are still waiting: no staff member could take them right now — everyone is offline or away, at their lead limit, outside the chosen staff, or it is outside working hours. They are retried automatically." : '';
+        return response()->json(['message' => "{$r['routed']} lead(s) routed" . ($r['found'] === 0 ? ' — nothing was waiting.' : '.') . $why, ...$r, 'data' => $this->ruleWithSchedule($rule->fresh())]);
     }
 
     // ── Category / campaign routing rules ─────────────────────────────────────
@@ -458,8 +459,8 @@ class LeadAssignmentController extends Controller
             'campaign_id' => ['nullable', 'integer', \Illuminate\Validation\Rule::exists('campaigns', 'id')->where('company_id', $cid)],
             'starts_at'   => 'nullable|date',
             'ends_at'     => 'nullable|date|after_or_equal:starts_at',
-            'staff_scope' => 'required|in:all,online,selected,selected_online',
-            'staff_ids'   => 'required_if:staff_scope,selected,selected_online|nullable|array',
+            'staff_scope' => 'required|in:all,online,selected,selected_online,selected_any',
+            'staff_ids'   => 'required_if:staff_scope,selected,selected_online,selected_any|nullable|array',
             'staff_ids.*' => ['integer', \Illuminate\Validation\Rule::exists('users', 'id')->where('company_id', $cid)],
             'strategy'    => 'nullable|in:algorithm,round_robin',
             'is_active'   => 'boolean',
@@ -467,8 +468,8 @@ class LeadAssignmentController extends Controller
         ]);
         abort_if($d['match_type'] === 'campaign' && empty($d['campaign_id']) && empty($d['starts_at']) && empty($d['ends_at']), 422, 'Pick a campaign or set a period.');
         if ($d['match_type'] === 'category') { $d['campaign_id'] = null; } else { $d['category'] = null; }
-        $d['staff_ids'] = in_array($d['staff_scope'], ['selected', 'selected_online'], true) ? array_values(array_unique(array_map('intval', $d['staff_ids'] ?? []))) : [];
-        abort_if(in_array($d['staff_scope'], ['selected', 'selected_online'], true) && !$d['staff_ids'], 422, 'Pick at least one employee.');
+        $d['staff_ids'] = in_array($d['staff_scope'], ['selected', 'selected_online', 'selected_any'], true) ? array_values(array_unique(array_map('intval', $d['staff_ids'] ?? []))) : [];
+        abort_if(in_array($d['staff_scope'], ['selected', 'selected_online', 'selected_any'], true) && !$d['staff_ids'], 422, 'Pick at least one employee.');
         abort_if($d['staff_scope'] !== $existing?->staff_scope && in_array($d['staff_scope'], \App\Services\LeadAssignment\StaffPoolResolver::ATTENDANCE_SCOPES, true) && !app(\App\Services\LeadAssignment\StaffPoolResolver::class)->attendanceAvailable($cid), 422, 'Attendance-based assignment needs the HR section, which is not available on your plan.');
         return $d;
     }

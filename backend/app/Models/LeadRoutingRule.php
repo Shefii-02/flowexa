@@ -31,7 +31,7 @@ class LeadRoutingRule extends Model
             ->orderBy('priority')->orderBy('id')->get()
             ->first(function (self $r) use ($cats, $campaignId) {
                 // a selected rule needs its employees; an all / online rule needs none
-                if (in_array($r->staff_scope ?: 'selected', ['selected', 'selected_online'], true) && !$r->staff_ids) { return false; }
+                if (in_array($r->staff_scope ?: 'selected', ['selected', 'selected_online', 'selected_any'], true) && !$r->staff_ids) { return false; }
                 if ($r->match_type === 'category') {
                     return $cats && $r->category && in_array(mb_strtolower(trim($r->category)), $cats, true);
                 }
