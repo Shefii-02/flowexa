@@ -25,7 +25,7 @@ class LeadSourceController extends Controller
     /** PUT /lead-assignment-rules/sources { source, enabled } */
     public function update(Request $request): JsonResponse
     {
-        $d = $request->validate(['source' => ['required', 'string'], 'enabled' => ['required', 'boolean']]);
+        $d = $request->validate(['source' => ['required', 'string'], 'enabled' => ['required', 'boolean'], 'review_mode' => ['nullable', 'in:off,smart,all']]);
         abort_unless(isset(LeadSourceGate::SOURCES[$d['source']]), 422, 'That lead source cannot be switched.');
 
         $company = auth()->user()->company;
@@ -35,7 +35,7 @@ class LeadSourceController extends Controller
 
         DB::table('lead_source_settings')->updateOrInsert(
             ['company_id' => $company->id, 'source' => $d['source']],
-            ['is_enabled' => $d['enabled'], 'updated_by' => auth()->id(), 'updated_at' => now(), 'created_at' => now()],
+            ['is_enabled' => $d['enabled'], 'updated_by' => auth()->id(), 'updated_at' => now(), 'created_at' => now()] + (isset($d['review_mode']) ? ['review_mode' => $d['review_mode']] : []),
         );
         LeadSourceGate::forgetMemo();
 
@@ -232,6 +232,7 @@ class LeadSourceController extends Controller
         $accounts = $this->accountsFor($company);
         $ent = Entitlements::forCompany($company);
         $settings = DB::table('lead_source_settings')->where('company_id', $company->id)->pluck('is_enabled', 'source');
+        $modes = DB::table('lead_source_settings')->where('company_id', $company->id)->pluck('review_mode', 'source');
         $held = HeldLead::where('company_id', $company->id)->where('status', 'held')->selectRaw('source, count(*) c')->groupBy('source')->pluck('c', 'source');
 
         $out = [];
@@ -244,6 +245,7 @@ class LeadSourceController extends Controller
                 'feature' => $module ? (Modules::REGISTRY[$module][0] ?? $module) : 'Leads',
                 'available' => $available, 'via' => $via, 'complimentary_until' => $via === 'complimentary' ? $until : null,
                 'enabled' => (bool) ($settings[$key] ?? true),
+                'review_mode' => $modes[$key] ?? 'off',
                 'held' => (int) ($held[$key] ?? 0),
                 // the individual accounts of this source (sessions / numbers / pages / widgets / ad accounts) — each can be switched on its own
                 'accounts' => $accounts[$key] ?? [],

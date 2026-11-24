@@ -823,6 +823,7 @@ Route::prefix('v1')->group(function () {
             Route::get('/reports/rejected',  [\App\Modules\Lead\Http\Controllers\LeadReportsController::class, 'rejected'])->middleware('permission:leads.view');
             Route::get('/reports/summary',   [\App\Modules\Lead\Http\Controllers\LeadReportsController::class, 'summary'])->middleware('permission:leads.view');
             Route::get('/reports/campaigns', [\App\Modules\Lead\Http\Controllers\LeadReportsController::class, 'campaigns'])->middleware('permission:leads.view');
+            Route::get('/reports/sources', [\App\Modules\Lead\Http\Controllers\LeadReportsController::class, 'sources'])->middleware('permission:leads.view');
             // Deleted leads — list, restore, purge (before the /{lead} routes)
             Route::get('/deleted',            [LeadController::class, 'deleted'])->middleware('permission:leads.manage');
             Route::post('/deleted/restore',   [LeadController::class, 'restoreDeleted'])->middleware('permission:leads.manage');

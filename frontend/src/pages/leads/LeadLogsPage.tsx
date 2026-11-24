@@ -1,7 +1,7 @@
 // Company-wide feed of lead activity — every stage change, note, assignment, accept/decline,
 // timeout-and-reassign, transfer, and AI hand-off, across every lead, newest first.
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { leadApi } from '@/api'
 import { Badge, EmptyState, Pagination, Spinner, StatCard } from '@/components/ui'
 import { fmt, formatPhone, getError, stageConfig } from '@/utils'
@@ -24,13 +24,14 @@ const EVENT_LABEL: Record<string, string> = {
   lead_verified: 'Verified', lead_verification_revoked: 'Verification removed',
   lead_ai_handoff: 'AI hand-off',
   lead_sla_breached: 'SLA breached',
+  lead_review_approved: 'Review approved', lead_review_held: 'Held for review',
 }
 
 const EVENT_ICON: Record<string, string> = {
   note_added: '📝', stage_changed: '🔀', assigned: '👤', reassigned_bulk: '⇄',
   lead_assigned: '📨', lead_assignment_accepted: '✅', lead_assignment_declined: '❌',
   lead_assignment_timeout: '⏱️', lead_assignment_transferred: '🔁', lead_assignment_completed: '🏁', lead_assignment_restored: '↩️', lead_recalled: '↩', category_changed: '📂', call_logged: '📞', message_logged: '💬', meeting_logged: '🤝', visit_logged: '🏢', other_logged: '📝', lead_verified: '✅', lead_verification_revoked: '↺',
-  lead_ai_handoff: '🤖', lead_sla_breached: '⚠️',
+  lead_ai_handoff: '🤖', lead_sla_breached: '⚠️', lead_review_approved: '🛂', lead_review_held: '⏸',
 }
 
 interface LogRow {
@@ -69,6 +70,7 @@ function describe(row: LogRow): string {
     case 'lead_verified':             return 'Converted / closed lead approved'
     case 'lead_verification_revoked': return 'Approval taken back'
     case 'lead_ai_handoff':           return p.reason ? String(p.reason) : 'Handed to the AI agent'
+    case 'lead_review_approved':      return `Checked by ${p.by ?? 'a team head'}${p.topic ? ` · seen as ${String(p.topic).replace(/_/g, ' ')}` : ''}${p.assigned_to ? ` · given to ${p.assigned_to}` : ''}`
     case 'lead_sla_breached':         return `Reply SLA (${p.sla_minutes ?? '?'} min) breached`
     default:                return '—'
   }
@@ -82,6 +84,7 @@ export default function LeadLogsPage() {
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
   const [loading, setLoading] = useState(true)
+  const navigate = useNavigate()
 
   useEffect(() => {
     setLoading(true)
@@ -131,10 +134,10 @@ export default function LeadLogsPage() {
           <>
             <div className="table-wrapper">
               <table className="table">
-                <thead><tr><th>When</th><th>Lead</th><th>Source</th><th>Category</th><th>Activity</th><th>Details</th><th>By</th></tr></thead>
+                <thead><tr><th>When</th><th>Lead</th><th>Source</th><th>Category</th><th>Activity</th><th>Details</th><th>By</th><th>Action</th></tr></thead>
                 <tbody>
                   {rows.map((r) => (
-                    <tr key={r.id}>
+                    <tr key={r.id} className={r.lead ? 'cursor-pointer hover:bg-gray-50' : ''} onDoubleClick={() => r.lead && navigate(`/crm/leads/${r.lead.id}`)}>
                       <td className="text-xs whitespace-nowrap">
                         <div className="text-gray-700">{new Date(r.created_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' })}</div>
                         <div className="text-gray-400">{fmt.relative(r.created_at)}</div>
@@ -152,6 +155,11 @@ export default function LeadLogsPage() {
                       <td className="whitespace-nowrap"><span className="mr-1.5">{EVENT_ICON[r.event] ?? '•'}</span>{EVENT_LABEL[r.event] ?? r.event.replace(/_/g, ' ')}</td>
                       <td className="text-sm text-gray-600 max-w-[360px] truncate" title={describe(r)}>{describe(r)}</td>
                       <td className="text-xs text-gray-400 whitespace-nowrap">{r.user ?? '—'}</td>
+                      <td className="whitespace-nowrap">
+                        {r.lead
+                          ? <Link to={`/crm/leads/${r.lead.id}`} className="text-xs font-medium text-brand-600 hover:underline">View lead →</Link>
+                          : <span className="text-xs text-gray-300" title="This lead has since been deleted">Deleted</span>}
+                      </td>
                     </tr>
                   ))}
                 </tbody>

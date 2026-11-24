@@ -13,7 +13,7 @@ class HeldLeadService
     public function __construct(private readonly LeadService $leads) {}
 
     /** @return array{status:string, lead_id:?int, note:?string} */
-    public function move(HeldLead $h, int $userId): array
+    public function move(HeldLead $h, int $userId, ?int $assignTo = null): array
     {
         if ($h->status !== 'held') {
             return ['status' => $h->status, 'lead_id' => $h->lead_id, 'note' => 'Already handled.'];
@@ -25,6 +25,18 @@ class HeldLeadService
             ));
             if ($h->wa_open_campaign_id) {
                 Lead::whereKey($lead->id)->update(['wa_open_campaign_id' => $h->wa_open_campaign_id]);
+            }
+            if ($assignTo) {
+                // the reviewer picked who gets it — same checks as any assignment (the person must belong to this company)
+                $who = \App\Models\User::where('company_id', $h->company_id)->where('is_active', true)->find($assignTo);
+                if ($who) { $lead = app(\App\Modules\Lead\Repositories\LeadRepository::class)->assign($lead, $who->id, $userId); }
+            }
+            if ($h->held_reason === 'needs_review') {
+                // the lead's own log shows who let it in — and what it was seen as
+                \App\Models\LeadEvent::create(['lead_id' => $lead->id, 'company_id' => $h->company_id, 'user_id' => $userId, 'event' => 'lead_review_approved', 'payload' => [
+                    'by' => \App\Models\User::whereKey($userId)->value('name'), 'topic' => $h->topic, 'held_at' => $h->first_captured_at?->toIso8601String(), 'hits' => $h->hits,
+                    'assigned_to' => $assignTo ? \App\Models\User::whereKey($assignTo)->value('name') : null,
+                ]]);
             }
             $this->finish($h, 'moved', $lead->id, $userId, null);
             return ['status' => 'moved', 'lead_id' => $lead->id, 'note' => null];

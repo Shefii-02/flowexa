@@ -11,7 +11,7 @@ import MetaCampaignSwitches from './MetaCampaignSwitches'
 export type SourceAccount = { type: string; id: number; label: string; sub: string | null; enabled: boolean; held: number; campaign_total?: number; campaign_off?: number; campaign_held?: number }
 export type SourceRow = {
   source: string; label: string; icon: string; feature: string; available: boolean
-  via: 'plan' | 'complimentary' | 'addon' | null; complimentary_until: string | null; enabled: boolean; held: number
+  via: 'plan' | 'complimentary' | 'addon' | null; complimentary_until: string | null; enabled: boolean; held: number; review_mode?: 'off' | 'smart' | 'all'
   accounts?: SourceAccount[]
 }
 
@@ -27,6 +27,15 @@ export default function LeadSourcesPanel() {
     try {
       const res = await leadChannelApi.set(r.source, !r.enabled)
       setRows(res.data.data); toast.success(res.data.message)
+    } catch (e) { toast.error(getError(e)) } finally { setBusy(null) }
+  }
+
+  const setReview = async (r: SourceRow, mode: 'off' | 'smart' | 'all') => {
+    setBusy(r.source)
+    try {
+      const res = await leadChannelApi.set(r.source, r.enabled, mode)
+      setRows(res.data.data)
+      toast.success(mode === 'off' ? `${r.label}: new contacts become leads straight away.` : mode === 'smart' ? `${r.label}: real enquiries become leads, everything else waits for review.` : `${r.label}: every new contact waits for a team head to check it.`)
     } catch (e) { toast.error(getError(e)) } finally { setBusy(null) }
   }
 
@@ -75,6 +84,17 @@ export default function LeadSourcesPanel() {
               <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${r.enabled && r.available ? 'left-[22px]' : 'left-0.5'}`} />
             </button>
           </div>
+          {r.available && r.enabled && r.source !== 'flow' && (
+            <div className="px-4 pb-2 flex flex-wrap items-center gap-2 text-xs text-gray-600">
+              <span>New contact →</span>
+              <select className="select !w-auto !py-1 text-xs" value={r.review_mode ?? 'off'} disabled={busy === r.source} onChange={e => setReview(r, e.target.value as 'off' | 'smart' | 'all')}>
+                <option value="off">Make a lead straight away</option>
+                <option value="smart">Check the conversation first (enquiry → lead, other → review)</option>
+                <option value="all">Hold every new contact for review</option>
+              </select>
+              {r.review_mode && r.review_mode !== 'off' && <Link to={`/crm/leads/held?source=${r.source}&reason=needs_review`} className="text-brand-600 hover:underline">Open review list →</Link>}
+            </div>
+          )}
           {(r.accounts?.length ?? 0) > 0 && (
             <div className="px-4 pb-3">
               <button type="button" onClick={() => setOpen(o => ({ ...o, [r.source]: !o[r.source] }))} className="text-xs text-brand-600 hover:underline">

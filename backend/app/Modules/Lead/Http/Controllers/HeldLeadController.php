@@ -15,7 +15,7 @@ class HeldLeadController extends Controller
 
     private function filters(Request $r): array
     {
-        return $r->validate(['status' => ['nullable', 'in:held,moved,discarded,all'], 'source' => ['nullable', 'string', 'max:30'], 'search' => ['nullable', 'string', 'max:100'], 'account' => ['nullable', 'regex:/^[a-z_]{3,30}:\d{1,12}$/'], 'per_page' => ['nullable', 'integer', 'min:5', 'max:100']]);
+        return $r->validate(['status' => ['nullable', 'in:held,moved,discarded,all'], 'source' => ['nullable', 'string', 'max:30'], 'search' => ['nullable', 'string', 'max:100'], 'account' => ['nullable', 'regex:/^[a-z_]{3,30}:\d{1,12}$/'], 'reason' => ['nullable', 'in:needs_review,source_off,account_off,campaign_off'], 'topic' => ['nullable', 'in:lead_enquiry,technical,billing,complaint,existing_customer,other'], 'per_page' => ['nullable', 'integer', 'min:5', 'max:100']]);
     }
 
     private function base(array $f)
@@ -27,6 +27,8 @@ class HeldLeadController extends Controller
                 // a Meta ad campaign is the lead's ORIGIN; every other account type is the account it came through
                 $type === 'ad_campaign' ? $q->where('origin_type', 'ad_campaign')->where('origin_id', (int) $id) : $q->where('account_type', $type)->where('account_id', (int) $id);
             })
+            ->when($f['reason'] ?? null, fn ($q, $r) => $q->where('held_reason', $r))
+            ->when($f['topic'] ?? null, fn ($q, $t) => $q->where('topic', $t))
             ->when($f['search'] ?? null, fn ($q, $s) => $q->whereHas('contact', fn ($c) => $c->where('name', 'like', "%{$s}%")->orWhere('phone', 'like', "%{$s}%")));
     }
 
@@ -44,7 +46,7 @@ class HeldLeadController extends Controller
         $page->getCollection()->transform(fn (HeldLead $h) => [
             'id' => $h->id, 'source' => $h->source, 'status' => $h->status, 'hits' => $h->hits,
             'contact' => ['id' => $h->contact?->id, 'name' => $h->contact?->name, 'phone' => $h->contact?->phone, 'phone_is_real' => $h->contact?->phoneLooksReal()],
-            'origin_label' => $h->origin_label, 'held_reason' => $h->held_reason ?? 'source_off', 'account_type' => $h->account_type, 'account_id' => $h->account_id, 'category' => $h->category, 'notes' => $h->notes,
+            'origin_label' => $h->origin_label, 'held_reason' => $h->held_reason ?? 'source_off', 'account_type' => $h->account_type, 'account_id' => $h->account_id, 'category' => $h->category, 'notes' => $h->notes, 'topic' => $h->topic, 'topic_confidence' => $h->topic_confidence !== null ? (float) $h->topic_confidence : null, 'sample_text' => $h->sample_text,
             'first_captured_at' => $h->first_captured_at?->toIso8601String(), 'last_captured_at' => $h->last_captured_at?->toIso8601String(),
             'lead_id' => $h->lead_id, 'result_note' => $h->result_note, 'handled_by' => $h->handler?->name, 'handled_at' => $h->handled_at?->toIso8601String(),
         ]);
@@ -55,10 +57,11 @@ class HeldLeadController extends Controller
     /** POST /leads/held/move { ids: [] } or { all_matching: true, source?, search? } */
     public function move(Request $request): JsonResponse
     {
+        $assignTo = $request->integer('assign_to') ?: null;
         $rows = $this->selected($request);
         $moved = 0; $dup = 0;
         foreach ($rows as $h) {
-            $r = $this->held->move($h, (int) auth()->id());
+            $r = $this->held->move($h, (int) auth()->id(), $assignTo);
             $r['status'] === 'moved' ? $moved++ : $dup++;
         }
         return response()->json(['moved' => $moved, 'skipped' => $dup, 'message' => "{$moved} lead(s) moved into Leads" . ($dup ? ", {$dup} skipped (already have an open lead)." : '.')]);

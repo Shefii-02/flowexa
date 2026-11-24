@@ -38,7 +38,7 @@ export default function LeadsPage() {
   const [page,    setPage]    = useState(1)
   const [view,    setView]    = useState<'table'|'kanban'>('table')
   const [stage,   setStage]   = useState(urlStage)
-  const [sourceFilter, setSourceFilter] = useState('')
+  const [sourceFilter, setSourceFilter] = useState(new URLSearchParams(window.location.search).get('source') ?? '')   // arrives from the Lead Sources page
   const [sources, setSources] = useState<Record<string, { label: string; icon: string }>>({})
   const [assignedFilter, setAssignedFilter] = useState((urlMine || onlyMine) && me ? String(me.id) : '')
   useEffect(() => { setStage(urlStage); setAssignedFilter((urlMine || onlyMine) && me ? String(me.id) : ''); setPage(1) }, [urlStage, urlMine, urlTransferred, onlyMine, me?.id]) // eslint-disable-line react-hooks/exhaustive-deps

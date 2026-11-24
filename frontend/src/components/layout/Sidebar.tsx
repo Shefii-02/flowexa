@@ -779,6 +779,7 @@ const SidebarInner = () => {
               {canManageLeads && <SubLink to="/crm/leads/held" icon="⏸" label="Held Leads" />}
               {canManageLeads && <SubLink to="/crm/leads/deleted" icon="🗑️" label="Deleted Leads" />}
               <SubLink to="/crm/leads/reports" icon="🧮" label="Lead Reports" />
+              <SubLink to="/crm/leads/sources" icon="🧭" label="Lead Sources" />
 
               {/* Basic — at-a-glance metrics */}
               {/* <NestedAccordion icon="🟢" label="Basic" basePaths={['/leads/summary']}>

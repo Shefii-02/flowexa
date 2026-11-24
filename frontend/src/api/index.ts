@@ -273,7 +273,7 @@ export const leadSheetApi = {
 // ── Lead sources (switch incoming channels on / off) and the leads held while one is off ─
 export const leadChannelApi = {
   list: () => api.get('/lead-assignment-rules/sources'),
-  set: (source: string, enabled: boolean) => api.put('/lead-assignment-rules/sources', { source, enabled }),
+  set: (source: string, enabled: boolean, review_mode?: 'off' | 'smart' | 'all') => api.put('/lead-assignment-rules/sources', { source, enabled, review_mode }),
   /** Switch ONE account of a source (a WA Chat session, a WhatsApp Cloud number, an Instagram account, a widget, an ad account). */
   /** The campaigns of one Meta ad account — searchable and paged (state: all | off | held). */
   campaigns: (p: Record<string, unknown>) => api.get('/lead-assignment-rules/sources/campaigns', { params: p }),
@@ -1009,6 +1009,7 @@ export const leadDeletedApi = {
 }
 export const leadReportApi = {
   scheduled: (p?: Record<string, unknown>) => api.get('/leads/reports/scheduled', { params: p }),
+  sources: (p?: Record<string, unknown>) => api.get('/leads/reports/sources', { params: p }),
   staff: (p?: Record<string, unknown>) => api.get('/leads/reports/staff', { params: p }),
   rejected: (p?: Record<string, unknown>) => api.get('/leads/reports/rejected', { params: p }),
   summary: (p?: Record<string, unknown>) => api.get('/leads/reports/summary', { params: p }),

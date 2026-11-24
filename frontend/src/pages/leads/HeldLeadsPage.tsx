@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import toast from 'react-hot-toast'
-import { heldLeadApi, leadChannelApi } from '@/api'
+import { heldLeadApi, leadChannelApi, staffApi } from '@/api'
 import { usePermission } from '@/store'
 import { Badge, Button, EmptyState, Pagination, Spinner, StatCard } from '@/components/ui'
 import { fmt, getError, phoneLabel } from '@/utils'
@@ -11,10 +11,11 @@ import type { SourceRow } from './components/LeadSourcesPanel'
 type Row = {
   id: number; source: string; status: 'held' | 'moved' | 'discarded'; hits: number
   contact: { id: number; name: string | null; phone: string; phone_is_real: boolean }
-  origin_label: string | null; category: string | null; notes: string | null; held_reason?: 'source_off' | 'account_off' | 'campaign_off'; account_type?: string | null; account_id?: number | null
+  origin_label: string | null; category: string | null; notes: string | null; held_reason?: 'source_off' | 'account_off' | 'campaign_off' | 'needs_review'; topic?: string | null; topic_confidence?: number | null; sample_text?: string | null; account_type?: string | null; account_id?: number | null
   first_captured_at: string | null; last_captured_at: string | null; lead_id: number | null; result_note: string | null; handled_by: string | null; handled_at: string | null
 }
 const PER = 25
+const TOPIC_LABEL: Record<string, string> = { lead_enquiry: 'Lead enquiry', technical: 'Technical / support', billing: 'Billing', complaint: 'Complaint', existing_customer: 'Existing customer', other: 'Other conversation' }
 
 export default function HeldLeadsPage() {
   const allowed = usePermission('leads.manage')
@@ -23,6 +24,9 @@ export default function HeldLeadsPage() {
   const [source, setSource] = useState(params.get('source') ?? '')
   const [account, setAccount] = useState(params.get('account') ?? '')   // "type:id" — one WA session / number / page / widget / ad account
   const [search, setSearch] = useState('')
+  const [reason, setReason] = useState(params.get('reason') ?? '')   // needs_review = waiting for a team head's check
+  const [assignTo, setAssignTo] = useState('')
+  const [staff, setStaff] = useState<{ id: number; name: string }[]>([])
   const [page, setPage] = useState(1)
   const [rows, setRows] = useState<Row[]>([])
   const [total, setTotal] = useState(0)
@@ -32,8 +36,9 @@ export default function HeldLeadsPage() {
   const [picked, setPicked] = useState<Set<number>>(new Set())
   const [busy, setBusy] = useState(false)
 
+  useEffect(() => { staffApi.list({ per_page: 200 }).then(r => setStaff((r.data.data ?? r.data.staff ?? []).filter((x: any) => x.is_active !== false).map((x: any) => ({ id: x.id, name: x.name })))).catch(() => {}) }, [])
   useEffect(() => { leadChannelApi.list().then(r => setSources(r.data.data ?? [])).catch(() => {}) }, [])
-  const filters = useCallback(() => ({ status, source: source || undefined, account: account || undefined, search: search || undefined }), [status, source, account, search])
+  const filters = useCallback(() => ({ status, source: source || undefined, account: account || undefined, search: search || undefined, reason: reason || undefined }), [status, source, account, search, reason])
   const load = useCallback(() => {
     setLoading(true)
     heldLeadApi.list({ ...filters(), page, per_page: PER })
@@ -41,8 +46,8 @@ export default function HeldLeadsPage() {
       .catch(e => toast.error(getError(e))).finally(() => setLoading(false))
   }, [filters, page])
   useEffect(() => { if (allowed) load() }, [allowed, load])
-  useEffect(() => { setPage(1); setPicked(new Set()) }, [status, source, account, search])
-  useEffect(() => { const n: Record<string, string> = {}; if (source) n.source = source; if (account) n.account = account; setParams(n, { replace: true }) }, [source, account]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { setPage(1); setPicked(new Set()) }, [status, source, account, search, reason])
+  useEffect(() => { const n: Record<string, string> = {}; if (source) n.source = source; if (account) n.account = account; if (reason) n.reason = reason; setParams(n, { replace: true }) }, [source, account, reason]) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!allowed) return <div className="p-8"><EmptyState icon="🔒" title="No access" desc="You need permission to manage leads to see held leads." /></div>
 
@@ -55,16 +60,16 @@ export default function HeldLeadsPage() {
 
   const run = async (kind: 'move' | 'discard', body: Record<string, unknown>) => {
     setBusy(true)
-    try { const { data } = await (kind === 'move' ? heldLeadApi.move(body) : heldLeadApi.discard(body)); toast.success(data.message); setPicked(new Set()); load() }
+    try { const { data } = await (kind === 'move' ? heldLeadApi.move({ ...body, assign_to: assignTo ? Number(assignTo) : undefined }) : heldLeadApi.discard(body)); toast.success(data.message); setPicked(new Set()); load() }
     catch (e) { toast.error(getError(e)) } finally { setBusy(false) }
   }
-  const matching = { all_matching: true, source: source || undefined, account: account || undefined, search: search || undefined }
+  const matching = { all_matching: true, source: source || undefined, account: account || undefined, search: search || undefined, reason: reason || undefined }
 
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="page-title">Held leads</h1>
-        <p className="page-sub">Contacts captured while their source was switched off — move them into Leads when you are ready, or discard them</p>
+        <h1 className="page-title">Review &amp; held leads</h1>
+        <p className="page-sub">New contacts that are waiting for a check, or were captured while their source was switched off. Look at what they wrote, then move the real ones into Leads with one click — or discard the rest</p>
       </div>
       <div className="grid grid-cols-3 gap-3">
         <StatCard label="Waiting" value={fmt.number(summary.held)} icon="⏸" />
@@ -81,6 +86,11 @@ export default function HeldLeadsPage() {
           <option value="">All sources</option>
           {sources.map(s => <option key={s.source} value={s.source}>{s.icon} {s.label}</option>)}
         </select>
+        <select className="select !w-auto text-sm" value={reason} onChange={e => setReason(e.target.value)}>
+          <option value="">Everything waiting</option>
+          <option value="needs_review">🛂 Needs a check</option>
+          <option value="source_off">⏸ Source switched off</option>
+        </select>
         <input className="input !w-56" placeholder="Search name / number" value={search} onChange={e => setSearch(e.target.value)} />
         <Link to="/crm/leads/assignment-rules?section=sources" className="ml-auto text-xs text-brand-600 hover:underline">⚙ Switch sources on / off</Link>
       </div>
@@ -88,6 +98,10 @@ export default function HeldLeadsPage() {
       {held && (picked.size > 0 || summary.held > 0) && (
         <div className="flex flex-wrap items-center gap-3 bg-brand-50 border border-brand-200 rounded-xl px-4 py-2.5">
           <span className="text-sm font-medium text-brand-800">{picked.size} selected</span>
+          <select className="select !w-auto !py-1 text-sm" value={assignTo} onChange={e => setAssignTo(e.target.value)} title="Who gets the lead (blank = the normal auto-assignment)">
+            <option value="">Assign: automatic</option>
+            {staff.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
           <Button size="sm" onClick={() => run('move', { ids: [...picked] })} loading={busy} disabled={picked.size === 0}>→ Move to Leads</Button>
           <Button size="sm" variant="secondary" disabled={picked.size === 0 || busy} onClick={() => { if (confirm(`Discard ${picked.size} held lead(s)? No lead will be created.`)) run('discard', { ids: [...picked] }) }}>Discard</Button>
           {total > 0 && <Button size="sm" variant="secondary" disabled={busy} onClick={() => { if (confirm(`Move all ${total} waiting contact(s) that match these filters into Leads?`)) run('move', matching) }}>Move all {fmt.number(total)} matching</Button>}
@@ -109,12 +123,14 @@ export default function HeldLeadsPage() {
                 <tr key={r.id} className={picked.has(r.id) ? 'bg-brand-50/40' : ''}>
                   {held && <td><input type="checkbox" checked={picked.has(r.id)} onChange={() => toggle(r.id)} /></td>}
                   <td><p className="font-medium text-gray-900">{r.contact.name && r.contact.name !== r.contact.phone ? r.contact.name : '—'}</p><p className="text-xs text-gray-400 font-mono">{phoneLabel(r.contact)}</p></td>
-                  <td className="text-sm whitespace-nowrap">{icon(r.source)} {label(r.source)}{r.origin_label && <span className="block text-xs text-gray-400">{r.origin_label}</span>}{r.held_reason === 'account_off' && <span className="block text-[10px] text-amber-600">held: this account is off</span>}{r.held_reason === 'campaign_off' && <span className="block text-[10px] text-amber-600">held: this campaign is off</span>}</td>
+                  <td className="text-sm whitespace-nowrap">{icon(r.source)} {label(r.source)}{r.origin_label && <span className="block text-xs text-gray-400">{r.origin_label}</span>}{r.held_reason === 'needs_review' && <span className="block text-[10px] text-indigo-600">waiting for a check</span>}{r.held_reason === 'account_off' && <span className="block text-[10px] text-amber-600">held: this account is off</span>}{r.held_reason === 'campaign_off' && <span className="block text-[10px] text-amber-600">held: this campaign is off</span>}</td>
                   <td className="text-xs text-gray-500 whitespace-nowrap">{r.first_captured_at ? fmt.datetime(r.first_captured_at) : '—'}</td>
                   <td className="text-xs text-gray-500 whitespace-nowrap">{r.last_captured_at ? fmt.relative(r.last_captured_at) : '—'}</td>
                   <td className="text-right text-sm">{r.hits}</td>
                   <td className="text-xs text-gray-600 max-w-[260px]">
-                    {held ? <span className="line-clamp-2">{r.notes ?? '—'}</span> : <>
+                    {held ? <>
+                      {r.topic && <span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-medium mb-1 ${r.topic === 'lead_enquiry' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-800'}`}>{TOPIC_LABEL[r.topic] ?? r.topic}{r.topic_confidence != null ? ` · ${Math.round(r.topic_confidence * 100)}%` : ''}</span>}
+                      <span className="line-clamp-2 block">{r.sample_text ? `“${r.sample_text}”` : r.notes ?? '—'}</span></> : <>
                       <Badge variant={r.status === 'moved' ? 'green' : 'gray'}>{r.status}</Badge>
                       <span className="block text-gray-400">{r.result_note ?? ''}{r.handled_by ? ` · ${r.handled_by}` : ''}</span></>}
                   </td>

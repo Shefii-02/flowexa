@@ -146,4 +146,36 @@ class LeadReportsController extends Controller
             'totals' => ['total' => $rows->sum('total'), 'rejected' => $rows->sum('rejected'), 'in_followup' => $rows->sum('in_followup'), 'confirmed' => $rows->sum('confirmed'),
                 'conversion' => $rows->sum('total') > 0 ? round($rows->sum('confirmed') / $rows->sum('total') * 100, 1) : 0]]);
     }
+
+    // GET /leads/reports/sources — one row per lead source: how many leads came in, where they stand, and how many wait for a check
+    public function sources(Request $r): JsonResponse
+    {
+        [$from, $to] = $this->range($r);
+        $rows = $this->leads()->whereBetween('leads.created_at', [$from->toDateTimeString(), $to->toDateTimeString()])
+            ->selectRaw("COALESCE(leads.source, 'manual') as source, count(*) as total,
+                SUM(leads.stage = 'new') as new_leads, SUM(leads.stage = 'follow_up') as in_followup,
+                SUM(leads.stage = 'enrolled') as converted, SUM(leads.stage = 'lost') as lost,
+                SUM(leads.verified_at IS NOT NULL) as verified, SUM(leads.assigned_to IS NULL) as unassigned")
+            ->groupBy(DB::raw("COALESCE(leads.source, 'manual')"))->get()->keyBy('source');
+
+        $waiting = $this->team()
+            ? DB::table('held_leads')->where('company_id', $this->cid())->where('status', 'held')
+                ->selectRaw("source, SUM(held_reason = 'needs_review') as review, SUM(held_reason <> 'needs_review' OR held_reason IS NULL) as switched_off")->groupBy('source')->get()->keyBy('source')
+            : collect();
+
+        $keys = $rows->keys()->merge($waiting->keys())->unique()->values();
+        $out = $keys->map(function ($k) use ($rows, $waiting) {
+            $x = $rows[$k] ?? null; $w = $waiting[$k] ?? null;
+            $total = (int) ($x->total ?? 0); $conv = (int) ($x->converted ?? 0);
+            return [
+                'source' => $k, 'label' => config("lead_sources.{$k}.label") ?? ucwords(str_replace('_', ' ', (string) $k)), 'icon' => config("lead_sources.{$k}.icon"),
+                'total' => $total, 'new' => (int) ($x->new_leads ?? 0), 'in_followup' => (int) ($x->in_followup ?? 0), 'converted' => $conv, 'lost' => (int) ($x->lost ?? 0),
+                'verified' => (int) ($x->verified ?? 0), 'unassigned' => (int) ($x->unassigned ?? 0),
+                'conversion' => $total ? round($conv / $total * 100, 1) : 0,
+                'awaiting_review' => (int) ($w->review ?? 0), 'switched_off' => (int) ($w->switched_off ?? 0),
+            ];
+        })->sortByDesc('total')->values();
+
+        return response()->json(['rows' => $out, 'totals' => ['total' => $out->sum('total'), 'converted' => $out->sum('converted'), 'awaiting_review' => $out->sum('awaiting_review'), 'verified' => $out->sum('verified')]]);
+    }
 }

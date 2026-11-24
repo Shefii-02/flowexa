@@ -41,11 +41,50 @@ class LeadSourceGate
 
     /** @var array<int,array<string,bool>> */
     private static array $memo = [];
+    /** @var array<int,array<string,string>> company => source => off|smart|all */
+    private static array $reviewMemo = [];
     /** @var array<int,array<string,bool>> company => "type:id" => enabled */
     private static array $acctMemo = [];
     private static ?bool $heldHasAccount = null;
 
-    public static function forgetMemo(): void { self::$memo = []; self::$acctMemo = []; self::$heldHasAccount = null; }
+    public static function forgetMemo(): void { self::$reviewMemo = []; self::$memo = []; self::$acctMemo = []; self::$heldHasAccount = null; }
+
+    /** What happens to a NEW contact on this source: off = lead at once | smart = check the conversation first | all = a team head reviews every one. */
+    public static function reviewMode(int $companyId, string $source): string
+    {
+        if (!Schema::hasTable('lead_source_settings') || !Schema::hasColumn('lead_source_settings', 'review_mode')) {
+            return 'off';
+        }
+        if (!isset(self::$reviewMemo[$companyId])) {
+            self::$reviewMemo[$companyId] = DB::table('lead_source_settings')->where('company_id', $companyId)->pluck('review_mode', 'source')->all();
+        }
+        return self::$reviewMemo[$companyId][$source] ?? 'off';
+    }
+
+    /** The customer's own recent messages on this channel (oldest → newest), for the keyword check. Empty when the channel keeps none here. @return string[] */
+    private static function inboundTexts(int $companyId, int $contactId, string $source): array
+    {
+        try {
+            if ($source === 'website' && Schema::hasTable('widget_messages')) {
+                return DB::table('widget_messages as m')->join('widget_conversations as c', 'c.id', '=', 'm.widget_conversation_id')
+                    ->where('c.contact_id', $contactId)->where('m.role', 'visitor')->orderByDesc('m.id')->limit(8)->pluck('m.text')->reverse()->values()->all();
+            }
+            if ($source === 'instagram' && Schema::hasTable('instagram_messages')) {
+                return DB::table('instagram_messages as m')->join('instagram_conversations as c', 'c.id', '=', 'm.instagram_conversation_id')
+                    ->where('c.contact_id', $contactId)->where('m.direction', 'in')->whereNotNull('m.text')->orderByDesc('m.id')->limit(8)->pluck('m.text')->reverse()->values()->all();
+            }
+            if ($source === 'whatsapp_cloud' && Schema::hasTable('wa_messages')) {
+                return DB::table('wa_messages as m')->join('wa_conversations as c', 'c.id', '=', 'm.conversation_id')
+                    ->where('m.company_id', $companyId)->where('c.contact_id', $contactId)->where('m.direction', 'inbound')->where('m.type', 'text')
+                    ->orderByDesc('m.id')->limit(8)->pluck('m.content')->reverse()
+                    ->map(function ($c) { $a = is_array($c) ? $c : (json_decode((string) $c, true) ?: []); return (string) ($a['body'] ?? $a['text']['body'] ?? (is_string($a['text'] ?? null) ? $a['text'] : '')); })
+                    ->filter()->values()->all();
+            }
+        } catch (\Throwable) {
+            // a missing / different table must never stop a lead from being captured
+        }
+        return [];
+    }
 
     /** Is this single account (WA session / phone number / Instagram account / widget / ad account) switched on? No row = on. */
     public static function accountOn(int $companyId, string $type, int $id): bool
@@ -121,8 +160,33 @@ class LeadSourceGate
         $campType = self::CAMPAIGN_TYPES[$key] ?? null;
         $campaignOff = $campType !== null && ($attrs['origin_type'] ?? null) === $campType && !empty($attrs['origin_id'])
             && !self::accountOn($companyId, $campType, (int) $attrs['origin_id']);
+        $review = [];   // set when the source is ON but its new contacts wait for a team head
         if (!$sourceOff && !$accountOff && !$campaignOff) {
-            return false;
+            $mode = self::reviewMode($companyId, $key);
+            if ($mode === 'off') {
+                return false;
+            }
+            if ($mode === 'smart') {
+                if (in_array($key, ['meta_ads', 'flow'], true)) {
+                    return false;   // a lead-form / flow contact is an enquiry by definition — nothing to check
+                }
+                $texts = self::inboundTexts($companyId, $contactId, $key);
+                if ($key === 'wa_chat' || !$texts) {
+                    // WA Chat keeps its messages on the phone gateway; its conversation label (when one exists) stands in for the text check
+                    $t = \App\Models\ConversationTopic::where('company_id', $companyId)->where('contact_id', $contactId)->orderByDesc('classified_at')->first();
+                    if ($t) { $review = ['topic' => $t->topic, 'topic_confidence' => $t->confidence, 'sample_text' => null, 'confident' => $t->confidence >= 0.55]; }
+                } else {
+                    $r = \App\Services\Topics\TopicRules::classify($texts);
+                    $review = ['topic' => $r['topic'], 'topic_confidence' => $r['confidence'], 'sample_text' => mb_substr((string) end($texts), 0, 400), 'confident' => $r['confident']];
+                }
+                if (($review['topic'] ?? null) === 'lead_enquiry' && ($review['confident'] ?? false)) {
+                    // it reads like a real enquiry: no waiting — and clear any earlier hold for this contact
+                    HeldLead::where('company_id', $companyId)->where('contact_id', $contactId)->where('source', $key)->where('status', 'held')->where('held_reason', 'needs_review')
+                        ->update(['status' => 'moved', 'handled_at' => now(), 'result_note' => 'The conversation turned into a lead enquiry — lead created automatically.']);
+                    return false;
+                }
+            }
+            $review = ['reason' => 'needs_review'] + $review;
         }
         $company = Company::find($companyId);
         if ($company && !self::available($company, $key)) {
@@ -134,7 +198,10 @@ class LeadSourceGate
         $fill = array_filter(array_intersect_key($attrs, array_flip(['origin_type', 'origin_id', 'origin_label', 'campaign_id', 'wa_open_campaign_id', 'flow_node_id', 'category', 'priority', 'notes'])), fn ($v) => $v !== null && $v !== '');
         self::$heldHasAccount ??= Schema::hasColumn('held_leads', 'held_reason');
         if (self::$heldHasAccount) {
-            $fill += ['held_reason' => $sourceOff ? 'source_off' : ($accountOff ? 'account_off' : 'campaign_off')] + ($acct ? ['account_type' => $acct[0], 'account_id' => $acct[1]] : []);
+            $fill += ['held_reason' => $review ? 'needs_review' : ($sourceOff ? 'source_off' : ($accountOff ? 'account_off' : 'campaign_off'))] + ($acct ? ['account_type' => $acct[0], 'account_id' => $acct[1]] : []);
+            if ($review && Schema::hasColumn('held_leads', 'topic')) {
+                $fill += array_filter(array_intersect_key($review, array_flip(['topic', 'topic_confidence', 'sample_text'])), fn ($v) => $v !== null);
+            }
         }
         if ($row) {
             $row->fill($fill)->forceFill(['hits' => $row->hits + 1, 'last_captured_at' => $now])->save();
