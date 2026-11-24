@@ -1026,6 +1026,7 @@ export const staffExtrasApi = {
     const fd = new FormData(); fd.append('type', type); fd.append('file', file); if (title) fd.append('title', title)
     return api.post(`/staff/${id}/documents`, fd, { headers: { 'Content-Type': 'multipart/form-data' } })
   },
+  loginAs: (id: number) => api.post(`/staff/${id}/login-as`),
   removeDocument: (id: number, docId: number) => api.delete(`/staff/${id}/documents/${docId}`),
 }
 export const companyPackageApi = { get: () => api.get('/company-package') }

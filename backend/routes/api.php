@@ -392,6 +392,7 @@ Route::prefix('v1')->group(function () {
             });
 
             // Create staff (admin, owner)
+            Route::post('/{staff}/login-as', [\App\Modules\Staff\Http\Controllers\StaffExtrasController::class, 'loginAs'])->middleware('permission:staff.manage');
             Route::post('/', [StaffController::class, 'store'])
                 ->middleware(['permission:staff.manage', 'plan.limit:users'])
                 ->name('store');

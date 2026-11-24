@@ -7,6 +7,8 @@ use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Tymon\JWTAuth\Facades\JWTAuth;
 use Illuminate\Support\Facades\Storage;
 
 /**
@@ -135,5 +137,27 @@ class StaffExtrasController extends Controller
         }
 
         return $this->show($staff);
+    }
+
+    /**
+     * POST /staff/{staff}/login-as — the company owner signs in as one of their staff (to see exactly what that person
+     * sees, or help them). Returns a token for that user; the web keeps the owner's own token to switch back.
+     */
+    public function loginAs(Request $request, int $staff): JsonResponse
+    {
+        $me = $request->user();
+        if (!$me->isOwner()) return response()->json(['message' => 'Only the company owner can sign in as a staff member.'], 403);
+
+        $target = User::where('company_id', $me->company_id)->with('role')->findOrFail($staff);
+        if ($target->id === $me->id) return response()->json(['message' => 'That is your own account.'], 422);
+        if ($target->isOwner())      return response()->json(['message' => 'You cannot sign in as another owner.'], 422);
+        if (!$target->is_active)     return response()->json(['message' => 'Activate this staff member first.'], 422);
+
+        Log::info('staff.login_as', ['by' => $me->id, 'as' => $target->id, 'company' => $me->company_id]);
+        return response()->json([
+            'message'      => "Signed in as {$target->name}.",
+            'access_token' => JWTAuth::fromUser($target),
+            'name'         => $target->name,
+        ]);
     }
 }

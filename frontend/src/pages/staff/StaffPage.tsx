@@ -21,6 +21,20 @@ export default function StaffPage() {
   const planLim = useLimit('users')
   const dispatch   = useAppDispatch()
   const { list, total, loading } = useAppSelector((s) => s.staff)
+  const me = useAppSelector((s) => s.auth.user)
+  const isOwner = me?.role?.name === 'owner'
+  // Owner only: switch into a staff member's account. Their own token is kept so the banner can switch back.
+  const loginAs = async (u: any) => {
+    try {
+      const { data } = await staffExtrasApi.loginAs(u.id)
+      const current = localStorage.getItem('wa_token')
+      if (current && !localStorage.getItem('wa_original_token')) localStorage.setItem('wa_original_token', current)
+      localStorage.setItem('wa_token', data.access_token)
+      localStorage.setItem('wa_impersonation', JSON.stringify({ label: data.name, back: '/staff/index' }))
+      toast.success(`Signing in as ${data.name}…`)
+      setTimeout(() => { window.location.href = '/dashboard' }, 800)
+    } catch (e) { toast.error(getError(e)) }
+  }
   // Backend only defines 'staff.manage' (no create/edit/delete split).
   const canManage  = usePermission('staff.manage')
   const canCreate  = canManage
@@ -239,6 +253,9 @@ export default function StaffPage() {
                     <td>
                       <div className="flex gap-1">
                         <button onClick={() => setDeviceUser(u)} className="text-xs text-indigo-600 hover:underline px-1">Devices</button>
+                        {isOwner && u.id !== me?.id && u.role?.name !== 'owner' && u.is_active && (
+                          <button onClick={() => loginAs(u)} className="text-xs text-emerald-600 hover:underline px-1" title="Sign in as this staff member">Login as</button>
+                        )}
                         {canEdit && (
                           <>
                             <button onClick={() => openEdit(u)} className="text-xs text-blue-600 hover:underline px-1">Edit</button>

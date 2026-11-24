@@ -446,8 +446,11 @@ const SidebarInner = () => {
     if (!originalToken) return
     localStorage.setItem('wa_token', originalToken)
     localStorage.removeItem('wa_original_token')
-    toast.success('Returned to superadmin account.')
-    setTimeout(() => { window.location.href = '/superadmin/companies' }, 800)
+    let back = '/superadmin/companies'
+    try { back = JSON.parse(localStorage.getItem('wa_impersonation') ?? '{}').back ?? back } catch { /* keep default */ }
+    localStorage.removeItem('wa_impersonation')
+    toast.success('Back to your own account.')
+    setTimeout(() => { window.location.href = back }, 800)
   }
 
   // Sales-team staff get the short lead-first menu; they can flip to the full menu and back (remembered on this browser)
@@ -497,9 +500,9 @@ const SidebarInner = () => {
         {/* ── Impersonation banner ── */}
         {isImpersonating && (
           <div className="mx-0 mb-2 px-3 py-2 bg-purple-50 border border-purple-200 rounded-lg">
-            <p className="text-xs text-purple-700 font-medium">Impersonating company</p>
+            <p className="text-xs text-purple-700 font-medium">{(() => { try { return JSON.parse(localStorage.getItem('wa_impersonation') ?? '{}').label ? `Signed in as ${JSON.parse(localStorage.getItem('wa_impersonation')!).label}` : 'Impersonating company' } catch { return 'Impersonating company' } })()}</p>
             <button onClick={handleExitImpersonation} className="text-xs text-purple-600 hover:underline mt-0.5">
-              ← Exit to superadmin
+              ← Switch back
             </button>
           </div>
         )}
