@@ -779,7 +779,7 @@ const SidebarInner = () => {
               <SubLink to="/crm/leads/by-staff" icon="👤" label="Leads by Staff" />
               <SubLink to="/crm/leads/logs" icon="📜" label="Lead Logs" />
               {canVerifyLeads && <SubLink to="/crm/leads/verification" icon="✅" label="Verify Leads" />}
-              {canManageLeads && <SubLink to="/crm/leads/held" icon="⏸" label="Held Leads" />}
+              {canManageLeads && <SubLink to="/crm/leads/held" icon="🛂" label="Lead Review (Held)" />}
               {canManageLeads && <SubLink to="/crm/leads/deleted" icon="🗑️" label="Deleted Leads" />}
               <SubLink to="/crm/leads/reports" icon="🧮" label="Lead Reports" />
               <SubLink to="/crm/leads/sources" icon="🧭" label="Lead Sources" />

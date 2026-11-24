@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import toast from 'react-hot-toast'
-import { leadVerificationApi, staffApi } from '@/api'
+import { leadVerificationApi, staffApi, heldLeadApi } from '@/api'
 import { usePermission } from '@/store'
 import { Badge, Button, EmptyState, Pagination, Spinner, StatCard } from '@/components/ui'
 import DateRangePicker from '@/components/ui/DateRangePicker'
@@ -30,6 +30,9 @@ export default function LeadVerificationPage() {
   const [rows, setRows] = useState<Row[]>([])
   const [total, setTotal] = useState(0)
   const [summary, setSummary] = useState<Summary | null>(null)
+  const canReview = usePermission('leads.manage')
+  const [waiting, setWaiting] = useState(0)   // new contacts waiting for a check (the other kind of verification)
+  useEffect(() => { if (canReview) heldLeadApi.list({ status: 'held', reason: 'needs_review', per_page: 5 }).then(r => setWaiting(r.data.summary?.held ?? 0)).catch(() => {}) }, [canReview])
   const [loading, setLoading] = useState(true)
   const [picked, setPicked] = useState<Set<number>>(new Set())
   const [busy, setBusy] = useState(false)
@@ -70,6 +73,11 @@ export default function LeadVerificationPage() {
         <h1 className="page-title">Verify leads</h1>
         <p className="page-sub">Check converted and closed leads, then approve them — one by one or many at once</p>
       </div>
+      {waiting > 0 && (
+        <Link to="/crm/leads/held?reason=needs_review" className="flex items-center gap-3 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-800 hover:bg-indigo-100">
+          <span className="text-xl">🛂</span><span className="flex-1"><b>{waiting}</b> new contact{waiting === 1 ? ' is' : 's are'} waiting for a check before becoming leads</span><span className="font-medium">Open review →</span>
+        </Link>
+      )}
 
       {summary && (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -109,7 +117,7 @@ export default function LeadVerificationPage() {
 
       <div className="card">
         {loading ? <div className="flex justify-center py-12"><Spinner size="lg" /></div> : rows.length === 0 ? (
-          <EmptyState icon="🧾" title="Nothing to verify" desc="No converted or closed leads match these filters." />
+          <EmptyState icon="🧾" title="Nothing to verify" desc={summary && summary.verified > 0 ? `No ${status === 'pending' ? 'waiting' : ''} converted or closed leads match these filters — ${summary.verified} are already verified (switch the status filter to see them).` : 'This page lists leads that reached Converted (Enrolled) or Closed (Lost). None have reached those stages yet — they appear here as soon as staff close one.'} />
         ) : (
           <>
             <div className="table-wrapper"><table className="table">

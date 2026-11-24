@@ -111,7 +111,19 @@ export default function HeldLeadsPage() {
 
       <div className="card">
         {loading ? <div className="flex justify-center py-12"><Spinner size="lg" /></div> : rows.length === 0 ? (
-          <EmptyState icon="⏸" title={held ? 'Nothing is waiting' : 'Nothing here'} desc={held ? 'When a lead source is switched off, new contacts from it wait here.' : 'No entries match.'} />
+held ? (
+            <div className="text-center py-12 px-6 max-w-xl mx-auto">
+              <p className="text-4xl mb-2">🛂</p>
+              <p className="font-semibold text-gray-800">Nothing is waiting for a check</p>
+              <p className="text-sm text-gray-500 mt-2">This list only fills when a lead source is set to <b>hold new contacts</b>. Today every source creates leads straight away, so nothing lands here.</p>
+              <ul className="text-sm text-gray-600 mt-3 space-y-1 text-left list-disc pl-6">
+                <li><b>Check the conversation first</b> — real enquiries become leads, technical / billing / other chats wait here.</li>
+                <li><b>Hold every new contact</b> — a team head checks every one.</li>
+                <li><b>Switch a source off</b> — its new contacts wait here until you move them.</li>
+              </ul>
+              <Link to="/crm/leads/assignment-rules?section=sources" className="inline-block mt-4 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700">Choose it per source →</Link>
+            </div>
+          ) : <EmptyState icon="⏸" title="Nothing here" desc="No entries match." />
         ) : (
           <>
             <div className="table-wrapper"><table className="table">
