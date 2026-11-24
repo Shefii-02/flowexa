@@ -161,12 +161,14 @@ class LiveChatController extends Controller
             return response()->json(['message' => "You are already handling {$limit} chats — end one before accepting another."], 409);
         }
 
-        // Atomic: only one staff member can win a waiting / missed request.
-        $won = WidgetConversation::where('id', $convo->id)->whereIn('live_status', ['waiting', 'missed'])
+        // Atomic: only one staff member can win it. A visitor's request (waiting / missed) can be taken, and so can any other chat — one the
+        // assistant is handling, or one that was closed (it is reopened): staff can start talking to a visitor whenever they want.
+        $won = WidgetConversation::where('id', $convo->id)->where(fn ($q) => $q->whereIn('live_status', ['waiting', 'missed', 'ended'])->orWhereNull('live_status'))
             ->update(['live_status' => 'live', 'ai_active' => false, 'live_accepted_at' => now(), 'assigned_user_id' => $user->id, 'staff_name' => $user->name,
-                'case_status' => 'attended', 'attended_by' => $user->id, 'attended_at' => now()]);
+                'case_status' => 'attended', 'attended_by' => $user->id, 'attended_at' => now(), 'closed_at' => null,
+                'status' => \Illuminate\Support\Facades\DB::raw("CASE WHEN status = 'closed' THEN 'active' ELSE status END")]);
         if (!$won) {
-            return response()->json(['message' => $convo->live_status === 'live' ? 'Another staff member already accepted this chat.' : 'This chat is no longer waiting.'], 409);
+            return response()->json(['message' => 'Another staff member is already chatting with this visitor.'], 409);
         }
 
         WidgetMessage::create(['widget_conversation_id' => $convo->id, 'role' => 'system', 'text' => "{$user->name} joined the chat."]);

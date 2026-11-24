@@ -18,7 +18,7 @@ export function useNotificationCounts(enabled = true) {
     refresh()
     const t = setInterval(refresh, 45000)
     // something new for me: refresh the numbers and play the tone the backend chose (the pop-up tone is played by the pop-up itself)
-    const offA = subscribeStaffEvent<any>('notification_new', e => { refresh(); if (e?.tone && e.tone !== 'lead_popup') playTone(e.tone) })
+    const offA = subscribeStaffEvent<any>('notification_new', e => { refresh(); if (e?.tone && !['lead_offer', 'ai_handoff_offer', 'new_lead_notification'].includes(e.type)) playTone(e.tone) })
     const offB = subscribeStaffEvent<any>('team_chat', e => {
       refresh()   // a chat message / read changes the team-chat number
       if (e?.kind !== 'message' || e.by === myId) return

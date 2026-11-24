@@ -230,6 +230,12 @@ export default function ChatPane({ id, expanded, onClose, onToggleExpand, onChan
           <button onClick={accept} className="btn-primary text-xs px-3 py-1.5">{convo?.live_status === 'waiting' ? 'Accept chat' : 'Start chat'}</button>
         </div>
       )}
+      {convo && !waiting && !isLive && (
+        <div className="p-3 border-t border-gray-100 bg-sky-50 flex items-center gap-3">
+          <span className="text-xs text-sky-800 flex-1">{closed ? 'This chat is closed — start it again to talk to the visitor yourself.' : 'The assistant is handling this chat — start the chat to talk to the visitor yourself.'}</span>
+          <button onClick={accept} className="btn-primary text-xs px-3 py-1.5">{closed ? 'Reopen & start chat' : 'Start chat'}</button>
+        </div>
+      )}
       {isLive && !closed && (
         <div className="relative border-t border-gray-100 bg-white">
           {replyTo && (
@@ -252,7 +258,7 @@ export default function ChatPane({ id, expanded, onClose, onToggleExpand, onChan
           <div className="px-3 pb-2 flex justify-end"><button onClick={end} className="text-[11px] text-gray-400 hover:text-rose-600">End chat</button></div>
         </div>
       )}
-      {closed && <div className="px-3 py-2 border-t border-gray-100 text-center text-xs text-gray-400 bg-gray-50">This chat is closed.</div>}
+      {closed && isLive && <div className="px-3 py-2 border-t border-gray-100 text-center text-xs text-gray-400 bg-gray-50">This chat is closed.</div>}
     </section>
   )
 }

@@ -13,7 +13,7 @@ class UserNotification extends Model
     public static function categoryFor(string $type): string
     {
         return match (true) {
-            str_starts_with($type, 'lead') || in_array($type, ['new_lead', 'ai_handoff_offer', 'sla_breach'], true) => 'lead',
+            str_starts_with($type, 'lead') || in_array($type, ['new_lead', 'ai_handoff_offer', 'sla_breach', 'live_chat'], true) => 'lead',
             str_starts_with($type, 'team_chat') => 'team',
             str_contains($type, 'leave') || str_contains($type, 'payroll') || str_contains($type, 'attendance') => 'hr',
             str_starts_with($type, 'campaign') => 'campaign',

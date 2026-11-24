@@ -17,7 +17,7 @@ return [
 
     // notification type => tone key (anything not listed uses `default`)
     'types' => [
-        'lead_offer' => 'lead_popup', 'ai_handoff_offer' => 'lead_popup', 'new_lead_notification' => 'lead_popup',
+        'lead_offer' => 'lead_popup', 'ai_handoff_offer' => 'lead_popup', 'new_lead_notification' => 'lead_popup', 'live_chat' => 'lead_popup',
         'lead_assigned' => 'lead', 'lead_transferred' => 'lead', 'lead_transferred_out' => 'lead', 'lead_recalled' => 'lead',
         'lead_new_waiting' => 'lead', 'lead_stage_change' => 'lead', 'new_lead' => 'lead', 'sla_breach' => 'lead',
         'lead_new_conversation' => 'conversation', 'team_chat_message' => 'conversation', 'team_chat_mention' => 'conversation',

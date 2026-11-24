@@ -40,7 +40,9 @@ class LeadAlertService
             $push = app(\App\Services\FirebasePushService::class);
             foreach (\App\Modules\Catalog\Support\LiveChatSupport::alertRecipients($widget) as $userId) {
                 $push->sendToUser($userId, 'live_chat', $head, $who,
-                    ['widget_id' => (string) $widget->id, 'conversation_id' => (string) $convo->id]);
+                    ['widget_id' => (string) $widget->id, 'conversation_id' => (string) $convo->id,
+                     // tapping it opens that one chat (web: /website-widget/chats?c=…, app: the widget chat screen)
+                     'action' => 'open_widget_chat', 'widget_conversation_id' => (string) $convo->id]);
             }
         } catch (\Throwable $e) {
             Log::warning('LeadAlertService: push failed', ['error' => $e->getMessage()]);

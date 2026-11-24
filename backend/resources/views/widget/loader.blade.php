@@ -208,7 +208,7 @@
     fetch(API + "/" + KEY + "/live/upload", { method: "POST", headers: { "Accept": "application/json" }, body: fd })
       .then(function (r) { return r.json().then(function (d) { if (!r.ok) throw d; return d; }); })
       .then(function (d) {
-        if (d.session_token) localStorage.setItem(LS, d.session_token);
+        if (d.session_token) { localStorage.setItem(LS, d.session_token); connectRt(); }
         addRich(echo, "v");
         if (!liveOn()) addMsg("agent", "Thanks — we've received your file. Our team can view it.", "sys");
       })
@@ -295,7 +295,7 @@
     post("live/start", { session_token: localStorage.getItem(LS) || null, name: name, phone: phone, page_url: location.href })
       .then(function (d) {
         removeForm();
-        if (d.session_token) localStorage.setItem(LS, d.session_token);
+        if (d.session_token) { localStorage.setItem(LS, d.session_token); connectRt(); }
         addMsg("agent", d.repeat ? "We already have your request, " + name + ". Our staff will connect with you shortly — no need to ask again."
           : "Thanks " + name + "! Waiting for your assistance — a staff member will join shortly.");
         addControls([{ action: "editlive", label: "✏️ Edit my details" }]);
@@ -389,6 +389,15 @@
       .catch(function () { live.fail = Math.min((live.fail || 0) + 1, 4); })
       .then(function () { if (live.timer) schedulePoll(); });
   }
+  // The assistant is answering and no live chat exists, but staff can start one at any moment. Staying connected to the realtime room, one
+  // look at the server when it pings us is enough: if a person has joined, normal polling starts and their messages appear.
+  function peek() {
+    var t = localStorage.getItem(LS); if (!t || live.timer) return;
+    fetch(API + "/" + KEY + "/live/poll?session_token=" + encodeURIComponent(t) + "&after=" + live.lastId, { headers: { "Accept": "application/json" } })
+      .then(function (r) { if (!r.ok) throw 0; return r.json(); })
+      .then(function (d) { applyLive(d); if (liveOn()) startPolling(); })
+      .catch(function () {});
+  }
   function schedulePoll() { clearTimeout(live.timer); live.timer = setTimeout(poll, pollDelay()); }
   function startPolling() { stopPolling(); schedulePoll(); connectRt(); }
   function stopPolling() { if (live.timer) { clearTimeout(live.timer); live.timer = null; } closeRt(); }
@@ -418,7 +427,7 @@
     rt.sock.on("connect_error", function () { rt.up = false; });
     rt.sock.on("widget_update", function () {
       clearTimeout(rt.debounce);
-      rt.debounce = setTimeout(function () { if (live.timer) { clearTimeout(live.timer); poll(); } }, 100);
+      rt.debounce = setTimeout(function () { if (live.timer) { clearTimeout(live.timer); poll(); } else peek(); }, 100);
     });
   }
   function closeRt() {
@@ -456,6 +465,7 @@
           var ctl = [{ action: "menu", label: "🏠 Main menu" }, { action: "reset", label: "🔄 Reset" }];
           if (cfg.live_chat && live.canLive) ctl = [{ action: "live", label: "💬 Chat with a person" }];   // only after "issue not solved"
           addControls(ctl);
+          connectRt();   // listen for a staff member starting a chat
         }
         bodyEl.scrollTop = bodyEl.scrollHeight;
       }).catch(function () {});
@@ -522,7 +532,7 @@
     }).then(function (r) { return r.json(); }).then(function (d) {
       typing(false);
       if (d.error_code === "details_required") { live.ident = false; sending = false; sendBtn.disabled = false; askIdentity(true); return; }
-      if (d.session_token) localStorage.setItem(LS, d.session_token);
+      if (d.session_token) { localStorage.setItem(LS, d.session_token); connectRt(); }
       if (d.live_status) { setReply(null); applyLive({ live_status: d.live_status, messages: [] }); return; }
       addMsg("agent", d.reply || "Thanks!");
       addOpts(d.options);

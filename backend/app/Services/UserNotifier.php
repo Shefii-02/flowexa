@@ -35,7 +35,8 @@ class UserNotifier
             // tell open web tabs so the bell updates at once (best effort)
             Http::withHeaders(['X-Internal-Key' => config('services.internal.key', '')])->timeout(2)
                 ->post(config('services.chat.url', 'http://localhost:3005') . '/api/internal/emit-many', [
-                    'type' => 'notification_new', 'staff_ids' => $users->pluck('id')->all(), 'data' => ['type' => $type, 'category' => $category, 'tone' => $tone['key'], 'tone_url' => $tone['url']],
+                    'type' => 'notification_new', 'staff_ids' => $users->pluck('id')->all(), 'data' => ['type' => $type, 'category' => $category, 'tone' => $tone['key'], 'tone_url' => $tone['url'], 'title' => $title, 'body' => $body,
+                    'action' => $data['action'] ?? null, 'widget_conversation_id' => $data['widget_conversation_id'] ?? null, 'lead_id' => $data['lead_id'] ?? null],
                 ]);
         } catch (\Throwable $e) {
             Log::debug('UserNotifier failed: ' . $e->getMessage());

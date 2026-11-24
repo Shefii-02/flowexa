@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { notificationApi } from '@/api'
+import { subscribeStaffEvent } from '@/socket/staffSocket'
 import { useNotificationCounts } from '@/lib/useNotificationCounts'
 import { cn, fmt, getError } from '@/utils'
 import { pid } from '@/lib/publicId'
@@ -17,6 +18,7 @@ function targetFor(n: Item): string | null {
   switch (d.action) {
     case 'open_lead': return d.lead_id ? `/crm/leads/${pid(d.lead_id)}` : '/crm/leads?mine=1'
     case 'open_leads': case 'lead_offer': case 'ai_handoff_offer': return '/crm/leads?mine=1'
+    case 'open_widget_chat': return d.widget_conversation_id ? `/website-widget/chats?c=${pid(d.widget_conversation_id)}` : '/website-widget/chats'
     case 'open_team_chat': return '/team-chat'
     case 'open_wallet': return '/plan-purchase?section=wallet'
     case 'open_campaign': return '/wa-cloud/campaigns'
@@ -34,6 +36,18 @@ export default function NotificationBell() {
   const [loading, setLoading] = useState(false)
   const box = useRef<HTMLDivElement>(null)
   const [muted, setMuted] = useState(tonesMuted())
+  // a visitor asking for a person (handover): a toast you can click, wherever you are in the portal
+  useEffect(() => subscribeStaffEvent<any>('notification_new', e => {
+    if (e?.type !== 'live_chat') return
+    const to = e.widget_conversation_id ? `/website-widget/chats?c=${pid(e.widget_conversation_id)}` : '/website-widget/chats'
+    toast.custom(t => (
+      <button onClick={() => { toast.dismiss(t.id); navigate(to) }} className="w-80 text-left rounded-xl bg-white border border-purple-200 shadow-xl px-4 py-3">
+        <span className="block text-sm font-semibold text-purple-700">{e.title ?? '💬 Live chat waiting'}</span>
+        <span className="block text-xs text-gray-600 mt-0.5">{e.body}</span>
+        <span className="block text-xs font-medium text-brand-600 mt-1">Open chat →</span>
+      </button>
+    ), { duration: 15000 })
+  }), [navigate])
 
   const load = useCallback(() => {
     setLoading(true)
