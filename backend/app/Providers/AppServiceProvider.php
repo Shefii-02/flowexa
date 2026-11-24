@@ -23,6 +23,11 @@ class AppServiceProvider extends ServiceProvider
         }
 
         Company::observe(CompanyObserver::class);
+        \App\Models\Lead::observe(\App\Observers\LeadObserver::class);   // push + bell when a lead is assigned / transferred / taken back
+        // a customer with an open lead starts a new conversation → tell the lead's owner
+        \App\Models\WaConversation::created(fn ($c) => \App\Services\NewConversationNotice::fire($c->company_id, $c->contact_id, 'WhatsApp', $c->assigned_to));
+        \App\Models\InstagramConversation::created(fn ($c) => \App\Services\NewConversationNotice::fire($c->company_id ?? null, $c->contact_id ?? null, 'Instagram'));
+        \App\Models\WidgetConversation::created(fn ($c) => \App\Services\NewConversationNotice::fire($c->company_id, $c->contact_id ?? null, 'Website chat'));
 
         // Cron Jobs monitor: records every scheduled run + a heartbeat each time the server cron calls schedule:run
         \App\Support\SchedulerMonitor::register();

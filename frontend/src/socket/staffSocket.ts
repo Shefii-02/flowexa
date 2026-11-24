@@ -4,6 +4,7 @@ import { io, Socket } from 'socket.io-client'
 import { store } from '@/store'
 import { addNotification, addAiOffer, updateAssignment } from '@/store/slices'
 import type { LeadNotification, AiHandoffOffer, LeadAssignment } from '@/types'
+import { playTone } from '@/lib/tones'
 
 const CHAT_URL = import.meta.env.VITE_CHAT_URL || 'https://chatserver.teamzo.io'
 
@@ -33,6 +34,7 @@ export function connectStaffSocket(staffId: number, companyId: number): void {
   }
 
   socket.on('new_lead_notification', (data: LeadNotification) => {
+    playTone('lead_popup')
     store.dispatch(addNotification(data))
 
     // Play notification sound
@@ -60,6 +62,7 @@ export function connectStaffSocket(staffId: number, companyId: number): void {
   })
 
   socket.on('ai_handoff_offer', (data: AiHandoffOffer) => {
+    playTone('lead_popup')
     store.dispatch(addAiOffer(data))
   })
 

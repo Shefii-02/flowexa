@@ -30,6 +30,11 @@ class CheckLeadSla implements ShouldQueue
             'sla_breached_at' => now(),
         ]);
 
+        // tell the owner their reply time ran out
+        if ($assignment->staff_id && $assignment->lead_id) {
+            \App\Jobs\NotifyLeadEvent::dispatch('sla', (int) $assignment->lead_id, (int) $assignment->staff_id);
+        }
+
         // If staff is assigned but hasn't replied → hand to AI
         if ($assignment->staff_id && $assignment->status === 'assigned') {
             $engine->startAiAgent($assignment, $assignment->company, $assignment->contact);

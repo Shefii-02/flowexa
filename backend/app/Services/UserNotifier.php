@@ -24,17 +24,18 @@ class UserNotifier
                 ->when($companyId, fn ($q) => $q->where('company_id', $companyId))->get(['id', 'company_id']);
             if ($users->isEmpty()) { return; }
             $category = UserNotification::categoryFor($type);
+            $tone = \App\Support\NotificationTone::forType($type);
             $now = now();
             UserNotification::insert($users->map(fn ($u) => [
                 'company_id' => $u->company_id, 'user_id' => $u->id, 'category' => $category, 'type' => $type,
-                'title' => mb_substr($title, 0, 200), 'body' => $body, 'data' => json_encode($data + ['type' => $type]),
+                'title' => mb_substr($title, 0, 200), 'body' => $body, 'data' => json_encode($data + ['type' => $type, 'tone' => $tone['key']]),
                 'created_at' => $now, 'updated_at' => $now,
             ])->all());
 
             // tell open web tabs so the bell updates at once (best effort)
             Http::withHeaders(['X-Internal-Key' => config('services.internal.key', '')])->timeout(2)
                 ->post(config('services.chat.url', 'http://localhost:3005') . '/api/internal/emit-many', [
-                    'type' => 'notification_new', 'staff_ids' => $users->pluck('id')->all(), 'data' => ['type' => $type, 'category' => $category],
+                    'type' => 'notification_new', 'staff_ids' => $users->pluck('id')->all(), 'data' => ['type' => $type, 'category' => $category, 'tone' => $tone['key'], 'tone_url' => $tone['url']],
                 ]);
         } catch (\Throwable $e) {
             Log::debug('UserNotifier failed: ' . $e->getMessage());

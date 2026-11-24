@@ -128,6 +128,9 @@ class FirebasePushService
     {
         // FCM v1 rejects the WHOLE message when a data value is not a string (an int lead_id, a balance …) — normalise once, here
         $data = array_map(fn ($v) => is_scalar($v) || $v === null ? (string) $v : json_encode($v), $data);
+        // the sound this kind of notification plays: the clients play `tone` / `tone_url` while open; a closed Android app uses the matching channel
+        $tone = \App\Support\NotificationTone::forType($type);
+        $data += ['tone' => $tone['key'], 'tone_url' => $tone['url']];
         $projectId    = config('services.firebase.project_id');
         $accessToken  = $this->getAccessToken();
         $url          = str_replace('{PROJECT_ID}', $projectId, $this->fcmUrl);
@@ -146,7 +149,7 @@ class FirebasePushService
                                 'data'         => array_merge($data, ['type' => $type]),
                                 // `group` (e.g. "team_chat_12"): Android keeps ONE notification per group — a newer one replaces the older — and
                                 // iOS stacks them under one thread, so a busy conversation is a single entry, not a pile.
-                                'android'      => ['priority' => 'high', 'notification' => array_filter(['sound' => 'default', 'tag' => $data['group'] ?? null])],
+                                'android'      => ['priority' => 'high', 'notification' => array_filter(['sound' => 'default', 'channel_id' => 'tone_' . $tone['key'], 'tag' => $data['group'] ?? null])],
                                 'apns'         => ['payload' => ['aps' => array_filter(['sound' => 'default', 'badge' => 1, 'thread-id' => $data['group'] ?? null])]],
                             ],
                         ]);

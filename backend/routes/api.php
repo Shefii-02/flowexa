@@ -570,6 +570,7 @@ Route::prefix('v1')->group(function () {
         Route::prefix('notifications')->middleware(['company.active'])->group(function () {
             Route::get('/',             [\App\Http\Controllers\UserNotificationController::class, 'index']);
             Route::get('unread-count',  [\App\Http\Controllers\UserNotificationController::class, 'unreadCount']);
+            Route::get('tones',         fn () => response()->json(['data' => \App\Support\NotificationTone::all()]));   // which sound each kind plays (files in public/tones)
             Route::post('read',         [\App\Http\Controllers\UserNotificationController::class, 'read']);
         });
 

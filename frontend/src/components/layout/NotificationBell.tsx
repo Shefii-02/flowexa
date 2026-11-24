@@ -4,6 +4,7 @@ import toast from 'react-hot-toast'
 import { notificationApi } from '@/api'
 import { useNotificationCounts } from '@/lib/useNotificationCounts'
 import { cn, fmt, getError } from '@/utils'
+import { playTone, setTonesMuted, tonesMuted } from '@/lib/tones'
 
 type Item = { id: number; type: string; category: string; title: string; message: string | null; data: Record<string, any> | null; created_at: string; read_at: string | null }
 type Tab = 'all' | 'lead' | 'other'
@@ -31,6 +32,7 @@ export default function NotificationBell() {
   const [items, setItems] = useState<Item[]>([])
   const [loading, setLoading] = useState(false)
   const box = useRef<HTMLDivElement>(null)
+  const [muted, setMuted] = useState(tonesMuted())
 
   const load = useCallback(() => {
     setLoading(true)
@@ -63,7 +65,10 @@ export default function NotificationBell() {
         <div className="absolute right-0 mt-2 w-[380px] max-w-[92vw] bg-white border border-gray-200 rounded-xl shadow-xl z-50 flex flex-col max-h-[70vh]" role="dialog" aria-label="Notifications">
           <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
             <p className="font-semibold text-gray-900 text-sm">Notifications</p>
-            <button onClick={markAll} disabled={counts.unread === 0} className="text-xs text-brand-600 hover:underline disabled:text-gray-300 disabled:no-underline">Mark all read</button>
+            <span className="flex items-center gap-3">
+              <button onClick={() => { const m = !muted; setMuted(m); setTonesMuted(m); if (!m) playTone('general') }} title={muted ? 'Notification sounds are off — click to turn on' : 'Notification sounds are on — click to turn off'} className="text-sm">{muted ? '🔇' : '🔊'}</button>
+              <button onClick={markAll} disabled={counts.unread === 0} className="text-xs text-brand-600 hover:underline disabled:text-gray-300 disabled:no-underline">Mark all read</button>
+            </span>
           </div>
           <div className="flex gap-1 px-3 pt-2">
             {([['all', 'All', counts.unread], ['lead', 'Leads', counts.unread_leads], ['other', 'Other', counts.unread_other]] as [Tab, string, number][]).map(([id, label, n]) => (
