@@ -30,6 +30,8 @@ class LeadResource extends JsonResource
             'lost_at'        => $this->lost_at?->toIso8601String(),
             'assigned_at'    => $this->assigned_at?->toIso8601String(),
             'created_at'     => $this->created_at->toIso8601String(),
+            // latest logged activity (stage change, assignment, note …); falls back to the last edit, then creation
+            'last_activity_at' => ($this->last_event_at ? \Illuminate\Support\Carbon::parse($this->last_event_at) : ($this->updated_at ?? $this->created_at))->toIso8601String(),
             // Opportunity — the catalog item + amount this lead converts on. Set both and reach
             // "enrolled" to auto-record a sale and post the counsellor's incentive.
             'referred_by' => $this->whenLoaded('referrer', fn () => \App\Modules\Lead\Http\Controllers\LeadReferralController::shape($this->referrer)),

@@ -223,6 +223,7 @@ export interface Lead {
   enrolled_at: string | null
   lost_at?: string | null
   assigned_at: string | null
+  last_activity_at?: string
   created_at: string
   // Opportunity — the catalog item + amount this lead converts on.
   listing_id?: number | null

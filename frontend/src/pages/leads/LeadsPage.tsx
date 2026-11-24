@@ -617,7 +617,7 @@ export default function LeadsPage() {
                   <table className="table">
                     <thead><tr>
                       <th className="w-8"><input type="checkbox" checked={selectedIds.size === list.length} onChange={toggleSelectAll} /></th>
-                      <th>Contact</th><th>Stage</th><th>Priority</th><th>Category</th><th>Source</th><th>Assigned to</th><th>Actions</th>
+                      <th>Contact</th><th>Stage</th><th>Priority</th><th>Category</th><th>Source</th><th>Assigned to</th><th>Created</th><th>Last activity</th><th>Actions</th>
                     </tr></thead>
                     <tbody>
                       {list.map((l) => {
@@ -655,6 +655,8 @@ export default function LeadsPage() {
                               {l.origin_label && <p className="mt-0.5 max-w-[140px] truncate text-[11px] text-gray-400">{l.origin_label}</p>}
                             </td>
                             <td className="text-xs text-gray-600">{l.assigned_to?.name || <span className="text-gray-300">Unassigned</span>}</td>
+                            <td className="text-xs text-gray-500 whitespace-nowrap">{fmt.datetime(l.created_at)}</td>
+                            <td className="text-xs text-gray-500 whitespace-nowrap" title={l.last_activity_at ? new Date(l.last_activity_at).toLocaleString() : ''}>{l.last_activity_at ? fmt.relative(l.last_activity_at) : '—'}</td>
                             <td>
                               <div className="flex gap-1">
                                 <Link to={`/crm/leads/${l.id}`} className="text-xs text-blue-600 hover:underline">View</Link>
