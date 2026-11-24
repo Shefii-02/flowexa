@@ -4,6 +4,7 @@ import toast from 'react-hot-toast'
 import Picker from '@emoji-mart/react'
 import data from '@emoji-mart/data'
 import { getError } from '@/utils'
+import { useAppSelector, usePermission } from '@/store'
 import { subscribeWidgetChat } from '@/socket/staffSocket'
 import { liveChatApi, nodeChatApi, type LiveMessage, type NodeConversation } from '../api'
 import { avatarColor, initials } from './util'
@@ -141,6 +142,18 @@ export default function ChatPane({ id, expanded, onClose, onToggleExpand, onChan
       setTimeout(() => { if (recorder.current === mr && mr.state === 'recording') mr.stop() }, 60000)
     } catch { toast.error('Microphone access was denied.') }
   }
+  // deleting a chat (and its files) is for admins only: the owner, or anyone given "Delete Website Chat Conversations"
+  const me = useAppSelector(s => s.auth.user)
+  const canDelete = usePermission('widget_chat.delete') || me?.role?.name === 'owner'
+  const closeChat = async () => {
+    setMenuOpen(false)
+    if (!window.confirm('Close this chat? It moves to Closed and can be reopened later.')) return
+    try { if (convo?.live_status === 'live') await nodeChatApi.end(id); else await liveChatApi.close(id); void load(false); onChanged() } catch (e) { toast.error(getError(e)) }
+  }
+  const reopenChat = async () => {
+    setMenuOpen(false)
+    try { await liveChatApi.reopen(id); void load(false); onChanged() } catch (e) { toast.error(getError(e)) }
+  }
   const flag = async () => { setMenuOpen(false); try { await liveChatApi.flag(id); toast.success('Marked as not satisfied — admin will review it.'); void load(false) } catch (e) { toast.error(getError(e)) } }
   const remove = async () => {
     setMenuOpen(false)
@@ -172,8 +185,10 @@ export default function ChatPane({ id, expanded, onClose, onToggleExpand, onChan
           {menuOpen && (
             <div className="absolute right-0 top-full mt-1 z-20 w-44 bg-white border border-gray-200 rounded-xl shadow-lg py-1 text-sm" onMouseLeave={() => setMenuOpen(false)}>
               {convo?.page_url && <a href={convo.page_url} target="_blank" rel="noreferrer" className="block px-3 py-1.5 hover:bg-gray-50">🔗 Visitor's page</a>}
+              {convo && !closed && <button onClick={closeChat} className="w-full text-left px-3 py-1.5 hover:bg-gray-50">✅ Close chat</button>}
+              {convo && closed && <button onClick={reopenChat} className="w-full text-left px-3 py-1.5 hover:bg-gray-50">↩ Reopen chat</button>}
               {!convo?.flagged_at && <button onClick={flag} className="w-full text-left px-3 py-1.5 hover:bg-gray-50">🚩 Not satisfied</button>}
-              <button onClick={remove} className="w-full text-left px-3 py-1.5 hover:bg-gray-50 text-red-600">🗑 Delete</button>
+              {canDelete && <button onClick={remove} className="w-full text-left px-3 py-1.5 hover:bg-gray-50 text-red-600">🗑 Delete</button>}
             </div>
           )}
         </div>

@@ -4,7 +4,8 @@
 // Each section saves independently — fixing just the WA Chat token, say, never
 // re-submits the Advanced JSON textarea or any other section's fields.
 import { useEffect, useState, useCallback } from 'react'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
+import { useDecodedParams as useParams, pid } from '@/lib/publicId'
 import { superadminApi } from '@/api'
 import { Button, Input, Badge, ConfirmModal, Modal, Spinner } from '@/components/ui'
 import { fmt, getError } from '@/utils'
@@ -255,9 +256,9 @@ export default function CompanyDetailPage() {
           <p className="page-sub">{company.email} {company.phone ? `· ${company.phone}` : ''}</p>
         </div>
         <div className="flex gap-2">
-          <Link to={`/superadmin/companies/${companyId}/permissions`} className="btn btn-secondary">🛡️ Permissions</Link>
-          <Link to={`/superadmin/api-logs?company_id=${companyId}`} className="btn btn-secondary">📈 Activity</Link>
-          <Link to={`/superadmin/errors?company_id=${companyId}`} className="btn btn-secondary">🐞 Errors</Link>
+          <Link to={`/superadmin/companies/${pid(companyId)}/permissions`} className="btn btn-secondary">🛡️ Permissions</Link>
+          <Link to={`/superadmin/api-logs?company_id=${pid(companyId)}`} className="btn btn-secondary">📈 Activity</Link>
+          <Link to={`/superadmin/errors?company_id=${pid(companyId)}`} className="btn btn-secondary">🐞 Errors</Link>
         </div>
       </div>
 

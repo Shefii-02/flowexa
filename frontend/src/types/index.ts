@@ -80,6 +80,7 @@ export interface User {
   avatar: string | null
   department: string | null
   access_sections?: string[]   // main first
+  public_id_key?: string       // the key for random-looking record codes in addresses (lib/publicId.ts)
   portal_access?: boolean
   mobile_access?: boolean
   is_active: boolean
@@ -404,6 +405,9 @@ export interface AiHandoffOffer {
   contact_phone: string
   conversation_summary: string
   ai_message_count: number
+  widget_conversation_id?: number | null   // the website-widget chat this person is in (when there is one) — taking the chat opens it
+  lead_id?: number | null                  // otherwise taking the chat opens this lead
+  messages?: { from: 'customer' | 'ai' | 'staff'; text: string }[]   // the last few messages, shown as chat bubbles
 }
 
 // API

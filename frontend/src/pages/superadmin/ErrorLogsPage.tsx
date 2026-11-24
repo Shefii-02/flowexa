@@ -9,6 +9,7 @@ import { superadminApi } from '@/api'
 import { Badge, Button, ConfirmModal, EmptyState, Pagination, TableSkeleton, Modal, Spinner } from '@/components/ui'
 import { fmt, getError } from '@/utils'
 import toast from 'react-hot-toast'
+import { decodePid } from '@/lib/publicId'
 
 const SOURCES = [
   { value: 'laravel',      label: 'Laravel',       icon: '🐘' },
@@ -19,7 +20,7 @@ const SOURCES = [
 export default function ErrorLogsPage() {
   const [params, setParams] = useSearchParams()
   const source = params.get('source') || 'laravel'
-  const companyId = params.get('company_id') ?? ''
+  const companyId = String(decodePid(params.get('company_id')) ?? '')   // ?company_id=u1k9x (or an old plain number)
   const isNode = source === 'backend_node'
 
   const setSource = (s: string) => setParams((prev) => {

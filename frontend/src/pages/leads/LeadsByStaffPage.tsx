@@ -6,6 +6,7 @@ import { Spinner, EmptyState, Badge, StatCard } from '@/components/ui'
 import { fmt, getError } from '@/utils'
 import toast from 'react-hot-toast'
 import { type StaffInsight, StatusDot, Chips, MethodChips, when } from './components/staffInsights'
+import { pid } from '@/lib/publicId'
 
 export default function LeadsByStaffPage() {
   const [rows, setRows] = useState<StaffInsight[]>([])
@@ -69,7 +70,7 @@ export default function LeadsByStaffPage() {
                   {shown.map((r) => (
                     <tr key={r.id}>
                       <td className="whitespace-nowrap">
-                        <Link to={`/crm/leads/staff/${r.id}`} className="font-medium text-brand-700 hover:underline">{r.name}</Link>
+                        <Link to={`/crm/leads/staff/${pid(r.id)}`} className="font-medium text-brand-700 hover:underline">{r.name}</Link>
                         <p className="text-xs text-gray-400">{[r.role, r.department].filter(Boolean).join(' · ') || r.email}</p>
                       </td>
                       <td><StatusDot a={r.availability} /></td>

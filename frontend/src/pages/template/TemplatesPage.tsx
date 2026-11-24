@@ -13,6 +13,7 @@ import { MEDIA_RULES, MediaRuleKey } from '@/utils/mediaRules'
 import MediaPickerModal from '@/components/MediaPickerModal'
 import WaText from '@/components/shared/WaText'
 import CarouselCardsEditor, { CarouselPreview, CarouselCard, CardMedia, CarouselMediaFormat, newCard, carouselIssues, newCardUid } from './CarouselCardsEditor'
+import { pid } from '@/lib/publicId'
 
 const CATEGORIES = ['MARKETING', 'UTILITY', 'AUTHENTICATION']
 const LANGUAGES  = [
@@ -793,7 +794,7 @@ export default function TemplatesPage() {
                     <td className="text-xs text-gray-400">{fmt.relative?.(t.updated_at) || t.updated_at?.slice(0,10)}</td>
                     <td>
                       <div className="flex gap-2">
-                        <a href={`/wa-cloud/templates/${t.id}`} className="text-xs text-gray-500 hover:underline">View</a>
+                        <a href={`/wa-cloud/templates/${pid(t.id)}`} className="text-xs text-gray-500 hover:underline">View</a>
                         {locked ? (
                           <span className="text-xs text-gray-300" title="Meta is reviewing this template (or it is disabled) — it can't be edited right now. Refresh its status, or Duplicate it.">🔒 In review</span>
                         ) : (

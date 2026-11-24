@@ -110,6 +110,8 @@ export const liveChatApi = {
   markReviewed: (id: number, note?: string) => api.post(`/widgets/live/${id}/review`, { note }),
   analytics: (days = 30) => api.get('/widgets/live/analytics', { params: { days } }),
   end: (id: number) => api.post(`/widgets/live/${id}/end`),
+  close: (id: number) => api.post(`/widgets/live/${id}/close`),
+  reopen: (id: number) => api.post(`/widgets/live/${id}/reopen`),
   // CRM for a chat: the contact, the leads on that number, and the actions (save contact / new lead / link a lead)
   crm: (id: number) => api.get<ChatCrm>(`/widgets/live/${id}/crm`),
   saveContact: (id: number) => api.post<ChatCrm>(`/widgets/live/${id}/crm/contact`),

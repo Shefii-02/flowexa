@@ -17,6 +17,7 @@ import { useAssignMethods, usePermission } from '@/store'
 import { fmt, formatPhone, phoneLabel, getError, downloadBlob, stageConfig, priorityConfig } from '@/utils'
 import toast from 'react-hot-toast'
 import type { Lead, LeadStage } from '@/types'
+import { pid } from '@/lib/publicId'
 
 const STAGES: LeadStage[] = ['new', 'contacted', 'follow_up', 'enrolled', 'lost']
 
@@ -485,7 +486,7 @@ export default function LeadsPage() {
           {counsellors.map((c) => <option key={c.id} value={c.id}>{c.name} — all stages</option>)}
         </select>}
         {assignedFilter && !onlyMine && (
-          <Link to={`/crm/leads/staff/${assignedFilter}`} className="text-xs text-brand-600 hover:underline mb-1.5">
+          <Link to={`/crm/leads/staff/${pid(assignedFilter)}`} className="text-xs text-brand-600 hover:underline mb-1.5">
             Open as page →
           </Link>
         )}
@@ -662,7 +663,7 @@ export default function LeadsPage() {
                             <td className="text-xs text-gray-500 whitespace-nowrap" title={l.last_activity_at ? new Date(l.last_activity_at).toLocaleString() : ''}>{l.last_activity_at ? fmt.relative(l.last_activity_at) : '—'}</td>
                             <td>
                               <div className="flex gap-1">
-                                <Link to={`/crm/leads/${l.id}`} className="text-xs text-blue-600 hover:underline">View</Link>
+                                <Link to={`/crm/leads/${pid(l.id)}`} className="text-xs text-blue-600 hover:underline">View</Link>
                                 <button onClick={() => { setShowAssign(l); setAssignUserId('') }} className="text-xs text-brand-600 hover:underline">Assign</button>
                               </div>
                             </td>
@@ -704,7 +705,7 @@ export default function LeadsPage() {
             <div className="flex gap-4 overflow-x-auto pb-4">
               {kanbanStages.map((st) => (
                 <KanbanColumn key={st} stage={st} col={cols[st]} sources={sources}
-                  stageUpdating={stageUpdating} onCardClick={(l) => navigate(`/crm/leads/${l.id}`)}
+                  stageUpdating={stageUpdating} onCardClick={(l) => navigate(`/crm/leads/${pid(l.id)}`)}
                   onLoadMore={() => void fetchColumn(st, cols[st].page + 1)} />
               ))}
             </div>

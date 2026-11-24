@@ -9,6 +9,7 @@ import { nodeChatApi, widgetApi, type ChatWidget, type InboxTab } from '../api'
 import InboxList from './InboxList'
 import ChatPane from './ChatPane'
 import { MAX_PANES, loadPanes, resolveWidget, savePanes, widgetSlug } from './util'
+import { decodePid } from '@/lib/publicId'
 
 function Workspace() {
   // ?widget=… narrows the list to one widget's conversations (the "Conversations" link on the widgets page). It can be the widget's number,
@@ -48,6 +49,14 @@ function Workspace() {
   const [mobileList, setMobileList] = useState(true)
 
   useEffect(() => { savePanes(open) }, [open])
+  // /website-widget/chats?c=u1k9x opens that one chat on its own screen (from the "take over" pop-up), then tidies the address
+  const wantedChat = decodePid(params.get('c'))
+  useEffect(() => {
+    if (!wantedChat) return
+    openChat(wantedChat)
+    const n = new URLSearchParams(window.location.search); n.delete('c')
+    navigate({ pathname: window.location.pathname, search: n.toString() ? `?${n}` : '' }, { replace: true })
+  }, [wantedChat]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if ('Notification' in window && Notification.permission === 'default') void Notification.requestPermission() }, [])
 
   const loadMe = useCallback(() => { nodeChatApi.me().then(r => setMe(r.data)).catch(() => {}) }, [])

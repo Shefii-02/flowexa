@@ -6,6 +6,7 @@ import { Modal, Button, Input, Textarea, Badge } from '@/components/ui'
 import { getError } from '@/utils'
 import toast from 'react-hot-toast'
 import { metaAdsApi } from '../api/meta-ads'
+import { pid } from '@/lib/publicId'
 
 interface Account { id: number; ad_account_name?: string; ad_account_id: string }
 
@@ -70,7 +71,7 @@ export function AiCampaignBuilder({ accounts, onBuilt }: { accounts: Account[]; 
       const r = await metaAdsApi.aiBuild({ account_id: +brief.account_id, draft })
       toast.success(r.data.message ?? 'Campaign built.')
       setOpen(false); setStep('brief'); setDraft(null); onBuilt()
-      if (r.data.campaign_id) navigate(`/meta-ads/campaigns/${r.data.campaign_id}`)
+      if (r.data.campaign_id) navigate(`/meta-ads/campaigns/${pid(r.data.campaign_id)}`)
     } catch (e) { toast.error(getError(e)) }
     finally { setLoading(false) }
   }

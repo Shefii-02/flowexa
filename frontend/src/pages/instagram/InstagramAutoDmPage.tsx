@@ -9,6 +9,7 @@ import AutoDmWizard from './autodm/AutoDmWizard'
 import { ConnectMethodDialog } from './ConnectDialogs'
 import { Avatar, Sparkline, handleOf, triggerMeta, triggersFor } from './autodm/parts'
 import type { AutoDmTrigger, Channel } from './api/instagram'
+import { pid } from '@/lib/publicId'
 
 const dateFmt = (s: string) => new Date(s).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
 const pillBtn = 'rounded-full px-4 py-2 text-sm font-medium'
@@ -230,7 +231,7 @@ function RunsDrawer({ a, onClose }: { a: AutoDm; onClose: () => void }) {
             {r.follow_attempts > 0 && <span className="rounded-full bg-blue-100 px-2 py-0.5">follow check ×{r.follow_attempts}{r.followed ? ' ✔ followed' : ''}</span>}
             {r.email && <span className="rounded-full bg-green-100 px-2 py-0.5">{r.email}</span>}
             {r.clicked && <span className="rounded-full bg-violet-100 px-2 py-0.5">clicked link</span>}
-            {r.lead_id && <Link to={`/leads/${r.lead_id}`} className="rounded-full bg-amber-100 px-2 py-0.5 underline">CRM lead #{r.lead_id}</Link>}
+            {r.lead_id && <Link to={`/crm/leads/${pid(r.lead_id)}`} className="rounded-full bg-amber-100 px-2 py-0.5 underline">CRM lead #{r.lead_id}</Link>}
           </div>
           {r.error && <p className="mt-1 text-xs text-red-600">{r.error}</p>}
           <ol className="mt-2 space-y-1 border-l-2 border-gray-100 pl-3">{r.messages.map((m, i) => (

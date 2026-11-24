@@ -9,6 +9,7 @@ import { Badge, Button, EmptyState, Pagination, Spinner, StatCard } from '@/comp
 import DateRangePicker from '@/components/ui/DateRangePicker'
 import StaffPicker from './components/StaffPicker'
 import { fmt, getError } from '@/utils'
+import { pid } from '@/lib/publicId'
 
 type Row = {
   id: number; contact: string; phone: string; outcome: 'converted' | 'closed'; closed_at: string | null; staff: string | null
@@ -128,7 +129,7 @@ export default function LeadVerificationPage() {
               <tbody>{rows.map(r => (
                 <tr key={r.id} className={picked.has(r.id) ? 'bg-brand-50/40' : ''}>
                   <td><input type="checkbox" checked={picked.has(r.id)} disabled={!!r.verified_at} onChange={() => toggle(r.id)} /></td>
-                  <td><Link to={`/crm/leads/${r.id}`} className="font-medium text-brand-700 hover:underline">{r.contact}</Link><p className="text-xs text-gray-400 font-mono">{r.phone}</p></td>
+                  <td><Link to={`/crm/leads/${pid(r.id)}`} className="font-medium text-brand-700 hover:underline">{r.contact}</Link><p className="text-xs text-gray-400 font-mono">{r.phone}</p></td>
                   <td><Badge variant={r.outcome === 'converted' ? 'green' : 'red'}>{r.outcome === 'converted' ? 'Converted' : 'Closed'}</Badge></td>
                   <td className="text-xs text-gray-600 whitespace-nowrap">{r.closed_at ? new Date(r.closed_at).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}</td>
                   <td className="text-sm">{r.staff ?? <span className="text-gray-300">—</span>}</td>

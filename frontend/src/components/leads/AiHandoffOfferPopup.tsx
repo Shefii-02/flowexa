@@ -6,9 +6,12 @@ import { getError } from '@/utils'
 import toast from 'react-hot-toast'
 import type { AiHandoffOffer } from '@/types'
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { pid } from '@/lib/publicId'
 
 function OfferCard({ offer, onDone }: { offer: AiHandoffOffer; onDone: () => void }) {
   const [responding, setResponding] = useState(false)
+  const navigate = useNavigate()
 
   const handleAccept = async () => {
     setResponding(true)
@@ -16,6 +19,9 @@ function OfferCard({ offer, onDone }: { offer: AiHandoffOffer; onDone: () => voi
       await leadAssignmentApi.accept(offer.assignment_id)
       toast.success("You're taking over the conversation!")
       onDone()
+      // a website-widget chat opens right away on its own screen
+      if (offer.widget_conversation_id) navigate(`/website-widget/chats?c=${pid(offer.widget_conversation_id)}`)
+      else if (offer.lead_id) navigate(`/crm/leads/${pid(offer.lead_id)}`)   // any other channel: the lead page has the whole chat
     } catch (e) {
       toast.error(getError(e))
       setResponding(false)
@@ -47,10 +53,21 @@ function OfferCard({ offer, onDone }: { offer: AiHandoffOffer; onDone: () => voi
           <p className="text-gray-500 text-sm font-mono">📱 {offer.contact_phone}</p>
         </div>
 
-        <div className="bg-purple-50 rounded-lg p-3">
-          <p className="text-xs text-purple-500 mb-1">Conversation summary</p>
-          <p className="text-sm text-gray-700 italic">"{offer.conversation_summary}"</p>
-        </div>
+        {offer.messages && offer.messages.length > 0 ? (
+          <div className="bg-purple-50 rounded-lg p-2 space-y-1 max-h-44 overflow-y-auto">
+            <p className="text-xs text-purple-500 px-1">Latest messages</p>
+            {offer.messages.map((m, i) => (
+              <div key={i} className={`flex ${m.from === 'customer' ? 'justify-start' : 'justify-end'}`}>
+                <span className={`max-w-[85%] rounded-2xl px-3 py-1.5 text-xs whitespace-pre-wrap break-words ${m.from === 'customer' ? 'bg-white border border-gray-200 text-gray-800 rounded-bl-sm' : m.from === 'ai' ? 'bg-purple-600 text-white rounded-br-sm' : 'bg-sky-600 text-white rounded-br-sm'}`}>{m.text}</span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="bg-purple-50 rounded-lg p-3">
+            <p className="text-xs text-purple-500 mb-1">Conversation summary</p>
+            <p className="text-sm text-gray-700 italic">"{offer.conversation_summary}"</p>
+          </div>
+        )}
 
         <div className="flex items-center gap-2 text-xs text-gray-400">
           <span>🤖 AI handled {offer.ai_message_count} messages</span>

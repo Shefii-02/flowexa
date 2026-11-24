@@ -1,6 +1,7 @@
 // Visual builder for an Instagram flow (React Flow). The graph is stored as-is in `instagram_flows.nodes/edges`.
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
+import { useDecodedParams as useParams } from '@/lib/publicId'
 import {
   ReactFlow, ReactFlowProvider, Background, Controls, MiniMap, Handle, Position,
   addEdge, useNodesState, useEdgesState, useReactFlow,

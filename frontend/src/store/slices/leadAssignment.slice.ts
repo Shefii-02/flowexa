@@ -51,21 +51,33 @@ export const fetchRuleThunk = createAsyncThunk('leadAssignment/rule',
     catch (e: any) { return rejectWithValue(e.response?.data?.message) }
   })
 
+/** same person = same phone digits (a card with no number is never merged) */
+const samePerson = (phone?: string | null) => {
+  const d = (phone ?? '').replace(/\D/g, '')
+  return (other?: string | null) => d !== '' && (other ?? '').replace(/\D/g, '') === d
+}
+
 export const leadAssignmentSlice = createSlice({
   name: 'leadAssignment',
   initialState: init,
   reducers: {
     addNotification: (s, a: PayloadAction<LeadNotification>) => {
-      s.activeNotifications = [a.payload, ...s.activeNotifications.slice(0, 4)]
+      // one pop-up per person: a newer offer for the same number replaces the older one instead of stacking up
+      const same = samePerson(a.payload.contact_phone)
+      s.activeNotifications = [a.payload, ...s.activeNotifications.filter(n => !same(n.contact_phone)).slice(0, 4)]
     },
     removeNotification: (s, a: PayloadAction<number>) => {
       s.activeNotifications = s.activeNotifications.filter(n => n.assignment_id !== a.payload)
     },
     addAiOffer: (s, a: PayloadAction<AiHandoffOffer>) => {
-      s.aiHandoffOffers = [a.payload, ...s.aiHandoffOffers.slice(0, 4)]
+      const same = samePerson(a.payload.contact_phone)
+      s.aiHandoffOffers = [a.payload, ...s.aiHandoffOffers.filter(o => !same(o.contact_phone)).slice(0, 4)]
     },
     removeAiOffer: (s, a: PayloadAction<number>) => {
-      s.aiHandoffOffers = s.aiHandoffOffers.filter(o => o.assignment_id !== a.payload)
+      // answering one offer clears every card for that same person
+      const gone = s.aiHandoffOffers.find(o => o.assignment_id === a.payload)
+      const same = samePerson(gone?.contact_phone)
+      s.aiHandoffOffers = s.aiHandoffOffers.filter(o => o.assignment_id !== a.payload && !(gone && same(o.contact_phone)))
     },
     updateAssignment: (s, a: PayloadAction<LeadAssignment>) => {
       const i = s.assignments.findIndex(x => x.id === a.payload.id)

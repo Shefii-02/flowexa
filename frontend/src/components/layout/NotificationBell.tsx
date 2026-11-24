@@ -4,6 +4,7 @@ import toast from 'react-hot-toast'
 import { notificationApi } from '@/api'
 import { useNotificationCounts } from '@/lib/useNotificationCounts'
 import { cn, fmt, getError } from '@/utils'
+import { pid } from '@/lib/publicId'
 import { playTone, setTonesMuted, tonesMuted } from '@/lib/tones'
 
 type Item = { id: number; type: string; category: string; title: string; message: string | null; data: Record<string, any> | null; created_at: string; read_at: string | null }
@@ -14,7 +15,7 @@ const ICON: Record<string, string> = { lead: '🎯', team: '💬', hr: '🕒', c
 function targetFor(n: Item): string | null {
   const d = n.data ?? {}
   switch (d.action) {
-    case 'open_lead': return d.lead_id ? `/crm/leads/${d.lead_id}` : '/crm/leads?mine=1'
+    case 'open_lead': return d.lead_id ? `/crm/leads/${pid(d.lead_id)}` : '/crm/leads?mine=1'
     case 'open_leads': case 'lead_offer': case 'ai_handoff_offer': return '/crm/leads?mine=1'
     case 'open_team_chat': return '/team-chat'
     case 'open_wallet': return '/plan-purchase?section=wallet'

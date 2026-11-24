@@ -1,6 +1,7 @@
 // One employee's leads, on their own page — every stage, with status, switch and delete.
 import { useEffect, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link } from 'react-router-dom'
+import { useDecodedParams as useParams, pid } from '@/lib/publicId'
 import { leadApi, staffApi } from '@/api'
 import StaffPicker from './components/StaffPicker'
 import { useStageNote } from './components/StageReason'
@@ -225,7 +226,7 @@ export default function StaffLeadsPage() {
                     <td className="text-xs text-gray-600">{l.category || '—'}</td>
                     <td className="text-xs text-gray-600">{l.source || '—'}</td>
                     <td className="text-xs text-gray-400 whitespace-nowrap">{when(l.created_at)}</td>
-                    <td><Link to={`/crm/leads/${l.id}`} className="text-xs text-blue-600 hover:underline">View</Link></td>
+                    <td><Link to={`/crm/leads/${pid(l.id)}`} className="text-xs text-blue-600 hover:underline">View</Link></td>
                   </tr>
                 ))}
               </tbody>
@@ -243,7 +244,7 @@ export default function StaffLeadsPage() {
                 <tbody>{insight.recent_assignments!.map((a) => (
                   <tr key={a.id}>
                     <td className="text-xs text-gray-500 whitespace-nowrap">{when(a.created_at)}</td>
-                    <td className="text-sm">{a.lead_id ? <Link to={`/crm/leads/${a.lead_id}`} className="text-brand-600 hover:underline">{a.contact ?? 'Lead'}</Link> : (a.contact ?? '—')}</td>
+                    <td className="text-sm">{a.lead_id ? <Link to={`/crm/leads/${pid(a.lead_id)}`} className="text-brand-600 hover:underline">{a.contact ?? 'Lead'}</Link> : (a.contact ?? '—')}</td>
                     <td className="text-xs">{a.source ?? '—'}</td><td className="text-xs">{a.category ?? '—'}</td>
                     <td className="text-xs">{a.method ? (METHOD_LABEL[a.method] ?? a.method) : '—'}</td>
                     <td className="text-xs">{a.status}</td>
@@ -255,7 +256,7 @@ export default function StaffLeadsPage() {
             {(insight.recent_activity ?? []).length === 0 ? <p className="text-sm text-gray-400">None yet.</p> : (
               <ul className="divide-y divide-gray-100">{insight.recent_activity!.map((e) => (
                 <li key={e.id} className="py-1.5 text-sm flex justify-between gap-3">
-                  <span>{e.event.replace(/^lead_/, '').replace(/_/g, ' ')}{e.contact && <> — {e.lead_id ? <Link to={`/crm/leads/${e.lead_id}`} className="text-brand-600 hover:underline">{e.contact}</Link> : e.contact}</>}</span>
+                  <span>{e.event.replace(/^lead_/, '').replace(/_/g, ' ')}{e.contact && <> — {e.lead_id ? <Link to={`/crm/leads/${pid(e.lead_id)}`} className="text-brand-600 hover:underline">{e.contact}</Link> : e.contact}</>}</span>
                   <span className="text-xs text-gray-400 whitespace-nowrap">{when(e.created_at)}</span>
                 </li>))}</ul>
             )}

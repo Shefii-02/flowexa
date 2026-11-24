@@ -7,6 +7,7 @@ import { usePermission } from '@/store'
 import { Badge, Button, EmptyState, Pagination, Spinner, StatCard } from '@/components/ui'
 import { fmt, getError, phoneLabel } from '@/utils'
 import type { SourceRow } from './components/LeadSourcesPanel'
+import { pid } from '@/lib/publicId'
 
 type Row = {
   id: number; source: string; status: 'held' | 'moved' | 'discarded'; hits: number
@@ -150,7 +151,7 @@ held ? (
                     {held ? <>
                       <button className="text-xs text-brand-700 hover:underline mr-3" onClick={() => run('move', { ids: [r.id] })}>Move to Leads</button>
                       <button className="text-xs text-gray-400 hover:underline" onClick={() => run('discard', { ids: [r.id] })}>Discard</button></>
-                      : r.lead_id ? <Link className="text-xs text-brand-700 hover:underline" to={`/crm/leads/${r.lead_id}`}>Open lead →</Link> : null}
+                      : r.lead_id ? <Link className="text-xs text-brand-700 hover:underline" to={`/crm/leads/${pid(r.lead_id)}`}>Open lead →</Link> : null}
                   </td>
                 </tr>))}
               </tbody>

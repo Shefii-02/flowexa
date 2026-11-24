@@ -4,7 +4,8 @@
 //   • dashed edges = redirect_to_reply_id (a "Back" / "Main menu" style jump)
 // Only the layout (canvas_x / canvas_y) is canvas-specific.
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link } from 'react-router-dom'
+import { useDecodedParams as useParams, pid } from '@/lib/publicId'
 import {
   ReactFlow, ReactFlowProvider, Background, Controls, MiniMap, Handle, Position,
   useNodesState, useReactFlow,
@@ -239,7 +240,7 @@ function Canvas() {
           <Button variant="secondary" onClick={() => setShowMsgs(true)}>⚙ Flow messages</Button>
           <Button variant="secondary" onClick={() => setShowHelp(true)}>❓ Help</Button>
           <Button variant="secondary" onClick={tidy}>Auto layout</Button>
-          <Link to={`/wa-cloud/flow/builder/${builderId}`} className="rounded-xl border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Classic editor</Link>
+          <Link to={`/wa-cloud/flow/builder/${pid(builderId)}`} className="rounded-xl border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Classic editor</Link>
         </div>
       </div>
 

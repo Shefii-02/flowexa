@@ -7,6 +7,7 @@ import { fmt, getError } from '@/utils'
 import toast from 'react-hot-toast'
 import { metaAdsApi } from '../api/meta-ads'
 import { AiCampaignBuilder } from './AiCampaignBuilder'
+import { pid } from '@/lib/publicId'
 
 const OBJECTIVES = [
   { value: 'LEAD_GENERATION', label: 'Lead Generation', icon: '🎯', desc: 'Collect leads from interested people' },
@@ -70,7 +71,7 @@ export default function MetaCampaignsPage() {
         special_ad_categories: specialCategories.length ? specialCategories : undefined,
       })
       toast.success('Campaign created!'); setShowModal(false); setSpecialCategories([])
-      navigate(`/meta-ads/campaigns/${data.campaign.id}`)
+      navigate(`/meta-ads/campaigns/${pid(data.campaign.id)}`)
     } catch (e) { toast.error(getError(e)) }
     finally     { setSaving(false) }
   }
@@ -113,7 +114,7 @@ export default function MetaCampaignsPage() {
                 {campaigns.map((c: any) => (
                   <tr key={c.id}>
                     <td>
-                      <button onClick={() => navigate(`/meta-ads/campaigns/${c.id}`)} className="font-medium text-brand-600 hover:underline text-left">
+                      <button onClick={() => navigate(`/meta-ads/campaigns/${pid(c.id)}`)} className="font-medium text-brand-600 hover:underline text-left">
                         {c.name}
                       </button>
                       {c.meta_campaign_id && <p className="text-xs text-gray-400 font-mono">{c.meta_campaign_id}</p>}
@@ -126,7 +127,7 @@ export default function MetaCampaignsPage() {
                     <td>{c.review_status && <Badge variant={statusColor[c.review_status] as any || 'gray'}>{c.review_status}</Badge>}</td>
                     <td>
                       <div className="flex gap-1">
-                        <button onClick={() => navigate(`/meta-ads/campaigns/${c.id}`)} className="text-xs text-blue-600 hover:underline">Details</button>
+                        <button onClick={() => navigate(`/meta-ads/campaigns/${pid(c.id)}`)} className="text-xs text-blue-600 hover:underline">Details</button>
                         {c.status === 'ACTIVE'  && <button onClick={() => handleStatus(c.id,'PAUSED')} className="text-xs text-yellow-600 hover:underline">Pause</button>}
                         {c.status === 'PAUSED'  && <button onClick={() => handleStatus(c.id,'ACTIVE')} className="text-xs text-green-600 hover:underline">Resume</button>}
                         <button onClick={() => handleDuplicate(c.id)} disabled={dupingId === c.id} className="text-xs text-gray-500 hover:underline disabled:opacity-50">

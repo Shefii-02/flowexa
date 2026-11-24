@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import { Link } from 'react-router-dom'
+import { useDecodedParams as useParams } from '@/lib/publicId'
 import { superadminApi } from '@/api'
 import { getError } from '@/utils'
 import toast from 'react-hot-toast'

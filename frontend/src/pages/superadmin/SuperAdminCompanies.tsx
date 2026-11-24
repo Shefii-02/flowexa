@@ -17,6 +17,7 @@ import {
 import { fmt, getError } from '@/utils'
 import toast from 'react-hot-toast'
 import CompanyPlanUpgradeModal from './CompanyPlanUpgradeModal'
+import { pid } from '@/lib/publicId'
 
 type Company = {
   id: number
@@ -739,7 +740,7 @@ export default function SuperAdminCompanies() {
 
                             {/* View / Config */}
                             <Link
-                              to={`/superadmin/companies/${company.id}`}
+                              to={`/superadmin/companies/${pid(company.id)}`}
                               onClick={() => setOpenMenuId(null)}
                               className="block w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
                             >
@@ -758,7 +759,7 @@ export default function SuperAdminCompanies() {
 
                             {/* Permissions */}
                             <Link
-                              to={`/superadmin/companies/${company.id}/permissions`}
+                              to={`/superadmin/companies/${pid(company.id)}/permissions`}
                               onClick={() => setOpenMenuId(null)}
                               className="block w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
                             >

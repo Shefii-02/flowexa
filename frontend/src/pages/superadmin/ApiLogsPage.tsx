@@ -9,6 +9,7 @@ import { superadminApi } from '@/api'
 import { Badge, EmptyState, Pagination, TableSkeleton, StatCard, Modal } from '@/components/ui'
 import { fmt, getError } from '@/utils'
 import toast from 'react-hot-toast'
+import { decodePid } from '@/lib/publicId'
 
 const METHOD_COLOR: Record<string, string> = {
   GET: 'blue', POST: 'green', PUT: 'yellow', PATCH: 'yellow', DELETE: 'red',
@@ -22,7 +23,7 @@ const SOURCES = [
 export default function ApiLogsPage() {
   const [params, setParams] = useSearchParams()
   const source = params.get('source') || 'laravel'
-  const companyId = params.get('company_id') ?? ''
+  const companyId = String(decodePid(params.get('company_id')) ?? '')   // ?company_id=u1k9x (or an old plain number)
   const isNode = source === 'backend_node'
 
   const setSource = (s: string) => setParams((prev) => {

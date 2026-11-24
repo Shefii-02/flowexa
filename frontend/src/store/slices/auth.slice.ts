@@ -3,6 +3,7 @@ import { createAsyncThunk, createSlice, PayloadAction } from '@reduxjs/toolkit'
 import { authApi } from '@/api'
 import type { AuthState, User, Wallet } from '@/types'
 import { WA_CHAT_API_KEY_STORAGE } from '@/pages/wa-chat/api/client'
+import { setPidKey } from '@/lib/publicId'
 
 // ── WA Chat session bootstrap ─────────────────────────────────────────────────
 // Maps Project A's user role to the WA Chat RBAC role so RequireWaAdmin gates
@@ -19,6 +20,7 @@ export function resolveWaChatRole(user: User | null): 'admin' | 'operator' | 'vi
 // WA Chat pages can authenticate against unichatwa.univexa.in without a second
 // login flow. Also persists the resolved RBAC role.
 function syncWaChatSession(user: User | null) {
+  setPidKey(user?.public_id_key)   // the key for the random-looking record codes in addresses — set before any page reads one
   const token = user?.company?.wa_chat_token
   if (token) {
     sessionStorage.setItem(WA_CHAT_API_KEY_STORAGE, token)

@@ -1,7 +1,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // src/pages/meta-ads/AdSetPage.tsx
 import { useEffect, useState } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
+import { useDecodedParams as useParams } from '@/lib/publicId'
 
 import { Button, Input, Badge, EmptyState, Modal } from '@/components/ui'
 import { getError } from '@/utils'

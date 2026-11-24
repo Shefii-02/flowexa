@@ -1506,6 +1506,8 @@ Route::prefix('v1')->group(function () {
             Route::post('/{id}/accept',   [$c, 'accept']);
             Route::post('/{id}/reply',    [$c, 'reply']);
             Route::post('/{id}/end',      [$c, 'end']);
+            Route::post('/{id}/close',    [$c, 'close'])->whereNumber('id');
+            Route::post('/{id}/reopen',   [$c, 'reopen'])->whereNumber('id');
             Route::delete('/{id}',        [$c, 'destroy'])->middleware('permission:widget_chat.delete');
         });
         Route::prefix('/widgets')->middleware(['company.active'])->group(function () {

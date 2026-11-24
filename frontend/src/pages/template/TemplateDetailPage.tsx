@@ -1,6 +1,7 @@
 // src/pages/templates/TemplateDetailPage.tsx
 import { useEffect, useState } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
+import { useDecodedParams as useParams } from '@/lib/publicId'
 import { templateApi } from '@/api'
 import { Button, Badge, EmptyState } from '@/components/ui'
 import { getError } from '@/utils'

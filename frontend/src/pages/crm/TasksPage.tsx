@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { api } from '@/api/client'
 import { leadApi } from '@/api'
 import toast from 'react-hot-toast'
+import { pid } from '@/lib/publicId'
 
 type Tab = 'todo' | 'scheduled' | 'followup'
 const TABS: { key: Tab; label: string; icon: string; hint: string }[] = [
@@ -184,7 +185,7 @@ export default function TasksPage({ mode = 'tasks' }: { mode?: 'tasks' | 'follow
                       <div className="text-xs text-gray-400 mt-0.5 flex gap-3 flex-wrap">
                         {t.due_at && <span>🗓️ {new Date(t.due_at).toLocaleString()}</span>}
                         {t.lead_id
-                          ? <Link to={`/crm/leads/${t.lead_id}`} className="text-indigo-500 hover:underline">🎯 Lead: {t.lead?.contact?.name || t.lead?.contact?.phone || `#${t.lead_id}`}</Link>
+                          ? <Link to={`/crm/leads/${pid(t.lead_id)}`} className="text-indigo-500 hover:underline">🎯 Lead: {t.lead?.contact?.name || t.lead?.contact?.phone || `#${t.lead_id}`}</Link>
                           : t.contact && <span>👤 {t.contact.name || t.contact.phone}</span>}
                         {t.synced_task_id && <span title="Linked to a matching follow-up / to-do — completing one completes both">🔗 synced</span>}
                         {t.assignee && <span>➡️ {t.assignee.name}</span>}

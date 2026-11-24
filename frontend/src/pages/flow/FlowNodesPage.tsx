@@ -19,7 +19,8 @@ import LimitBadge from '@/components/plan/LimitBadge'
 import {
   useEffect, useState, useCallback, useMemo, useRef, DragEvent,
 } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import { Link } from 'react-router-dom'
+import { useDecodedParams as useParams, pid } from '@/lib/publicId'
 import { flowBuilderApi, flowNodeApi, surveyFormApi } from '@/api'
 import { Button, Modal, ConfirmModal, EmptyState } from '@/components/ui'
 import { getError } from '@/utils'
@@ -692,7 +693,7 @@ export default function FlowNodesPage() {
           <div className="flex items-center gap-2 flex-wrap">
             <h1 className="page-title">{builder?.name || 'Flow nodes'}</h1>
             {builder?.is_active && <span className="text-xs bg-green-100 text-green-700 border border-green-300 px-2 py-0.5 rounded-full font-semibold">🟢 Active</span>}
-            <Link to={`/wa-cloud/flow/builder/${builderId}/canvas`} className="text-xs px-2.5 py-1 rounded-full border border-brand-200 text-brand-700 bg-brand-50 hover:bg-brand-100 font-medium">🎨 Drag &amp; drop canvas</Link>
+            <Link to={`/wa-cloud/flow/builder/${pid(builderId)}/canvas`} className="text-xs px-2.5 py-1 rounded-full border border-brand-200 text-brand-700 bg-brand-50 hover:bg-brand-100 font-medium">🎨 Drag &amp; drop canvas</Link>
             <button type="button" onClick={() => setShowHelp(true)} className="text-xs px-2.5 py-1 rounded-full border border-gray-200 text-gray-600 bg-white hover:bg-gray-50 font-medium">❓ Help</button>
             <button type="button" onClick={() => setShowMsgs(true)} className="text-xs px-2.5 py-1 rounded-full border border-gray-200 text-gray-600 bg-white hover:bg-gray-50 font-medium">⚙ Flow messages</button>
           </div>

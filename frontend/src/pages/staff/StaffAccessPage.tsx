@@ -12,6 +12,7 @@ import WebScreensCard, { type WebSection } from './WebScreensCard'
 import MobileScreensCard, { type MobileScreens, type MobileScreensMeta } from './MobileScreensCard'
 import { getError } from '@/utils'
 import toast from 'react-hot-toast'
+import { decodePid } from '@/lib/publicId'
 
 type Section = AccessSection
 type StaffRow = { id: number; name: string; email: string; role?: { label: string } }
@@ -23,7 +24,7 @@ export default function StaffAccessPage() {
   const [accounts, setAccounts] = useState<Record<string, AccountRow[]>>({})
   const [search, setSearch] = useState('')
   const [params] = useSearchParams()
-  const [selectedId, setSelectedId] = useState<number | null>(() => Number(params.get('staff')) || null)   // /staff/access?staff=12 opens that person
+  const [selectedId, setSelectedId] = useState<number | null>(() => decodePid(params.get('staff')))   // /staff/access?staff=u1k9x (or an old plain number) opens that person
   const [busy, setBusy] = useState(false)
   const [saving, setSaving] = useState(false)
   const [portal, setPortal] = useState(true)

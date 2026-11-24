@@ -6,6 +6,7 @@ import { leadApi } from '@/api'
 import { Badge, EmptyState, Pagination, Spinner, StatCard } from '@/components/ui'
 import { fmt, formatPhone, getError, stageConfig } from '@/utils'
 import toast from 'react-hot-toast'
+import { pid } from '@/lib/publicId'
 
 const EVENT_LABEL: Record<string, string> = {
   note_added: 'Note added',
@@ -137,14 +138,14 @@ export default function LeadLogsPage() {
                 <thead><tr><th>When</th><th>Lead</th><th>Source</th><th>Category</th><th>Activity</th><th>Details</th><th>By</th><th>Action</th></tr></thead>
                 <tbody>
                   {rows.map((r) => (
-                    <tr key={r.id} className={r.lead ? 'cursor-pointer hover:bg-gray-50' : ''} onDoubleClick={() => r.lead && navigate(`/crm/leads/${r.lead.id}`)}>
+                    <tr key={r.id} className={r.lead ? 'cursor-pointer hover:bg-gray-50' : ''} onDoubleClick={() => r.lead && navigate(`/crm/leads/${pid(r.lead.id)}`)}>
                       <td className="text-xs whitespace-nowrap">
                         <div className="text-gray-700">{new Date(r.created_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' })}</div>
                         <div className="text-gray-400">{fmt.relative(r.created_at)}</div>
                       </td>
                       <td>
                         {r.lead ? (
-                          <Link to={`/crm/leads/${r.lead.id}`} className="text-brand-600 hover:underline">
+                          <Link to={`/crm/leads/${pid(r.lead.id)}`} className="text-brand-600 hover:underline">
                             {r.lead.contact?.name || formatPhone(r.lead.contact?.phone || '')}
                           </Link>
                         ) : <span className="text-gray-300">—</span>}
@@ -157,7 +158,7 @@ export default function LeadLogsPage() {
                       <td className="text-xs text-gray-400 whitespace-nowrap">{r.user ?? '—'}</td>
                       <td className="whitespace-nowrap">
                         {r.lead
-                          ? <Link to={`/crm/leads/${r.lead.id}`} className="text-xs font-medium text-brand-600 hover:underline">View lead →</Link>
+                          ? <Link to={`/crm/leads/${pid(r.lead.id)}`} className="text-xs font-medium text-brand-600 hover:underline">View lead →</Link>
                           : <span className="text-xs text-gray-300" title="This lead has since been deleted">Deleted</span>}
                       </td>
                     </tr>

@@ -13,6 +13,7 @@ import ChatReviewPanel from './ChatReviewPanel'
 import { PermissionGate } from '@/components/ui/PermissionGate'
 import { widgetApi, type ChatWidget } from './api'
 import { widgetSlug } from './chats/util'
+import { pid } from '@/lib/publicId'
 
 type WaSession = { id: number; session_name: string; status: string }
 
@@ -346,7 +347,7 @@ export default function WidgetPage() {
                 </div>
                 <Button variant="secondary" onClick={() => setImportOpen(true)}>Import nodes</Button>
                 {editor.flow_builder_id && (
-                  <Link to={`/wa-cloud/flow/builder/${editor.flow_builder_id}`} className="text-xs text-brand-600 hover:underline pb-2 whitespace-nowrap">Edit nodes →</Link>
+                  <Link to={`/wa-cloud/flow/builder/${pid(editor.flow_builder_id)}`} className="text-xs text-brand-600 hover:underline pb-2 whitespace-nowrap">Edit nodes →</Link>
                 )}
               </div>
             </div>

@@ -194,6 +194,7 @@ import WaChatAutomationsPage from '@/pages/wa-chat/pages/WaChatAutomationsPage'
 
 // Lead Categories
 import LeadCategoriesPage from '@/pages/leads/LeadCategoriesPage'
+import { pid } from '@/lib/publicId'
 
 
 
@@ -233,12 +234,12 @@ function LegacyAgentRedirect() {
 function LegacyFlowRedirect() {
   const { search } = useLocation()
   const id = Number(new URLSearchParams(search).get('builder'))
-  return <Navigate to={id ? `/wa-cloud/flow/builder/${id}` : '/wa-cloud/flow-builders'} replace />
+  return <Navigate to={id ? `/wa-cloud/flow/builder/${pid(id)}` : '/wa-cloud/flow-builders'} replace />
 }
 
 function LegacyTemplateRedirect() {
   const { id } = useParams()
-  return <Navigate to={`/wa-cloud/templates/${id}`} replace />
+  return <Navigate to={`/wa-cloud/templates/${pid(id)}`} replace />
 }
 
 // /contacts, /labels, /blacklist and /leads/* moved under /crm — send old bookmarks and links there. (Short links live at /short-links.)

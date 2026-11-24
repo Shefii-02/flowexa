@@ -14,6 +14,7 @@ import {
 import LinkedDevicesModal, { type DeviceService } from '@/components/devices/LinkedDevicesModal'
 import { fmt, getError } from '@/utils'
 import toast from 'react-hot-toast'
+import { pid } from '@/lib/publicId'
 
 interface Role { id: number; name: string; label: string; access_main?: string | null; access_subs?: string[] }
 
@@ -159,7 +160,7 @@ export default function StaffPage() {
         if (newId) await staffExtrasApi.update(newId, { designation: extras.designation || null, joined_on: extras.joined_on || null, accessible_user_ids: extras.accessible }).catch(() => {})
         toast.success('Staff created — set their access next.')
         setShowModal(false)
-        if (newId && canManageAccess) { navigate(`/staff/access?staff=${newId}`); return }
+        if (newId && canManageAccess) { navigate(`/staff/access?staff=${pid(newId)}`); return }
       }
       setShowModal(false)
       dispatch(fetchStaffThunk({ page, search, per_page: 20 }))
@@ -259,7 +260,7 @@ export default function StaffPage() {
                         {canEdit && (
                           <>
                             <button onClick={() => openEdit(u)} className="text-xs text-blue-600 hover:underline px-1">Edit</button>
-                            {canManageAccess && <Link to={`/staff/access?staff=${u.id}`} className="text-xs text-violet-600 hover:underline px-1">Access</Link>}
+                            {canManageAccess && <Link to={`/staff/access?staff=${pid(u.id)}`} className="text-xs text-violet-600 hover:underline px-1">Access</Link>}
                             <button onClick={() => handleToggle(u)} className="text-xs text-gray-500 hover:underline px-1">
                               {u.is_active ? 'Deactivate' : 'Activate'}
                             </button>
@@ -358,7 +359,7 @@ export default function StaffPage() {
               ? <> ({[pickedRole?.access_main, ...(pickedRole?.access_subs ?? [])].filter(Boolean).map((k) => sectionLabel(k as string)?.label ?? k).join(', ')})</>
               : null}
             {' '}and change automatically when the role changes.
-            {canManageAccess && editUser && <> To customise them, or set web / app access and screens, use <Link to={`/staff/access?staff=${editUser.id}`} className="text-brand-600 underline">Staff Access</Link>.</>}
+            {canManageAccess && editUser && <> To customise them, or set web / app access and screens, use <Link to={`/staff/access?staff=${pid(editUser.id)}`} className="text-brand-600 underline">Staff Access</Link>.</>}
             {canManageAccess && !editUser && ' After you create the account you land on Staff Access to set web / app access and screens.'}
           </p>
         </div>

@@ -5,6 +5,7 @@ import { Link } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { getError } from '@/utils'
 import { liveChatApi, type ChatCrm } from '../api'
+import { pid } from '@/lib/publicId'
 
 export default function ChatCrmPanel({ id, phone, onChanged }: { id: number; phone?: string | null; onChanged?: () => void }) {
   const [open, setOpen] = useState(false)
@@ -51,7 +52,7 @@ export default function ChatCrmPanel({ id, phone, onChanged }: { id: number; pho
                 {crm.leads.map(l => (
                   <li key={l.id} className={`rounded-lg border p-2 ${l.id === crm.lead_id ? 'border-indigo-300 bg-indigo-50/50' : 'border-gray-200'}`}>
                     <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                      <Link to={`/crm/leads/${l.id}`} className="font-semibold text-brand-700 underline">Lead #{l.id}</Link>
+                      <Link to={`/crm/leads/${pid(l.id)}`} className="font-semibold text-brand-700 underline">Lead #{l.id}</Link>
                       <span className="rounded-full bg-gray-100 px-1.5 capitalize">{l.stage?.replace('_', ' ')}</span>
                       {l.category && <span className="text-gray-500">{l.category}</span>}
                       {l.priority && <span className="text-gray-400">{l.priority}</span>}

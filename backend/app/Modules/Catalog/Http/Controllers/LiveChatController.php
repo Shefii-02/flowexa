@@ -227,6 +227,26 @@ class LiveChatController extends Controller
         return response()->json(['ended' => true]);
     }
 
+    /** Close any chat (a live one is ended; an AI-handled one stops answering) — it stays in the inbox under Closed and can be reopened. */
+    public function close(int $id): JsonResponse
+    {
+        $convo = $this->find($id);
+        $convo->update(['status' => 'closed', 'case_status' => 'closed', 'closed_at' => now(), 'ai_active' => false]
+            + (in_array($convo->live_status, ['live', 'waiting', 'missed'], true) ? ['live_status' => 'ended'] : []));
+        WidgetMessage::create(['widget_conversation_id' => $convo->id, 'role' => 'system', 'text' => 'This conversation was closed by ' . (auth()->user()->name ?: 'our team') . '.']);
+        return response()->json(['closed' => true]);
+    }
+
+    /** Open a closed chat again. */
+    public function reopen(int $id): JsonResponse
+    {
+        $convo = $this->find($id);
+        $convo->update(['status' => 'active', 'case_status' => $convo->attended_by ? 'attended' : 'open', 'closed_at' => null]
+            + ($convo->live_status === 'ended' ? ['live_status' => null] : []));
+        WidgetMessage::create(['widget_conversation_id' => $convo->id, 'role' => 'system', 'text' => 'This conversation was reopened by ' . (auth()->user()->name ?: 'our team') . '.']);
+        return response()->json(['reopened' => true]);
+    }
+
     // ── CRM for this chat: the contact, the leads for the visitor's number, and the actions staff can take ──
 
     private function digits(?string $phone): string { return preg_replace('/\D+/', '', (string) $phone); }

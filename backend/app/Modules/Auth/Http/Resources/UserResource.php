@@ -25,6 +25,8 @@ class UserResource extends JsonResource
 
             // Access sections (prebuilt permission bundles) + which channels this account may use
             'access_sections' => $this->accessSectionKeys(),
+            // the key the website uses to turn record ids into random-looking codes in its addresses (see frontend lib/publicId.ts) — only for yourself
+            'public_id_key'   => $this->when((int) $this->id === (int) auth()->id(), fn () => substr(hash_hmac('sha256', 'public-id-v2', (string) config('app.key')), 0, 32)),
             'portal_access'   => (bool) $this->portal_access,
             'mobile_access'   => (bool) $this->mobile_access,
 

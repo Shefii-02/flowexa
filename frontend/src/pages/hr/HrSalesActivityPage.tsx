@@ -7,6 +7,7 @@ import { salesActivityApi } from '@/api'
 import { usePermission } from '@/store'
 import { Badge, Button, Spinner, StatCard } from '@/components/ui'
 import { fmt, getError } from '@/utils'
+import { pid } from '@/lib/publicId'
 
 type Targets = { daily_new_lead_calls: number; daily_follow_up_calls: number; monthly_calls: number; monthly_conversions: number; max_cost_per_conversion: number }
 type Row = {
@@ -56,7 +57,7 @@ function Detail({ row, date }: { row: Row; date: string }) {
             <ul className="divide-y divide-gray-100">{row.timeline!.map(a => (
               <li key={a.id} className="py-1.5 text-sm flex gap-3">
                 <span className="w-14 text-xs text-gray-400 shrink-0">{new Date(a.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                <span className="flex-1">{a.kind}{a.first && <span className="ml-1 text-[10px] rounded bg-indigo-50 text-indigo-700 px-1">new</span>} — <Link className="text-brand-700 hover:underline" to={`/crm/leads/${a.lead_id}`}>{a.contact ?? `Lead #${a.lead_id}`}</Link>
+                <span className="flex-1">{a.kind}{a.first && <span className="ml-1 text-[10px] rounded bg-indigo-50 text-indigo-700 px-1">new</span>} — <Link className="text-brand-700 hover:underline" to={`/crm/leads/${pid(a.lead_id)}`}>{a.contact ?? `Lead #${a.lead_id}`}</Link>
                   {a.outcome && <span className="text-gray-500"> · {a.outcome.replace('_', ' ')}</span>}{a.duration_seconds ? <span className="text-gray-400"> · {Math.round(a.duration_seconds / 60)} min</span> : null}
                   {a.notes && <span className="block text-xs text-gray-500">{a.notes}</span>}</span>
               </li>))}</ul>)}
