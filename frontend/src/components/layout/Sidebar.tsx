@@ -450,6 +450,12 @@ const SidebarInner = () => {
     setTimeout(() => { window.location.href = '/superadmin/companies' }, 800)
   }
 
+  // Sales-team staff get the short lead-first menu; they can flip to the full menu and back (remembered on this browser)
+  const isSalesStaff = (user as any)?.access_sections?.[0] === 'sales'
+  const [fullMenu, setFullMenu] = useState(() => { try { return localStorage.getItem('sidebar_full_menu') === '1' } catch { return false } })
+  const salesMenu = !isSuperAdmin && isSalesStaff && !fullMenu
+  const flipMenu = () => setFullMenu(v => { const n = !v; try { localStorage.setItem('sidebar_full_menu', n ? '1' : '0') } catch { /* private mode */ } return n })
+
   if (!sidebarOpen) return null
 
   return (
@@ -498,7 +504,9 @@ const SidebarInner = () => {
           </div>
         )}
 
-        {!isSuperAdmin && (
+        {!isSuperAdmin && salesMenu && <SalesNav />}
+
+        {!isSuperAdmin && !salesMenu && (
           <>
             {/* Dashboard - always visible */}
             {/* {canViewDash &&  */}
@@ -749,6 +757,8 @@ const SidebarInner = () => {
               <SubLink to="/crm/leads/logs" icon="📜" label="Lead Logs" />
               {canVerifyLeads && <SubLink to="/crm/leads/verification" icon="✅" label="Verify Leads" />}
               {canManageLeads && <SubLink to="/crm/leads/held" icon="⏸" label="Held Leads" />}
+              {canManageLeads && <SubLink to="/crm/leads/deleted" icon="🗑️" label="Deleted Leads" />}
+              <SubLink to="/crm/leads/reports" icon="🧮" label="Lead Reports" />
 
               {/* Basic — at-a-glance metrics */}
               {/* <NestedAccordion icon="🟢" label="Basic" basePaths={['/leads/summary']}>
@@ -880,6 +890,12 @@ const SidebarInner = () => {
         )}
       </nav>
 
+      {!isSuperAdmin && isSalesStaff && (
+        <button onClick={flipMenu} className="mx-3 mb-1 text-xs text-gray-400 hover:text-brand-600 text-left px-2 py-1">
+          {salesMenu ? 'Show full menu' : '← Back to sales menu'}
+        </button>
+      )}
+
       {/* Footer */}
       <div className="px-3 py-3 border-t border-gray-100 flex-shrink-0">
         <div className="flex items-center gap-2 px-2 py-2">
@@ -903,6 +919,86 @@ const SidebarInner = () => {
         </div>
       </div>
     </aside>
+  )
+}
+
+// ── Sales team menu ───────────────────────────────────────────────────────────
+// Staff in the Sales section work from their assigned leads, so their menu is short and lead-first. Links may carry a
+// query (?stage=new); they're active only when the page AND that query match.
+function QLink({ to, icon, label, top }: { to: string; icon: string; label: string; top?: boolean }) {
+  const loc = useLocation()
+  const [base, query = ''] = to.split('?')
+  const allowed = usePermissionAny(PAGE_PERMS[base])
+  if (!useEntitled(base) || !allowed) return null
+  const want = new URLSearchParams(query), have = new URLSearchParams(loc.search)
+  const keys = ['stage', 'mine', 'transferred', 'tab']
+  const active = loc.pathname === base && keys.every(k => (want.get(k) ?? '') === (have.get(k) ?? ''))
+  return (
+    <NavLink to={to} className={cn(
+      'flex items-center gap-2 px-2 py-1.5 rounded-lg transition-colors',
+      top ? 'text-sm gap-2.5' : 'text-[13px]',
+      active ? 'bg-brand-100 text-brand-700 font-medium' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-800'
+    )}>
+      <span className={cn('leading-none text-center', top ? 'text-base w-5' : 'text-sm w-4')}>{icon}</span>
+      <span className="flex-1">{label}</span>
+    </NavLink>
+  )
+}
+
+function SalesNav() {
+  return (
+    <>
+      <QLink top to="/dashboard" icon="📊" label="Dashboard" />
+      <QLink top to="/crm/leads?mine=1" icon="🎯" label="My Leads" />
+
+      <NestedAccordion id="s-chats" icon="💬" label="Chats" basePaths={['/website-widget', '/wa-chat/chats', '/wa-cloud/inbox', '/instagram/inbox', '/messenger/inbox']}>
+        <QLink to="/website-widget/chats" icon="🌐" label="Widgets" />
+        <QLink to="/wa-chat/chats" icon="💬" label="WA Chat" />
+        <QLink to="/wa-cloud/inbox" icon="📥" label="WA Cloud" />
+        <QLink to="/instagram/inbox" icon="📸" label="Instagram" />
+        <QLink to="/messenger/inbox" icon="💭" label="Messenger" />
+      </NestedAccordion>
+
+      <NestedAccordion id="s-crm" icon="👥" label="CRM" basePaths={['/crm/contacts', '/crm/labels', '/crm/blacklist']}>
+        <QLink to="/crm/contacts" icon="👥" label="Contacts" />
+        <QLink to="/crm/labels" icon="🏷️" label="Labels" />
+        <QLink to="/crm/blacklist" icon="🚫" label="Blacklist" />
+      </NestedAccordion>
+
+      <NestedAccordion id="s-tasks" icon="📋" label="Tasks" basePaths={['/tasks']}>
+        <QLink to="/tasks" icon="📋" label="Tasks" />
+        <QLink to="/tasks/followups" icon="🔁" label="Follow-ups" />
+        <QLink to="/tasks/calendar" icon="📅" label="Calendar" />
+      </NestedAccordion>
+
+      <NestedAccordion id="s-leads" icon="🎯" label="Leads" basePaths={['/crm/leads']}>
+        <QLink to="/crm/leads" icon="🎯" label="All Leads" />
+        <QLink to="/crm/leads?stage=new" icon="🆕" label="New Leads" />
+        <QLink to="/crm/leads?stage=follow_up" icon="🔁" label="Followup Leads" />
+        <QLink to="/crm/leads?stage=enrolled" icon="🏆" label="Closed / Converted Leads" />
+        <QLink to="/crm/leads?transferred=1" icon="🔀" label="Transfer Leads" />
+        <QLink to="/crm/leads?stage=lost" icon="❌" label="Lost Leads" />
+      </NestedAccordion>
+
+      <QLink top to="/hr/attendance" icon="🕒" label="My Attendance" />
+      <QLink top to="/hr/target" icon="🎯" label="My Target" />
+      <QLink top to="/hr/sales-activity" icon="📞" label="Sales Activity" />
+      <QLink top to="/hr/payroll" icon="💰" label="My Payroll" />
+      <QLink top to="/hr/admin/incentives" icon="🎁" label="Incentives" />
+      <QLink top to="/hr/attendance?tab=leave" icon="🌴" label="Leaves" />
+      <QLink top to="/hr/admin/leave" icon="📨" label="Leave Requests" />
+
+      <div className="pt-2 mt-2 border-t border-gray-100 space-y-0.5">
+        <QLink top to="/sticky-notes" icon="📝" label="Sticky Notes" />
+        <QLink top to="/todo" icon="✅" label="Todo List" />
+      </div>
+
+      <NestedAccordion id="s-settings" icon="⚙️" label="Settings" basePaths={['/settings/index']}>
+        <QLink to="/settings/index?tab=profile" icon="👤" label="My Profile" />
+        <QLink to="/settings/index?tab=display" icon="🖥️" label="Display" />
+        <QLink to="/settings/index?tab=devices" icon="📱" label="Linked Devices" />
+      </NestedAccordion>
+    </>
   )
 }
 

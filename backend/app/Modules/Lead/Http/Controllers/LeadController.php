@@ -263,6 +263,68 @@ class LeadController extends Controller
 
 
 
+    /** GET /leads/import/sample?with_country_code=1 — a ready-to-fill CSV with the columns the importer understands. */
+    public function importSample(\Illuminate\Http\Request $request): StreamedResponse
+    {
+        $with = $request->boolean('with_country_code');
+
+        return response()->streamDownload(function () use ($with) {
+            $out = fopen('php://output', 'w');
+            fputcsv($out, ['client name', 'contact number', 'email', 'address', 'pincode', 'state', 'district', 'category', 'priority', 'remarks']);
+            fputcsv($out, ['Anita Nair', $with ? '919812345678' : '9812345678', 'anita@example.com', '12 Lake Road', '682001', 'Kerala', 'Ernakulam', 'Admissions', 'high', 'Asked about the 2027 batch']);
+            fclose($out);
+        }, $with ? 'leads_sample_with_country_code.csv' : 'leads_sample.csv', ['Content-Type' => 'text/csv']);
+    }
+
+    /** GET /leads/deleted — soft-deleted leads (search, staff, category, deleted-between). */
+    public function deleted(\Illuminate\Http\Request $request): JsonResponse
+    {
+        $q = \App\Models\Lead::onlyTrashed()->with(['contact:id,name,phone', 'assignedTo:id,name'])->where('company_id', auth()->user()->company_id)
+            ->when($request->filled('search'), function ($w) use ($request) {
+                $t = '%' . addcslashes((string) $request->query('search'), '%_\\') . '%';
+                $w->whereHas('contact', fn ($c) => $c->where('name', 'like', $t)->orWhere('phone', 'like', $t));
+            })
+            ->when($request->filled('staff_id'), fn ($w) => $w->where('assigned_to', $request->integer('staff_id')))
+            ->when($request->filled('category'), fn ($w) => $w->where('category', $request->query('category')))
+            ->when($request->filled('from'), fn ($w) => $w->whereDate('deleted_at', '>=', $request->query('from')))
+            ->when($request->filled('to'), fn ($w) => $w->whereDate('deleted_at', '<=', $request->query('to')))
+            ->orderByDesc('deleted_at');
+
+        $page = $q->paginate(max(5, min(100, $request->integer('per_page', 20))));
+        $page->getCollection()->transform(fn ($l) => [
+            'id' => $l->id, 'name' => $l->contact?->name, 'phone' => $l->contact?->phone, 'category' => $l->category, 'stage' => $l->stage, 'source' => $l->source,
+            'staff' => $l->assignedTo?->name, 'created_at' => $l->created_at, 'deleted_at' => $l->deleted_at,
+        ]);
+
+        return response()->json($page);
+    }
+
+    /** POST /leads/deleted/restore {ids:[…]} */
+    public function restoreDeleted(\Illuminate\Http\Request $request): JsonResponse
+    {
+        $ids = $request->validate(['ids' => ['required', 'array', 'min:1', 'max:500'], 'ids.*' => ['integer']])['ids'];
+        $n = 0;
+        foreach (\App\Models\Lead::onlyTrashed()->where('company_id', auth()->user()->company_id)->whereIn('id', $ids)->get() as $lead) {
+            $lead->restore();
+            $n++;
+        }
+
+        return response()->json(['message' => "{$n} lead(s) restored.", 'count' => $n]);
+    }
+
+    /** POST /leads/deleted/purge {ids:[…]} — permanently removes already-deleted leads. */
+    public function purgeDeleted(\Illuminate\Http\Request $request): JsonResponse
+    {
+        $ids = $request->validate(['ids' => ['required', 'array', 'min:1', 'max:500'], 'ids.*' => ['integer']])['ids'];
+        $n = 0;
+        foreach (\App\Models\Lead::onlyTrashed()->where('company_id', auth()->user()->company_id)->whereIn('id', $ids)->get() as $lead) {
+            $lead->forceDelete();
+            $n++;
+        }
+
+        return response()->json(['message' => "{$n} lead(s) permanently deleted.", 'count' => $n]);
+    }
+
     public function export(LeadFilterRequest $request): StreamedResponse
     {
         $path = $this->leadService->export(

@@ -91,7 +91,7 @@ function SelfieCapture({ onDone }: { onDone: (f: File | null) => void }) {
 }
 
 export default function AttendancePage() {
-  const [tab, setTab] = useState<'attendance' | 'leave'>('attendance')
+  const [tab, setTab] = useState<'attendance' | 'leave'>(new URLSearchParams(window.location.search).get('tab') === 'leave' ? 'leave' : 'attendance')
   const [me, setMe] = useState<MeResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)

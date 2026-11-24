@@ -30,6 +30,8 @@ import StaffLeadsPage from '@/pages/leads/StaffLeadsPage'
 import LeadsByStaffPage from '@/pages/leads/LeadsByStaffPage'
 import LeadVerificationPage from '@/pages/leads/LeadVerificationPage'
 import HeldLeadsPage from '@/pages/leads/HeldLeadsPage'
+import DeletedLeadsPage from '@/pages/leads/DeletedLeadsPage'
+import LeadReportsPage from '@/pages/leads/LeadReportsPage'
 import LeadLogsPage from '@/pages/leads/LeadLogsPage'
 import LeadDetailPage from '@/pages/leads/LeadDetailPage'
 import LeadsSummaryPage from '@/pages/leads/LeadsSummaryPage'
@@ -350,6 +352,8 @@ export default function App() {
               <Route path="crm/leads/logs" element={<LeadLogsPage />} />
               <Route path="crm/leads/verification" element={<LeadVerificationPage />} />
               <Route path="crm/leads/held" element={<HeldLeadsPage />} />
+              <Route path="crm/leads/deleted" element={<DeletedLeadsPage />} />
+              <Route path="crm/leads/reports" element={<LeadReportsPage />} />
               <Route path="crm/leads/staff/:staffId" element={<StaffLeadsPage />} />
               <Route path="crm/leads/:id" element={<LeadDetailPage />} />
               <Route path="crm/leads/summary" element={<LeadsSummaryPage />} />

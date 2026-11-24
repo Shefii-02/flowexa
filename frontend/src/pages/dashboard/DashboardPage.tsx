@@ -7,6 +7,7 @@ import {
 import { analyticsApi } from '@/api'
 import { Spinner } from '@/components/ui'
 import TeamMembersPanel from '@/components/dashboard/TeamMembersPanel'
+import PackagePanel from '@/components/dashboard/PackagePanel'
 import { useAppSelector, usePermission } from '@/store'
 import { fmt } from '@/utils'
 
@@ -208,6 +209,9 @@ export default function DashboardPage() {
           )}
         </p>
       </div>
+
+      {/* The company's plan and what it allows — shown to admins (needs settings / plans access) */}
+      <PackagePanel />
 
       {/* Company admin / team head: every member, per section (HR · CRM · Leads). Renders nothing for anyone else. */}
       <TeamMembersPanel initial={mainSection === 'sales' ? 'leads' : 'hr'} />

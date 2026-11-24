@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAppDispatch, useAppSelector, usePermission } from '@/store'
 import { fetchStaffThunk } from '@/store/slices'
-import { staffApi, staffAccessApi, labelApi, deviceApi } from '@/api'
+import { staffApi, staffAccessApi, labelApi, deviceApi, staffExtrasApi } from '@/api'
 import { type AccessSection } from './AccessSectionPicker'
 import {
   Button, Input, Select, Modal, ConfirmModal,
@@ -80,7 +80,44 @@ export default function StaffPage() {
     dispatch(fetchStaffThunk({ page, search, per_page: 20 }))
   }, [dispatch, page, search])
 
+  // Profile extras: designation (a list the company grows), joining date, accessible users, documents
+  const [extras, setExtras] = useState<{ designation: string; joined_on: string; accessible: number[] }>({ designation: '', joined_on: '', accessible: [] })
+  const [designations, setDesignations] = useState<{ id: number; name: string }[]>([])
+  const [docTypes, setDocTypes] = useState<{ id: number; name: string }[]>([])
+  const [allStaff, setAllStaff] = useState<{ id: number; name: string }[]>([])
+  const [docs, setDocs] = useState<any[]>([])
+  const [docType, setDocType] = useState('')
+  const [docFile, setDocFile] = useState<File | null>(null)
+  const [docBusy, setDocBusy] = useState(false)
+  useEffect(() => {
+    if (!showModal) return
+    staffExtrasApi.designations().then((r) => setDesignations(r.data.data ?? [])).catch(() => {})
+    staffExtrasApi.documentTypes().then((r) => { setDocTypes(r.data.data ?? []); setDocType((t) => t || r.data.data?.[0]?.name || '') }).catch(() => {})
+    staffApi.list({ per_page: 200 }).then((r) => setAllStaff((r.data.data ?? r.data.staff ?? []).map((x: any) => ({ id: x.id, name: x.name })))).catch(() => {})
+  }, [showModal])
+  const loadExtras = (id: number) => {
+    staffExtrasApi.show(id).then((r) => setExtras({ designation: r.data.designation ?? '', joined_on: r.data.joined_on ?? '', accessible: r.data.accessible_user_ids ?? [] })).catch(() => {})
+    staffExtrasApi.documents(id).then((r) => setDocs(r.data.data ?? [])).catch(() => {})
+  }
+  const addDocument = async () => {
+    if (!editUser || !docFile || !docType) return
+    setDocBusy(true)
+    try { const r = await staffExtrasApi.upload(editUser.id, docType, docFile); setDocs(r.data.data ?? []); setDocFile(null) }
+    catch (e) { toast.error(getError(e)) } finally { setDocBusy(false) }
+  }
+  const addDesignation = async () => {
+    const name = window.prompt('New designation')?.trim()
+    if (!name) return
+    try { const r = await staffExtrasApi.addDesignation(name); setDesignations(r.data.data ?? []); setExtras((x) => ({ ...x, designation: name })) } catch (e) { toast.error(getError(e)) }
+  }
+  const addDocType = async () => {
+    const name = window.prompt('New document type (max 30 characters)')?.trim()
+    if (!name) return
+    try { const r = await staffExtrasApi.addDocumentType(name); setDocTypes(r.data.data ?? []); setDocType(name) } catch (e) { toast.error(getError(e)) }
+  }
+
   const openCreate = () => {
+    setExtras({ designation: '', joined_on: '', accessible: [] }); setDocs([])
     setEditUser(null)
     setForm({ name:'', email:'', password:'', password_confirmation:'', role_id: roles[0]?.id?.toString() || '', department:'', max_leads:'50' })
     setShowModal(true)
@@ -88,6 +125,7 @@ export default function StaffPage() {
 
   const openEdit = (u: any) => {
     setEditUser(u)
+    loadExtras(u.id)
     setForm({ name: u.name, email: u.email, password:'', password_confirmation:'', role_id: u.role?.id?.toString() || '', department: u.department || '', max_leads: u.max_leads?.toString() || '50' })
     setShowModal(true)
   }
@@ -99,10 +137,12 @@ export default function StaffPage() {
         const payload: any = { name: form.name, role_id: +form.role_id, department: form.department, max_leads: maxLeadsValue }
         if (form.password) { payload.password = form.password; payload.password_confirmation = form.password_confirmation }
         await staffApi.update(editUser.id, payload)
+        await staffExtrasApi.update(editUser.id, { designation: extras.designation || null, joined_on: extras.joined_on || null, accessible_user_ids: extras.accessible })
         toast.success('Staff updated.')
       } else {
         const { data } = await staffApi.create({ ...form, role_id: +form.role_id, max_leads: maxLeadsValue })
         const newId = data?.staff?.id ?? data?.data?.id
+        if (newId) await staffExtrasApi.update(newId, { designation: extras.designation || null, joined_on: extras.joined_on || null, accessible_user_ids: extras.accessible }).catch(() => {})
         toast.success('Staff created — set their access next.')
         setShowModal(false)
         if (newId && canManageAccess) { navigate(`/staff/access?staff=${newId}`); return }
@@ -240,6 +280,57 @@ export default function StaffPage() {
           <Input label="Department" placeholder="Sales, Support..." value={form.department} onChange={(e) => set('department', e.target.value)} />
           {handlesLeads && (
             <Input label="Max leads" type="number" min={1} max={500} value={form.max_leads} onChange={(e) => set('max_leads', e.target.value)} />
+          )}
+        </div>
+
+        <div className="mt-5 grid grid-cols-2 gap-4" data-testid="staff-extras">
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Designation</label>
+            <div className="flex gap-2">
+              <select className="input flex-1" value={extras.designation} onChange={(e) => setExtras({ ...extras, designation: e.target.value })}>
+                <option value="">Select</option>
+                {extras.designation && !designations.some((d) => d.name === extras.designation) && <option value={extras.designation}>{extras.designation}</option>}
+                {designations.map((d) => <option key={d.id} value={d.name}>{d.name}</option>)}
+              </select>
+              <button type="button" onClick={addDesignation} className="px-3 rounded-lg bg-brand-600 text-white text-sm" title="Add a designation">+</button>
+            </div>
+          </div>
+          <Input label="Joining date" type="date" value={extras.joined_on} onChange={(e) => setExtras({ ...extras, joined_on: e.target.value })} />
+          <div className="col-span-2">
+            <label className="block text-xs font-medium text-gray-600 mb-1">Accessible users <span className="font-normal text-gray-400">— whose leads {editUser?.name ?? 'this person'} can also see (besides their own)</span></label>
+            <div className="max-h-32 overflow-y-auto border border-gray-200 rounded-lg p-2 grid grid-cols-2 gap-x-3">
+              {allStaff.filter((p) => p.id !== editUser?.id).map((p) => (
+                <label key={p.id} className="flex items-center gap-1.5 text-sm py-0.5">
+                  <input type="checkbox" checked={extras.accessible.includes(p.id)} onChange={(e) => setExtras({ ...extras, accessible: e.target.checked ? [...extras.accessible, p.id] : extras.accessible.filter((x) => x !== p.id) })} /> {p.name}
+                </label>
+              ))}
+              {allStaff.length === 0 && <span className="text-xs text-gray-400">No other staff yet.</span>}
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-5" data-testid="staff-documents">
+          <p className="text-sm font-semibold text-gray-800 mb-2">Documents</p>
+          {!editUser ? <p className="text-xs text-gray-400">Save the staff member first, then edit them to upload documents.</p> : (
+            <>
+              <div className="flex flex-wrap items-end gap-2">
+                <div className="flex gap-1">
+                  <select className="input" value={docType} onChange={(e) => setDocType(e.target.value)}>{docTypes.map((t) => <option key={t.id} value={t.name}>{t.name}</option>)}</select>
+                  <button type="button" onClick={addDocType} className="px-2.5 rounded-lg bg-gray-100 text-sm" title="Add a document type">+</button>
+                </div>
+                <input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx" onChange={(e) => setDocFile(e.target.files?.[0] ?? null)} className="text-xs" />
+                <Button size="sm" onClick={addDocument} loading={docBusy} disabled={!docFile || !docType}>Upload</Button>
+              </div>
+              <ul className="mt-2 divide-y divide-gray-100 border border-gray-100 rounded-lg">
+                {docs.length === 0 ? <li className="p-2 text-xs text-gray-400">No documents uploaded.</li> : docs.map((d) => (
+                  <li key={d.id} className="flex items-center gap-2 px-2 py-1.5 text-sm">
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100">{d.type}</span>
+                    <a href={d.url} target="_blank" rel="noreferrer" className="flex-1 truncate text-brand-600 hover:underline">{d.title}</a>
+                    <button type="button" className="text-xs text-red-500" onClick={async () => { try { const r = await staffExtrasApi.removeDocument(editUser.id, d.id); setDocs(r.data.data ?? []) } catch (e) { toast.error(getError(e)) } }}>Remove</button>
+                  </li>
+                ))}
+              </ul>
+            </>
           )}
         </div>
 

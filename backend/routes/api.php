@@ -150,6 +150,7 @@ Route::prefix('v1')->group(function () {
 
         Route::get('mobile-modules/hidden', [\App\Http\Controllers\MobileModulesController::class, 'hidden']);
         Route::get('home/{workspace}', [\App\Http\Controllers\WorkspaceHomeController::class, 'show'])->where('workspace', 'sales|hr|administrators|marketing|accounts');   // one workspace's Home content in one call
+        Route::get('company-package', [\App\Http\Controllers\CompanyPackageController::class, 'show'])->middleware('permission:dashboard.view');   // dashboard "Active package" panel
         Route::get('web-config', [\App\Http\Controllers\MobileAppConfigController::class, 'web']);   // web menu sections to hide for me
         Route::get('mobile-config', [\App\Http\Controllers\MobileAppConfigController::class, 'show']);   // the company's own mobile layout
 
@@ -424,6 +425,19 @@ Route::prefix('v1')->group(function () {
                 Route::get('/account-access/options', [StaffAccountAccessController::class, 'options'])->name('account-access.options');
                 Route::get('/{staff}/account-access',  [StaffAccountAccessController::class, 'show'])->name('account-access.show');
                 Route::put('/{staff}/account-access',  [StaffAccountAccessController::class, 'update'])->name('account-access.update');
+
+                // Profile extras: designations, document types, documents, designation / joining date / accessible users
+                Route::get('/extras/designations',          [\App\Modules\Staff\Http\Controllers\StaffExtrasController::class, 'designations']);
+                Route::post('/extras/designations',         [\App\Modules\Staff\Http\Controllers\StaffExtrasController::class, 'storeDesignation']);
+                Route::delete('/extras/designations/{id}',  [\App\Modules\Staff\Http\Controllers\StaffExtrasController::class, 'destroyDesignation'])->whereNumber('id');
+                Route::get('/extras/document-types',        [\App\Modules\Staff\Http\Controllers\StaffExtrasController::class, 'documentTypes']);
+                Route::post('/extras/document-types',       [\App\Modules\Staff\Http\Controllers\StaffExtrasController::class, 'storeDocumentType']);
+                Route::delete('/extras/document-types/{id}', [\App\Modules\Staff\Http\Controllers\StaffExtrasController::class, 'destroyDocumentType'])->whereNumber('id');
+                Route::get('/{staff}/documents',            [\App\Modules\Staff\Http\Controllers\StaffExtrasController::class, 'documents'])->whereNumber('staff');
+                Route::post('/{staff}/documents',           [\App\Modules\Staff\Http\Controllers\StaffExtrasController::class, 'uploadDocument'])->whereNumber('staff');
+                Route::delete('/{staff}/documents/{id}',   [\App\Modules\Staff\Http\Controllers\StaffExtrasController::class, 'destroyDocument'])->whereNumber('staff')->whereNumber('id');
+                Route::get('/{staff}/extras',               [\App\Modules\Staff\Http\Controllers\StaffExtrasController::class, 'show'])->whereNumber('staff');
+                Route::put('/{staff}/extras',               [\App\Modules\Staff\Http\Controllers\StaffExtrasController::class, 'update'])->whereNumber('staff');
             });
         });
 
@@ -801,6 +815,17 @@ Route::prefix('v1')->group(function () {
             // was unusable by any role (owner included) purely due to the key mismatch. Consolidated
             // onto the real catalogue key, leads.manage, matching how "Sales Agent" is actually seeded.
             Route::post('/import', [LeadController::class, 'import'])->middleware(['permission:leads.manage', 'plan.monthly_limit:leads']);
+            Route::get('/import/sample',      [LeadController::class, 'importSample'])->middleware('permission:leads.view');
+            // Report pack: scheduled follow-ups calendar, staff, rejected, detailed summary, campaign-wise
+            Route::get('/reports/scheduled', [\App\Modules\Lead\Http\Controllers\LeadReportsController::class, 'scheduled'])->middleware('permission:leads.view');
+            Route::get('/reports/staff',     [\App\Modules\Lead\Http\Controllers\LeadReportsController::class, 'staff'])->middleware('permission:leads.view');
+            Route::get('/reports/rejected',  [\App\Modules\Lead\Http\Controllers\LeadReportsController::class, 'rejected'])->middleware('permission:leads.view');
+            Route::get('/reports/summary',   [\App\Modules\Lead\Http\Controllers\LeadReportsController::class, 'summary'])->middleware('permission:leads.view');
+            Route::get('/reports/campaigns', [\App\Modules\Lead\Http\Controllers\LeadReportsController::class, 'campaigns'])->middleware('permission:leads.view');
+            // Deleted leads — list, restore, purge (before the /{lead} routes)
+            Route::get('/deleted',            [LeadController::class, 'deleted'])->middleware('permission:leads.manage');
+            Route::post('/deleted/restore',   [LeadController::class, 'restoreDeleted'])->middleware('permission:leads.manage');
+            Route::post('/deleted/purge',     [LeadController::class, 'purgeDeleted'])->middleware('permission:leads.manage');
             Route::get('/export',  [LeadController::class, 'export'])->middleware('permission:leads.view_all');
 
             // Leads → Summary (Basic) + Report (Advanced). Declared before /{lead}.

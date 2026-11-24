@@ -18,7 +18,7 @@ class User extends Authenticatable implements JWTSubject
     protected $fillable = [
         'company_id', 'role_id', 'name', 'email', 'phone',
         'avatar', 'department', 'password', 'is_active',
-        'max_leads', 'last_login_at', 'portal_access', 'mobile_access', 'mobile_screens', 'web_screens', 'extra_permissions',
+        'max_leads', 'last_login_at', 'portal_access', 'mobile_access', 'mobile_screens', 'web_screens', 'extra_permissions', 'designation', 'joined_on', 'accessible_user_ids',
     ];
 
     protected $hidden = ['password', 'remember_token'];
@@ -30,6 +30,8 @@ class User extends Authenticatable implements JWTSubject
         'mobile_screens'  => 'array',
         'web_screens'     => 'array',
         'extra_permissions' => 'array',
+        'accessible_user_ids' => 'array',
+        'joined_on'       => 'date',
         'last_login_at'   => 'datetime',
         'email_verified_at' => 'datetime',
     ];
@@ -103,6 +105,12 @@ class User extends Authenticatable implements JWTSubject
     {
         if ($this->isSuperAdmin() || $this->isOwner()) return true;
         return $channel === 'mobile' ? (bool) $this->mobile_access : (bool) $this->portal_access;
+    }
+
+    /** Whose leads this person may see: themselves plus anyone listed under "Accessible users" on their staff profile. */
+    public function leadOwnerIds(): array
+    {
+        return array_values(array_unique(array_merge([$this->id], array_map('intval', (array) ($this->accessible_user_ids ?? [])))));
     }
 
     private ?array $_sectionKeys = null;

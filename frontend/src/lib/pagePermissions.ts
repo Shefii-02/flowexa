@@ -57,7 +57,7 @@ export const PAGE_SECTIONS: PageSection[] = [
   { section: 'Leads', pages: [
     p('/crm/leads/dashboard', 'Dashboard', 'leads.view'), p('/crm/leads', 'All Leads', 'leads.view'), p('/crm/leads/categories', 'Lead Categories', 'leads.view'),
     p('/crm/leads/by-staff', 'Leads by Staff', 'leads.manage', 'staff.view'), p('/crm/leads/logs', 'Lead Logs', 'leads.manage'), p('/crm/leads/verification', 'Verify Leads', 'leads.verify'),
-    p('/crm/leads/held', 'Held Leads', 'leads.manage'), p('/crm/leads/summary', 'Leads Summary', 'leads.view'), p('/crm/leads/report', 'Leads Report', 'leads.view'),
+    p('/crm/leads/held', 'Held Leads', 'leads.manage'), p('/crm/leads/deleted', 'Deleted Leads', 'leads.manage'), p('/crm/leads/reports', 'Lead Reports', 'leads.view'), p('/crm/leads/summary', 'Leads Summary', 'leads.view'), p('/crm/leads/report', 'Leads Report', 'leads.view'),
     p('/crm/leads/assignments', 'Assignment Queues', 'leads.view'), p('/crm/leads/assignment-rules', 'Assignment Rules', 'lead_assignment.manage'),
   ] },
   { section: 'Accounts', pages: [

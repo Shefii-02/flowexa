@@ -756,10 +756,12 @@ export const blacklistApi = {
 
 // ── Lead Import / Export ──────────────────────────────────────────────────
 export const leadImportExportApi = {
-  import: (file: File) => {
+  import: (file: File, options?: Record<string, string | number | undefined>) => {
     const fd = new FormData(); fd.append('file', file)
+    Object.entries(options ?? {}).forEach(([k, v]) => { if (v !== undefined && v !== '') fd.append(k, String(v)) })
     return api.post('/leads/import', fd, { headers: { 'Content-Type': 'multipart/form-data' } })
   },
+  sample: (withCountryCode: boolean) => api.get('/leads/import/sample', { params: { with_country_code: withCountryCode ? 1 : 0 }, responseType: 'blob' }),
   export: (p?: Record<string, unknown>) =>
     api.get('/leads/export', { params: p, responseType: 'blob' }),
 }
@@ -998,3 +1000,32 @@ export type ExpiryRow = {
   addons: { id: number; name: string; resource: string | null; amount: number | null; cycle: string; expires_at: string; days_left: number }[]
   last_followup: { kind: string; note: string | null; contacted_at: string; by: string | null } | null
 }
+
+// ── Deleted leads, lead reports, staff extras, package panel ──────────────
+export const leadDeletedApi = {
+  list: (p?: Record<string, unknown>) => api.get('/leads/deleted', { params: p }),
+  restore: (ids: number[]) => api.post('/leads/deleted/restore', { ids }),
+  purge: (ids: number[]) => api.post('/leads/deleted/purge', { ids }),
+}
+export const leadReportApi = {
+  scheduled: (p?: Record<string, unknown>) => api.get('/leads/reports/scheduled', { params: p }),
+  staff: (p?: Record<string, unknown>) => api.get('/leads/reports/staff', { params: p }),
+  rejected: (p?: Record<string, unknown>) => api.get('/leads/reports/rejected', { params: p }),
+  summary: (p?: Record<string, unknown>) => api.get('/leads/reports/summary', { params: p }),
+  campaigns: (p?: Record<string, unknown>) => api.get('/leads/reports/campaigns', { params: p }),
+}
+export const staffExtrasApi = {
+  designations: () => api.get('/staff/extras/designations'),
+  addDesignation: (name: string) => api.post('/staff/extras/designations', { name }),
+  documentTypes: () => api.get('/staff/extras/document-types'),
+  addDocumentType: (name: string) => api.post('/staff/extras/document-types', { name }),
+  show: (id: number) => api.get(`/staff/${id}/extras`),
+  update: (id: number, d: { designation?: string | null; joined_on?: string | null; accessible_user_ids?: number[] }) => api.put(`/staff/${id}/extras`, d),
+  documents: (id: number) => api.get(`/staff/${id}/documents`),
+  upload: (id: number, type: string, file: File, title?: string) => {
+    const fd = new FormData(); fd.append('type', type); fd.append('file', file); if (title) fd.append('title', title)
+    return api.post(`/staff/${id}/documents`, fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+  },
+  removeDocument: (id: number, docId: number) => api.delete(`/staff/${id}/documents/${docId}`),
+}
+export const companyPackageApi = { get: () => api.get('/company-package') }

@@ -27,13 +27,14 @@ class LeadRepository implements LeadRepositoryInterface
         // Instagram account they've been explicitly granted access to — not just leads
         // assigned to them — so a shared-session queue works for a team, not just 1:1.
         $scopedOrigin = $viewAll ? [] : (($user = User::find($userId)) ? Lead::scopedOriginAccessFor($user) : []);
+        $owners = ($user ?? null) ? $user->leadOwnerIds() : [$userId];
 
         return $this->applyFilters(
             Lead::with(['contact:id,name,phone,email,wa_id', 'assignedTo:id,name,email,department', 'categoryLinks'])
                 ->withCount('siblings as contact_leads_count')
                 ->where('company_id', $companyId)
-                ->when(!$viewAll, fn($q) => $q->where(function ($qq) use ($userId, $scopedOrigin) {
-                    $qq->where('assigned_to', $userId);
+                ->when(!$viewAll, fn($q) => $q->where(function ($qq) use ($userId, $scopedOrigin, $owners) {
+                    $qq->whereIn('assigned_to', $owners);   // their own leads + those of the staff listed under "Accessible users"
                     foreach ($scopedOrigin as $originType => $ids) {
                         $qq->orWhere(fn ($o) => $o->where('origin_type', $originType)->whereIn('origin_id', $ids));
                     }
@@ -50,12 +51,13 @@ class LeadRepository implements LeadRepositoryInterface
     public function recipients(int $companyId, int $userId, bool $viewAll, LeadFilterDTO $filter): Collection
     {
         $scopedOrigin = $viewAll ? [] : (($user = User::find($userId)) ? Lead::scopedOriginAccessFor($user) : []);
+        $owners = ($user ?? null) ? $user->leadOwnerIds() : [$userId];
 
         return $this->applyFilters(
             Lead::with('contact:id,name,phone')
                 ->where('company_id', $companyId)
-                ->when(!$viewAll, fn($q) => $q->where(function ($qq) use ($userId, $scopedOrigin) {
-                    $qq->where('assigned_to', $userId);
+                ->when(!$viewAll, fn($q) => $q->where(function ($qq) use ($userId, $scopedOrigin, $owners) {
+                    $qq->whereIn('assigned_to', $owners);   // their own leads + those of the staff listed under "Accessible users"
                     foreach ($scopedOrigin as $originType => $ids) {
                         $qq->orWhere(fn ($o) => $o->where('origin_type', $originType)->whereIn('origin_id', $ids));
                     }
@@ -76,6 +78,9 @@ class LeadRepository implements LeadRepositoryInterface
             ->when($filter->category,   fn($q) => $q->where(fn ($w) => $w->where('leads.category', $filter->category)->orWhere(fn ($x) => $x->inCategory($filter->category))))   // any of its categories, not just the primary
             ->when($filter->assignedTo, fn($q) => $q->where('assigned_to', $filter->assignedTo))
             ->when($filter->source,     fn($q) => $q->where('source', $filter->source))
+            ->when($filter->transferred, fn($q) => $q->whereExists(fn ($e) => $e->selectRaw('1')->from('lead_events')
+                ->whereColumn('lead_events.lead_id', 'leads.id')->where('lead_events.event', 'assigned')
+                ->whereNotNull('lead_events.payload->from')))
             ->when($filter->search,     fn($q) =>
                 $q->whereHas('contact', fn($c) =>
                     $c->where('name',  'like', "%{$filter->search}%")
@@ -354,6 +359,22 @@ class LeadRepository implements LeadRepositoryInterface
             ->get();
     }
 
+    /** CSV import is capped so one upload cannot tie up the request. */
+    public const IMPORT_MAX_ROWS = 1000;
+
+    /** Header spellings other CRMs / spreadsheets use → the field they mean. */
+    private const IMPORT_ALIASES = [
+        'phone' => ['phone', 'mobile', 'mobile_number', 'mobile_no', 'contact', 'contact_number', 'contact_no', 'phone_number', 'phone_no', 'whatsapp', 'whatsapp_number', 'client_phone', 'customer_phone'],
+        'name' => ['name', 'client_name', 'customer_name', 'full_name', 'lead_name'],
+        'email' => ['email', 'email_id', 'email_address'],
+        'address' => ['address', 'location'],
+        'pincode' => ['pincode', 'pin_code', 'pin', 'zip', 'zipcode', 'postal_code'],
+        'state' => ['state'], 'district' => ['district', 'city'],
+        'notes' => ['notes', 'note', 'remarks', 'remark', 'comment', 'comments'],
+        'category' => ['category', 'lead_category', 'category_name'], 'stage' => ['stage', 'lead_stage', 'status'], 'priority' => ['priority'],
+        'cost' => ['cost', 'amount', 'value'],
+    ];
+
     public function import(int $companyId, int $userId, ImportLeadDTO $dto): LeadImport
     {
         $path = $dto->file->store("lead-imports/{$companyId}", 'local');
@@ -365,60 +386,82 @@ class LeadRepository implements LeadRepositoryInterface
             'status'     => 'processing',
         ]);
 
-        $this->processImport($import, $companyId);
+        $this->processImport($import, $companyId, $userId, $dto->options);
 
         return $import->fresh();
     }
 
-    private function processImport(LeadImport $import, int $companyId): void
+    /** "with": the number already carries its country code. "without": add the default one (a leading 0 is dropped). */
+    private function importPhone(string $raw, string $mode, string $country): string
     {
-        $filePath = Storage::path($import->file_path);
-        $handle = fopen($filePath, 'r');
+        $d = preg_replace('/\D/', '', $raw);
+        if ($d === '' || $mode !== 'without') { return $d; }
 
+        return $country . ltrim($d, '0');
+    }
+
+    private function processImport(LeadImport $import, int $companyId, int $userId, array $o = []): void
+    {
+        $handle = fopen(Storage::path($import->file_path), 'r');
         if ($handle === false) {
             $import->update(['status' => 'failed', 'errors' => ['Unable to open import file.']]);
             return;
         }
 
-        $headers = array_map('trim', fgetcsv($handle));
-        $imported = 0;
-        $skipped = 0;
-        $failed = 0;
-        $errors = [];
-        $row = 0;
+        // map each header to a field through the aliases (so "client name" / "contact number" / "address" just work)
+        $headerLine = fgetcsv($handle) ?: [];
+        $map = [];
+        foreach ($headerLine as $idx => $h) {
+            $key = trim(preg_replace('/[^a-z0-9]+/', '_', strtolower(ltrim((string) $h, "\xEF\xBB\xBF"))), '_');
+            foreach (self::IMPORT_ALIASES as $field => $names) {
+                if (in_array($key, $names, true) && !isset($map[$field])) { $map[$field] = $idx; }
+            }
+        }
+        if (!isset($map['phone'])) {
+            fclose($handle); Storage::delete($import->file_path);
+            $import->update(['status' => 'failed', 'errors' => ['No phone column found — use a header such as "phone" or "contact number".']]);
+            return;
+        }
+
+        $mode = $o['country_code_mode'] ?? 'with';
+        $country = preg_replace('/\D/', '', (string) ($o['default_country_code'] ?? '91')) ?: '91';
+        $stages = ['new', 'contacted', 'follow_up', 'enrolled', 'lost'];
+        $imported = $skipped = $failed = 0; $errors = []; $row = 0;
+        $get = fn (array $line, string $f) => isset($map[$f]) ? trim((string) ($line[$map[$f]] ?? '')) : '';
 
         while (($line = fgetcsv($handle)) !== false) {
+            if (!array_filter($line, fn ($c) => trim((string) $c) !== '')) { continue; }   // blank line
             $row++;
-            if (count($line) < count($headers)) { $skipped++; continue; }
+            if ($row > self::IMPORT_MAX_ROWS) { $errors[] = 'Only the first ' . self::IMPORT_MAX_ROWS . ' rows were imported — split the file and upload the rest.'; break; }
 
-            $data = array_combine($headers, $line);
-            $phone = preg_replace('/\D/', '', trim($data['phone'] ?? ''));
-
-            if (!$phone) { $errors[] = "Row {$row}: missing phone"; $failed++; continue; }
+            $phone = $this->importPhone($get($line, 'phone'), $mode, $country);
+            if ($phone === '' || strlen($phone) < 8) { $errors[] = "Row {$row}: missing or invalid phone"; $failed++; continue; }
 
             try {
+                $extra = array_filter(['address' => $get($line, 'address'), 'pincode' => $get($line, 'pincode'), 'state' => $get($line, 'state'), 'district' => $get($line, 'district')]);
                 $contact = Contact::firstOrCreate(
                     ['company_id' => $companyId, 'phone' => $phone],
-                    ['name' => $data['name'] ?? null, 'email' => $data['email'] ?? null, 'opted_in' => true]
+                    ['name' => $get($line, 'name') ?: null, 'email' => $get($line, 'email') ?: null, 'opted_in' => true, 'custom_fields' => $extra ?: null]
                 );
 
-                $existing = Lead::where('contact_id', $contact->id)
-                    ->where('company_id', $companyId)
-                    ->whereNotIn('stage', ['enrolled', 'lost'])
-                    ->exists();
+                if (Lead::where('contact_id', $contact->id)->where('company_id', $companyId)->whereNotIn('stage', ['enrolled', 'lost'])->exists()) { $skipped++; continue; }
 
-                if ($existing) { $skipped++; continue; }
+                $stage = strtolower(str_replace([' ', '-'], '_', $get($line, 'stage') ?: ($o['stage'] ?? 'new')));
+                $priority = strtolower($get($line, 'priority') ?: ($o['priority'] ?? 'medium'));
+                $priority = $priority === 'normal' ? 'medium' : $priority;
+                $assignTo = !empty($o['assign_to']) && User::where('company_id', $companyId)->whereKey((int) $o['assign_to'])->exists() ? (int) $o['assign_to'] : null;
 
                 Lead::create([
-                    'company_id' => $companyId,
-                    'contact_id' => $contact->id,
-                    'stage'      => $data['stage']    ?? 'new',
-                    'priority'   => $data['priority'] ?? 'medium',
-                    'category'   => $data['category'] ?? null,
-                    'source'     => 'import',
-                    'notes'      => $data['notes']    ?? null,
+                    'company_id'  => $companyId,
+                    'contact_id'  => $contact->id,
+                    'stage'       => in_array($stage, $stages, true) ? $stage : 'new',
+                    'priority'    => in_array($priority, ['low', 'medium', 'high'], true) ? $priority : 'medium',
+                    'category'    => $get($line, 'category') ?: ($o['category'] ?? null),
+                    'source'      => $o['source'] ?? 'import',
+                    'notes'       => $get($line, 'notes') ?: null,
+                    'cost'        => is_numeric($get($line, 'cost')) ? (float) $get($line, 'cost') : null,
+                    'assigned_to' => $assignTo, 'assigned_by' => $assignTo ? $userId : null, 'assigned_at' => $assignTo ? now() : null,
                 ]);
-
                 $imported++;
             } catch (\Exception $e) {
                 $errors[] = "Row {$row}: " . $e->getMessage();

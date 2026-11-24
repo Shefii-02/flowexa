@@ -2,7 +2,7 @@
 import { useLimit } from '@/lib/planUsage'
 import LimitBadge from '@/components/plan/LimitBadge'
 import { useEffect, useState, useCallback } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { DndContext, useDraggable, useDroppable, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
 import { useAppDispatch, useAppSelector } from '@/store'
 import { fetchLeadsThunk, fetchLeadAnalyticsThunk, updateLeadInList } from '@/store/slices'
@@ -24,13 +24,20 @@ export default function LeadsPage() {
   const dispatch   = useAppDispatch()
   const navigate   = useNavigate()
   const { list, total, analytics, loading } = useAppSelector((s) => s.leads)
+  const me = useAppSelector((s) => s.auth.user)
+  // Sidebar shortcuts (My Leads, New Leads, Transfer Leads …) arrive as ?stage= / ?mine=1 / ?transferred=1
+  const [urlParams] = useSearchParams()
+  const urlStage = urlParams.get('stage') ?? ''
+  const urlMine = urlParams.get('mine') === '1'
+  const urlTransferred = urlParams.get('transferred') === '1'
 
   const [page,    setPage]    = useState(1)
   const [view,    setView]    = useState<'table'|'kanban'>('table')
-  const [stage,   setStage]   = useState('')
+  const [stage,   setStage]   = useState(urlStage)
   const [sourceFilter, setSourceFilter] = useState('')
   const [sources, setSources] = useState<Record<string, { label: string; icon: string }>>({})
-  const [assignedFilter, setAssignedFilter] = useState('')
+  const [assignedFilter, setAssignedFilter] = useState(urlMine && me ? String(me.id) : '')
+  useEffect(() => { setStage(urlStage); setAssignedFilter(urlMine && me ? String(me.id) : ''); setPage(1) }, [urlStage, urlMine, urlTransferred]) // eslint-disable-line react-hooks/exhaustive-deps
   const [search,  setSearch]  = useState('')
   const [createdFrom, setCreatedFrom] = useState('')
   const [createdTo,   setCreatedTo]   = useState('')
@@ -43,6 +50,10 @@ export default function LeadsPage() {
   const [stageUpdating, setStageUpdating] = useState<number|null>(null)
 
   const [showImport, setShowImport] = useState(false)
+  // import options (the wizard): number format and the defaults applied to every imported row
+  const [impMode, setImpMode] = useState<'with' | 'without'>('without')
+  const [impCountry, setImpCountry] = useState('91')
+  const [imp, setImp] = useState({ stage: 'new', priority: 'medium', category: '', source: 'import', assign_to: '' })
   const [csvFile, setCsvFile] = useState<File | null>(null)
   const [importing, setImporting] = useState(false)
   const [exporting, setExporting] = useState(false)
@@ -56,6 +67,8 @@ export default function LeadsPage() {
   const [newContact, setNewContact] = useState(false)
   const [newContactPhone, setNewContactPhone] = useState('')
   const [newContactName, setNewContactName] = useState('')
+  const [newContactEmail, setNewContactEmail] = useState('')
+  const [phoneCheck, setPhoneCheck] = useState<'idle' | 'checking' | 'existing' | 'new'>('idle')
   const [createForm, setCreateForm] = useState({ category: '', priority: 'medium', notes: '', assigned_to: '', source: 'manual', origin_label: '' })
   const [categories, setCategories] = useState<string[]>([])
 
@@ -112,11 +125,12 @@ export default function LeadsPage() {
     created_to: createdTo || undefined,
     closed_from: closedFrom || undefined,
     closed_to: closedTo || undefined,
+    transferred: urlTransferred ? 1 : undefined,
   }
 
   const load = useCallback(() => {
     dispatch(fetchLeadsThunk({ page, per_page: perPage, ...filters }))
-  }, [dispatch, page, perPage, stage, sourceFilter, assignedFilter, search, createdFrom, createdTo, closedFrom, closedTo]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [dispatch, page, perPage, stage, sourceFilter, assignedFilter, search, createdFrom, createdTo, closedFrom, closedTo, urlTransferred]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Kanban: every column loads its own leads (own count, own "load more") instead of slicing the table's single page
   type Col = { items: Lead[]; total: number; page: number; loading: boolean }
@@ -186,7 +200,10 @@ export default function LeadsPage() {
     if (!csvFile) return
     setImporting(true)
     try {
-      const { data } = await leadImportExportApi.import(csvFile)
+      const { data } = await leadImportExportApi.import(csvFile, {
+        country_code_mode: impMode, default_country_code: impMode === 'without' ? impCountry : undefined,
+        stage: imp.stage, priority: imp.priority, category: imp.category.trim(), source: imp.source.trim(), assign_to: imp.assign_to,
+      })
       const s = data.import
       toast.success(s ? `Imported ${s.imported}, skipped ${s.skipped}, failed ${s.failed}.` : (data.message ?? 'Imported.'))
       setShowImport(false); setCsvFile(null)
@@ -197,18 +214,29 @@ export default function LeadsPage() {
 
   // Debounced contact search for the "+ Add lead" contact picker
   useEffect(() => {
-    if (!showCreate || newContact || !contactQuery.trim()) { setContactResults([]); return }
+    // Phone-first: type the number, we check whether that contact already exists and fill their details in
+    const digits = contactQuery.replace(/\D/g, '')
+    if (!showCreate || digits.length < 7) { setContactResults([]); setSelectedContact(null); setPhoneCheck('idle'); return }
+    setPhoneCheck('checking')
+    let stale = false
     const t = setTimeout(() => {
-      contactApi.list({ search: contactQuery, per_page: 8 })
-        .then((r) => setContactResults(r.data.data ?? []))
-        .catch(() => setContactResults([]))
-    }, 300)
-    return () => clearTimeout(t)
-  }, [contactQuery, showCreate, newContact])
+      contactApi.list({ search: digits, per_page: 8 })
+        .then((r) => {
+          if (stale) return
+          const rows: any[] = r.data.data ?? []
+          const hit = rows.find((c) => { const p = String(c.phone ?? '').replace(/\D/g, ''); return p === digits || p.endsWith(digits) || digits.endsWith(p) })
+          setContactResults(rows)
+          if (hit) { setSelectedContact(hit); setNewContactName(hit.name ?? ''); setNewContactEmail(hit.email ?? ''); setPhoneCheck('existing') }
+          else { setSelectedContact(null); setPhoneCheck('new') }
+        })
+        .catch(() => { if (!stale) { setContactResults([]); setPhoneCheck('new') } })
+    }, 350)
+    return () => { stale = true; clearTimeout(t) }
+  }, [contactQuery, showCreate])
 
   const resetCreate = () => {
     setShowCreate(false); setContactQuery(''); setContactResults([]); setSelectedContact(null)
-    setNewContact(false); setNewContactPhone(''); setNewContactName('')
+    setNewContact(false); setNewContactPhone(''); setNewContactName(''); setNewContactEmail(''); setPhoneCheck('idle')
     setCreateForm({ category: '', priority: 'medium', notes: '', assigned_to: '', source: 'manual', origin_label: '' })
   }
 
@@ -216,12 +244,18 @@ export default function LeadsPage() {
     setCreating(true)
     try {
       let contactId = selectedContact?.id
-      if (!contactId && newContact) {
-        if (!newContactPhone.trim()) { toast.error('Phone is required.'); setCreating(false); return }
-        const { data } = await contactApi.create({ phone: newContactPhone.trim(), name: newContactName.trim() || undefined })
+      if (contactId) {
+        // existing contact — save any manual edits to their name / email before the lead is created
+        const name = newContactName.trim(), email = newContactEmail.trim()
+        if (name !== (selectedContact.name ?? '') || email !== (selectedContact.email ?? '')) {
+          await contactApi.update(contactId, { name: name || undefined, email: email || undefined })
+        }
+      } else {
+        if (contactQuery.replace(/\D/g, '').length < 7) { toast.error('Enter the customer\'s phone number.'); setCreating(false); return }
+        const { data } = await contactApi.create({ phone: contactQuery.trim(), name: newContactName.trim() || undefined, email: newContactEmail.trim() || undefined })
         contactId = data.contact?.id ?? data.id
       }
-      if (!contactId) { toast.error('Pick a contact first.'); setCreating(false); return }
+      if (!contactId) { toast.error('Could not save the contact.'); setCreating(false); return }
 
       await leadApi.create({
         contact_id: contactId,
@@ -364,13 +398,11 @@ export default function LeadsPage() {
     finally { setBulkDeleting(false) }
   }
 
-  const downloadSampleCsv = () => {
-    const sample = [
-      'phone,name,email,stage,priority,category,notes',
-      '918086544821,Priya Nair,priya@gmail.com,new,medium,Admissions,Called about fees',
-      '918086544822,Rahul Thomas,,contacted,high,Admissions,Interested in evening batch',
-    ].join('\n')
-    downloadBlob(new Blob([sample], { type: 'text/csv' }), 'leads_sample.csv')
+  const downloadSampleCsv = async () => {
+    try {
+      const r = await leadImportExportApi.sample(impMode === 'with')
+      downloadBlob(r.data, impMode === 'with' ? 'leads_sample_with_country_code.csv' : 'leads_sample.csv')
+    } catch (e) { toast.error(getError(e)) }
   }
 
     const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }))
@@ -702,6 +734,36 @@ export default function LeadsPage() {
         }
       >
         <div className="space-y-4">
+          <div className="flex border-b border-gray-200" role="tablist">
+            {([['with', 'With country code'], ['without', 'Without country code']] as const).map(([id, label]) => (
+              <button key={id} role="tab" aria-selected={impMode === id} onClick={() => setImpMode(id)}
+                className={`px-3 py-2 text-sm -mb-px border-b-2 ${impMode === id ? 'border-brand-600 text-brand-700 font-medium' : 'border-transparent text-gray-500'}`}>{label}</button>
+            ))}
+          </div>
+          <p className="text-xs text-gray-500">
+            {impMode === 'with'
+              ? 'Numbers in the file already start with the country code (e.g. 919812345678).'
+              : <>Numbers are local (e.g. 9812345678) — this country code is added: <input value={impCountry} onChange={(e) => setImpCountry(e.target.value.replace(/\D/g, '').slice(0, 4))} className="input !w-16 !py-0.5 !px-2 inline-block mx-1" /></>}
+          </p>
+          <div className="grid grid-cols-2 gap-3">
+            <label className="text-xs text-gray-600">Lead stage
+              <select className="input mt-1" value={imp.stage} onChange={(e) => setImp({ ...imp, stage: e.target.value })}>
+                {['new', 'contacted', 'follow_up', 'enrolled', 'lost'].map((x) => <option key={x} value={x}>{x.replace('_', ' ')}</option>)}
+              </select></label>
+            <label className="text-xs text-gray-600">Priority
+              <select className="input mt-1" value={imp.priority} onChange={(e) => setImp({ ...imp, priority: e.target.value })}>
+                {['low', 'medium', 'high'].map((x) => <option key={x} value={x}>{x}</option>)}
+              </select></label>
+            <label className="text-xs text-gray-600">Lead category
+              <input className="input mt-1" placeholder="e.g. Admissions" value={imp.category} onChange={(e) => setImp({ ...imp, category: e.target.value })} /></label>
+            <label className="text-xs text-gray-600">Lead source
+              <input className="input mt-1" value={imp.source} onChange={(e) => setImp({ ...imp, source: e.target.value })} /></label>
+            <label className="text-xs text-gray-600 col-span-2">Assign to staff
+              <select className="input mt-1" value={imp.assign_to} onChange={(e) => setImp({ ...imp, assign_to: e.target.value })}>
+                <option value="">Leave unassigned</option>
+                {counsellors.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select></label>
+          </div>
           <div className="flex justify-end">
             <button onClick={downloadSampleCsv} className="text-xs text-brand-600 hover:underline">↓ Download sample CSV</button>
           </div>
@@ -710,15 +772,10 @@ export default function LeadsPage() {
             <label htmlFor="lead-csv-input" className="cursor-pointer">
               <p className="text-2xl mb-2">📂</p>
               <p className="text-sm font-medium text-gray-700">{csvFile ? csvFile.name : 'Click to select CSV file'}</p>
-              <p className="text-xs text-gray-400 mt-1">Required column: <strong>phone</strong>. Optional: name, email, stage, priority, category, notes</p>
+              <p className="text-xs text-gray-400 mt-1">Needs a phone column — <strong>phone</strong>, <strong>contact number</strong> and <strong>mobile</strong> all work. Also read: name / client name, email, address, pincode, state, district, category, stage, priority, cost, remarks.</p>
             </label>
           </div>
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-700">
-            <strong>CSV format:</strong><br/>
-            <code>phone,name,email,stage,priority,category,notes</code><br/>
-            <code>918086544821,Priya Nair,priya@gmail.com,new,medium,Admissions,Called about fees</code>
-          </div>
-          <p className="text-xs text-gray-400">A contact is matched (or created) by phone. A lead already open for that contact is left as-is — rows for it are skipped.</p>
+          <p className="text-xs text-blue-700">Limit: 1000 rows per file. A contact is matched (or created) by phone; a lead already open for that contact is skipped.</p>
         </div>
       </Modal>
 
@@ -727,41 +784,24 @@ export default function LeadsPage() {
         footer={
           <>
             <Button variant="secondary" onClick={resetCreate}>Cancel</Button>
-            <Button onClick={handleCreate} loading={creating}>Create lead</Button>
+            <Button onClick={handleCreate} loading={creating} disabled={phoneCheck === 'idle' || phoneCheck === 'checking'}>Create lead</Button>
           </>
         }>
         <div className="space-y-3">
           <div>
-            <span className="label">Contact</span>
-            {selectedContact ? (
-              <div className="mt-1 flex items-center justify-between border border-gray-200 rounded-lg px-3 py-2">
-                <div>
-                  <p className="text-sm font-medium text-gray-900">{selectedContact.name || '(no name)'}</p>
-                  <p className="text-xs text-gray-400 font-mono">{formatPhone(selectedContact.phone)}</p>
-                </div>
-                <button onClick={() => setSelectedContact(null)} className="text-xs text-gray-400 hover:underline">Change</button>
-              </div>
-            ) : newContact ? (
-              <div className="mt-1 space-y-2">
-                <input className="input w-full" placeholder="Phone *" value={newContactPhone} onChange={(e) => setNewContactPhone(e.target.value)} />
-                <input className="input w-full" placeholder="Name" value={newContactName} onChange={(e) => setNewContactName(e.target.value)} />
-                <button onClick={() => setNewContact(false)} className="text-xs text-gray-400 hover:underline">← Search an existing contact instead</button>
-              </div>
-            ) : (
-              <div className="mt-1 space-y-1.5">
-                <input className="input w-full" placeholder="Search name or phone…" value={contactQuery} onChange={(e) => setContactQuery(e.target.value)} />
-                {contactResults.length > 0 && (
-                  <div className="border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-40 overflow-y-auto">
-                    {contactResults.map((c) => (
-                      <button key={c.id} onClick={() => { setSelectedContact(c); setContactResults([]) }}
-                        className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50">
-                        <span className="font-medium text-gray-900">{c.name || '(no name)'}</span>{' '}
-                        <span className="text-xs text-gray-400 font-mono">{formatPhone(c.phone)}</span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-                <button onClick={() => setNewContact(true)} className="text-xs text-brand-600 hover:underline">+ Can't find them? Add a new contact</button>
+            <span className="label">Customer phone number *</span>
+            <input className="input w-full mt-1 font-mono" inputMode="tel" autoFocus placeholder="e.g. 9876543210 or +91 98765 43210"
+              value={contactQuery} onChange={(e) => setContactQuery(e.target.value)} />
+            <p className={`text-xs mt-1 ${phoneCheck === 'existing' ? 'text-green-600' : phoneCheck === 'new' ? 'text-amber-600' : 'text-gray-400'}`}>
+              {phoneCheck === 'idle' && 'Type the number — we check whether this customer is already in your contacts.'}
+              {phoneCheck === 'checking' && 'Checking contacts…'}
+              {phoneCheck === 'existing' && '✓ Existing contact found — details filled in. You can edit them.'}
+              {phoneCheck === 'new' && 'New number — a new contact will be added with the details below.'}
+            </p>
+            {(phoneCheck === 'existing' || phoneCheck === 'new') && (
+              <div className="grid grid-cols-2 gap-2 mt-2">
+                <input className="input w-full" placeholder="Customer name" value={newContactName} onChange={(e) => setNewContactName(e.target.value)} />
+                <input className="input w-full" placeholder="Email (optional)" value={newContactEmail} onChange={(e) => setNewContactEmail(e.target.value)} />
               </div>
             )}
           </div>

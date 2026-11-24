@@ -20,6 +20,7 @@ class LeadFilterRequest extends FormRequest
             'source'      => ['nullable', 'string'],
             'search'      => ['nullable', 'string', 'max:100'],
             'created_from'=> ['nullable', 'date'],
+            'transferred' => ['nullable', 'boolean'],
             'created_to'  => ['nullable', 'date'],
             'closed_from' => ['nullable', 'date'],
             'closed_to'   => ['nullable', 'date'],
