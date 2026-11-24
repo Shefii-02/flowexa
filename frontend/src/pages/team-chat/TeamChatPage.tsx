@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
 import { useSearchParams } from 'react-router-dom'
+import { chatIdFromParam, chatSlug } from '@/lib/teamChatSlug'
 import { api as http } from '@/api/client'
 import { useAppSelector } from '@/store'
 import { subscribeStaffEvent } from '@/socket/staffSocket'
@@ -32,7 +33,7 @@ export default function TeamChatPage() {
   const [more, setMore] = useState(false)
   const [loading, setLoading] = useState(true)
   const [modal, setModal] = useState<null | 'chat' | 'group' | 'info'>(null)
-  const sel = Number(params.get('c')) || null
+  const sel = chatIdFromParam(params.get('c'))   // ?c=sales-team-1k9x (or an old ?c=12)
   const gen = useRef(0)
   const selRef = useRef<number | null>(null); selRef.current = sel
 
@@ -64,8 +65,12 @@ export default function TeamChatPage() {
     return () => { off(); clearInterval(poll); clearTimeout(t) }
   }, [load, me?.id])
 
-  const open = (id: number | null) => { const n = new URLSearchParams(params); id ? n.set('c', String(id)) : n.delete('c'); setParams(n, { replace: true }) }
+  // the link carries the chat's name + a unique code; a direct chat names both people
+  const slugFor = useCallback((id: number) => { const c = chats.find(x => x.id === id); return chatSlug(id, !c ? [] : c.type === 'group' ? [c.name] : [me?.name ?? '', c.name]) }, [chats, me?.name])
+  const open = (id: number | null) => { const n = new URLSearchParams(params); id ? n.set('c', slugFor(id)) : n.delete('c'); setParams(n, { replace: true }) }
   const current = useMemo(() => chats.find(c => c.id === sel), [chats, sel])
+  // once the chat is known (opened from a bare code / old link / just created), show its proper name-and-code link
+  useEffect(() => { if (sel && current && params.get('c') !== slugFor(sel)) { const n = new URLSearchParams(window.location.search); n.set('c', slugFor(sel)); setParams(n, { replace: true }) } }, [sel, current, slugFor]) // eslint-disable-line react-hooks/exhaustive-deps
   const unreadChats = counts.unread_chats ?? 0
 
   // Unread tab disappears when nothing is unread.

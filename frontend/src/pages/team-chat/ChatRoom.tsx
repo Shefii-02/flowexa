@@ -51,6 +51,10 @@ export default function ChatRoom({ chatId, myId, admin = false, title, onChanged
   const tempSeq = useRef(0)
   const lastTypingEmit = useRef(0)
   const fileRef = useRef<HTMLInputElement>(null)
+  const taRef = useRef<HTMLTextAreaElement>(null)
+  // @-mentions: typing "@" lists the group's members (and @all); the open token is the text between the @ and the caret
+  const [mention, setMention] = useState<{ q: string; start: number } | null>(null)
+  const [mIdx, setMIdx] = useState(0)
   const debounce = useRef<ReturnType<typeof setTimeout>>()
 
   const mergeMsgs = useCallback((rows: Msg[]) => setMsgs(prev => {
@@ -129,6 +133,41 @@ export default function ChatRoom({ chatId, myId, admin = false, title, onChanged
   }
 
   const names = useMemo(() => new Map((info?.members ?? []).map(m => [m.id, m.name])), [info])
+  const isGroup = info?.type === 'group'
+  const options = useMemo(() => {
+    if (!mention) return [] as { key: string; label: string; sub?: string; insert: string }[]
+    const q = mention.q.toLowerCase()
+    const people = (info?.members ?? []).filter(m => m.id !== myId && m.name.toLowerCase().includes(q)).sort((a, b) => Number(b.name.toLowerCase().startsWith(q)) - Number(a.name.toLowerCase().startsWith(q))).slice(0, 7)
+      .map(m => ({ key: `u${m.id}`, label: m.name, sub: m.role === 'admin' ? 'Group admin' : undefined, insert: `@${m.name} ` }))
+    const all = isGroup && 'all'.startsWith(q) ? [{ key: 'all', label: 'all', sub: `Notify everyone in this group (${Math.max(0, (info?.members.length ?? 1) - 1)} people)`, insert: '@all ' }] : []
+    return [...all, ...people]
+  }, [mention, info, myId, isGroup])
+  useEffect(() => { setMIdx(0) }, [mention?.q])
+  const pickMention = (o: { insert: string }) => {
+    if (!mention) return
+    const caret = taRef.current?.selectionStart ?? text.length
+    const next = text.slice(0, mention.start) + o.insert + text.slice(caret)
+    setText(next); setMention(null)
+    const pos = mention.start + o.insert.length
+    requestAnimationFrame(() => { taRef.current?.focus(); taRef.current?.setSelectionRange(pos, pos) })
+  }
+  /** Look at the text before the caret: an unfinished "@something" opens the picker. */
+  const trackMention = (value: string, caret: number) => {
+    const m = /(^|\s)@([^\s@]*)$/.exec(value.slice(0, caret))
+    setMention(m ? { q: m[2], start: caret - m[2].length - 1 } : null)
+  }
+  /** message text with @names and @all picked out */
+  const renderBody = (body: string) => {
+    const names = [...(info?.members ?? [])].map(m => m.name).filter(Boolean).sort((a, b) => b.length - a.length)
+    const alt = ['all', ...names].map(n => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')
+    const re = new RegExp(`(^|\\s)(@(?:${alt}))(?![\\p{L}\\p{N}])`, 'giu')
+    const out: React.ReactNode[] = []; let last = 0; let k = 0
+    for (const m of body.matchAll(re)) {
+      const at = (m.index ?? 0) + m[1].length
+      out.push(body.slice(last, at)); out.push(<span key={k++} className="rounded bg-sky-100 px-0.5 font-semibold text-sky-700">{m[2]}</span>); last = at + m[2].length
+    }
+    out.push(body.slice(last)); return out
+  }
   const canPost = admin ? false : !(info?.type === 'group' && info.only_admins_post && info.my_role !== 'admin')
 
   const send = async () => {
@@ -139,7 +178,10 @@ export default function ChatRoom({ chatId, myId, admin = false, title, onChanged
       catch (e) { toast.error(errMsg(e)) } finally { setBusy(false) }
       return
     }
-    const mentions = [...body.matchAll(/@([^\s@]+(?: [^\s@]+)?)/g)].map(x => [...names.entries()].find(([, n]) => n.toLowerCase() === x[1].toLowerCase())?.[0]).filter(Boolean) as number[]
+    const picked = [...body.matchAll(/@([^\s@]+(?: [^\s@]+)?)/g)].map(x => [...names.entries()].find(([, n]) => n.toLowerCase() === x[1].toLowerCase())?.[0]).filter(Boolean) as number[]
+    // "@all" mentions every other member of the group (the server keeps only real members)
+    const everyone = isGroup && /(^|\s)@all(?![\p{L}\p{N}])/iu.test(body) ? (info?.members ?? []).map(m => m.id).filter(id => id !== myId) : []
+    const mentions = [...new Set([...picked, ...everyone])]
     const temp = -(++tempSeq.current)
     // client_id makes a retry (socket ack timed out → REST) return the stored message instead of sending twice, and lets every
     // device of the sender swap its optimistic copy for the real one.
@@ -221,7 +263,7 @@ export default function ChatRoom({ chatId, myId, admin = false, title, onChanged
                       : <>
                           {m.deleted && admin && <div className="mb-1 rounded bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-600">Deleted{m.deleted_by_name ? ` by ${m.deleted_by_name}` : ''} · original shown to admins</div>}
                           <Attachment m={m} />
-                          {m.body && <div className="whitespace-pre-wrap break-words text-sm text-gray-800">{m.body}</div>}
+                          {m.body && <div className="whitespace-pre-wrap break-words text-sm text-gray-800">{isGroup || (m.mentions?.length ?? 0) > 0 ? renderBody(m.body) : m.body}</div>}
                         </>}
                     <div className="mt-1 flex items-center justify-end gap-1.5 text-[10.5px] text-gray-400">
                       {m.pinned && <span>📌</span>}{m.starred && <span className="text-amber-500">★</span>}
@@ -268,12 +310,34 @@ export default function ChatRoom({ chatId, myId, admin = false, title, onChanged
             <div className="flex items-end gap-2">
               <input ref={fileRef} type="file" className="hidden" onChange={e => e.target.files?.[0] && sendFile(e.target.files[0])} />
               <button onClick={() => fileRef.current?.click()} disabled={busy} className="rounded-full p-2 text-xl text-sky-600 hover:bg-sky-50" title="Attach a file">📎</button>
+              <div className="relative flex-1">
+              {options.length > 0 && (
+                <div className="absolute bottom-full left-0 z-30 mb-2 w-72 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-xl" role="listbox">
+                  {options.map((o, i) => (
+                    <button key={o.key} role="option" aria-selected={i === mIdx} onMouseDown={e => { e.preventDefault(); pickMention(o) }} onMouseEnter={() => setMIdx(i)}
+                      className={`flex w-full items-center gap-2 px-3 py-2 text-left text-sm ${i === mIdx ? 'bg-sky-50' : ''}`}>
+                      <span className="flex h-7 w-7 items-center justify-center rounded-full bg-sky-100 text-xs font-bold text-sky-700">{o.key === 'all' ? '@' : o.label.charAt(0).toUpperCase()}</span>
+                      <span className="min-w-0 flex-1"><span className="block truncate font-medium text-gray-800">{o.key === 'all' ? '@all' : o.label}</span>{o.sub && <span className="block truncate text-xs text-gray-400">{o.sub}</span>}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
               <textarea
-                value={text} rows={1} placeholder={info?.type === 'group' ? 'Message the group…' : 'Message'}
-                onChange={e => { setText(e.target.value); const n = Date.now(); if (e.target.value.trim() && n - lastTypingEmit.current > 3000) { lastTypingEmit.current = n; emitTyping(chatId, true) } }}
-                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }}
-                className="max-h-32 flex-1 resize-none rounded-2xl border border-sky-100 bg-white px-4 py-2.5 text-sm outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
+                ref={taRef} value={text} rows={1} placeholder={info?.type === 'group' ? 'Message the group…  (type @ to mention)' : 'Message'}
+                onChange={e => { setText(e.target.value); trackMention(e.target.value, e.target.selectionStart ?? e.target.value.length); const n = Date.now(); if (e.target.value.trim() && n - lastTypingEmit.current > 3000) { lastTypingEmit.current = n; emitTyping(chatId, true) } }}
+                onKeyDown={e => {
+                  if (options.length > 0) {
+                    if (e.key === 'ArrowDown') { e.preventDefault(); setMIdx(i => (i + 1) % options.length); return }
+                    if (e.key === 'ArrowUp') { e.preventDefault(); setMIdx(i => (i - 1 + options.length) % options.length); return }
+                    if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); pickMention(options[mIdx] ?? options[0]); return }
+                    if (e.key === 'Escape') { e.preventDefault(); setMention(null); return }
+                  }
+                  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() }
+                }}
+                onClick={e => trackMention(text, (e.target as HTMLTextAreaElement).selectionStart ?? text.length)}
+                className="max-h-32 w-full resize-none rounded-2xl border border-sky-100 bg-white px-4 py-2.5 text-sm outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
               />
+              </div>
               <button onClick={send} disabled={busy || !text.trim()} className="rounded-full bg-sky-500 px-4 py-2.5 text-sm font-semibold text-white shadow hover:bg-sky-600 disabled:opacity-40">{editing ? 'Save' : 'Send'}</button>
             </div>
           ) : <div className="py-2 text-center text-sm text-gray-500">Only admins can send messages in this group</div>}
