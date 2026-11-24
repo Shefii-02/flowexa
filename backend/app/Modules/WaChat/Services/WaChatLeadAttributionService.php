@@ -26,7 +26,7 @@ class WaChatLeadAttributionService
 
     // ── open-wa: origin = which WA session received it, campaign = message_sender_jobs ──
     /** @return bool true if this reply resulted in a new lead being created. */
-    public function handleInboundMessage(int $companyId, string $sessionRef, string $phone, ?Carbon $receivedAt = null, ?string $chatId = null): bool
+    public function handleInboundMessage(int $companyId, string $sessionRef, string $phone, ?Carbon $receivedAt = null, ?string $chatId = null, ?string $text = null, ?string $kind = null): bool
     {
         return $this->attribute(
             chatId:         $chatId,
@@ -37,13 +37,15 @@ class WaChatLeadAttributionService
             campaignField:  'wa_open_campaign_id',
             resolveOrigin:  fn() => $this->resolveWaSessionOrigin($companyId, $sessionRef),
             resolveCampaign: fn(Carbon $at) => $this->matchOpenWaCampaign($companyId, $phone, $at),
+            text:           $text,
+            kind:           $kind,
         );
     }
 
     // ── WA Cloud: origin = which of the company's phone numbers received it, campaign
     // = the existing Modules/Campaign `campaigns` table (leads.campaign_id already exists) ──
     /** @return bool true if this reply resulted in a new lead being created. */
-    public function handleInboundMetaCloudMessage(int $companyId, string $phoneNumberId, string $phone, ?Carbon $receivedAt = null): bool
+    public function handleInboundMetaCloudMessage(int $companyId, string $phoneNumberId, string $phone, ?Carbon $receivedAt = null, ?string $text = null, ?string $kind = null): bool
     {
         return $this->attribute(
             companyId:      $companyId,
@@ -53,6 +55,8 @@ class WaChatLeadAttributionService
             campaignField:  'campaign_id',
             resolveOrigin:  fn() => $this->resolvePhoneNumberOrigin($companyId, $phoneNumberId),
             resolveCampaign: fn(Carbon $at) => $this->matchWaCloudCampaign($companyId, $phone, $at),
+            text:           $text,
+            kind:           $kind,
         );
     }
 
@@ -65,6 +69,8 @@ class WaChatLeadAttributionService
         \Closure $resolveOrigin,
         \Closure $resolveCampaign,
         ?string $chatId = null,   // the real WhatsApp chat id ("…@lid" / "…@c.us") when the channel has one
+        ?string $text = null,     // what this very message said (a voice note: its transcript) — for the review check
+        ?string $kind = null,     // text | voice | audio | image | video | document | sticker | location …
     ): bool {
         if ($phone === '') {
             return false;
@@ -91,6 +97,7 @@ class WaChatLeadAttributionService
         // source switched off in Assignment Rules → keep the contact in Held leads instead of creating the lead
         if (\App\Services\LeadSourceGate::intercept($companyId, $contact->id, $source, [
             'origin_type' => $originType, 'origin_id' => $originId, 'origin_label' => $originLabel, $campaignField => $campaignId,
+            'text' => $text, 'kind' => $kind,
         ])) {
             return false;
         }

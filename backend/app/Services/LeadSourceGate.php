@@ -86,6 +86,17 @@ class LeadSourceGate
         return [];
     }
 
+    /** What to show a reviewer when the message has no readable text: 🎤 for a voice note we could not transcribe, 🖼️ for a picture … */
+    private static function kindLabel(string $kind): ?string
+    {
+        return match ($kind) {
+            'voice', 'audio', 'ptt' => '🎤 Voice message (could not be read)',
+            'image' => '🖼️ Image', 'video' => '🎞️ Video', 'document' => '📄 Document', 'sticker' => '🙂 Sticker', 'location' => '📍 Location',
+            'contacts', 'vcard' => '👤 Contact card',
+            default => null,
+        };
+    }
+
     /** Is this single account (WA session / phone number / Instagram account / widget / ad account) switched on? No row = on. */
     public static function accountOn(int $companyId, string $type, int $id): bool
     {
@@ -171,10 +182,15 @@ class LeadSourceGate
                     return false;   // a lead-form / flow contact is an enquiry by definition — nothing to check
                 }
                 $texts = self::inboundTexts($companyId, $contactId, $key);
-                if ($key === 'wa_chat' || !$texts) {
+                // the message that just arrived is not stored yet when this runs — add it (a voice note arrives as its transcript)
+                $now = trim((string) ($attrs['text'] ?? ''));
+                if ($now !== '' && end($texts) !== $now) { $texts[] = $now; }
+                $kind = (string) ($attrs['kind'] ?? 'text');
+                if ($key === 'wa_chat' && !$texts || !$texts) {
                     // WA Chat keeps its messages on the phone gateway; its conversation label (when one exists) stands in for the text check
                     $t = \App\Models\ConversationTopic::where('company_id', $companyId)->where('contact_id', $contactId)->orderByDesc('classified_at')->first();
-                    if ($t) { $review = ['topic' => $t->topic, 'topic_confidence' => $t->confidence, 'sample_text' => null, 'confident' => $t->confidence >= 0.55]; }
+                    if ($t) { $review = ['topic' => $t->topic, 'topic_confidence' => $t->confidence, 'sample_text' => self::kindLabel($kind), 'confident' => $t->confidence >= 0.55]; }
+                    else { $review = ['topic' => 'other', 'topic_confidence' => 0.0, 'sample_text' => self::kindLabel($kind) ?? '(nothing readable yet)', 'confident' => false]; }
                 } else {
                     $r = \App\Services\Topics\TopicRules::classify($texts);
                     $review = ['topic' => $r['topic'], 'topic_confidence' => $r['confidence'], 'sample_text' => mb_substr((string) end($texts), 0, 400), 'confident' => $r['confident']];

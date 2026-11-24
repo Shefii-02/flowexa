@@ -733,6 +733,8 @@ class WahaSessionController extends Controller
                             $phone,
                             null,
                             (string) $from,
+                            (string) $body,
+                            (string) $type,
                         );
                     } catch (\Throwable $e) {
                         Log::error('Webhook lead attribution error: ' . $e->getMessage());

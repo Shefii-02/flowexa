@@ -130,7 +130,7 @@ export default function HeldLeadsPage() {
                   <td className="text-xs text-gray-600 max-w-[260px]">
                     {held ? <>
                       {r.topic && <span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-medium mb-1 ${r.topic === 'lead_enquiry' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-800'}`}>{TOPIC_LABEL[r.topic] ?? r.topic}{r.topic_confidence != null ? ` · ${Math.round(r.topic_confidence * 100)}%` : ''}</span>}
-                      <span className="line-clamp-2 block">{r.sample_text ? `“${r.sample_text}”` : r.notes ?? '—'}</span></> : <>
+                      <span className="line-clamp-2 block">{r.sample_text ? (/^[\p{Extended_Pictographic}(]/u.test(r.sample_text) ? r.sample_text : `“${r.sample_text}”`) : r.notes ?? '—'}</span></> : <>
                       <Badge variant={r.status === 'moved' ? 'green' : 'gray'}>{r.status}</Badge>
                       <span className="block text-gray-400">{r.result_note ?? ''}{r.handled_by ? ` · ${r.handled_by}` : ''}</span></>}
                   </td>

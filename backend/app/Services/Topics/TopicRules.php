@@ -19,6 +19,7 @@ class TopicRules
                   'admission', 'course', 'enroll', 'enrol', 'site visit', 'buy', 'purchase', 'book now', 'enquiry', 'inquiry', 'interested',
                   'send details', 'share details', 'send me the details', 'send me details', 'the details', 'details pls', 'is this available', 'need details', 'do you have', 'is it available', 'availability', 'want to buy', 'looking for',
                   'vila', 'rate evide', 'ethra aanu', 'ethra aakum', 'ethra rupa', 'demo venam', 'details tharamo', 'details venam', 'kittumo', 'undo', 'venam',
+                  'rate entha', 'price entha', 'cost entha', 'fees entha', 'fees ethra', 'fee ethra', 'etra aanu', 'ethra aan', 'ethra varum', 'rate parayamo', 'price parayamo', 'details ayakku', 'details ayachu', 'details onnu ayakku', 'details ayachu tharu', 'details tharumo', 'ariyikkamo', 'ariyan', 'join cheyyan', 'join cheyyanam', 'admission venam', 'admission undo', 'course undo', 'seat undo', 'class undo', 'batch undo', 'demo class', 'online undo', 'available aano', 'stock undo', 'kittumo', 'visit cheyyan', 'call cheyyamo', 'vilikkamo', 'enquiry aanu', 'ente aavasyam', 'enikku venam', 'enikku vendi', 'interested aanu', 'interest undu', 'vilikku', 'whatsapp il ayakku', 'location evide', 'evide aanu', 'address evide',
                   'kitna', 'kitne', 'chahiye', 'details bhejo', 'milega', 'kab milega', 'interested hu', 'price kya', 'rate kya',
                   'വില', 'എത്ര', 'ഡെമോ', 'വേണം', 'ലഭ്യമാണോ', 'ഉണ്ടോ', 'വിവരങ്ങൾ', 'कीमत', 'कितना', 'चाहिए', 'जानकारी', 'डेमो'],
             1 => ['details', 'plans', 'plan', 'information', 'info', 'tell me', 'more about', 'need', 'require', 'wanted', 'available', 'visit'],
@@ -30,6 +31,7 @@ class TopicRules
                   'server down', 'is down', 'sync issue', 'qr code', 'session expired', 'disconnected', 'reset password', 'forgot password', 'password reset',
                   'webhook', 'api key', 'installation', 'how to setup', 'setup help', 'configure', 'stuck', 'hang', 'hangs', 'hanging', 'failed', 'failing',
                   'work cheyyunnilla', 'work aakunnilla', 'work avunnilla', 'open aakunnilla', 'login aakunnilla', 'varunnilla', 'kaanunnilla', 'pattunnilla', 'prashnam', 'error varunnu',
+                  'work aavunnilla', 'login aavunnilla', 'open aavunnilla', 'load aavunnilla', 'connect aakunnilla', 'send aakunnilla', 'error kanikkunnu', 'otp varunnilla', 'otp vannilla', 'message povunnilla', 'qr scan', 'problem undu', 'prashnam undu', 'sariyakunnilla', 'sheriyakunnilla', 'engane use cheyyam', 'engane cheyyum', 'engane install', 'app open aakunnilla',
                   'kaam nahi kar raha', 'nahi chal raha', 'nahi khul raha', 'chal nahi raha', 'error aa raha', 'login nahi', 'otp nahi aa raha', 'dikkat',
                   'ശരിയാകുന്നില്ല', 'പ്രശ്നം', 'വർക്ക് ചെയ്യുന്നില്ല', 'തുറക്കുന്നില്ല', 'समस्या', 'काम नहीं कर रहा'],
             1 => ['issue', 'problem', 'slow', 'update', 'install', 'setup', 'login', 'otp', 'app', 'website', 'link', 'help'],
@@ -37,7 +39,8 @@ class TopicRules
         'billing' => [
             2 => ['invoice', 'invoices', 'bill', 'billing', 'payment', 'paid', 'refund', 'receipt', 'gst', 'gst number', 'tax invoice', 'transaction', 'upi',
                   'bank details', 'account number', 'amount debited', 'double charged', 'charged twice', 'renewal', 'renew', 'subscription', 'outstanding',
-                  'payment failed', 'paid already', 'pay cheythu', 'bill venam', 'refund venam', 'paisa', 'kaasu', 'bill chahiye', 'paise', 'bhugtan', 'paisa kat gaya',
+                  'payment failed', 'paid already', 'pay cheythu', 'bill venam', 'refund venam', 'paisa', 'kaasu',
+                  'paisa poyi', 'amount poyi', 'refund tharumo', 'refund kittiyilla', 'bill ayakku', 'invoice ayakku', 'invoice venam', 'payment aayilla', 'payment kittiyilla', 'paid aayi', 'gst bill', 'receipt venam', 'bill chahiye', 'paise', 'bhugtan', 'paisa kat gaya',
                   'ബിൽ', 'പേയ്മെന്റ്', 'പണം', 'रसीद', 'भुगतान', 'बिल'],
             1 => ['amount', 'due', 'pay', 'cheque', 'tax', 'charge'],
         ],
@@ -46,6 +49,7 @@ class TopicRules
                   'useless', 'no response', 'nobody replied', 'not happy', 'unhappy', 'angry', 'escalate', 'consumer court', 'legal action', 'disgusting', 'ridiculous',
                   'fed up', 'still waiting', 'since days', 'again and again', 'worst service', 'waste of money', 'poor quality',
                   'mosham', 'reply illa', 'response illa', 'thattippu', 'kashtam', 'pattichu',
+                  'mosham service', 'reply illallo', 'ennum reply illa', 'aarum reply cheythilla', 'cheating aanu', 'kallam', 'pattikkal', 'paranju pattichu', 'complaint undu',
                   'shikayat', 'bakwas', 'dhokha', 'bekar', 'ghatiya', 'koi jawab nahi',
                   'പരാതി', 'മോശം', 'ദേഷ്യം', 'शिकायत', 'धोखा'],
             1 => ['delay', 'delayed', 'late', 'manager', 'bad', 'rude', 'sorry', 'wrong'],
@@ -53,7 +57,7 @@ class TopicRules
         'existing_customer' => [
             2 => ['my order', 'when will my', 'my delivery', 'my parcel', 'my shipment', 'order status', 'order id', 'order number', 'my account', 'already bought', 'already purchased', 'i purchased', 'i bought', 'my booking',
                   'booking id', 'track my', 'tracking', 'delivery status', 'when will i get', 'my subscription', 'warranty', 'service request', 'my ticket', 'customer id',
-                  'invoice number', 'as discussed', 'as per our', 'last time', 'earlier you', 'my previous', 'ente order', 'ente account', 'order status entha',
+                  'invoice number', 'as discussed', 'as per our', 'last time', 'earlier you', 'my previous', 'ente order', 'ente account', 'order status entha', 'order ethiyilla', 'order vannilla', 'ente booking', 'delivery enn varum', 'enn kittum', 'ente ticket',
                   'mera order', 'mera account', 'order kab aayega', 'मेरा ऑर्डर'],
             1 => ['ticket', 'delivery', 'delivered', 'received', 'shipment', 'dispatch'],
         ],
@@ -72,10 +76,27 @@ class TopicRules
 
     private static function normalize(string $text): string
     {
+        return self::foldManglish(self::tidy($text));
+    }
+
+    /** Lower-cased, punctuation-free text with the spelling left as typed (the greeting list is matched against this). */
+    private static function tidy(string $text): string
+    {
         $t = mb_strtolower($text, 'UTF-8');
         $t = preg_replace("/[^\p{L}\p{M}\p{N}'’\s]+/u", ' ', $t) ?? $t;     // punctuation / emoji → space (apostrophes kept: "can't")
         $t = str_replace('’', "'", $t);
         return trim(preg_replace('/\s+/u', ' ', $t) ?? $t);
+    }
+
+    /**
+     * Malayalam typed in English letters has no fixed spelling (ethra / ethara / etra, kittumo / kittumoo, aakunnilla / akunnilla). Both the message and
+     * every keyword go through this same fold, so the common variants meet: doubled vowels and "th"/"dh"/"kk"-style doubles collapse to one letter.
+     * Only Latin text is touched (Malayalam / Devanagari script is left alone).
+     */
+    private static function foldManglish(string $t): string
+    {
+        if (!preg_match('/[a-z]/', $t)) { return $t; }
+        return preg_replace(['/(a|e|i|o|u)\1+/', '/th/', '/dh/', '/(k|t|p|d|n|m|l|r|s)\1+/'], ['$1', 't', 'd', '$1'], $t) ?? $t;
     }
 
     /** @return array<string,array<int,string>> topic => weight => compiled regex */
@@ -118,7 +139,7 @@ class TopicRules
 
     public static function isTrivial(string $text): bool
     {
-        $norm = self::normalize($text);
+        $norm = self::tidy($text);
         return $norm === '' || (mb_strlen($norm) <= 14 && preg_match(self::TRIVIAL, $norm) === 1);
     }
 

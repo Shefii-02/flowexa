@@ -101,12 +101,20 @@ class WebhookService
         // engines below: a failure here must never break inbound message processing.
         // Run before the MessageLog write below so that write can record whether this
         // exact message was the one that created a new lead.
+        // A real voice note is transcribed first (it is anyway, a few lines down) so the review check can read what was said.
+        $voiceTranscript = null;
+        if ($dto->type === 'audio' && ($dto->rawPayload['audio']['voice'] ?? false) && trim((string) $dto->text) === '') {
+            $voiceTranscript = $this->resolveVoiceTranscript($company, $dto);
+        }
         $leadCreated = false;
         try {
             $leadCreated = app(WaChatLeadAttributionService::class)->handleInboundMetaCloudMessage(
                 $company->id,
                 (string) ($company->wa_phone_id ?: 'meta_cloud'),
                 $dto->phone,
+                null,
+                (string) ($dto->text ?? $dto->replyTitle ?? $dto->caption ?? $voiceTranscript ?? ''),
+                $voiceTranscript !== null ? 'voice' : (string) $dto->type,
             );
         } catch (\Throwable $e) {
             Log::warning('WA Cloud lead attribution failed: ' . $e->getMessage());
@@ -145,10 +153,6 @@ class WebhookService
         // message's text would be used below — keyword automations and the AI agent alike —
         // same "understanding always works" behavior as the open-wa side (see
         // WahaSessionController::resolveVoiceTranscript()).
-        $voiceTranscript = null;
-        if ($dto->type === 'audio' && ($dto->rawPayload['audio']['voice'] ?? false) && trim((string) $dto->text) === '') {
-            $voiceTranscript = $this->resolveVoiceTranscript($company, $dto);
-        }
         $inboundText = (string) ($dto->text ?? $dto->replyTitle ?? $dto->caption ?? $voiceTranscript ?? '');
 
         // 3c. WA Cloud automation rules (welcome / keyword / out-of-office). Best-effort —
