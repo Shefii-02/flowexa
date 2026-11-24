@@ -367,6 +367,7 @@ export interface LeadAssignmentRule {
   id: number
   company_id: number
   auto_assign_enabled: boolean
+  assign_outside_hours?: boolean
   weight_availability: number
   weight_max_leads: number
   weight_performance: number

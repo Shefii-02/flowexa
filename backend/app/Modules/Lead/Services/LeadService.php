@@ -153,6 +153,7 @@ class LeadService
     public function autoAssign(int $companyId, array $leadIds, string $strategy, ?string $staffScope = null, ?array $staffIds = null, ?bool $notify = null): array
     {
         // null scope = follow the routing rules; otherwise the chosen pool (all / attendance-online / selected / selected+online) decides who may get leads
+        \App\Models\StaffAvailability::recountWorkload($companyId);   // lead limits are judged on what people really hold
         $pool = $staffScope === null ? false : app(\App\Services\LeadAssignment\StaffPoolResolver::class)->resolve($companyId, $staffScope, $staffIds);
         $company = \App\Models\Company::findOrFail($companyId);
         $engine  = app(\App\Services\LeadAssignment\LeadAssignmentEngine::class);
@@ -192,7 +193,7 @@ class LeadService
      * @param array|false|null $pool false = the routing rules decide (availability applies), null = everyone, array = exactly these
      * @return string[]
      */
-    private function whyNoStaff(int $companyId, array|bool|null $pool): array
+    public function whyNoStaff(int $companyId, array|bool|null $pool): array
     {
         if (is_array($pool) && $pool === [\App\Services\LeadAssignment\StaffPoolResolver::NOBODY]) {
             return ['Nobody in the chosen pool is clocked in right now (attendance-based). Choose "All staff" or "Selected staff", or ask them to clock in.'];
@@ -260,6 +261,7 @@ class LeadService
             }
         });
 
+        \App\Models\StaffAvailability::recountWorkload($companyId);   // give every owner's slots back, whatever way the lead was assigned
         return ['count' => $done, 'sample' => $sample];
     }
 

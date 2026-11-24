@@ -425,7 +425,7 @@ class LeadAssignmentController extends Controller
             'notification_mode', 'notification_gap_seconds', 'notification_timeout_seconds', 'max_notification_rounds',
             'duplicate_window_days', 'duplicate_action',
             'working_hours_start', 'working_hours_end', 'working_days', 'timezone',
-            'auto_assign_run_mode', 'auto_assign_interval_minutes', 'auto_assign_run_start', 'auto_assign_run_end',
+            'auto_assign_run_mode', 'auto_assign_interval_minutes', 'auto_assign_run_start', 'auto_assign_run_end', 'assign_outside_hours',
         ]));
 
         return response()->json(['data' => $this->ruleWithSchedule($rule->fresh())]);
@@ -443,8 +443,12 @@ class LeadAssignmentController extends Controller
         $company = Auth::user()->company;
         $rule = LeadAssignmentRule::firstOrCreate(['company_id' => $company->id], LeadAssignmentRule::defaultForCompany($company->id));
         abort_unless($rule->auto_assign_enabled, 422, 'Auto-assign is switched off.');
-        $r = app(\App\Services\LeadAssignment\ScheduledAutoAssigner::class)->runForCompany($company);
-        $why = $r['waiting'] > 0 ? " {$r['waiting']} lead(s) are still waiting: no staff member could take them right now — everyone is offline or away, at their lead limit, outside the chosen staff, or it is outside working hours. They are retried automatically." : '';
+        $r = app(\App\Services\LeadAssignment\ScheduledAutoAssigner::class)->runForCompany($company, 200, true);   // an admin's click ignores working hours, like the Auto assign button
+        $why = '';
+        if ($r['waiting'] > 0) {
+            $reasons = app(\App\Modules\Lead\Services\LeadService::class)->whyNoStaff($company->id, false);
+            $why = " {$r['waiting']} lead(s) are still waiting — no staff member could take them. Why: " . implode('; ', $reasons) . '. They are retried automatically.';
+        }
         return response()->json(['message' => "{$r['routed']} lead(s) routed" . ($r['found'] === 0 ? ' — nothing was waiting.' : '.') . $why, ...$r, 'data' => $this->ruleWithSchedule($rule->fresh())]);
     }
 

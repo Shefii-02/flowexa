@@ -147,6 +147,8 @@ export default function AssignmentRulesPage() {
                 </label>
               </div>
             )}
+            <label className="flex items-start gap-2 text-sm"><input type="checkbox" className="mt-0.5" checked={!!rule.assign_outside_hours} onChange={e => set('assign_outside_hours', e.target.checked)} />
+              <span><b>Also assign outside working hours</b> — off: a lead that arrives after hours waits (the AI agent engages) until the next working period. The Run now button and the Auto assign button always ignore working hours.</span></label>
             <div className="flex items-center justify-between flex-wrap gap-2 text-xs text-gray-500">
               <span>
                 Last run: {rule.auto_assign_last_run_at ? `${new Date(rule.auto_assign_last_run_at).toLocaleString()} · ${rule.auto_assign_last_run_count ?? 0} lead(s)` : 'never'}

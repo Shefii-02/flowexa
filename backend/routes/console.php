@@ -37,6 +37,7 @@ Schedule::command('subscriptions:sweep')->dailyAt('00:30')->withoutOverlapping()
 Schedule::command('leads:check-sla')->everyMinute();
 // Catches leads that never went through the routing engine (manual/CSV-created) — sweeps
 // "Unassigned" and routes them via the same round-robin / weighted engine as any other lead.
+Schedule::command('leads:recount-workload')->hourly()->withoutOverlapping();   // heal drifted open-lead counters
 Schedule::command('leads:process-unassigned')->everyMinute()->withoutOverlapping();   // each company runs on its own interval / window (Assignment rules → schedule)
 Schedule::command('leads:process-handoffs')->everyFiveMinutes();
 Schedule::command('leads:update-performance')->dailyAt('01:00');

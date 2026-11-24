@@ -60,8 +60,9 @@ class ScheduledAutoAssigner
      * (nobody online / at capacity / outside working hours → the AI agent held them and the lead stayed ownerless). The second kind
      * used to be skipped forever, which is why leads piled up unassigned.
      */
-    public function runForCompany(Company $company, int $limit = 200): array
+    public function runForCompany(Company $company, int $limit = 200, bool $manual = false): array
     {
+        \App\Models\StaffAvailability::recountWorkload($company->id);   // lead limits are judged on what people really hold
         $auto = in_array(LeadAssignmentRule::where('company_id', $company->id)->value('notification_mode'), ['auto', 'silent'], true);
         $leads = Lead::where('company_id', $company->id)->whereNull('assigned_to')
             ->whereNotIn('stage', ['enrolled', 'lost'])
@@ -89,10 +90,10 @@ class ScheduledAutoAssigner
             try {
                 $stuck = $auto ? $lead->assignments()->where('status', 'ai_handling')->whereNull('staff_id')->latest('id')->first() : null;
                 if ($stuck) {
-                    $this->engine->retryWaiting($company, $stuck) ? $routed++ : $waiting++;
+                    $this->engine->retryWaiting($company, $stuck, $manual) ? $routed++ : $waiting++;
                     continue;
                 }
-                $a = $this->engine->assign($company, $lead->contact, $lead->source ?: 'organic', $lead->campaign_id, null, 'auto', $lead);
+                $a = $this->engine->assign($company, $lead->contact, $lead->source ?: 'organic', $lead->campaign_id, null, 'auto', $lead, null, null, false, null, $manual);
                 $a->status === 'ai_handling' ? $waiting++ : $routed++;   // handed to the AI agent = nobody could take it yet
             } catch (\Throwable $e) {
                 Log::warning('Scheduled auto-assign failed', ['lead_id' => $lead->id, 'error' => $e->getMessage()]);
@@ -103,6 +104,9 @@ class ScheduledAutoAssigner
             'auto_assign_last_run_at' => now(), 'auto_assign_last_run_count' => $routed,
         ]);
 
-        return ['routed' => $routed, 'found' => $leads->count(), 'waiting' => $waiting];
+        $rule = LeadAssignmentRule::where('company_id', $company->id)->first();
+        $closed = $waiting > 0 && !$manual && $rule && !$rule->assign_outside_hours && !$this->engine->withinWorkingHours($company, $rule);   // the cron only hands out leads in working hours
+
+        return ['routed' => $routed, 'found' => $leads->count(), 'waiting' => $waiting, 'outside_hours' => $closed];
     }
 }

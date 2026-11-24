@@ -41,6 +41,7 @@ class LeadAssignmentEngine
         ?string $strategyOverride = null,   // manual "Auto assign" button: 'algorithm' | 'round_robin' — assigns instantly, ignores working hours
         array|bool|null $poolOverride = false,   // manual button only: false = follow the routing rules / default pool, null = every available staff member, array = exactly these (see StaffPoolResolver)
         ?bool $notify = null,   // manual button only: false = no notification to the staff member, true = notify, null = follow the company's mode
+        bool $ignoreHours = false,   // an admin pressed Run now: working hours are not asked (the cron still asks)
     ): LeadAssignment {
         $rule = LeadAssignmentRule::where('company_id', $company->id)->first()
             ?? LeadAssignmentRule::create(LeadAssignmentRule::defaultForCompany($company->id));
@@ -101,7 +102,7 @@ class LeadAssignmentEngine
 
         return DB::transaction(function () use (
             $company, $contact, $campaignId, $sourceType, $sourceRef,
-            $assignmentType, $rule, $dupCheck, $lead, $onlyStaffIds, $strategyOverride, $routing, $poolOverride, $ignoreByScope
+            $assignmentType, $rule, $dupCheck, $lead, $onlyStaffIds, $strategyOverride, $routing, $poolOverride, $ignoreByScope, $ignoreHours
         ) {
             $resolvedType = $rule->notification_mode === 'uber' ? 'notification' : $assignmentType;
 
@@ -135,7 +136,7 @@ class LeadAssignmentEngine
 
             // Outside the company's working hours (per-weekday schedule + holiday
             // overrides) → hand straight to the AI agent so the lead isn't dropped.
-            if (!$strategyOverride && !$this->withinWorkingHours($company, $rule)) {
+            if (!$strategyOverride && !$ignoreHours && !$rule->assign_outside_hours && !$this->withinWorkingHours($company, $rule)) {
                 $this->startAiAgent($assignment, $company, $contact);
                 $assignment->update(['transfer_reason' => 'Received outside working hours — AI agent engaged.']);
                 return $assignment;
@@ -193,10 +194,10 @@ class LeadAssignmentEngine
      * so the AI agent took it and the lead stayed unassigned. Try again now with the same rules; true = a staff member took it.
      * (Only for "Auto-assign" mode; the accept/decline modes have their own cascade.)
      */
-    public function retryWaiting(Company $company, LeadAssignment $assignment): bool
+    public function retryWaiting(Company $company, LeadAssignment $assignment, bool $ignoreHours = false): bool
     {
         $rule = LeadAssignmentRule::where('company_id', $company->id)->first();
-        if (!$rule || !in_array($rule->notification_mode, ['auto', 'silent'], true) || !$this->withinWorkingHours($company, $rule)) {
+        if (!$rule || !in_array($rule->notification_mode, ['auto', 'silent'], true) || (!$ignoreHours && !$rule->assign_outside_hours && !$this->withinWorkingHours($company, $rule))) {
             return false;
         }
         $lead = $assignment->lead_id ? Lead::find($assignment->lead_id) : null;

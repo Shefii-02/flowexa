@@ -19,6 +19,7 @@ class StaffLeadInsights
     /** @param int[]|null $onlyIds */
     public function overview(int $companyId, ?array $onlyIds = null): Collection
     {
+        \App\Models\StaffAvailability::recountWorkload($companyId);   // the page must show what people really hold, not a drifted counter
         $staff = User::where('company_id', $companyId)->where('is_active', true)
             ->when($onlyIds, fn ($q) => $q->whereIn('id', $onlyIds))
             ->with('role:id,name')
@@ -71,7 +72,7 @@ class StaffLeadInsights
                 'availability' => [
                     'status' => $a?->status ?? 'offline', 'is_available' => (bool) ($a?->is_available),
                     'last_seen_at' => $a?->last_seen_at?->toIso8601String(),
-                    'open_leads' => (int) ($a?->current_leads_count ?? 0),
+                    'open_leads' => $leads['active'],
                 ],
                 'leads' => $leads,
                 'conversion_rate' => $leads['total'] > 0 ? round($leads['enrolled'] / $leads['total'] * 100, 1) : 0,
