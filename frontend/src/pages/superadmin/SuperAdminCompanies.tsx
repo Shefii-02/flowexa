@@ -706,8 +706,8 @@ export default function SuperAdminCompanies() {
                       <td>
                         <span
                           className={`text-xs ${company.wa_connected
-                              ? 'text-green-600'
-                              : 'text-gray-300'
+                            ? 'text-green-600'
+                            : 'text-gray-300'
                             }`}
                         >
                           {company.wa_connected
@@ -1038,64 +1038,7 @@ export default function SuperAdminCompanies() {
             />
           )}
 
-          {/* Plan — chosen at creation only; afterwards use "Upgrade plan" */}
-          {!editingCompany && <div>
-            <label className="label">
-              Plan *
-            </label>
 
-            <select
-              className="select"
-              value={form.plan_id}
-              onChange={(event) =>
-                set(
-                  'plan_id',
-                  event.target.value
-                )
-              }
-            >
-              <option value="">
-                — Select plan —
-              </option>
-
-              {plans.filter((plan) => !plan.deleted_at || String(plan.id) === form.plan_id).map((plan) => (
-
-                <option
-                  key={plan.id}
-                  value={plan.id}
-                >
-                  {plan.name}{plan.archived_at ? ' · archived' : ''}{plan.is_public === false ? ' · private' : ''} (
-                  ₹{plan.price}
-                  )
-                </option>
-
-              ))}
-
-            </select>
-          </div>}
-
-          {/* Billing at creation — active companies only */}
-          {!editingCompany && form.status === 'active' && (
-            <div className="space-y-3 rounded-xl border border-gray-200 bg-gray-50 p-3">
-              <p className="text-sm font-medium text-gray-700">Billing <span className="font-normal text-gray-400">— recorded as a payment, so revenue and coupon usage stay accurate</span></p>
-              <div className="grid grid-cols-1 gap-3">
-                <div>
-                  <label className="label">Paid for</label>
-                  <select className="select" value={form.duration_type} onChange={(event) => set('duration_type', event.target.value)}>
-                    <option value="monthly">1 month</option><option value="3month">3 months</option><option value="6month">6 months</option><option value="yearly">12 months</option>
-                  </select>
-                </div>
-                <Input label="Coupon code" placeholder="optional" value={form.coupon_code} onChange={(event) => set('coupon_code', event.target.value.toUpperCase())} />
-                <div>
-                  <label className="label">Payment received by</label>
-                  <select className="select" value={form.payment_method} onChange={(event) => set('payment_method', event.target.value)}>
-                    <option value="cash">Cash</option><option value="bank_transfer">Bank transfer</option><option value="upi">UPI</option><option value="cheque">Cheque</option><option value="free">Free / complimentary</option>
-                  </select>
-                </div>
-                <Input label="Reference / UTR" placeholder="optional" value={form.payment_reference} onChange={(event) => set('payment_reference', event.target.value)} />
-              </div>
-            </div>
-          )}
 
           {/* Owner name */}
           <Input
@@ -1173,6 +1116,66 @@ export default function SuperAdminCompanies() {
 
         </div>
 
+        <div >
+          {/* Plan — chosen at creation only; afterwards use "Upgrade plan" */}
+          {!editingCompany && <div>
+            <label className="label">
+              Plan *
+            </label>
+
+            <select
+              className="select"
+              value={form.plan_id}
+              onChange={(event) =>
+                set(
+                  'plan_id',
+                  event.target.value
+                )
+              }
+            >
+              <option value="">
+                — Select plan —
+              </option>
+
+              {plans.filter((plan) => !plan.deleted_at || String(plan.id) === form.plan_id).map((plan) => (
+
+                <option
+                  key={plan.id}
+                  value={plan.id}
+                >
+                  {plan.name}{plan.archived_at ? ' · archived' : ''}{plan.is_public === false ? ' · private' : ''} (
+                  ₹{plan.price}
+                  )
+                </option>
+
+              ))}
+
+            </select>
+          </div>}
+
+          {/* Billing at creation — active companies only */}
+          {!editingCompany && form.status === 'active' && (
+            <div className="space-y-3 rounded-xl border border-gray-200 bg-gray-50 p-3">
+              <p className="text-sm font-medium text-gray-700">Billing <span className="font-normal text-gray-400">— recorded as a payment, so revenue and coupon usage stay accurate</span></p>
+              <div className="grid grid-cols-1 gap-3">
+                <div>
+                  <label className="label">Paid for</label>
+                  <select className="select" value={form.duration_type} onChange={(event) => set('duration_type', event.target.value)}>
+                    <option value="monthly">1 month</option><option value="3month">3 months</option><option value="6month">6 months</option><option value="yearly">12 months</option>
+                  </select>
+                </div>
+                <Input label="Coupon code" placeholder="optional" value={form.coupon_code} onChange={(event) => set('coupon_code', event.target.value.toUpperCase())} />
+                <div>
+                  <label className="label">Payment received by</label>
+                  <select className="select" value={form.payment_method} onChange={(event) => set('payment_method', event.target.value)}>
+                    <option value="cash">Cash</option><option value="bank_transfer">Bank transfer</option><option value="upi">UPI</option><option value="cheque">Cheque</option><option value="free">Free / complimentary</option>
+                  </select>
+                </div>
+                <Input label="Reference / UTR" placeholder="optional" value={form.payment_reference} onChange={(event) => set('payment_reference', event.target.value)} />
+              </div>
+            </div>
+          )}
+        </div>
       </Modal>
 
       {/* Upgrade plan (online / manual payment) */}
