@@ -14,6 +14,21 @@ export function loadFacebookSdk(appId: string): Promise<any> {
   return fbReady
 }
 
+/** Why a login gave no token: 'closed' = the popup was shut / blocked, 'denied' = the person (or the app's setup) refused it. */
+export type FacebookLoginResult = { token: string | null; reason?: 'closed' | 'denied'; granted?: string }
+
+/** Like facebookLogin, but says why there is no token, and which permissions were granted. */
+export async function facebookLoginDetailed(appId: string, scope: string): Promise<FacebookLoginResult> {
+  const FB = await loadFacebookSdk(appId)
+  return new Promise(resolve => {
+    FB.login((res: any) => {
+      const token = res?.authResponse?.accessToken ?? null
+      if (token) return resolve({ token, granted: res.authResponse.grantedScopes })
+      resolve({ token: null, reason: res?.status === 'not_authorized' ? 'denied' : 'closed' })
+    }, { scope, return_scopes: true, auth_type: 'rerequest' })
+  })
+}
+
 /** Opens the Facebook login popup and resolves with the user access token, or null when the person closed it / said no. */
 export async function facebookLogin(appId: string, scope: string): Promise<string | null> {
   const FB = await loadFacebookSdk(appId)

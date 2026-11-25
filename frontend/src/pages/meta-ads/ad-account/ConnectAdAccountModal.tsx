@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import toast from 'react-hot-toast'
 import { Button, Input, Modal } from '@/components/ui'
 import { getError } from '@/utils'
-import { facebookLogin } from '@/lib/facebookSdk'
+import { facebookLoginDetailed, loadFacebookSdk } from '@/lib/facebookSdk'
 import { metaAdsApi } from '../api/meta-ads'
 
 const META_APP_ID = import.meta.env.VITE_META_APP_ID as string | undefined
@@ -33,6 +33,9 @@ export default function ConnectAdAccountModal({ open, onClose, onConnected, refr
   const [form, setForm] = useState(emptyForm)
   const set = (k: keyof typeof emptyForm, v: string) => setForm(f => ({ ...f, [k]: v }))
 
+  // load Facebook's script as soon as the window opens, so the login popup opens straight from the click (browsers block a popup that waits on a download)
+  useEffect(() => { if (open && META_APP_ID) loadFacebookSdk(META_APP_ID).catch(() => {}) }, [open])
+
   useEffect(() => { if (!open) { setFound(null); setPicked(new Set()); setPageId(''); setForm(emptyForm); setTab('facebook') } }, [open])
 
   const discover = async (token: string) => {
@@ -51,9 +54,17 @@ export default function ConnectAdAccountModal({ open, onClose, onConnected, refr
     if (!META_APP_ID) return
     setBusy(true)
     try {
-      const token = await facebookLogin(META_APP_ID, FB_ADS_SCOPES)
-      if (!token) { toast.error('Facebook login was cancelled or not authorised.'); return }
-      await discover(token)
+      const r = await facebookLoginDetailed(META_APP_ID, FB_ADS_SCOPES)
+      if (!r.token) {
+        toast.error(r.reason === 'denied'
+          ? 'Facebook did not authorise this app for your account. Ask the app admin to add you as a tester/developer, or get the ads permissions approved by Meta.'
+          : 'The Facebook window closed before login finished. Allow pop-ups for this site and try again — if it keeps closing, the app\'s permissions or website domain are not set up in Meta (use the Advanced tab meanwhile).', { duration: 9000 })
+        return
+      }
+      // a person can untick permissions in Facebook's dialog; connecting without them fails later in a confusing way
+      const missing = FB_ADS_SCOPES.split(',').filter(sc => r.granted && !r.granted.split(',').includes(sc))
+      if (missing.length) toast(`Not granted: ${missing.join(', ')}. Some features may not work.`, { icon: '⚠️', duration: 8000 })
+      await discover(r.token)
     } catch (e) { toast.error(getError(e)) } finally { setBusy(false) }
   }
 

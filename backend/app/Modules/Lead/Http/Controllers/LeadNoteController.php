@@ -39,14 +39,20 @@ class LeadNoteController extends Controller
 
     public function destroy(int $lead, int $event): JsonResponse
     {
-        \App\Models\LeadEvent::where('id', $event)->where('event', 'note_added')->delete();
+        // only a note on a lead you may open, and only your own unless you manage leads (it used to delete any note by id, across companies)
+        $l = $this->leadService->show($lead, auth()->user()->company_id, auth()->id(), auth()->user()->hasPermission('leads.view_all'));
+        $q = \App\Models\LeadEvent::where('id', $event)->where('lead_id', $l->id)->where('event', 'note_added');
+        if (!auth()->user()->hasPermission('leads.manage')) { $q->where('user_id', auth()->id()); }
+        $q->delete();
         return response()->json(['message' => 'Note deleted.']);
     }
 
 
     public function events(int $lead): JsonResponse
     {
-        $events = \App\Models\LeadEvent::where('lead_id', $lead)->get();
+        // the lead must be one this person may open (it used to return any lead's events to anyone, across companies)
+        $l = $this->leadService->show($lead, auth()->user()->company_id, auth()->id(), auth()->user()->hasPermission('leads.view_all'));
+        $events = \App\Models\LeadEvent::where('lead_id', $l->id)->with('user:id,name')->get();
 
         return response()->json(['events' => $events]);
 
