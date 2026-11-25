@@ -579,6 +579,9 @@ Route::prefix('v1')->group(function () {
         Route::prefix('notification-preferences')->middleware(['company.active'])->group(function () {
             Route::get('me', [\App\Http\Controllers\NotificationPreferenceController::class, 'me']);
             Route::put('me', [\App\Http\Controllers\NotificationPreferenceController::class, 'update']);
+            Route::get('devices', [\App\Http\Controllers\NotificationPreferenceController::class, 'devices']);
+            Route::put('devices/{id}', [\App\Http\Controllers\NotificationPreferenceController::class, 'updateDevice'])->whereNumber('id');
+            Route::delete('devices/{id}', [\App\Http\Controllers\NotificationPreferenceController::class, 'removeDevice'])->whereNumber('id');
         });
 
         // ── Team chat (internal 1:1 + groups; mobile "Chats" tab) ────────────
@@ -817,6 +820,7 @@ Route::prefix('v1')->group(function () {
             Route::get('/staff-overview',         [LeadController::class, 'staffOverview'])->middleware('permission:leads.view_all')->name('staff-overview');
             Route::get('/staff-overview/{staff}', [LeadController::class, 'staffDetail'])->middleware('permission:leads.view_all')->whereNumber('staff')->name('staff-detail');
             Route::get('/sources',    [LeadController::class, 'sources'])->middleware('permission:leads.view')->name('sources');
+            Route::get('/origins',    [LeadController::class, 'origins'])->middleware('permission:leads.view')->name('origins');
             // Unpaginated id/name/phone list for a filter — feeds wa-chat message-sender's
             // "Lead" recipient tab. Declared before /{lead}.
             Route::get('/recipients', [LeadController::class, 'recipients'])->middleware('permission:leads.view')->name('recipients');

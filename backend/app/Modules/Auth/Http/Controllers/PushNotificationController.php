@@ -15,18 +15,23 @@ class PushNotificationController extends Controller
             'fcm_token'   => ['required','string'],
             'device_type' => ['nullable','in:android,ios,web'],
             'device_id'   => ['nullable','string','max:200'],
+            'device_name' => ['nullable','string','max:120'],
         ]);
 
         $user  = auth()->user();
         // fcm_token is globally unique, so key on it alone: when another user signs in on the same
         // browser/device the token moves to them instead of violating the unique index.
+        $existing = PushToken::where('fcm_token', $d['fcm_token'])->first();
         PushToken::updateOrCreate(
             ['fcm_token' => $d['fcm_token']],
             [
+                // a phone handed to another person starts clean; the same person keeps their per-phone choices and its name
+                'modes'        => $existing && (int) $existing->user_id === (int) $user->id ? $existing->modes : null,
                 'user_id'      => $user->id,
                 'company_id'   => $user->company_id,
                 'device_type'  => $d['device_type'] ?? 'android',
                 'device_id'    => $d['device_id'] ?? null,
+                'device_name'  => $d['device_name'] ?? ($existing && (int) $existing->user_id === (int) $user->id ? $existing->device_name : null),
                 'is_active'    => true,
                 'last_used_at' => now(),
             ]

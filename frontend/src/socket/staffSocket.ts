@@ -4,7 +4,7 @@ import { io, Socket } from 'socket.io-client'
 import { store } from '@/store'
 import { addNotification, addAiOffer, updateAssignment } from '@/store/slices'
 import type { LeadNotification, AiHandoffOffer, LeadAssignment } from '@/types'
-import { playTone } from '@/lib/tones'
+import { playTone, toneMode } from '@/lib/tones'
 
 const CHAT_URL = import.meta.env.VITE_CHAT_URL || 'https://chatserver.teamzo.io'
 
@@ -34,11 +34,13 @@ export function connectStaffSocket(staffId: number, companyId: number): void {
   }
 
   socket.on('new_lead_notification', (data: LeadNotification) => {
+    if (toneMode('lead_popup') === 'off') return   // this person switched these notifications off
     playTone('lead_popup')
     store.dispatch(addNotification(data))
 
     // Play notification sound
     try {
+      if (toneMode('lead_popup') !== 'sound') throw new Error('silent')
       const audio = new Audio('/sounds/lead-notification.mp3')
       audio.volume = 0.6
       void audio.play()
@@ -62,6 +64,7 @@ export function connectStaffSocket(staffId: number, companyId: number): void {
   })
 
   socket.on('ai_handoff_offer', (data: AiHandoffOffer) => {
+    if (toneMode('lead_popup') === 'off') return
     playTone('lead_popup')
     store.dispatch(addAiOffer(data))
   })

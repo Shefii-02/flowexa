@@ -8,6 +8,8 @@ import { facebookLoginDetailed, loadFacebookSdk } from '@/lib/facebookSdk'
 import { metaAdsApi } from '../api/meta-ads'
 
 const META_APP_ID = import.meta.env.VITE_META_APP_ID as string | undefined
+/** Only for a Facebook Login for Business app: the configuration (with the ads permissions) created in Meta; replaces the permission list. */
+const META_ADS_CONFIG_ID = (import.meta.env.VITE_META_ADS_CONFIG_ID as string | undefined) || undefined
 /** Ads + Page + lead-form access — what ad management and lead capture need. */
 export const FB_ADS_SCOPES = 'ads_management,ads_read,business_management,pages_show_list,pages_read_engagement,leads_retrieval,pages_manage_ads'
 
@@ -54,7 +56,7 @@ export default function ConnectAdAccountModal({ open, onClose, onConnected, refr
     if (!META_APP_ID) return
     setBusy(true)
     try {
-      const r = await facebookLoginDetailed(META_APP_ID, FB_ADS_SCOPES)
+      const r = await facebookLoginDetailed(META_APP_ID, FB_ADS_SCOPES, META_ADS_CONFIG_ID)
       if (!r.token) {
         toast.error(r.reason === 'denied'
           ? 'Facebook did not authorise this app for your account. Ask the app admin to add you as a tester/developer, or get the ads permissions approved by Meta.'

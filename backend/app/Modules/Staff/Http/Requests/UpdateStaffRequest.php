@@ -23,7 +23,7 @@ class UpdateStaffRequest extends FormRequest
             )],
             'phone'      => ['nullable', 'string', 'max:20'],
             'department' => ['nullable', 'string', 'max:100'],
-            'max_leads'  => ['nullable', 'integer', 'min:0', 'max:500'],   // 0 = not a lead-handling account
+            'max_leads'  => ['nullable', 'integer', 'min:0', 'max:4294967295'],   // 0 = not a lead-handling account; no practical cap
             'is_active'  => ['sometimes', 'boolean'],
         ];
     }

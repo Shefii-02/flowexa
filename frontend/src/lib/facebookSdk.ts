@@ -18,14 +18,15 @@ export function loadFacebookSdk(appId: string): Promise<any> {
 export type FacebookLoginResult = { token: string | null; reason?: 'closed' | 'denied'; granted?: string }
 
 /** Like facebookLogin, but says why there is no token, and which permissions were granted. */
-export async function facebookLoginDetailed(appId: string, scope: string): Promise<FacebookLoginResult> {
+export async function facebookLoginDetailed(appId: string, scope: string, configId?: string): Promise<FacebookLoginResult> {
   const FB = await loadFacebookSdk(appId)
   return new Promise(resolve => {
     FB.login((res: any) => {
+      console.warn('[facebook login]', res)   // status 'unknown' + no authResponse = closed, blocked, or refused by the app's setup
       const token = res?.authResponse?.accessToken ?? null
       if (token) return resolve({ token, granted: res.authResponse.grantedScopes })
       resolve({ token: null, reason: res?.status === 'not_authorized' ? 'denied' : 'closed' })
-    }, { scope, return_scopes: true, auth_type: 'rerequest' })
+    }, configId ? { config_id: configId } : { scope, return_scopes: true, auth_type: 'rerequest' })   // a Facebook Login for Business app takes its permissions from a configuration, not `scope`
   })
 }
 

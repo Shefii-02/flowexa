@@ -15,11 +15,14 @@ class PushToken extends Model
         'device_id',
         'is_active',
         'last_used_at',
+        'modes',
+        'device_name',
     ];
 
     protected $casts = [
         'is_active' => 'boolean',
         'last_used_at' => 'datetime',
+        'modes' => 'array',
     ];
 
     public function user(): BelongsTo

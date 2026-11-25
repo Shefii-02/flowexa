@@ -75,6 +75,10 @@ class WaChatLeadAttributionService
         if ($phone === '') {
             return false;
         }
+        // only a one-to-one chat becomes a lead — never a group, broadcast list, Status or channel (WA Cloud has no chat id: a person)
+        if ($chatId !== null && !\App\Support\WaChatId::isIndividual($chatId)) {
+            return false;
+        }
 
         $contact = Contact::forPhone($companyId, $phone, ['name' => $phone, 'source' => $source], $chatId);
 

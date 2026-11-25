@@ -722,7 +722,7 @@ class WahaSessionController extends Controller
                 // Lead auto-creation + campaign attribution — runs for every reply regardless
                 // of whether an AI playbook is configured (ConversationalAgentService's own
                 // lead creation below only fires when one is), skipping group chats.
-                if ($from && !str_ends_with((string) $from, '@g.us')) {
+                if ($from && \App\Support\WaChatId::isIndividual((string) $from)) {   // one person only — not a group, broadcast, Status or channel
                     $phone = preg_replace('/@.*/', '', (string) $from);
                     $leadCreated = false;
 
@@ -806,7 +806,7 @@ class WahaSessionController extends Controller
                                 phone: preg_replace('/@.*/', '', (string) $from),
                                 text: (string) $body,
                                 type: (string) $type,
-                                fromGroup: str_ends_with((string) $from, '@g.us'),
+                                fromGroup: !\App\Support\WaChatId::isIndividual((string) $from),
                                 chatId: (string) $from,
                             ));
                         }

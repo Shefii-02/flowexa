@@ -13,6 +13,7 @@ import { registerWebPush, webPushSupport } from '@/lib/push'
 import type { Role } from '@/types'
 import WorkingHoursPanel from '@/components/leads/WorkingHoursPanel'
 import MobileAppTab from './MobileAppTab'
+import NotificationModes from './NotificationModes'
 
 // ── Tab definitions ───────────────────────────────────────────────────────────
 
@@ -644,6 +645,8 @@ function PushTab() {
 
   return (
     <div className="space-y-5">
+      <NotificationModes />
+
       <div className="card">
         <div className="card-header"><h3 className="card-title">Server (Firebase)</h3>
           <span className={`text-xs font-semibold ${serverOk ? 'text-green-600' : 'text-red-600'}`}>{serverOk ? 'Ready' : 'Not ready'}</span></div>

@@ -68,7 +68,20 @@ class LeadController extends Controller
 
     public function store(CreateLeadRequest $request): JsonResponse
     {
-        $lead = $this->leadService->create(auth()->user()->company_id, CreateLeadDTO::fromRequest($request->validated()));
+        $data = $request->validated();
+        $company = auth()->user()->company;
+        // a chosen number / account / campaign: it must be one of THIS company's (and one this person may use); the source and label follow from it
+        if (!empty($data['origin_type'])) {
+            $hit = $this->originOptions($company)->first(fn ($o) => $o['type'] === $data['origin_type'] && $o['id'] === (int) $data['origin_id']);
+            abort_unless($hit, 422, 'That lead origin was not found.');
+            $data['source'] = $hit['source'];
+            $data['origin_label'] = $hit['label'];
+        }
+        // several categories: the first is the primary one (leads.category); the rest are linked after the lead exists
+        $cats = array_values(array_filter($data['categories'] ?? [], 'strlen'));
+        if ($cats) { $data['category'] = $cats[0]; }
+        $lead = $this->leadService->create($company->id, CreateLeadDTO::fromRequest($data));
+        if (count($cats) > 0) { app(\App\Services\LeadCategorizer::class)->replace($lead, $cats); }
         return response()->json(['message' => 'Lead created.', 'lead' => new LeadResource($lead)], 201);
     }
 
@@ -210,6 +223,28 @@ class LeadController extends Controller
         $d = $insights->detail(auth()->user()->company_id, $staff);
         abort_unless($d, 404, 'Employee not found.');
         return response()->json(['staff' => $d]);
+    }
+
+    /** @return \Illuminate\Support\Collection<int,array{source:string,source_label:string,icon:string,type:string,id:int,label:string,sub:?string}> */
+    private function originOptions(\App\Models\Company $company)
+    {
+        $user = auth()->user();
+        $meta = config('lead_sources', []);
+        $out = collect();
+        foreach (app(\App\Modules\Lead\Http\Controllers\LeadSourceController::class)->accountsFor($company) as $source => $accounts) {
+            foreach ($accounts as $a) {
+                $allowed = $user->allowedAccountIds($a['type']);   // null = every account of that kind
+                if ($allowed !== null && !in_array($a['id'], $allowed, true)) { continue; }
+                $out->push(['source' => $source, 'source_label' => $meta[$source]['label'] ?? $source, 'icon' => $meta[$source]['icon'] ?? '', 'type' => $a['type'], 'id' => (int) $a['id'], 'label' => $a['label'], 'sub' => $a['sub'] ?? null]);
+            }
+        }
+        return $out->values();
+    }
+
+    /** GET /leads/origins — the numbers / accounts / widgets / ad accounts a lead can be tagged with (for the Add-lead form). */
+    public function origins(): JsonResponse
+    {
+        return response()->json(['data' => $this->originOptions(auth()->user()->company)]);
     }
 
     /** GET /leads/sources — the canonical "Lead Source" list (config/lead_sources.php), for filter/create dropdowns. */

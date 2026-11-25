@@ -197,7 +197,7 @@ class LeadSourceController extends Controller
      * The accounts of each switchable source, with their on/off state and how many held leads each has waiting.
      * @return array<string,array<int,array{type:string,id:int,label:string,sub:?string,enabled:bool,held:int}>>
      */
-    private function accountsFor(\App\Models\Company $company): array
+    public function accountsFor(\App\Models\Company $company): array
     {
         $switches = DB::table('lead_account_switches')->where('company_id', $company->id)->get()->mapWithKeys(fn ($r) => ["{$r->origin_type}:{$r->origin_id}" => (bool) $r->is_enabled]);
         $held = HeldLead::where('company_id', $company->id)->where('status', 'held')->whereNotNull('account_id')->selectRaw('account_type, account_id, count(*) c')->groupBy('account_type', 'account_id')->get()

@@ -35,6 +35,8 @@ readonly class CreateLeadDTO
             notes:       $data['notes']       ?? null,
             assignedTo:  isset($data['assigned_to']) ? (int) $data['assigned_to'] : null,
             originLabel: $data['origin_label'] ?? null,
+            originType:  $data['origin_type'] ?? null,
+            originId:    isset($data['origin_id']) ? (int) $data['origin_id'] : null,
         );
     }
 

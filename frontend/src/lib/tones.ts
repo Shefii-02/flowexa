@@ -10,6 +10,14 @@ export const TONE_FILES: Record<string, string> = {
   conversation: 'conversation_tone.mp3',
   general: 'general_notifications.mp3',
 }
+// How each kind reaches this person: sound = notification with its tone · silent = notification only · off = none. Missing = sound.
+export type ToneMode = 'sound' | 'silent' | 'off'
+export type ToneModes = Partial<Record<string, ToneMode>>
+export const TONE_GROUPS = ['lead_popup', 'lead', 'conversation', 'general'] as const
+let modes: ToneModes = {}
+export const setToneModes = (m: ToneModes | null | undefined) => { modes = m && !Array.isArray(m) ? m : {} }
+export const toneMode = (key?: string | null): ToneMode => modes[key ?? 'general'] ?? 'sound'
+
 const MUTE_KEY = 'tone_muted'
 export const tonesMuted = (): boolean => { try { return localStorage.getItem(MUTE_KEY) === '1' } catch { return false } }
 export const setTonesMuted = (m: boolean) => { try { localStorage.setItem(MUTE_KEY, m ? '1' : '0') } catch { /* private mode */ } }
@@ -19,7 +27,7 @@ const last: Record<string, number> = {}
 
 /** Play a tone by key (lead_popup | lead | conversation | general). The same tone within a second is ignored; the mute switch silences all. */
 export function playTone(key?: string | null): void {
-  if (tonesMuted()) return
+  if (tonesMuted() || toneMode(key) !== 'sound') return
   const file = TONE_FILES[key ?? 'general'] ?? TONE_FILES.general
   const now = Date.now()
   if (last[file] && now - last[file] < 1000) return

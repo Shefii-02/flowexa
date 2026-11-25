@@ -18,18 +18,18 @@ class FirebasePushService
             $company = \App\Models\User::whereKey($userId)->value('company_id');
             \App\Services\UserNotifier::record([$userId], $company ? (int) $company : null, $type, $title, $body, $data);   // the bell, even with no phone token
         }
-        $tokens = PushToken::where('user_id', $userId)->where('is_active', true)->pluck('fcm_token');
+        $tokens = PushToken::where('user_id', $userId)->where('is_active', true)->get(['fcm_token', 'user_id', 'modes']);
         if ($tokens->isEmpty()) return;
-        $this->sendToTokens($tokens->toArray(), $userId, null, $type, $title, $body, $data);
+        $this->sendToTokens($tokens, $userId, null, $type, $title, $body, $data);
     }
 
     // ── Send to all company staff ─────────────────────────────────────────
     public function sendToCompany(int $companyId, string $type, string $title, string $body, array $data = []): void
     {
         \App\Services\UserNotifier::record(\App\Models\User::where('company_id', $companyId)->where('is_active', true)->limit(500)->pluck('id')->all(), $companyId, $type, $title, $body, $data);
-        $tokens = PushToken::where('company_id', $companyId)->where('is_active', true)->pluck('fcm_token');
+        $tokens = PushToken::where('company_id', $companyId)->where('is_active', true)->get(['fcm_token', 'user_id', 'modes']);
         if ($tokens->isEmpty()) return;
-        $this->sendToTokens($tokens->toArray(), null, $companyId, $type, $title, $body, $data);
+        $this->sendToTokens($tokens, null, $companyId, $type, $title, $body, $data);
     }
 
     // ── Lead assigned notification ─────────────────────────────────────────
@@ -124,13 +124,23 @@ class FirebasePushService
     }
 
     // ── Core send method ───────────────────────────────────────────────────
-    private function sendToTokens(array $tokens, ?int $userId, ?int $companyId, string $type, string $title, string $body, array $data): void
+    /** @param \Illuminate\Support\Collection<int,PushToken> $tokens */
+    private function sendToTokens($tokens, ?int $userId, ?int $companyId, string $type, string $title, string $body, array $data): void
     {
         // FCM v1 rejects the WHOLE message when a data value is not a string (an int lead_id, a balance …) — normalise once, here
         $data = array_map(fn ($v) => is_scalar($v) || $v === null ? (string) $v : json_encode($v), $data);
         // the sound this kind of notification plays: the clients play `tone` / `tone_url` while open; a closed Android app uses the matching channel
         $tone = \App\Support\NotificationTone::forType($type);
         $data += ['tone' => $tone['key'], 'tone_url' => $tone['url']];
+        // each person (and each of their phones) chooses per kind: notification with its tone, notification only, or none at all
+        $accountModes = \App\Models\NotificationPreference::whereIn('user_id', $tokens->pluck('user_id')->unique()->all())->pluck('modes', 'user_id');
+        $deliver = [];   // fcm token => 'sound' | 'silent'
+        foreach ($tokens as $t) {
+            $mode = \App\Models\NotificationPreference::resolveMode($tone['key'], $accountModes[$t->user_id] ?? null, $t->modes);
+            if ($mode !== 'off') { $deliver[$t->fcm_token] = $mode; }
+        }
+        if (!$deliver) { return; }   // everyone switched this kind off
+        $tokens = array_keys($deliver);
         $projectId    = config('services.firebase.project_id');
         $accessToken  = $this->getAccessToken();
         $url          = str_replace('{PROJECT_ID}', $projectId, $this->fcmUrl);
@@ -139,6 +149,9 @@ class FirebasePushService
 
         foreach (array_chunk($tokens, 100) as $chunk) {
             foreach ($chunk as $token) {
+                $silent = $deliver[$token] === 'silent';
+                // a silent one carries no tone for the app to play while open, and lands on the app's no-sound channel when closed
+                $msgData = $silent ? array_merge($data, ['tone' => '', 'tone_url' => '', 'mode' => 'silent']) : $data;
                 try {
                     $response = Http::withToken($accessToken)
                         ->timeout(10)
@@ -146,11 +159,11 @@ class FirebasePushService
                             'message' => [
                                 'token'        => $token,
                                 'notification' => ['title' => $title, 'body' => $body],
-                                'data'         => array_merge($data, ['type' => $type]),
+                                'data'         => array_merge($msgData, ['type' => $type]),
                                 // `group` (e.g. "team_chat_12"): Android keeps ONE notification per group — a newer one replaces the older — and
                                 // iOS stacks them under one thread, so a busy conversation is a single entry, not a pile.
-                                'android'      => ['priority' => 'high', 'notification' => array_filter(['sound' => 'default', 'channel_id' => 'tone_' . $tone['key'], 'tag' => $data['group'] ?? null])],
-                                'apns'         => ['payload' => ['aps' => array_filter(['sound' => 'default', 'badge' => 1, 'thread-id' => $data['group'] ?? null])]],
+                                'android'      => ['priority' => 'high', 'notification' => array_filter(['sound' => $silent ? null : 'default', 'channel_id' => $silent ? 'tone_silent' : 'tone_' . $tone['key'], 'tag' => $data['group'] ?? null])],
+                                'apns'         => ['payload' => ['aps' => array_filter(['sound' => $silent ? null : 'default', 'badge' => 1, 'thread-id' => $data['group'] ?? null])]],
                             ],
                         ]);
 
