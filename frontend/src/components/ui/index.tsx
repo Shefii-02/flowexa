@@ -1,5 +1,5 @@
 // src/components/ui/index.tsx
-import { ReactNode, forwardRef, InputHTMLAttributes, TextareaHTMLAttributes, SelectHTMLAttributes } from 'react'
+import { ReactNode, useState, forwardRef, InputHTMLAttributes, TextareaHTMLAttributes, SelectHTMLAttributes } from 'react'
 import { cn } from '@/utils'
 import { useCloseGuard, CloseConfirm } from './useCloseGuard'
 
@@ -55,6 +55,27 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(({ label, error, c
   </div>
 ))
 Input.displayName = 'Input'
+
+// ── Password input with a show / hide eye ─────────────────────────────────────
+export const PasswordInput = forwardRef<HTMLInputElement, Omit<InputProps, 'type'>>(({ label, error, className, ...props }, ref) => {
+  const [shown, setShown] = useState(false)
+  return (
+    <div>
+      {label && <label className="label">{label}</label>}
+      <div className="relative">
+        <input ref={ref} type={shown ? 'text' : 'password'} className={cn('input pr-10', error && 'border-red-400 focus:ring-red-400', className)} {...props} />
+        <button type="button" tabIndex={-1} onClick={() => setShown(v => !v)} aria-label={shown ? 'Hide password' : 'Show password'} title={shown ? 'Hide password' : 'Show password'}
+          className="absolute inset-y-0 right-0 px-3 text-gray-400 hover:text-gray-600">
+          {shown
+            ? <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+            : <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>}
+        </button>
+      </div>
+      {error && <p className="text-xs text-red-500 mt-1">{error}</p>}
+    </div>
+  )
+})
+PasswordInput.displayName = 'PasswordInput'
 
 // ── Textarea ──────────────────────────────────────────────────────────────────
 interface TextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElement> { label?: string; error?: string }

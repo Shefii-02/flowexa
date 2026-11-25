@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { settingsApi, roleApi, staffApi, deviceApi, stickyApi, type StickySettings } from '@/api'
 import { Button, Input } from '@/components/ui'
 import { getError } from '@/utils'
@@ -14,6 +14,8 @@ import type { Role } from '@/types'
 import WorkingHoursPanel from '@/components/leads/WorkingHoursPanel'
 import MobileAppTab from './MobileAppTab'
 import NotificationModes from './NotificationModes'
+import StaffFormDrawer from '../staff/StaffFormDrawer'
+import { pid } from '@/lib/publicId'
 
 // ── Tab definitions ───────────────────────────────────────────────────────────
 
@@ -421,24 +423,15 @@ function FloatingWidgetsCard() {
 
 function StaffTab() {
   const [rows, setRows] = useState<any[]>([])
-  const [roles, setRoles] = useState<any[]>([])
-  const [form, setForm] = useState({ name: '', email: '', password: '', role_id: '' })
   const [showForm, setShowForm] = useState(false)
+  const canManageAccess = usePermission('staff.manage')
+  const navigate = useNavigate()
 
   const load = useCallback(() => {
     staffApi.list().then(r => setRows(r.data?.data ?? r.data?.staff ?? (Array.isArray(r.data) ? r.data : []))).catch(() => {})
-    staffApi.roles().then(r => setRoles(r.data?.roles ?? r.data?.data ?? (Array.isArray(r.data) ? r.data : []))).catch(() => {})
   }, [])
   useEffect(() => { load() }, [load])
 
-  const create = async () => {
-    if (!form.name || !form.email || !form.password) { toast.error('Name, email and password are required'); return }
-    try {
-      await staffApi.create({ ...form, role_id: form.role_id ? Number(form.role_id) : undefined })
-      setForm({ name: '', email: '', password: '', role_id: '' }); setShowForm(false); load()
-      toast.success('Staff created')
-    } catch (e) { toast.error(getError(e)) }
-  }
   const toggle = async (id: number) => { try { await staffApi.toggle(id); load() } catch (e) { toast.error(getError(e)) } }
   const resetPwd = async (id: number) => {
     const password = prompt('New password for this staff member (min 8 chars):')
@@ -452,23 +445,19 @@ function StaffTab() {
     <div className="card">
       <div className="card-header">
         <h3 className="card-title">Staff members</h3>
-        <button onClick={() => setShowForm(v => !v)} className="text-sm text-indigo-600 hover:underline">+ Add staff</button>
+        <button onClick={() => setShowForm(true)} className="text-sm text-indigo-600 hover:underline">+ Add staff</button>
       </div>
       <div className="card-body space-y-3">
-        {showForm && (
-          <div className="border border-gray-200 rounded-lg p-3 grid grid-cols-2 gap-2">
-            <Input label="Name" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
-            <Input label="Email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} />
-            <Input label="Password" type="password" value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} />
-            <label className="text-sm">Role
-              <select value={form.role_id} onChange={e => setForm(f => ({ ...f, role_id: e.target.value }))} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mt-1">
-                <option value="">Default</option>
-                {roles.map((r: any) => <option key={r.id} value={r.id}>{r.label ?? r.name}</option>)}
-              </select>
-            </label>
-            <div className="col-span-2"><Button onClick={create}>Create</Button></div>
-          </div>
-        )}
+        {/* the same Add staff drawer as the Staff page */}
+        <StaffFormDrawer
+          open={showForm}
+          onClose={() => setShowForm(false)}
+          canManageAccess={canManageAccess}
+          onSaved={({ created, id }) => {
+            setShowForm(false); load()
+            if (created && id && canManageAccess) navigate(`/staff/access?staff=${pid(id)}`)
+          }}
+        />
         <table className="w-full text-sm">
           <thead><tr className="text-left text-gray-400 border-b border-gray-100"><th className="py-1.5">Name</th><th className="py-1.5">Email</th><th className="py-1.5">Role</th><th className="py-1.5">Status</th><th className="py-1.5 text-right">Actions</th></tr></thead>
           <tbody>
