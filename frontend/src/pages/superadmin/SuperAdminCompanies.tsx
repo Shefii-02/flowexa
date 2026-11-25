@@ -1058,13 +1058,13 @@ export default function SuperAdminCompanies() {
                 — Select plan —
               </option>
 
-              {plans.filter((plan) => (!plan.deleted_at && !plan.archived_at) || String(plan.id) === form.plan_id).map((plan) => (
+              {plans.filter((plan) => !plan.deleted_at || String(plan.id) === form.plan_id).map((plan) => (
 
                 <option
                   key={plan.id}
                   value={plan.id}
                 >
-                  {plan.name}{plan.is_public === false ? ' · private' : ''} (
+                  {plan.name}{plan.archived_at ? ' · archived' : ''}{plan.is_public === false ? ' · private' : ''} (
                   ₹{plan.price}
                   )
                 </option>
@@ -1078,7 +1078,7 @@ export default function SuperAdminCompanies() {
           {!editingCompany && form.status === 'active' && (
             <div className="space-y-3 rounded-xl border border-gray-200 bg-gray-50 p-3">
               <p className="text-sm font-medium text-gray-700">Billing <span className="font-normal text-gray-400">— recorded as a payment, so revenue and coupon usage stay accurate</span></p>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3">
                 <div>
                   <label className="label">Paid for</label>
                   <select className="select" value={form.duration_type} onChange={(event) => set('duration_type', event.target.value)}>

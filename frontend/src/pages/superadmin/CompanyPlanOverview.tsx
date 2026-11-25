@@ -37,7 +37,7 @@ export default function CompanyPlanOverview({ companyId, onChanged }: { companyI
   const load = useCallback(() => {
     superadminApi.planOverview(companyId).then(r => setD(r.data)).catch(e => toast.error(getError(e)))
   }, [companyId])
-  useEffect(() => { load(); planApi.saPlans().then(r => setPlans((r.data.plans ?? []).filter((p: any) => !p.deleted_at && !p.archived_at))).catch(() => {}) }, [load])
+  useEffect(() => { load(); planApi.saPlans().then(r => setPlans((r.data.plans ?? []).filter((p: any) => !p.deleted_at))).catch(() => {}) }, [load])
 
   const assign = async () => {
     if (!pick) return
@@ -205,7 +205,7 @@ export default function CompanyPlanOverview({ companyId, onChanged }: { companyI
           <label className="text-xs font-medium text-gray-600">Move to plan
             <select className="select mt-1 block" value={pick} onChange={e => setPick(e.target.value)}>
               <option value="">Choose…</option>
-              {plans.map(p => <option key={p.id} value={p.id}>{p.name}{p.is_public === false ? ' · private' : ''} (₹{p.price})</option>)}
+              {plans.map(p => <option key={p.id} value={p.id}>{p.name}{p.archived_at ? ' · archived' : ''}{p.is_public === false ? ' · private' : ''} (₹{p.price})</option>)}
             </select></label>
           <label className="text-xs font-medium text-gray-600">Expires <span className="text-gray-400">(optional)</span>
             <input type="date" className="input mt-1 block" value={expires} onChange={e => setExpires(e.target.value)} /></label>
