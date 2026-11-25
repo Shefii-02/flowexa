@@ -139,9 +139,9 @@ class PlanPurchaseController extends Controller
         return [
             'name' => [$req, 'string', 'max:50'],
             'messages_limit' => [$req, 'integer', 'min:0'],
-            // Paid plans only — every plan already includes a free trial, so no ₹0 plans.
-            'price' => [$req, 'numeric', 'min:1'],
-            'price_yearly' => ['nullable', 'numeric', 'min:1'],
+            // ₹0 is allowed for free or trial plans.
+            'price' => [$req, 'numeric', 'min:0'],
+            'price_yearly' => ['nullable', 'numeric', 'min:0'],
             'duration_type' => [$req, 'in:monthly,yearly,3month,6month,12month,custom,unlimited'],
             'duration_months' => ['nullable', 'integer', 'min:0'],
             'duration_days' => ['nullable', 'integer', 'min:1', 'max:3650'],

@@ -250,8 +250,8 @@ export default function SuperAdminPlans() {
                 <Input label="Number of days" type="number" min={1} placeholder="e.g. 7 or 14 (trial)" value={form.duration_days} onChange={e => set('duration_days', e.target.value)} />
                 <Input label="…or number of months" type="number" min={1} placeholder="used when days is blank" value={form.duration_months} onChange={e => set('duration_months', e.target.value)} disabled={!!form.duration_days} />
               </>}
-              <Input label="Monthly price ₹ *" type="number" min={1} value={form.price} onChange={e => set('price', e.target.value)} />
-              <Input label="Yearly price ₹" type="number" min={1} placeholder="blank = 12 months − 20%" value={form.price_yearly} onChange={e => set('price_yearly', e.target.value)} />
+              <Input label="Monthly price ₹ *" type="number" min={0} value={form.price} onChange={e => set('price', e.target.value)} />
+              <Input label="Yearly price ₹" type="number" min={0} placeholder="blank = 12 months − 20%" value={form.price_yearly} onChange={e => set('price_yearly', e.target.value)} />
               <Input label="Messages included" type="number" min={0} value={form.messages_limit} onChange={e => set('messages_limit', e.target.value)} />
               <Input label="Sending speed (msgs / min)" type="number" min={10} max={1000} value={form.throttle_per_minute} onChange={e => set('throttle_per_minute', e.target.value)} />
               <Input label="Warn before expiry (days)" type="number" min={0} max={60} value={form.alert_before_days} onChange={e => set('alert_before_days', e.target.value)} />
