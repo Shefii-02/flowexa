@@ -52,12 +52,12 @@ const INTEGRATIONS = [
 ]
 
 type Form = {
-  name: string; price: string; price_yearly: string; duration_type: string; duration_months: string; messages_limit: string; throttle_per_minute: string
+  name: string; price: string; price_yearly: string; duration_type: string; duration_months: string; duration_days: string; messages_limit: string; throttle_per_minute: string
   alert_before_days: string; highlights: string; is_active: boolean; is_public: boolean; archived: boolean; is_popular: boolean; sort_order: string
   modules: string[]; permissions: string[]; complimentary: { module: string; months: number }[]; billing: Record<string, { on: boolean; pct: string }>; lead_assign_methods: string[]; integrations: Record<string, boolean>; limits: Record<string, string>
 }
 const EMPTY: Form = {
-  name: '', price: '499', price_yearly: '', duration_type: 'monthly', duration_months: '1', messages_limit: '1000', throttle_per_minute: '60',
+  name: '', price: '499', price_yearly: '', duration_type: 'monthly', duration_months: '1', duration_days: '', messages_limit: '1000', throttle_per_minute: '60',
   alert_before_days: '7', highlights: '', is_active: true, is_public: true, archived: false, is_popular: false, sort_order: '0',
   modules: [], permissions: [], complimentary: [], billing: DEFAULT_BILLING, lead_assign_methods: ['manual', 'round_robin'], integrations: {}, limits: {},
 }
@@ -112,7 +112,7 @@ export default function SuperAdminPlans() {
     setEditPlan(p)
     setForm({
       name: p.name ?? '', price: String(p.price ?? ''), price_yearly: p.price_yearly != null ? String(p.price_yearly) : '',
-      duration_type: p.duration_type ?? 'monthly', duration_months: String(p.duration_months ?? 1), messages_limit: String(p.messages_limit ?? 0),
+      duration_type: p.duration_type ?? 'monthly', duration_months: String(p.duration_months ?? 1), duration_days: p.duration_days != null ? String(p.duration_days) : '', messages_limit: String(p.messages_limit ?? 0),
       throttle_per_minute: String(p.throttle_per_minute ?? 60), alert_before_days: String(p.alert_before_days ?? 7),
       highlights: Array.isArray(p.features) ? p.features.join('\n') : '', is_active: !!p.is_active, is_public: p.is_public !== false, archived: !!p.archived_at, is_popular: !!p.is_popular, sort_order: String(p.sort_order ?? 0),
       // an old plan with no module list had everything on — show it that way so saving does not silently drop features
@@ -133,7 +133,8 @@ export default function SuperAdminPlans() {
     setSaving(true)
     const payload: Record<string, unknown> = {
       name: form.name, price: +form.price, price_yearly: form.price_yearly ? +form.price_yearly : null,
-      duration_type: form.duration_type, duration_months: form.duration_months ? +form.duration_months : null,
+      duration_type: form.duration_type, duration_months: form.duration_type === 'custom' && form.duration_days ? null : (form.duration_months ? +form.duration_months : null),
+      duration_days: form.duration_type === 'custom' && form.duration_days ? +form.duration_days : null,
       messages_limit: +form.messages_limit || 0, throttle_per_minute: +form.throttle_per_minute || 60, alert_before_days: +form.alert_before_days || 7,
       features: form.highlights.split('\n').map(s => s.trim()).filter(Boolean),
       is_active: form.is_active, is_public: form.is_public && !form.archived, archived: form.archived, is_popular: form.is_popular, sort_order: +form.sort_order || 0,
@@ -245,6 +246,10 @@ export default function SuperAdminPlans() {
               <Input label="Plan name *" placeholder="Growth" value={form.name} onChange={e => set('name', e.target.value)} />
               <div><label className="label">Duration type *</label>
                 <select className="select" value={form.duration_type} onChange={e => set('duration_type', e.target.value)}>{DURATION_TYPES.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}</select></div>
+              {form.duration_type === 'custom' && <>
+                <Input label="Number of days" type="number" min={1} placeholder="e.g. 7 or 14 (trial)" value={form.duration_days} onChange={e => set('duration_days', e.target.value)} />
+                <Input label="…or number of months" type="number" min={1} placeholder="used when days is blank" value={form.duration_months} onChange={e => set('duration_months', e.target.value)} disabled={!!form.duration_days} />
+              </>}
               <Input label="Monthly price ₹ *" type="number" min={1} value={form.price} onChange={e => set('price', e.target.value)} />
               <Input label="Yearly price ₹" type="number" min={1} placeholder="blank = 12 months − 20%" value={form.price_yearly} onChange={e => set('price_yearly', e.target.value)} />
               <Input label="Messages included" type="number" min={0} value={form.messages_limit} onChange={e => set('messages_limit', e.target.value)} />

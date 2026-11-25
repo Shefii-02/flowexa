@@ -13,7 +13,7 @@ class CompanyPlan extends Model
 {
     protected $fillable = [
         'company_id','plan_id','payment_order_id','duration_type',
-        'duration_months','amount_paid','status','starts_at',
+        'duration_months','duration_days','amount_paid','status','starts_at',
         'expires_at','cancelled_at','notes',
     ];
 

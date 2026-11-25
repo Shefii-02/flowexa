@@ -226,7 +226,7 @@ class PlanPurchaseService
         CompanyPlan::where('company_id', $companyId)->where('status', 'active')->update(['status' => 'upgraded']);
 
         $startsAt  = now();
-        $expiresAt = $this->calculateExpiry($startsAt, $durationType, $plan->duration_months);
+        $expiresAt = $this->calculateExpiry($startsAt, $durationType, $plan->duration_months, $plan->duration_days);
 
         $companyPlan = CompanyPlan::create([
             'company_id'       => $companyId,
@@ -234,6 +234,7 @@ class PlanPurchaseService
             'payment_order_id' => $order->id,
             'duration_type'    => $durationType,
             'duration_months'  => $plan->duration_months,
+            'duration_days'    => $plan->duration_days,
             'amount_paid'      => $order->amount,
             'status'           => 'active',
             'starts_at'        => $startsAt,
@@ -434,10 +435,15 @@ class PlanPurchaseService
     {
         CompanyPlan::where('company_id', $companyId)->where('status', 'active')->update(['status' => 'upgraded']);
         $plan = Plan::findOrFail($planId);
+        // no date picked: count the plan's own duration (days or months) from today
+        if (!$expiresAt && $plan->duration_type !== 'unlimited' && ($plan->duration_days || $plan->duration_months)) {
+            $expiresAt = $this->calculateExpiry(now(), 'custom', $plan->duration_months, $plan->duration_days);
+        }
         $cp   = CompanyPlan::create([
             'company_id'      => $companyId,
             'plan_id'         => $planId,
             'duration_type'   => 'custom',
+            'duration_days'   => $plan->duration_days,
             'amount_paid'     => 0,
             'status'          => 'active',
             'starts_at'       => now(),
@@ -547,9 +553,10 @@ class PlanPurchaseService
         return $requested === 'yearly' ? 'yearly' : 'monthly';
     }
 
-    private function calculateExpiry(\Carbon\Carbon $start, string $durationType, ?int $months): ?\Carbon\Carbon
+    private function calculateExpiry(\Carbon\Carbon $start, string $durationType, ?int $months, ?int $days = null): ?\Carbon\Carbon
     {
         if ($durationType === 'unlimited') return null;
+        if ($durationType === 'custom' && $days) return $start->copy()->addDays($days);
         $m = match ($durationType) {
             'monthly'  => 1,
             '3month'   => 3,
