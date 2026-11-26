@@ -114,7 +114,7 @@ class StaffService
     /**
      * Remove a staff member. $plan says what happens to what they hold, each part either handed to another person or released:
      *   leads        {action: transfer|unassign, to_user_id}   (default unassign — the old behaviour)
-     *   installments {action: transfer|unassign, to_user_id}   their installment follow-ups; "unassign" = no one in particular (the lead's owner / HR)
+     *   installments {action: transfer|unassign|none, to_user_id}   their installment follow-ups; "unassign" = back to the lead's owner, "none" = no one at all (only HR can follow them up)
      *   incentives   {action: transfer|cancel|keep, to_user_id}  unpaid incentives only — paid ones stay as history; "cancel" = nobody gets them
      */
     public function delete(int $staffId, int $companyId, array $plan = []): void
@@ -140,13 +140,14 @@ class StaffService
         };
         $leadsTo = $target('leads');
         $instTo = $target('installments');
+        $instNobody = (($plan['installments']['action'] ?? null) === 'none');   // no one at all — only HR can follow them up
         $incTo = $target('incentives');
         $incAction = $plan['incentives']['action'] ?? 'keep';
 
-        \Illuminate\Support\Facades\DB::transaction(function () use ($user, $companyId, $leadsTo, $instTo, $incTo, $incAction) {
+        \Illuminate\Support\Facades\DB::transaction(function () use ($user, $companyId, $leadsTo, $instTo, $instNobody, $incTo, $incAction) {
             // installments first: they reference the leads
             \Illuminate\Support\Facades\DB::table('lead_installments')->where('company_id', $companyId)->where('assigned_to', $user->id)
-                ->update(['assigned_to' => $instTo, 'updated_at' => now()]);
+                ->update(['assigned_to' => $instTo, 'no_followup' => $instNobody, 'updated_at' => now()]);
 
             if ($leadsTo) {
                 $ids = \Illuminate\Support\Facades\DB::table('leads')->where('company_id', $companyId)->where('assigned_to', $user->id)->whereNull('deleted_at')->pluck('id');

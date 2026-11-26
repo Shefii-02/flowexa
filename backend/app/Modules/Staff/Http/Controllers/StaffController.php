@@ -112,7 +112,7 @@ class StaffController extends Controller
     {
         $plan = request()->validate([
             'leads'                 => ['nullable', 'array'], 'leads.action' => ['nullable', 'in:transfer,unassign'], 'leads.to_user_id' => ['nullable', 'integer'],
-            'installments'          => ['nullable', 'array'], 'installments.action' => ['nullable', 'in:transfer,unassign'], 'installments.to_user_id' => ['nullable', 'integer'],
+            'installments'          => ['nullable', 'array'], 'installments.action' => ['nullable', 'in:transfer,unassign,none'], 'installments.to_user_id' => ['nullable', 'integer'],
             'incentives'            => ['nullable', 'array'], 'incentives.action' => ['nullable', 'in:transfer,cancel,keep'], 'incentives.to_user_id' => ['nullable', 'integer'],
         ]);
         $this->staffService->delete(

@@ -16,3 +16,16 @@ function resolve(): string {
 }
 
 export const API_ROOT = resolve()
+
+/**
+ * Where an uploaded file (a profile photo) can be loaded from. The API returns a bare `storage/app/public` path such as
+ * `avatars/6/x.jpg`; files are served by the API host (api.teamzo.io/storage/…), not the website host, so a relative `/storage/…`
+ * 404s in production.
+ */
+export function storageUrl(path?: string | null): string | null {
+  if (!path) return null
+  if (/^https?:\/\//.test(path)) return path
+  const api = (import.meta.env.VITE_API_URL as string | undefined)?.trim()
+  const origin = api && /^https?:\/\//.test(api) ? new URL(api).origin : ''
+  return `${origin}/storage/${path.replace(/^\/+/, '')}`
+}

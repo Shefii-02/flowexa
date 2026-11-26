@@ -10,7 +10,7 @@ import { pid } from '@/lib/publicId'
 
 const money = (n: any) => (n === null || n === undefined || n === '' ? '—' : `₹${Number(n).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`)
 const day = (d?: string | null) => (d ? new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—')
-const VIEWS = [['overdue', 'Overdue'], ['today', 'Due today'], ['upcoming', 'Upcoming'], ['paid', 'Paid / waived'], ['all', 'All']] as const
+const VIEWS = [['overdue', 'Overdue'], ['today', 'Due today'], ['upcoming', 'Upcoming'], ['paid', 'Paid / waived'], ['all', 'All'], ['nobody', 'No one following']] as const
 
 function Rules({ onClose }: { onClose: () => void }) {
   const [s, setS] = useState<any>(null)
@@ -99,7 +99,7 @@ export default function InstallmentsPage() {
   const move = async () => {
     setMoving(true)
     try {
-      const r = await installmentApi.bulkAssign(picked, to === '' || to === 'none' ? null : +to)
+      const r = await installmentApi.bulkAssign(picked, to === '' || to === 'none' || to === 'nobody' ? null : +to, to === 'nobody')
       toast.success(`${r.data.updated} installment${r.data.updated === 1 ? '' : 's'} moved.`); setTo(''); load()
     } catch (e) { toast.error(getError(e)) } finally { setMoving(false) }
   }
@@ -114,7 +114,7 @@ export default function InstallmentsPage() {
       {rules && <Rules onClose={() => setRules(false)} />}
 
       <div className="flex flex-wrap items-center gap-1 border-b border-gray-200">
-        {VIEWS.map(([k, label]) => <button key={k} onClick={() => setView(k)} className={`px-4 py-2 text-sm -mb-px border-b-2 ${view === k ? 'border-brand-600 text-brand-700 font-medium' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>{label}</button>)}
+        {VIEWS.filter(([k]) => k !== 'nobody' || isHr).map(([k, label]) => <button key={k} onClick={() => setView(k)} className={`px-4 py-2 text-sm -mb-px border-b-2 ${view === k ? 'border-brand-600 text-brand-700 font-medium' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>{label}</button>)}
         {isHr && <label className="ml-auto flex items-center gap-2 text-xs text-gray-500"><input type="checkbox" checked={mine} onChange={(e) => setMine(e.target.checked)} /> Only mine</label>}
       </div>
 
@@ -125,7 +125,7 @@ export default function InstallmentsPage() {
             <div className="mx-5 mb-2 flex flex-wrap items-center gap-2 rounded-lg bg-indigo-50 border border-indigo-100 px-3 py-2 text-sm">
               <b>{picked.length}</b> selected — switch follow-up to
               <select className="input w-56" value={to} onChange={(e) => setTo(e.target.value)}>
-                <option value="">Choose…</option><option value="none">No one in particular (lead owner / HR)</option>{staff.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                <option value="">Choose…</option><option value="none">Back to the lead owner (default)</option>{isHr && <option value="nobody">No one — only HR can act on it</option>}{staff.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
               <Button size="sm" onClick={move} loading={moving} disabled={to === ''}>Switch</Button>
               <button className="text-xs text-gray-500 hover:underline" onClick={() => setPicked([])}>Clear</button>

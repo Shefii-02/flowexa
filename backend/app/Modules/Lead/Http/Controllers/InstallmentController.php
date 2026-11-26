@@ -35,6 +35,7 @@ class InstallmentController extends Controller
         $u = auth()->user();
         if ($this->hr()) { return true; }
         $s = $this->svc->settings((int) $u->company_id);
+        if ($installment && !empty($installment->no_followup)) { return false; }   // set to no one: only HR (handled above) can act
         $assigned = $installment && (int) $installment->assigned_to === (int) $u->id;
         $owner = (int) $lead->assigned_to === (int) $u->id;
         return match ($s['followup_mode']) {
@@ -135,7 +136,7 @@ class InstallmentController extends Controller
     {
         [$i] = $this->installment($id);
         abort_unless($this->hr(), 403, 'Only HR can edit installments.');
-        $d = $r->validate(['due_date' => ['sometimes', 'date'], 'amount' => ['sometimes', 'numeric', 'min:0.01'], 'assigned_to' => ['sometimes', 'nullable', 'integer'], 'promised_on' => ['sometimes', 'nullable', 'date']]);
+        $d = $r->validate(['due_date' => ['sometimes', 'date'], 'amount' => ['sometimes', 'numeric', 'min:0.01'], 'assigned_to' => ['sometimes', 'nullable', 'integer'], 'no_followup' => ['sometimes', 'boolean'], 'promised_on' => ['sometimes', 'nullable', 'date']]);
         if (!empty($d['assigned_to'])) { abort_unless(\App\Models\User::where('company_id', $i->company_id)->whereKey($d['assigned_to'])->exists(), 422, 'Unknown staff member.'); }
 
         return response()->json($this->svc->edit($id, (int) $i->company_id, $d, auth()->id()));
@@ -146,10 +147,10 @@ class InstallmentController extends Controller
     {
         $u = auth()->user();
         abort_unless($this->hr() || $u->hasPermission('leads.manage'), 403, 'Only HR or a lead manager can switch who follows up.');
-        $d = $r->validate(['ids' => ['required', 'array', 'min:1', 'max:500'], 'ids.*' => ['integer'], 'assigned_to' => ['nullable', 'integer']]);
+        $d = $r->validate(['ids' => ['required', 'array', 'min:1', 'max:500'], 'ids.*' => ['integer'], 'assigned_to' => ['nullable', 'integer'], 'nobody' => ['nullable', 'boolean']]);
         $to = $d['assigned_to'] ?? null;
         if ($to) { abort_unless(\App\Models\User::where('company_id', $u->company_id)->where('is_active', true)->whereKey($to)->exists(), 422, 'Choose an active staff member.'); }
-        $n = $this->svc->bulkAssign((int) $u->company_id, $d['ids'], $to ? (int) $to : null, $u->id);
+        $n = $this->svc->bulkAssign((int) $u->company_id, $d['ids'], $to ? (int) $to : null, $u->id, (bool) ($d['nobody'] ?? false));
 
         return response()->json(['updated' => $n]);
     }
@@ -188,7 +189,7 @@ class InstallmentController extends Controller
 
         // who sees what: HR / view-all see everyone's; everyone else only the installments they are set to follow up
         if (!$all || $r->boolean('mine')) {
-            $q->where(function ($w) use ($u, $s) {
+            $q->where('i.no_followup', false)->where(function ($w) use ($u, $s) {
                 $w->where('i.assigned_to', $u->id);
                 if ($s['followup_mode'] === 'collector' && (int) $s['collector_user_id'] === (int) $u->id) { $w->orWhereRaw('1 = 1'); }
                 elseif ($s['followup_mode'] !== 'collector') { $w->orWhere('l.assigned_to', $u->id); }
@@ -200,6 +201,7 @@ class InstallmentController extends Controller
             'today' => $q->whereIn('i.status', ['pending', 'partial'])->where('i.due_date', $today),
             'upcoming' => $q->whereIn('i.status', ['pending', 'partial'])->where('i.due_date', '>', $today),
             'paid' => $q->whereIn('i.status', ['paid', 'waived']),
+            'nobody' => $q->where('i.no_followup', true)->whereIn('i.status', ['pending', 'partial']),
             default => null,
         };
 

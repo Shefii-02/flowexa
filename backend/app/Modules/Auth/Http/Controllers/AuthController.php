@@ -155,11 +155,8 @@ class AuthController extends Controller
         ]);
 
         if ($request->hasFile('avatar')) {
-            $user = auth()->user();
-            if ($user->avatar && \Illuminate\Support\Facades\Storage::disk('public')->exists($user->avatar)) {
-                \Illuminate\Support\Facades\Storage::disk('public')->delete($user->avatar);
-            }
-            $d['avatar'] = $request->file('avatar')->store("avatars/{$user->company_id}", 'public');
+            // into the Media Library → "Profile Photos" folder; the old photo is removed
+            $d['avatar'] = app(\App\Modules\Auth\Support\ProfilePhotoStorage::class)->store(auth()->user(), $request->file('avatar'));
         }
 
         auth()->user()->update($d);

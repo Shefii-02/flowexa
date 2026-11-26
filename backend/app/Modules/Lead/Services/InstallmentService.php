@@ -211,25 +211,28 @@ class InstallmentService
     {
         $i = DB::table('lead_installments')->where('company_id', $companyId)->find($installmentId);
         if (!$i) { abort(404); }
-        $upd = array_intersect_key($d, array_flip(['due_date', 'amount', 'assigned_to', 'promised_on']));
+        $upd = array_intersect_key($d, array_flip(['due_date', 'amount', 'assigned_to', 'promised_on', 'no_followup']));
+        if (!empty($upd['no_followup'])) { $upd['assigned_to'] = null; }                       // "no one" wins over a person
+        elseif (array_key_exists('assigned_to', $upd)) { $upd['no_followup'] = false; }      // choosing a person (or the owner default) lifts "no one"
         if (isset($upd['amount']) && (float) $upd['amount'] + 0.009 < $this->paidOf((int) $i->id)['paid']) {
             throw ValidationException::withMessages(['amount' => 'The amount cannot be less than what has already been paid on it.']);
         }
         $before = array_intersect_key((array) $i, $upd);
         DB::table('lead_installments')->where('id', $i->id)->update($upd + ['updated_at' => now()]);
         $this->refreshStatus((int) $i->id);
-        $this->log($companyId, (int) $i->lead_id, (int) $i->id, $by, isset($upd['assigned_to']) && count($upd) === 1 ? 'assigned' : 'edited', ['from' => $before, 'to' => $upd]);
+        $this->log($companyId, (int) $i->lead_id, (int) $i->id, $by, (array_key_exists('assigned_to', $upd) || array_key_exists('no_followup', $upd)) && count(array_diff(array_keys($upd), ['assigned_to', 'no_followup'])) === 0 ? 'assigned' : 'edited', ['from' => $before, 'to' => $upd]);
 
         return $this->forLead($companyId, (int) $i->lead_id);
     }
 
     /** Hand a batch of installments' follow-up to another staff member (null = no one in particular: the lead's owner / HR). */
-    public function bulkAssign(int $companyId, array $ids, ?int $to, ?int $by): int
+    public function bulkAssign(int $companyId, array $ids, ?int $to, ?int $by, bool $nobody = false): int
     {
-        $rows = DB::table('lead_installments')->where('company_id', $companyId)->whereIn('id', $ids)->get(['id', 'lead_id', 'assigned_to']);
+        $rows = DB::table('lead_installments')->where('company_id', $companyId)->whereIn('id', $ids)->get(['id', 'lead_id', 'assigned_to', 'no_followup']);
         foreach ($rows as $r) {
-            DB::table('lead_installments')->where('id', $r->id)->update(['assigned_to' => $to, 'updated_at' => now()]);
-            $this->log($companyId, (int) $r->lead_id, (int) $r->id, $by, 'assigned', ['from' => ['assigned_to' => $r->assigned_to], 'to' => ['assigned_to' => $to], 'bulk' => true]);
+            // $to = a person; null = back to the lead's owner (the default); $nobody = no one at all — only HR can act on it
+            DB::table('lead_installments')->where('id', $r->id)->update(['assigned_to' => $nobody ? null : $to, 'no_followup' => $nobody, 'updated_at' => now()]);
+            $this->log($companyId, (int) $r->lead_id, (int) $r->id, $by, 'assigned', ['from' => ['assigned_to' => $r->assigned_to, 'no_followup' => (bool) $r->no_followup], 'to' => ['assigned_to' => $nobody ? null : $to, 'no_followup' => $nobody], 'bulk' => true]);
         }
 
         return $rows->count();

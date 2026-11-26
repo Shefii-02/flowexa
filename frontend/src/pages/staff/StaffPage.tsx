@@ -226,7 +226,7 @@ export default function StaffPage() {
         <p className="text-sm text-gray-600 mb-4">Decide what happens to the work {delUser?.name} holds. Each part can go to another person, or be released so no one in particular holds it.</p>
         {([
           ['leads', 'Leads', 'Leads they own', [['unassign', 'Unassign — no one owns them'], ['transfer', 'Hand over to…']]],
-          ['installments', 'Installment follow-ups', 'Installments they were chasing', [['unassign', 'No one in particular (the lead owner / HR)'], ['transfer', 'Hand over to…']]],
+          ['installments', 'Installment follow-ups', 'Installments they were chasing', [['unassign', 'Back to each lead’s owner (default)'], ['none', 'No one — only HR can act on them'], ['transfer', 'Hand over to…']]],
           ['incentives', 'Unpaid incentives', 'Pending or approved, not yet in a payroll', [['keep', 'Leave as they are'], ['transfer', 'Hand over to…'], ['cancel', 'Cancel — nobody gets them']]],
         ] as const).map(([k, title, hint, opts]) => (
           <div key={k} className="mb-4">

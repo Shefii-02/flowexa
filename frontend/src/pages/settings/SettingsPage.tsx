@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
+import { storageUrl } from '@/lib/apiBase'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { settingsApi, roleApi, staffApi, deviceApi, stickyApi, type StickySettings } from '@/api'
 import { Button, Input } from '@/components/ui'
@@ -249,7 +250,7 @@ function ProfileTab() {
     settingsApi.getProfile().then(r => {
       const u = r.data.user
       setForm({ name: u.name ?? '', phone: u.phone ?? '', department: u.department ?? '' })
-      setAvatarUrl(u.avatar ? (u.avatar.startsWith('http') ? u.avatar : `/storage/${u.avatar}`) : null)
+      setAvatarUrl(storageUrl(u.avatar))
     }).catch(() => {})
   }, [])
 
@@ -263,7 +264,7 @@ function ProfileTab() {
     try {
       const r = await settingsApi.updateAvatar(file)
       const a = r.data.user?.avatar
-      setAvatarUrl(a ? `/storage/${a}` : null)
+      setAvatarUrl(storageUrl(a))
       toast.success('Photo updated')
     } catch (e) { toast.error(getError(e)) }
   }

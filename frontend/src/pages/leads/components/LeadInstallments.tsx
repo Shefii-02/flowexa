@@ -117,7 +117,7 @@ export default function LeadInstallments({ leadId, saleValue }: { leadId: number
                         <button className="text-xs text-green-700 hover:underline mr-2" onClick={() => { setF({ amount: String(i.balance), late_fee_amount: i.fee_due ? String(i.fee_due) : '', paid_on: new Date().toISOString().slice(0, 10), method: '', reference: '' }); setAction({ kind: 'pay', inst: i }) }}>Record payment</button>
                         <button className="text-xs text-brand-600 hover:underline mr-2" onClick={() => { setF({ note: '', promised_on: i.promised_on ?? '' }); setAction({ kind: 'followup', inst: i }) }}>Follow-up</button>
                       </>)}
-                      {isHr && i.status !== 'waived' && <button className="text-xs text-gray-500 hover:underline mr-2" onClick={() => { setF({ due_date: i.due_date, amount: String(i.amount), assigned_to: i.assigned_to ?? '' }); setAction({ kind: 'edit', inst: i }) }}>Edit</button>}
+                      {isHr && i.status !== 'waived' && <button className="text-xs text-gray-500 hover:underline mr-2" onClick={() => { setF({ due_date: i.due_date, amount: String(i.amount), assigned_to: i.no_followup ? 'nobody' : i.assigned_to ?? '' }); setAction({ kind: 'edit', inst: i }) }}>Edit</button>}
                       {isHr && i.status !== 'waived' && i.status !== 'paid' && <button className="text-xs text-red-500 hover:underline" onClick={() => { const r = ask('Reason for waiving this installment?'); if (r) run(() => installmentApi.waive(i.id, r), 'Waived.') }}>Waive</button>}
                     </td>
                   </tr>
@@ -158,7 +158,7 @@ export default function LeadInstallments({ leadId, saleValue }: { leadId: number
             const id = action!.inst.id
             if (action!.kind === 'pay') run(() => installmentApi.pay(id, { amount: +f.amount, late_fee_amount: f.late_fee_amount ? +f.late_fee_amount : 0, paid_on: f.paid_on, method: f.method || undefined, reference: f.reference || undefined }), 'Payment recorded.')
             else if (action!.kind === 'followup') run(() => installmentApi.followup(id, { note: f.note || undefined, promised_on: f.promised_on || undefined }), 'Follow-up saved.')
-            else run(() => installmentApi.edit(id, { due_date: f.due_date, amount: +f.amount, assigned_to: f.assigned_to ? +f.assigned_to : null }), 'Saved.')
+            else run(() => installmentApi.edit(id, { due_date: f.due_date, amount: +f.amount, assigned_to: f.assigned_to && f.assigned_to !== 'nobody' ? +f.assigned_to : null, no_followup: f.assigned_to === 'nobody' }), 'Saved.')
           }}>Save</Button></>}>
         {action?.kind === 'pay' && (<div className="space-y-3">
           <Input label={`Amount received (balance ${money(action.inst.balance)})`} type="number" value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} />
@@ -175,7 +175,7 @@ export default function LeadInstallments({ leadId, saleValue }: { leadId: number
           <Input label="Due date" type="date" value={f.due_date} onChange={(e) => setF({ ...f, due_date: e.target.value })} />
           <Input label="Amount (₹)" type="number" value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} />
           <div><label className="block text-xs text-gray-500 mb-1">Follow-up by</label>
-            <select className="input" value={f.assigned_to} onChange={(e) => setF({ ...f, assigned_to: e.target.value })}><option value="">Lead owner / default</option>{staff.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
+            <select className="input" value={f.assigned_to} onChange={(e) => setF({ ...f, assigned_to: e.target.value })}><option value="">Lead owner / default</option><option value="nobody">No one — only HR can act on it</option>{staff.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
           <p className="text-[11px] text-gray-400">If you change an amount, make sure the installments still add up to the plan total.</p>
         </div>)}
       </Drawer>

@@ -313,7 +313,7 @@ export const salesActivityApi = {
 
 // ── Leads ─────────────────────────────────────────────────────────────────────
 export const installmentApi = {
-  bulkAssign: (ids: number[], assigned_to: number | null) => api.post('/installments/bulk-assign', { ids, assigned_to }),
+  bulkAssign: (ids: number[], assigned_to: number | null, nobody = false) => api.post('/installments/bulk-assign', { ids, assigned_to, nobody }),
   settings: () => api.get('/installments/settings'),
   saveSettings: (d: Record<string, unknown>) => api.put('/installments/settings', d),
   list: (p?: Record<string, unknown>) => api.get('/installments', { params: p }),
