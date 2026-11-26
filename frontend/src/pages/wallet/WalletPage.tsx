@@ -6,19 +6,16 @@ import { fmt, getError, normalizePhone } from '@/utils'
 import toast from 'react-hot-toast'
 import { useAppDispatch } from '@/store'
 import { updateWallet } from '@/store/slices'
+import WalletUsage from './WalletUsage'
 
 declare global { interface Window { Razorpay: any } }
 
 interface Package { messages: number; price_inr: number; label: string; popular: boolean }
-interface Tx { id: number; type: 'credit'|'debit'; amount: number; balance_before: number; balance_after: number; description: string; reference_type: string|null; created_at: string }
 
 export default function WalletPage({ embedded = false }: { embedded?: boolean }) {
   const dispatch = useAppDispatch()
   const [wallet,   setWallet]   = useState<any>(null)
   const [packages, setPackages] = useState<Package[]>([])
-  const [txs,      setTxs]      = useState<Tx[]>([])
-  const [txTotal,  setTxTotal]  = useState(0)
-  const [txPage,   setTxPage]   = useState(1)
   const [loading,  setLoading]  = useState(true)
   const [paying,   setPaying]   = useState(false)
   const [coupon,   setCoupon]   = useState('')
@@ -41,24 +38,18 @@ export default function WalletPage({ embedded = false }: { embedded?: boolean })
 
   const load = async () => {
     try {
-      const [w, p, t] = await Promise.all([
+      const [w, p] = await Promise.all([
         walletApi.index(),
         walletApi.packages(),
-        walletApi.transactions({ page: txPage, per_page: 15 }),
       ])
       setWallet(w.data.wallet)
       setPackages(p.data.packages)
-      setTxs(t.data.data)
-      setTxTotal(t.data.total)
     } finally { setLoading(false) }
   }
 
   const [billing, setBilling] = useState<WalletBilling | null>(null)
   useEffect(() => { walletApi.billing().then(r => setBilling(r.data.data)).catch(() => {}) }, [])
   useEffect(() => { load() }, [])
-  useEffect(() => {
-    walletApi.transactions({ page: txPage, per_page: 15 }).then((r) => { setTxs(r.data.data); setTxTotal(r.data.total) })
-  }, [txPage])
 
   const handleRecharge = async (pkg: Package) => {
     setPaying(true)
@@ -193,35 +184,7 @@ export default function WalletPage({ embedded = false }: { embedded?: boolean })
         </div>
       </div>
 
-      {/* Transactions */}
-      <div className="card">
-        <div className="card-header"><h3 className="card-title">Transaction history</h3></div>
-        {txs.length === 0 ? (
-          <div className="py-12 text-center text-sm text-gray-400">No transactions yet.</div>
-        ) : (
-          <>
-            <div className="table-wrapper">
-              <table className="table">
-                <thead><tr><th>Description</th><th>Type</th><th>Amount</th><th>Balance after</th><th>Date</th></tr></thead>
-                <tbody>
-                  {txs.map((t) => (
-                    <tr key={t.id}>
-                      <td className="text-gray-700 max-w-xs truncate">{t.description}</td>
-                      <td><Badge variant={t.type === 'credit' ? 'green' : 'red'}>{t.type}</Badge></td>
-                      <td className={`font-medium ${t.type === 'credit' ? 'text-green-600' : 'text-red-600'}`}>
-                        {t.type === 'credit' ? '+' : '-'}{fmt.number(t.amount)}
-                      </td>
-                      <td className="text-gray-600">{fmt.number(t.balance_after)}</td>
-                      <td className="text-xs text-gray-400">{fmt.datetime(t.created_at)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <Pagination page={txPage} lastPage={Math.ceil(txTotal / 15)} total={txTotal} perPage={15} onChange={setTxPage} />
-          </>
-        )}
-      </div>
+      <WalletUsage refreshKey={wallet?.balance} />
     </div>
   )
 }

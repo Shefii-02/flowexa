@@ -85,12 +85,33 @@ class WalletRepository implements WalletRepositoryInterface
     }
 
     // ─── Transaction history ──────────────────────────────────────────────────
-    public function transactions(int $companyId, ?string $type, int $perPage, int $page): LengthAwarePaginator
+    // $filters: from / to (dates, inclusive), source (reference_type), q (text in the description or reference)
+    private function transactionQuery(int $companyId, ?string $type, array $filters)
     {
         return WalletTransaction::where('company_id', $companyId)
             ->when($type, fn($q) => $q->where('type', $type))
-            ->latest()
+            ->when(!empty($filters['from']), fn($q) => $q->where('created_at', '>=', $filters['from'] . ' 00:00:00'))
+            ->when(!empty($filters['to']), fn($q) => $q->where('created_at', '<=', $filters['to'] . ' 23:59:59'))
+            ->when(!empty($filters['source']), fn($q) => $q->where('reference_type', $filters['source']))
+            ->when(!empty($filters['q']), function ($q) use ($filters) {
+                $like = '%' . addcslashes($filters['q'], '%_\\') . '%';
+                $q->where(fn($w) => $w->where('description', 'like', $like)->orWhere('reference_id', 'like', $like));
+            });
+    }
+
+    public function transactions(int $companyId, ?string $type, int $perPage, int $page, array $filters = []): LengthAwarePaginator
+    {
+        return $this->transactionQuery($companyId, $type, $filters)
+            ->latest('id')
             ->paginate($perPage, ['*'], 'page', $page);
+    }
+
+    public function transactionTotals(int $companyId, ?string $type, array $filters = []): array
+    {
+        $r = $this->transactionQuery($companyId, $type, $filters)
+            ->selectRaw("COUNT(*) n, COALESCE(SUM(CASE WHEN type = 'credit' THEN amount ELSE 0 END), 0) credits, COALESCE(SUM(CASE WHEN type = 'debit' THEN amount ELSE 0 END), 0) debits")
+            ->first();
+        return ['count' => (int) $r->n, 'credits' => (int) $r->credits, 'debits' => (int) $r->debits];
     }
 
     // ─── Create Razorpay order record ─────────────────────────────────────────

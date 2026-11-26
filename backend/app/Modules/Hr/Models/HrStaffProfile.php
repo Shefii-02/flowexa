@@ -12,7 +12,7 @@ class HrStaffProfile extends Model
 
     protected $fillable = [
         'company_id', 'user_id', 'attendance_type', 'work_mode',
-        'duty_start', 'duty_end', 'weekly_off',
+        'duty_start', 'duty_end', 'shift_id', 'weekly_off',
         'monthly_salary', 'hourly_rate', 'monthly_target', 'is_active',
     ];
 
@@ -25,6 +25,7 @@ class HrStaffProfile extends Model
     ];
 
     public function user(): BelongsTo { return $this->belongsTo(User::class); }
+    public function shift(): BelongsTo { return $this->belongsTo(HrShift::class, 'shift_id'); }
 
     public static function forUser(int $companyId, int $userId): self
     {

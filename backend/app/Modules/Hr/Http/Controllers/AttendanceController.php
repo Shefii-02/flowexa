@@ -133,6 +133,7 @@ class AttendanceController extends Controller
                 'geo_required' => $this->geoRequired($settings, $profile, (string) ($today?->work_mode ?: $profile->work_mode)),
             ],
             'schedule' => $this->svc->schedule($settings, $profile, now()),
+            'shift'    => $profile->shift_id && $profile->shift?->is_active ? ['name' => $profile->shift->name, 'start' => $profile->shift->start_time, 'end' => $profile->shift->end_time, 'grace_minutes' => $this->svc->graceFor($settings, $profile)] : null,
             'today'    => $today,
             'open_break' => $today?->openBreak(),
             'break_types' => HrBreakType::where('company_id', $companyId)->where('is_active', true)->orderBy('sort_order')->get(),
@@ -296,7 +297,7 @@ class AttendanceController extends Controller
 
         if ($data['action'] === 'clock_in' && !$att?->clock_in_at) {
             $sched = $this->svc->schedule($settings, $profile, $now);
-            $status = $this->svc->clockInStatus($now, $sched['start'], $settings->early_window_minutes, $settings->grace_minutes);
+            $status = $this->svc->clockInStatus($now, $sched['start'], $settings->early_window_minutes, $this->svc->graceFor($settings, $profile));
             $result['late_minutes'] = $status['late_minutes'];
             $result['delay_kind'] = $status['color'] === 'danger' ? 'late' : null;   // inside the grace minutes is not "late"
             $result['late_note_mode'] = $settings->lateNoteMode();
@@ -372,7 +373,7 @@ class AttendanceController extends Controller
         $workMode = $data['work_mode'] ?? $att->work_mode ?? $profile->work_mode;
         $sched = $this->svc->schedule($settings, $profile, $now);
         $status = $isFirstSession
-            ? $this->svc->clockInStatus($now, $sched['start'], $settings->early_window_minutes, $settings->grace_minutes)
+            ? $this->svc->clockInStatus($now, $sched['start'], $settings->early_window_minutes, $this->svc->graceFor($settings, $profile))
             : ['color' => $att->clock_in_status ?: 'success', 'late_minutes' => (int) $att->late_minutes, 'requires_note' => false];
         $geo = $this->svc->geofence($settings, $profile, $data['lat'] ?? null, $data['lng'] ?? null);
 
@@ -943,7 +944,7 @@ class AttendanceController extends Controller
         $sched    = $this->svc->schedule($settings, $profile, $date);
 
         if ($att->clock_in_at) {
-            $st = $this->svc->clockInStatus($att->clock_in_at, $sched['start'], $settings->early_window_minutes, $settings->grace_minutes);
+            $st = $this->svc->clockInStatus($att->clock_in_at, $sched['start'], $settings->early_window_minutes, $this->svc->graceFor($settings, $profile));
             $att->late_minutes = $st['late_minutes'];
             $att->clock_in_status = $st['color'];
         }

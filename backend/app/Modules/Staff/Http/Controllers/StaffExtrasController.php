@@ -153,7 +153,7 @@ class StaffExtrasController extends Controller
 
     private function personalRow(int $uid): array
     {
-        $row = (array) (DB::table('staff_personal_details')->where('company_id', $this->cid())->where('user_id', $uid)->first() ?? []);
+        $row = !\Illuminate\Support\Facades\Schema::hasTable('staff_personal_details') ? [] : (array) (DB::table('staff_personal_details')->where('company_id', $this->cid())->where('user_id', $uid)->first() ?? []);
         $keys = array_merge(array_keys(self::PERSONAL_TEXT), ['alternate_phones', 'other_numbers']);
         $out = [];
         foreach ($keys as $k) {
@@ -177,8 +177,11 @@ class StaffExtrasController extends Controller
             'other_numbers' => ['nullable', 'array', 'max:10'], 'other_numbers.*.label' => ['nullable', 'string', 'max:40'], 'other_numbers.*.number' => ['required', 'string', 'max:20'],
         ];
         $d = $r->validate($rules);
-        if (array_key_exists('phone', $d)) { $u->update(['phone' => $d['phone']]); }
+        if (array_key_exists('phone', $d)) { $u->update(['phone' => $d['phone']]); }   // the phone lives on the user, so it is saved either way
         unset($d['phone']);
+        if (!\Illuminate\Support\Facades\Schema::hasTable('staff_personal_details')) {
+            return response()->json(['message' => 'Phone saved, but the other personal details cannot be stored yet — the server database update (staff_personal_details migration) has not been run.'], 503);
+        }
         foreach (['alternate_phones', 'other_numbers'] as $k) {
             $d[$k] = json_encode(array_values(array_filter((array) ($d[$k] ?? []), fn ($x) => trim((string) ($x['number'] ?? '')) !== '')));
         }
@@ -230,7 +233,7 @@ class StaffExtrasController extends Controller
                 'id' => $u->id, 'name' => $u->name, 'email' => $u->email, 'phone' => $u->phone, 'avatar' => $u->avatar, 'is_active' => (bool) $u->is_active,
                 'role' => $u->role?->label ?? $u->role?->name, 'department' => $u->department, 'designation' => $u->designation, 'joined_on' => $u->joined_on?->toDateString(),
                 'last_login_at' => $u->last_login_at, 'max_leads' => $u->max_leads,
-                'work' => $prof ? ['attendance_type' => $prof->attendance_type, 'work_mode' => $prof->work_mode, 'duty_start' => $prof->duty_start, 'duty_end' => $prof->duty_end,
+                'work' => $prof ? ['shift' => $prof->shift_id ? DB::table('hr_shifts')->where('id', $prof->shift_id)->value('name') : null, 'attendance_type' => $prof->attendance_type, 'work_mode' => $prof->work_mode, 'duty_start' => $prof->duty_start, 'duty_end' => $prof->duty_end,
                     'weekly_off' => json_decode((string) $prof->weekly_off, true) ?: [], 'monthly_salary' => (float) $prof->monthly_salary, 'monthly_target' => (float) $prof->monthly_target] : null,
             ],
             'personal' => $this->personalRow($u->id),

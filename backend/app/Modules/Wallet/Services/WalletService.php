@@ -42,8 +42,19 @@ class WalletService
     public function transactions(int $companyId, TransactionFilterDTO $dto): LengthAwarePaginator
     {
         return $this->walletRepository->transactions(
-            $companyId, $dto->type, $dto->perPage, $dto->page
+            $companyId, $dto->type, $dto->perPage, $dto->page, $dto->filters
         );
+    }
+
+    public function transactionTotals(int $companyId, TransactionFilterDTO $dto): array
+    {
+        return $this->walletRepository->transactionTotals($companyId, $dto->type, $dto->filters);
+    }
+
+    /** The kinds of entries this company has (for the filter dropdown). */
+    public function transactionSources(int $companyId): array
+    {
+        return \App\Models\WalletTransaction::where('company_id', $companyId)->whereNotNull('reference_type')->distinct()->pluck('reference_type')->all();
     }
 
     // ─── Available packages ───────────────────────────────────────────────────

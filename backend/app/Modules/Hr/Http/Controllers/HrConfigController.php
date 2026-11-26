@@ -111,6 +111,58 @@ class HrConfigController extends Controller
         return response()->json(['data' => $settings->fresh()]);
     }
 
+    // ── Shifts ────────────────────────────────────────────────────────────
+
+    public function shifts(): JsonResponse
+    {
+        $cid = $this->companyId();
+        $counts = HrStaffProfile::where('company_id', $cid)->whereNotNull('shift_id')->selectRaw('shift_id, COUNT(*) c')->groupBy('shift_id')->pluck('c', 'shift_id');
+        $rows = \App\Modules\Hr\Models\HrShift::where('company_id', $cid)->orderBy('start_time')->orderBy('name')->get()
+            ->map(fn ($s) => $s->toArray() + ['staff_count' => (int) ($counts[$s->id] ?? 0)]);
+
+        return response()->json(['data' => $rows]);
+    }
+
+    public function storeShift(Request $request): JsonResponse
+    {
+        $this->guard();
+        $data = $this->validateShift($request);
+        $data['company_id'] = $this->companyId();
+
+        return response()->json(['data' => \App\Modules\Hr\Models\HrShift::create($data)], 201);
+    }
+
+    public function updateShift(Request $request, int $id): JsonResponse
+    {
+        $this->guard();
+        $s = \App\Modules\Hr\Models\HrShift::where('company_id', $this->companyId())->findOrFail($id);
+        $s->update($this->validateShift($request, true, $s->id));
+
+        return response()->json(['data' => $s->fresh()]);
+    }
+
+    public function destroyShift(int $id): JsonResponse
+    {
+        $this->guard();
+        \App\Modules\Hr\Models\HrShift::where('company_id', $this->companyId())->findOrFail($id)->delete();   // staff on it fall back to their own / company hours
+
+        return response()->json(['message' => 'Deleted.']);
+    }
+
+    private function validateShift(Request $request, bool $isUpdate = false, ?int $ignoreId = null): array
+    {
+        $req = $isUpdate ? 'sometimes' : 'required';
+
+        return $request->validate([
+            'name'          => [$req, 'string', 'max:60', $this->uniqueName('hr_shifts', $ignoreId)],
+            'start_time'    => [$req, 'date_format:H:i'],
+            'end_time'      => [$req, 'date_format:H:i'],
+            'grace_minutes' => ['nullable', 'integer', 'min:0', 'max:240'],
+            'color'         => ['nullable', 'string', 'max:9'],
+            'is_active'     => ['boolean'],
+        ]);
+    }
+
     // ── Break types ───────────────────────────────────────────────────────
 
     public function breakTypes(): JsonResponse
@@ -248,6 +300,7 @@ class HrConfigController extends Controller
                 'work_mode'       => $p?->work_mode ?? 'wfo',
                 'duty_start'      => $p?->duty_start,
                 'duty_end'        => $p?->duty_end,
+                'shift_id'        => $p?->shift_id,
                 'weekly_off'      => $p?->weekly_off ?? [],
                 'monthly_salary'  => $p?->monthly_salary,
                 'hourly_rate'     => $p?->hourly_rate,
@@ -268,6 +321,7 @@ class HrConfigController extends Controller
             'work_mode'       => ['nullable', 'in:wfo,wfh,hybrid'],
             'duty_start'      => ['nullable', 'date_format:H:i'],
             'duty_end'        => ['nullable', 'date_format:H:i'],
+            'shift_id'        => ['nullable', 'integer', \Illuminate\Validation\Rule::exists('hr_shifts', 'id')->where('company_id', $this->companyId())],
             'weekly_off'      => ['nullable', 'array'],
             'weekly_off.*'    => ['integer', 'between:0,6'],
             'monthly_salary'  => ['nullable', 'numeric', 'min:0'],

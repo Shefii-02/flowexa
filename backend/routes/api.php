@@ -735,6 +735,10 @@ Route::prefix('v1')->group(function () {
             Route::middleware('permission:hr.manage,staff.manage')->group(function () {
                 Route::get('settings',      [HrConfigController::class, 'showSettings']);
                 Route::put('settings',      [HrConfigController::class, 'updateSettings']);
+                Route::get('shifts',        [HrConfigController::class, 'shifts']);
+                Route::post('shifts',       [HrConfigController::class, 'storeShift']);
+                Route::patch('shifts/{id}', [HrConfigController::class, 'updateShift'])->whereNumber('id');
+                Route::delete('shifts/{id}', [HrConfigController::class, 'destroyShift'])->whereNumber('id');
                 Route::get('break-types',   [HrConfigController::class, 'breakTypes']);
                 Route::post('break-types',  [HrConfigController::class, 'storeBreakType']);
                 Route::patch('break-types/{id}',  [HrConfigController::class, 'updateBreakType']);

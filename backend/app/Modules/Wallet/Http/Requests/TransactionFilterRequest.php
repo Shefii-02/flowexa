@@ -16,6 +16,10 @@ class TransactionFilterRequest extends FormRequest
             'type'     => ['nullable', 'in:credit,debit'],
             'per_page' => ['nullable', 'integer', 'min:5', 'max:100'],
             'page'     => ['nullable', 'integer', 'min:1'],
+            'from'     => ['nullable', 'date'],
+            'to'       => ['nullable', 'date'],
+            'source'   => ['nullable', 'string', 'max:40'],
+            'q'        => ['nullable', 'string', 'max:100'],
         ];
     }
 

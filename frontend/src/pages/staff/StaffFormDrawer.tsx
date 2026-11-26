@@ -71,7 +71,7 @@ export default function StaffFormDrawer({ open, onClose, editUser = null, canMan
   const loadExtras = (id: number) => {
     staffExtrasApi.show(id).then((r) => setExtras({ designation: r.data.designation ?? '', joined_on: r.data.joined_on ?? '', accessible: r.data.accessible_user_ids ?? [] })).catch(() => {})
     staffExtrasApi.documents(id).then((r) => setDocs(r.data.data ?? [])).catch(() => {})
-    staffExtrasApi.personal(id).then((r) => setPersonal(personalFromApi(r.data))).catch(() => {})
+    staffExtrasApi.personal(id).then((r) => setPersonal(personalFromApi(r.data))).catch(() => { toast.error('Could not load personal details — try again.') })
   }
   const addDocument = async () => {
     if (!editUser || !docFile || !docType) return
@@ -96,6 +96,7 @@ export default function StaffFormDrawer({ open, onClose, editUser = null, canMan
   useEffect(() => {
     if (!open) return
     if (editUser) {
+      setPersonal({ ...blankPersonal(), phone: editUser.phone ?? '' })   // the list row already has the phone; the full details load on top
       loadExtras(editUser.id)
       setForm({ name: editUser.name, email: editUser.email, password: '', password_confirmation: '', role_id: editUser.role?.id?.toString() || '', department: editUser.department || '', max_leads: editUser.max_leads?.toString() || '50' })
     } else {
@@ -114,14 +115,14 @@ export default function StaffFormDrawer({ open, onClose, editUser = null, canMan
     setSaving(true)
     try {
       if (editUser) {
-        const payload: any = { name: form.name, role_id: +form.role_id, department: form.department, max_leads: maxLeadsValue }
+        const payload: any = { name: form.name, role_id: +form.role_id, phone: personal.phone || null, department: form.department, max_leads: maxLeadsValue }
         if (form.password) { payload.password = form.password; payload.password_confirmation = form.password_confirmation }
         await staffApi.update(editUser.id, payload)
         await staffExtrasApi.update(editUser.id, { designation: extras.designation || null, joined_on: extras.joined_on || null, accessible_user_ids: extras.accessible })
         await staffExtrasApi.updatePersonal(editUser.id, personal)
         toast.success('Staff updated.')
       } else {
-        const { data } = await staffApi.create({ ...form, role_id: +form.role_id, max_leads: maxLeadsValue })
+        const { data } = await staffApi.create({ ...form, phone: personal.phone || undefined, role_id: +form.role_id, max_leads: maxLeadsValue })
         const newId = data?.staff?.id ?? data?.data?.id
         if (newId) await staffExtrasApi.update(newId, { designation: extras.designation || null, joined_on: extras.joined_on || null, accessible_user_ids: extras.accessible }).catch(() => {})
         if (newId) await staffExtrasApi.updatePersonal(newId, personal).catch(() => {})

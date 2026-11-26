@@ -92,6 +92,7 @@ export default function StaffDetailPage() {
             <Field label="Last login" value={p.last_login_at ? `${day(p.last_login_at)} ${time(p.last_login_at)}` : null} />
             <Field label="Attendance type" value={p.work?.attendance_type} />
             <Field label="Work mode" value={p.work?.work_mode} />
+            <Field label="Shift" value={p.work?.shift} />
             <Field label="Duty hours" value={p.work?.duty_start ? `${String(p.work.duty_start).slice(0, 5)} – ${String(p.work.duty_end ?? '').slice(0, 5)}` : null} />
             <Field label="Weekly off" value={(p.work?.weekly_off ?? []).join(', ')} />
             <Field label="Monthly salary" value={p.work ? money(p.work.monthly_salary) : null} />

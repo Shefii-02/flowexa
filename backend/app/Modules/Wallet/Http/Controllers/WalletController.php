@@ -46,8 +46,13 @@ class WalletController extends Controller
             dto:       TransactionFilterDTO::fromRequest($request->validated()),
         );
 
+        $dto = TransactionFilterDTO::fromRequest($request->validated());
+        $cid = auth()->user()->company_id;
+
         return response()->json([
             'data'         => TransactionResource::collection($paginator->items()),
+            'totals'       => $this->walletService->transactionTotals($cid, $dto),   // over the whole filter, not just this page
+            'sources'      => $this->walletService->transactionSources($cid),
             'total'        => $paginator->total(),
             'per_page'     => $paginator->perPage(),
             'current_page' => $paginator->currentPage(),

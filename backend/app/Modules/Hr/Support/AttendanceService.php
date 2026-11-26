@@ -23,8 +23,11 @@ class AttendanceService
      */
     public function schedule(HrSetting $settings, HrStaffProfile $profile, Carbon $date): array
     {
-        $start = $profile->duty_start;
-        $end   = $profile->duty_end;
+        // A shift the staff member is on wins; otherwise their own duty hours, then the company's.
+        $shift = $profile->shift_id ? $profile->shift : null;
+        if ($shift && !$shift->is_active) { $shift = null; }
+        $start = $shift?->start_time ?: $profile->duty_start;
+        $end   = $shift?->end_time   ?: $profile->duty_end;
 
         if (!$start || !$end) {
             $wh = CompanyWorkingHour::where('company_id', $profile->company_id)
@@ -38,10 +41,18 @@ class AttendanceService
         $start = $start ?: $settings->office_start;
         $end   = $end ?: $settings->office_end;
 
-        return [
-            'start' => $date->copy()->setTimeFromTimeString((string) $start),
-            'end'   => $date->copy()->setTimeFromTimeString((string) $end),
-        ];
+        $s = $date->copy()->setTimeFromTimeString((string) $start);
+        $e = $date->copy()->setTimeFromTimeString((string) $end);
+        if ($e->lte($s)) { $e->addDay(); }   // a night shift (e.g. 22:00 – 06:00) ends the next morning
+
+        return ['start' => $s, 'end' => $e];
+    }
+
+    /** Minutes after the start that still count as only "slightly late": the staff member's shift grace, else the company's. */
+    public function graceFor(HrSetting $settings, HrStaffProfile $profile): int
+    {
+        $shift = $profile->shift_id ? $profile->shift : null;
+        return (int) (($shift && $shift->is_active && $shift->grace_minutes !== null) ? $shift->grace_minutes : $settings->grace_minutes);
     }
 
     /**

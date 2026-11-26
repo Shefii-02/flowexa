@@ -18,7 +18,10 @@ interface WalletRepositoryInterface
 
     public function updateSettings(Wallet $wallet, WalletSettingsDTO $dto): Wallet;
 
-    public function transactions(int $companyId, ?string $type, int $perPage, int $page): LengthAwarePaginator;
+    public function transactions(int $companyId, ?string $type, int $perPage, int $page, array $filters = []): LengthAwarePaginator;
+
+    /** Credits in / debits out / count over the same filter (not just the visible page). */
+    public function transactionTotals(int $companyId, ?string $type, array $filters = []): array;
 
     public function createPaymentOrder(int $companyId, int $userId, string $razorpayOrderId, int $amount, int $messagesCredit): PaymentOrder;
 
