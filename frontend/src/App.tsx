@@ -19,6 +19,7 @@ import ResetPassword from '@/pages/settings/ResetPassword'
 // Main pages
 import DashboardPage from '@/pages/dashboard/DashboardPage'
 import StaffPage from '@/pages/staff/StaffPage'
+import StaffDetailPage from '@/pages/staff/StaffDetailPage'
 import PrivacyPolicyPage from '@/pages/legal/PrivacyPolicyPage'
 import RolesPage from '@/pages/staff/RolesPage'
 import StaffAccessPage from '@/pages/staff/StaffAccessPage'
@@ -344,6 +345,7 @@ export default function App() {
 
               <Route path="setup-guide" element={<SetupGuidePage />} />
               <Route path="staff/index" element={<StaffPage />} />
+              <Route path="staff/view/:id" element={<StaffDetailPage />} />
               <Route path="staff/roles" element={<RolesPage />} />
               <Route path="staff/access" element={<StaffAccessPage />} />
               <Route path="staff/account-access" element={<Navigate to="/staff/access" replace />} />

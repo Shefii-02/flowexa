@@ -114,7 +114,7 @@ export default function StaffPage() {
             <table className="table">
               <thead>
                 <tr>
-                  <th>Name</th><th>Role</th><th>Access</th><th>Department</th><th>Leads</th><th>Status</th><th>Actions</th>
+                  <th>Name</th><th>Phone</th><th>Role</th><th>Access</th><th>Department</th><th>Leads</th><th>Status</th><th>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -131,6 +131,7 @@ export default function StaffPage() {
                         </div>
                       </div>
                     </td>
+                    <td className="text-gray-600 text-sm">{u.phone || '—'}</td>
                     <td><Badge variant="blue">{u.role?.label}</Badge></td>
                     <td>
                       <div className="flex flex-wrap items-center gap-1">
@@ -157,6 +158,7 @@ export default function StaffPage() {
                     </td>
                     <td>
                       <div className="flex gap-1">
+                        {canManage && <Link to={`/staff/view/${pid(u.id)}`} className="text-xs text-teal-600 hover:underline px-1 font-medium">View details</Link>}
                         <button onClick={() => setDeviceUser(u)} className="text-xs text-indigo-600 hover:underline px-1">Devices</button>
                         {canLoginAs && u.id !== me?.id && u.role?.name !== 'owner' && u.is_active && (
                           <button onClick={() => loginAs(u)} className="text-xs text-emerald-600 hover:underline px-1" title="Sign in as this staff member">Login as</button>

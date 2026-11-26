@@ -8,6 +8,7 @@ import { Button, Input, PasswordInput, Select, Drawer } from '@/components/ui'
 import { getError } from '@/utils'
 import toast from 'react-hot-toast'
 import { pid } from '@/lib/publicId'
+import StaffPersonalFields, { blankPersonal, personalFromApi, type PersonalForm } from './StaffPersonalFields'
 
 interface Role { id: number; name: string; label: string; access_main?: string | null; access_subs?: string[] }
 
@@ -56,6 +57,7 @@ export default function StaffFormDrawer({ open, onClose, editUser = null, canMan
   const [designations, setDesignations] = useState<{ id: number; name: string }[]>([])
   const [docTypes, setDocTypes] = useState<{ id: number; name: string }[]>([])
   const [allStaff, setAllStaff] = useState<{ id: number; name: string }[]>([])
+  const [personal, setPersonal] = useState<PersonalForm>(blankPersonal())
   const [docs, setDocs] = useState<any[]>([])
   const [docType, setDocType] = useState('')
   const [docFile, setDocFile] = useState<File | null>(null)
@@ -69,6 +71,7 @@ export default function StaffFormDrawer({ open, onClose, editUser = null, canMan
   const loadExtras = (id: number) => {
     staffExtrasApi.show(id).then((r) => setExtras({ designation: r.data.designation ?? '', joined_on: r.data.joined_on ?? '', accessible: r.data.accessible_user_ids ?? [] })).catch(() => {})
     staffExtrasApi.documents(id).then((r) => setDocs(r.data.data ?? [])).catch(() => {})
+    staffExtrasApi.personal(id).then((r) => setPersonal(personalFromApi(r.data))).catch(() => {})
   }
   const addDocument = async () => {
     if (!editUser || !docFile || !docType) return
@@ -96,7 +99,7 @@ export default function StaffFormDrawer({ open, onClose, editUser = null, canMan
       loadExtras(editUser.id)
       setForm({ name: editUser.name, email: editUser.email, password: '', password_confirmation: '', role_id: editUser.role?.id?.toString() || '', department: editUser.department || '', max_leads: editUser.max_leads?.toString() || '50' })
     } else {
-      setExtras({ designation: '', joined_on: '', accessible: [] }); setDocs([])
+      setExtras({ designation: '', joined_on: '', accessible: [] }); setDocs([]); setPersonal(blankPersonal())
       setForm(blankForm())
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -115,11 +118,13 @@ export default function StaffFormDrawer({ open, onClose, editUser = null, canMan
         if (form.password) { payload.password = form.password; payload.password_confirmation = form.password_confirmation }
         await staffApi.update(editUser.id, payload)
         await staffExtrasApi.update(editUser.id, { designation: extras.designation || null, joined_on: extras.joined_on || null, accessible_user_ids: extras.accessible })
+        await staffExtrasApi.updatePersonal(editUser.id, personal)
         toast.success('Staff updated.')
       } else {
         const { data } = await staffApi.create({ ...form, role_id: +form.role_id, max_leads: maxLeadsValue })
         const newId = data?.staff?.id ?? data?.data?.id
         if (newId) await staffExtrasApi.update(newId, { designation: extras.designation || null, joined_on: extras.joined_on || null, accessible_user_ids: extras.accessible }).catch(() => {})
+        if (newId) await staffExtrasApi.updatePersonal(newId, personal).catch(() => {})
         toast.success('Staff created — set their access next.')
         onSaved({ created: true, id: newId })
         return
@@ -134,7 +139,7 @@ export default function StaffFormDrawer({ open, onClose, editUser = null, canMan
 
   return (
     <>
-    <Drawer open={open} onClose={onClose} title={editUser ? 'Edit staff' : 'Add staff'} size="md"
+    <Drawer open={open} onClose={onClose} title={editUser ? 'Edit staff' : 'Add staff'} size="xl"
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>Cancel</Button>
@@ -179,6 +184,8 @@ export default function StaffFormDrawer({ open, onClose, editUser = null, canMan
           </div>
         </div>
       </div>
+
+      <div className="mt-5"><StaffPersonalFields value={personal} onChange={setPersonal} /></div>
 
       <div className="mt-5" data-testid="staff-documents">
         <p className="text-sm font-semibold text-gray-800 mb-2">Documents</p>

@@ -1028,6 +1028,9 @@ export const staffExtrasApi = {
     const fd = new FormData(); fd.append('type', type); fd.append('file', file); if (title) fd.append('title', title)
     return api.post(`/staff/${id}/documents`, fd, { headers: { 'Content-Type': 'multipart/form-data' } })
   },
+  personal: (id: number) => api.get(`/staff/${id}/personal`),
+  updatePersonal: (id: number, d: Record<string, any>) => api.put(`/staff/${id}/personal`, d),
+  overview: (id: number, month?: string) => api.get(`/staff/${id}/overview`, { params: { month } }),
   loginAs: (id: number) => api.post(`/staff/${id}/login-as`),
   removeDocument: (id: number, docId: number) => api.delete(`/staff/${id}/documents/${docId}`),
 }

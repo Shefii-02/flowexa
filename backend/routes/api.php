@@ -437,6 +437,9 @@ Route::prefix('v1')->group(function () {
                 Route::get('/{staff}/documents',            [\App\Modules\Staff\Http\Controllers\StaffExtrasController::class, 'documents'])->whereNumber('staff');
                 Route::post('/{staff}/documents',           [\App\Modules\Staff\Http\Controllers\StaffExtrasController::class, 'uploadDocument'])->whereNumber('staff');
                 Route::delete('/{staff}/documents/{id}',   [\App\Modules\Staff\Http\Controllers\StaffExtrasController::class, 'destroyDocument'])->whereNumber('staff')->whereNumber('id');
+                Route::get('/{staff}/personal',  [\App\Modules\Staff\Http\Controllers\StaffExtrasController::class, 'personal'])->whereNumber('staff');
+                Route::put('/{staff}/personal',  [\App\Modules\Staff\Http\Controllers\StaffExtrasController::class, 'updatePersonal'])->whereNumber('staff');
+                Route::get('/{staff}/overview',  [\App\Modules\Staff\Http\Controllers\StaffExtrasController::class, 'overview'])->whereNumber('staff');
                 Route::get('/{staff}/extras',               [\App\Modules\Staff\Http\Controllers\StaffExtrasController::class, 'show'])->whereNumber('staff');
                 Route::put('/{staff}/extras',               [\App\Modules\Staff\Http\Controllers\StaffExtrasController::class, 'update'])->whereNumber('staff');
             });
