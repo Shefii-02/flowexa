@@ -159,6 +159,14 @@ class ProcessMessageSenderJob implements ShouldQueue
             'delay_ms'        => $delayMs,
         ]);
 
+        // Progress reports: after every 3–5 recipients, the "numbers to share" (anti-block option) get a status message —
+        // campaign, sent/total, balance, time, next send time and who was just messaged — so the owner can follow along.
+        $reportNumbers = !empty($options['variation']['enabled'])
+            ? array_values(array_filter(array_map(fn ($n) => preg_replace('/\D+/', '', (string) $n), (array) ($options['variation']['share_numbers'] ?? [])), fn ($n) => strlen($n) >= 7))
+            : [];
+        $reportEvery = random_int(3, 5);
+        $reportBatch = [];
+
         foreach ($recipients as $index => $recipient) {
             $job->refresh();
             if (in_array($job->status, ['stopped', 'paused'])) {
@@ -295,6 +303,8 @@ class ProcessMessageSenderJob implements ShouldQueue
                 $job->increment('failed');
             }
 
+            $reportBatch[] = (str_contains($phone, '@') ? ($name ?: $phone) : '+' . preg_replace('/\D+/', '', $phone)) . ($res && $res->successful() ? '' : ' (failed)');
+
             // Gateway-hung circuit breaker: each timed-out send blocks this worker for the full HTTP timeout
             // (30s). Several in a row means the gateway/session is stuck, not that those numbers are bad —
             // pause instead of grinding through the whole list (hours) and failing everyone. Resume continues
@@ -306,11 +316,20 @@ class ProcessMessageSenderJob implements ShouldQueue
                 break;
             }
 
-            if ($index < count($recipients) - 1) {
+            $hasNext = $index < count($recipients) - 1;
+            $restSec = $hasNext ? ($pacer ? $pacer->delayAfterSend() : $delayMs / 1000) : 0;
+
+            if ($reportNumbers && count($reportBatch) >= $reportEvery && $hasNext) {
+                $this->sendProgressReport($job, $apiKey, $reportNumbers, $reportBatch, $hasNext ? now()->addSeconds((int) $restSec) : null, false);
+                $reportBatch = [];
+                $reportEvery = random_int(3, 5);
+            }
+
+            if ($hasNext) {
                 if ($pacer) {
-                    $this->restFor($job, $pacer->delayAfterSend());
+                    $this->restFor($job, $restSec);
                 } else {
-                    usleep($delayMs * 1000);
+                    usleep((int) ($restSec * 1_000_000));
                 }
             }
         }
@@ -320,11 +339,52 @@ class ProcessMessageSenderJob implements ShouldQueue
             $job->update(['status' => 'done', 'completed_at' => now()]);
         }
 
+        if ($reportNumbers && $job->status === 'done') {
+            $this->sendProgressReport($job, $apiKey, $reportNumbers, $reportBatch, null, true);
+        }
+
         Log::info("ProcessMessageSenderJob #{$job->id}: finished", [
             'final_status' => $job->status,
             'sent'         => $job->sent,
             'failed'       => $job->failed,
         ]);
+    }
+
+    // Sends the progress message to every "number to share". Normal chat messages (not billed) and never allowed to break the campaign.
+    private function sendProgressReport(MessageSenderJob $job, string $apiKey, array $numbers, array $batch, ?\Illuminate\Support\Carbon $nextAt, bool $final): void
+    {
+        $job->refresh();
+        $sent = (int) $job->sent; $failed = (int) $job->failed; $total = (int) $job->total;
+        $left = max($total - $sent - $failed, 0);
+        $lines = [
+            ($final ? 'Campaign finished: *' : 'Campaign update: *') . ($job->campaign_name ?: 'Campaign') . '*',
+            "Sent: {$sent}/{$total}" . ($failed ? "  |  Failed: {$failed}" : ''),
+            "Balance: {$left} left",
+            'Time: ' . now()->format('d M, h:i A'),
+        ];
+        if (!$final) {
+            $lines[] = 'Next send: ' . ($nextAt ? $nextAt->format('h:i:s A') : '-');
+        }
+        if ($batch) {
+            $lines[] = 'Just sent to: ' . implode(', ', array_slice($batch, 0, 5));
+        }
+        // Varies every report so WhatsApp never sees the same text twice: a random reference number, then 1-20 stars.
+        $lines[] = 'Ref: ' . random_int(10, 99);
+        $lines[] = str_repeat('*', random_int(1, 20));
+        $text = implode("\n", $lines);
+
+        $wa = new OpenWaMessageService();   // not billedAs(): a status note to the owner is a normal chat message
+        foreach ($numbers as $n) {
+            try {
+                $chatId = "{$n}@c.us";
+                $check = $wa->checkNumber($job->session_id, $apiKey, $n);
+                if ($check !== null && !empty($check['whatsappId'])) { $chatId = $check['whatsappId']; }
+                $wa->sendText($job->session_id, $apiKey, $chatId, $text);
+            } catch (\Throwable $e) {
+                Log::warning("ProcessMessageSenderJob #{$job->id}: progress report to {$n} failed: {$e->getMessage()}");
+            }
+            usleep(1_500_000);
+        }
     }
 
     // Waits between messages in short slices so Pause / Stop take effect within a few seconds even when the

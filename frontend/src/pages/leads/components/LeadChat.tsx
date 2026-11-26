@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import toast from 'react-hot-toast'
 import { Link } from 'react-router-dom'
 import { conversationApi, leadApi } from '@/api'
 import { getError, formatPhone } from '@/utils'
@@ -52,6 +53,7 @@ type WaChat = {
  */
 export function useWaChat(leadId: number | undefined, enabled: boolean, limit = 100, onNumberFound?: (phone: string) => void) {
   const [state, setState] = useState<{ loading: boolean; data: WaChat | null; error?: string }>({ loading: enabled, data: null })
+  const [tick, setTick] = useState(0)
   const reported = useRef(false)
   useEffect(() => {
     if (!enabled || !leadId) { setState({ loading: false, data: null }); return }
@@ -61,7 +63,7 @@ export function useWaChat(leadId: number | undefined, enabled: boolean, limit = 
       .then(r => { if (!off) setState({ loading: false, data: r.data }) })
       .catch(e => { if (!off) setState({ loading: false, data: null, error: getError(e) }) })
     return () => { off = true }
-  }, [leadId, enabled, limit])
+  }, [leadId, enabled, limit, tick])
 
   const d = state.data
   useEffect(() => {
@@ -70,7 +72,7 @@ export function useWaChat(leadId: number | undefined, enabled: boolean, limit = 
     reported.current = true
     onNumberFound?.(d.real_number_saved)
   }, [d, onNumberFound])
-  return state
+  return { ...state, reload: () => setTick(t => t + 1) }
 }
 
 /** The inline preview on the lead page. */
@@ -122,6 +124,33 @@ export function LeadChatCard({ contactId, phone, name, onOpen, leadId, waFirst =
             {shown.map((m: any) => <Bubble key={m.id} m={m} />)}
           </button>
         )}
+    </div>
+  )
+}
+
+/** Reply box under the live WhatsApp Chat thread — sends a normal chat message through the lead's session. */
+function WaComposer({ leadId, chatId, sessionId, onSent }: { leadId?: number; chatId: string; sessionId: number; onSent: () => void }) {
+  const [text, setText] = useState('')
+  const [sending, setSending] = useState(false)
+  const send = async () => {
+    const t = text.trim()
+    if (!t || !leadId || sending) return
+    setSending(true)
+    try {
+      await leadApi.waChatSend(leadId, { text: t, chat_id: chatId, session_id: sessionId })
+      setText('')
+      onSent()
+    } catch (e) { toast.error(getError(e)) } finally { setSending(false) }
+  }
+  return (
+    <div className="px-4 py-3 border-t border-gray-100">
+      <div className="flex items-end gap-2">
+        <textarea value={text} onChange={e => setText(e.target.value)} rows={1} placeholder="Type a message…"
+          onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }}
+          className="flex-1 resize-none rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-green-500 max-h-28" />
+        <button onClick={send} disabled={sending || !text.trim()} className="rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50">{sending ? '…' : 'Send'}</button>
+      </div>
+      <div className="mt-1 text-[10px] text-gray-400">Sent from the WhatsApp Chat gateway · Enter to send, Shift+Enter for a new line</div>
     </div>
   )
 }
@@ -181,7 +210,9 @@ export function LeadChatDrawer({ open, contactId, phone, name, onClose, leadId, 
               </div>
             )}
           </div>
-          <div className="px-5 py-2 border-t border-gray-100 text-[11px] text-gray-400">Live from the WhatsApp Chat gateway — read-only.</div>
+          {d?.available && d.chat_id && d.session
+            ? <WaComposer leadId={leadId} chatId={d.chat_id} sessionId={d.session.id} onSent={wa.reload} />
+            : <div className="px-5 py-2 border-t border-gray-100 text-[11px] text-gray-400">Live from the WhatsApp Chat gateway.</div>}
         </div>
       </div>
     )

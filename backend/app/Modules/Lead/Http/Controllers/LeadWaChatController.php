@@ -90,6 +90,46 @@ class LeadWaChatController extends Controller
         ]);
     }
 
+    /**
+     * POST /leads/{lead}/wa-chat/send  {text, chat_id, session_id}
+     * Sends a normal chat message (free, like typing in the inbox) from one of the company's sessions to the lead's WhatsApp chat.
+     * chat_id / session_id must be the ones GET .../wa-chat reported — a chat id is only accepted if it belongs to this contact.
+     */
+    public function send(Request $request, int $lead): JsonResponse
+    {
+        $data = $request->validate([
+            'text'       => ['required', 'string', 'max:4000'],
+            'chat_id'    => ['required', 'string', 'max:100'],
+            'session_id' => ['required', 'integer'],
+        ]);
+        $u = auth()->user();
+        $l = $this->leads->show($lead, $u->company_id, $u->id, $u->hasPermission('leads.view_all'));
+        $contact = $l->contact;
+        $token = $u->company?->wa_chat_token;
+        if (!$contact || !$token || !config('services.open_wa.base_url')) {
+            return response()->json(['message' => 'WhatsApp Chat is not set up for this company.'], 409);
+        }
+        if (!in_array($data['chat_id'], $this->chatCandidates($contact), true)) {
+            return response()->json(['message' => 'That chat does not belong to this lead.'], 422);
+        }
+        $session = WahaSession::where('company_id', $u->company_id)->find($data['session_id']);
+        if (!$session) {
+            return response()->json(['message' => 'That WhatsApp session no longer exists.'], 422);
+        }
+
+        try {
+            $res = (new \App\Modules\WaChat\Services\OpenWaMessageService())
+                ->sendText($session->session_name, $token, $data['chat_id'], $data['text'], null, null, 'manual');
+        } catch (\Throwable $e) {
+            return response()->json(['message' => 'Could not reach the WhatsApp gateway.'], 502);
+        }
+        if (!$res->successful()) {
+            $msg = $res->json('message') ?: "Message not sent (gateway returned HTTP {$res->status()}).";
+            return response()->json(['message' => is_string($msg) ? $msg : 'Message not sent.'], 422);
+        }
+        return response()->json(['message' => 'Sent.']);
+    }
+
     /** The chat ids this contact's conversation could be under, most likely first. @return string[] */
     private function chatCandidates(Contact $c): array
     {

@@ -863,6 +863,7 @@ Route::prefix('v1')->group(function () {
             Route::put('/{lead}/referrer',    [\App\Modules\Lead\Http\Controllers\LeadReferralController::class, 'set'])->middleware('permission:leads.manage')->whereNumber('lead')->name('referrer');
             Route::get('/{lead}/chats',       [\App\Modules\Lead\Http\Controllers\LeadChannelChatController::class, 'show'])->middleware('permission:leads.view')->whereNumber('lead')->name('chats');
             Route::get('/{lead}/wa-chat',     [\App\Modules\Lead\Http\Controllers\LeadWaChatController::class, 'show'])->middleware('permission:leads.view')->whereNumber('lead')->name('wa-chat');
+            Route::post('/{lead}/wa-chat/send', [\App\Modules\Lead\Http\Controllers\LeadWaChatController::class, 'send'])->middleware('permission:leads.view')->whereNumber('lead')->name('wa-chat.send');
             Route::get('/{lead}/activities',  [\App\Modules\Lead\Http\Controllers\LeadActivityController::class, 'index'])->middleware('permission:leads.view')->whereNumber('lead')->name('activities.index');
             Route::post('/{lead}/activities', [\App\Modules\Lead\Http\Controllers\LeadActivityController::class, 'store'])->middleware('permission:leads.view')->whereNumber('lead')->name('activities.store');
             Route::put('/{lead}/categories',  [LeadController::class, 'setCategories'])->middleware('permission:leads.manage')->whereNumber('lead')->name('categories');

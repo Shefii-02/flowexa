@@ -332,6 +332,7 @@ export const leadApi = {
   setReferrer: (id: number, d: Record<string, unknown>) => api.put(`/leads/${id}/referrer`, d),
   /** The lead's WhatsApp Chat conversation, read live from the chat gateway (+ the real number behind an @lid id, when it can be resolved). */
   waChat: (id: number, limit = 100) => api.get(`/leads/${id}/wa-chat`, { params: { limit } }),
+  waChatSend: (id: number, body: { text: string; chat_id: string; session_id: number }) => api.post(`/leads/${id}/wa-chat/send`, body),
   setCategories: (id: number, categories: string[]) => api.put(`/leads/${id}/categories`, { categories }),
   bulkStatus: (leadIds: number[], d: { stage?: string; reason?: string; priority?: string; category?: string; clear_category?: boolean; categories?: string[]; category_mode?: 'add' | 'replace' | 'remove' }) => api.post('/leads/bulk-status', { lead_ids: leadIds, ...d }),
   delete: (id: number) => api.delete(`/leads/${id}`),
