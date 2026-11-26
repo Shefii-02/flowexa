@@ -149,6 +149,7 @@ Route::prefix('v1')->group(function () {
     Route::middleware(['jwt.auth', 'module.gate', 'screen.gate'])->group(function () {
 
         Route::get('mobile-modules/hidden', [\App\Http\Controllers\MobileModulesController::class, 'hidden']);
+        Route::get('home/sales/feed', [\App\Http\Controllers\WorkspaceHomeController::class, 'salesFeed']);   // the Sales dashboard's tabbed lists, 10 at a time
         Route::get('home/{workspace}', [\App\Http\Controllers\WorkspaceHomeController::class, 'show'])->where('workspace', 'sales|hr|administrators|marketing|accounts');   // one workspace's Home content in one call
         Route::get('company-package', [\App\Http\Controllers\CompanyPackageController::class, 'show'])->middleware('permission:dashboard.view');   // dashboard "Active package" panel
         Route::get('web-config', [\App\Http\Controllers\MobileAppConfigController::class, 'web']);   // web menu sections to hide for me

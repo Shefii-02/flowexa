@@ -67,6 +67,7 @@ class TaskController extends Controller
         unset($data['sync_todo']);
         $data['company_id'] = $this->companyId();
         $data['created_by'] = auth()->id();
+        $data['assigned_to'] = $data['assigned_to'] ?? auth()->id();   // nobody picked (or the person can't see the staff list): it is theirs
 
         // a lead-based follow-up carries the lead's contact so it shows who to call
         if (!empty($data['lead_id']) && empty($data['contact_id'])) {

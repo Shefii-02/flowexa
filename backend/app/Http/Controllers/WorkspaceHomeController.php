@@ -48,6 +48,58 @@ class WorkspaceHomeController extends Controller
         return response()->json(['workspace' => $workspace, 'generated_at' => now()->toIso8601String()] + $this->{$workspace}($u, TeamMembersController::canSeeTeam($u)));
     }
 
+    /**
+     * GET /home/sales/feed?tab=hot|tasks|followups|installments&offset=0&limit=10 — one page of a Sales dashboard list, the signed-in person's own items.
+     * Each item: {id, lead_id, name, phone, title, subtitle, badge, overdue}. Fetches one extra row to tell the app whether "Load more" is needed.
+     */
+    public function salesFeed(\Illuminate\Http\Request $r): JsonResponse
+    {
+        $u = auth()->user();
+        abort_unless($u->isSuperAdmin() || $u->isOwner() || TeamMembersController::canSeeTeam($u) || $u->hasAnyPermission(self::PERMISSIONS['sales']), 403);
+        $cid = $this->cid();
+        $tab = (string) $r->query('tab', 'hot');
+        abort_unless(in_array($tab, ['hot', 'tasks', 'followups', 'installments'], true), 422, 'Unknown list.');
+        $offset = max(0, (int) $r->query('offset', 0));
+        $limit = min(30, max(1, (int) $r->query('limit', 10)));
+        $endOfToday = Carbon::today()->endOfDay()->toDateTimeString();
+        $today = Carbon::today()->toDateString();
+
+        $rows = $this->safe(function () use ($tab, $u, $cid, $offset, $limit, $endOfToday, $today) {
+            if ($tab === 'hot') {
+                return DB::table('leads')->leftJoin('contacts as c', 'c.id', '=', 'leads.contact_id')->where('leads.company_id', $cid)->whereNull('leads.deleted_at')
+                    ->where('leads.assigned_to', $u->id)->whereNotIn('leads.stage', ['enrolled', 'lost'])
+                    ->orderByDesc('leads.updated_at')->orderByDesc('leads.id')->offset($offset)->limit($limit + 1)
+                    ->get(['leads.id', 'leads.stage', 'leads.updated_at', 'c.name', 'c.phone'])
+                    ->map(fn ($l) => ['id' => $l->id, 'lead_id' => $l->id, 'name' => $l->name ?: $l->phone, 'phone' => $l->phone, 'title' => $l->name ?: $l->phone,
+                        'subtitle' => str_replace('_', ' ', (string) $l->stage), 'at' => $l->updated_at, 'badge' => null, 'overdue' => false])->all();
+            }
+            if ($tab === 'tasks' || $tab === 'followups') {
+                // open items due today or already late; the person's own
+                return DB::table('crm_tasks as t')->leftJoin('contacts as c', 'c.id', '=', 't.contact_id')->leftJoin('leads as l', 'l.id', '=', 't.lead_id')->leftJoin('contacts as lc', 'lc.id', '=', 'l.contact_id')
+                    ->where('t.company_id', $cid)->where('t.assigned_to', $u->id)->where('t.status', 'open')->where('t.due_at', '<=', $endOfToday)
+                    ->when($tab === 'followups', fn ($q) => $q->where('t.type', 'followup'), fn ($q) => $q->where('t.type', '!=', 'followup'))
+                    ->orderBy('t.due_at')->orderBy('t.id')->offset($offset)->limit($limit + 1)
+                    ->get(['t.id', 't.title', 't.type', 't.due_at', 't.lead_id', 'c.name as cname', 'c.phone as cphone', 'lc.name as lname', 'lc.phone as lphone'])
+                    ->map(fn ($t) => ['id' => $t->id, 'lead_id' => $t->lead_id, 'name' => $t->lname ?: $t->cname, 'phone' => $t->lphone ?: $t->cphone, 'title' => $t->title,
+                        'subtitle' => trim(($t->lname ?: $t->cname ?: '') . ' · ' . $t->type, ' ·'), 'at' => $t->due_at, 'badge' => null, 'overdue' => $t->due_at < now()->startOfDay()->toDateTimeString()])->all();
+            }
+            // installments to follow up today (or late) — same "who follows up" rule as the Installments page
+            return DB::table('lead_installments as i')->join('lead_installment_plans as p', 'p.id', '=', 'i.plan_id')->join('leads as l', 'l.id', '=', 'i.lead_id')
+                ->leftJoin('contacts as c', 'c.id', '=', 'l.contact_id')
+                ->where('i.company_id', $cid)->where('p.status', '!=', 'cancelled')->whereNull('l.deleted_at')->where('i.no_followup', false)
+                ->whereIn('i.status', ['pending', 'partial'])->where('i.due_date', '<=', $today)
+                ->where(fn ($w) => $w->where('i.assigned_to', $u->id)->orWhere(fn ($x) => $x->whereNull('i.assigned_to')->where('l.assigned_to', $u->id)))
+                ->orderBy('i.due_date')->orderBy('i.id')->offset($offset)->limit($limit + 1)
+                ->get(['i.id', 'i.lead_id', 'i.seq', 'i.amount', 'i.due_date', 'c.name as cname', 'c.phone as cphone'])
+                ->map(fn ($i) => ['id' => $i->id, 'lead_id' => $i->lead_id, 'name' => $i->cname ?: $i->cphone, 'phone' => $i->cphone, 'title' => $i->cname ?: $i->cphone,
+                    'subtitle' => 'Installment #' . $i->seq . ' · ₹' . number_format((float) $i->amount), 'at' => $i->due_date, 'badge' => null, 'overdue' => $i->due_date < $today])->all();
+        }, []);
+
+        $more = count($rows) > $limit;
+
+        return response()->json(['tab' => $tab, 'items' => array_slice($rows, 0, $limit), 'has_more' => $more]);
+    }
+
     // ───────────────────────────── Sales ─────────────────────────────
     private function sales($u, bool $team): array
     {
