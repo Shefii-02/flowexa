@@ -266,6 +266,12 @@ function formatCountdown(ms: number): string {
 
 // ── ITEM 3 — Backend persistence helpers ──────────────────────────────────────
 
+// The server only knows these job types (validation + DB enum). The UI has finer-grained recipient
+// tabs — 'group-chat' (a whole group chat) and 'wa-label' (WhatsApp Business label) — that map onto
+// the closest stored type, otherwise the POST is rejected with 422 "The selected type is invalid".
+const toServerJobType = (t?: string): string =>
+  t === 'wa-label' ? 'label' : t === 'group-chat' ? 'chat' : (t ?? 'personal')
+
 async function persistJobToBackend(job: JobState, sessionId: string) {
   try {
     await api.post('/message-sender/jobs', {
@@ -273,7 +279,7 @@ async function persistJobToBackend(job: JobState, sessionId: string) {
       total: job.progress.total,
       sent: job.progress.sent,
       failed: job.progress.failed,
-      type: job.log[0]?.type ?? 'personal',
+      type: toServerJobType(job.log[0]?.type),
       session_id: sessionId,
       started_at: job.startedAt ?? new Date().toISOString(),
       completed_at: job.completedAt ?? new Date().toISOString(),
@@ -1421,7 +1427,7 @@ export function MessageSender() {
       const res = await api.post('/message-sender', {
         campaign_name: campaignName || undefined,
         session_id: session,
-        type: selectedRecipients[0]?.type ?? 'personal',
+        type: toServerJobType(selectedRecipients[0]?.type),
         total: sendable.length,
         delay_ms: delaySeconds * 1000,
         unique_signature: uniqueSignature,
