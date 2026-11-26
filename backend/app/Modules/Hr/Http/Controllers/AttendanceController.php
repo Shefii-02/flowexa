@@ -127,6 +127,7 @@ class AttendanceController extends Controller
                 'selfie_required_clock_in', 'selfie_required_clock_out',
                 'selfie_required_break_start', 'selfie_required_break_end',
             ]) + [
+                'late_note_mode' => $settings->lateNoteMode(),   // off | optional | required — "optional" = the reason is added from Attendance after clocking in
                 // Does THIS person have to share a location? Only when the company enforces the office radius AND they are GPS-tracked
                 // AND working from the office today. (`geofence_mandatory` alone is a company-wide switch — a work-from-home or
                 // non-GPS colleague must not be blocked by it.)
@@ -341,6 +342,27 @@ class AttendanceController extends Controller
     }
 
     /** POST /hr/attendance/clock-in */
+    /**
+     * POST /hr/attendance/late-note {note} — the person's own reason for today's late clock-in, added AFTER clocking in (company setting
+     * "Late clock-in reason = Optional"). Only for a day they were actually late; saved on the attendance row where HR sees it.
+     */
+    public function addLateNote(Request $request): JsonResponse
+    {
+        $data = $request->validate(['note' => ['required', 'string', 'max:500']]);
+        $u = auth()->user();
+        $settings = HrSetting::forCompany((int) $u->company_id);
+        if ($settings->lateNoteMode() === 'off') {
+            return response()->json(['message' => 'Late reasons are turned off for your company.'], 422);
+        }
+        $att = HrAttendance::where('company_id', $u->company_id)->where('user_id', $u->id)->whereDate('work_date', today())->first();
+        if (!$att || !$att->clock_in_at || (int) $att->late_minutes <= 0 || $att->clock_in_status !== 'danger') {
+            return response()->json(['message' => 'There is no late clock-in today to explain.'], 422);
+        }
+        $att->update(['late_note' => trim($data['note'])]);
+
+        return response()->json(['message' => 'Reason saved.', 'data' => $att->fresh()]);
+    }
+
     public function clockIn(Request $request): JsonResponse
     {
         $data = $request->validate([

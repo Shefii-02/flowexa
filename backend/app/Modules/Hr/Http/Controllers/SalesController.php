@@ -114,10 +114,10 @@ class SalesController extends Controller
             ->get()
             ->keyBy('user_id');
 
-        $byStaff = $sales->groupBy('staff_id')->map(function ($rows, $staffId) use ($targets) {
+        $byStaff = $sales->groupBy('staff_id')->map(function ($rows, $staffId) use ($targets, $companyId, $month) {
             $profile = $targets->get($staffId);
             $sold = (float) $rows->sum('amount');
-            $target = (float) ($profile?->monthly_target ?? 0);
+            $target = app(\App\Modules\Hr\Support\StaffCompensation::class)->monthlyTarget($companyId, (int) $staffId, $month, $profile);
 
             return [
                 'staff_id'   => (int) $staffId,
@@ -150,7 +150,7 @@ class SalesController extends Controller
         $today = today();
 
         $profile = HrStaffProfile::forUser($companyId, $userId);
-        $target = (float) ($profile->monthly_target ?? 0);
+        $target = app(\App\Modules\Hr\Support\StaffCompensation::class)->monthlyTarget($companyId, $userId, $month, $profile);
 
         $sales = ListingSale::where('company_id', $companyId)->where('staff_id', $userId)
             ->whereBetween('sold_at', [$monthStart, $monthEnd])->get(['amount', 'sold_at']);
@@ -203,13 +203,15 @@ class SalesController extends Controller
             ->whereBetween('sold_at', [$monthStart, $monthEnd])
             ->selectRaw('staff_id, SUM(amount) as total')->groupBy('staff_id')->pluck('total', 'staff_id');
 
+        $comp = app(\App\Modules\Hr\Support\StaffCompensation::class);
+        $ym = $monthStart->format('Y-m');
         $rows = HrStaffProfile::where('company_id', $companyId)->where('is_active', true)
-            ->whereNotNull('monthly_target')->where('monthly_target', '>', 0)
             ->with('user:id,name')
             ->get()
-            ->map(function (HrStaffProfile $p) use ($sold) {
+            ->filter(fn (HrStaffProfile $p) => $comp->monthlyTarget($companyId, (int) $p->user_id, $ym, $p) > 0)
+            ->map(function (HrStaffProfile $p) use ($sold, $comp, $companyId, $ym) {
                 $achieved = (float) ($sold[$p->user_id] ?? 0);
-                $target = (float) $p->monthly_target;
+                $target = $comp->monthlyTarget($companyId, (int) $p->user_id, $ym, $p);
 
                 return [
                     'user_id' => (int) $p->user_id,

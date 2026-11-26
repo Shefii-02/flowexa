@@ -437,8 +437,18 @@ Route::prefix('v1')->group(function () {
                 Route::get('/{staff}/documents',            [\App\Modules\Staff\Http\Controllers\StaffExtrasController::class, 'documents'])->whereNumber('staff');
                 Route::post('/{staff}/documents',           [\App\Modules\Staff\Http\Controllers\StaffExtrasController::class, 'uploadDocument'])->whereNumber('staff');
                 Route::delete('/{staff}/documents/{id}',   [\App\Modules\Staff\Http\Controllers\StaffExtrasController::class, 'destroyDocument'])->whereNumber('staff')->whereNumber('id');
+                Route::get('/{staff}/salary',    [\App\Modules\Staff\Http\Controllers\StaffExtrasController::class, 'salary'])->whereNumber('staff');
+                Route::put('/{staff}/salary',    [\App\Modules\Staff\Http\Controllers\StaffExtrasController::class, 'updateSalary'])->whereNumber('staff');
+                Route::get('/{staff}/targets',   [\App\Modules\Staff\Http\Controllers\StaffExtrasController::class, 'targets'])->whereNumber('staff');
+                Route::put('/{staff}/targets',   [\App\Modules\Staff\Http\Controllers\StaffExtrasController::class, 'setTarget'])->whereNumber('staff');
+                Route::delete('/{staff}/targets/{id}', [\App\Modules\Staff\Http\Controllers\StaffExtrasController::class, 'destroyTarget'])->whereNumber('staff')->whereNumber('id');
+                Route::put('/{staff}/category-targets',  [\App\Modules\Staff\Http\Controllers\StaffExtrasController::class, 'setCategoryTarget'])->whereNumber('staff');
+                Route::delete('/{staff}/category-targets/{id}', [\App\Modules\Staff\Http\Controllers\StaffExtrasController::class, 'destroyCategoryTarget'])->whereNumber('staff')->whereNumber('id');
                 Route::get('/{staff}/personal',  [\App\Modules\Staff\Http\Controllers\StaffExtrasController::class, 'personal'])->whereNumber('staff');
                 Route::put('/{staff}/personal',  [\App\Modules\Staff\Http\Controllers\StaffExtrasController::class, 'updatePersonal'])->whereNumber('staff');
+                Route::get('/{staff}/leads',        [\App\Modules\Staff\Http\Controllers\StaffExtrasController::class, 'leadsSummary'])->whereNumber('staff');
+                Route::get('/{staff}/performance',  [\App\Modules\Staff\Http\Controllers\StaffExtrasController::class, 'performance'])->whereNumber('staff');
+                Route::get('/{staff}/activity',     [\App\Modules\Staff\Http\Controllers\StaffExtrasController::class, 'activity'])->whereNumber('staff');
                 Route::get('/{staff}/overview',  [\App\Modules\Staff\Http\Controllers\StaffExtrasController::class, 'overview'])->whereNumber('staff');
                 Route::get('/{staff}/extras',               [\App\Modules\Staff\Http\Controllers\StaffExtrasController::class, 'show'])->whereNumber('staff');
                 Route::put('/{staff}/extras',               [\App\Modules\Staff\Http\Controllers\StaffExtrasController::class, 'update'])->whereNumber('staff');
@@ -641,6 +651,7 @@ Route::prefix('v1')->group(function () {
             // Self service — every staff member manages their own attendance/leave, no permission needed.
             Route::get('attendance/me',          [AttendanceController::class, 'me']);
             Route::get('attendance/me/history',  [AttendanceController::class, 'myHistory']);
+            Route::post('attendance/late-note',  [AttendanceController::class, 'addLateNote']);
             Route::post('attendance/clock-in',   [AttendanceController::class, 'clockIn']);
             Route::post('attendance/clock-out',  [AttendanceController::class, 'clockOut']);
             Route::post('attendance/break/start', [AttendanceController::class, 'breakStart']);
@@ -810,6 +821,18 @@ Route::prefix('v1')->group(function () {
             });
         });
 
+        // Installments — the follow-up page, payments, and HR's rules / corrections. Access is decided inside the controller (HR vs. who is set to follow up).
+        Route::prefix('installments')->group(function () {
+            Route::get('/',                      [\App\Modules\Lead\Http\Controllers\InstallmentController::class, 'index']);
+            Route::get('/settings',              [\App\Modules\Lead\Http\Controllers\InstallmentController::class, 'settings']);
+            Route::put('/settings',              [\App\Modules\Lead\Http\Controllers\InstallmentController::class, 'saveSettings']);
+            Route::post('/{id}/pay',             [\App\Modules\Lead\Http\Controllers\InstallmentController::class, 'pay'])->whereNumber('id');
+            Route::post('/{id}/followup',        [\App\Modules\Lead\Http\Controllers\InstallmentController::class, 'followup'])->whereNumber('id');
+            Route::patch('/{id}',                [\App\Modules\Lead\Http\Controllers\InstallmentController::class, 'edit'])->whereNumber('id');
+            Route::post('/{id}/waive',           [\App\Modules\Lead\Http\Controllers\InstallmentController::class, 'waive'])->whereNumber('id');
+            Route::post('/payments/{paymentId}/reverse', [\App\Modules\Lead\Http\Controllers\InstallmentController::class, 'reverse'])->whereNumber('paymentId');
+        });
+
         Route::prefix('leads')->name('leads.')->group(function () {
 
             // Reads — every action below requires at least leads.view (previously ungated).
@@ -869,6 +892,8 @@ Route::prefix('v1')->group(function () {
             Route::post('/bulk-assign', [LeadController::class, 'bulkAssign'])->middleware('permission:leads.manage')->name('bulk-assign');
             Route::put('/{lead}/referrer',    [\App\Modules\Lead\Http\Controllers\LeadReferralController::class, 'set'])->middleware('permission:leads.manage')->whereNumber('lead')->name('referrer');
             Route::get('/{lead}/chats',       [\App\Modules\Lead\Http\Controllers\LeadChannelChatController::class, 'show'])->middleware('permission:leads.view')->whereNumber('lead')->name('chats');
+            Route::get('/{lead}/installments',  [\App\Modules\Lead\Http\Controllers\InstallmentController::class, 'show'])->middleware('permission:leads.view')->whereNumber('lead');
+            Route::post('/{lead}/installments/plan', [\App\Modules\Lead\Http\Controllers\InstallmentController::class, 'createPlan'])->middleware('permission:leads.view')->whereNumber('lead');
             Route::get('/{lead}/wa-chat',     [\App\Modules\Lead\Http\Controllers\LeadWaChatController::class, 'show'])->middleware('permission:leads.view')->whereNumber('lead')->name('wa-chat');
             Route::post('/{lead}/wa-chat/send', [\App\Modules\Lead\Http\Controllers\LeadWaChatController::class, 'send'])->middleware('permission:leads.view')->whereNumber('lead')->name('wa-chat.send');
             Route::get('/{lead}/activities',  [\App\Modules\Lead\Http\Controllers\LeadActivityController::class, 'index'])->middleware('permission:leads.view')->whereNumber('lead')->name('activities.index');

@@ -93,8 +93,16 @@ export default function HrStaffSetupPage() {
                     <option value="wfo">WFO</option><option value="wfh">WFH</option><option value="hybrid">Hybrid</option>
                   </select>
                 </td>
-                <td className="p-2"><input type="time" disabled={!!r.shift_id} title={r.shift_id ? 'Set by the shift' : undefined} defaultValue={r.duty_start ? String(r.duty_start).slice(0, 5) : ''} onBlur={e => save(r.user.id, { duty_start: e.target.value || null })} className="text-xs border border-gray-200 rounded px-1 w-24" /></td>
-                <td className="p-2"><input type="time" disabled={!!r.shift_id} title={r.shift_id ? 'Set by the shift' : undefined} defaultValue={r.duty_end ? String(r.duty_end).slice(0, 5) : ''} onBlur={e => save(r.user.id, { duty_end: e.target.value || null })} className="text-xs border border-gray-200 rounded px-1 w-24" /></td>
+                {(() => {
+                  const sh = shifts.find(x => x.id === r.shift_id)
+                  const start = sh?.start_time ?? (r.duty_start ? String(r.duty_start).slice(0, 5) : '')
+                  const end = sh?.end_time ?? (r.duty_end ? String(r.duty_end).slice(0, 5) : '')
+                  // key: the boxes refill when the shift (or its times) change
+                  return (<>
+                    <td className="p-2"><input key={`s${r.shift_id}-${start}`} type="time" disabled={!!sh} title={sh ? `Set by the ${sh.name} shift` : undefined} defaultValue={start} onBlur={e => save(r.user.id, { duty_start: e.target.value || null })} className="text-xs border border-gray-200 rounded px-1 w-24 disabled:bg-gray-50 disabled:text-gray-700" /></td>
+                    <td className="p-2"><input key={`e${r.shift_id}-${end}`} type="time" disabled={!!sh} title={sh ? `Set by the ${sh.name} shift` : undefined} defaultValue={end} onBlur={e => save(r.user.id, { duty_end: e.target.value || null })} className="text-xs border border-gray-200 rounded px-1 w-24 disabled:bg-gray-50 disabled:text-gray-700" /></td>
+                  </>)
+                })()}
                 <td className="p-2"><input type="number" defaultValue={r.hourly_rate ?? ''} onBlur={e => save(r.user.id, { hourly_rate: e.target.value ? Number(e.target.value) : null })} className="text-xs border border-gray-200 rounded px-1 w-24" /></td>
                 <td className="p-2"><input type="number" defaultValue={r.monthly_salary ?? ''} onBlur={e => save(r.user.id, { monthly_salary: e.target.value ? Number(e.target.value) : null })} className="text-xs border border-gray-200 rounded px-1 w-28" /></td>
                 <td className="p-2"><input type="number" defaultValue={r.monthly_target ?? ''} onBlur={e => save(r.user.id, { monthly_target: e.target.value ? Number(e.target.value) : null })} className="text-xs border border-gray-200 rounded px-1 w-28" placeholder="₹ / units" /></td>

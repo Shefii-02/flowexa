@@ -57,6 +57,11 @@ class SalesService
                 'created_by' => $data['created_by'] ?? auth()->id(),
             ]);
 
+            // Instalment sales can count toward the TARGET without earning an incentive (HR chose different bases for the two).
+            if (!empty($data['skip_incentive'])) {
+                return $sale->fresh(['staff:id,name', 'listing:id,title']);
+            }
+
             [$incentiveAmount, $rule] = $this->resolveIncentive($companyId, $listing, $amount);
 
             $incentive = HrIncentive::create([
@@ -77,6 +82,29 @@ class SalesService
 
             return $sale->fresh(['staff:id,name', 'listing:id,title', 'incentive']);
         });
+    }
+
+    /** An incentive that is not tied to a sale row (instalment payments when HR counts incentives differently from targets). */
+    public function recordIncentive(int $companyId, int $userId, ?int $listingId, float $base, string $earnedOn, string $title, string $sourceType, int $sourceId): ?HrIncentive
+    {
+        if ($base <= 0) { return null; }
+        $listing = $listingId ? Listing::where('company_id', $companyId)->find($listingId) : null;
+        [$amount, $rule] = $this->resolveIncentive($companyId, $listing, round($base, 2));
+
+        return HrIncentive::create([
+            'company_id' => $companyId, 'user_id' => $userId, 'incentive_rule_id' => $rule?->id, 'source_type' => $sourceType, 'source_id' => $sourceId,
+            'title' => $title, 'base_amount' => round($base, 2), 'amount' => round($amount, 2), 'earned_on' => $earnedOn, 'status' => 'pending',
+        ]);
+    }
+
+    /** Take back standalone incentives of one source — refuses when one was already paid out. */
+    public function voidIncentives(string $sourceType, int $sourceId): void
+    {
+        $rows = HrIncentive::where('source_type', $sourceType)->where('source_id', $sourceId)->get();
+        foreach ($rows as $inc) {
+            if ($inc->status === 'paid') { abort(422, 'The incentive for this payment was already paid out — it cannot be reversed.'); }
+        }
+        foreach ($rows as $inc) { $inc->delete(); }
     }
 
     /** Reverse a sale — removes its incentive unless already paid. */

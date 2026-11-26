@@ -94,7 +94,7 @@ class DashboardController extends Controller
     {
         $month = now()->format('Y-m');
         $profile = HrStaffProfile::forUser($companyId, $userId);
-        $target = (float) ($profile->monthly_target ?? 0);
+        $target = app(\App\Modules\Hr\Support\StaffCompensation::class)->monthlyTarget($companyId, $userId, $month, $profile);
 
         $achieved = (float) ListingSale::where('company_id', $companyId)
             ->where('staff_id', $userId)

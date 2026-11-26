@@ -312,6 +312,19 @@ export const salesActivityApi = {
 }
 
 // ── Leads ─────────────────────────────────────────────────────────────────────
+export const installmentApi = {
+  settings: () => api.get('/installments/settings'),
+  saveSettings: (d: Record<string, unknown>) => api.put('/installments/settings', d),
+  list: (p?: Record<string, unknown>) => api.get('/installments', { params: p }),
+  forLead: (leadId: number) => api.get(`/leads/${leadId}/installments`),
+  createPlan: (leadId: number, d: Record<string, unknown>) => api.post(`/leads/${leadId}/installments/plan`, d),
+  pay: (id: number, d: Record<string, unknown>) => api.post(`/installments/${id}/pay`, d),
+  followup: (id: number, d: Record<string, unknown>) => api.post(`/installments/${id}/followup`, d),
+  edit: (id: number, d: Record<string, unknown>) => api.patch(`/installments/${id}`, d),
+  waive: (id: number, reason: string) => api.post(`/installments/${id}/waive`, { reason }),
+  reverse: (paymentId: number, reason: string) => api.post(`/installments/payments/${paymentId}/reverse`, { reason }),
+}
+
 export const leadApi = {
   list: (p?: Record<string, unknown>) => api.get('/leads', { params: p }),
   show: (id: number) => api.get(`/leads/${id}`),
@@ -1028,6 +1041,16 @@ export const staffExtrasApi = {
     const fd = new FormData(); fd.append('type', type); fd.append('file', file); if (title) fd.append('title', title)
     return api.post(`/staff/${id}/documents`, fd, { headers: { 'Content-Type': 'multipart/form-data' } })
   },
+  leadsSummary: (id: number, month?: string) => api.get(`/staff/${id}/leads`, { params: { month } }),
+  performance: (id: number, months = 6) => api.get(`/staff/${id}/performance`, { params: { months } }),
+  activity: (id: number) => api.get(`/staff/${id}/activity`),
+  salary: (id: number) => api.get(`/staff/${id}/salary`),
+  updateSalary: (id: number, d: { monthly_salary: number | null; hourly_rate: number | null; effective_from?: string; note?: string }) => api.put(`/staff/${id}/salary`, d),
+  targets: (id: number, month?: string) => api.get(`/staff/${id}/targets`, { params: { month } }),
+  setTarget: (id: number, d: { month: string | null; monthly_target: number }) => api.put(`/staff/${id}/targets`, d),
+  removeTarget: (id: number, rowId: number) => api.delete(`/staff/${id}/targets/${rowId}`),
+  setCategoryTarget: (id: number, d: { category: string; month: string | null; target_amount: number; incentive_percent: number }) => api.put(`/staff/${id}/category-targets`, d),
+  removeCategoryTarget: (id: number, rowId: number, month?: string) => api.delete(`/staff/${id}/category-targets/${rowId}`, { params: { month } }),
   personal: (id: number) => api.get(`/staff/${id}/personal`),
   updatePersonal: (id: number, d: Record<string, any>) => api.put(`/staff/${id}/personal`, d),
   overview: (id: number, month?: string) => api.get(`/staff/${id}/overview`, { params: { month } }),

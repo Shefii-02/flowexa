@@ -97,11 +97,14 @@ class PayrollService
         $absent = max(0, $workingDaysElapsed - $present - (int) ceil($paidLeave) - (int) ceil($unpaidLeave));
 
         $wd = max(1, $settings->payroll_working_days);
-        $dayRate = $profile->monthly_salary ? round($profile->monthly_salary / $wd, 2) : null;
-        $hourRate = $profile->hourly_rate ?? ($dayRate ? round($dayRate / 8, 2) : null);
+        // The salary that applies IN THIS MONTH (a raise that starts next month does not change this month's payroll).
+        $sal = app(StaffCompensation::class)->salaryFor($profile, $month);
+        $monthlySalary = $sal['monthly_salary'];
+        $dayRate = $monthlySalary ? round($monthlySalary / $wd, 2) : null;
+        $hourRate = $sal['hourly_rate'] ?? ($dayRate ? round($dayRate / 8, 2) : null);
 
-        $basePay = $profile->monthly_salary !== null
-            ? (float) $profile->monthly_salary
+        $basePay = $monthlySalary !== null
+            ? (float) $monthlySalary
             : round($worked * ($hourRate ?? 0), 2);
 
         $otPay = $hourRate !== null ? round($otHours * $hourRate * $settings->overtime_multiplier, 2) : 0.0;
@@ -121,7 +124,7 @@ class PayrollService
             $deductions += round($absent * $dayRate, 2);
         }
         // hourly staff already lose absent/leave pay via worked hours
-        if ($profile->monthly_salary === null) {
+        if ($monthlySalary === null) {
             $deductions = round($lateDays * (float) $settings->late_penalty_amount, 2);
         }
 

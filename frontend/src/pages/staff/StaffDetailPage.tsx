@@ -1,14 +1,16 @@
 // src/pages/staff/StaffDetailPage.tsx
 // One staff member, everything in one place: profile & personal details, attendance, leaves, payroll, targets and tasks.
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { staffExtrasApi } from '@/api'
+import { staffExtrasApi, staffApi } from '@/api'
+import StaffFormDrawer from './StaffFormDrawer'
+import { LeadsTab, PerformanceTab, DocumentsTab, ActivityTab, WorkSetup, exportProfileCsv } from './StaffDetailExtras'
 import { Badge, Spinner, EmptyState } from '@/components/ui'
 import { getError } from '@/utils'
 import { useDecodedParams, pid } from '@/lib/publicId'
 import toast from 'react-hot-toast'
 
-const TABS = ['Overview', 'Personal', 'Attendance', 'Leaves', 'Payroll', 'Targets & tasks'] as const
+const TABS = ['Overview', 'Personal', 'Leads', 'Attendance', 'Leaves', 'Payroll', 'Salary', 'Targets & tasks', 'Performance', 'Documents', 'Activity'] as const
 type Tab = typeof TABS[number]
 
 const money = (n: any) => (n === null || n === undefined || n === '' ? '—' : `₹${Number(n).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`)
@@ -35,18 +37,142 @@ function Stat({ label, value, sub }: { label: string; value: any; sub?: string }
 }
 const statusVariant = (s: string): any => ({ present: 'green', approved: 'green', done: 'green', released: 'green', absent: 'red', rejected: 'red', on_leave: 'blue', pending: 'yellow', half_day: 'yellow', open: 'yellow' } as any)[s] ?? 'gray'
 
+
+const monthLabel = (ym?: string | null) => (ym ? new Date(`${ym.slice(0, 7)}-01`).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' }) : 'Every month')
+
+/** Salary: what applies now, change it from a chosen month, and the full log of every change. */
+function SalaryTab({ id }: { id: number }) {
+  const [d, setD] = useState<any>(null)
+  const [f, setF] = useState({ monthly_salary: '', hourly_rate: '', effective_from: new Date().toISOString().slice(0, 7), note: '' })
+  const [busy, setBusy] = useState(false)
+  const load = useCallback(() => {
+    staffExtrasApi.salary(id).then((r) => { setD(r.data); setF((x) => ({ ...x, monthly_salary: r.data.current?.monthly_salary ?? '', hourly_rate: r.data.current?.hourly_rate ?? '' })) }).catch((e) => toast.error(getError(e)))
+  }, [id])
+  useEffect(() => { load() }, [load])
+  const save = async () => {
+    setBusy(true)
+    try {
+      await staffExtrasApi.updateSalary(id, { monthly_salary: f.monthly_salary === '' ? null : Number(f.monthly_salary), hourly_rate: f.hourly_rate === '' ? null : Number(f.hourly_rate), effective_from: f.effective_from, note: f.note || undefined })
+      toast.success('Salary saved.'); setF((x) => ({ ...x, note: '' })); load()
+    } catch (e) { toast.error(getError(e)) } finally { setBusy(false) }
+  }
+  if (!d) return <div className="p-6 flex justify-center"><Spinner /></div>
+  return (
+    <div className="space-y-5">
+      <div className="grid grid-cols-2 gap-3 md:max-w-lg">
+        <Stat label="Monthly salary (now)" value={money(d.current.monthly_salary)} />
+        <Stat label="Hourly rate (now)" value={money(d.current.hourly_rate)} />
+      </div>
+      <div className="card p-5">
+        <p className="text-sm font-semibold mb-3">Change salary</p>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div><label className="block text-xs text-gray-500 mb-1">Monthly salary (₹)</label><input type="number" min={0} className="input" value={f.monthly_salary} onChange={(e) => setF({ ...f, monthly_salary: e.target.value })} /></div>
+          <div><label className="block text-xs text-gray-500 mb-1">Hourly rate (₹)</label><input type="number" min={0} className="input" value={f.hourly_rate} onChange={(e) => setF({ ...f, hourly_rate: e.target.value })} /></div>
+          <div><label className="block text-xs text-gray-500 mb-1">Applies from month</label><input type="month" className="input" value={f.effective_from} onChange={(e) => setF({ ...f, effective_from: e.target.value })} /></div>
+          <div><label className="block text-xs text-gray-500 mb-1">Note</label><input className="input" placeholder="Increment…" value={f.note} onChange={(e) => setF({ ...f, note: e.target.value })} /></div>
+        </div>
+        <button onClick={save} disabled={busy} className="mt-3 px-4 py-2 rounded-lg bg-brand-600 text-white text-sm disabled:opacity-50">{busy ? 'Saving…' : 'Save salary'}</button>
+        <p className="text-[11px] text-gray-400 mt-2">Payroll for each month uses the salary that applies from that month, so a raise from a later month never changes earlier months.</p>
+      </div>
+      <div className="card table-wrapper">
+        <div className="card-header"><h3 className="card-title">Salary activity log</h3></div>
+        <table className="table"><thead><tr><th>Changed on</th><th>Applies from</th><th>Monthly salary</th><th>Hourly rate</th><th>By</th><th>Note</th></tr></thead>
+          <tbody>
+            {d.history.length === 0 ? <tr><td colSpan={6} className="text-center text-gray-400 py-6">No salary changes recorded yet.</td></tr> : d.history.map((h: any) => (
+              <tr key={h.id}>
+                <td className="text-xs text-gray-500 whitespace-nowrap">{day(h.created_at)} {time(h.created_at)}</td>
+                <td className="font-medium whitespace-nowrap">{monthLabel(h.effective_from)}</td>
+                <td>{h.prev_monthly_salary != null && <span className="text-gray-400 line-through mr-1">{money(h.prev_monthly_salary)}</span>}{money(h.monthly_salary)}</td>
+                <td>{h.prev_hourly_rate != null && <span className="text-gray-400 line-through mr-1">{money(h.prev_hourly_rate)}</span>}{money(h.hourly_rate)}</td>
+                <td>{h.changed_by || '—'}{h.source === 'setup' && <span className="text-[10px] text-gray-400"> (Staff Setup)</span>}</td>
+                <td className="text-gray-500 max-w-xs truncate">{h.note || '—'}</td>
+              </tr>
+            ))}
+          </tbody></table>
+      </div>
+    </div>
+  )
+}
+
+/** Monthly sales target (common for every month, or one chosen month) and lead-category targets with incentive %. */
+function TargetsPanel({ id, month }: { id: number; month: string }) {
+  const [d, setD] = useState<any>(null)
+  const [t, setT] = useState({ month: '', amount: '' })
+  const [c, setC] = useState({ category: '', month: '', target: '', pct: '' })
+  const load = useCallback(() => { staffExtrasApi.targets(id, month).then((r) => setD(r.data)).catch((e) => toast.error(getError(e))) }, [id, month])
+  useEffect(() => { load() }, [load])
+  const run = async (fn: () => Promise<any>, ok: string) => { try { const r = await fn(); setD(r.data); toast.success(ok) } catch (e) { toast.error(getError(e)) } }
+  if (!d) return <div className="p-4 flex justify-center"><Spinner /></div>
+  const common = d.targets.find((x: any) => !x.month)
+  return (
+    <div className="space-y-5">
+      <div className="card p-5">
+        <p className="text-sm font-semibold mb-1">Monthly sales target</p>
+        <p className="text-xs text-gray-500 mb-3">Set one target that applies to <b>every month</b>, or a different one for a <b>chosen month</b> (that month's own target wins). {monthLabel(month)}: <b>{money(d.effective_target)}</b></p>
+        <div className="flex flex-wrap items-end gap-2">
+          <div><label className="block text-xs text-gray-500 mb-1">For</label>
+            <select className="input w-44" value={t.month} onChange={(e) => setT({ ...t, month: e.target.value })}>
+              <option value="">Every month</option><option value="pick">A chosen month…</option>
+            </select></div>
+          {t.month !== '' && <div><label className="block text-xs text-gray-500 mb-1">Month</label><input type="month" className="input" value={t.month === 'pick' ? '' : t.month} onChange={(e) => setT({ ...t, month: e.target.value || 'pick' })} /></div>}
+          <div><label className="block text-xs text-gray-500 mb-1">Target (₹)</label><input type="number" min={0} className="input w-40" value={t.amount} onChange={(e) => setT({ ...t, amount: e.target.value })} placeholder={common ? String(common.monthly_target) : ''} /></div>
+          <button className="px-4 py-2 rounded-lg bg-brand-600 text-white text-sm disabled:opacity-50" disabled={t.amount === '' || t.month === 'pick'}
+            onClick={() => run(() => staffExtrasApi.setTarget(id, { month: t.month || null, monthly_target: Number(t.amount) }), 'Target saved.').then(() => setT({ month: t.month, amount: '' }))}>Save target</button>
+        </div>
+        <div className="mt-3 flex flex-wrap gap-2 text-xs">
+          {d.targets.length === 0 ? <span className="text-gray-400">No target set yet.</span> : d.targets.map((x: any) => (
+            <span key={x.id} className="inline-flex items-center gap-1.5 rounded-full bg-gray-100 px-3 py-1">
+              {monthLabel(x.month)}: <b>{money(x.monthly_target)}</b>
+              {x.month && <button className="text-red-500" title="Remove this month's own target" onClick={() => run(() => staffExtrasApi.removeTarget(id, x.id), 'Removed.')}>×</button>}
+            </span>
+          ))}
+        </div>
+      </div>
+
+      <div className="card p-5">
+        <p className="text-sm font-semibold mb-1">Lead category targets &amp; incentive %</p>
+        <p className="text-xs text-gray-500 mb-3">For each lead category: a sales target and the incentive % earned on the sale value of this person's leads enrolled in it. Applies every month, or only the month you pick.</p>
+        <div className="flex flex-wrap items-end gap-2">
+          <div><label className="block text-xs text-gray-500 mb-1">Category</label>
+            <select className="input w-48" value={c.category} onChange={(e) => setC({ ...c, category: e.target.value })}><option value="">Select…</option>{d.categories.map((n: string) => <option key={n} value={n}>{n}</option>)}</select></div>
+          <div><label className="block text-xs text-gray-500 mb-1">Month <span className="text-gray-400">(blank = every month)</span></label><input type="month" className="input" value={c.month} onChange={(e) => setC({ ...c, month: e.target.value })} /></div>
+          <div><label className="block text-xs text-gray-500 mb-1">Target (₹)</label><input type="number" min={0} className="input w-32" value={c.target} onChange={(e) => setC({ ...c, target: e.target.value })} /></div>
+          <div><label className="block text-xs text-gray-500 mb-1">Incentive %</label><input type="number" min={0} max={100} step="0.01" className="input w-24" value={c.pct} onChange={(e) => setC({ ...c, pct: e.target.value })} /></div>
+          <button className="px-4 py-2 rounded-lg bg-brand-600 text-white text-sm disabled:opacity-50" disabled={!c.category}
+            onClick={() => run(() => staffExtrasApi.setCategoryTarget(id, { category: c.category, month: c.month || null, target_amount: Number(c.target || 0), incentive_percent: Number(c.pct || 0) }), 'Saved.').then(() => setC({ ...c, target: '', pct: '' }))}>Save</button>
+        </div>
+        <div className="table-wrapper mt-4">
+          <table className="table"><thead><tr><th>Category</th><th>Applies</th><th>Target</th><th>Incentive %</th><th>Enrolled ({monthLabel(month)})</th><th>Achieved</th><th>Progress</th><th>Incentive earned</th><th /></tr></thead>
+            <tbody>
+              {d.category_progress.length === 0 ? <tr><td colSpan={9} className="text-center text-gray-400 py-5">No category targets for {monthLabel(month)}.</td></tr> : d.category_progress.map((r: any) => (
+                <tr key={r.id}><td className="font-medium">{r.category}</td><td className="text-xs text-gray-500">{r.month ? monthLabel(r.month) : 'Every month'}</td><td>{money(r.target_amount)}</td><td>{r.incentive_percent}%</td>
+                  <td>{r.enrolled}</td><td>{money(r.achieved)}</td><td>{r.progress != null ? `${r.progress}%` : '—'}</td><td className="font-medium text-green-700">{money(r.incentive)}</td>
+                  <td><button className="text-xs text-red-500" onClick={() => run(() => staffExtrasApi.removeCategoryTarget(id, r.id, month), 'Removed.')}>Remove</button></td></tr>
+              ))}
+            </tbody></table>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function StaffDetailPage() {
   const { id } = useDecodedParams<{ id: string }>()
   const [tab, setTab] = useState<Tab>('Overview')
   const [month, setMonth] = useState(new Date().toISOString().slice(0, 7))
   const [data, setData] = useState<any>(null)
   const [loading, setLoading] = useState(true)
+  const [editUser, setEditUser] = useState<any>(null)
+  const [tick, setTick] = useState(0)
 
   useEffect(() => {
     if (!id) return
     setLoading(true)
     staffExtrasApi.overview(+id, month).then((r) => setData(r.data)).catch((e) => toast.error(getError(e))).finally(() => setLoading(false))
-  }, [id, month])
+  }, [id, month, tick])
+
+  // the same Add / Edit staff form as the list, opened right here (it loads this person's own row first)
+  const openEdit = async () => { try { const r = await staffApi.show(+id!); setEditUser(r.data.staff ?? r.data.data ?? r.data) } catch (e) { toast.error(getError(e)) } }
 
   if (loading && !data) return <div className="p-10 flex justify-center"><Spinner size="lg" /></div>
   if (!data) return <EmptyState icon="👤" title="Staff member not found" desc="You may not have access to see this person." />
@@ -67,14 +193,21 @@ export default function StaffDetailPage() {
             <div className="mt-1 flex gap-2"><Badge variant={p.is_active ? 'green' : 'gray'}>{p.is_active ? 'Active' : 'Inactive'}</Badge>{p.joined_on && <Badge variant="blue">Joined {day(p.joined_on)}</Badge>}</div>
           </div>
         </div>
-        <Link to="/staff/index" className="text-sm text-brand-600 hover:underline">← All staff</Link>
+        <div className="flex flex-col items-end gap-2">
+          <Link to="/staff/index" className="text-sm text-brand-600 hover:underline">← All staff</Link>
+          <div className="flex gap-2 print:hidden">
+            <button onClick={openEdit} className="px-3 py-1.5 rounded-lg bg-brand-600 text-white text-xs">Edit details</button>
+            <button onClick={() => exportProfileCsv(data)} className="px-3 py-1.5 rounded-lg border border-gray-200 text-xs">Export (Excel)</button>
+            <button onClick={() => window.print()} className="px-3 py-1.5 rounded-lg border border-gray-200 text-xs">Print / PDF</button>
+          </div>
+        </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-1 border-b border-gray-200">
         {TABS.map((x) => (
           <button key={x} onClick={() => setTab(x)} className={`px-4 py-2 text-sm -mb-px border-b-2 ${tab === x ? 'border-brand-600 text-brand-700 font-medium' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>{x}</button>
         ))}
-        {(tab === 'Attendance' || tab === 'Overview') && (
+        {(tab === 'Attendance' || tab === 'Overview' || tab === 'Targets & tasks' || tab === 'Leads') && (
           <input type="month" value={month} onChange={(e) => e.target.value && setMonth(e.target.value)} className="input ml-auto w-40" />
         )}
       </div>
@@ -100,6 +233,13 @@ export default function StaffDetailPage() {
           </div>
         </div>
       )}
+
+      {tab === 'Overview' && <WorkSetup id={+id!} work={p.work} onSaved={() => setTick((x) => x + 1)} />}
+
+      {tab === 'Leads' && <LeadsTab id={+id!} month={month} />}
+      {tab === 'Performance' && <PerformanceTab id={+id!} />}
+      {tab === 'Documents' && <DocumentsTab id={+id!} />}
+      {tab === 'Activity' && <ActivityTab id={+id!} />}
 
       {tab === 'Personal' && (
         <div className="space-y-5">
@@ -150,6 +290,11 @@ export default function StaffDetailPage() {
         </div>
       )}
 
+      {tab === 'Leaves' && data.leave_balance?.length > 0 && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {data.leave_balance.map((l: any) => <Stat key={l.name} label={`${l.name}${l.paid ? '' : ' (unpaid)'}`} value={l.left != null ? `${l.left} left` : `${l.used} used`} sub={l.allowed != null ? `${l.used} of ${l.allowed} days used this year` : 'no yearly limit'} />)}
+        </div>
+      )}
       {tab === 'Leaves' && (
         <div className="card table-wrapper">
           <table className="table"><thead><tr><th>Type</th><th>From</th><th>To</th><th>Days</th><th>Status</th><th>Reason</th></tr></thead>
@@ -174,8 +319,11 @@ export default function StaffDetailPage() {
         </div>
       )}
 
+      {tab === 'Salary' && <SalaryTab id={+id!} />}
+
       {tab === 'Targets & tasks' && (
         <div className="space-y-5">
+          <TargetsPanel id={+id!} month={month} />
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <Stat label="Tasks done (this month)" value={t.stats.done_this_month} sub={`${t.stats.done_total} all time`} />
             <Stat label="Open tasks" value={t.stats.open} sub={`${t.stats.overdue} overdue`} />
@@ -201,6 +349,7 @@ export default function StaffDetailPage() {
           </div>
         </div>
       )}
+      <StaffFormDrawer open={!!editUser} onClose={() => setEditUser(null)} editUser={editUser} canManageAccess onSaved={() => { setEditUser(null); setTick((x) => x + 1) }} />
     </div>
   )
 }

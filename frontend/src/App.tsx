@@ -29,6 +29,7 @@ import CampaignsPage from '@/pages/meta-ads/campaigns/CampaignsPage'
 import LeadsPage from '@/pages/leads/LeadsPage'
 import StaffLeadsPage from '@/pages/leads/StaffLeadsPage'
 import LeadsByStaffPage from '@/pages/leads/LeadsByStaffPage'
+import InstallmentsPage from '@/pages/leads/InstallmentsPage'
 import LeadVerificationPage from '@/pages/leads/LeadVerificationPage'
 import WidgetLeadsPage from '@/pages/wa-agent/widget/WidgetLeadsPage'
 import WidgetAnalyticsPage from '@/pages/wa-agent/widget/WidgetAnalyticsPage'
@@ -368,6 +369,7 @@ export default function App() {
 
               <Route path="crm/leads" element={<LeadsPage />} />
               <Route path="crm/leads/by-staff" element={<LeadsByStaffPage />} />
+              <Route path="crm/installments" element={<InstallmentsPage />} />
               <Route path="crm/leads/logs" element={<LeadLogsPage />} />
               <Route path="crm/leads/verification" element={<LeadVerificationPage />} />
               <Route path="crm/leads/held" element={<HeldLeadsPage />} />

@@ -195,7 +195,8 @@ class LeadRepository implements LeadRepositoryInterface
         $lead->refresh();
         if ($lead->stage === 'enrolled' && $oldStage !== 'enrolled'
             && $lead->listing_id && $lead->sale_value && $lead->assigned_to
-            && !$lead->sale()->exists()) {
+            && !$lead->sale()->exists()
+            && !$this->installmentsReplaceFullSale($lead)) {
             try {
                 app(\App\Modules\Hr\Support\SalesService::class)->record($lead->company_id, [
                     'listing_id' => $lead->listing_id,
@@ -214,6 +215,14 @@ class LeadRepository implements LeadRepositoryInterface
         }
 
         return $lead->fresh(['contact', 'assignedTo']);
+    }
+
+    /** A lead with an instalment plan is credited by HR's instalment rules (see InstallmentService), not always the whole value at enrolment. */
+    private function installmentsReplaceFullSale(Lead $lead): bool
+    {
+        if (!\Illuminate\Support\Facades\Schema::hasTable('lead_installment_plans')) { return false; }
+
+        return app(\App\Modules\Lead\Services\InstallmentService::class)->handleEnrolment($lead);
     }
 
     public function assign(Lead $lead, int $assignedTo, int $assignedBy): Lead

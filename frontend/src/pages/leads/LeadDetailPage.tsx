@@ -11,6 +11,7 @@ import { useDecodedParams as useParams } from '@/lib/publicId'
 import { leadApi, leadCategoryApi, staffApi, contactApi, labelApi } from '@/api'
 import { catalogApi } from '@/pages/wa-agent/catalog/api'
 import { LeadChatCard, LeadChatDrawer } from './components/LeadChat'
+import LeadInstallments from './components/LeadInstallments'
 import SideDrawer from './components/SideDrawer'
 import AssignStaffDrawer from './components/AssignStaffDrawer'
 import { Button, ConfirmModal, Badge, Spinner } from '@/components/ui'
@@ -352,6 +353,8 @@ export default function LeadDetailPage() {
           {lead.contact?.phone && (
             <LeadChatCard contactId={lead.contact.id} phone={lead.contact.phone} name={lead.contact.name} onOpen={() => setChatOpen(true)} leadId={lead.id} waFirst={waFirst} onNumberFound={fillRealNumber} onReviewConflict={(id) => setMergeOther(id)} />
           )}
+
+          {lead.stage === 'enrolled' || lead.sale_value ? <LeadInstallments leadId={lead.id} saleValue={lead.sale_value} /> : null}
 
           <LeadChannelChats leadId={lead.id} source={lead.source} />
           <LeadReferrer lead={lead} canEdit={canManage} onChanged={load} />

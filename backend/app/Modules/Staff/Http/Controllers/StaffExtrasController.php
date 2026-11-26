@@ -140,6 +140,210 @@ class StaffExtrasController extends Controller
     }
 
 
+
+    // ── salary, sales targets, category targets + incentive % ──────────────────
+    private function comp(): \App\Modules\Hr\Support\StaffCompensation { return app(\App\Modules\Hr\Support\StaffCompensation::class); }
+
+    private function salaryPayload(int $staff): array
+    {
+        $u = $this->person($staff);
+        $profile = \App\Modules\Hr\Models\HrStaffProfile::forUser($this->cid(), $u->id);
+        $now = $this->comp()->salaryFor($profile, now());
+
+        return ['current' => $now, 'history' => $this->comp()->salaryHistory($this->cid(), $u->id)];
+    }
+
+    public function salary(int $staff): JsonResponse { return response()->json($this->salaryPayload($staff)); }
+
+    public function updateSalary(Request $r, int $staff): JsonResponse
+    {
+        $u = $this->person($staff);
+        $d = $r->validate([
+            'monthly_salary' => ['nullable', 'numeric', 'min:0', 'max:99999999'],
+            'hourly_rate'    => ['nullable', 'numeric', 'min:0', 'max:9999999'],
+            'effective_from' => ['nullable', 'regex:/^\d{4}-\d{2}$/'],
+            'note'           => ['nullable', 'string', 'max:255'],
+        ]);
+        $this->comp()->setSalary($this->cid(), $u->id, isset($d['monthly_salary']) ? (float) $d['monthly_salary'] : null, isset($d['hourly_rate']) ? (float) $d['hourly_rate'] : null,
+            $d['effective_from'] ?? null, auth()->id(), $d['note'] ?? null, 'staff');
+
+        return response()->json($this->salaryPayload($staff));
+    }
+
+    private function targetsPayload(int $staff, ?string $month = null): array
+    {
+        $u = $this->person($staff);
+        $month = preg_match('/^\d{4}-\d{2}$/', (string) $month) ? $month : now()->format('Y-m');
+        $categories = DB::table('lead_categories')->where('company_id', $this->cid())->where('is_active', true)->orderBy('sort_order')->orderBy('name')->pluck('name');
+
+        return [
+            'month' => $month,
+            'effective_target' => $this->comp()->monthlyTarget($this->cid(), $u->id, $month),
+            'targets' => $this->comp()->targets($this->cid(), $u->id),
+            'category_rows' => $this->comp()->categoryRows($this->cid(), $u->id),
+            'category_progress' => $this->comp()->categoryProgress($this->cid(), $u->id, $month),
+            'categories' => $categories,
+        ];
+    }
+
+    public function targets(Request $r, int $staff): JsonResponse { return response()->json($this->targetsPayload($staff, $r->query('month'))); }
+
+    /** PUT {month: YYYY-MM | null (= every month), monthly_target} */
+    public function setTarget(Request $r, int $staff): JsonResponse
+    {
+        $u = $this->person($staff);
+        $d = $r->validate(['month' => ['nullable', 'regex:/^\d{4}-\d{2}$/'], 'monthly_target' => ['required', 'numeric', 'min:0', 'max:99999999999']]);
+        $this->comp()->setMonthlyTarget($this->cid(), $u->id, $d['month'] ?? null, (float) $d['monthly_target']);
+
+        return response()->json($this->targetsPayload($staff, $d['month'] ?? null));
+    }
+
+    public function destroyTarget(int $staff, int $id): JsonResponse
+    {
+        $u = $this->person($staff);
+        DB::table('hr_staff_targets')->where('company_id', $this->cid())->where('user_id', $u->id)->where('id', $id)->whereNotNull('month')->delete();   // the every-month target is changed, not removed
+
+        return response()->json($this->targetsPayload($staff));
+    }
+
+    /** PUT {category, month: YYYY-MM | null (= every month), target_amount, incentive_percent} — adds or updates that row */
+    public function setCategoryTarget(Request $r, int $staff): JsonResponse
+    {
+        $u = $this->person($staff);
+        $d = $r->validate([
+            'category' => ['required', 'string', 'max:100'],
+            'month' => ['nullable', 'regex:/^\d{4}-\d{2}$/'],
+            'target_amount' => ['nullable', 'numeric', 'min:0', 'max:99999999999'],
+            'incentive_percent' => ['nullable', 'numeric', 'min:0', 'max:100'],
+        ]);
+        $key = ['user_id' => $u->id, 'category' => $d['category'], 'month' => $d['month'] ?? null];
+        $q = DB::table('hr_category_targets')->where('user_id', $u->id)->where('category', $d['category']);
+        ($d['month'] ?? null) === null ? $q->whereNull('month') : $q->where('month', $d['month']);
+        $vals = ['target_amount' => (float) ($d['target_amount'] ?? 0), 'incentive_percent' => (float) ($d['incentive_percent'] ?? 0), 'updated_at' => now()];
+        if ($q->exists()) { $q->update($vals); } else { DB::table('hr_category_targets')->insert($key + $vals + ['company_id' => $this->cid(), 'created_at' => now()]); }
+
+        return response()->json($this->targetsPayload($staff, $d['month'] ?? null));
+    }
+
+    public function destroyCategoryTarget(Request $r, int $staff, int $id): JsonResponse
+    {
+        $u = $this->person($staff);
+        DB::table('hr_category_targets')->where('company_id', $this->cid())->where('user_id', $u->id)->where('id', $id)->delete();
+
+        return response()->json($this->targetsPayload($staff, $r->query('month')));
+    }
+
+
+    // ── leads, performance, activity ───────────────────────────────────────────
+
+    /** GET /staff/{staff}/leads?month=YYYY-MM — this person's leads by stage, the month's movement, follow-ups and the latest leads. */
+    public function leadsSummary(Request $r, int $staff): JsonResponse
+    {
+        $u = $this->person($staff);
+        $cid = $this->cid();
+        $month = preg_match('/^\d{4}-\d{2}$/', (string) $r->query('month')) ? (string) $r->query('month') : now()->format('Y-m');
+        $from = \Illuminate\Support\Carbon::createFromFormat('Y-m-d', $month . '-01')->startOfDay();
+        $to = $from->copy()->endOfMonth();
+        $leads = fn () => DB::table('leads')->where('company_id', $cid)->where('assigned_to', $u->id)->whereNull('deleted_at');
+
+        $byStage = $leads()->selectRaw('stage, COUNT(*) c')->groupBy('stage')->pluck('c', 'stage');
+        $stages = [];
+        foreach (['new', 'contacted', 'follow_up', 'enrolled', 'lost'] as $s) { $stages[$s] = (int) ($byStage[$s] ?? 0); }
+
+        $open = fn () => $leads()->whereNotIn('stage', ['enrolled', 'lost']);
+        $dueQ = fn () => DB::table('lead_activities as a')->join('leads as l', 'l.id', '=', 'a.lead_id')->where('a.company_id', $cid)->where('l.assigned_to', $u->id)
+            ->whereNull('l.deleted_at')->whereNotIn('l.stage', ['enrolled', 'lost']);
+
+        $recent = $leads()->leftJoin('contacts as c', 'c.id', '=', 'leads.contact_id')->orderByDesc('leads.updated_at')->limit(15)
+            ->get(['leads.id', 'leads.stage', 'leads.category', 'leads.sale_value', 'leads.updated_at', 'leads.enrolled_at', 'leads.lost_at', 'c.name as contact_name', 'c.phone as contact_phone']);
+
+        return response()->json([
+            'month' => $month,
+            'total' => array_sum($stages),
+            'by_stage' => $stages,
+            'month_stats' => [
+                'assigned' => $leads()->whereBetween('assigned_at', [$from, $to])->count(),
+                'enrolled' => $leads()->whereBetween('enrolled_at', [$from, $to])->count(),
+                'lost' => $leads()->whereBetween('lost_at', [$from, $to])->count(),
+                'sale_value' => round((float) $leads()->whereBetween('enrolled_at', [$from, $to])->sum('sale_value'), 2),
+                'calls' => (int) DB::table('lead_activities')->where('company_id', $cid)->where('user_id', $u->id)->whereBetween('happened_at', [$from, $to])->count(),
+            ],
+            'followups' => [
+                'due_today' => (int) $dueQ()->whereBetween('a.next_follow_up_at', [today()->startOfDay(), today()->endOfDay()])->distinct()->count('l.id'),
+                'overdue' => (int) $dueQ()->where('a.next_follow_up_at', '<', today()->startOfDay())->distinct()->count('l.id'),
+                'upcoming' => (int) $dueQ()->where('a.next_follow_up_at', '>', today()->endOfDay())->distinct()->count('l.id'),
+            ],
+            'open' => $open()->count(),
+            'recent' => $recent,
+        ]);
+    }
+
+    /** GET /staff/{staff}/performance?months=6 — month by month: attendance, sales vs target, leads, tasks and incentives; plus the incentive list. */
+    public function performance(Request $r, int $staff): JsonResponse
+    {
+        $u = $this->person($staff);
+        $cid = $this->cid();
+        $n = max(2, min(12, (int) $r->query('months', 6)));
+        $comp = $this->comp();
+        $rows = [];
+        for ($i = $n - 1; $i >= 0; $i--) {
+            $m = now()->startOfMonth()->subMonths($i);
+            $from = $m->copy(); $to = $m->copy()->endOfMonth(); $ym = $m->format('Y-m');
+            $att = DB::table('hr_attendance')->where('company_id', $cid)->where('user_id', $u->id)->whereBetween('work_date', [$from->toDateString(), $to->toDateString()])->get();
+            $sold = (float) DB::table('listing_sales')->where('company_id', $cid)->where('staff_id', $u->id)->whereNull('deleted_at')->whereBetween('sold_at', [$from->toDateString(), $to->toDateString()])->sum('amount');
+            $target = $comp->monthlyTarget($cid, $u->id, $ym);
+            $leads = fn () => DB::table('leads')->where('company_id', $cid)->where('assigned_to', $u->id)->whereNull('deleted_at');
+            $inc = DB::table('hr_incentives')->where('company_id', $cid)->where('user_id', $u->id)->whereBetween('earned_on', [$from->toDateString(), $to->toDateString()]);
+            $rows[] = [
+                'month' => $ym, 'label' => $m->format('M y'),
+                'present' => $att->where('status', 'present')->count(), 'late_days' => $att->where('late_minutes', '>', 0)->count(), 'absent' => $att->where('status', 'absent')->count(),
+                'worked_hours' => round($att->sum('worked_minutes') / 60, 1),
+                'sold' => round($sold, 2), 'target' => $target, 'achieved_pct' => $target > 0 ? round(min($sold / $target * 100, 999), 1) : null,
+                'leads_assigned' => $leads()->whereBetween('assigned_at', [$from, $to])->count(),
+                'leads_enrolled' => $leads()->whereBetween('enrolled_at', [$from, $to])->count(),
+                'leads_lost' => $leads()->whereBetween('lost_at', [$from, $to])->count(),
+                'tasks_done' => (int) DB::table('crm_tasks')->where('company_id', $cid)->where('assigned_to', $u->id)->where('status', 'done')->whereBetween('completed_at', [$from, $to])->count(),
+                'incentive' => round((float) (clone $inc)->sum('amount'), 2),
+            ];
+        }
+        $list = DB::table('hr_incentives')->where('company_id', $cid)->where('user_id', $u->id)->orderByDesc('earned_on')->orderByDesc('id')->limit(30)
+            ->get(['id', 'title', 'base_amount', 'amount', 'earned_on', 'status', 'source_type']);
+        $totals = DB::table('hr_incentives')->where('company_id', $cid)->where('user_id', $u->id)->selectRaw('status, COALESCE(SUM(amount),0) s')->groupBy('status')->pluck('s', 'status');
+
+        return response()->json(['months' => $rows, 'incentives' => $list, 'incentive_totals' => [
+            'pending' => (float) ($totals['pending'] ?? 0), 'approved' => (float) ($totals['approved'] ?? 0), 'paid' => (float) ($totals['paid'] ?? 0)]]);
+    }
+
+    /** GET /staff/{staff}/activity — last login, linked devices and one merged feed of what this person did and what was changed about them. */
+    public function activity(int $staff): JsonResponse
+    {
+        $u = $this->person($staff);
+        $cid = $this->cid();
+        $feed = collect();
+
+        DB::table('lead_activities as a')->leftJoin('leads as l', 'l.id', '=', 'a.lead_id')->leftJoin('contacts as c', 'c.id', '=', 'l.contact_id')
+            ->where('a.company_id', $cid)->where('a.user_id', $u->id)->orderByDesc('a.happened_at')->limit(40)
+            ->get(['a.kind', 'a.outcome', 'a.notes', 'a.happened_at', 'a.lead_id', 'c.name as contact'])
+            ->each(fn ($x) => $feed->push(['at' => $x->happened_at, 'type' => 'lead activity', 'text' => ucfirst($x->kind) . ($x->outcome ? ' — ' . str_replace('_', ' ', $x->outcome) : '') . ($x->contact ? " · {$x->contact}" : ''), 'detail' => $x->notes, 'lead_id' => $x->lead_id]));
+
+        DB::table('lead_events as e')->leftJoin('leads as l', 'l.id', '=', 'e.lead_id')->leftJoin('contacts as c', 'c.id', '=', 'l.contact_id')
+            ->where('e.company_id', $cid)->where('e.user_id', $u->id)->orderByDesc('e.created_at')->limit(40)
+            ->get(['e.event', 'e.payload', 'e.created_at', 'e.lead_id', 'c.name as contact'])
+            ->each(function ($x) use ($feed) {
+                $p = json_decode((string) $x->payload, true) ?: [];
+                $feed->push(['at' => $x->created_at, 'type' => 'lead', 'text' => ucfirst(str_replace('_', ' ', $x->event)) . (isset($p['from'], $p['to']) ? " ({$p['from']} → {$p['to']})" : '') . ($x->contact ? " · {$x->contact}" : ''), 'detail' => $p['reason'] ?? null, 'lead_id' => $x->lead_id]);
+            });
+
+        DB::table('hr_salary_history as h')->leftJoin('users as b', 'b.id', '=', 'h.changed_by')->where('h.company_id', $cid)->where('h.user_id', $u->id)->orderByDesc('h.id')->limit(20)
+            ->get(['h.created_at', 'h.monthly_salary', 'h.hourly_rate', 'h.effective_from', 'h.note', 'b.name as by'])
+            ->each(fn ($x) => $feed->push(['at' => $x->created_at, 'type' => 'salary', 'text' => 'Salary changed from ' . substr((string) $x->effective_from, 0, 7) . ($x->monthly_salary !== null ? ' → ₹' . number_format((float) $x->monthly_salary) : ''), 'detail' => trim(($x->by ? "by {$x->by}" : '') . ($x->note ? " — {$x->note}" : '')), 'lead_id' => null]));
+
+        $devices = DB::table('user_devices')->where('company_id', $cid)->where('user_id', $u->id)->orderByDesc('id')->limit(10)->get(['id', 'device_name', 'platform', 'app_version', 'ip', 'last_active_at', 'revoked_at', 'created_at']);
+        $sorted = $feed->filter(fn ($f) => $f['at'])->sortByDesc('at')->take(80)->values();
+
+        return response()->json(['last_login_at' => $u->last_login_at, 'devices' => $devices, 'feed' => $sorted]);
+    }
+
     // ── personal + parents details ─────────────────────────────────────────────
     private const PERSONAL_TEXT = [
         'dob' => ['nullable', 'date'], 'gender' => ['nullable', 'string', 'max:12'], 'blood_group' => ['nullable', 'string', 'max:5'],
@@ -234,7 +438,7 @@ class StaffExtrasController extends Controller
                 'role' => $u->role?->label ?? $u->role?->name, 'department' => $u->department, 'designation' => $u->designation, 'joined_on' => $u->joined_on?->toDateString(),
                 'last_login_at' => $u->last_login_at, 'max_leads' => $u->max_leads,
                 'work' => $prof ? ['shift' => $prof->shift_id ? DB::table('hr_shifts')->where('id', $prof->shift_id)->value('name') : null, 'attendance_type' => $prof->attendance_type, 'work_mode' => $prof->work_mode, 'duty_start' => $prof->duty_start, 'duty_end' => $prof->duty_end,
-                    'weekly_off' => json_decode((string) $prof->weekly_off, true) ?: [], 'monthly_salary' => (float) $prof->monthly_salary, 'monthly_target' => (float) $prof->monthly_target] : null,
+                    'weekly_off' => json_decode((string) $prof->weekly_off, true) ?: [], 'monthly_salary' => (float) $prof->monthly_salary, 'hourly_rate' => $prof->hourly_rate !== null ? (float) $prof->hourly_rate : null, 'monthly_target' => $this->comp()->monthlyTarget($cid, $u->id, $month)] : null,
             ],
             'personal' => $this->personalRow($u->id),
             'attendance' => [
@@ -245,6 +449,12 @@ class StaffExtrasController extends Controller
                     'late_minutes' => (int) $a->late_minutes, 'worked_minutes' => (int) $a->worked_minutes])->values(),
             ],
             'leaves' => $leaves,
+            'leave_balance' => DB::table('hr_leave_types as t')->where('t.company_id', $cid)->where('t.is_active', true)->orderBy('t.sort_order')->get(['t.id', 't.name', 't.max_days_per_year', 't.is_paid'])
+                ->map(function ($t) use ($cid, $u) {
+                    $used = (float) DB::table('hr_leave_requests')->where('company_id', $cid)->where('user_id', $u->id)->where('leave_type_id', $t->id)->where('status', 'approved')
+                        ->whereYear('start_date', now()->year)->sum('days');
+                    return ['name' => $t->name, 'paid' => (bool) $t->is_paid, 'allowed' => $t->max_days_per_year, 'used' => $used, 'left' => $t->max_days_per_year !== null ? max(0, $t->max_days_per_year - $used) : null];
+                })->values(),
             'payroll' => $payroll,
             'sales' => $sales,
             'leads' => ['assigned' => (clone $leads)->count(), 'enrolled' => (clone $leads)->whereNotNull('enrolled_at')->count()],

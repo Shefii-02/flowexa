@@ -333,7 +333,20 @@ class HrConfigController extends Controller
         \App\Models\User::where('company_id', $this->companyId())->findOrFail($userId);
 
         $profile = HrStaffProfile::forUser($this->companyId(), $userId);
-        $profile->update($data);
+        $comp = app(\App\Modules\Hr\Support\StaffCompensation::class);
+        // Salary and target edits go through the compensation service so they are logged (salary history) and month-aware.
+        if (array_key_exists('monthly_salary', $data) || array_key_exists('hourly_rate', $data)) {
+            $comp->setSalary($this->companyId(), $userId,
+                array_key_exists('monthly_salary', $data) ? ($data['monthly_salary'] !== null ? (float) $data['monthly_salary'] : null) : $profile->monthly_salary,
+                array_key_exists('hourly_rate', $data) ? ($data['hourly_rate'] !== null ? (float) $data['hourly_rate'] : null) : $profile->hourly_rate,
+                null, auth()->id(), 'Changed in HR Staff Setup', 'setup');
+        }
+        if (array_key_exists('monthly_target', $data)) {
+            $comp->setMonthlyTarget($this->companyId(), $userId, null, (float) ($data['monthly_target'] ?? 0));
+        }
+        unset($data['monthly_salary'], $data['hourly_rate'], $data['monthly_target']);
+        $profile = $profile->fresh();
+        if ($data) { $profile->update($data); }
 
         return response()->json(['data' => $profile->fresh()]);
     }

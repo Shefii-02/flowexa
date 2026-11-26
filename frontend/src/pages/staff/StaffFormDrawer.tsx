@@ -58,6 +58,11 @@ export default function StaffFormDrawer({ open, onClose, editUser = null, canMan
   const [docTypes, setDocTypes] = useState<{ id: number; name: string }[]>([])
   const [allStaff, setAllStaff] = useState<{ id: number; name: string }[]>([])
   const [personal, setPersonal] = useState<PersonalForm>(blankPersonal())
+  // Salary — every change is logged with the month it starts from (see the staff's Salary tab)
+  const thisMonth = new Date().toISOString().slice(0, 7)
+  const blankPay = { monthly_salary: '', hourly_rate: '', effective_from: thisMonth, note: '' }
+  const [pay, setPay] = useState(blankPay)
+  const [payLoaded, setPayLoaded] = useState(false)   // never send a blank salary just because the real one has not arrived yet
   const [docs, setDocs] = useState<any[]>([])
   const [docType, setDocType] = useState('')
   const [docFile, setDocFile] = useState<File | null>(null)
@@ -71,6 +76,7 @@ export default function StaffFormDrawer({ open, onClose, editUser = null, canMan
   const loadExtras = (id: number) => {
     staffExtrasApi.show(id).then((r) => setExtras({ designation: r.data.designation ?? '', joined_on: r.data.joined_on ?? '', accessible: r.data.accessible_user_ids ?? [] })).catch(() => {})
     staffExtrasApi.documents(id).then((r) => setDocs(r.data.data ?? [])).catch(() => {})
+    staffExtrasApi.salary(id).then((r) => { setPay({ ...blankPay, monthly_salary: r.data.current?.monthly_salary ?? '', hourly_rate: r.data.current?.hourly_rate ?? '' }); setPayLoaded(true) }).catch(() => {})
     staffExtrasApi.personal(id).then((r) => setPersonal(personalFromApi(r.data))).catch(() => { toast.error('Could not load personal details — try again.') })
   }
   const addDocument = async () => {
@@ -96,11 +102,12 @@ export default function StaffFormDrawer({ open, onClose, editUser = null, canMan
   useEffect(() => {
     if (!open) return
     if (editUser) {
+      setPayLoaded(false)
       setPersonal({ ...blankPersonal(), phone: editUser.phone ?? '' })   // the list row already has the phone; the full details load on top
       loadExtras(editUser.id)
       setForm({ name: editUser.name, email: editUser.email, password: '', password_confirmation: '', role_id: editUser.role?.id?.toString() || '', department: editUser.department || '', max_leads: editUser.max_leads?.toString() || '50' })
     } else {
-      setExtras({ designation: '', joined_on: '', accessible: [] }); setDocs([]); setPersonal(blankPersonal())
+      setExtras({ designation: '', joined_on: '', accessible: [] }); setDocs([]); setPersonal(blankPersonal()); setPay(blankPay); setPayLoaded(true)
       setForm(blankForm())
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -111,6 +118,13 @@ export default function StaffFormDrawer({ open, onClose, editUser = null, canMan
     if (open && !editUser && roles.length) setForm((f) => (f.role_id ? f : { ...f, role_id: roles[0].id.toString() }))
   }, [open, editUser, roles])
 
+  const payBody = () => ({
+    monthly_salary: pay.monthly_salary === '' ? null : Number(pay.monthly_salary),
+    hourly_rate: pay.hourly_rate === '' ? null : Number(pay.hourly_rate),
+    effective_from: pay.effective_from || thisMonth,
+    note: pay.note || undefined,
+  })
+
   const handleSave = async () => {
     setSaving(true)
     try {
@@ -120,12 +134,14 @@ export default function StaffFormDrawer({ open, onClose, editUser = null, canMan
         await staffApi.update(editUser.id, payload)
         await staffExtrasApi.update(editUser.id, { designation: extras.designation || null, joined_on: extras.joined_on || null, accessible_user_ids: extras.accessible })
         await staffExtrasApi.updatePersonal(editUser.id, personal)
+        if (payLoaded) await staffExtrasApi.updateSalary(editUser.id, payBody())
         toast.success('Staff updated.')
       } else {
         const { data } = await staffApi.create({ ...form, phone: personal.phone || undefined, role_id: +form.role_id, max_leads: maxLeadsValue })
         const newId = data?.staff?.id ?? data?.data?.id
         if (newId) await staffExtrasApi.update(newId, { designation: extras.designation || null, joined_on: extras.joined_on || null, accessible_user_ids: extras.accessible }).catch(() => {})
         if (newId) await staffExtrasApi.updatePersonal(newId, personal).catch(() => {})
+        if (newId && (pay.monthly_salary !== '' || pay.hourly_rate !== '')) await staffExtrasApi.updateSalary(newId, payBody()).catch(() => {})
         toast.success('Staff created — set their access next.')
         onSaved({ created: true, id: newId })
         return
@@ -187,6 +203,17 @@ export default function StaffFormDrawer({ open, onClose, editUser = null, canMan
       </div>
 
       <div className="mt-5"><StaffPersonalFields value={personal} onChange={setPersonal} /></div>
+
+      <div className="mt-5" data-testid="staff-salary">
+        <p className="text-sm font-semibold text-gray-800 mb-2">Salary</p>
+        <div className="grid grid-cols-2 gap-4">
+          <Input label="Monthly salary (₹)" type="number" min={0} value={pay.monthly_salary as any} onChange={(e) => setPay({ ...pay, monthly_salary: e.target.value })} />
+          <Input label="Hourly rate (₹)" type="number" min={0} value={pay.hourly_rate as any} onChange={(e) => setPay({ ...pay, hourly_rate: e.target.value })} />
+          <Input label="Applies from month" type="month" value={pay.effective_from} onChange={(e) => setPay({ ...pay, effective_from: e.target.value })} />
+          <Input label="Note (optional)" placeholder="Increment, probation over…" value={pay.note} onChange={(e) => setPay({ ...pay, note: e.target.value })} />
+        </div>
+        <p className="text-[11px] text-gray-400 mt-1">Payroll for a month uses the salary that applies from that month. Every change is saved in the staff's Salary history.</p>
+      </div>
 
       <div className="mt-5" data-testid="staff-documents">
         <p className="text-sm font-semibold text-gray-800 mb-2">Documents</p>
