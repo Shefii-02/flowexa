@@ -40,6 +40,7 @@ class ConversationController extends Controller
         $conversations = $visible()
             ->when($request->status, fn ($q, $s) => $q->where('status', $s))
             ->when($request->boolean('mine'), fn ($q) => $q->where('assigned_to', auth()->id()))
+            ->when($request->filled('wa_phone_number_id'), fn ($q) => $q->where('wa_phone_number_id', $request->integer('wa_phone_number_id')))
             ->when($request->boolean('unassigned'), $unassigned)
             ->when($request->boolean('unread'), fn ($q) => $q->where('unread_count', '>', 0))
             // server-side search, so a customer beyond the first page can still be found

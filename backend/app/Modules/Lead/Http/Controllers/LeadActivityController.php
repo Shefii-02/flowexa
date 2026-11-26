@@ -29,9 +29,49 @@ class LeadActivityController extends Controller
         $l = $this->lead($lead);
         $rows = LeadActivity::where('lead_id', $l->id)->with('user:id,name')->orderByDesc('happened_at')->orderByDesc('id')->limit(100)->get();
         return response()->json(['data' => $rows->map(fn ($a) => [
-            'id' => $a->id, 'kind' => $a->kind, 'outcome' => $a->outcome, 'first' => $a->is_first_contact, 'duration_seconds' => $a->duration_seconds,
+            'id' => $a->id, 'kind' => $a->kind, 'direction' => $a->direction, 'outcome' => $a->outcome, 'first' => $a->is_first_contact, 'duration_seconds' => $a->duration_seconds,
             'notes' => $a->notes, 'next_follow_up_at' => $a->next_follow_up_at?->toIso8601String(), 'happened_at' => $a->happened_at->toIso8601String(), 'by' => $a->user?->name,
         ])]);
+    }
+
+    /** GET /leads/call-logs?scope=mine|all&kind=call&q= — recent calls (or other logged activity) across leads: mine by default; everyone's for those who see all leads. */
+    public function callLogs(Request $request): JsonResponse
+    {
+        $u = auth()->user();
+        $all = $request->query('scope') === 'all' && $u->hasPermission('leads.view_all');
+        $kind = $request->query('kind', 'call');
+        // everything except the direction / status picks, so the chips can show how many calls each would give
+        $base = fn () => DB::table('lead_activities as a')
+            ->join('leads as l', 'l.id', '=', 'a.lead_id')
+            ->leftJoin('contacts as c', 'c.id', '=', 'l.contact_id')
+            ->leftJoin('users as u', 'u.id', '=', 'a.user_id')
+            ->where('a.company_id', $u->company_id)->whereNull('l.deleted_at')
+            ->when($kind !== 'all', fn ($x) => $x->where('a.kind', $kind))
+            ->when(!$all, fn ($x) => $x->where('a.user_id', $u->id))
+            ->when($request->filled('user_id') && $all, fn ($x) => $x->where('a.user_id', $request->integer('user_id')))
+            ->when($request->filled('from'), fn ($x) => $x->where('a.happened_at', '>=', Carbon::parse($request->string('from'))->startOfDay()))
+            ->when($request->filled('to'), fn ($x) => $x->where('a.happened_at', '<=', Carbon::parse($request->string('to'))->endOfDay()))
+            ->when($request->filled('q'), function ($x) use ($request) {
+                $t = '%' . $request->string('q') . '%';
+                $x->where(fn ($w) => $w->where('c.name', 'like', $t)->orWhere('c.phone', 'like', $t));
+            });
+
+        $rows = $base()
+            ->when($request->filled('direction'), fn ($x) => $x->where('a.direction', $request->string('direction')))
+            // "received" = a call that was answered: incoming and connected
+            ->when($request->query('status') === 'received', fn ($x) => $x->where('a.direction', 'incoming')->where('a.outcome', 'connected'))
+            ->when($request->query('status') === 'not_reached', fn ($x) => $x->where('a.outcome', 'not_reachable'))
+            ->when($request->filled('outcome'), fn ($x) => $x->where('a.outcome', $request->string('outcome')))
+            ->orderByDesc('a.happened_at')->orderByDesc('a.id')->limit(300)
+            ->get(['a.id', 'a.lead_id', 'a.kind', 'a.direction', 'a.outcome', 'a.duration_seconds', 'a.notes', 'a.next_follow_up_at', 'a.happened_at', 'c.name as contact_name', 'c.phone as contact_phone', 'u.name as by']);
+
+        $byDir = $base()->selectRaw('a.direction, count(*) as n')->groupBy('a.direction')->pluck('n', 'direction');
+        $received = $base()->where('a.direction', 'incoming')->where('a.outcome', 'connected')->count();
+
+        return response()->json(['data' => $rows, 'scope' => $all ? 'all' : 'mine', 'counts' => [
+            'all' => (int) $byDir->sum(), 'incoming' => (int) ($byDir['incoming'] ?? 0), 'outgoing' => (int) ($byDir['outgoing'] ?? 0),
+            'missed' => (int) ($byDir['missed'] ?? 0), 'received' => $received,
+        ]]);
     }
 
     /** POST /leads/{lead}/activities — log a call (or message / meeting). */
@@ -39,6 +79,7 @@ class LeadActivityController extends Controller
     {
         $d = $request->validate([
             'kind'              => ['nullable', 'in:' . implode(',', LeadActivity::KINDS)],
+            'direction'         => ['nullable', 'in:' . implode(',', LeadActivity::DIRECTIONS)],
             'outcome'           => ['nullable', 'in:' . implode(',', LeadActivity::OUTCOMES)],
             'duration_seconds'  => ['nullable', 'integer', 'min:0', 'max:86400'],
             'notes'             => ['nullable', 'string', 'max:2000'],
@@ -59,7 +100,7 @@ class LeadActivityController extends Controller
             \App\Models\Lead::whereKey($l->id)->lockForUpdate()->first();   // two calls logged at once must not both count as the first
             $first = !LeadActivity::where('lead_id', $l->id)->exists();
             $a = LeadActivity::create([
-                'company_id' => $l->company_id, 'lead_id' => $l->id, 'user_id' => $user->id, 'kind' => $kind,
+                'company_id' => $l->company_id, 'lead_id' => $l->id, 'user_id' => $user->id, 'kind' => $kind, 'direction' => $d['direction'] ?? 'outgoing',
                 'outcome' => $d['outcome'] ?? null, 'is_first_contact' => $first, 'duration_seconds' => $d['duration_seconds'] ?? null,
                 'notes' => $d['notes'] ?? null, 'next_follow_up_at' => $d['next_follow_up_at'] ?? null,
                 'happened_at' => isset($d['happened_at']) ? Carbon::parse($d['happened_at']) : now(),

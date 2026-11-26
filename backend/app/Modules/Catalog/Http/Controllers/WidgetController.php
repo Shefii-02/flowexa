@@ -48,6 +48,7 @@ class WidgetController extends Controller
         $this->find($id);
         $rows = WidgetConversation::where('chat_widget_id', $id)
             ->when($request->status, fn ($q, $s) => $q->where('status', $s))
+            ->when($request->boolean('mine'), fn ($q) => $q->whereHas('lead', fn ($l) => $l->where('assigned_to', auth()->id())))
             ->with(['lead:id,stage'])
             ->orderByDesc('last_message_at')
             ->paginate(30);

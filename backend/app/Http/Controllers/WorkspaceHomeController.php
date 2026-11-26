@@ -70,6 +70,30 @@ class WorkspaceHomeController extends Controller
         $contacts = fn () => DB::table('contacts')->where('company_id', $cid)->whereNull('deleted_at');
 
         return [
+            // the stat cards on a sales member's home: active/total leads, new today vs yesterday, lost, and leads handed over this month
+            'cards' => [
+                'my_leads'  => ['active' => $this->safe(fn () => $leads()->whereNotIn('stage', ['enrolled', 'lost'])->count(), 0), 'total' => $this->safe(fn () => $leads()->count(), 0)],
+                'new_leads' => ['today' => $this->safe(fn () => $leads()->where('created_at', '>=', $today->toDateTimeString())->count(), 0),
+                    'prev' => $this->safe(fn () => $leads()->where('created_at', '>=', $today->copy()->subDay()->toDateTimeString())->where('created_at', '<', $today->toDateTimeString())->count(), 0)],
+                'lost'      => ['today' => $this->safe(fn () => $leads()->where('stage', 'lost')->where('lost_at', '>=', $today->toDateTimeString())->count(), 0),
+                    'total' => $this->safe(fn () => $leads()->where('stage', 'lost')->count(), 0)],
+                'transferred' => [
+                    'from_me' => $this->safe(fn () => DB::table('lead_events')->where('company_id', $cid)->where('event', 'assigned')->where('created_at', '>=', now()->startOfMonth()->toDateTimeString())
+                        ->whereRaw("JSON_EXTRACT(payload, '$.from') IS NOT NULL AND JSON_EXTRACT(payload, '$.from') != CAST('null' AS JSON)")
+                        ->when(!$team, fn ($q) => $q->whereRaw("JSON_EXTRACT(payload, '$.from') = ?", [(int) $u->id]))->count(), 0),
+                    'to_me' => $this->safe(fn () => DB::table('lead_events')->where('company_id', $cid)->where('event', 'assigned')->where('created_at', '>=', now()->startOfMonth()->toDateTimeString())
+                        ->whereRaw("JSON_EXTRACT(payload, '$.from') IS NOT NULL AND JSON_EXTRACT(payload, '$.from') != CAST('null' AS JSON)")
+                        ->when(!$team, fn ($q) => $q->whereRaw("JSON_EXTRACT(payload, '$.to') = ?", [(int) $u->id]))->count(), 0),
+                ],
+            ],
+            // today's counts for the round icons on a sales member's home: new leads, follow-ups to do, missed / made calls, leads won
+            'today' => [
+                'new_leads' => $this->safe(fn () => $leads()->where('created_at', '>=', $today->toDateTimeString())->count(), 0),
+                'followups' => $dueToday + $overdue,
+                'missed'    => $this->safe(fn () => (fn () => DB::table('lead_activities')->where('company_id', $cid)->where('kind', 'call')->where('happened_at', '>=', $today->toDateTimeString())->when(!$team, fn ($q) => $q->where('user_id', $u->id)))()->where('direction', 'missed')->count(), 0),
+                'called'    => $this->safe(fn () => (fn () => DB::table('lead_activities')->where('company_id', $cid)->where('kind', 'call')->where('happened_at', '>=', $today->toDateTimeString())->when(!$team, fn ($q) => $q->where('user_id', $u->id)))()->where('direction', '!=', 'missed')->count(), 0),
+                'closed'    => $this->safe(fn () => $leads()->where('stage', 'enrolled')->where('enrolled_at', '>=', $today->toDateTimeString())->count(), 0),
+            ],
             'followups' => ['done' => $doneToday, 'due_today' => $dueToday, 'overdue' => $overdue, 'total_today' => $doneToday + $dueToday],
             'kpis' => [
                 'leads'    => ['total' => $this->safe(fn () => $leads()->count(), 0), 'new_today' => $this->safe(fn () => $leads()->where('created_at', '>=', $today->toDateTimeString())->count(), 0)],

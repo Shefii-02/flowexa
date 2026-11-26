@@ -9,12 +9,13 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class LeadActivity extends Model
 {
     public const KINDS = ['call', 'message', 'meeting', 'visit', 'other'];
+    public const DIRECTIONS = ['outgoing', 'incoming', 'missed'];
     /** Outcomes where the person was actually reached — the first of these moves a "New" lead to "Contacted". */
     public const REACHED = ['connected', 'interested', 'callback', 'not_interested'];
     public const OUTCOMES = ['connected', 'not_reachable', 'callback', 'interested', 'not_interested', 'wrong_number'];
 
     protected $fillable = [
-        'company_id', 'lead_id', 'user_id', 'kind', 'outcome', 'is_first_contact',
+        'company_id', 'lead_id', 'user_id', 'kind', 'direction', 'outcome', 'is_first_contact',
         'duration_seconds', 'notes', 'next_follow_up_at', 'happened_at',
     ];
 

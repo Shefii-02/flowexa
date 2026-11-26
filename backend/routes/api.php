@@ -886,6 +886,7 @@ Route::prefix('v1')->group(function () {
             Route::patch('/saved-reports/{id}', [LeadReportController::class, 'updateSavedReport'])->middleware('permission:leads.manage');
             Route::delete('/saved-reports/{id}',[LeadReportController::class, 'destroySavedReport'])->middleware('permission:leads.manage');
 
+            Route::get('/call-logs', [\App\Modules\Lead\Http\Controllers\LeadActivityController::class, 'callLogs'])->middleware('permission:leads.view')->name('call-logs');
             Route::get('/{lead}',     [LeadController::class, 'show'])->middleware('permission:leads.view')->name('show');
 
             Route::post('/', [LeadController::class, 'store'])->middleware(['permission:leads.manage', 'plan.monthly_limit:leads'])->name('store');
@@ -1663,6 +1664,9 @@ Route::prefix('v1')->group(function () {
             });
 
 
+        // my own chats per channel (assigned to me) — needs no inbox permission, it only ever returns the caller's
+        Route::get('chat-channels/mine',    [\App\Http\Controllers\ChatChannelsController::class, 'mine']);
+        Route::get('chat-channels/wa-chat', [\App\Http\Controllers\ChatChannelsController::class, 'waChat']);
         Route::get('auth/profile',          [AuthController::class, 'profile']);
         Route::put('auth/profile',          [AuthController::class, 'updateProfile']);
         Route::post('auth/change-password',  [AuthController::class, 'changePassword']);

@@ -21,6 +21,8 @@ class InstagramInboxController extends Controller
             ->when($request->account_id, fn ($q, $id) => $q->where('instagram_account_id', $id))
             ->whereHas('account', fn ($q) => $q->where('channel', $request->query('channel', 'instagram')))
             ->when($request->status, fn ($q, $s) => $q->where('status', $s))
+            // only the conversations whose captured lead is assigned to me
+            ->when($request->boolean('mine'), fn ($q) => $q->whereHas('lead', fn ($l) => $l->where('assigned_to', auth()->id())))
             ->when($request->boolean('needs_agent'), fn ($q) => $q->where('needs_agent', true))
             ->with('account:id,username')
             ->orderByDesc('last_message_at')

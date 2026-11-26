@@ -22,6 +22,11 @@ class ContactFilterRequest extends FormRequest
             'sort_dir' => ['nullable', 'in:asc,desc'],
             'per_page' => ['nullable', 'integer', 'min:1', 'max:100'],
             'page'     => ['nullable', 'integer', 'min:1'],
+            'unnamed'  => ['nullable', 'boolean'],
+            'named'    => ['nullable', 'boolean'],
+            'letter'   => ['nullable', 'string', 'max:1'],
+            'created_from' => ['nullable', 'date'],
+            'created_to'   => ['nullable', 'date'],
         ];
     }
 

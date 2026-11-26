@@ -14,6 +14,11 @@ readonly class ContactFilterDTO
         public ?string $sortDir   = 'desc',
         public int     $perPage   = 20,
         public int     $page      = 1,
+        public bool    $unnamed   = false,   // saved without a name (just a number)
+        public bool    $named     = false,
+        public ?string $letter    = null,    // A–Z, or # for names that do not start with a letter
+        public ?string $createdFrom = null,
+        public ?string $createdTo   = null,
     ) {}
 
     public static function fromRequest(array $data): self
@@ -26,6 +31,11 @@ readonly class ContactFilterDTO
             sortDir: $data['sort_dir'] ?? 'desc',
             perPage: (int) ($data['per_page'] ?? 20),
             page:    (int) ($data['page']     ?? 1),
+            unnamed: (bool) ($data['unnamed'] ?? false),
+            named:   (bool) ($data['named'] ?? false),
+            letter:  $data['letter'] ?? null,
+            createdFrom: $data['created_from'] ?? null,
+            createdTo:   $data['created_to'] ?? null,
         );
     }
 }

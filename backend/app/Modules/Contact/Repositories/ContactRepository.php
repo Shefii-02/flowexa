@@ -48,6 +48,14 @@ class ContactRepository implements ContactRepositoryInterface
                     $l->where('contact_labels.id', $filter->labelId)
                 )
             )
+            // unsaved numbers: no name, or the "name" is just the number itself
+            ->when($filter->unnamed, fn($q) => $q->where(fn($w) => $w->whereNull('name')->orWhere('name', '')->orWhereColumn('name', 'phone')))
+            ->when($filter->named, fn($q) => $q->whereNotNull('name')->where('name', '!=', '')->whereColumn('name', '!=', 'phone'))
+            ->when($filter->letter, fn($q) => $filter->letter === '#'
+                ? $q->where(fn($w) => $w->whereNull('name')->orWhere('name', 'not regexp', '^[A-Za-z]'))
+                : $q->where('name', 'like', $filter->letter . '%'))
+            ->when($filter->createdFrom, fn($q) => $q->where('created_at', '>=', \Illuminate\Support\Carbon::parse($filter->createdFrom)->startOfDay()))
+            ->when($filter->createdTo, fn($q) => $q->where('created_at', '<=', \Illuminate\Support\Carbon::parse($filter->createdTo)->endOfDay()))
             ->when(!is_null($filter->optedIn), fn($q) =>
                 $q->where('opted_in', $filter->optedIn)
             )
