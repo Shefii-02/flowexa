@@ -389,7 +389,7 @@ export default function CompanyDetailPage() {
           <label className="label">Message billing</label>
           <select className="input" value={form.wa_chat_billing} onChange={(e) => set('wa_chat_billing', e.target.value)}>
             <option value="wallet">Wallet — credits are taken for every delivered campaign, API and test message</option>
-            <option value="included">Included in the plan — WA Chat campaign and API messages are not charged</option>
+            <option value="included" disabled={form.wa_chat_billing !== 'included'}>Included in the plan — WA Chat campaign and API messages are not charged</option>
           </select>
           <p className="text-xs text-gray-400 mt-1">
             Charged once per message, when WhatsApp confirms it was delivered. Normal chat messages are always free. Campaigns, test messages and API sends are refused when the wallet cannot cover them. WhatsApp Cloud has its own setting above.

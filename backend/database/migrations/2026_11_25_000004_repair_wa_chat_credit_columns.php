@@ -14,7 +14,7 @@ return new class extends Migration
             Schema::table('plans', fn (Blueprint $t) => $t->unsignedTinyInteger('wa_chat_credits_per_message')->nullable());
         }
         if (!Schema::hasColumn('companies', 'wa_chat_billing')) {
-            Schema::table('companies', fn (Blueprint $t) => $t->string('wa_chat_billing', 12)->default('included'));
+            Schema::table('companies', fn (Blueprint $t) => $t->string('wa_chat_billing', 12)->default('wallet'));
         }
         if (!Schema::hasColumn('companies', 'wa_chat_credits_per_message')) {
             Schema::table('companies', fn (Blueprint $t) => $t->unsignedTinyInteger('wa_chat_credits_per_message')->nullable());
