@@ -127,6 +127,10 @@ class InstallmentService
             throw ValidationException::withMessages(['installments' => "The installments add up to {$sum} but the total is " . round($total, 2) . '.']);
         }
 
+        // Follow-up defaults to the person who made the sale (the lead's owner today) and stays with them even if the lead moves — change it per
+        // installment, or in bulk on the Installments page.
+        $assignTo = $assignTo ?: ($lead->assigned_to ? (int) $lead->assigned_to : null);
+
         DB::transaction(function () use ($lead, $total, $rows, $assignTo, $by, $note) {
             // a new plan replaces any earlier open one (its unpaid installments are dropped; payments already made are kept in the log)
             $old = DB::table('lead_installment_plans')->where('lead_id', $lead->id)->whereIn('status', ['active', 'completed'])->first();
@@ -217,6 +221,18 @@ class InstallmentService
         $this->log($companyId, (int) $i->lead_id, (int) $i->id, $by, isset($upd['assigned_to']) && count($upd) === 1 ? 'assigned' : 'edited', ['from' => $before, 'to' => $upd]);
 
         return $this->forLead($companyId, (int) $i->lead_id);
+    }
+
+    /** Hand a batch of installments' follow-up to another staff member (null = no one in particular: the lead's owner / HR). */
+    public function bulkAssign(int $companyId, array $ids, ?int $to, ?int $by): int
+    {
+        $rows = DB::table('lead_installments')->where('company_id', $companyId)->whereIn('id', $ids)->get(['id', 'lead_id', 'assigned_to']);
+        foreach ($rows as $r) {
+            DB::table('lead_installments')->where('id', $r->id)->update(['assigned_to' => $to, 'updated_at' => now()]);
+            $this->log($companyId, (int) $r->lead_id, (int) $r->id, $by, 'assigned', ['from' => ['assigned_to' => $r->assigned_to], 'to' => ['assigned_to' => $to], 'bulk' => true]);
+        }
+
+        return $rows->count();
     }
 
     public function followup(int $installmentId, int $companyId, ?string $note, ?string $promisedOn, ?int $by): array

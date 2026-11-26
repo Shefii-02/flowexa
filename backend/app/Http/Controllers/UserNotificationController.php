@@ -19,6 +19,13 @@ class UserNotificationController extends Controller
     private function teamUnread(): int
     {
         $uid = (int) auth()->id();
+        // The heaviest part of the bell (a join across every chat message the person has not read): kept for a few seconds so a burst of
+        // refreshes (several tabs, socket events) costs one query, not many. Short on purpose — reading a chat clears the badge almost at once.
+        return (int) \Illuminate\Support\Facades\Cache::remember("team_unread:{$uid}", 8, fn () => $this->computeTeamUnread($uid));
+    }
+
+    private function computeTeamUnread(int $uid): int
+    {
         try {
             return (int) DB::table('team_chat_messages as msg')->join('team_chat_members as m', function ($j) use ($uid) {
                 $j->on('m.chat_id', '=', 'msg.chat_id')->where('m.user_id', $uid)->whereNull('m.left_at')

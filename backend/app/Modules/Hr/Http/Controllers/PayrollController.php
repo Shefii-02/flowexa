@@ -33,7 +33,7 @@ class PayrollController extends Controller
         $this->guard();
 
         return response()->json(['data' => HrPayrollRun::where('company_id', $this->companyId())
-            ->withCount('items')->orderByDesc('period')->get()]);
+            ->withCount('items')->with('generator:id,name', 'releaser:id,name')->orderByDesc('period')->get()]);
     }
 
     public function show(int $id): JsonResponse
@@ -41,7 +41,7 @@ class PayrollController extends Controller
         $this->guard();
 
         $run = HrPayrollRun::where('company_id', $this->companyId())
-            ->with('items.user:id,name,department')->findOrFail($id);
+            ->with('items.user:id,name,department', 'generator:id,name', 'releaser:id,name')->findOrFail($id);
 
         return response()->json(['data' => $run]);
     }
@@ -55,6 +55,50 @@ class PayrollController extends Controller
         $run = $this->payroll->generate($this->companyId(), $data['period'], (int) auth()->id());
 
         return response()->json(['data' => $run], 201);
+    }
+
+    /** PATCH /hr/payroll/runs/{id} { notes } — edit the run's own note (draft or released). */
+    public function updateRun(Request $request, int $id): JsonResponse
+    {
+        $this->guard();
+        $data = $request->validate(['notes' => 'nullable|string|max:1000']);
+        $run = HrPayrollRun::where('company_id', $this->companyId())->findOrFail($id);
+        $run->update(['notes' => $data['notes'] ?? null]);
+
+        return response()->json(['data' => $run->fresh()->load('generator:id,name', 'releaser:id,name')]);
+    }
+
+    /** DELETE /hr/payroll/runs/{id} — remove a DRAFT run (a released one must be reopened first). Incentives it had picked up become available again. */
+    public function destroyRun(int $id): JsonResponse
+    {
+        $this->guard();
+        $run = HrPayrollRun::where('company_id', $this->companyId())->findOrFail($id);
+        if ($run->isReleased()) {
+            throw ValidationException::withMessages(['payroll' => 'A released payroll cannot be deleted. Reopen it first.']);
+        }
+        \Illuminate\Support\Facades\DB::transaction(function () use ($run) {
+            \App\Modules\Hr\Models\HrIncentive::whereIn('payroll_item_id', $run->items()->pluck('id'))->update(['payroll_item_id' => null]);
+            $run->items()->delete();
+            $run->delete();
+        });
+
+        return response()->json(['message' => 'Payroll deleted.']);
+    }
+
+    /** POST /hr/payroll/runs/{id}/reopen — take a released run back to draft so it can be corrected; its incentives go back to approved (not paid). */
+    public function reopen(int $id): JsonResponse
+    {
+        $this->guard();
+        $run = HrPayrollRun::where('company_id', $this->companyId())->findOrFail($id);
+        if (!$run->isReleased()) {
+            throw ValidationException::withMessages(['payroll' => 'This payroll is not released.']);
+        }
+        \Illuminate\Support\Facades\DB::transaction(function () use ($run) {
+            \App\Modules\Hr\Models\HrIncentive::whereIn('payroll_item_id', $run->items()->pluck('id'))->where('status', 'paid')->update(['status' => 'approved']);
+            $run->update(['status' => 'draft', 'released_by' => null, 'released_at' => null]);
+        });
+
+        return response()->json(['data' => $run->fresh()->load('items.user:id,name,department', 'generator:id,name', 'releaser:id,name')]);
     }
 
     /** PATCH /hr/payroll/items/{id} — custom edit one staff member's pay line. */

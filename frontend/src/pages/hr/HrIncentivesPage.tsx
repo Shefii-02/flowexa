@@ -4,18 +4,20 @@ import { api } from '@/api/client'
 import toast from 'react-hot-toast'
 import { PageHeader, err, inp, money } from './hrShared'
 
-export default function HrIncentivesPage() {
+export default function HrIncentivesPage({ embedded = false }: { embedded?: boolean }) {
   const [rules, setRules] = useState<any[]>([])
   const [ledger, setLedger] = useState<any[]>([])
   const [staff, setStaff] = useState<any[]>([])
   const [rf, setRf] = useState({ name: '', category: 'service', kind: 'percentage', percent: '', fixed_amount: '' })
   const [showManual, setShowManual] = useState(false)
+  const [categories, setCategories] = useState<string[]>(['service', 'course', 'product', 'other'])   // replaced by what this company's catalog really has
 
   const load = useCallback(() => {
     api.get('/hr/incentive-rules').then(r => setRules(r.data?.data ?? [])).catch(() => {})
     api.get('/hr/incentives').then(r => setLedger(r.data?.data ?? [])).catch(() => {})
   }, [])
   useEffect(() => { load() }, [load])
+  useEffect(() => { api.get('/hr/incentive-categories').then(r => { const c = r.data?.data; if (Array.isArray(c) && c.length) setCategories(c) }).catch(() => {}) }, [rules.length])
   useEffect(() => { api.get('/hr/staff-profiles').then(r => setStaff((r.data?.data ?? []).map((x: any) => x.user))).catch(() => {}) }, [])
 
   const addRule = async () => {
@@ -34,18 +36,21 @@ export default function HrIncentivesPage() {
   const delIncentive = async (id: number) => { await api.delete(`/hr/incentives/${id}`); load() }
 
   return (
-    <div className="p-6  mx-auto space-y-5">
-      <PageHeader icon="🎁" title="Incentives" sub="Commission rules per item, and the earned-incentive ledger" />
+    <div className={embedded ? 'space-y-5' : 'p-6  mx-auto space-y-5'}>
+      {!embedded && <PageHeader icon="🎁" title="Incentives" sub="Commission rules per item, and the earned-incentive ledger" />}
 
       <div className="bg-white border border-gray-200 rounded-xl p-4 space-y-3">
         <h3 className="text-sm font-semibold text-gray-700">Incentive rules — per service / course / product</h3>
         <div className="flex flex-wrap items-end gap-2">
-          <input value={rf.name} onChange={e => setRf(p => ({ ...p, name: e.target.value }))} placeholder="Service / course / product" className={inp} />
-          <select value={rf.category} onChange={e => setRf(p => ({ ...p, category: e.target.value }))} className={inp}>{['service', 'course', 'product', 'other'].map(c => <option key={c}>{c}</option>)}</select>
-          <select value={rf.kind} onChange={e => setRf(p => ({ ...p, kind: e.target.value }))} className={inp}><option value="percentage">% of value</option><option value="fixed">Fixed</option></select>
+          <label className="block"><span className="block text-xs font-medium text-gray-600 mb-1">Rule name <span className="font-normal text-gray-400">(service / course / product)</span></span>
+            <input value={rf.name} onChange={e => setRf(p => ({ ...p, name: e.target.value }))} placeholder="e.g. Python course" className={inp} /></label>
+          <label className="block"><span className="block text-xs font-medium text-gray-600 mb-1">Item type</span>
+            <select value={rf.category} onChange={e => setRf(p => ({ ...p, category: e.target.value }))} className={inp}>{categories.map(c => <option key={c} value={c}>{c}</option>)}</select></label>
+          <label className="block"><span className="block text-xs font-medium text-gray-600 mb-1">Incentive type</span>
+            <select value={rf.kind} onChange={e => setRf(p => ({ ...p, kind: e.target.value }))} className={inp}><option value="percentage">% of value</option><option value="fixed">Fixed amount</option></select></label>
           {rf.kind === 'percentage'
-            ? <input type="number" value={rf.percent} onChange={e => setRf(p => ({ ...p, percent: e.target.value }))} placeholder="%" className={`${inp} w-20`} />
-            : <input type="number" value={rf.fixed_amount} onChange={e => setRf(p => ({ ...p, fixed_amount: e.target.value }))} placeholder="₹" className={`${inp} w-24`} />}
+            ? <label className="block"><span className="block text-xs font-medium text-gray-600 mb-1">Percent (%)</span><input type="number" value={rf.percent} onChange={e => setRf(p => ({ ...p, percent: e.target.value }))} placeholder="%" className={`${inp} w-24`} /></label>
+            : <label className="block"><span className="block text-xs font-medium text-gray-600 mb-1">Amount (₹)</span><input type="number" value={rf.fixed_amount} onChange={e => setRf(p => ({ ...p, fixed_amount: e.target.value }))} placeholder="₹" className={`${inp} w-28`} /></label>}
           <button onClick={addRule} className="px-3 py-2 bg-indigo-600 text-white rounded-lg text-sm">Add</button>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -106,12 +111,18 @@ function ManualIncentive({ rules, staff, onDone }: { rules: any[]; staff: any[];
   }
   return (
     <div className="border border-gray-200 rounded-lg p-3 grid grid-cols-2 gap-2">
-      <select value={f.user_id} onChange={e => setF(p => ({ ...p, user_id: e.target.value }))} className={inp}><option value="">Staff *</option>{staff.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select>
-      <select value={f.incentive_rule_id} onChange={e => setF(p => ({ ...p, incentive_rule_id: e.target.value }))} className={inp}><option value="">Rule (optional)</option>{rules.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}</select>
-      <input value={f.title} onChange={e => setF(p => ({ ...p, title: e.target.value }))} placeholder="Title / what was sold" className={inp} />
-      <input type="number" value={f.base_amount} onChange={e => setF(p => ({ ...p, base_amount: e.target.value }))} placeholder="Sale value" className={inp} />
-      <input type="number" value={f.amount} onChange={e => setF(p => ({ ...p, amount: e.target.value }))} placeholder="Incentive (blank = from rule)" className={inp} />
-      <input type="date" value={f.earned_on} onChange={e => setF(p => ({ ...p, earned_on: e.target.value }))} className={inp} />
+      <label className="block"><span className="block text-xs font-medium text-gray-600 mb-1">Staff member *</span>
+        <select value={f.user_id} onChange={e => setF(p => ({ ...p, user_id: e.target.value }))} className={inp}><option value="">Select staff</option>{staff.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}</select></label>
+      <label className="block"><span className="block text-xs font-medium text-gray-600 mb-1">Rule <span className="font-normal text-gray-400">(optional)</span></span>
+        <select value={f.incentive_rule_id} onChange={e => setF(p => ({ ...p, incentive_rule_id: e.target.value }))} className={inp}><option value="">No rule</option>{rules.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}</select></label>
+      <label className="block"><span className="block text-xs font-medium text-gray-600 mb-1">What was sold *</span>
+        <input value={f.title} onChange={e => setF(p => ({ ...p, title: e.target.value }))} placeholder="Title / what was sold" className={inp} /></label>
+      <label className="block"><span className="block text-xs font-medium text-gray-600 mb-1">Sale value (₹)</span>
+        <input type="number" value={f.base_amount} onChange={e => setF(p => ({ ...p, base_amount: e.target.value }))} placeholder="Sale value" className={inp} /></label>
+      <label className="block"><span className="block text-xs font-medium text-gray-600 mb-1">Incentive (₹) <span className="font-normal text-gray-400">(blank = from rule)</span></span>
+        <input type="number" value={f.amount} onChange={e => setF(p => ({ ...p, amount: e.target.value }))} placeholder="Incentive" className={inp} /></label>
+      <label className="block"><span className="block text-xs font-medium text-gray-600 mb-1">Earned on</span>
+        <input type="date" value={f.earned_on} onChange={e => setF(p => ({ ...p, earned_on: e.target.value }))} className={inp} /></label>
       <div className="col-span-2"><button onClick={submit} className="px-3 py-2 bg-indigo-600 text-white rounded-lg text-sm">Add incentive</button></div>
     </div>
   )

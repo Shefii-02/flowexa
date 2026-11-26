@@ -17,7 +17,7 @@ type MeResponse = {
   break_types: BreakType[]
   month: { present_days: number; worked_hours: number; late_days: number; overtime_hours: number; on_leave_days: number }
 }
-type LeaveType = { id: number; name: string; color: string; is_paid: boolean }
+type LeaveType = { id: number; name: string; color: string; is_paid: boolean; max_days_per_year?: number | null; used?: number; left?: number | null }
 type LeaveRequest = {
   id: number; status: string; start_date: string; end_date: string; days: number; half_day: boolean
   reason: string | null; leave_type?: { name: string; color: string } | null; review_note: string | null
@@ -34,7 +34,7 @@ const COLOR: Record<string, string> = {
 const hm = (min: number) => `${Math.floor(min / 60)}h ${min % 60}m`
 const time = (s: string | null) => (s ? new Date(s).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—')
 
-function getPosition(): Promise<{ lat: number; lng: number } | null> {
+export function getPosition(): Promise<{ lat: number; lng: number } | null> {
   return new Promise(resolve => {
     if (!navigator.geolocation) return resolve(null)
     navigator.geolocation.getCurrentPosition(
@@ -46,7 +46,7 @@ function getPosition(): Promise<{ lat: number; lng: number } | null> {
 }
 
 /** Webcam capture dialog — resolves with a JPEG blob, or null if cancelled / no camera (file picker is the fallback). */
-function SelfieCapture({ onDone }: { onDone: (f: File | null) => void }) {
+export function SelfieCapture({ onDone }: { onDone: (f: File | null) => void }) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const [ready, setReady] = useState(false)
@@ -378,7 +378,7 @@ function LeaveTab() {
         <div className="bg-white border border-gray-200 rounded-xl p-4 space-y-3">
           <select value={form.leave_type_id} onChange={e => setForm(p => ({ ...p, leave_type_id: e.target.value }))} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
             <option value="">Leave type</option>
-            {types.map(t => <option key={t.id} value={t.id}>{t.name}{t.is_paid ? '' : ' (unpaid)'}</option>)}
+            {types.map(t => <option key={t.id} value={t.id} disabled={t.left === 0}>{t.name}{t.is_paid ? ' (paid)' : ' (unpaid)'}{t.left != null ? ` — ${t.left} left` : ''}</option>)}
           </select>
           <div className="grid grid-cols-2 gap-3">
             <input type="date" value={form.start_date} onChange={e => setForm(p => ({ ...p, start_date: e.target.value }))} className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />

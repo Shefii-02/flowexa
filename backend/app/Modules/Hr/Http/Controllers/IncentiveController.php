@@ -25,6 +25,19 @@ class IncentiveController extends Controller
         );
     }
 
+    /** GET /hr/incentive-categories — what a rule can be for: the item types in this company's catalog, any category its rules already use, and "other". */
+    public function categories(): JsonResponse
+    {
+        $cid = $this->companyId();
+        $fromCatalog = \Illuminate\Support\Facades\DB::table('listings')->where('company_id', $cid)->whereNotNull('type')->distinct()->pluck('type')->all();
+        $fromRules = HrIncentiveRule::where('company_id', $cid)->distinct()->pluck('category')->all();
+        $all = array_values(array_unique(array_filter(array_merge(['service', 'course', 'product'], $fromCatalog, $fromRules))));
+        $all = array_values(array_diff($all, ['other']));
+        sort($all);
+
+        return response()->json(['data' => array_merge($all, ['other'])]);
+    }
+
     // ── Rules: per service / course / product incentive % ────────────────────
 
     public function rules(): JsonResponse
@@ -65,7 +78,7 @@ class IncentiveController extends Controller
 
         return $request->validate([
             'name'         => [$req, 'string', 'max:120'],
-            'category'     => ['nullable', 'in:service,course,product,other'],
+            'category'     => ['nullable', 'string', 'max:20', 'regex:/^[a-z0-9_\- ]+$/i'],   // any catalog type the company uses (service, course, product, property, …) or "other"
             'kind'         => ['nullable', 'in:percentage,fixed'],
             'percent'      => ['nullable', 'numeric', 'min:0', 'max:100'],
             'fixed_amount' => ['nullable', 'numeric', 'min:0'],

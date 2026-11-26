@@ -7,6 +7,7 @@ import {
 import { analyticsApi } from '@/api'
 import { Spinner } from '@/components/ui'
 import TeamMembersPanel from '@/components/dashboard/TeamMembersPanel'
+import StartYourDay from '@/components/dashboard/StartYourDay'
 import PackagePanel from '@/components/dashboard/PackagePanel'
 import { useWorkspace } from '@/lib/workspace'
 import { useAppSelector, usePermission } from '@/store'
@@ -211,6 +212,9 @@ export default function DashboardPage() {
           )}
         </p>
       </div>
+
+      {/* Clock in / break / clock out / leave — for anyone with attendance */}
+      <StartYourDay name={user?.name?.split(' ')[0]} />
 
       {/* The company's plan and what it allows — shown to admins (needs settings / plans access) */}
       <PackagePanel />

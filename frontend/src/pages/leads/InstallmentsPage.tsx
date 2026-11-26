@@ -82,11 +82,27 @@ export default function InstallmentsPage() {
   const [rows, setRows] = useState<any[] | null>(null)
   const [isHr, setIsHr] = useState(false)
   const [rules, setRules] = useState(false)
+  const [canSwitch, setCanSwitch] = useState(false)
+  const [picked, setPicked] = useState<number[]>([])
+  const [staff, setStaff] = useState<{ id: number; name: string }[]>([])
+  const [to, setTo] = useState('')
+  const [moving, setMoving] = useState(false)
+  useEffect(() => { staffApi.list({ per_page: 200 }).then((r) => setStaff((r.data.data ?? r.data.staff ?? []).filter((x: any) => x.is_active !== false).map((x: any) => ({ id: x.id, name: x.name })))).catch(() => {}) }, [])
   const load = useCallback(() => {
-    setRows(null)
-    installmentApi.list({ view, mine: mine ? 1 : undefined }).then((r) => { setRows(r.data.data ?? []); setIsHr(!!r.data.is_hr) }).catch((e) => { toast.error(getError(e)); setRows([]) })
+    setRows(null); setPicked([])
+    installmentApi.list({ view, mine: mine ? 1 : undefined }).then((r) => { setRows(r.data.data ?? []); setIsHr(!!r.data.is_hr); setCanSwitch(!!r.data.can_switch) }).catch((e) => { toast.error(getError(e)); setRows([]) })
   }, [view, mine])
   useEffect(() => { load() }, [load])
+  const open = (rows ?? []).filter((r) => r.status !== 'paid' && r.status !== 'waived')
+  const allPicked = open.length > 0 && open.every((r) => picked.includes(r.id))
+  const toggle = (id: number) => setPicked((p) => (p.includes(id) ? p.filter((x) => x !== id) : [...p, id]))
+  const move = async () => {
+    setMoving(true)
+    try {
+      const r = await installmentApi.bulkAssign(picked, to === '' || to === 'none' ? null : +to)
+      toast.success(`${r.data.updated} installment${r.data.updated === 1 ? '' : 's'} moved.`); setTo(''); load()
+    } catch (e) { toast.error(getError(e)) } finally { setMoving(false) }
+  }
   const totalBal = (rows ?? []).reduce((a, r) => a + (r.status === 'paid' || r.status === 'waived' ? 0 : r.balance), 0)
 
   return (
@@ -105,10 +121,21 @@ export default function InstallmentsPage() {
       {rows === null ? <div className="p-10 flex justify-center"><Spinner /></div> : rows.length === 0 ? <EmptyState icon="💸" title="Nothing here" desc="No installments in this view." /> : (
         <div className="card table-wrapper">
           <div className="px-5 py-2 text-xs text-gray-500">{rows.length} installment{rows.length > 1 ? 's' : ''}{view !== 'paid' && <> · balance to collect <b>{money(totalBal)}</b></>}</div>
-          <table className="table"><thead><tr><th>Student</th><th>Installment</th><th>Due</th><th>Amount</th><th>Paid</th><th>Balance</th><th>Status</th><th>Follow-up by</th><th>Last follow-up</th><th /></tr></thead>
+          {canSwitch && picked.length > 0 && (
+            <div className="mx-5 mb-2 flex flex-wrap items-center gap-2 rounded-lg bg-indigo-50 border border-indigo-100 px-3 py-2 text-sm">
+              <b>{picked.length}</b> selected — switch follow-up to
+              <select className="input w-56" value={to} onChange={(e) => setTo(e.target.value)}>
+                <option value="">Choose…</option><option value="none">No one in particular (lead owner / HR)</option>{staff.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+              <Button size="sm" onClick={move} loading={moving} disabled={to === ''}>Switch</Button>
+              <button className="text-xs text-gray-500 hover:underline" onClick={() => setPicked([])}>Clear</button>
+            </div>
+          )}
+          <table className="table"><thead><tr>{canSwitch && <th className="w-8"><input type="checkbox" checked={allPicked} onChange={() => setPicked(allPicked ? [] : open.map((r) => r.id))} title="Select all open" /></th>}<th>Student</th><th>Installment</th><th>Due</th><th>Amount</th><th>Paid</th><th>Balance</th><th>Status</th><th>Follow-up by</th><th>Last follow-up</th><th /></tr></thead>
             <tbody>
               {rows.map((i) => (
                 <tr key={i.id}>
+                  {canSwitch && <td>{i.status !== 'paid' && i.status !== 'waived' && <input type="checkbox" checked={picked.includes(i.id)} onChange={() => toggle(i.id)} />}</td>}
                   <td><p className="font-medium text-gray-900">{i.contact_name || i.contact_phone || `Lead #${i.lead_id}`}</p><p className="text-xs text-gray-400">{i.contact_phone}</p></td>
                   <td>#{i.seq}</td>
                   <td className="whitespace-nowrap">{day(i.due_date)}{i.overdue && <div className="text-[11px] text-red-500">{i.days_overdue} days late</div>}</td>

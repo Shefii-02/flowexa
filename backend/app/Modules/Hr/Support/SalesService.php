@@ -142,8 +142,10 @@ class SalesService
 
         // 2. Category-matched rule
         if ($listing) {
-            $category = self::CATEGORY_MAP[$listing->type] ?? 'other';
-            $match = $rules->firstWhere('category', $category);
+            // the item's own type first (a rule for "property" matches property listings), then the older grouping, then the "other" rule
+            $match = $rules->firstWhere('category', $listing->type)
+                ?? $rules->firstWhere('category', self::CATEGORY_MAP[$listing->type] ?? 'other')
+                ?? $rules->firstWhere('category', 'other');
             if ($match) {
                 return [$match->amountFor($amount), $match];
             }

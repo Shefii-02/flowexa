@@ -33,10 +33,25 @@ class LeaveController extends Controller
         return $u->isOwner() || $u->isSuperAdmin() || $u->hasAnyPermission(['hr.leave.approve', 'hr.manage']);
     }
 
+    /** Days of one leave type already taken or waiting for approval in a calendar year (cancelled / rejected do not count). */
+    private function usedDays(int $userId, int $typeId, int $year, ?int $exceptId = null): float
+    {
+        return (float) HrLeaveRequest::where('company_id', $this->companyId())->where('user_id', $userId)->where('leave_type_id', $typeId)
+            ->whereIn('status', ['approved', 'pending'])->whereYear('start_date', $year)
+            ->when($exceptId, fn ($q) => $q->where('id', '!=', $exceptId))->sum('days');
+    }
+
+    /** Active leave types, each with this person's balance for the year: is_paid, max_days_per_year, used (approved + pending) and left (null = no limit). */
     public function types(): JsonResponse
     {
-        return response()->json(['data' => HrLeaveType::where('company_id', $this->companyId())
-            ->where('is_active', true)->orderBy('sort_order')->get()]);
+        $uid = (int) auth()->id();
+        $rows = HrLeaveType::where('company_id', $this->companyId())->where('is_active', true)->orderBy('sort_order')->get()
+            ->map(function ($t) use ($uid) {
+                $used = $this->usedDays($uid, $t->id, now()->year);
+                return $t->toArray() + ['used' => $used, 'left' => $t->max_days_per_year !== null ? max(0, $t->max_days_per_year - $used) : null];
+            });
+
+        return response()->json(['data' => $rows]);
     }
 
     /** GET /hr/leave?scope=mine|team&status= */
@@ -79,6 +94,26 @@ class LeaveController extends Controller
         $days = ($data['half_day'] ?? false) ? 0.5 : ($start->diffInDays($end) + 1);
 
         $type = HrLeaveType::where('company_id', $this->companyId())->findOrFail($data['leave_type_id']);
+        if (!$type->is_active) {
+            throw ValidationException::withMessages(['leave_type_id' => "{$type->name} is not available right now."]);
+        }
+        if (($data['half_day'] ?? false) && !$start->equalTo($end)) {
+            throw ValidationException::withMessages(['half_day' => 'A half day is a single date — choose the same start and end date.']);
+        }
+        // no second request over days already covered by an approved / waiting one
+        $clash = HrLeaveRequest::where('company_id', $this->companyId())->where('user_id', auth()->id())->whereIn('status', ['approved', 'pending'])
+            ->whereDate('start_date', '<=', $end)->whereDate('end_date', '>=', $start)->first();
+        if ($clash) {
+            throw ValidationException::withMessages(['start_date' => 'You already have leave on ' . Carbon::parse($clash->start_date)->format('d M') . ' → ' . Carbon::parse($clash->end_date)->format('d M') . ' (' . $clash->status . ').']);
+        }
+        // the yearly allowance of this leave type
+        if ($type->max_days_per_year !== null) {
+            $used = $this->usedDays((int) auth()->id(), $type->id, $start->year);
+            if ($used + $days > $type->max_days_per_year + 0.001) {
+                $left = max(0, $type->max_days_per_year - $used);
+                throw ValidationException::withMessages(['leave_type_id' => "Only {$left} day(s) of {$type->name} left this year — you asked for {$days}."]);
+            }
+        }
         $settings = HrSetting::forCompany($this->companyId());
         $autoApprove = !$type->requires_approval || $settings->leave_auto_approve;
 

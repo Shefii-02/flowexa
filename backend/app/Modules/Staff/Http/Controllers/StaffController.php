@@ -110,13 +110,19 @@ class StaffController extends Controller
     // ─── DELETE /staff/{id} ───────────────────────────────────────────────────
     public function destroy(int $staff): JsonResponse
     {
+        $plan = request()->validate([
+            'leads'                 => ['nullable', 'array'], 'leads.action' => ['nullable', 'in:transfer,unassign'], 'leads.to_user_id' => ['nullable', 'integer'],
+            'installments'          => ['nullable', 'array'], 'installments.action' => ['nullable', 'in:transfer,unassign'], 'installments.to_user_id' => ['nullable', 'integer'],
+            'incentives'            => ['nullable', 'array'], 'incentives.action' => ['nullable', 'in:transfer,cancel,keep'], 'incentives.to_user_id' => ['nullable', 'integer'],
+        ]);
         $this->staffService->delete(
             staffId:   $staff,
             companyId: auth()->user()->company_id,
+            plan:      $plan,
         );
 
         return response()->json([
-            'message' => 'Staff member removed. Their leads have been unassigned.',
+            'message' => 'Staff member removed.',
         ]);
     }
 

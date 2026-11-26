@@ -111,7 +111,13 @@ class StaffService
     }
 
     // ─── Delete staff ─────────────────────────────────────────────────────────
-    public function delete(int $staffId, int $companyId): void
+    /**
+     * Remove a staff member. $plan says what happens to what they hold, each part either handed to another person or released:
+     *   leads        {action: transfer|unassign, to_user_id}   (default unassign — the old behaviour)
+     *   installments {action: transfer|unassign, to_user_id}   their installment follow-ups; "unassign" = no one in particular (the lead's owner / HR)
+     *   incentives   {action: transfer|cancel|keep, to_user_id}  unpaid incentives only — paid ones stay as history; "cancel" = nobody gets them
+     */
+    public function delete(int $staffId, int $companyId, array $plan = []): void
     {
         $user = $this->staffRepository->findById($staffId, $companyId);
 
@@ -124,9 +130,41 @@ class StaffService
             throw StaffException::cannotDeleteSelf();
         }
 
-        // Unassign their leads before deleting
-        $this->staffRepository->unassignLeads($user->id);
-        $this->staffRepository->delete($user);
+        $target = function (string $key) use ($plan, $companyId, $user): ?int {
+            $p = $plan[$key] ?? [];
+            if (($p['action'] ?? null) !== 'transfer') { return null; }
+            $to = (int) ($p['to_user_id'] ?? 0);
+            $ok = $to && $to !== $user->id && \App\Models\User::where('company_id', $companyId)->where('is_active', true)->whereKey($to)->exists();
+            if (!$ok) { throw \Illuminate\Validation\ValidationException::withMessages([$key => "Choose an active staff member to hand the {$key} to."]); }
+            return $to;
+        };
+        $leadsTo = $target('leads');
+        $instTo = $target('installments');
+        $incTo = $target('incentives');
+        $incAction = $plan['incentives']['action'] ?? 'keep';
+
+        \Illuminate\Support\Facades\DB::transaction(function () use ($user, $companyId, $leadsTo, $instTo, $incTo, $incAction) {
+            // installments first: they reference the leads
+            \Illuminate\Support\Facades\DB::table('lead_installments')->where('company_id', $companyId)->where('assigned_to', $user->id)
+                ->update(['assigned_to' => $instTo, 'updated_at' => now()]);
+
+            if ($leadsTo) {
+                $ids = \Illuminate\Support\Facades\DB::table('leads')->where('company_id', $companyId)->where('assigned_to', $user->id)->whereNull('deleted_at')->pluck('id');
+                \Illuminate\Support\Facades\DB::table('leads')->whereIn('id', $ids)->update(['assigned_to' => $leadsTo, 'assigned_by' => auth()->id(), 'assigned_at' => now(), 'updated_at' => now()]);
+                foreach ($ids->chunk(500) as $chunk) {
+                    \Illuminate\Support\Facades\DB::table('lead_events')->insert($chunk->map(fn ($lid) => ['lead_id' => $lid, 'company_id' => $companyId, 'user_id' => auth()->id(),
+                        'event' => 'assigned', 'payload' => json_encode(['from' => $user->id, 'to' => $leadsTo, 'reason' => 'staff member removed']), 'created_at' => now(), 'updated_at' => now()])->all());
+                }
+            } else {
+                $this->staffRepository->unassignLeads($user->id);
+            }
+
+            $unpaid = \App\Modules\Hr\Models\HrIncentive::where('company_id', $companyId)->where('user_id', $user->id)->whereIn('status', ['pending', 'approved'])->whereNull('payroll_item_id');
+            if ($incAction === 'transfer' && $incTo) { (clone $unpaid)->update(['user_id' => $incTo]); }
+            elseif ($incAction === 'cancel') { (clone $unpaid)->delete(); }
+
+            $this->staffRepository->delete($user);
+        });
     }
 
     // ─── Performance report ───────────────────────────────────────────────────

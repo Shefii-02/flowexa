@@ -49,11 +49,10 @@ import SegmentsPage from '@/pages/crm/SegmentsPage'
 import AttendancePage from '@/pages/hr/AttendancePage'
 import HrAttendanceAdminPage from '@/pages/hr/HrAttendanceAdminPage'
 import HrPayrollPage from '@/pages/hr/HrPayrollPage'
-import HrSalesPage from '@/pages/hr/HrSalesPage'
 import HrSalesActivityPage from '@/pages/hr/HrSalesActivityPage'
 import MyTargetPage from '@/pages/hr/MyTargetPage'
 import MyPayrollPage from '@/pages/hr/MyPayrollPage'
-import HrIncentivesPage from '@/pages/hr/HrIncentivesPage'
+import HrSalesIncentivesPage from '@/pages/hr/HrSalesIncentivesPage'
 import HrLeaveRequestsPage from '@/pages/hr/HrLeaveRequestsPage'
 import HrBreakTypesPage from '@/pages/hr/HrBreakTypesPage'
 import HrLeaveTypesPage from '@/pages/hr/HrLeaveTypesPage'
@@ -468,9 +467,9 @@ export default function App() {
               <Route path="hr/admin" element={<Navigate to="/hr/admin/attendance" replace />} />
               <Route path="hr/admin/attendance" element={<HrAttendanceAdminPage />} />
               <Route path="hr/admin/payroll" element={<HrPayrollPage />} />
-              <Route path="hr/admin/sales" element={<HrSalesPage />} />
+              <Route path="hr/admin/sales" element={<HrSalesIncentivesPage />} />
               <Route path="hr/sales-activity" element={<HrSalesActivityPage />} />
-              <Route path="hr/admin/incentives" element={<HrIncentivesPage />} />
+              <Route path="hr/admin/incentives" element={<HrSalesIncentivesPage />} />
               <Route path="hr/admin/leave" element={<HrLeaveRequestsPage />} />
               <Route path="hr/admin/break-types" element={<HrBreakTypesPage />} />
               <Route path="hr/admin/leave-types" element={<HrLeaveTypesPage />} />

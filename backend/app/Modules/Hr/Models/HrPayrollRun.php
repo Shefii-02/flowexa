@@ -15,5 +15,8 @@ class HrPayrollRun extends Model
 
     public function items(): HasMany { return $this->hasMany(HrPayrollItem::class, 'payroll_run_id'); }
 
+    public function generator(): \Illuminate\Database\Eloquent\Relations\BelongsTo { return $this->belongsTo(\App\Models\User::class, 'generated_by'); }
+    public function releaser(): \Illuminate\Database\Eloquent\Relations\BelongsTo { return $this->belongsTo(\App\Models\User::class, 'released_by'); }
+
     public function isReleased(): bool { return $this->status === 'released'; }
 }

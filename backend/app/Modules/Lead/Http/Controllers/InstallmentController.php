@@ -141,6 +141,19 @@ class InstallmentController extends Controller
         return response()->json($this->svc->edit($id, (int) $i->company_id, $d, auth()->id()));
     }
 
+    /** POST /installments/bulk-assign { ids[], assigned_to|null } — HR or lead managers move many installments to another follow-up person at once. */
+    public function bulkAssign(Request $r): JsonResponse
+    {
+        $u = auth()->user();
+        abort_unless($this->hr() || $u->hasPermission('leads.manage'), 403, 'Only HR or a lead manager can switch who follows up.');
+        $d = $r->validate(['ids' => ['required', 'array', 'min:1', 'max:500'], 'ids.*' => ['integer'], 'assigned_to' => ['nullable', 'integer']]);
+        $to = $d['assigned_to'] ?? null;
+        if ($to) { abort_unless(\App\Models\User::where('company_id', $u->company_id)->where('is_active', true)->whereKey($to)->exists(), 422, 'Choose an active staff member.'); }
+        $n = $this->svc->bulkAssign((int) $u->company_id, $d['ids'], $to ? (int) $to : null, $u->id);
+
+        return response()->json(['updated' => $n]);
+    }
+
     public function waive(Request $r, int $id): JsonResponse
     {
         [$i] = $this->installment($id);
@@ -193,6 +206,6 @@ class InstallmentController extends Controller
         $rows = $q->orderBy('i.due_date')->limit(300)->get(['i.*', 'l.id as lead_id', 'c.name as contact_name', 'c.phone as contact_phone', 'a.name as assigned_name', 'o.name as owner_name', 'p.total_amount'])
             ->map(fn ($i) => $this->svc->decorate($i))->all();
 
-        return response()->json(['data' => $rows, 'view' => $view, 'is_hr' => $this->hr()]);
+        return response()->json(['data' => $rows, 'view' => $view, 'is_hr' => $this->hr(), 'can_switch' => $this->hr() || $u->hasPermission('leads.manage')]);
     }
 }

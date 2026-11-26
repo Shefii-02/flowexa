@@ -4,11 +4,22 @@ import { api } from '@/api/client'
 import toast from 'react-hot-toast'
 import { PageHeader, Modal, err, inp, money } from './hrShared'
 
+const stamp = (iso?: string | null) => (iso ? new Date(iso).toLocaleString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '')
+/** "Generated 26 Nov 2026, 02:15 pm by Asha · Released …" */
+const RunTimes = ({ r }: { r: any }) => (
+  <span className="text-xs text-gray-400">
+    Generated {stamp(r.created_at)}{r.generator?.name ? ` by ${r.generator.name}` : ''}
+    {r.status === 'released' && r.released_at ? ` · Released ${stamp(r.released_at)}${r.releaser?.name ? ` by ${r.releaser.name}` : ''}` : ''}
+    {r.updated_at && r.updated_at !== r.created_at && r.status !== 'released' ? ` · Last changed ${stamp(r.updated_at)}` : ''}
+  </span>
+)
+
 export default function HrPayrollPage() {
   const [runs, setRuns] = useState<any[]>([])
   const [month, setMonth] = useState(new Date().toISOString().slice(0, 7))
   const [open, setOpen] = useState<any | null>(null)
   const [editItem, setEditItem] = useState<any | null>(null)
+  const [editRun, setEditRun] = useState<any | null>(null)
 
   const load = useCallback(() => { api.get('/hr/payroll/runs').then(r => setRuns(r.data?.data ?? [])).catch(() => {}) }, [])
   useEffect(() => { load() }, [load])
@@ -33,6 +44,20 @@ export default function HrPayrollPage() {
       setEditItem(null); openRun(open.id); toast.success('Line updated')
     } catch (e) { toast.error(err(e)) }
   }
+  const saveRun = async () => {
+    try { const r = await api.patch(`/hr/payroll/runs/${editRun.id}`, { notes: editRun.notes || null }); if (open?.id === editRun.id) setOpen((o: any) => ({ ...o, ...r.data.data })); setEditRun(null); load(); toast.success('Saved') }
+    catch (e) { toast.error(err(e)) }
+  }
+  const deleteRun = async (r: any) => {
+    if (!confirm(`Delete the ${r.period} payroll? All its pay lines and adjustments are removed. You can generate it again afterwards.`)) return
+    try { await api.delete(`/hr/payroll/runs/${r.id}`); if (open?.id === r.id) setOpen(null); load(); toast.success('Payroll deleted') }
+    catch (e) { toast.error(err(e)) }
+  }
+  const reopen = async (r: any) => {
+    if (!confirm(`Reopen the released ${r.period} payroll? It goes back to draft so lines can be corrected, and its incentives stop counting as paid until you release it again.`)) return
+    try { const x = await api.post(`/hr/payroll/runs/${r.id}/reopen`); setOpen(x.data.data); load(); toast.success('Reopened as draft') }
+    catch (e) { toast.error(err(e)) }
+  }
   const exportCsv = async (id: number) => {
     const r = await api.get(`/hr/payroll/runs/${id}/report`)
     const rows = r.data.rows as any[]
@@ -51,8 +76,16 @@ export default function HrPayrollPage() {
         <div className="space-y-3">
           <button onClick={() => setOpen(null)} className="text-sm text-indigo-600">← All runs</button>
           <div className="flex items-center justify-between flex-wrap gap-2">
-            <h3 className="font-semibold text-gray-800">Payroll {open.period} · <span className={open.status === 'released' ? 'text-green-600' : 'text-amber-600'}>{open.status}</span></h3>
-            <div className="flex gap-2">
+            <div>
+              <h3 className="font-semibold text-gray-800">Payroll {open.period} · <span className={open.status === 'released' ? 'text-green-600' : 'text-amber-600'}>{open.status}</span></h3>
+              <RunTimes r={open} />
+              {open.notes && <p className="text-xs text-gray-600 mt-0.5">Note: {open.notes}</p>}
+            </div>
+            <div className="flex gap-2 flex-wrap">
+              <button onClick={() => setEditRun({ id: open.id, period: open.period, notes: open.notes ?? '' })} className="text-sm border border-gray-200 rounded-lg px-3 py-1.5">Edit note</button>
+              {open.status === 'released'
+                ? <button onClick={() => reopen(open)} className="text-sm border border-amber-300 text-amber-700 rounded-lg px-3 py-1.5">Reopen to edit</button>
+                : <button onClick={() => deleteRun(open)} className="text-sm border border-red-200 text-red-600 rounded-lg px-3 py-1.5">Delete payroll</button>}
               <button onClick={() => exportCsv(open.id)} className="text-sm border border-gray-200 rounded-lg px-3 py-1.5">Export CSV</button>
               {open.status !== 'released' && <>
                 <button onClick={generate} className="text-sm border border-gray-200 rounded-lg px-3 py-1.5">Re-generate</button>
@@ -116,13 +149,29 @@ export default function HrPayrollPage() {
                   <span className="font-medium">{r.period}</span>
                   <span className={`ml-2 text-xs px-2 py-0.5 rounded-full ${r.status === 'released' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}>{r.status}</span>
                   <span className="ml-2 text-xs text-gray-400">{r.items_count} staff · net {money(r.totals?.net_pay)}</span>
+                  <div><RunTimes r={r} />{r.notes && <span className="text-xs text-gray-500"> · {r.notes}</span>}</div>
                 </div>
-                <button onClick={() => openRun(r.id)} className="text-sm text-indigo-600 hover:underline">Open</button>
+                <div className="flex items-center gap-3">
+                  <button onClick={() => openRun(r.id)} className="text-sm text-indigo-600 hover:underline">Open</button>
+                  <button onClick={() => setEditRun({ id: r.id, period: r.period, notes: r.notes ?? '' })} className="text-sm text-gray-500 hover:underline">Edit</button>
+                  {r.status === 'released'
+                    ? <button onClick={() => reopen(r)} className="text-sm text-amber-600 hover:underline">Reopen</button>
+                    : <button onClick={() => deleteRun(r)} className="text-sm text-red-500 hover:underline">Delete</button>}
+                </div>
               </div>
             ))}
             {runs.length === 0 && <p className="p-4 text-center text-gray-400 text-sm">No payroll runs yet.</p>}
           </div>
         </div>
+      )}
+      {editRun && (
+        <Modal title={`Edit payroll — ${editRun.period}`} onClose={() => setEditRun(null)}>
+          <label className="text-xs text-gray-500">Note <span className="text-gray-400">(shown on the run — e.g. why it was regenerated or corrected)</span>
+            <textarea value={editRun.notes} onChange={e => setEditRun((p: any) => ({ ...p, notes: e.target.value }))} rows={3} maxLength={1000} className={`block mt-1 w-full ${inp}`} />
+          </label>
+          <p className="text-[11px] text-gray-400">To change what each person is paid, open the payroll and use Edit on their line (draft payrolls only).</p>
+          <button onClick={saveRun} className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm">Save</button>
+        </Modal>
       )}
     </div>
   )

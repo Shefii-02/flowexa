@@ -4,7 +4,7 @@ import { api } from '@/api/client'
 import toast from 'react-hot-toast'
 import { PageHeader, err, inp, money } from './hrShared'
 
-export default function HrSalesPage() {
+export default function HrSalesPage({ embedded = false }: { embedded?: boolean }) {
   const month = new Date().toISOString().slice(0, 7)
   const [rows, setRows] = useState<any[]>([])
   const [summary, setSummary] = useState<any[]>([])
@@ -51,8 +51,8 @@ export default function HrSalesPage() {
   }
 
   return (
-    <div className="p-6 mx-auto space-y-4">
-      <PageHeader icon="🧾" title="Sales" sub="Record what each staff member sold — the incentive posts automatically" />
+    <div className={embedded ? 'space-y-4' : 'p-6 mx-auto space-y-4'}>
+      {!embedded && <PageHeader icon="🧾" title="Sales" sub="Record what each staff member sold — the incentive posts automatically" />}
 
       <div className="bg-indigo-50 border border-indigo-200 rounded-xl px-4 py-2.5 text-xs text-indigo-700">
         Recording a sale credits the staff member automatically — the incentive uses the item's own % if set, otherwise the matching category rule. A lead reaching <b>enrolled</b> with an item + amount also records a sale on its own.
@@ -82,18 +82,24 @@ export default function HrSalesPage() {
 
       {showForm && (
         <div className="bg-white border border-gray-200 rounded-xl p-4 grid grid-cols-2 gap-3">
-          <select value={f.listing_id} onChange={e => setF(p => ({ ...p, listing_id: e.target.value }))} className={inp}>
-            <option value="">— catalog item —</option>
-            {listings.map((l: any) => <option key={l.id} value={l.id}>{l.title}{l.price ? ` (${money(l.price)})` : ''}</option>)}
-          </select>
-          <input value={f.item_label} onChange={e => setF(p => ({ ...p, item_label: e.target.value }))} placeholder="…or type an item name" className={inp} />
-          <select value={f.staff_id} onChange={e => setF(p => ({ ...p, staff_id: e.target.value }))} className={inp}>
-            <option value="">— staff member —</option>
-            {staff.map((s: any) => <option key={s.id} value={s.id}>{s.name}</option>)}
-          </select>
-          <input type="number" value={f.amount} onChange={e => setF(p => ({ ...p, amount: e.target.value }))} placeholder="Sale amount" className={inp} />
-          <input type="date" value={f.sold_at} onChange={e => setF(p => ({ ...p, sold_at: e.target.value }))} className={inp} />
-          <input value={f.note} onChange={e => setF(p => ({ ...p, note: e.target.value }))} placeholder="Note (optional)" className={inp} />
+          <label className="block"><span className="block text-xs font-medium text-gray-600 mb-1">Catalog item</span>
+            <select value={f.listing_id} onChange={e => setF(p => ({ ...p, listing_id: e.target.value }))} className={inp}>
+              <option value="">— catalog item —</option>
+              {listings.map((l: any) => <option key={l.id} value={l.id}>{l.title}{l.price ? ` (${money(l.price)})` : ''}</option>)}
+            </select></label>
+          <label className="block"><span className="block text-xs font-medium text-gray-600 mb-1">Item name <span className="font-normal text-gray-400">(if not in the catalog)</span></span>
+            <input value={f.item_label} onChange={e => setF(p => ({ ...p, item_label: e.target.value }))} placeholder="…or type an item name" className={inp} /></label>
+          <label className="block"><span className="block text-xs font-medium text-gray-600 mb-1">Staff member</span>
+            <select value={f.staff_id} onChange={e => setF(p => ({ ...p, staff_id: e.target.value }))} className={inp}>
+              <option value="">— staff member —</option>
+              {staff.map((s: any) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select></label>
+          <label className="block"><span className="block text-xs font-medium text-gray-600 mb-1">Sale amount (₹)</span>
+            <input type="number" value={f.amount} onChange={e => setF(p => ({ ...p, amount: e.target.value }))} placeholder="Sale amount" className={inp} /></label>
+          <label className="block"><span className="block text-xs font-medium text-gray-600 mb-1">Sale date</span>
+            <input type="date" value={f.sold_at} onChange={e => setF(p => ({ ...p, sold_at: e.target.value }))} className={inp} /></label>
+          <label className="block"><span className="block text-xs font-medium text-gray-600 mb-1">Note <span className="font-normal text-gray-400">(optional)</span></span>
+            <input value={f.note} onChange={e => setF(p => ({ ...p, note: e.target.value }))} placeholder="Note (optional)" className={inp} /></label>
           <div className="col-span-2 flex justify-end">
             <button onClick={submit} disabled={saving} className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm">{saving ? 'Saving…' : 'Record sale'}</button>
           </div>

@@ -708,6 +708,7 @@ Route::prefix('v1')->group(function () {
 
             // Incentives
             Route::middleware('permission:hr.manage,hr.leave.approve')->group(function () {
+                Route::get('incentive-categories',   [IncentiveController::class, 'categories']);
                 Route::get('incentive-rules',        [IncentiveController::class, 'rules']);
                 Route::post('incentive-rules',       [IncentiveController::class, 'storeRule']);
                 Route::patch('incentive-rules/{id}', [IncentiveController::class, 'updateRule']);
@@ -721,6 +722,9 @@ Route::prefix('v1')->group(function () {
                 Route::get('payroll/runs',              [PayrollController::class, 'runs']);
                 Route::post('payroll/runs',             [PayrollController::class, 'generate']);
                 Route::get('payroll/runs/{id}',         [PayrollController::class, 'show']);
+                Route::patch('payroll/runs/{id}',       [PayrollController::class, 'updateRun'])->whereNumber('id');
+                Route::delete('payroll/runs/{id}',      [PayrollController::class, 'destroyRun'])->whereNumber('id');
+                Route::post('payroll/runs/{id}/reopen', [PayrollController::class, 'reopen'])->whereNumber('id');
                 Route::get('payroll/runs/{id}/report',  [PayrollController::class, 'report']);
                 Route::post('payroll/runs/{id}/release', [PayrollController::class, 'release']);
                 Route::patch('payroll/items/{id}',      [PayrollController::class, 'updateItem']);
@@ -824,6 +828,7 @@ Route::prefix('v1')->group(function () {
         // Installments — the follow-up page, payments, and HR's rules / corrections. Access is decided inside the controller (HR vs. who is set to follow up).
         Route::prefix('installments')->group(function () {
             Route::get('/',                      [\App\Modules\Lead\Http\Controllers\InstallmentController::class, 'index']);
+            Route::post('/bulk-assign',          [\App\Modules\Lead\Http\Controllers\InstallmentController::class, 'bulkAssign']);
             Route::get('/settings',              [\App\Modules\Lead\Http\Controllers\InstallmentController::class, 'settings']);
             Route::put('/settings',              [\App\Modules\Lead\Http\Controllers\InstallmentController::class, 'saveSettings']);
             Route::post('/{id}/pay',             [\App\Modules\Lead\Http\Controllers\InstallmentController::class, 'pay'])->whereNumber('id');

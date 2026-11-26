@@ -63,6 +63,14 @@ export default function StaffPage() {
   const [editUser,  setEditUser]  = useState<any>(null)
   const [delUser,   setDelUser]   = useState<any>(null)
   const [deleting,  setDeleting]  = useState(false)
+  const [others, setOthers] = useState<{ id: number; name: string }[]>([])
+  const [plan, setPlan] = useState({ leads: 'unassign', installments: 'unassign', incentives: 'keep', leadsTo: '', installmentsTo: '', incentivesTo: '' })
+  // opening the remove dialog: load the people that work can be handed to, and start from the safe defaults
+  useEffect(() => {
+    if (!delUser) return
+    setPlan({ leads: 'unassign', installments: 'unassign', incentives: 'keep', leadsTo: '', installmentsTo: '', incentivesTo: '' })
+    staffApi.list({ per_page: 200 }).then((r) => setOthers((r.data.data ?? r.data.staff ?? []).filter((x: any) => x.is_active !== false && x.id !== delUser.id).map((x: any) => ({ id: x.id, name: x.name })))).catch(() => {})
+  }, [delUser])
 
   // Access (sections + web / app) is managed on Staff Access, not here: a new member follows their role's sections until someone customises them.
   const [sections, setSections] = useState<AccessSection[]>([])
@@ -87,7 +95,11 @@ export default function StaffPage() {
   const handleDelete = async () => {
     setDeleting(true)
     try {
-      await staffApi.delete(delUser.id)
+      const part = (action: string, to: string) => (action === 'transfer' ? { action, to_user_id: +to } : { action })
+      if ((plan.leads === 'transfer' && !plan.leadsTo) || (plan.installments === 'transfer' && !plan.installmentsTo) || (plan.incentives === 'transfer' && !plan.incentivesTo)) {
+        toast.error('Choose who to hand the work to.'); setDeleting(false); return
+      }
+      await staffApi.delete(delUser.id, { leads: part(plan.leads, plan.leadsTo), installments: part(plan.installments, plan.installmentsTo), incentives: part(plan.incentives, plan.incentivesTo) })
       toast.success('Staff removed.')
       setDelUser(null)
       dispatch(fetchStaffThunk({ page, search, per_page: 20 }))
@@ -208,15 +220,29 @@ export default function StaffPage() {
         service={deviceService ?? { list: async () => ({ max: 0, active: 0, devices: [] }), createChallenge: async () => { throw new Error('n/a') }, revoke: async () => undefined }}
       />
 
-      {/* Delete Confirm */}
-      <ConfirmModal
-        open={!!delUser}
-        title="Remove staff member?"
-        message={`This will remove ${delUser?.name} and unassign all their leads.`}
-        onConfirm={handleDelete}
-        onCancel={() => setDelUser(null)}
-        loading={deleting}
-      />
+      {/* Remove staff — say what happens to the leads, installment follow-ups and unpaid incentives they hold */}
+      <Modal open={!!delUser} onClose={() => setDelUser(null)} title={`Remove ${delUser?.name ?? 'staff member'}?`} size="md"
+        footer={<><Button variant="secondary" onClick={() => setDelUser(null)} disabled={deleting}>Cancel</Button><Button variant="danger" onClick={handleDelete} loading={deleting}>Remove</Button></>}>
+        <p className="text-sm text-gray-600 mb-4">Decide what happens to the work {delUser?.name} holds. Each part can go to another person, or be released so no one in particular holds it.</p>
+        {([
+          ['leads', 'Leads', 'Leads they own', [['unassign', 'Unassign — no one owns them'], ['transfer', 'Hand over to…']]],
+          ['installments', 'Installment follow-ups', 'Installments they were chasing', [['unassign', 'No one in particular (the lead owner / HR)'], ['transfer', 'Hand over to…']]],
+          ['incentives', 'Unpaid incentives', 'Pending or approved, not yet in a payroll', [['keep', 'Leave as they are'], ['transfer', 'Hand over to…'], ['cancel', 'Cancel — nobody gets them']]],
+        ] as const).map(([k, title, hint, opts]) => (
+          <div key={k} className="mb-4">
+            <p className="text-sm font-semibold text-gray-800">{title} <span className="text-xs font-normal text-gray-400">· {hint}</span></p>
+            <div className="mt-1.5 flex flex-wrap items-center gap-2">
+              <select className="input w-64" value={(plan as any)[k]} onChange={(e) => setPlan({ ...plan, [k]: e.target.value })}>{opts.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
+              {(plan as any)[k] === 'transfer' && (
+                <select className="input w-52" value={(plan as any)[`${k}To`]} onChange={(e) => setPlan({ ...plan, [`${k}To`]: e.target.value })}>
+                  <option value="">Choose person…</option>{others.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+                </select>
+              )}
+            </div>
+          </div>
+        ))}
+        <p className="text-[11px] text-gray-400">Paid incentives and payroll history are kept either way.</p>
+      </Modal>
     </div>
   )
 }

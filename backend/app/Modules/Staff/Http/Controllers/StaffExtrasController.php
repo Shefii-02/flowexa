@@ -244,7 +244,7 @@ class StaffExtrasController extends Controller
         $month = preg_match('/^\d{4}-\d{2}$/', (string) $r->query('month')) ? (string) $r->query('month') : now()->format('Y-m');
         $from = \Illuminate\Support\Carbon::createFromFormat('Y-m-d', $month . '-01')->startOfDay();
         $to = $from->copy()->endOfMonth();
-        $leads = fn () => DB::table('leads')->where('company_id', $cid)->where('assigned_to', $u->id)->whereNull('deleted_at');
+        $leads = fn () => DB::table('leads')->where('leads.company_id', $cid)->where('leads.assigned_to', $u->id)->whereNull('leads.deleted_at');   // qualified: the latest-leads query joins contacts, which has the same columns
 
         $byStage = $leads()->selectRaw('stage, COUNT(*) c')->groupBy('stage')->pluck('c', 'stage');
         $stages = [];

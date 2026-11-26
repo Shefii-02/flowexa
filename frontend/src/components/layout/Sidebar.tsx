@@ -841,8 +841,7 @@ const SidebarInner = () => {
               <NestedAccordion icon="🛠️" label="Administration" basePaths={['/hr/admin']}>
                 <SubLink to="/hr/admin/attendance" icon="🗓️" label="Attendance" />
                 <SubLink to="/hr/admin/payroll" icon="💰" label="Payroll" />
-                <SubLink to="/hr/admin/sales" icon="🧾" label="Sales" />
-                <SubLink to="/hr/admin/incentives" icon="🎁" label="Incentives" />
+                <SubLink to="/hr/admin/sales" icon="🧾" label="Sales & Incentives" />
                 <SubLink to="/hr/admin/leave" icon="🌴" label="Leave Requests" />
                 <SubLink to="/hr/admin/staff-setup" icon="⚙️" label="Staff Setup" />
                 <SubLink to="/hr/admin/staff-availability" icon="🟢" label="Staff Availability" />

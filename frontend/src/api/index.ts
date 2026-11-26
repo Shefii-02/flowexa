@@ -39,7 +39,7 @@ export const staffApi = {
   update: (id: number, d: Record<string, unknown>) => api.put(`/staff/${id}`, d),
   toggle: (id: number) => api.patch(`/staff/${id}/toggle-active`),
   resetPwd: (id: number, d: Record<string, string>) => api.patch(`/staff/${id}/reset-password`, d),
-  delete: (id: number) => api.delete(`/staff/${id}`),
+  delete: (id: number, plan?: Record<string, unknown>) => api.delete(`/staff/${id}`, plan ? { data: plan } : undefined),
 }
 
 // ── Staff Account Access (WA sessions / WA Cloud numbers / Instagram accounts) ─
@@ -313,6 +313,7 @@ export const salesActivityApi = {
 
 // ── Leads ─────────────────────────────────────────────────────────────────────
 export const installmentApi = {
+  bulkAssign: (ids: number[], assigned_to: number | null) => api.post('/installments/bulk-assign', { ids, assigned_to }),
   settings: () => api.get('/installments/settings'),
   saveSettings: (d: Record<string, unknown>) => api.put('/installments/settings', d),
   list: (p?: Record<string, unknown>) => api.get('/installments', { params: p }),
