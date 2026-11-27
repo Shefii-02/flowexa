@@ -10,7 +10,7 @@ import { pid } from '@/lib/publicId'
 
 export interface ExistingLead {
   id: number; stage: string; category?: string | null; item?: string | null; created_at?: string | null
-  assigned_to: { id: number; name: string } | null; mine: boolean; can_view: boolean
+  assigned_to: { id: number; name: string } | null; mine: boolean; can_view: boolean; claimable?: boolean
 }
 
 export default function DuplicateLeadPrompt({ open, lead, customer, defaultNote, onClose }: {
@@ -20,14 +20,23 @@ export default function DuplicateLeadPrompt({ open, lead, customer, defaultNote,
   const [note, setNote] = useState('')
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
-  useEffect(() => { if (open) { setNote(defaultNote ?? ''); setSaved(false) } }, [open, defaultNote])
+  const [taken, setTaken] = useState(false)   // an unowned lead has been assigned to me (by saving a note or opening it)
+  const [opening, setOpening] = useState(false)
+  useEffect(() => { if (open) { setNote(defaultNote ?? ''); setSaved(false); setTaken(false) } }, [open, defaultNote])
   if (!lead) return null
 
   const stage = stageConfig[lead.stage as keyof typeof stageConfig]?.label ?? lead.stage
+  // nobody owns it yet → it is assigned to me first (needed to open it or write on it), once
+  const claimIfUnowned = async () => { if (lead.claimable && !taken) { await leadApi.claim(lead.id); setTaken(true) } }
+  const openLead = async () => {
+    setOpening(true)
+    try { await claimIfUnowned(); if (lead.claimable) toast.success('This lead is now assigned to you.'); onClose(); navigate(`/crm/leads/${pid(lead.id)}`) }
+    catch (e) { toast.error(getError(e)) } finally { setOpening(false) }
+  }
   const saveNote = async () => {
     if (!note.trim()) return
     setSaving(true)
-    try { await leadApi.addNote(lead.id, `New enquiry: ${note.trim()}`); setSaved(true); toast.success('Saved in that lead\'s activity.') }
+    try { await claimIfUnowned(); await leadApi.addNote(lead.id, `New enquiry: ${note.trim()}`); setSaved(true); toast.success('Saved in that lead\'s activity.') }
     catch (e) { toast.error(getError(e)) } finally { setSaving(false) }
   }
 
@@ -35,7 +44,7 @@ export default function DuplicateLeadPrompt({ open, lead, customer, defaultNote,
     <Modal open={open} onClose={onClose} title="This customer already has an open lead" size="md"
       footer={<>
         <Button variant="secondary" onClick={onClose}>No</Button>
-        <Button onClick={() => { onClose(); navigate(`/crm/leads/${pid(lead.id)}`) }} disabled={!lead.can_view}>Yes, open that lead</Button>
+        <Button onClick={openLead} loading={opening} disabled={!lead.can_view}>{lead.claimable && !taken ? 'Yes, open & assign to me' : 'Yes, open that lead'}</Button>
       </>}>
       <div className="space-y-3 text-sm">
         <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
@@ -50,7 +59,11 @@ export default function DuplicateLeadPrompt({ open, lead, customer, defaultNote,
           <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
             ⚠ This lead belongs to {lead.assigned_to?.name ?? 'another staff member'} and you can't open it. Ask them or a team head to add this enquiry.
           </p>
-        ) : !lead.mine && (
+        ) : lead.claimable && !taken ? (
+          <p className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-800">
+            ℹ This lead has no owner yet. Opening it (or saving a note on it) assigns it to you.
+          </p>
+        ) : !lead.mine && !taken && (
           <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
             ⚠ This lead is not assigned to you{lead.assigned_to ? ` — it belongs to ${lead.assigned_to.name}` : ' — it has no owner yet'}. You can still open it and add what the customer needs.
           </p>

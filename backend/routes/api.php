@@ -913,6 +913,7 @@ Route::prefix('v1')->group(function () {
             Route::get('/{lead}/activities',  [\App\Modules\Lead\Http\Controllers\LeadActivityController::class, 'index'])->middleware('permission:leads.view')->whereNumber('lead')->name('activities.index');
             Route::post('/{lead}/activities', [\App\Modules\Lead\Http\Controllers\LeadActivityController::class, 'store'])->middleware('permission:leads.view')->whereNumber('lead')->name('activities.store');
             Route::put('/{lead}/categories',  [LeadController::class, 'setCategories'])->middleware('permission:leads.manage')->whereNumber('lead')->name('categories');
+            Route::post('/{lead}/claim',      [LeadController::class, 'claim'])->middleware('permission:leads.view')->whereNumber('lead')->name('claim');
             Route::put('/{lead}/star',        [LeadController::class, 'star'])->middleware('permission:leads.view')->whereNumber('lead')->name('star');
             Route::put('/{lead}/cost',        [\App\Modules\Lead\Http\Controllers\LeadActivityController::class, 'cost'])->middleware('permission:leads.manage')->whereNumber('lead')->name('cost');
             Route::post('/recall', [LeadController::class, 'recall'])->middleware('permission:leads.recall')->name('recall');

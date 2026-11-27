@@ -101,8 +101,9 @@ class LeadController extends Controller
         $existing = app(\App\Modules\Lead\Repositories\Interfaces\LeadRepositoryInterface::class)->findOpenForItem($contactId, $companyId, $listingId);
         if (!$existing) { return null; }
         $me = auth()->user();
+        $unowned = $existing->assigned_to === null;   // nobody owns it yet: the user may take it (claim) and open it
         $canView = true;
-        try { $this->leadService->show($existing->id, $companyId, $me->id, $this->canViewAll()); } catch (\Throwable $e) { $canView = false; }
+        try { $this->leadService->show($existing->id, $companyId, $me->id, $this->canViewAll()); } catch (\Throwable $e) { $canView = $unowned; }
         $owner = $existing->assigned_to ? \App\Models\User::find($existing->assigned_to, ['id', 'name']) : null;
 
         return [
@@ -110,7 +111,28 @@ class LeadController extends Controller
             'assigned_to' => $owner ? ['id' => $owner->id, 'name' => $owner->name] : null,
             'mine' => $existing->assigned_to !== null && in_array((int) $existing->assigned_to, array_map('intval', $me->leadOwnerIds()), true),
             'can_view' => $canView,
+            'claimable' => $unowned,
         ];
+    }
+
+    /**
+     * POST /leads/{lead}/claim — take an UNASSIGNED open lead for the signed-in user (used when "Add lead" finds the customer already has one
+     * that nobody owns: opening it assigns it to whoever is adding the enquiry). Refused if someone got it first.
+     */
+    public function claim(int $lead): JsonResponse
+    {
+        $u = auth()->user();
+        $l = \Illuminate\Support\Facades\DB::transaction(function () use ($lead, $u) {
+            $row = \App\Models\Lead::where('company_id', $u->company_id)->where('id', $lead)->lockForUpdate()->first();
+            abort_unless($row, 404, 'Lead not found.');
+            abort_if(in_array($row->stage, ['enrolled', 'lost'], true), 422, 'This lead is already closed.');
+            abort_if($row->assigned_to !== null && (int) $row->assigned_to !== (int) $u->id, 409, 'Someone else has already taken this lead.');
+            return $row;
+        });
+        if ($l->assigned_to === null) {
+            $l = $this->leadService->assign($l->id, $u->company_id, new \App\Modules\Lead\DTOs\AssignLeadDTO($u->id));   // events, CRM outbox, capacity rules like any assignment
+        }
+        return response()->json(['message' => 'Lead assigned to you.', 'lead' => new LeadResource($l)]);
     }
 
     /** PUT /leads/{lead}/star { starred: true|false } — star or unstar a lead for the signed-in user only. */

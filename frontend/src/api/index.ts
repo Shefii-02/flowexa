@@ -332,6 +332,7 @@ export const leadApi = {
   show: (id: number) => api.get(`/leads/${id}`),
   create: (d: Record<string, unknown>) => api.post('/leads', d),
   origins: () => api.get('/leads/origins'),
+  claim: (id: number) => api.post(`/leads/${id}/claim`),
   star: (id: number, starred: boolean) => api.put(`/leads/${id}/star`, { starred }),
   update: (id: number, d: Record<string, unknown>) => api.put(`/leads/${id}`, d),
   assign: (id: number, userId: number) => api.post(`/leads/${id}/assign`, { user_id: userId }),
