@@ -128,6 +128,18 @@ class LeadRepository implements LeadRepositoryInterface
       return  $lead = $lead->first();
     }
 
+    /**
+     * The contact's OPEN lead that a new lead would duplicate. With an item chosen, only an open lead for that SAME item counts (the same
+     * customer asking about another item is a new lead). With no item (webhooks, flows, imports, "no item" in the form) any open lead counts, as before.
+     */
+    public function findOpenForItem(int $contactId, int $companyId, ?int $listingId): ?Lead
+    {
+        return Lead::where('contact_id', $contactId)->where('company_id', $companyId)
+            ->whereNotIn('stage', ['enrolled', 'lost'])
+            ->when($listingId, fn ($q) => $q->where('listing_id', $listingId))
+            ->orderByDesc('id')->first();
+    }
+
     public function create(int $companyId, CreateLeadDTO $dto): Lead
     {
         $lead = Lead::create([
@@ -143,6 +155,7 @@ class LeadRepository implements LeadRepositoryInterface
             'origin_type'  => $dto->originType,
             'origin_id'    => $dto->originId,
             'origin_label' => $dto->originLabel,
+            'listing_id'   => $dto->listingId,
             'stage'        => 'new',
             'priority'     => $dto->priority,
             'notes'        => $dto->notes,

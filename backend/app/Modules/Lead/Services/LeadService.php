@@ -51,8 +51,8 @@ class LeadService
     public function create(int $companyId, CreateLeadDTO $dto): Lead
     {
         // Prevent duplicate lead for same contact
-        $existing = $this->leadRepository->findByContact($dto->contactId, $companyId);
-        if ($existing && !in_array($existing->stage, ['enrolled', 'lost'])) {
+        // a duplicate = the same customer, the same item (or both without one), still open. Another item is a new lead.
+        if ($this->leadRepository->findOpenForItem($dto->contactId, $companyId, $dto->listingId)) {
             throw LeadException::duplicateLead();
         }
 

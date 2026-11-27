@@ -83,13 +83,11 @@ class LeadController extends Controller
         try {
             $lead = $this->leadService->create($company->id, CreateLeadDTO::fromRequest($data));
         } catch (\App\Modules\Lead\Exceptions\LeadException $e) {
-            // The customer already has an open lead. When the caller asks for it (the phone app does), keep that one lead and store the new
-            // enquiry INSIDE it — its notes, categories, origin and priority — instead of refusing.
-            if ($e->getErrorCode() === 'duplicate_lead' && $request->boolean('merge_if_duplicate')) {
-                $merged = $this->mergeIntoExisting($company, $data, $cats);
-                if ($merged) {
-                    return response()->json(['message' => 'This customer already has an open lead — your details were added to it.', 'merged' => true, 'lead' => new LeadResource($merged)]);
-                }
+            // The customer already has an open lead: say WHICH one, who owns it and whether this user may open it, so the app can offer
+            // "open that lead?" and warn when it is somebody else's — instead of just refusing.
+            if ($e->getErrorCode() === 'duplicate_lead') {
+                $existing = $this->existingLeadInfo($company->id, (int) $data['contact_id'], isset($data['listing_id']) ? (int) $data['listing_id'] : null);
+                return response()->json(['message' => $e->getMessage(), 'error_code' => 'duplicate_lead', 'existing_lead' => $existing], 422);
             }
             throw $e;
         }
@@ -97,33 +95,22 @@ class LeadController extends Controller
         return response()->json(['message' => 'Lead created.', 'lead' => new LeadResource($lead)], 201);
     }
 
-    /** Adds a repeat enquiry to the contact's open lead: a note in its history, extra categories, a higher priority. Null when the lead can't be seen by this user. */
-    private function mergeIntoExisting($company, array $data, array $cats): ?\App\Models\Lead
+    /** The contact's open lead as the duplicate warning needs it: id, stage, owner, whether it is this user's, and whether this user may open it. */
+    private function existingLeadInfo(int $companyId, int $contactId, ?int $listingId): ?array
     {
-        $repo = app(\App\Modules\Lead\Repositories\Interfaces\LeadRepositoryInterface::class);
-        $existing = $repo->findByContact((int) $data['contact_id'], $company->id);
-        if (!$existing || in_array($existing->stage, ['enrolled', 'lost'], true)) { return null; }
-        try {
-            $lead = $this->leadService->show($existing->id, $company->id, auth()->id(), $this->canViewAll());   // same visibility rules as opening the lead
-        } catch (\Throwable $e) {
-            return null;
-        }
+        $existing = app(\App\Modules\Lead\Repositories\Interfaces\LeadRepositoryInterface::class)->findOpenForItem($contactId, $companyId, $listingId);
+        if (!$existing) { return null; }
+        $me = auth()->user();
+        $canView = true;
+        try { $this->leadService->show($existing->id, $companyId, $me->id, $this->canViewAll()); } catch (\Throwable $e) { $canView = false; }
+        $owner = $existing->assigned_to ? \App\Models\User::find($existing->assigned_to, ['id', 'name']) : null;
 
-        $parts = [];
-        if (!empty($data['origin_label'])) { $parts[] = 'via ' . $data['origin_label']; }
-        if (!empty($data['notes'])) { $parts[] = trim((string) $data['notes']); }
-        $repo->logEvent($lead, 'note_added', ['content' => 'New enquiry' . ($parts ? ': ' . implode(' · ', $parts) : '') . ' (added instead of a duplicate lead)']);
-
-        if ($cats) {
-            [$before, $after] = app(\App\Services\LeadCategorizer::class)->add($lead, $cats);
-            if ($before !== $after) { $repo->logEvent($lead, 'category_changed', ['from' => $before, 'to' => $after]); }
-        }
-        $rank = ['low' => 1, 'medium' => 2, 'high' => 3];
-        if (!empty($data['priority']) && ($rank[$data['priority']] ?? 0) > ($rank[$lead->priority] ?? 0)) {
-            $lead->update(['priority' => $data['priority']]);
-        }
-
-        return $lead->fresh();
+        return [
+            'id' => $existing->id, 'stage' => $existing->stage, 'category' => $existing->category, 'item' => $existing->listing_id ? \App\Models\Listing::where('id', $existing->listing_id)->value('title') : null, 'created_at' => $existing->created_at?->toIso8601String(),
+            'assigned_to' => $owner ? ['id' => $owner->id, 'name' => $owner->name] : null,
+            'mine' => $existing->assigned_to !== null && in_array((int) $existing->assigned_to, array_map('intval', $me->leadOwnerIds()), true),
+            'can_view' => $canView,
+        ];
     }
 
     public function update(UpdateLeadRequest $request, int $lead): JsonResponse

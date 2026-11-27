@@ -7,6 +7,7 @@ import { DndContext, useDraggable, useDroppable, PointerSensor, useSensor, useSe
 import { useAppDispatch, useAppSelector } from '@/store'
 import { fetchLeadsThunk, fetchLeadAnalyticsThunk, updateLeadInList } from '@/store/slices'
 import { leadApi, staffApi, leadImportExportApi, contactApi, leadCategoryApi } from '@/api'
+import { catalogApi } from '@/pages/wa-agent/catalog/api'
 import StaffPicker from './components/StaffPicker'
 import { useWorkspace } from '@/lib/workspace'
 import { useStageNote, stageNoteRule } from './components/StageReason'
@@ -18,6 +19,7 @@ import { fmt, formatPhone, phoneLabel, getError, downloadBlob, stageConfig, prio
 import toast from 'react-hot-toast'
 import type { Lead, LeadStage } from '@/types'
 import { pid } from '@/lib/publicId'
+import DuplicateLeadPrompt, { type ExistingLead } from './components/DuplicateLeadPrompt'
 
 const STAGES: LeadStage[] = ['new', 'contacted', 'follow_up', 'enrolled', 'lost']
 
@@ -73,12 +75,17 @@ export default function LeadsPage() {
   const [newContactPhone, setNewContactPhone] = useState('')
   const [newContactName, setNewContactName] = useState('')
   const [newContactEmail, setNewContactEmail] = useState('')
-  const [phoneCheck, setPhoneCheck] = useState<'idle' | 'checking' | 'pick' | 'existing' | 'new'>('idle')
+  const [phoneCheck, setPhoneCheck] = useState<'idle' | 'checking' | 'pick' | 'none' | 'existing' | 'new'>('idle')
+  const [dup, setDup] = useState<{ lead: ExistingLead; customer: string; note: string } | null>(null)   // the customer already has an open lead
   const [createForm, setCreateForm] = useState({ category: '', priority: 'medium', notes: '', assigned_to: '', source: 'manual', origin_label: '' })
   // Lead origin = which number / account / campaign the lead came from (picked from what is connected; "not listed" = typed)
+  // Item = what the customer enquired about. The same customer on a different item is a new lead; the same item is a duplicate.
+  const [items, setItems] = useState<any[]>([])
+  const [itemId, setItemId] = useState('')
   const [origins, setOrigins] = useState<any[]>([])
   const [origin, setOrigin] = useState<any | null>(null)
   const [originOther, setOriginOther] = useState(false)
+  useEffect(() => { if (showCreate && items.length === 0) catalogApi.list({ status: 'active', per_page: 100 }).then((r) => setItems(r.data?.data ?? r.data ?? [])).catch(() => {}) }, [showCreate]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (showCreate && origins.length === 0) leadApi.origins().then((r) => setOrigins(r.data?.data ?? r.data?.origins ?? [])).catch(() => {}) }, [showCreate]) // eslint-disable-line react-hooks/exhaustive-deps
   const [categories, setCategories] = useState<string[]>([])
 
@@ -227,7 +234,8 @@ export default function LeadsPage() {
   useEffect(() => {
     // Phone-first: type the number, we check whether that contact already exists and fill their details in
     const digits = contactQuery.replace(/\D/g, '')
-    if (!showCreate || digits.length < 7) { setContactResults([]); setSelectedContact(null); setPhoneCheck('idle'); return }
+    // search starts from the 5th digit — the full number isn't needed
+    if (!showCreate || digits.length < 5) { setContactResults([]); setSelectedContact(null); setPhoneCheck('idle'); return }
     setPhoneCheck('checking')
     let stale = false
     const t = setTimeout(() => {
@@ -242,7 +250,7 @@ export default function LeadsPage() {
           const partial = rows.filter((c) => num(c).includes(digits))   // still typing: the start / middle of a stored number
           if (exact.length === 1) { const hit = exact[0]; setContactResults([]); setSelectedContact(hit); setNewContactName(hit.name ?? ''); setNewContactEmail(hit.email ?? ''); setPhoneCheck('existing') }
           else if (exact.length > 1 || partial.length > 0) { setContactResults((exact.length ? exact : partial).slice(0, 5)); setSelectedContact(null); setPhoneCheck('pick') }
-          else { setContactResults([]); setSelectedContact(null); setPhoneCheck('new') }
+          else { setContactResults([]); setSelectedContact(null); setPhoneCheck(digits.length >= 7 ? 'new' : 'none') }   // still short: no match yet, keep typing
         })
         .catch(() => { if (!stale) { setContactResults([]); setPhoneCheck('new') } })
     }, 350)
@@ -253,7 +261,7 @@ export default function LeadsPage() {
     setShowCreate(false); setContactQuery(''); setContactResults([]); setSelectedContact(null)
     setNewContact(false); setNewContactPhone(''); setNewContactName(''); setNewContactEmail(''); setPhoneCheck('idle')
     setCreateForm({ category: '', priority: 'medium', notes: '', assigned_to: '', source: 'manual', origin_label: '' })
-    setOrigin(null); setOriginOther(false)
+    setOrigin(null); setOriginOther(false); setItemId('')
   }
 
   const handleCreate = async () => {
@@ -278,12 +286,19 @@ export default function LeadsPage() {
         category: createForm.category || undefined,
         priority: createForm.priority,
         notes: createForm.notes || undefined,
+        listing_id: itemId ? +itemId : undefined,
         assigned_to: createForm.assigned_to || undefined,
         ...(origin ? { origin_type: origin.type, origin_id: origin.id } : { source: createForm.source || undefined, origin_label: createForm.origin_label || undefined }),
       })
       toast.success('Lead created.')
       resetCreate(); load()
-    } catch (e) { toast.error(getError(e)) }
+    } catch (e: any) {
+      const d = e?.response?.data
+      if (d?.error_code === 'duplicate_lead' && d.existing_lead) {
+        setDup({ lead: d.existing_lead, customer: newContactName || selectedContact?.name || contactQuery, note: createForm.notes })
+        resetCreate()                       // the add form is done with; the prompt takes over
+      } else toast.error(getError(e))
+    }
     finally { setCreating(false) }
   }
 
@@ -799,11 +814,13 @@ export default function LeadsPage() {
       </Modal>
 
       {/* Create modal */}
+      <DuplicateLeadPrompt open={dup !== null} lead={dup?.lead ?? null} customer={dup?.customer} defaultNote={dup?.note} onClose={() => setDup(null)} />
+
       <Modal open={showCreate} onClose={resetCreate} title="Add lead" size="md"
         footer={
           <>
             <Button variant="secondary" onClick={resetCreate}>Cancel</Button>
-            <Button onClick={handleCreate} loading={creating} disabled={phoneCheck === 'idle' || phoneCheck === 'checking'}>Create lead</Button>
+            <Button onClick={handleCreate} loading={creating} disabled={phoneCheck === 'idle' || phoneCheck === 'checking' || phoneCheck === 'none' || phoneCheck === 'pick'}>Create lead</Button>
           </>
         }>
         <div className="space-y-3">
@@ -812,7 +829,8 @@ export default function LeadsPage() {
             <input className="input w-full mt-1 font-mono" inputMode="tel" autoFocus placeholder="e.g. 9876543210 or +91 98765 43210"
               value={contactQuery} onChange={(e) => setContactQuery(e.target.value)} />
             <p className={`text-xs mt-1 ${phoneCheck === 'existing' ? 'text-green-600' : phoneCheck === 'new' ? 'text-amber-600' : 'text-gray-400'}`}>
-              {phoneCheck === 'idle' && 'Type the number — we check whether this customer is already in your contacts.'}
+              {phoneCheck === 'idle' && 'Type at least 5 digits of the number — we look for this customer in your contacts.'}
+              {phoneCheck === 'none' && 'No customer matches these digits yet — keep typing.'}
               {phoneCheck === 'checking' && 'Checking contacts…'}
               {phoneCheck === 'pick' && `${contactResults.length} customer${contactResults.length === 1 ? '' : 's'} found — pick one, or keep typing the full number.`}
               {phoneCheck === 'existing' && '✓ Existing contact found — details filled in. You can edit them.'}
@@ -866,6 +884,21 @@ export default function LeadsPage() {
               <option value="">— Unassigned —</option>
               {counsellors.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
+          </div>
+          <div>
+            <span className="label">Item <span className="text-gray-400 font-normal">(what the customer enquired about — optional)</span></span>
+            <div className="mt-2 max-h-40 space-y-1.5 overflow-y-auto pr-1" role="radiogroup" aria-label="Item">
+              {[{ id: '', title: 'No item', price: null as any }, ...items].map((it) => {
+                const val = String(it.id); const on = itemId === val
+                return (
+                  <button key={val || 'none'} type="button" role="radio" aria-checked={on} onClick={() => setItemId(val)} className="flex w-full items-center gap-2 text-left text-sm">
+                    <span className={`flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full border-2 ${on ? 'border-brand-600' : 'border-gray-300'}`}>{on && <span className="h-2 w-2 rounded-full bg-brand-600" />}</span>
+                    <span className={on ? 'font-medium text-gray-900' : 'text-gray-700'}>{it.title}{it.price ? <span className="text-xs text-gray-400"> · {fmt.currency(it.price)}</span> : null}</span>
+                  </button>
+                )
+              })}
+            </div>
+            <p className="mt-1 text-[11px] text-gray-400">The same customer on a different item becomes a new lead; the same item is a duplicate.</p>
           </div>
           <div>
             <span className="label">Lead origin <span className="text-gray-400 font-normal">(which number / account / campaign it came from)</span></span>

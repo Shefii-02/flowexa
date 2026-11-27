@@ -16,6 +16,7 @@ class CreateLeadRequest extends FormRequest
             'category'     => ['nullable', 'string', 'max:100'],
             'priority'     => ['nullable', 'in:low,medium,high'],
             'notes'        => ['nullable', 'string', 'max:1000'],
+            'listing_id'   => ['nullable', 'integer', \Illuminate\Validation\Rule::exists('listings', 'id')->where('company_id', auth()->user()->company_id)],
             'assigned_to'  => ['nullable', 'integer', 'exists:users,id'],
             // Lead Source (which channel) + Lead Origin (which specific number/account/campaign
             // within it) — for a manually-entered lead the staff member knows this first-hand

@@ -23,6 +23,8 @@ readonly class CreateLeadDTO
         public ?string $originType   = null,
         public ?int    $originId     = null,
         public ?string $originLabel  = null,
+        // the item / listing the customer enquired about — the same customer asking about a DIFFERENT item is a new lead, not a duplicate
+        public ?int    $listingId    = null,
     ) {}
 
     public static function fromRequest(array $data): self
@@ -37,6 +39,7 @@ readonly class CreateLeadDTO
             originLabel: $data['origin_label'] ?? null,
             originType:  $data['origin_type'] ?? null,
             originId:    isset($data['origin_id']) ? (int) $data['origin_id'] : null,
+            listingId:   isset($data['listing_id']) ? (int) $data['listing_id'] : null,
         );
     }
 
