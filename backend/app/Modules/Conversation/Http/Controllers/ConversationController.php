@@ -94,9 +94,16 @@ class ConversationController extends Controller
             ->with('waPhoneNumber:id,label,display_number')
             ->orderByDesc('last_message_at')->get();
 
+        // When the customer last wrote — WhatsApp lets us send free text for 24 hours after that; later it has to be a template.
+        $lastIn = \App\Models\WaMessage::whereIn('conversation_id', $rows->pluck('id'))->where('direction', 'inbound')
+            ->selectRaw('conversation_id, MAX(created_at) last_in')->groupBy('conversation_id')->pluck('last_in', 'conversation_id');
+
         return response()->json(['conversations' => $rows->map(fn ($c) => [
             'id' => $c->id, 'phone' => $c->phone, 'status' => $c->status, 'unread_count' => $c->unread_count,
             'last_message_at' => $c->last_message_at, 'number' => $c->waPhoneNumber?->label ?: $c->waPhoneNumber?->display_number,
+            'wa_phone_number_id' => $c->wa_phone_number_id,
+            'last_inbound_at' => ($t = $lastIn[$c->id] ?? null) ? \Illuminate\Support\Carbon::parse($t)->toIso8601String() : null,
+            'window_open' => $t ? \Illuminate\Support\Carbon::parse($t)->gt(now()->subHours(24)) : false,
         ])->values()]);
     }
 
@@ -215,6 +222,12 @@ class ConversationController extends Controller
                     ? 'This conversation is assigned to another agent. Ask them, or an admin/team leader, to reply.'
                     : 'Claim this conversation before replying.',
             ], 403);
+        }
+
+        // WhatsApp only allows free text within 24 hours of the customer's last message; after that a template is the only option.
+        $lastIn = \App\Models\WaMessage::where('conversation_id', $conversation->id)->where('direction', 'inbound')->max('created_at');
+        if (!$lastIn || \Illuminate\Support\Carbon::parse($lastIn)->lte(now()->subHours(24))) {
+            return response()->json(['message' => 'The 24-hour reply window has closed — send an approved template to start the conversation again.', 'window_closed' => true], 422);
         }
 
         $company = auth()->user()->company;

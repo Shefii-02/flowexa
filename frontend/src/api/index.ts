@@ -298,6 +298,7 @@ export const leadVerificationApi = {
 
 // ── Sales activity (calls / follow-ups / conversions vs targets) ─
 export const leadActivityApi = {
+  campaigns: (leadId: number) => api.get(`/leads/${leadId}/campaigns`),
   list: (leadId: number) => api.get(`/leads/${leadId}/activities`),
   log: (leadId: number, d: Record<string, unknown>) => api.post(`/leads/${leadId}/activities`, d),
   setCost: (leadId: number, cost: number | null) => api.put(`/leads/${leadId}/cost`, { cost }),

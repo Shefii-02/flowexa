@@ -1,5 +1,5 @@
 // "Log a call" on a lead — the data behind the daily sales-activity monitor (new-lead calls vs follow-up calls, conversions).
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
 import { leadActivityApi } from '@/api'
 import { Button } from '@/components/ui'
@@ -13,12 +13,24 @@ const OUTCOMES: [string, string][] = [['', '— outcome —'], ['connected', 'Sp
 const STAGES: [string, string][] = [['', 'Keep stage (auto)'], ['contacted', 'Contacted'], ['follow_up', 'Follow-up'], ['enrolled', 'Converted'], ['lost', 'Lost']]
 const outcomeLabel = (o: string | null) => OUTCOMES.find(x => x[0] === o)?.[1] ?? ''
 
-export default function LeadCallLog({ leadId, cost, onChanged }: { leadId: number; cost?: string | number | null; onChanged?: () => void }) {
+/** `callSignal` goes up by one each time the staff taps "Phone call" on the lead: the form scrolls into view as a call, ready to log how it went. */
+export default function LeadCallLog({ leadId, cost, onChanged, callSignal = 0 }: { leadId: number; cost?: string | number | null; onChanged?: () => void; callSignal?: number }) {
+  const root = useRef<HTMLDivElement>(null)
+  const outcomeRef = useRef<HTMLSelectElement>(null)
+  const [justCalled, setJustCalled] = useState(false)
   const canCost = usePermission('leads.manage')
   const [rows, setRows] = useState<Act[]>([])
   const [f, setF] = useState({ kind: 'call', outcome: '', minutes: '', notes: '', next: '', stage: '' })
   const [busy, setBusy] = useState(false)
   const [costVal, setCostVal] = useState(cost == null ? '' : String(cost))
+
+  useEffect(() => {
+    if (!callSignal) return
+    setF(x => ({ ...x, kind: 'call' })); setJustCalled(true)
+    root.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    const t = setTimeout(() => outcomeRef.current?.focus({ preventScroll: true }), 400)
+    return () => clearTimeout(t)
+  }, [callSignal])
 
   const load = useCallback(() => { leadActivityApi.list(leadId).then(r => setRows(r.data.data ?? [])).catch(() => {}) }, [leadId])
   useEffect(() => { load() }, [load])
@@ -33,7 +45,7 @@ export default function LeadCallLog({ leadId, cost, onChanged }: { leadId: numbe
         duration_seconds: f.minutes ? Math.round(Number(f.minutes) * 60) : undefined,
         next_follow_up_at: f.next ? new Date(f.next).toISOString() : undefined,
       })
-      toast.success('Logged.'); setF({ kind: 'call', outcome: '', minutes: '', notes: '', next: '', stage: '' }); load(); onChanged?.()
+      toast.success('Logged.'); setJustCalled(false); setF({ kind: 'call', outcome: '', minutes: '', notes: '', next: '', stage: '' }); load(); onChanged?.()
     } catch (e) { toast.error(getError(e)) } finally { setBusy(false) }
   }
   const saveCost = async () => {
@@ -42,7 +54,8 @@ export default function LeadCallLog({ leadId, cost, onChanged }: { leadId: numbe
 
   const sel = 'border border-gray-300 rounded-lg px-2 py-1.5 text-sm bg-white'
   return (
-    <div className="card p-5 space-y-4">
+    <div ref={root} className={`card p-5 space-y-4 transition-shadow ${justCalled ? 'ring-2 ring-green-400' : ''}`}>
+      {justCalled && <p className="rounded-lg bg-green-50 px-3 py-2 text-xs text-green-800">📞 Call started — when you're done, note how it went and save it here.</p>}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <p className="text-sm font-semibold text-gray-800">Log a call / follow-up</p>
         {canCost && (
@@ -54,7 +67,7 @@ export default function LeadCallLog({ leadId, cost, onChanged }: { leadId: numbe
       </div>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
         <select className={sel} value={f.kind} onChange={e => setF({ ...f, kind: e.target.value })}>{KINDS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
-        <select className={sel} value={f.outcome} onChange={e => setF({ ...f, outcome: e.target.value })}>{OUTCOMES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
+        <select ref={outcomeRef} className={sel} value={f.outcome} onChange={e => setF({ ...f, outcome: e.target.value })}>{OUTCOMES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
         <input type="number" min={0} step="0.5" className={sel} placeholder="Minutes on call" value={f.minutes} onChange={e => setF({ ...f, minutes: e.target.value })} />
         <select className={sel} value={f.stage} onChange={e => setF({ ...f, stage: e.target.value })}>{STAGES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
       </div>

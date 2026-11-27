@@ -12,6 +12,7 @@ import { leadApi, leadCategoryApi, staffApi, contactApi, labelApi, leadActivityA
 import { catalogApi } from '@/pages/wa-agent/catalog/api'
 import { LeadChatCard, LeadChatDrawer } from './components/LeadChat'
 import LeadInstallments from './components/LeadInstallments'
+import LeadCampaigns from './components/LeadCampaigns'
 import SideDrawer from './components/SideDrawer'
 import AssignStaffDrawer from './components/AssignStaffDrawer'
 import { Button, ConfirmModal, Badge, Spinner, Modal } from '@/components/ui'
@@ -60,7 +61,7 @@ export default function LeadDetailPage() {
   const [labelDrawer, setLabelDrawer] = useState(false)
   const [newLabel, setNewLabel] = useState({ name: '', color: PALETTE[1] })
   const [contactEditing, setContactEditing] = useState(false)
-  const [chatOpen, setChatOpen] = useState(false)   // drawer with the contact's chats
+  const [chatMode, setChatMode] = useState<null | 'auto' | 'wachat' | 'inbox'>(null)   // which chat drawer is open (null = closed)
   const [assignOpen, setAssignOpen] = useState(false) // drawer with the staff list
   const [contactForm, setContactForm] = useState({ name: '', email: '', phone: '' })
   const [contactSaving, setContactSaving] = useState(false)
@@ -106,6 +107,10 @@ export default function LeadDetailPage() {
 
   const { askNote, noteModal } = useStageNote()
   // "Conversion details" step after a lead is marked converted: deal value, lead cost, and (optionally) straight on to the installment plan.
+  // Edit drawer: categories are multi-select, and a converted lead also carries its lead cost
+  const [editCats, setEditCats] = useState<string[]>([])
+  const [editCost, setEditCost] = useState('')
+  const [callSignal, setCallSignal] = useState(0)   // bumps when "Phone call" is tapped, so the call log opens ready to fill
   const [conv, setConv] = useState<{ sale_value: string; cost: string } | null>(null)
   const [convSaving, setConvSaving] = useState(false)
   const saveConversion = async (thenInstallments: boolean) => {
@@ -136,16 +141,31 @@ export default function LeadDetailPage() {
     finally { setStageUpdating(false) }
   }
 
-  const handleSave = async () => {
+  useEffect(() => {
+    if (editing && lead) { setEditCats(myCategories(lead)); setEditCost((lead as any).cost != null ? String((lead as any).cost) : '') }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editing])
+
+  const handleSave = async (thenInstallments = false) => {
     if (!lead) return
     setSaving(true)
     try {
-      const { data } = await leadApi.update(lead.id, {
-        ...editForm, listing_id: editForm.listing_id || null, sale_value: editForm.sale_value || null,
-      })
-      setLead(data.lead)
+      const { category: _unused, ...rest } = editForm   // categories are saved below (several, first = primary)
+      const { data } = await leadApi.update(lead.id, { ...rest, listing_id: editForm.listing_id || null, sale_value: editForm.sale_value || null })
+      let next = data.lead as Lead
+      const before = myCategories(lead)
+      if (editCats.join('|') !== before.join('|')) {
+        const r2 = await leadApi.setCategories(lead.id, editCats)
+        next = { ...next, category: r2.data.category ?? editCats[0] ?? null, categories: r2.data.categories ?? editCats } as Lead
+      }
+      if (lead.stage === 'enrolled' && editCost !== (((lead as any).cost ?? '') === '' ? '' : String((lead as any).cost))) {
+        await leadActivityApi.setCost(lead.id, editCost === '' ? null : Number(editCost))
+        next = { ...next, cost: editCost === '' ? null : editCost } as any
+      }
+      setLead(next)
       toast.success('Lead updated.')
       setEditing(false)
+      if (thenInstallments) setParams({ tab: 'installments' }, { replace: true })
     } catch (e) { toast.error(getError(e)) }
     finally { setSaving(false) }
   }
@@ -312,14 +332,17 @@ export default function LeadDetailPage() {
   const initial = (lead.contact?.name || lead.contact?.phone || '?').trim().charAt(0).toUpperCase()
   const showInstallments = lead.stage === 'enrolled' || !!lead.sale_value
   const detailTabs = [
-    { id: 'overview', icon: '📋', label: 'Overview' },
-    { id: 'conversation', icon: '💬', label: 'Conversation' },
-    { id: 'activity', icon: '📞', label: 'Activity' },
+    { id: 'pipeline', icon: '👤', label: 'Contact & pipeline' },
+    { id: 'info', icon: '📋', label: 'Lead information' },
+    { id: 'chat', icon: '💬', label: 'Chat' },
+    { id: 'referred', icon: '🤝', label: 'Referred by' },
+    { id: 'staff', icon: '🧑‍💼', label: 'Assigned staff' },
+    { id: 'organize', icon: '🏷️', label: 'Category & labels' },
+    { id: 'campaigns', icon: '📣', label: 'Campaigns' },
     ...(showInstallments ? [{ id: 'installments', icon: '💳', label: 'Installments' }] : []),
-    { id: 'organize', icon: '🏷️', label: 'Categories & labels' },
   ]
-  const tab = detailTabs.find((t) => t.id === params.get('tab'))?.id ?? 'overview'
-  const setTab = (id: string) => setParams(id === 'overview' ? {} : { tab: id }, { replace: true })
+  const tab = detailTabs.find((t) => t.id === params.get('tab'))?.id ?? 'pipeline'
+  const setTab = (id: string) => setParams(id === 'pipeline' ? {} : { tab: id }, { replace: true })
   return (
     <div className="space-y-5 max-w-6xl">
       <Link to="/crm/leads" className="text-xs text-gray-400 hover:underline">← All leads</Link>
@@ -344,7 +367,42 @@ export default function LeadDetailPage() {
         </div>
       </div>
 
-      {/* Pipeline — always visible above the tabs */}
+      {/* Tabs */}
+      <div className="flex gap-1 overflow-x-auto border-b border-gray-200" role="tablist">
+        {detailTabs.map((t) => (
+          <button key={t.id} role="tab" aria-selected={tab === t.id} onClick={() => setTab(t.id)}
+            className={`px-4 py-2.5 text-sm -mb-px border-b-2 whitespace-nowrap ${tab === t.id ? 'border-brand-600 text-brand-700 font-medium' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+            <span className="mr-1.5">{t.icon}</span>{t.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Contact details & Pipeline: who they are, where the lead is, and everything logged on it */}
+      {tab === 'pipeline' && (
+        <div className="space-y-5">
+          <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-5 items-start">
+          <div className="card p-5">
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-sm font-semibold text-gray-800">Contact details</p>
+              {lead.contact && (
+                <button className="text-xs text-brand-600 hover:underline"
+                  onClick={() => { setContactForm({ name: lead.contact?.name ?? '', email: lead.contact?.email ?? '', phone: '' }); setContactEditing(true) }}>Edit</button>
+              )}
+            </div>
+            <div className="space-y-2.5">
+              <Field label="Name">{lead.contact?.name || '—'}</Field>
+              <Field label="Phone"><span className="font-mono">{phoneLabel(lead.contact)}</span></Field>
+              <Field label="Email">{lead.contact?.email || '—'}</Field>
+            </div>
+            {lead.contact?.phone && (
+              <div className="mt-4 grid grid-cols-2 gap-2 border-t border-gray-100 pt-4">
+                <a href={`tel:+${String(lead.contact.phone).replace(/\D+/g, '')}`} onClick={() => setCallSignal((n) => n + 1)} className="flex items-center justify-center gap-1.5 rounded-lg border border-gray-200 px-2 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50">📞 Phone call</a>
+                <button type="button" disabled title="IVR calling is not available yet" className="flex cursor-not-allowed items-center justify-center gap-1.5 rounded-lg border border-gray-100 bg-gray-50 px-2 py-2 text-xs font-medium text-gray-300">☎️ IVR call</button>
+                <button type="button" onClick={() => setChatMode('wachat')} className="flex items-center justify-center gap-1.5 rounded-lg border border-green-200 bg-green-50 px-2 py-2 text-xs font-medium text-green-800 hover:bg-green-100">💬 WA Chat</button>
+                <button type="button" onClick={() => setChatMode('inbox')} className="flex items-center justify-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-2 py-2 text-xs font-medium text-blue-800 hover:bg-blue-100">📥 WA shared inbox</button>
+              </div>
+            )}
+          </div>
       <div className="card p-5">
         <p className="text-sm font-semibold text-gray-800 mb-4">Pipeline</p>
         {lead.stage === 'lost' ? (
@@ -376,92 +434,9 @@ export default function LeadDetailPage() {
       </div>
 
 
-      {/* Tabs */}
-      <div className="flex flex-wrap gap-1 border-b border-gray-200" role="tablist">
-        {detailTabs.map((t) => (
-          <button key={t.id} role="tab" aria-selected={tab === t.id} onClick={() => setTab(t.id)}
-            className={`px-4 py-2.5 text-sm -mb-px border-b-2 whitespace-nowrap ${tab === t.id ? 'border-brand-600 text-brand-700 font-medium' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
-            <span className="mr-1.5">{t.icon}</span>{t.label}
-          </button>
-        ))}
-      </div>
-
-      {tab === 'overview' && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 items-start">
-          <div className="lg:col-span-2 space-y-5">
-          {/* Lead information (read-only — "Edit lead" opens the drawer) */}
-          <div className="card p-5">
-            <div className="flex items-center justify-between mb-3">
-              <p className="text-sm font-semibold text-gray-800">Lead information</p>
-              <button className="text-xs text-brand-600 hover:underline" onClick={() => setEditing(true)}>Edit</button>
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3">
-              <Field label="Source">{lead.source ? (lead.source_label ?? lead.source) : '—'}</Field>
-              <Field label="Origin">{lead.origin_label ?? '—'}</Field>
-              <Field label="Priority"><span className={`badge ${priorityConfig[lead.priority].badge}`}>{priorityConfig[lead.priority].label}</span></Field>
-              <Field label="Categories">{myCategories(lead).join(', ') || '—'}</Field>
-              <Field label="Assigned to">{lead.assigned_to?.name || 'Unassigned'}</Field>
-              <Field label="Created">{fmt.date(lead.created_at)}</Field>
-              <Field label="Item / listing">{lead.listing?.title || '—'}</Field>
-              <Field label="Deal value">{lead.sale_value != null ? fmt.currency(lead.sale_value) : '—'}</Field>
-              {lead.sale && <Field label="Sale recorded" wide><span className="text-green-600">✓ {fmt.currency(lead.sale.amount)} on {lead.sale.sold_at ? fmt.date(lead.sale.sold_at) : '—'}</span></Field>}
-              {lead.notes && <Field label="Notes" wide><span className="text-gray-600 whitespace-pre-wrap">{lead.notes}</span></Field>}
-            </div>
           </div>
-
-          <LeadReferrer lead={lead} canEdit={canManage} onChanged={load} />
-
-          </div>
-          <aside className="space-y-5">
-          {/* Assigned staff */}
-          <div className="card p-5">
-            <p className="text-sm font-semibold text-gray-800 mb-3">Assigned staff</p>
-            {lead.assigned_to?.name ? (
-              <div className="flex items-center gap-3 mb-3">
-                <span className="w-9 h-9 rounded-full bg-brand-100 text-brand-700 flex items-center justify-center text-sm font-semibold">{lead.assigned_to.name.trim().charAt(0).toUpperCase()}</span>
-                <span className="min-w-0">
-                  <span className="block text-sm font-medium text-gray-900 truncate">{lead.assigned_to.name}</span>
-                  {lead.assigned_at && <span className="block text-[11px] text-gray-400">since {fmt.date(lead.assigned_at as any)}</span>}
-                </span>
-              </div>
-            ) : <p className="text-sm text-gray-400 mb-3">Not assigned to anyone yet</p>}
-            <Button variant="secondary" className="w-full justify-center" onClick={() => setAssignOpen(true)}>{lead.assigned_to?.name ? 'Switch to another staff' : 'Assign staff'}</Button>
-          </div>
-
-          {/* Contact */}
-          <div className="card p-5">
-            <div className="flex items-center justify-between mb-3">
-              <p className="text-sm font-semibold text-gray-800">Contact details</p>
-              {lead.contact && (
-                <button className="text-xs text-brand-600 hover:underline"
-                  onClick={() => { setContactForm({ name: lead.contact?.name ?? '', email: lead.contact?.email ?? '', phone: '' }); setContactEditing(true) }}>Edit</button>
-              )}
-            </div>
-            <div className="space-y-2.5">
-              <Field label="Name">{lead.contact?.name || '—'}</Field>
-              <Field label="Phone"><span className="font-mono">{phoneLabel(lead.contact)}</span></Field>
-              <Field label="Email">{lead.contact?.email || '—'}</Field>
-            </div>
-          </div>
-          </aside>
-        </div>
-      )}
-
-      {tab === 'conversation' && (
-        <div className="max-w-4xl space-y-5">
-          {/* Chat preview */}
-          {lead.contact?.phone && (
-            <LeadChatCard contactId={lead.contact.id} phone={lead.contact.phone} name={lead.contact.name} onOpen={() => setChatOpen(true)} leadId={lead.id} waFirst={waFirst} onNumberFound={fillRealNumber} onReviewConflict={(id) => setMergeOther(id)} />
-          )}
-
-          <LeadChannelChats leadId={lead.id} source={lead.source} />
-        </div>
-      )}
-
-      {tab === 'activity' && (
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-5 items-start">
-          {/* Activity */}
-          <LeadCallLog leadId={lead.id} cost={(lead as any).cost} onChanged={load} />
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-5 items-start">
+          <LeadCallLog leadId={lead.id} cost={(lead as any).cost} onChanged={load} callSignal={callSignal} />
 
           <div className="card p-5">
             <p className="text-sm font-semibold text-gray-800 mb-3">Lead activities</p>
@@ -485,12 +460,69 @@ export default function LeadDetailPage() {
               })}
             </div>
           </div>
+          </div>
         </div>
       )}
 
-      {tab === 'installments' && showInstallments && (
-        <div className="max-w-4xl">
-          {lead.stage === 'enrolled' || lead.sale_value ? <LeadInstallments leadId={lead.id} saleValue={lead.sale_value} /> : null}
+      {tab === 'info' && (
+        <div className="max-w-3xl">
+          {/* Lead information (read-only — "Edit lead" opens the drawer) */}
+          <div className="card p-5">
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-sm font-semibold text-gray-800">Lead information</p>
+              <button className="text-xs text-brand-600 hover:underline" onClick={() => setEditing(true)}>Edit</button>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3">
+              <Field label="Source">{lead.source ? (lead.source_label ?? lead.source) : '—'}</Field>
+              <Field label="Origin">{lead.origin_label ?? '—'}</Field>
+              <Field label="Priority"><span className={`badge ${priorityConfig[lead.priority].badge}`}>{priorityConfig[lead.priority].label}</span></Field>
+              <Field label="Categories">{myCategories(lead).join(', ') || '—'}</Field>
+              <Field label="Assigned to">{lead.assigned_to?.name || 'Unassigned'}</Field>
+              <Field label="Created">{fmt.date(lead.created_at)}</Field>
+              <Field label="Item / listing">{lead.listing?.title || '—'}</Field>
+              <Field label="Deal value">{lead.sale_value != null ? fmt.currency(lead.sale_value) : '—'}</Field>
+              {lead.sale && <Field label="Sale recorded" wide><span className="text-green-600">✓ {fmt.currency(lead.sale.amount)} on {lead.sale.sold_at ? fmt.date(lead.sale.sold_at) : '—'}</span></Field>}
+              {lead.notes && <Field label="Notes" wide><span className="text-gray-600 whitespace-pre-wrap">{lead.notes}</span></Field>}
+            </div>
+          </div>
+
+        </div>
+      )}
+
+      {tab === 'chat' && (
+        <div className="max-w-4xl space-y-5">
+          {/* Chat preview */}
+          {lead.contact?.phone && (
+            <LeadChatCard contactId={lead.contact.id} phone={lead.contact.phone} name={lead.contact.name} onOpen={() => setChatMode('auto')} leadId={lead.id} waFirst={waFirst} onNumberFound={fillRealNumber} onReviewConflict={(id) => setMergeOther(id)} />
+          )}
+
+          <LeadChannelChats leadId={lead.id} source={lead.source} />
+        </div>
+      )}
+
+      {tab === 'referred' && (
+        <div className="max-w-3xl">
+          <LeadReferrer lead={lead} canEdit={canManage} onChanged={load} />
+
+        </div>
+      )}
+
+      {tab === 'staff' && (
+        <div className="max-w-xl">
+          {/* Assigned staff */}
+          <div className="card p-5">
+            <p className="text-sm font-semibold text-gray-800 mb-3">Assigned staff</p>
+            {lead.assigned_to?.name ? (
+              <div className="flex items-center gap-3 mb-3">
+                <span className="w-9 h-9 rounded-full bg-brand-100 text-brand-700 flex items-center justify-center text-sm font-semibold">{lead.assigned_to.name.trim().charAt(0).toUpperCase()}</span>
+                <span className="min-w-0">
+                  <span className="block text-sm font-medium text-gray-900 truncate">{lead.assigned_to.name}</span>
+                  {lead.assigned_at && <span className="block text-[11px] text-gray-400">since {fmt.date(lead.assigned_at as any)}</span>}
+                </span>
+              </div>
+            ) : <p className="text-sm text-gray-400 mb-3">Not assigned to anyone yet</p>}
+            <Button variant="secondary" className="w-full justify-center" onClick={() => setAssignOpen(true)}>{lead.assigned_to?.name ? 'Switch to another staff' : 'Assign staff'}</Button>
+          </div>
 
         </div>
       )}
@@ -560,8 +592,17 @@ export default function LeadDetailPage() {
         </div>
       )}
 
+      {tab === 'campaigns' && <LeadCampaigns leadId={lead.id} />}
+
+      {tab === 'installments' && showInstallments && (
+        <div className="max-w-4xl">
+          {lead.stage === 'enrolled' || lead.sale_value ? <LeadInstallments leadId={lead.id} saleValue={lead.sale_value} /> : null}
+
+        </div>
+      )}
+
       {lead.contact?.phone && (
-        <LeadChatDrawer open={chatOpen} contactId={lead.contact.id} phone={lead.contact.phone} name={lead.contact.name} leadId={lead.id} waFirst={waFirst} onClose={() => setChatOpen(false)} />
+        <LeadChatDrawer open={chatMode !== null} mode={chatMode ?? 'auto'} contactId={lead.contact.id} phone={lead.contact.phone} name={lead.contact.name} leadId={lead.id} waFirst={waFirst} onClose={() => setChatMode(null)} />
       )}
 
       <AssignStaffDrawer open={assignOpen} staff={counsellors} currentId={lead.assigned_to?.id} currentName={lead.assigned_to?.name}
@@ -586,21 +627,43 @@ export default function LeadDetailPage() {
 
       {/* Edit lead */}
       <SideDrawer open={editing} onClose={() => setEditing(false)} title="Edit lead" subtitle={lead.contact?.name || formatPhone(lead.contact?.phone || '')} width="max-w-lg"
-        footer={<><Button variant="secondary" onClick={() => setEditing(false)}>Cancel</Button><Button onClick={handleSave} loading={saving}>Save changes</Button></>}>
+        footer={<><Button variant="secondary" onClick={() => setEditing(false)}>Cancel</Button>
+          {lead.stage === 'enrolled' && <Button variant="secondary" onClick={() => handleSave(true)} loading={saving} disabled={!editForm.sale_value}>Save &amp; installments</Button>}
+          <Button onClick={() => handleSave()} loading={saving}>Save changes</Button></>}>
         <div className="p-5 space-y-4 text-sm">
           <div>
             <span className="label">Priority</span>
-            <select className="select w-full mt-1" value={editForm.priority} onChange={(e) => setEditForm((f) => ({ ...f, priority: e.target.value }))}>
-              <option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option>
-            </select>
+            <div className="mt-2 flex flex-wrap gap-2" role="radiogroup" aria-label="Priority">
+              {([['low', 'Low', '#16a34a'], ['medium', 'Medium', '#f59e0b'], ['high', 'High', '#dc2626']] as const).map(([v, l, col]) => {
+                const on = editForm.priority === v
+                return (
+                  <button key={v} type="button" role="radio" aria-checked={on} onClick={() => setEditForm((f) => ({ ...f, priority: v }))}
+                    className={`flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm transition-colors ${on ? 'bg-gray-50 font-medium text-gray-900' : 'text-gray-600 hover:bg-gray-50'}`}
+                    style={{ borderColor: on ? col : '#e5e7eb' }}>
+                    <span className="flex h-4 w-4 items-center justify-center rounded-full border-2" style={{ borderColor: col }}>{on && <span className="h-2 w-2 rounded-full" style={{ background: col }} />}</span>
+                    {l}
+                  </button>
+                )
+              })}
+            </div>
           </div>
           <div>
-            <span className="label">Category</span>
-            <select className="select w-full mt-1" value={editForm.category} onChange={(e) => setEditForm((f) => ({ ...f, category: e.target.value }))}>
-              <option value="">— None —</option>
-              {!categories.includes(editForm.category) && editForm.category && <option value={editForm.category}>{editForm.category}</option>}
-              {categories.map((c) => <option key={c} value={c}>{c}</option>)}
-            </select>
+            <div className="flex items-center justify-between"><span className="label">Categories</span><span className="text-[11px] text-gray-400">Pick one or more · the first is primary</span></div>
+            <div className="mt-2 flex flex-wrap gap-2" role="group" aria-label="Categories">
+              {catList.map((c) => {
+                const on = editCats.includes(c.name); const col = c.color ?? '#6b7280'
+                return (
+                  <button key={c.id} type="button" role="checkbox" aria-checked={on}
+                    onClick={() => setEditCats((cs) => (cs.includes(c.name) ? cs.filter((x) => x !== c.name) : [...cs, c.name]))}
+                    className={`flex items-center gap-2 rounded-full border px-3 py-1.5 text-sm transition-colors ${on ? 'bg-gray-50 font-medium text-gray-900' : 'text-gray-600 hover:bg-gray-50'}`}
+                    style={{ borderColor: on ? col : '#e5e7eb' }}>
+                    <span className="flex h-4 w-4 items-center justify-center rounded-full border-2 text-[9px] leading-none text-white" style={{ borderColor: col, background: on ? col : 'transparent' }}>{on ? '✓' : ''}</span>
+                    {c.name}
+                  </button>
+                )
+              })}
+              {catList.length === 0 && <span className="text-xs text-gray-400">No categories yet.</span>}
+            </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -611,11 +674,23 @@ export default function LeadDetailPage() {
               </select>
             </div>
             <div>
-              <span className="label">Deal value</span>
+              <span className="label">{lead.stage === 'enrolled' ? 'Deal value (₹)' : 'Expected deal value (₹)'}</span>
               <input type="number" min="0" className="input w-full mt-1" value={editForm.sale_value}
                 onChange={(e) => setEditForm((f) => ({ ...f, sale_value: e.target.value }))} placeholder="₹" />
             </div>
           </div>
+          {lead.stage === 'enrolled' && (
+            <div className="rounded-xl border border-green-200 bg-green-50/50 p-3 space-y-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-green-800">Converted — deal &amp; payment</p>
+              <label className="block"><span className="label">Lead cost (₹)</span>
+                <input type="number" min="0" className="input w-full mt-1" value={editCost} onChange={(e) => setEditCost(e.target.value)} placeholder="What this lead cost to get — optional" /></label>
+              <div className="flex items-center justify-between gap-3 text-xs text-gray-600">
+                <span>Collecting in parts? Set the dates and amounts on the Installments tab.</span>
+                <button type="button" className="whitespace-nowrap font-medium text-brand-600 hover:underline disabled:opacity-40" disabled={!editForm.sale_value}
+                  onClick={() => handleSave(true)}>Save &amp; set up →</button>
+              </div>
+            </div>
+          )}
           <div>
             <span className="label">Notes</span>
             <textarea className="textarea w-full mt-1" rows={5} value={editForm.notes} onChange={(e) => setEditForm((f) => ({ ...f, notes: e.target.value }))} />

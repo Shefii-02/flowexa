@@ -126,4 +126,57 @@ class LeadActivityController extends Controller
         $l->update(['cost' => $d['cost'] ?? null]);
         return response()->json(['message' => 'Lead cost saved.', 'cost' => $l->fresh()->cost]);
     }
+
+    /**
+     * GET /leads/{lead}/campaigns — this contact's WhatsApp campaign history: how many campaigns were sent to this number, how many of those
+     * got a reply, plus one row per campaign. "Responded" = the contact sent us a message within 7 days after that campaign message.
+     */
+    public function campaigns(int $lead): JsonResponse
+    {
+        $l = $this->lead($lead);
+        $cid = (int) auth()->user()->company_id;
+        $digits = preg_replace('/\D+/', '', (string) ($l->contact?->phone ?? ''));
+        $tail = strlen($digits) >= 10 ? substr($digits, -10) : $digits;
+
+        $rows = DB::table('campaign_contacts as cc')->join('campaigns as c', 'c.id', '=', 'cc.campaign_id')
+            ->where('c.company_id', $cid)
+            ->where(fn ($q) => $q->when($l->contact_id, fn ($w) => $w->where('cc.contact_id', $l->contact_id))
+                ->when($tail !== '', fn ($w) => $w->orWhere('cc.phone', 'like', '%' . $tail)))
+            ->orderByDesc(DB::raw('COALESCE(cc.sent_at, cc.created_at)'))->limit(200)
+            ->get(['cc.id', 'cc.campaign_id', 'c.name', 'cc.status', 'cc.sent_at', 'cc.delivered_at', 'cc.read_at', 'cc.failed_reason', 'cc.pricing_category']);
+
+        // everything this contact sent us (newest 1000), compared against each campaign send time
+        $inbound = DB::table('message_logs')->where('company_id', $cid)->where('direction', 'inbound')
+            ->where(fn ($q) => $q->when($l->contact_id, fn ($w) => $w->where('contact_id', $l->contact_id))
+                ->when($tail !== '', fn ($w) => $w->orWhere('phone', 'like', '%' . $tail)))
+            ->orderByDesc('created_at')->limit(1000)->pluck('created_at')->map(fn ($t) => Carbon::parse($t))->all();
+
+        $items = $rows->map(function ($r) use ($inbound) {
+            $sent = $r->sent_at ? Carbon::parse($r->sent_at) : null;
+            $replies = $sent ? array_values(array_filter($inbound, fn ($t) => $t->gte($sent) && $t->lte($sent->copy()->addDays(7)))) : [];
+            usort($replies, fn ($a, $b) => $a <=> $b);
+
+            return ['id' => $r->id, 'campaign_id' => $r->campaign_id, 'name' => $r->name, 'status' => $r->status, 'category' => $r->pricing_category,
+                'sent_at' => $sent?->toIso8601String(), 'delivered_at' => $r->delivered_at ? Carbon::parse($r->delivered_at)->toIso8601String() : null,
+                'read_at' => $r->read_at ? Carbon::parse($r->read_at)->toIso8601String() : null, 'failed_reason' => $r->failed_reason,
+                'responded' => count($replies) > 0, 'replies' => count($replies), 'first_reply_at' => $replies ? $replies[0]->toIso8601String() : null];
+        })->values();
+
+        $sentRows = $items->filter(fn ($i) => $i['sent_at'] !== null);
+
+        return response()->json([
+            'summary' => [
+                'campaigns_sent' => $sentRows->pluck('campaign_id')->unique()->count(),
+                'messages_sent' => $sentRows->count(),
+                'delivered' => $items->filter(fn ($i) => $i['delivered_at'] !== null)->count(),
+                'read' => $items->filter(fn ($i) => $i['read_at'] !== null)->count(),
+                'failed' => $items->where('status', 'failed')->count(),
+                'responded' => $sentRows->where('responded', true)->pluck('campaign_id')->unique()->count(),
+                'response_rate' => $sentRows->count() ? round($sentRows->where('responded', true)->count() / $sentRows->count() * 100, 1) : 0,
+                'last_sent_at' => $sentRows->first()['sent_at'] ?? null,
+            ],
+            'items' => $items,
+            'note' => 'Responded = this contact messaged us within 7 days after the campaign message. WA Cloud campaigns only.',
+        ]);
+    }
 }

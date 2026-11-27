@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
 import { Link } from 'react-router-dom'
-import { conversationApi, leadApi } from '@/api'
+import { conversationApi, leadApi, phoneApi, templateApi } from '@/api'
 import { getError, formatPhone } from '@/utils'
 
 // Chat on a lead's page: a small preview card (latest messages) and a drawer with the contact's chats listing + the thread.
 // Everything here is read-only and passes peek=1, so looking at a chat never clears the agents' unread count.
 
-type Conv = { id: number; phone: string; status: string; unread_count: number; last_message_at: string | null; number?: string }
+type Conv = { id: number; phone: string; status: string; unread_count: number; last_message_at: string | null; number?: string; wa_phone_number_id?: number | null; last_inbound_at?: string | null; window_open?: boolean }
 
 const fmt = (iso?: string | null) => iso ? new Date(iso).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : ''
 const bodyOf = (m: any) => {
@@ -30,6 +30,7 @@ function Bubble({ m }: { m: any }) {
 /** The contact's chats (one per WhatsApp number), newest first. */
 function useChats(contactId: number | undefined, phone: string) {
   const [state, setState] = useState<{ loading: boolean; convs: Conv[]; error?: string }>({ loading: true, convs: [] })
+  const [tick, setTick] = useState(0)
   useEffect(() => {
     let off = false
     setState({ loading: true, convs: [] })
@@ -37,8 +38,8 @@ function useChats(contactId: number | undefined, phone: string) {
       .then(r => { if (!off) setState({ loading: false, convs: r.data?.conversations ?? [] }) })
       .catch(e => { if (!off) setState({ loading: false, convs: [], error: getError(e) }) })
     return () => { off = true }
-  }, [contactId, phone])
-  return state
+  }, [contactId, phone, tick])
+  return { ...state, reload: () => setTick(t => t + 1) }
 }
 
 type WaChat = {
@@ -155,10 +156,91 @@ function WaComposer({ leadId, chatId, sessionId, onSent }: { leadId?: number; ch
   )
 }
 
+const placeholders = (body: string) => { const m = [...(body || '').matchAll(/\{\{\s*(\d+)\s*\}\}/g)].map(x => +x[1]); return m.length ? Math.max(...m) : 0 }
+
+/**
+ * Reply box for the shared WhatsApp Cloud inbox. Inside WhatsApp's 24 hours after the customer's last message, free text is allowed;
+ * after that (or when there has never been a chat) only an approved TEMPLATE can be sent, so the text box is replaced by a template picker.
+ */
+function InboxComposer({ conv, phone, contactId, onSent }: { conv: Conv | null; phone: string; contactId?: number; onSent: () => void }) {
+  const open = !!conv?.window_open
+  const [text, setText] = useState('')
+  const [sending, setSending] = useState(false)
+  const [numbers, setNumbers] = useState<{ id: number; label: string }[]>([])
+  const [numberId, setNumberId] = useState(conv?.wa_phone_number_id ? String(conv.wa_phone_number_id) : '')
+  const [templates, setTemplates] = useState<any[]>([])
+  const [templateId, setTemplateId] = useState('')
+  const [vars, setVars] = useState<string[]>([])
+
+  useEffect(() => { setNumberId(conv?.wa_phone_number_id ? String(conv.wa_phone_number_id) : '') }, [conv?.id, conv?.wa_phone_number_id])
+  useEffect(() => {
+    if (open) return
+    templateApi.list({ status: 'approved', per_page: 100 }).then(r => setTemplates((r.data.templates ?? []).filter((t: any) => String(t.status).toLowerCase() === 'approved'))).catch(() => {})
+    if (!conv?.wa_phone_number_id) phoneApi.list().then(r => {
+      const list = (r.data.phone_numbers ?? []).filter((n: any) => n.is_active !== false)
+      setNumbers(list); setNumberId(id => id || String((list.find((n: any) => n.is_default) ?? list[0])?.id ?? ''))
+    }).catch(() => {})
+  }, [open, conv?.id, conv?.wa_phone_number_id])
+
+  const usable = templates.filter(t => !t.wa_phone_number_id || String(t.wa_phone_number_id) === numberId)
+  const tpl = usable.find(t => String(t.id) === templateId) ?? null
+  const need = tpl ? placeholders(tpl.body) : 0
+  useEffect(() => { setVars(v => Array.from({ length: need }, (_, i) => v[i] ?? '')) }, [need, templateId])
+
+  const sendText = async () => {
+    const t = text.trim(); if (!t || !conv || sending) return
+    setSending(true)
+    try { await conversationApi.send(conv.id, { body: t }); setText(''); onSent() } catch (e) { toast.error(getError(e)) } finally { setSending(false) }
+  }
+  const sendTemplate = async () => {
+    if (!tpl || !numberId || sending) return
+    setSending(true)
+    try {
+      await conversationApi.startChat({ wa_phone_number_id: +numberId, phone: (conv?.phone ?? phone).replace(/\D+/g, ''), contact_id: contactId ?? null, template_id: +templateId, variables: vars })
+      toast.success('Template sent.'); setTemplateId(''); setVars([]); onSent()
+    } catch (e) { toast.error(getError(e)) } finally { setSending(false) }
+  }
+
+  if (open) return (
+    <div className="px-4 py-3 border-t border-gray-100">
+      <div className="flex items-end gap-2">
+        <textarea value={text} onChange={e => setText(e.target.value)} rows={1} placeholder="Type a message…"
+          onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendText() } }}
+          className="flex-1 resize-none rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-green-500 max-h-28" />
+        <button onClick={sendText} disabled={sending || !text.trim()} className="rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50">{sending ? '…' : 'Send'}</button>
+      </div>
+      <div className="mt-1 text-[10px] text-gray-400">Replying from the shared inbox · the 24-hour window is open until {conv?.last_inbound_at ? fmt(new Date(new Date(conv.last_inbound_at).getTime() + 864e5).toISOString()) : '—'}</div>
+    </div>
+  )
+  return (
+    <div className="px-4 py-3 border-t border-gray-100 space-y-2">
+      <p className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
+        {conv ? 'The 24-hour reply window has closed' : 'No chat with this number yet'} — WhatsApp only allows an approved <b>template</b> message now. Once the customer replies you can type freely again.
+      </p>
+      {!conv?.wa_phone_number_id && (
+        <select className="select w-full text-sm" value={numberId} onChange={e => { setNumberId(e.target.value); setTemplateId('') }}>
+          {numbers.length === 0 && <option value="">No WA Cloud number connected</option>}
+          {numbers.map(n => <option key={n.id} value={n.id}>Send from {n.label}</option>)}
+        </select>
+      )}
+      <select className="select w-full text-sm" value={templateId} onChange={e => setTemplateId(e.target.value)}>
+        <option value="">Choose a template…</option>
+        {usable.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+      </select>
+      {tpl && <p className="rounded-lg bg-gray-50 px-3 py-2 text-xs text-gray-600 whitespace-pre-wrap">{tpl.body.replace(/\{\{\s*(\d+)\s*\}\}/g, (m: string, n: string) => vars[+n - 1]?.trim() || m)}</p>}
+      {vars.map((v, i) => <input key={i} className="input w-full text-sm" placeholder={`Value for {{${i + 1}}}`} value={v} onChange={e => setVars(a => a.map((x, j) => j === i ? e.target.value : x))} />)}
+      <button onClick={sendTemplate} disabled={sending || !tpl || !numberId || vars.some(v => !v.trim())} className="w-full rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50">{sending ? 'Sending…' : 'Send template'}</button>
+    </div>
+  )
+}
+
 /** Slide-over: the contact's chats listing on top, the selected thread below (older messages on request). */
-export function LeadChatDrawer({ open, contactId, phone, name, onClose, leadId, waFirst = false }: { open: boolean; contactId?: number; phone: string; name?: string | null; onClose: () => void; leadId?: number; waFirst?: boolean }) {
+/** mode: 'auto' (WA Chat for open-wa leads, otherwise the shared inbox) · 'wachat' (always the WA Chat thread, API send) · 'inbox' (always the shared WA Cloud inbox). */
+export function LeadChatDrawer({ open, contactId, phone, name, onClose, leadId, waFirst = false, mode = 'auto' }: { open: boolean; contactId?: number; phone: string; name?: string | null; onClose: () => void; leadId?: number; waFirst?: boolean; mode?: 'auto' | 'wachat' | 'inbox' }) {
+  const useWaThread = mode === 'wachat' || (mode === 'auto' && waFirst)
   const [waLimit, setWaLimit] = useState(100)
-  const wa = useWaChat(leadId, open && waFirst, waLimit)
+  const wa = useWaChat(leadId, open && useWaThread, waLimit)
+  const [reloadKey, setReloadKey] = useState(0)
   const chats = useChats(open ? contactId : undefined, open ? phone : '__closed__')
   const [activeId, setActiveId] = useState<number | null>(null)
   const [msgs, setMsgs] = useState<any[]>([])
@@ -178,7 +260,7 @@ export function LeadChatDrawer({ open, contactId, phone, name, onClose, leadId, 
       .catch(() => { if (!off) setMsgs([]) })
       .finally(() => { if (!off) setLoading(false) })
     return () => { off = true }
-  }, [open, activeId])
+  }, [open, activeId, reloadKey])
 
   const older = useCallback(async () => {
     if (activeId === null || !msgs.length) return
@@ -190,7 +272,7 @@ export function LeadChatDrawer({ open, contactId, phone, name, onClose, leadId, 
   }, [activeId, msgs])
 
   if (!open) return null
-  if (waFirst && (wa.loading || wa.data?.available)) {
+  if (useWaThread && (wa.loading || wa.data?.available || mode === 'wachat')) {
     const d = wa.data
     return (
       <div className="fixed inset-0 bg-black/30 z-[70] flex justify-end" onClick={onClose}>
@@ -207,6 +289,7 @@ export function LeadChatDrawer({ open, contactId, phone, name, onClose, leadId, 
               <div className="flex flex-col gap-1.5">
                 {d && d.total > d.messages.length && <button onClick={() => setWaLimit(l => Math.min(200, l + 100))} className="self-center text-xs text-brand-600 hover:underline mb-1">↑ Load older messages</button>}
                 {(d?.messages ?? []).map((m: any) => <Bubble key={m.id} m={m} />)}
+                {d && !d.available && <p className="text-sm text-gray-500">No WhatsApp Chat conversation for this contact yet.</p>}
               </div>
             )}
           </div>
@@ -256,7 +339,9 @@ export function LeadChatDrawer({ open, contactId, phone, name, onClose, leadId, 
             </div>
           )}
         </div>
-        <div className="px-5 py-2 border-t border-gray-100 text-[11px] text-gray-400">Read-only view — looking here does not mark the chat as read.</div>
+        {!chats.loading && <InboxComposer key={activeId ?? 'new'} conv={chats.convs.find(c => c.id === activeId) ?? null} phone={phone} contactId={contactId}
+          onSent={() => { setReloadKey(k => k + 1); chats.reload() }} />}
+        <div className="px-5 py-1.5 border-t border-gray-50 text-[10px] text-gray-400">Looking here does not mark the chat as read.</div>
       </div>
     </div>
   )
