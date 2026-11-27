@@ -37,8 +37,11 @@ class LeadService
         $lead = $this->leadRepository->findById($id, $companyId);
         if (!$lead) throw LeadException::notFound();
 
-        if (!$viewAll && $lead->assigned_to !== $userId) {
-            $user = \App\Models\User::find($userId);
+        // Same scope as the leads LIST: your own leads, the leads of staff listed under your "Accessible users", and leads of an origin
+        // (number / account) you were granted — a lead you can see in the list must also open.
+        $user = \App\Models\User::find($userId);
+        $owners = $user ? array_map('intval', $user->leadOwnerIds()) : [$userId];
+        if (!$viewAll && !in_array((int) $lead->assigned_to, $owners, true)) {
             $scopedOrigin = $user ? Lead::scopedOriginAccessFor($user) : [];
             if (!$lead->isVisibleByOrigin($scopedOrigin)) {
                 throw LeadException::forbidden();
