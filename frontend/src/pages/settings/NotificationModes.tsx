@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from 'react'
 import toast from 'react-hot-toast'
 import api from '@/api/client'
 import { getError } from '@/utils'
+import { resyncWebPush } from '@/lib/push'
+import { forgetPushToken } from '@/lib/pushToken'
 import { playTone, type ToneMode, type ToneModes } from '@/lib/tones'
 
 // The four kinds of notification (the same groups that pick a tone), and what they cover.
@@ -70,7 +72,7 @@ export default function NotificationModes() {
   if (!ready) return null
   const clearAll = async () => {
     if (!window.confirm('Remove every phone and browser from this list? A device is added back when it enables notifications or signs in again.')) return
-    try { await api.delete('/push/devices'); setDevices([]); toast.success('Device list cleared') } catch (e) { toast.error(getError(e)) }
+    try { await api.delete('/push/devices'); forgetPushToken(); await resyncWebPush(); toast.success('List cleared — this browser stays listed'); await load() } catch (e) { toast.error(getError(e)) }
   }
 
   const label = (d: Device) => d.name || (d.type === 'web' ? 'Web browser' : d.type === 'ios' ? 'iPhone' : 'Android phone')

@@ -4,6 +4,10 @@ let current: string | null = null
 
 export const getPushToken = () => current
 
+let lastSync = 0
+export const markSynced = () => { lastSync = Date.now() }
+export const syncedWithin = (ms: number) => Date.now() - lastSync < ms
+
 /** A stable id for this browser, so the server can keep one row per browser even when Firebase rotates the token. */
 export function browserId(): string {
   try {

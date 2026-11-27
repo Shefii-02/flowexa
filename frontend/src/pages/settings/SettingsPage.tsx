@@ -10,7 +10,8 @@ import { useIsDesktop } from '@/hooks/useIsDesktop'
 import LinkedDevicesModal, { LinkedDevicesPanel, type DeviceService } from '@/components/devices/LinkedDevicesModal'
 import toast from 'react-hot-toast'
 import api from '@/api/client'
-import { registerWebPush, webPushSupport } from '@/lib/push'
+import { registerWebPush, resyncWebPush, webPushSupport } from '@/lib/push'
+import { forgetPushToken } from '@/lib/pushToken'
 import type { Role } from '@/types'
 import WorkingHoursPanel from '@/components/leads/WorkingHoursPanel'
 import MobileAppTab from './MobileAppTab'
@@ -613,7 +614,7 @@ function PushTab() {
   }
   const clearDevices = async () => {
     if (!window.confirm('Remove every device from this list? A browser or phone is added back when it enables notifications or signs in again.')) return
-    try { await api.delete('/push/devices'); setDevices([]); toast.success('Device list cleared') } catch (e) { toast.error(getError(e)) }
+    try { await api.delete('/push/devices'); forgetPushToken(); await resyncWebPush(); toast.success('List cleared — this browser stays listed'); await check() } catch (e) { toast.error(getError(e)) }
   }
 
   const enable = async () => {

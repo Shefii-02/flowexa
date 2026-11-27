@@ -2,7 +2,7 @@ import { initializeApp } from 'firebase/app'
 import { getMessaging, getToken, isSupported, onMessage } from 'firebase/messaging'
 import toast from 'react-hot-toast'
 import api from '@/api/client'
-import { browserId, getPushToken, setPushToken } from './pushToken'
+import { browserId, getPushToken, markSynced, setPushToken, syncedWithin } from './pushToken'
 
 const config = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -38,10 +38,12 @@ export async function registerWebPush(): Promise<WebPushResult> {
     const sw = await navigator.serviceWorker.register('/firebase-messaging-sw.js')
     const token = await getToken(messaging, { vapidKey, serviceWorkerRegistration: sw })
     if (!token) return { ok: false, reason: 'Firebase did not return a token.' }
-    if (token === getPushToken()) return { ok: true }
+    // Same token, synced a moment ago → nothing to do. Otherwise always tell the server: it inserts a missing row, rewrites an existing one and re-activates a removed / pruned one.
+    if (token === getPushToken() && syncedWithin(30 * 60 * 1000)) return { ok: true }
 
     await api.post('/push/register-token', { fcm_token: token, device_type: 'web', device_id: browserId() || undefined })
     setPushToken(token)
+    markSynced()
 
     // Foreground messages aren't shown by the browser — surface them as a toast.
     onMessage(messaging, (m) => {
@@ -52,4 +54,10 @@ export async function registerWebPush(): Promise<WebPushResult> {
     console.warn('Web push registration failed', e)
     return { ok: false, reason: e?.message ?? 'Registration failed.' }
   }
+}
+
+/** Re-sync this browser's token (only if the user already allowed notifications — never prompts). Keeps an open tab listed and refills it after a cleanup. */
+export async function resyncWebPush(): Promise<void> {
+  if (!('Notification' in window) || Notification.permission !== 'granted') return
+  await registerWebPush()
 }

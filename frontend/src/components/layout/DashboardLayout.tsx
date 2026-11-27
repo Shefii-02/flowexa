@@ -18,7 +18,8 @@ import { connectStaffSocket, disconnectStaffSocket } from '@/socket/staffSocket'
 import { ErrorBoundary, AccessDeniedScreen, ConnectionErrorScreen } from '@/components/error'
 import { Spinner } from '@/components/ui'
 import PlanNoticeBanner from '@/components/plan/PlanNoticeBanner'
-import { registerWebPush } from '@/lib/push'
+import { resyncWebPush } from '@/lib/push'
+import NotificationPermissionBanner from './NotificationPermissionBanner'
 
 export const DashboardLayout = () => {
   const dispatch    = useAppDispatch()
@@ -31,7 +32,13 @@ export const DashboardLayout = () => {
   const connection = useAppSelector((s) => s.appError.connection)
 
   useEffect(() => {
-    if (user?.id) registerWebPush()
+    if (!user?.id) return
+    void resyncWebPush()   // silent: only if already allowed. Asking is the banner's job (it needs a click, and remembers "Not now")
+    // A tab can stay open for days: re-sync when it comes back into view and hourly, so this browser is always on the list (and never looks idle).
+    const onVisible = () => { if (document.visibilityState === 'visible') void resyncWebPush() }
+    document.addEventListener('visibilitychange', onVisible)
+    const timer = setInterval(() => void resyncWebPush(), 60 * 60 * 1000)
+    return () => { document.removeEventListener('visibilitychange', onVisible); clearInterval(timer) }
   }, [user?.id])
 
   useEffect(() => {
@@ -88,6 +95,7 @@ export const DashboardLayout = () => {
 
         {/* Page content */}
         <main className="flex-1 overflow-y-auto p-6">
+          <NotificationPermissionBanner />
           <PlanNoticeBanner />
           <ErrorBoundary resetKey={location.pathname}>
             {sessionExpired ? (
