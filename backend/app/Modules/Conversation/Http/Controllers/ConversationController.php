@@ -147,7 +147,12 @@ class ConversationController extends Controller
             $conversation->update(['unread_count' => 0]);
         }
 
-        return response()->json(['conversation' => $conversation, 'messages' => $messages, 'has_more' => $hasMore]);
+        // WhatsApp lets us send free text for 24 hours after the customer's last message; after that only an approved template.
+        $lastIn = WaMessage::where('conversation_id', $conversation->id)->where('direction', 'inbound')->max('created_at');
+        $lastInAt = $lastIn ? \Illuminate\Support\Carbon::parse($lastIn) : null;
+
+        return response()->json(['conversation' => $conversation, 'messages' => $messages, 'has_more' => $hasMore,
+            'last_inbound_at' => $lastInAt?->toIso8601String(), 'window_open' => $lastInAt ? $lastInAt->gt(now()->subHours(24)) : false]);
     }
 
     // POST /conversations/{id}/claim — atomic first-come-first-served assignment,

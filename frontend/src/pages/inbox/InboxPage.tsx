@@ -12,6 +12,7 @@ import { getError } from '@/utils'
 import toast from 'react-hot-toast'
 import ContactInfoDrawer from './ContactInfoDrawer'
 import NewChatModal from './NewChatModal'
+import ReplyTemplateModal from './ReplyTemplateModal'
 import { avatarColor, initials } from './avatar'
 import './inbox.css'
 
@@ -145,6 +146,10 @@ export default function InboxPage() {
   const [search, setSearch]               = useState('')
   const [drawerOpen, setDrawerOpen]       = useState(false)
   const [newChatOpen, setNewChatOpen]     = useState(false)
+  const [templateOpen, setTemplateOpen]   = useState(false)
+  // WhatsApp lets us type freely for 24 h after the customer's last message; after that only a template can be sent
+  const [lastInboundAt, setLastInboundAt]  = useState<string | null>(null)
+  const windowOpen = !!lastInboundAt && Date.now() - new Date(lastInboundAt).getTime() < 24 * 3600 * 1000
   const canStartChat = usePermission('inbox.manage')
   // conversation list paging + server-side search
   const [page, setPage]                   = useState(1)
@@ -234,7 +239,7 @@ export default function InboxPage() {
     setActiveId(id)
     // Paint the header instantly from the list row we already have, then load messages.
     setActiveConversation(conversations.find(c => c.id === id) ?? null)
-    setMessages([])
+    setMessages([]); setLastInboundAt(null)
     setHasMoreMsgs(false); forceBottomRef.current = true; stickRef.current = true
     setLoadingThread(true)
     conversationApi.messages(id)
@@ -242,6 +247,7 @@ export default function InboxPage() {
         if (reqRef.current !== token) return   // user moved on — drop this response
         setMessages(r.data.messages || [])
         setHasMoreMsgs(!!r.data.has_more)
+        setLastInboundAt(r.data.last_inbound_at ?? null)
         setActiveConversation(r.data.conversation ?? null)
         setConversations(prev => prev.map(c => c.id === id ? { ...c, unread_count: 0 } : c))
       })
@@ -301,6 +307,7 @@ export default function InboxPage() {
       })
       setActiveId(current => {
         if (current === message.conversation_id) {
+          if (message.direction === 'inbound') setLastInboundAt(message.created_at ?? new Date().toISOString())   // the customer wrote: the window is open again
           setMessages(prev => {
             const exists = prev.some(m => m.id === message.id)
             const withSender = { ...message, sentBy: message.sent_by_name ? { name: message.sent_by_name } : message.sentBy }
@@ -448,18 +455,19 @@ export default function InboxPage() {
             const numberLabel = number?.label || number?.display_number
             const last = c.last_message ?? c.lastMessage
             const preview = last?.content?.body
+              || (last?.content?.template ? `[Template] ${last.content.template}` : '')
               || (last?.type && last.type !== 'text' ? (MEDIA_LABEL[last.type] ?? last.type) : '')
             return (
               <div key={c.id} className={`wa-conv ${activeId === c.id ? 'is-active' : ''}`} onClick={() => openThread(c.id)}>
                 <div className="wa-avatar" style={{ background: avatarColor(c.phone || nm) }}>{initials(nm)}</div>
                 <div className="wa-conv__body">
                   <div className="wa-conv__row1">
-                    <span className="wa-conv__name">{nm}</span>
+                    <span className="wa-conv__name">{nm}{c.phone && nm !== c.phone && <span style={{ fontWeight: 400, color: 'var(--wa-muted)' }}> · {c.phone}</span>}</span>
                     <span className="wa-conv__time">{listTime(c.last_message_at)}</span>
                   </div>
                   <div className="wa-conv__row2">
                     <span className="wa-conv__preview">
-                      {last?.direction === 'outbound' ? 'You: ' : ''}{preview || c.phone}
+                      {last?.direction === 'outbound' ? 'You: ' : ''}{preview || (nm === c.phone ? '' : c.phone)}
                     </span>
                     {c.unread_count > 0 && <span className="wa-badge">{c.unread_count}</span>}
                   </div>
@@ -484,6 +492,8 @@ export default function InboxPage() {
         </div>
       </div>
 
+      <ReplyTemplateModal open={templateOpen} onClose={() => setTemplateOpen(false)} conversation={active}
+        onSent={() => { if (activeId) conversationApi.messages(activeId, { peek: 1 }).then(r => setMessages(r.data.messages || [])).catch(() => {}) }} />
       <NewChatModal open={newChatOpen} onClose={() => setNewChatOpen(false)} onStarted={async id => {
         // refresh the list so the new thread is in it, then open it
         setActiveId(null)
@@ -543,25 +553,37 @@ export default function InboxPage() {
             {threadBody()}
           </div>
 
+          {canReplyHere && !windowOpen && !loadingThread && (
+            <div style={{ background: '#fef3c7', color: '#92400e', fontSize: 12, padding: '6px 14px' }}>
+              The 24-hour reply window has closed — you can only send an approved template now. Once the customer replies you can type freely again.
+            </div>
+          )}
           <div className="wa-composer">
+            {canReplyHere && (
+              <button className="wa-iconbtn" title="Send a template" aria-label="Send a template" onClick={() => setTemplateOpen(true)}><FileText size={18} /></button>
+            )}
             <textarea
               ref={taRef}
               rows={1}
               placeholder={
-                canReplyHere ? 'Type a message'
-                  : active.assigned_to ? `Assigned to ${active.assigned_agent?.name || active.assignedAgent?.name || 'another agent'} — view only`
-                    : 'Claim this conversation to reply'
+                !canReplyHere
+                  ? (active.assigned_to ? `Assigned to ${active.assigned_agent?.name || active.assignedAgent?.name || 'another agent'} — view only` : 'Claim this conversation to reply')
+                  : !windowOpen ? 'Window closed — send a template' : 'Type a message'
               }
               value={reply}
-              disabled={!canReplyHere || sending}
+              disabled={!canReplyHere || sending || !windowOpen}
               onChange={e => setReply(e.target.value)}
               onKeyDown={e => {
                 if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() }
               }}
             />
-            <button className="wa-send" onClick={handleSend} disabled={!canReplyHere || sending || !reply.trim()}>
-              <Send size={18} />
-            </button>
+            {windowOpen ? (
+              <button className="wa-send" onClick={handleSend} disabled={!canReplyHere || sending || !reply.trim()}>
+                <Send size={18} />
+              </button>
+            ) : (
+              <button className="wa-send" onClick={() => setTemplateOpen(true)} disabled={!canReplyHere} title="Send a template" style={{ width: 'auto', padding: '0 14px', fontSize: 13 }}>Template</button>
+            )}
           </div>
         </div>
       )}
