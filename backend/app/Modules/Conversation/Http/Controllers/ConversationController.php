@@ -37,7 +37,19 @@ class ConversationController extends Controller
             ->whereExists(fn ($m) => $m->selectRaw('1')->from('wa_messages')
                 ->whereColumn('wa_messages.conversation_id', 'wa_conversations.id')->where('wa_messages.direction', 'inbound'));
 
+        // Status tabs: All · Unread (open, customer's messages waiting) · Read (open, nothing waiting) · Closed. They split the whole list, so
+        // Unread + Read + Closed = All.
+        $state = in_array($request->query('state'), ['unread', 'read', 'closed'], true) ? $request->query('state') : 'all';
+        $notClosed = fn ($q) => $q->where(fn ($w) => $w->whereNull('status')->orWhere('status', '!=', 'closed'));
+        $inState = fn ($q, string $st) => match ($st) {
+            'unread' => $notClosed($q)->where('unread_count', '>', 0),
+            'read'   => $notClosed($q)->where('unread_count', 0),
+            'closed' => $q->where('status', 'closed'),
+            default  => $q,
+        };
+
         $conversations = $visible()
+            ->when($state !== 'all', fn ($q) => $inState($q, $state))
             ->when($request->status, fn ($q, $s) => $q->where('status', $s))
             ->when($request->boolean('mine'), fn ($q) => $q->where('assigned_to', auth()->id()))
             ->when($request->filled('wa_phone_number_id'), fn ($q) => $q->where('wa_phone_number_id', $request->integer('wa_phone_number_id')))
@@ -71,8 +83,22 @@ class ConversationController extends Controller
             'unread_messages' => (int) $visible()->sum('unread_count'),
         ];
 
+        // Counts for the status tabs: within the same scope as the list (All chats / Assigned to me, the number and the Unassigned filter),
+        // not narrowed by the search box or by the status tab itself.
+        $scoped = fn () => $visible()
+            ->when($request->boolean('mine'), fn ($q) => $q->where('assigned_to', auth()->id()))
+            ->when($request->filled('wa_phone_number_id'), fn ($q) => $q->where('wa_phone_number_id', $request->integer('wa_phone_number_id')))
+            ->when($request->boolean('unassigned'), $unassigned);
+        $stateCounts = [
+            'all'    => $scoped()->count(),
+            'unread' => $inState($scoped(), 'unread')->count(),
+            'read'   => $inState($scoped(), 'read')->count(),
+            'closed' => $inState($scoped(), 'closed')->count(),
+        ];
+
         return response()->json([
             'counts'        => $counts,
+            'state_counts'  => $stateCounts,
             'conversations' => $conversations->items(),
             'total'         => $conversations->total(),
             'page'          => $conversations->currentPage(),

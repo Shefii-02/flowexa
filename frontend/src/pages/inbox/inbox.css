@@ -468,3 +468,15 @@
 .wa-media__docname b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .wa-media__docname small { color: var(--wa-muted); font-size: 11px; }
 .wa-media__caption { white-space: pre-wrap; }
+
+/* status tabs inside a main tab: All · Unread · Read · Closed — the open one is marked by a border, not a filled block */
+.wa-subtabs { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+.wa-subtab {
+  display: inline-flex; align-items: center; gap: 6px; font-size: 12px; padding: 4px 10px; border-radius: 999px;
+  border: 1px solid var(--wa-border); background: transparent; color: var(--wa-muted); cursor: pointer;
+}
+.wa-subtab:hover { background: var(--wa-panel-2); }
+.wa-subtab.is-active { border-color: var(--wa-green); color: var(--wa-ink); font-weight: 700; border-width: 1.5px; }
+.wa-subtab__n { font-size: 11px; font-weight: 700; color: var(--wa-muted); }
+.wa-subtab.is-active .wa-subtab__n { color: var(--wa-ink); }
+.wa-subtab__n.is-alert { color: #1da851; }

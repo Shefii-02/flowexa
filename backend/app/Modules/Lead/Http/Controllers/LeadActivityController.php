@@ -137,6 +137,7 @@ class LeadActivityController extends Controller
         $cid = (int) auth()->user()->company_id;
         $digits = preg_replace('/\D+/', '', (string) ($l->contact?->phone ?? ''));
         $tail = strlen($digits) >= 10 ? substr($digits, -10) : $digits;
+        if ($l->contact && !$l->contact->phoneLooksReal()) { $tail = ''; }   // a WhatsApp privacy id is not a phone number — match by contact only
 
         $rows = DB::table('campaign_contacts as cc')->join('campaigns as c', 'c.id', '=', 'cc.campaign_id')
             ->where('c.company_id', $cid)

@@ -611,7 +611,7 @@ export const conversationApi = {
   forContact: (contactId: number, phone?: string) => api.get(`/conversations/contact/${contactId}`, { params: phone ? { phone } : undefined }),
   // GET /conversations — inbox list, most recently active first.
   // filter: mine=1 (only conversations assigned to me), unassigned=1 (only unclaimed).
-  list: (params?: { status?: string; mine?: number | boolean; unassigned?: number | boolean; unread?: number | boolean; search?: string; page?: number; per_page?: number }) =>
+  list: (params?: { status?: string; mine?: number | boolean; unassigned?: number | boolean; unread?: number | boolean; state?: 'unread' | 'read' | 'closed'; search?: string; page?: number; per_page?: number }) =>
     api.get('/conversations', { params }),
 
   // GET /conversations/{id}/messages — the newest page of the thread, oldest first, plus has_more. Marks the thread read.

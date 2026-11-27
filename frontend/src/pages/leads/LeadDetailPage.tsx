@@ -342,6 +342,8 @@ export default function LeadDetailPage() {
     ...(showInstallments ? [{ id: 'installments', icon: '💳', label: 'Installments' }] : []),
   ]
   const tab = detailTabs.find((t) => t.id === params.get('tab'))?.id ?? 'pipeline'
+  const sub = (['main', 'call', 'activity'] as const).find((k) => k === params.get('sub')) ?? 'main'
+  const setSub = (k: 'main' | 'call' | 'activity') => { const next = new URLSearchParams(params); if (k === 'main') next.delete('sub'); else next.set('sub', k); setParams(next, { replace: true }) }
   const setTab = (id: string) => setParams(id === 'pipeline' ? {} : { tab: id }, { replace: true })
   return (
     <div className="space-y-5 max-w-6xl">
@@ -385,6 +387,15 @@ export default function LeadDetailPage() {
       {/* Contact details & Pipeline: who they are, where the lead is, and everything logged on it */}
       {tab === 'pipeline' && (
         <div className="space-y-5">
+          {/* inner tabs — the first tab held too much at once */}
+          <div className="flex flex-wrap gap-2" role="tablist" aria-label="Contact and pipeline">
+            {([['main', '👤 Contact & pipeline'], ['call', '📞 Log a call / follow-up'], ['activity', `📝 Lead activities${(lead.events?.length ?? 0) > 0 ? ` (${lead.events!.filter((e) => eventLine(e) !== null).length})` : ''}`]] as const).map(([k, label]) => (
+              <button key={k} role="tab" aria-selected={sub === k} onClick={() => setSub(k)}
+                className={`rounded-full border px-3.5 py-1.5 text-sm transition-colors ${sub === k ? 'border-brand-600 font-semibold text-gray-900' : 'border-gray-200 text-gray-500 hover:bg-gray-50'}`}
+                style={sub === k ? { borderWidth: 1.5 } : undefined}>{label}</button>
+            ))}
+          </div>
+          {sub === 'main' && (
           <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-5 items-start">
           <div className="card p-5">
             <div className="flex items-center justify-between mb-3">
@@ -399,14 +410,30 @@ export default function LeadDetailPage() {
               <Field label="Phone"><span className="font-mono">{phoneLabel(lead.contact)}</span></Field>
               <Field label="Email">{lead.contact?.email || '—'}</Field>
             </div>
-            {lead.contact?.phone && (
-              <div className="mt-4 grid grid-cols-2 gap-2 border-t border-gray-100 pt-4">
-                <a href={`tel:+${String(lead.contact.phone).replace(/\D+/g, '')}`} onClick={() => setCallSignal((n) => n + 1)} className="flex items-center justify-center gap-1.5 rounded-lg border border-gray-200 px-2 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50">📞 Phone call</a>
-                <button type="button" disabled title="IVR calling is not available yet" className="flex cursor-not-allowed items-center justify-center gap-1.5 rounded-lg border border-gray-100 bg-gray-50 px-2 py-2 text-xs font-medium text-gray-300">☎️ IVR call</button>
-                <button type="button" onClick={() => setChatMode('wachat')} className="flex items-center justify-center gap-1.5 rounded-lg border border-green-200 bg-green-50 px-2 py-2 text-xs font-medium text-green-800 hover:bg-green-100">💬 WA Chat</button>
-                <button type="button" onClick={() => setChatMode('inbox')} className="flex items-center justify-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-2 py-2 text-xs font-medium text-blue-800 hover:bg-blue-100">📥 WA shared inbox</button>
-              </div>
-            )}
+            {lead.contact?.phone && (() => {
+              const hidden = lead.contact?.phone_is_real === false   // a WhatsApp privacy id, not a dialable number
+              const off = 'flex cursor-not-allowed items-center justify-center gap-1.5 rounded-lg border border-gray-100 bg-gray-50 px-2 py-2 text-xs font-medium text-gray-300'
+              return (
+                <div className="mt-4 border-t border-gray-100 pt-4">
+                  {hidden && (
+                    <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                      WhatsApp is hiding this customer's real number, so calling and the shared inbox can't work yet. Chat with them in <b>WA Chat</b>, or{' '}
+                      <button type="button" className="font-medium underline" onClick={() => { setContactForm({ name: lead.contact?.name ?? '', email: lead.contact?.email ?? '', phone: '' }); setContactEditing(true) }}>add their real number</button>.
+                    </p>
+                  )}
+                  <div className="grid grid-cols-2 gap-2">
+                    {hidden
+                      ? <button type="button" disabled title="Needs the customer's real number" className={off}>📞 Phone call</button>
+                      : <a href={`tel:+${String(lead.contact.phone).replace(/\D+/g, '')}`} onClick={() => { setCallSignal((n) => n + 1); setSub('call') }} className="flex items-center justify-center gap-1.5 rounded-lg border border-gray-200 px-2 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50">📞 Phone call</a>}
+                    <button type="button" disabled title="IVR calling is not available yet" className={off}>☎️ IVR call</button>
+                    <button type="button" onClick={() => setChatMode('wachat')} className="flex items-center justify-center gap-1.5 rounded-lg border border-green-200 bg-green-50 px-2 py-2 text-xs font-medium text-green-800 hover:bg-green-100">💬 WA Chat</button>
+                    {hidden
+                      ? <button type="button" disabled title="Needs the customer's real number" className={off}>📥 WA shared inbox</button>
+                      : <button type="button" onClick={() => setChatMode('inbox')} className="flex items-center justify-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-2 py-2 text-xs font-medium text-blue-800 hover:bg-blue-100">📥 WA shared inbox</button>}
+                  </div>
+                </div>
+              )
+            })()}
           </div>
       <div className="card p-5">
         <p className="text-sm font-semibold text-gray-800 mb-4">Pipeline</p>
@@ -440,9 +467,10 @@ export default function LeadDetailPage() {
 
 
           </div>
-          <div className="grid grid-cols-1 xl:grid-cols-2 gap-5 items-start">
-          <LeadCallLog leadId={lead.id} cost={(lead as any).cost} onChanged={load} callSignal={callSignal} />
-
+          )}
+          {sub === 'call' && <div className="max-w-3xl"><LeadCallLog leadId={lead.id} cost={(lead as any).cost} onChanged={load} callSignal={callSignal} /></div>}
+          {sub === 'activity' && (
+          <div className="max-w-3xl">
           <div className="card p-5">
             <p className="text-sm font-semibold text-gray-800 mb-3">Lead activities</p>
             <div className="flex gap-2 mb-4">
@@ -466,6 +494,7 @@ export default function LeadDetailPage() {
             </div>
           </div>
           </div>
+          )}
         </div>
       )}
 

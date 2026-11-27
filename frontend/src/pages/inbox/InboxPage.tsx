@@ -141,7 +141,9 @@ export default function InboxPage() {
   const [loadingThread, setLoadingThread] = useState(false)
   // Two tabs — every chat I may see, or only the ones assigned to me — plus two toggles that narrow either tab
   const [filter, setFilter]               = useState<'all' | 'mine'>('all')
-  const [onlyUnread, setOnlyUnread]       = useState(false)
+  // status tabs inside either main tab: All · Unread · Read · Closed (they add up: Unread + Read + Closed = All)
+  const [stateTab, setStateTab]           = useState<'all' | 'unread' | 'read' | 'closed'>('all')
+  const [stateCounts, setStateCounts]     = useState<Record<string, number>>({})
   const [onlyUnassigned, setOnlyUnassigned] = useState(false)
   const [search, setSearch]               = useState('')
   const [drawerOpen, setDrawerOpen]       = useState(false)
@@ -181,11 +183,11 @@ export default function InboxPage() {
   const fetchConversations = useCallback((p: number) => conversationApi.list({
     mine: filter === 'mine' ? 1 : undefined,
     unassigned: filter === 'all' && onlyUnassigned ? 1 : undefined,   // "unassigned" only makes sense in the All tab
-    unread: onlyUnread ? 1 : undefined,
+    state: stateTab !== 'all' ? stateTab : undefined,
     search: debouncedSearch || undefined,
     page: p,
     per_page: PER_PAGE,
-  }), [filter, onlyUnread, onlyUnassigned, debouncedSearch])
+  }), [filter, stateTab, onlyUnassigned, debouncedSearch])
 
   const loadList = useCallback(() => {
     const token = ++listReqRef.current
@@ -195,6 +197,7 @@ export default function InboxPage() {
         if (listReqRef.current !== token) return   // a newer filter/search superseded this request
         setConversations(r.data.conversations || [])
         if (r.data.counts) setTabCounts(r.data.counts)
+        if (r.data.state_counts) setStateCounts(r.data.state_counts)
         setPage(1); setHasMoreConv(!!r.data.has_more); setTotalConv(r.data.total ?? (r.data.conversations || []).length)
       })
       .catch(e => { if (listReqRef.current === token) toast.error(getError(e)) })
@@ -206,10 +209,10 @@ export default function InboxPage() {
   useEffect(() => {
     const t = setInterval(() => {
       if (document.hidden) return
-      conversationApi.list({ page: 1, per_page: 10 }).then(r => { if (r.data.counts) setTabCounts(r.data.counts) }).catch(() => {})
+      fetchConversations(1).then(r => { if (r.data.counts) setTabCounts(r.data.counts); if (r.data.state_counts) setStateCounts(r.data.state_counts) }).catch(() => {})
     }, 30_000)
     return () => clearInterval(t)
-  }, [])
+  }, [fetchConversations])
   useEffect(() => { const t = setTimeout(() => setDebouncedSearch(search.trim()), 350); return () => clearTimeout(t) }, [search])
 
   const loadMoreConversations = async () => {
@@ -430,19 +433,21 @@ export default function InboxPage() {
               </button>
             ))}
           </div>
-          <div className="wa-filters" style={{ marginTop: 8 }}>
-            <button className={`wa-chip ${onlyUnread ? 'is-active' : ''}`} aria-pressed={onlyUnread} onClick={() => setOnlyUnread(v => !v)}>
-              Unread
-              {(tabCounts.unread_messages ?? tabCounts.unread) !== undefined && <span className={`wa-chip__count ${(tabCounts.unread_messages ?? tabCounts.unread) > 0 ? 'is-alert' : ''}`}
-                title={`${tabCounts.unread ?? 0} chat(s) · ${tabCounts.unread_messages ?? 0} unread message(s)`}>{(tabCounts.unread_messages ?? tabCounts.unread) > 999 ? '999+' : (tabCounts.unread_messages ?? tabCounts.unread)}</span>}
-            </button>
-            {filter === 'all' && (
+          <div className="wa-subtabs" role="tablist" aria-label="Chat status">
+            {([['all', 'All'], ['unread', 'Unread'], ['read', 'Read'], ['closed', 'Closed']] as const).map(([k, label]) => (
+              <button key={k} role="tab" aria-selected={stateTab === k} className={`wa-subtab ${stateTab === k ? 'is-active' : ''}`} onClick={() => setStateTab(k)}>
+                {label}<span className={`wa-subtab__n ${k === 'unread' && (stateCounts.unread ?? 0) > 0 ? 'is-alert' : ''}`}>{stateCounts[k] !== undefined ? (stateCounts[k] > 999 ? '999+' : stateCounts[k]) : ''}</span>
+              </button>
+            ))}
+          </div>
+          {filter === 'all' && (
+            <div className="wa-filters" style={{ marginTop: 8 }}>
               <button className={`wa-chip ${onlyUnassigned ? 'is-active' : ''}`} aria-pressed={onlyUnassigned} onClick={() => setOnlyUnassigned(v => !v)}>
                 Unassigned
                 {tabCounts.unassigned !== undefined && <span className="wa-chip__count" title={`${tabCounts.unassigned} chat(s) waiting for someone`}>{tabCounts.unassigned > 999 ? '999+' : tabCounts.unassigned}</span>}
               </button>
-            )}
-          </div>
+            </div>
+          )}
         </div>
         <div className="wa-list__scroll" onScroll={onListScroll}>
           {loadingList ? (
