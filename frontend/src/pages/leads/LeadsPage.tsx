@@ -76,6 +76,7 @@ export default function LeadsPage() {
   const [newContactName, setNewContactName] = useState('')
   const [newContactEmail, setNewContactEmail] = useState('')
   const [phoneCheck, setPhoneCheck] = useState<'idle' | 'checking' | 'pick' | 'none' | 'existing' | 'new'>('idle')
+  const [addToMine, setAddToMine] = useState(true)   // new leads go to "My leads" unless another staff member is picked
   const [dup, setDup] = useState<{ lead: ExistingLead; customer: string; note: string } | null>(null)   // the customer already has an open lead
   const [createForm, setCreateForm] = useState({ category: '', priority: 'medium', notes: '', assigned_to: '', source: 'manual', origin_label: '' })
   // Lead origin = which number / account / campaign the lead came from (picked from what is connected; "not listed" = typed)
@@ -265,7 +266,7 @@ export default function LeadsPage() {
     setShowCreate(false); setContactQuery(''); setContactResults([]); setSelectedContact(null)
     setNewContact(false); setNewContactPhone(''); setNewContactName(''); setNewContactEmail(''); setPhoneCheck('idle')
     setCreateForm({ category: '', priority: 'medium', notes: '', assigned_to: '', source: 'manual', origin_label: '' })
-    setOrigin(null); setOriginOther(false); setItemId(''); setItemType(''); setItemQ('')
+    setAddToMine(true); setOrigin(null); setOriginOther(false); setItemId(''); setItemType(''); setItemQ('')
   }
 
   const handleCreate = async () => {
@@ -291,7 +292,7 @@ export default function LeadsPage() {
         priority: createForm.priority,
         notes: createForm.notes || undefined,
         listing_id: itemId ? +itemId : undefined,
-        assigned_to: createForm.assigned_to || undefined,
+        assigned_to: createForm.assigned_to || (addToMine && me?.id ? me.id : undefined),
         ...(origin ? { origin_type: origin.type, origin_id: origin.id } : { source: createForm.source || undefined, origin_label: createForm.origin_label || undefined }),
       })
       toast.success('Lead created.')
@@ -896,6 +897,10 @@ export default function LeadsPage() {
               </select>
             </div>
           </div>
+          <label className="flex items-start gap-2 text-sm text-gray-700">
+            <input type="checkbox" className="mt-0.5" checked={addToMine} onChange={(e) => setAddToMine(e.target.checked)} />
+            <span><b>Add to my leads</b> <span className="block text-xs text-gray-400">Assigned to you — it appears under My leads. Picking another staff member below overrides this.</span></span>
+          </label>
           <div>
             <span className="label">Assign to</span>
             <select className="select w-full mt-1" value={createForm.assigned_to} onChange={(e) => setCreateForm(f => ({ ...f, assigned_to: e.target.value }))}>

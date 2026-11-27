@@ -138,7 +138,10 @@ export default function InboxPage() {
   const [sending, setSending]             = useState(false)
   const [loadingList, setLoadingList]     = useState(true)
   const [loadingThread, setLoadingThread] = useState(false)
-  const [filter, setFilter]               = useState<'unread' | 'all' | 'mine' | 'unassigned'>('all')
+  // Two tabs — every chat I may see, or only the ones assigned to me — plus two toggles that narrow either tab
+  const [filter, setFilter]               = useState<'all' | 'mine'>('all')
+  const [onlyUnread, setOnlyUnread]       = useState(false)
+  const [onlyUnassigned, setOnlyUnassigned] = useState(false)
   const [search, setSearch]               = useState('')
   const [drawerOpen, setDrawerOpen]       = useState(false)
   const [newChatOpen, setNewChatOpen]     = useState(false)
@@ -172,12 +175,12 @@ export default function InboxPage() {
   const [tabCounts, setTabCounts] = useState<Record<string, number>>({})
   const fetchConversations = useCallback((p: number) => conversationApi.list({
     mine: filter === 'mine' ? 1 : undefined,
-    unassigned: filter === 'unassigned' ? 1 : undefined,
-    unread: filter === 'unread' ? 1 : undefined,
+    unassigned: filter === 'all' && onlyUnassigned ? 1 : undefined,   // "unassigned" only makes sense in the All tab
+    unread: onlyUnread ? 1 : undefined,
     search: debouncedSearch || undefined,
     page: p,
     per_page: PER_PAGE,
-  }), [filter, debouncedSearch])
+  }), [filter, onlyUnread, onlyUnassigned, debouncedSearch])
 
   const loadList = useCallback(() => {
     const token = ++listReqRef.current
@@ -412,20 +415,26 @@ export default function InboxPage() {
             </div>
             {canStartChat && <button className="wa-iconbtn" title="New chat" aria-label="New chat" onClick={() => setNewChatOpen(true)}><SquarePen size={18} /></button>}
           </div>
-          <div className="wa-filters">
-            {(['unread', 'all', 'mine', 'unassigned'] as const).map(f => (
-              <button key={f} className={`wa-chip ${filter === f ? 'is-active' : ''}`} onClick={() => setFilter(f)}>
-                {f === 'unread' ? 'Unread' : f === 'all' ? 'All' : f === 'mine' ? 'Mine' : 'Unassigned'}
-                {tabCounts[f] !== undefined && (() => {
-                  // Unread shows how many MESSAGES are waiting; the other tabs show how many chats they hold
-                  const n = f === 'unread' ? (tabCounts.unread_messages ?? tabCounts.unread) : tabCounts[f]
-                  return <span className={`wa-chip__count ${f === 'unread' && n > 0 ? 'is-alert' : ''}`}
-                    title={f === 'unread' ? `${tabCounts.unread} chat(s) · ${tabCounts.unread_messages ?? 0} unread message(s)` : `${tabCounts[f]} chat(s)`}>
-                    {n > 999 ? '999+' : n}
-                  </span>
-                })()}
+          <div className="wa-tabs" role="tablist">
+            {([['all', 'All chats'], ['mine', 'Assigned to me']] as const).map(([f, label]) => (
+              <button key={f} role="tab" aria-selected={filter === f} className={`wa-tab ${filter === f ? 'is-active' : ''}`} onClick={() => { setFilter(f); if (f === 'mine') setOnlyUnassigned(false) }}>
+                {label}
+                {tabCounts[f] !== undefined && <span className="wa-chip__count" title={`${tabCounts[f]} chat(s)`}>{tabCounts[f] > 999 ? '999+' : tabCounts[f]}</span>}
               </button>
             ))}
+          </div>
+          <div className="wa-filters" style={{ marginTop: 8 }}>
+            <button className={`wa-chip ${onlyUnread ? 'is-active' : ''}`} aria-pressed={onlyUnread} onClick={() => setOnlyUnread(v => !v)}>
+              Unread
+              {(tabCounts.unread_messages ?? tabCounts.unread) !== undefined && <span className={`wa-chip__count ${(tabCounts.unread_messages ?? tabCounts.unread) > 0 ? 'is-alert' : ''}`}
+                title={`${tabCounts.unread ?? 0} chat(s) · ${tabCounts.unread_messages ?? 0} unread message(s)`}>{(tabCounts.unread_messages ?? tabCounts.unread) > 999 ? '999+' : (tabCounts.unread_messages ?? tabCounts.unread)}</span>}
+            </button>
+            {filter === 'all' && (
+              <button className={`wa-chip ${onlyUnassigned ? 'is-active' : ''}`} aria-pressed={onlyUnassigned} onClick={() => setOnlyUnassigned(v => !v)}>
+                Unassigned
+                {tabCounts.unassigned !== undefined && <span className="wa-chip__count" title={`${tabCounts.unassigned} chat(s) waiting for someone`}>{tabCounts.unassigned > 999 ? '999+' : tabCounts.unassigned}</span>}
+              </button>
+            )}
           </div>
         </div>
         <div className="wa-list__scroll" onScroll={onListScroll}>

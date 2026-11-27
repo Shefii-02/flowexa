@@ -77,6 +77,8 @@ class LeadController extends Controller
             $data['source'] = $hit['source'];
             $data['origin_label'] = $hit['label'];
         }
+        // someone who only sees their own leads must own the lead they add — otherwise it would vanish from their own list
+        if (empty($data['assigned_to']) && !$this->canViewAll()) { $data['assigned_to'] = auth()->id(); }
         // several categories: the first is the primary one (leads.category); the rest are linked after the lead exists
         $cats = array_values(array_filter($data['categories'] ?? [], 'strlen'));
         if ($cats) { $data['category'] = $cats[0]; }

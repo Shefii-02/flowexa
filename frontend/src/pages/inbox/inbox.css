@@ -80,6 +80,16 @@
   color: var(--wa-ink);
 }
 .wa-filters { display: flex; gap: 6px; flex-wrap: wrap; }
+/* the two main tabs: All chats / Assigned to me — the chosen one is marked by an underline, not a filled block */
+.wa-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--wa-border); }
+.wa-tab {
+  flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 8px 6px; font-size: 13px; font-weight: 500; color: var(--wa-muted);
+  background: none; border: 0; border-bottom: 2px solid transparent; margin-bottom: -1px; cursor: pointer;
+}
+.wa-tab:hover { color: var(--wa-ink); }
+.wa-tab.is-active { color: var(--wa-ink); border-bottom-color: var(--wa-green); font-weight: 700; }
+.wa-tab.is-active .wa-chip__count { background: var(--wa-green); color: #fff; }
 .wa-chip {
   font-size: 12px;
   padding: 4px 11px;
