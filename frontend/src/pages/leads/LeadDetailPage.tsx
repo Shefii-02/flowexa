@@ -351,7 +351,12 @@ export default function LeadDetailPage() {
       <div className="card p-5 flex flex-wrap items-center gap-4">
         <span className="w-14 h-14 rounded-2xl bg-brand-100 text-brand-700 flex items-center justify-center text-xl font-bold">{initial}</span>
         <div className="min-w-0 flex-1">
-          <h1 className="text-xl font-semibold text-gray-900 truncate">{lead.contact?.name || 'Unnamed contact'}</h1>
+          <h1 className="text-xl font-semibold text-gray-900 truncate">
+            <button type="button" aria-label={(lead as any).starred ? 'Unstar lead' : 'Star lead'} aria-pressed={!!(lead as any).starred} title={(lead as any).starred ? 'Starred — click to unstar' : 'Click to star this lead'}
+              onClick={async () => { const next = !(lead as any).starred; setLead({ ...lead, starred: next } as Lead); try { await leadApi.star(lead.id, next) } catch (e) { setLead({ ...lead, starred: !next } as Lead); toast.error(getError(e)) } }}
+              className={`mr-1.5 text-2xl leading-none align-middle transition-transform hover:scale-125 ${(lead as any).starred ? 'text-amber-500' : 'text-gray-300 hover:text-amber-400'}`}>{(lead as any).starred ? '★' : '☆'}</button>
+            {lead.contact?.name || 'Unnamed contact'}
+          </h1>
           <p className="text-sm text-gray-500 font-mono">{phoneLabel(lead.contact)}{lead.contact?.email ? ` · ${lead.contact.email}` : ''}</p>
           <div className="mt-2 flex flex-wrap items-center gap-1.5">
             <span className={`badge ${stageConfig[lead.stage].badge}`}>{stageConfig[lead.stage].label}</span>
@@ -479,7 +484,7 @@ export default function LeadDetailPage() {
               <Field label="Categories">{myCategories(lead).join(', ') || '—'}</Field>
               <Field label="Assigned to">{lead.assigned_to?.name || 'Unassigned'}</Field>
               <Field label="Created">{fmt.date(lead.created_at)}</Field>
-              <Field label="Item / listing">{lead.listing?.title || '—'}</Field>
+              <Field label="Product / service">{lead.listing?.title || '—'}</Field>
               <Field label="Deal value">{lead.sale_value != null ? fmt.currency(lead.sale_value) : '—'}</Field>
               {lead.sale && <Field label="Sale recorded" wide><span className="text-green-600">✓ {fmt.currency(lead.sale.amount)} on {lead.sale.sold_at ? fmt.date(lead.sale.sold_at) : '—'}</span></Field>}
               {lead.notes && <Field label="Notes" wide><span className="text-gray-600 whitespace-pre-wrap">{lead.notes}</span></Field>}
@@ -667,7 +672,7 @@ export default function LeadDetailPage() {
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <span className="label">Item / listing</span>
+              <span className="label">Product / service</span>
               <select className="select w-full mt-1" value={editForm.listing_id} onChange={(e) => setEditForm((f) => ({ ...f, listing_id: e.target.value }))}>
                 <option value="">— None —</option>
                 {listings.map((it) => <option key={it.id} value={it.id}>{it.title}{it.price ? ` (${fmt.currency(it.price)})` : ''}</option>)}

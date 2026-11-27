@@ -41,7 +41,7 @@ export default function DuplicateLeadPrompt({ open, lead, customer, defaultNote,
         <div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
           <div className="font-medium text-gray-900">{customer || 'This customer'}</div>
           <div className="text-xs text-gray-500">
-            Stage: <b>{stage}</b>{lead.item ? ` · Item: ${lead.item}` : ''}{lead.category ? ` · ${lead.category}` : ''}{lead.created_at ? ` · since ${fmt.date(lead.created_at)}` : ''}
+            Stage: <b>{stage}</b>{lead.item ? ` · Product / service: ${lead.item}` : ''}{lead.category ? ` · ${lead.category}` : ''}{lead.created_at ? ` · since ${fmt.date(lead.created_at)}` : ''}
           </div>
           <div className="text-xs text-gray-500">Assigned to: <b>{lead.assigned_to?.name ?? 'Nobody yet'}</b>{lead.mine ? ' (you)' : ''}</div>
         </div>

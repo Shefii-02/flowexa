@@ -87,6 +87,17 @@ class LeadService
         if ($dto->stage !== null) {
             self::assertStageNote($lead->stage, $dto->stage, $dto->reason);
         }
+        // Same rule as creating: the customer may not end up with two OPEN leads for the same product / service — by changing this lead's
+        // item to one they already have open, or by reopening a closed lead for an item that has an open lead again.
+        $closed = ['enrolled', 'lost'];
+        $item = $dto->listingId ?? $lead->listing_id;
+        $itemChanged = $dto->listingId !== null && (int) $dto->listingId !== (int) $lead->listing_id;
+        $reopening = $dto->stage !== null && in_array($lead->stage, $closed, true) && !in_array($dto->stage, $closed, true);
+        $staysOpen = !in_array($dto->stage ?? $lead->stage, $closed, true);
+        if ($item && $staysOpen && ($itemChanged || $reopening)
+            && $this->leadRepository->findOpenForItem((int) $lead->contact_id, $companyId, (int) $item, $lead->id)) {
+            throw LeadException::duplicateLead();
+        }
         return $this->leadRepository->update($lead, $dto);
     }
 

@@ -82,6 +82,8 @@ export default function LeadsPage() {
   // Item = what the customer enquired about. The same customer on a different item is a new lead; the same item is a duplicate.
   const [items, setItems] = useState<any[]>([])
   const [itemId, setItemId] = useState('')
+  const [itemType, setItemType] = useState('')   // filter the list: product / service / course …
+  const [itemQ, setItemQ] = useState('')
   const [origins, setOrigins] = useState<any[]>([])
   const [origin, setOrigin] = useState<any | null>(null)
   const [originOther, setOriginOther] = useState(false)
@@ -134,6 +136,7 @@ export default function LeadsPage() {
   const [showRecallSelected, setShowRecallSelected] = useState(false)
   const [bulkDeleting, setBulkDeleting] = useState(false)
 
+  const [onlyStarred, setOnlyStarred] = useState(false)   // show only the leads I starred
   const filters = {
     stage: stage || undefined,
     source: sourceFilter || undefined,
@@ -144,11 +147,12 @@ export default function LeadsPage() {
     closed_from: closedFrom || undefined,
     closed_to: closedTo || undefined,
     transferred: urlTransferred ? 1 : undefined,
+    starred: onlyStarred ? 1 : undefined,
   }
 
   const load = useCallback(() => {
     dispatch(fetchLeadsThunk({ page, per_page: perPage, ...filters }))
-  }, [dispatch, page, perPage, stage, sourceFilter, assignedFilter, search, createdFrom, createdTo, closedFrom, closedTo, urlTransferred]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [dispatch, page, perPage, stage, sourceFilter, assignedFilter, search, createdFrom, createdTo, closedFrom, closedTo, urlTransferred, onlyStarred]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Kanban: every column loads its own leads (own count, own "load more") instead of slicing the table's single page
   type Col = { items: Lead[]; total: number; page: number; loading: boolean }
@@ -165,7 +169,7 @@ export default function LeadsPage() {
         items: pg === 1 ? data.data : [...c[st].items, ...data.data.filter((n: Lead) => !c[st].items.some((o) => o.id === n.id))],
         total: data.total, page: data.current_page, loading: false } }))
     } catch (e) { toast.error(getError(e)); setCols((c) => ({ ...c, [st]: { ...c[st], loading: false } })) }
-  }, [stage, sourceFilter, assignedFilter, search, createdFrom, createdTo, closedFrom, closedTo, kanbanPer]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [stage, sourceFilter, assignedFilter, search, createdFrom, createdTo, closedFrom, closedTo, kanbanPer, onlyStarred]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadKanban = useCallback(() => { kanbanStages.forEach((st) => void fetchColumn(st, 1)) }, [fetchColumn, stage]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (view === 'kanban') loadKanban() }, [view, loadKanban])
@@ -261,7 +265,7 @@ export default function LeadsPage() {
     setShowCreate(false); setContactQuery(''); setContactResults([]); setSelectedContact(null)
     setNewContact(false); setNewContactPhone(''); setNewContactName(''); setNewContactEmail(''); setPhoneCheck('idle')
     setCreateForm({ category: '', priority: 'medium', notes: '', assigned_to: '', source: 'manual', origin_label: '' })
-    setOrigin(null); setOriginOther(false); setItemId('')
+    setOrigin(null); setOriginOther(false); setItemId(''); setItemType(''); setItemQ('')
   }
 
   const handleCreate = async () => {
@@ -348,6 +352,16 @@ export default function LeadsPage() {
     finally { setReassigning(false) }
   }
 
+  // Star / unstar for me: flips at once everywhere the lead is shown (table + board), undone if the server refuses
+  const toggleStar = async (l: Lead) => {
+    const next = !l.starred
+    const apply = (v: boolean) => {
+      dispatch(updateLeadInList({ ...l, starred: v } as Lead))
+      setCols((c) => Object.fromEntries(Object.entries(c).map(([k, col]) => [k, { ...col, items: col.items.map((x) => (x.id === l.id ? { ...x, starred: v } : x)) }])) as typeof c)
+    }
+    apply(next)
+    try { await leadApi.star(l.id, next) } catch (e) { apply(!next); toast.error(getError(e)) }
+  }
   const toggleSelect = (id: number) => setSelectedIds((s) => {
     const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n
   })
@@ -497,6 +511,10 @@ export default function LeadsPage() {
       <div className="flex flex-wrap items-end gap-3">
         <input className="input max-w-xs" placeholder="Search name, phone..." value={search}
           onChange={(e) => { setSearch(e.target.value); setPage(1) }} />
+        <button type="button" onClick={() => { setOnlyStarred((v) => !v); setPage(1) }} aria-pressed={onlyStarred}
+          className={`flex items-center gap-1.5 rounded-lg border px-3 py-2 text-sm transition-colors ${onlyStarred ? 'border-amber-300 bg-amber-50 text-amber-700' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`}>
+          <span className={onlyStarred ? 'text-amber-500' : 'text-gray-400'}>{onlyStarred ? '★' : '☆'}</span> Starred
+        </button>
         <select className="select max-w-[180px]" value={stage} onChange={(e) => { setStage(e.target.value); setPage(1) }}>
           <option value="">All stages</option>
           {STAGES.map((s) => <option key={s} value={s}>{stageConfig[s].label}</option>)}
@@ -654,7 +672,7 @@ export default function LeadsPage() {
                           <tr key={l.id} className={selectedIds.has(l.id) ? 'bg-brand-50/40' : ''}>
                             <td><input type="checkbox" checked={selectedIds.has(l.id)} onChange={() => toggleSelect(l.id)} /></td>
                             <td>
-                              <p className="font-medium text-gray-900">{l.contact?.name || '—'}</p>
+                              <p className="font-medium text-gray-900"><StarButton on={!!l.starred} onClick={() => void toggleStar(l)} /> {l.contact?.name || '—'}</p>
                               <p className="text-xs text-gray-400 font-mono">{phoneLabel(l.contact)}</p>
                               {!!l.repeat_count && l.repeat_count > 0 && (
                                 <button type="button" title="Same person enquired again — click to see all their leads"
@@ -728,7 +746,7 @@ export default function LeadsPage() {
           <DndContext sensors={sensors} onDragEnd={(e) => void handleDragEnd(e)}>
             <div className="flex gap-4 overflow-x-auto pb-4">
               {kanbanStages.map((st) => (
-                <KanbanColumn key={st} stage={st} col={cols[st]} sources={sources}
+                <KanbanColumn key={st} stage={st} col={cols[st]} sources={sources} onStar={(l) => void toggleStar(l)}
                   stageUpdating={stageUpdating} onCardClick={(l) => navigate(`/crm/leads/${pid(l.id)}`)}
                   onLoadMore={() => void fetchColumn(st, cols[st].page + 1)} />
               ))}
@@ -886,19 +904,39 @@ export default function LeadsPage() {
             </select>
           </div>
           <div>
-            <span className="label">Item <span className="text-gray-400 font-normal">(what the customer enquired about — optional)</span></span>
-            <div className="mt-2 max-h-40 space-y-1.5 overflow-y-auto pr-1" role="radiogroup" aria-label="Item">
-              {[{ id: '', title: 'No item', price: null as any }, ...items].map((it) => {
-                const val = String(it.id); const on = itemId === val
-                return (
-                  <button key={val || 'none'} type="button" role="radio" aria-checked={on} onClick={() => setItemId(val)} className="flex w-full items-center gap-2 text-left text-sm">
-                    <span className={`flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full border-2 ${on ? 'border-brand-600' : 'border-gray-300'}`}>{on && <span className="h-2 w-2 rounded-full bg-brand-600" />}</span>
-                    <span className={on ? 'font-medium text-gray-900' : 'text-gray-700'}>{it.title}{it.price ? <span className="text-xs text-gray-400"> · {fmt.currency(it.price)}</span> : null}</span>
-                  </button>
-                )
-              })}
-            </div>
-            <p className="mt-1 text-[11px] text-gray-400">The same customer on a different item becomes a new lead; the same item is a duplicate.</p>
+            <span className="label">Product / Service <span className="text-gray-400 font-normal">(what the customer enquired about — optional)</span></span>
+            {(() => {
+              const types = [...new Set(items.map((i) => String(i.type || 'product')))]
+              const shown = items.filter((i) => (!itemType || String(i.type || 'product') === itemType) && (!itemQ.trim() || String(i.title).toLowerCase().includes(itemQ.trim().toLowerCase())))
+              return (
+                <>
+                  {types.length > 1 && (
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {['', ...types].map((t) => (
+                        <button key={t || 'all'} type="button" onClick={() => setItemType(t)}
+                          className={`rounded-full border px-2.5 py-0.5 text-xs capitalize ${itemType === t ? 'border-brand-600 bg-brand-50 text-brand-700' : 'border-gray-200 text-gray-500 hover:bg-gray-50'}`}>{t || 'All'}</button>
+                      ))}
+                    </div>
+                  )}
+                  {items.length > 8 && <input className="input mt-2 w-full" placeholder="Search products / services…" value={itemQ} onChange={(e) => setItemQ(e.target.value)} />}
+                  <div className="mt-2 max-h-44 space-y-1.5 overflow-y-auto pr-1" role="radiogroup" aria-label="Product or service">
+                    {[{ id: '', title: 'None', price: null as any, type: '' }, ...shown].map((it) => {
+                      const val = String(it.id); const on = itemId === val
+                      return (
+                        <button key={val || 'none'} type="button" role="radio" aria-checked={on} onClick={() => setItemId(val)} className="flex w-full items-center gap-2 text-left text-sm">
+                          <span className={`flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full border-2 ${on ? 'border-brand-600' : 'border-gray-300'}`}>{on && <span className="h-2 w-2 rounded-full bg-brand-600" />}</span>
+                          <span className={on ? 'font-medium text-gray-900' : 'text-gray-700'}>{it.title}
+                            {it.type && <span className="ml-1.5 rounded bg-gray-100 px-1 text-[10px] uppercase text-gray-500">{it.type}</span>}
+                            {it.price ? <span className="text-xs text-gray-400"> · {fmt.currency(it.price)}</span> : null}</span>
+                        </button>
+                      )
+                    })}
+                    {shown.length === 0 && items.length > 0 && <p className="text-xs text-gray-400">Nothing matches.</p>}
+                  </div>
+                </>
+              )
+            })()}
+            <p className="mt-1 text-[11px] text-gray-400">The same customer on a different product / service becomes a new lead; the same one is a duplicate.</p>
           </div>
           <div>
             <span className="label">Lead origin <span className="text-gray-400 font-normal">(which number / account / campaign it came from)</span></span>
@@ -1001,9 +1039,9 @@ export default function LeadsPage() {
   )
 }
 
-function KanbanColumn({ stage, col, sources, stageUpdating, onCardClick, onLoadMore }: {
+function KanbanColumn({ stage, col, sources, stageUpdating, onCardClick, onLoadMore, onStar }: {
   stage: LeadStage; col: { items: Lead[]; total: number; page: number; loading: boolean }; sources: Record<string, { label: string; icon: string }>
-  stageUpdating: number | null; onCardClick: (l: Lead) => void; onLoadMore: () => void
+  stageUpdating: number | null; onCardClick: (l: Lead) => void; onLoadMore: () => void; onStar: (l: Lead) => void
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: stage })
   const cfg = stageConfig[stage]
@@ -1016,7 +1054,7 @@ function KanbanColumn({ stage, col, sources, stageUpdating, onCardClick, onLoadM
       </div>
       <div className="space-y-2 min-h-[60px]">
         {col.items.map((l) => (
-          <KanbanCard key={l.id} lead={l} sources={sources} busy={stageUpdating === l.id} onClick={() => onCardClick(l)} />
+          <KanbanCard key={l.id} lead={l} sources={sources} busy={stageUpdating === l.id} onClick={() => onCardClick(l)} onStar={() => onStar(l)} />
         ))}
         {col.loading && col.items.length === 0 && <div className="py-6 text-center text-xs text-gray-300">Loading…</div>}
         {!col.loading && col.items.length === 0 && (
@@ -1032,13 +1070,25 @@ function KanbanColumn({ stage, col, sources, stageUpdating, onCardClick, onLoadM
   )
 }
 
-function KanbanCard({ lead, sources, busy, onClick }: { lead: Lead; sources: Record<string, { label: string; icon: string }>; busy: boolean; onClick: () => void }) {
+/** The star: tap to mark / unmark a lead for yourself. Stops the click so it doesn't open the lead or start a drag. */
+function StarButton({ on, onClick, size = 'text-base' }: { on: boolean; onClick: () => void; size?: string }) {
+  return (
+    <button type="button" aria-label={on ? 'Unstar lead' : 'Star lead'} aria-pressed={on} title={on ? 'Starred — click to unstar' : 'Click to star this lead'}
+      onPointerDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); onClick() }}
+      className={`${size} leading-none align-middle transition-transform hover:scale-125 ${on ? 'text-amber-500' : 'text-gray-300 hover:text-amber-400'}`}>{on ? '★' : '☆'}</button>
+  )
+}
+
+function KanbanCard({ lead, sources, busy, onClick, onStar }: { lead: Lead; sources: Record<string, { label: string; icon: string }>; busy: boolean; onClick: () => void; onStar: () => void }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: lead.id, disabled: busy })
   const style = transform ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)` } : undefined
   return (
     <div ref={setNodeRef} style={style} {...listeners} {...attributes} onClick={onClick}
       className={`card p-3 cursor-grab active:cursor-grabbing hover:shadow-sm transition-shadow select-none ${isDragging ? 'opacity-50 shadow-lg relative z-10' : ''} ${busy ? 'opacity-60 pointer-events-none' : ''}`}>
-      <p className="text-sm font-medium text-gray-900 truncate">{lead.contact?.name || lead.contact?.phone}</p>
+      <div className="flex items-start justify-between gap-2">
+        <p className="text-sm font-medium text-gray-900 truncate">{lead.contact?.name || lead.contact?.phone}</p>
+        <StarButton on={!!lead.starred} onClick={onStar} />
+      </div>
       {lead.contact?.name && lead.contact?.phone && <p className="text-[11px] font-mono text-gray-400 truncate">{formatPhone(lead.contact.phone)}</p>}
       <p className="text-xs text-gray-400 mt-0.5 truncate">{lead.category || 'General'}</p>
       <div className="flex items-center justify-between mt-2">

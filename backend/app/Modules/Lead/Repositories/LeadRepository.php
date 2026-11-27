@@ -33,6 +33,8 @@ class LeadRepository implements LeadRepositoryInterface
             Lead::with(['contact:id,name,phone,email,wa_id', 'assignedTo:id,name,email,department', 'categoryLinks'])
                 ->withMax('events as last_event_at', 'created_at')   // last activity = the latest thing logged on the lead
                 ->withCount('siblings as contact_leads_count')
+                ->withExists(['stars as starred' => fn ($s) => $s->where('user_id', $userId)])   // this user's own star
+                ->when($filter->starred, fn ($q) => $q->whereHas('stars', fn ($s) => $s->where('user_id', $userId)))
                 ->where('company_id', $companyId)
                 ->when(!$viewAll, fn($q) => $q->where(function ($qq) use ($userId, $scopedOrigin, $owners) {
                     $qq->whereIn('assigned_to', $owners);   // their own leads + those of the staff listed under "Accessible users"
@@ -132,11 +134,12 @@ class LeadRepository implements LeadRepositoryInterface
      * The contact's OPEN lead that a new lead would duplicate. With an item chosen, only an open lead for that SAME item counts (the same
      * customer asking about another item is a new lead). With no item (webhooks, flows, imports, "no item" in the form) any open lead counts, as before.
      */
-    public function findOpenForItem(int $contactId, int $companyId, ?int $listingId): ?Lead
+    public function findOpenForItem(int $contactId, int $companyId, ?int $listingId, ?int $exceptLeadId = null): ?Lead
     {
         return Lead::where('contact_id', $contactId)->where('company_id', $companyId)
             ->whereNotIn('stage', ['enrolled', 'lost'])
             ->when($listingId, fn ($q) => $q->where('listing_id', $listingId))
+            ->when($exceptLeadId, fn ($q) => $q->where('id', '!=', $exceptLeadId))
             ->orderByDesc('id')->first();
     }
 

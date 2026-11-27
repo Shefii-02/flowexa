@@ -15,6 +15,8 @@ class LeadResource extends JsonResource
             'id'             => $this->id,
             'stage'          => $this->stage,
             'priority'       => $this->priority,
+            // this user's personal star (set by the list query; looked up for a single lead)
+            'starred'        => (bool) ($this->starred ?? $this->stars()->where('user_id', auth()->id())->exists()),
             'category'       => $this->category,                 // the primary category
             'categories'     => $this->categoryNames(),         // every category, primary first
             'source'         => $this->source,

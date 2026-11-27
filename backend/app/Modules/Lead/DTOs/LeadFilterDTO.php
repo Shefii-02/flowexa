@@ -21,6 +21,8 @@ readonly class LeadFilterDTO
         public ?string $closedTo    = null,
         // Only leads that were handed over from someone else (an 'assigned' event with a previous owner)
         public bool    $transferred = false,
+        // Only the leads the signed-in user has starred
+        public bool    $starred     = false,
         public int     $perPage    = 20,
         public int     $page       = 1,
     ) {}
@@ -39,6 +41,7 @@ readonly class LeadFilterDTO
             closedFrom:  $data['closed_from']  ?? null,
             closedTo:    $data['closed_to']    ?? null,
             transferred: (bool) ($data['transferred'] ?? false),
+            starred:     (bool) ($data['starred'] ?? false),
             perPage:     (int) ($data['per_page'] ?? 20),
             page:        (int) ($data['page']     ?? 1),
         );

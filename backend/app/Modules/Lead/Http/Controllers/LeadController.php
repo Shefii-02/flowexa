@@ -113,6 +113,20 @@ class LeadController extends Controller
         ];
     }
 
+    /** PUT /leads/{lead}/star { starred: true|false } — star or unstar a lead for the signed-in user only. */
+    public function star(Request $request, int $lead): JsonResponse
+    {
+        $d = $request->validate(['starred' => ['required', 'boolean']]);
+        $u = auth()->user();
+        $l = $this->leadService->show($lead, $u->company_id, $u->id, $this->canViewAll());   // you can only star a lead you may open
+        if ($d['starred']) {
+            \App\Models\LeadStar::firstOrCreate(['user_id' => $u->id, 'lead_id' => $l->id], ['company_id' => $u->company_id]);
+        } else {
+            \App\Models\LeadStar::where('user_id', $u->id)->where('lead_id', $l->id)->delete();
+        }
+        return response()->json(['starred' => (bool) $d['starred']]);
+    }
+
     public function update(UpdateLeadRequest $request, int $lead): JsonResponse
     {
         $l = $this->leadService->update($lead, auth()->user()->company_id, auth()->id(), $this->canViewAll(), UpdateLeadDTO::fromRequest($request->validated()));

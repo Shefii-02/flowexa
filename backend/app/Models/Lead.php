@@ -45,6 +45,7 @@ class Lead extends Model
     public function listing(): BelongsTo    { return $this->belongsTo(Listing::class); }
     public function sale(): \Illuminate\Database\Eloquent\Relations\HasOne { return $this->hasOne(ListingSale::class); }
     /** Every lead (this one included) for the same contact — used for the "repeat enquiry" count. */
+    public function stars(): HasMany       { return $this->hasMany(LeadStar::class); }
     public function siblings(): HasMany    { return $this->hasMany(Lead::class, 'contact_id', 'contact_id'); }
     public function events(): HasMany       { return $this->hasMany(LeadEvent::class)->latest(); }
     /** Routing/notification history from the assignment engine — see LeadAssignment::lead_id. */

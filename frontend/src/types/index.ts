@@ -207,6 +207,7 @@ export type LeadSource = string
 
 export interface Lead {
   id: number
+  starred?: boolean               // the signed-in user's own star on this lead
   stage: LeadStage
   priority: LeadPriority
   category: string | null          // the primary category
