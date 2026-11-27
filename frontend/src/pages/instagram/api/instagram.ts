@@ -20,6 +20,9 @@ export const instagramApi = {
   mediaComments: (accountId: number, mediaId: string) => api.get(`/instagram/accounts/${accountId}/media/${mediaId}/comments`),
   replyComment: (accountId: number, commentId: string, text: string) =>
     api.post(`/instagram/accounts/${accountId}/comments/${commentId}/reply`, { text }),
+  // a private message to the commenter (DM / Messenger) — Meta allows one per comment, within 7 days of it
+  privateReplyComment: (accountId: number, commentId: string, text: string) =>
+    api.post(`/instagram/accounts/${accountId}/comments/${commentId}/private-reply`, { text }),
   hideComment: (accountId: number, commentId: string, hide: boolean) =>
     api.post(`/instagram/accounts/${accountId}/comments/${commentId}/hide`, { hide }),
   deleteComment: (accountId: number, commentId: string) =>

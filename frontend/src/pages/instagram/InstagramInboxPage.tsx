@@ -63,18 +63,22 @@ export default function InstagramInboxPage({ channel = 'instagram' }: { channel?
   const [loading, setLoading] = useState(true)
   const feedRef = useRef<HTMLDivElement>(null)
 
+  // two tabs: every chat, or only those whose lead is assigned to me
+  const [scope, setScope] = useState<'all' | 'mine'>('all')
+  const [scopeCounts, setScopeCounts] = useState<{ all: number; mine: number }>({ all: 0, mine: 0 })
   const loadThreads = async (quiet = false) => {
     if (!quiet) setLoading(true)
     try {
-      const r = await instagramApi.conversations({ channel, ...(accountId ? { account_id: accountId } : {}), ...(statusFilter ? { status: statusFilter } : {}), ...(needsAgentOnly ? { needs_agent: 1 } : {}) })
+      const r = await instagramApi.conversations({ channel, ...(accountId ? { account_id: accountId } : {}), ...(statusFilter ? { status: statusFilter } : {}), ...(needsAgentOnly ? { needs_agent: 1 } : {}), ...(scope === 'mine' ? { mine: 1 } : {}) })
       setThreads(r.data.data ?? r.data ?? [])
+      if (r.data.counts) setScopeCounts(r.data.counts)
     } catch (e) { if (!quiet) toast.error(getError(e)) }
     finally { if (!quiet) setLoading(false) }
   }
   useEffect(() => { instagramApi.accounts(channel).then(r => setAccounts(r.data.accounts ?? [])).catch(() => {}) }, [channel])
   // A filter change shows a different set of threads: drop the open one so it can't belong to another account.
   useEffect(() => { setActiveId(null); setActive(null); setMessages([]) }, [accountId])
-  useEffect(() => { void loadThreads() }, [statusFilter, needsAgentOnly, accountId]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { void loadThreads() }, [statusFilter, needsAgentOnly, accountId, scope]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Flow replies, button taps and messages sent from the Instagram app arrive via webhooks — poll so they show up live.
   useEffect(() => {
@@ -175,6 +179,15 @@ export default function InstagramInboxPage({ channel = 'instagram' }: { channel?
       <div className="grid grid-cols-[320px_1fr] gap-4 h-[calc(100vh-220px)]">
         {/* Thread list */}
         <div className="card overflow-y-auto">
+          {/* the two main tabs: every chat, or only those assigned to me (the open one is underlined) */}
+          <div className="sticky top-0 z-10 flex border-b border-gray-200 bg-white" role="tablist">
+            {([['all', 'All chats', scopeCounts.all], ['mine', 'Assigned to me', scopeCounts.mine]] as const).map(([k, label, n]) => (
+              <button key={k} role="tab" aria-selected={scope === k} onClick={() => { setScope(k); setActiveId(null); setActive(null); setMessages([]) }}
+                className={`flex-1 -mb-px border-b-2 px-2 py-2.5 text-sm ${scope === k ? 'border-brand-600 font-bold text-gray-900' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+                {label}<span className="ml-1.5 rounded-full bg-gray-100 px-1.5 text-[10px] text-gray-600">{n}</span>
+              </button>
+            ))}
+          </div>
           {loading ? (
             <p className="p-4 text-sm text-gray-400">Loading…</p>
           ) : threads.length === 0 ? (

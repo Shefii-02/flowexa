@@ -27,7 +27,18 @@ class InstagramInboxController extends Controller
             ->with('account:id,username')
             ->orderByDesc('last_message_at')
             ->paginate(30);
-        return response()->json($threads);
+
+        // Totals for the "All chats" / "Assigned to me" tabs: same visibility and account as the list, not narrowed by status / the tab itself
+        $scoped = fn () => InstagramConversation::where('company_id', auth()->user()->company_id)
+            ->when($allowed !== null, fn ($q) => $q->whereIn('instagram_account_id', $allowed))
+            ->when($request->account_id, fn ($q, $id) => $q->where('instagram_account_id', $id))
+            ->whereHas('account', fn ($q) => $q->where('channel', $request->query('channel', 'instagram')));
+        $counts = [
+            'all'  => $scoped()->count(),
+            'mine' => $scoped()->whereHas('lead', fn ($l) => $l->where('assigned_to', auth()->id()))->count(),
+        ];
+
+        return response()->json(array_merge($threads->toArray(), ['counts' => $counts]));
     }
 
     public function show(int $id): JsonResponse

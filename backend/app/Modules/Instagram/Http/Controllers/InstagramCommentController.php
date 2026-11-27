@@ -39,6 +39,21 @@ class InstagramCommentController extends Controller
         return response()->json(['message' => 'Reply posted.']);
     }
 
+    /** Reply to the commenter in a private message (DM / Messenger). Meta allows one per comment, within 7 days of it. */
+    public function privateReply(Request $request, int $accountId, string $commentId): JsonResponse
+    {
+        $text = (string) $request->validate(['text' => ['required', 'string', 'max:900']])['text'];
+        $account = $this->find($accountId);
+        try {
+            $this->client->privateReply($account, $commentId, $text);
+        } catch (\Throwable $e) {
+            $m = $e->getMessage();
+            return response()->json(['message' => str_contains(mb_strtolower($m), 'comment') || str_contains($m, '10900') || str_contains($m, '2534022')
+                ? 'Meta did not allow a private reply to this comment — only one private reply is allowed per comment, within 7 days of it. (' . $m . ')' : $m], 422);
+        }
+        return response()->json(['message' => 'Private reply sent.']);
+    }
+
     public function hide(Request $request, int $accountId, string $commentId): JsonResponse
     {
         $hide = (bool) $request->boolean('hide', true);

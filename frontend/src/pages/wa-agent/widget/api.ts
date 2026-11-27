@@ -139,6 +139,7 @@ export interface NodeInboxPage {
   per_page: number
   has_more: boolean
   counts: Record<InboxTab, number>
+  scope_counts?: { all: number; mine: number }   // totals for the "All chats" / "Assigned to me" tabs
 }
 export interface NodeConversation {
   id: number
@@ -158,7 +159,7 @@ export interface NodeConversation {
 }
 
 export const nodeChatApi = {
-  inbox: (p: { tab: InboxTab; q?: string; page?: number; per_page?: number; widget_id?: number }) =>
+  inbox: (p: { tab: InboxTab; q?: string; page?: number; per_page?: number; widget_id?: number; scope?: 'mine' }) =>
     chatApi.get<NodeInboxPage>('/widget-chat/inbox', { params: { ...p, q: p.q || undefined } }),
   me: () => chatApi.get<{ muted: boolean; handling: number; limit: number }>('/widget-chat/me'),
   setMuted: (muted: boolean) => chatApi.put<{ muted: boolean }>('/widget-chat/me', { muted }),

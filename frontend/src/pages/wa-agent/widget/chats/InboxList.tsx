@@ -35,6 +35,8 @@ const badge = (r: NodeInboxRow) => {
 
 export default function InboxList({ widgetId, openIds, muted, refreshKey, onOpen, onCounts, onSocket, onForbidden }: Props) {
   const [tab, setTab] = useState<InboxTab>('all')   // new chats show up here whatever their state (bot-solved ones are not "unread")
+  const [scope, setScope] = useState<'all' | 'mine'>('all')   // the two main tabs: every chat, or only those assigned to me
+  const [scopeCounts, setScopeCounts] = useState<{ all: number; mine: number }>({ all: 0, mine: 0 })
   const [q, setQ] = useState('')
   const [dq, setDq] = useState('')
   const [rows, setRows] = useState<NodeInboxRow[]>([])
@@ -68,20 +70,20 @@ export default function InboxList({ widgetId, openIds, muted, refreshKey, onOpen
     const my = ++req.current
     const upTo = keepPages ? Math.min(pageRef.current, 4) : 1
     try {
-      const pages = await Promise.all(Array.from({ length: upTo }, (_, i) => nodeChatApi.inbox({ tab, q: dq, page: i + 1, per_page: PER_PAGE, widget_id: widgetId })))
+      const pages = await Promise.all(Array.from({ length: upTo }, (_, i) => nodeChatApi.inbox({ tab, q: dq, page: i + 1, per_page: PER_PAGE, widget_id: widgetId, scope: scope === 'mine' ? 'mine' : undefined })))
       if (my !== req.current) return
       const all = pages.flatMap(p => p.data.data)
       const last = pages[pages.length - 1].data
       setLoadError(null)
-      setRows(all); setCounts(last.counts); onCounts(last.counts); setHasMore(last.has_more); setPage(upTo)
+      setRows(all); setCounts(last.counts); onCounts(last.counts); if (last.scope_counts) setScopeCounts(last.scope_counts); setHasMore(last.has_more); setPage(upTo)
       if (tab === 'unread' || tab === 'all') alertNew(all)
     } catch (e: any) {
       if (e?.response?.status === 403) onForbidden()
       else if (my === req.current) setLoadError(e?.response?.data?.message ?? (e?.code === 'ERR_NETWORK' ? 'Could not reach the chat server.' : 'Could not load conversations.'))
     } finally { if (my === req.current) setLoading(false) }
-  }, [tab, dq, widgetId, alertNew, onCounts, onForbidden])
+  }, [tab, scope, dq, widgetId, alertNew, onCounts, onForbidden])
 
-  useEffect(() => { setLoading(true); setRows([]); setPage(1); void reload(false) }, [tab, dq, widgetId]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { setLoading(true); setRows([]); setPage(1); void reload(false) }, [tab, scope, dq, widgetId]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (refreshKey) void reload(true) }, [refreshKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -105,7 +107,7 @@ export default function InboxList({ widgetId, openIds, muted, refreshKey, onOpen
     if (loadingMore || !hasMore) return
     setLoadingMore(true)
     try {
-      const r = await nodeChatApi.inbox({ tab, q: dq, page: page + 1, per_page: PER_PAGE, widget_id: widgetId })
+      const r = await nodeChatApi.inbox({ tab, q: dq, page: page + 1, per_page: PER_PAGE, widget_id: widgetId, scope: scope === 'mine' ? 'mine' : undefined })
       setRows(prev => { const seen = new Set(prev.map(x => x.id)); return [...prev, ...r.data.data.filter(x => !seen.has(x.id))] })
       setPage(page + 1); setHasMore(r.data.has_more)
     } catch (e) { toast.error(getError(e)) } finally { setLoadingMore(false) }
@@ -122,6 +124,15 @@ export default function InboxList({ widgetId, openIds, muted, refreshKey, onOpen
   return (
     <aside className="flex flex-col min-h-0 h-full w-full bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
       <div className="p-3 space-y-3 border-b border-gray-100">
+        {/* the two main tabs — the open one is underlined */}
+        <div className="flex border-b border-gray-200 -mx-3 px-3" role="tablist">
+          {([['all', 'All chats', scopeCounts.all], ['mine', 'Assigned to me', scopeCounts.mine]] as const).map(([k, label, n]) => (
+            <button key={k} role="tab" aria-selected={scope === k} onClick={() => setScope(k)}
+              className={`flex-1 -mb-px border-b-2 px-2 py-2 text-sm ${scope === k ? 'border-brand-600 font-bold text-gray-900' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+              {label}<span className="ml-1.5 rounded-full bg-gray-100 px-1.5 text-[10px] text-gray-600">{n}</span>
+            </button>
+          ))}
+        </div>
         <div className="flex p-1 bg-gray-100 rounded-xl">
           {TABS.map(t => (
             <button key={t.key} onClick={() => setTab(t.key)}

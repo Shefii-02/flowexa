@@ -20,14 +20,18 @@ export default function InstagramCommentsPage() {
   const [loadingComments, setLoadingComments] = useState(false)
   const [selectedMedia, setSelectedMedia] = useState<IgMedia | null>(null)
   const [replyTo, setReplyTo] = useState<IgComment | null>(null)
+  const [replyMode, setReplyMode] = useState<'public' | 'private'>('public')   // a public reply under the comment, or a private message to the commenter
   const [replyText, setReplyText] = useState('')
   const [busy, setBusy] = useState<string | null>(null)
 
+  // Instagram or Messenger (a Facebook Page's posts) — same screen for both
+  const channel: 'instagram' | 'facebook' = params.get('channel') === 'facebook' ? 'facebook' : 'instagram'
   const accountId = Number(params.get('account')) || accounts[0]?.id || null
 
   useEffect(() => {
-    instagramApi.accounts().then(r => setAccounts(r.data.accounts ?? [])).catch(e => toast.error(getError(e)))
-  }, [])
+    setAccounts([])
+    instagramApi.accounts(channel).then(r => setAccounts(r.data.accounts ?? [])).catch(e => toast.error(getError(e)))
+  }, [channel])
 
   useEffect(() => {
     if (!accountId) return
@@ -54,8 +58,9 @@ export default function InstagramCommentsPage() {
     if (!accountId || !replyTo || !replyText.trim()) return
     setBusy(`reply-${replyTo.id}`)
     try {
-      await instagramApi.replyComment(accountId, replyTo.id, replyText.trim())
-      toast.success('Reply posted.')
+      if (replyMode === 'private') await instagramApi.privateReplyComment(accountId, replyTo.id, replyText.trim())
+      else await instagramApi.replyComment(accountId, replyTo.id, replyText.trim())
+      toast.success(replyMode === 'private' ? 'Private reply sent.' : 'Reply posted.')
       setReplyTo(null); setReplyText('')
       void refreshComments()
     } catch (e) { toast.error(getError(e)) }
@@ -91,8 +96,13 @@ export default function InstagramCommentsPage() {
   )
 
   if (accounts.length === 0) {
-    return <EmptyState icon="💬" title="Connect an Instagram account first"
-      desc="Comment moderation needs a connected account with instagram_manage_comments." />
+    return (
+      <div className="space-y-4">
+        <ChannelSwitch channel={channel} onChange={c => setParams({ channel: c })} />
+        <EmptyState icon="💬" title={channel === 'facebook' ? 'Connect a Facebook Page first' : 'Connect an Instagram account first'}
+          desc={channel === 'facebook' ? 'Messenger comments need a connected Page with pages_manage_engagement.' : 'Comment moderation needs a connected account with instagram_manage_comments.'} />
+      </div>
+    )
   }
 
   return (
@@ -100,10 +110,11 @@ export default function InstagramCommentsPage() {
       <div className="flex items-center gap-3">
         <div className="flex-1">
           <h1 className="page-title">Comments</h1>
-          <p className="page-sub">Read, reply to, hide or delete comments on your posts and reels</p>
+          <p className="page-sub">Read, reply to, hide or delete comments on your {channel === 'facebook' ? 'Page posts' : 'posts and reels'} — publicly, or by private message</p>
         </div>
+        <ChannelSwitch channel={channel} onChange={c => setParams({ channel: c })} />
         {accounts.length > 1 && (
-          <select className="select w-56" value={accountId ?? ''} onChange={e => setParams({ account: e.target.value })}>
+          <select className="select w-56" value={accountId ?? ''} onChange={e => setParams({ ...(channel === 'facebook' ? { channel } : {}), account: e.target.value })}>
             {accounts.map(a => <option key={a.id} value={a.id}>@{a.username || a.ig_user_id}</option>)}
           </select>
         )}
@@ -155,7 +166,8 @@ export default function InstagramCommentsPage() {
               ) : comments.map(c => (
                 <div key={c.id} className="space-y-2">
                   <CommentRow c={c} busy={busy}
-                    onReply={() => { setReplyTo(c); setReplyText('') }}
+                    onReply={() => { setReplyTo(c); setReplyMode('public'); setReplyText('') }}
+                    onPrivate={() => { setReplyTo(c); setReplyMode('private'); setReplyText('') }}
                     onHide={() => toggleHide(c)}
                     onDelete={() => remove(c)} />
                   {repliesOf(c).length > 0 && (
@@ -170,9 +182,9 @@ export default function InstagramCommentsPage() {
                   )}
                   {replyTo?.id === c.id && (
                     <div className="ml-8 flex gap-2">
-                      <Textarea rows={1} className="flex-1" placeholder={`Reply to @${c.username}…`}
+                      <Textarea rows={1} className="flex-1" placeholder={replyMode === 'private' ? `Private message to @${c.username}…` : `Reply to @${c.username}…`}
                         value={replyText} onChange={e => setReplyText(e.target.value)} />
-                      <Button size="sm" onClick={sendReply} loading={busy === `reply-${c.id}`}>Send</Button>
+                      <Button size="sm" onClick={sendReply} loading={busy === `reply-${c.id}`}>{replyMode === 'private' ? 'Send privately' : 'Send'}</Button>
                       <Button size="sm" variant="secondary" onClick={() => setReplyTo(null)}>Cancel</Button>
                     </div>
                   )}
@@ -186,9 +198,21 @@ export default function InstagramCommentsPage() {
   )
 }
 
-function CommentRow({ c, busy, onReply, onHide, onDelete }: {
+function ChannelSwitch({ channel, onChange }: { channel: 'instagram' | 'facebook'; onChange: (c: 'instagram' | 'facebook') => void }) {
+  return (
+    <div className="flex gap-2" role="tablist">
+      {([['instagram', '📸 Instagram'], ['facebook', '💭 Messenger']] as const).map(([k, label]) => (
+        <button key={k} role="tab" aria-selected={channel === k} onClick={() => onChange(k)}
+          className={`rounded-full border px-3 py-1 text-sm ${channel === k ? 'border-brand-600 font-semibold text-gray-900' : 'border-gray-200 text-gray-500 hover:bg-gray-50'}`}
+          style={channel === k ? { borderWidth: 1.5 } : undefined}>{label}</button>
+      ))}
+    </div>
+  )
+}
+
+function CommentRow({ c, busy, onReply, onPrivate, onHide, onDelete }: {
   c: IgComment; busy: string | null
-  onReply: () => void; onHide: () => void; onDelete: () => void
+  onReply: () => void; onPrivate?: () => void; onHide: () => void; onDelete: () => void
 }) {
   return (
     <div className="flex items-start gap-3">
@@ -205,6 +229,7 @@ function CommentRow({ c, busy, onReply, onHide, onDelete }: {
           <span>{new Date(c.timestamp).toLocaleString('en-IN')}</span>
           {(c.like_count ?? 0) > 0 && <span>♥ {c.like_count}</span>}
           <button onClick={onReply} className="text-brand-600 hover:underline">Reply</button>
+          {onPrivate && <button onClick={onPrivate} className="text-brand-600 hover:underline" title="Send the commenter a private message (one per comment, within 7 days)">Reply in DM</button>}
           <button onClick={onHide} disabled={busy === `hide-${c.id}`} className="hover:underline">
             {c.hidden ? 'Unhide' : 'Hide'}
           </button>

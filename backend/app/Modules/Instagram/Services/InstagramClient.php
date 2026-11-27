@@ -122,6 +122,15 @@ class InstagramClient
     /** Comments on a media item (posts/reels), each with its own nested replies. */
     public function mediaComments(InstagramAccount $account, string $mediaId, int $limit = 50): array
     {
+        if ($account->channel === 'facebook') {
+            // Facebook Page post comments, reshaped like Instagram's so the same screens read both (text / username / timestamp / hidden / replies).
+            $shape = fn (array $c) => ['id' => $c['id'] ?? null, 'text' => $c['message'] ?? '', 'username' => $c['from']['name'] ?? null,
+                'timestamp' => $c['created_time'] ?? null, 'like_count' => $c['like_count'] ?? 0, 'hidden' => (bool) ($c['is_hidden'] ?? false)];
+            return collect($this->graphFor($account)->getAllPages("/{$mediaId}/comments", $account->access_token, [
+                'fields' => 'id,message,from,created_time,like_count,is_hidden,comments{id,message,from,created_time,is_hidden}',
+                'order' => 'reverse_chronological',
+            ], $limit))->map(fn ($c) => $shape($c) + ['replies' => ['data' => collect($c['comments']['data'] ?? [])->map($shape)->values()->all()]])->all();
+        }
         return $this->graphFor($account)->getAllPages("/{$mediaId}/comments", $account->access_token, [
             'fields' => 'id,text,username,timestamp,like_count,hidden,replies{id,text,username,timestamp,hidden}',
         ], $limit);
@@ -139,6 +148,9 @@ class InstagramClient
     /** Hide (or, with $hide=false, unhide) a comment from the post's public comment thread. */
     public function hideComment(InstagramAccount $account, string $commentId, bool $hide = true): array
     {
+        if ($account->channel === 'facebook') {
+            return $this->graphFor($account)->post("/{$commentId}", $account->access_token, ['is_hidden' => $hide ? 'true' : 'false']);
+        }
         return $this->graphFor($account)->post("/{$commentId}", $account->access_token, ['hide' => $hide ? 'true' : 'false']);
     }
 

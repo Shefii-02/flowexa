@@ -1641,6 +1641,7 @@ Route::prefix('v1')->group(function () {
 
                 // Comment moderation: reply to, hide and delete comments on a post/reel.
                 Route::post('accounts/{id}/comments/{commentId}/reply',   [\App\Modules\Instagram\Http\Controllers\InstagramCommentController::class, 'reply']);
+                Route::post('accounts/{id}/comments/{commentId}/private-reply', [\App\Modules\Instagram\Http\Controllers\InstagramCommentController::class, 'privateReply']);
                 Route::post('accounts/{id}/comments/{commentId}/hide',    [\App\Modules\Instagram\Http\Controllers\InstagramCommentController::class, 'hide']);
                 Route::delete('accounts/{id}/comments/{commentId}',       [\App\Modules\Instagram\Http\Controllers\InstagramCommentController::class, 'destroy']);
 
