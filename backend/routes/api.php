@@ -554,8 +554,11 @@ Route::prefix('v1')->group(function () {
             Route::get('conversations', [ConversationController::class, 'index']);
             Route::get('conversations/contact/{contact}', [ConversationController::class, 'forContact']);
             Route::get('conversations/{id}/messages', [ConversationController::class, 'messages']);
+            Route::put('conversations/{id}/star', [ConversationController::class, 'star']);
         });
         Route::middleware('permission:inbox.manage')->group(function () {
+            Route::post('conversations/{id}/close', [ConversationController::class, 'close']);
+            Route::post('conversations/{id}/reopen', [ConversationController::class, 'reopen']);
             Route::post('conversations/new', [ConversationController::class, 'startChat']);
             Route::post('conversations/{id}/claim', [ConversationController::class, 'claim']);
             Route::post('conversations/{id}/release', [ConversationController::class, 'release']);

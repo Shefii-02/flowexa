@@ -611,7 +611,7 @@ export const conversationApi = {
   forContact: (contactId: number, phone?: string) => api.get(`/conversations/contact/${contactId}`, { params: phone ? { phone } : undefined }),
   // GET /conversations — inbox list, most recently active first.
   // filter: mine=1 (only conversations assigned to me), unassigned=1 (only unclaimed).
-  list: (params?: { status?: string; mine?: number | boolean; unassigned?: number | boolean; unread?: number | boolean; state?: 'unread' | 'read' | 'closed'; search?: string; page?: number; per_page?: number }) =>
+  list: (params?: { status?: string; mine?: number | boolean; unassigned?: number | boolean; unread?: number | boolean; state?: 'unread' | 'read' | 'closed'; starred?: number | boolean; search?: string; page?: number; per_page?: number }) =>
     api.get('/conversations', { params }),
 
   // GET /conversations/{id}/messages — the newest page of the thread, oldest first, plus has_more. Marks the thread read.
@@ -631,6 +631,11 @@ export const conversationApi = {
   // POST /conversations/{id}/release — give an assigned conversation back to the unassigned pool.
   release: (id: number) =>
     api.post(`/conversations/${id}/release`),
+
+  // PUT /conversations/{id}/star — my personal star on a chat · POST close / reopen — finish with a customer (a new message from them reopens it)
+  star: (id: number, starred: boolean) => api.put(`/conversations/${id}/star`, { starred }),
+  close: (id: number) => api.post(`/conversations/${id}/close`),
+  reopen: (id: number) => api.post(`/conversations/${id}/reopen`),
 
   // POST /conversations/{id}/messages — send a reply. Backend enforces who's allowed
   // to reply (assigned agent, or admin/team_leader override) — a 403 here means

@@ -80,7 +80,7 @@ class LeadWaChatController extends Controller
         return response()->json([
             'available'      => $found !== null,
             'chat_id'        => $chatId,
-            'session'        => $session ? ['id' => $session->id, 'name' => $session->display_name ?: $session->session_name] : null,
+            'session'        => $session ? ['id' => $session->id, 'name' => $session->display_name ?: $session->session_name, 'session_name' => $session->session_name] : null,
             'messages'       => $found ? $found[2]['messages'] : [],
             'total'          => $found ? $found[2]['total'] : 0,
             'phone_is_real'  => $contact->phoneLooksReal(),

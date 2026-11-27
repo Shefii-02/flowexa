@@ -28,6 +28,8 @@ class WaConversation extends Model
         'unread_count'    => 'integer',
     ];
 
+    public function stars(): \Illuminate\Database\Eloquent\Relations\HasMany { return $this->hasMany(\App\Models\WaConversationStar::class, 'conversation_id'); }
+
     public function company(): BelongsTo
     {
         return $this->belongsTo(Company::class);

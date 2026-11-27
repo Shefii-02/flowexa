@@ -4,7 +4,7 @@ import { subscribeStaffEvent } from '@/socket/staffSocket'
 import { useEffect, useLayoutEffect, useRef, useState, useCallback } from 'react'
 import {
   Search, Send, Info, UserPlus, LogOut, MessageSquare, SquarePen,
-  Image as ImageIcon, Video, FileText, Mic, MapPin, Check, CheckCheck, Clock, AlertTriangle,
+  Star, CheckCircle2, RotateCcw, Image as ImageIcon, Video, FileText, Mic, MapPin, Check, CheckCheck, Clock, AlertTriangle,
 } from 'lucide-react'
 import { useAppSelector, usePermission } from '@/store'
 import { conversationApi } from '@/api'
@@ -145,6 +145,7 @@ export default function InboxPage() {
   const [stateTab, setStateTab]           = useState<'all' | 'unread' | 'read' | 'closed'>('all')
   const [stateCounts, setStateCounts]     = useState<Record<string, number>>({})
   const [onlyUnassigned, setOnlyUnassigned] = useState(false)
+  const [onlyStarred, setOnlyStarred]     = useState(false)   // only the chats I starred
   const [search, setSearch]               = useState('')
   const [drawerOpen, setDrawerOpen]       = useState(false)
   const [newChatOpen, setNewChatOpen]     = useState(false)
@@ -184,10 +185,11 @@ export default function InboxPage() {
     mine: filter === 'mine' ? 1 : undefined,
     unassigned: filter === 'all' && onlyUnassigned ? 1 : undefined,   // "unassigned" only makes sense in the All tab
     state: stateTab !== 'all' ? stateTab : undefined,
+    starred: onlyStarred ? 1 : undefined,
     search: debouncedSearch || undefined,
     page: p,
     per_page: PER_PAGE,
-  }), [filter, stateTab, onlyUnassigned, debouncedSearch])
+  }), [filter, stateTab, onlyUnassigned, onlyStarred, debouncedSearch])
 
   const loadList = useCallback(() => {
     const token = ++listReqRef.current
@@ -333,6 +335,26 @@ export default function InboxPage() {
     setConversations(prev => prev.map(c => c.id === activeId ? { ...c, ...patch } : c))
   }
 
+  // star / unstar for me (flips at once, undone if the server refuses) · close / reopen the conversation
+  const handleStar = async (c: any) => {
+    const next = !c.starred
+    const apply = (v: boolean) => {
+      setConversations(prev => prev.map(x => x.id === c.id ? { ...x, starred: v } : x))
+      setActiveConversation((a: any) => a && a.id === c.id ? { ...a, starred: v } : a)
+    }
+    apply(next)
+    try { await conversationApi.star(c.id, next) } catch (e) { apply(!next); toast.error(getError(e)) }
+  }
+  const handleClose = async (reopen = false) => {
+    if (!active) return
+    try {
+      const r = reopen ? await conversationApi.reopen(active.id) : await conversationApi.close(active.id)
+      patchActive({ status: r.data?.conversation?.status ?? (reopen ? 'open' : 'closed') })
+      toast.success(reopen ? 'Conversation reopened.' : 'Conversation closed.')
+      loadListRef.current()   // the status tabs' counts change
+    } catch (e) { toast.error(getError(e)) }
+  }
+
   const handleClaim = async () => {
     if (!active) return
     try {
@@ -440,12 +462,15 @@ export default function InboxPage() {
               </button>
             ))}
           </div>
-          {filter === 'all' && (
+          {(
             <div className="wa-filters" style={{ marginTop: 8 }}>
+              <button className={`wa-chip ${onlyStarred ? 'is-active' : ''}`} aria-pressed={onlyStarred} onClick={() => setOnlyStarred(v => !v)}>★ Starred{tabCounts.starred !== undefined && <span className="wa-chip__count">{tabCounts.starred}</span>}</button>
+              {filter === 'all' && (
               <button className={`wa-chip ${onlyUnassigned ? 'is-active' : ''}`} aria-pressed={onlyUnassigned} onClick={() => setOnlyUnassigned(v => !v)}>
                 Unassigned
                 {tabCounts.unassigned !== undefined && <span className="wa-chip__count" title={`${tabCounts.unassigned} chat(s) waiting for someone`}>{tabCounts.unassigned > 999 ? '999+' : tabCounts.unassigned}</span>}
               </button>
+              )}
             </div>
           )}
         </div>
@@ -468,7 +493,11 @@ export default function InboxPage() {
                 <div className="wa-conv__body">
                   <div className="wa-conv__row1">
                     <span className="wa-conv__name">{nm}{c.phone && nm !== c.phone && <span style={{ fontWeight: 400, color: 'var(--wa-muted)' }}> · {c.phone}</span>}</span>
-                    <span className="wa-conv__time">{listTime(c.last_message_at)}</span>
+                    <span className="wa-conv__time">
+                      <button type="button" aria-label={c.starred ? 'Unstar chat' : 'Star chat'} title={c.starred ? 'Starred' : 'Star this chat'} onClick={e => { e.stopPropagation(); handleStar(c) }}
+                        style={{ background: 'none', border: 0, cursor: 'pointer', padding: '0 4px 0 0', fontSize: 14, lineHeight: 1, color: c.starred ? '#f59e0b' : '#c4c9d0' }}>{c.starred ? '★' : '☆'}</button>
+                      {listTime(c.last_message_at)}
+                    </span>
                   </div>
                   <div className="wa-conv__row2">
                     <span className="wa-conv__preview">
@@ -539,6 +568,12 @@ export default function InboxPage() {
               </div>
             </div>
             <div className="wa-thread__actions">
+              <button className="wa-iconbtn" title={active.starred ? 'Starred — click to unstar' : 'Star this chat'} aria-pressed={!!active.starred} onClick={() => handleStar(active)}>
+                <Star size={16} fill={active.starred ? '#f59e0b' : 'none'} color={active.starred ? '#f59e0b' : undefined} />
+              </button>
+              {(active.assigned_to === currentUser?.id || canReplyToAny) && (active.status === 'closed'
+                ? <button className="wa-iconbtn" title="Reopen conversation" onClick={() => handleClose(true)}><RotateCcw size={16} /></button>
+                : <button className="wa-iconbtn" title="Close conversation" onClick={() => handleClose(false)}><CheckCircle2 size={16} /></button>)}
               {!active.assigned_to ? (
                 <button className="wa-iconbtn" title="Claim conversation" onClick={handleClaim}><UserPlus size={16} /></button>
               ) : (active.assigned_to === currentUser?.id || canReplyToAny) ? (

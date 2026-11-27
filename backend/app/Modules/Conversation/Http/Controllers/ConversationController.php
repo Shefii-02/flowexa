@@ -50,6 +50,8 @@ class ConversationController extends Controller
 
         $conversations = $visible()
             ->when($state !== 'all', fn ($q) => $inState($q, $state))
+            ->withExists(['stars as starred' => fn ($s) => $s->where('user_id', $user->id)])   // this user's own star
+            ->when($request->boolean('starred'), fn ($q) => $q->whereHas('stars', fn ($s) => $s->where('user_id', $user->id)))
             ->when($request->status, fn ($q, $s) => $q->where('status', $s))
             ->when($request->boolean('mine'), fn ($q) => $q->where('assigned_to', auth()->id()))
             ->when($request->filled('wa_phone_number_id'), fn ($q) => $q->where('wa_phone_number_id', $request->integer('wa_phone_number_id')))
@@ -77,6 +79,7 @@ class ConversationController extends Controller
         $counts = [
             'all'        => $visible()->when($request->status, fn ($q, $s) => $q->where('status', $s))->count(),
             'unread'     => $visible()->where('unread_count', '>', 0)->count(),
+            'starred'    => $visible()->whereHas('stars', fn ($s) => $s->where('user_id', $user->id))->count(),
             'mine'       => $visible()->where('assigned_to', $user->id)->count(),
             'unassigned' => $visible()->tap($unassigned)->count(),
             // total unread MESSAGES (the Unread tab counts chats; this is how many messages are waiting in them)
@@ -177,8 +180,59 @@ class ConversationController extends Controller
         $lastIn = WaMessage::where('conversation_id', $conversation->id)->where('direction', 'inbound')->max('created_at');
         $lastInAt = $lastIn ? \Illuminate\Support\Carbon::parse($lastIn) : null;
 
+        $conversation->setAttribute('starred', $conversation->stars()->where('user_id', $user->id)->exists());
+
         return response()->json(['conversation' => $conversation, 'messages' => $messages, 'has_more' => $hasMore,
             'last_inbound_at' => $lastInAt?->toIso8601String(), 'window_open' => $lastInAt ? $lastInAt->gt(now()->subHours(24)) : false]);
+    }
+
+    // PUT /conversations/{id}/star { starred: bool } — a personal star on a chat (only you see it)
+    public function star(Request $request, int $id): JsonResponse
+    {
+        $d = $request->validate(['starred' => ['required', 'boolean']]);
+        $user = auth()->user();
+        $conversation = $this->visibleConversation($id);
+        if ($d['starred']) {
+            \App\Models\WaConversationStar::firstOrCreate(['user_id' => $user->id, 'conversation_id' => $conversation->id], ['company_id' => $user->company_id]);
+        } else {
+            \App\Models\WaConversationStar::where('user_id', $user->id)->where('conversation_id', $conversation->id)->delete();
+        }
+        return response()->json(['starred' => (bool) $d['starred']]);
+    }
+
+    // POST /conversations/{id}/close — finish with this customer for now. A new message from them reopens the chat by itself.
+    public function close(int $id): JsonResponse
+    {
+        return $this->setStatus($id, 'closed');
+    }
+
+    // POST /conversations/{id}/reopen
+    public function reopen(int $id): JsonResponse
+    {
+        return $this->setStatus($id, 'open');
+    }
+
+    /** A conversation this user may see (same rule as the list / thread): their company, their numbers, their own or unassigned chats. */
+    private function visibleConversation(int $id): WaConversation
+    {
+        $user = auth()->user();
+        $allowed = $user->allowedAccountIds('phone_number');
+        return WaConversation::where('id', $id)->where('company_id', $user->company_id)
+            ->when($allowed !== null, fn ($q) => $q->whereIn('wa_phone_number_id', $allowed))
+            ->when(!$user->hasPermission('inbox.view_all'), fn ($q) => $q->where(fn ($q2) => $q2->where('assigned_to', $user->id)->orWhereNull('assigned_to')))
+            ->firstOrFail();
+    }
+
+    private function setStatus(int $id, string $status): JsonResponse
+    {
+        $user = auth()->user();
+        $conversation = $this->visibleConversation($id);
+        // like replying: the assigned agent, or anyone who may handle every chat (inbox.view_all)
+        if (!$user->hasPermission('inbox.view_all') && (int) $conversation->assigned_to !== (int) $user->id) {
+            return response()->json(['message' => 'Only the agent this chat is assigned to, or a team leader, can ' . ($status === 'closed' ? 'close' : 'reopen') . ' it.'], 403);
+        }
+        $conversation->update(['status' => $status]);
+        return response()->json(['message' => $status === 'closed' ? 'Conversation closed.' : 'Conversation reopened.', 'conversation' => $conversation->fresh()]);
     }
 
     // POST /conversations/{id}/claim — atomic first-come-first-served assignment,
