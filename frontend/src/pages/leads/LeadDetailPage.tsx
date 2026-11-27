@@ -6,15 +6,15 @@ import ContactMergePanel from './components/ContactMergePanel'
 import LeadChannelChats from './components/LeadChannelChats'
 import LeadReferrer from './components/LeadReferrer'
 import { useStageNote } from './components/StageReason'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { useDecodedParams as useParams } from '@/lib/publicId'
-import { leadApi, leadCategoryApi, staffApi, contactApi, labelApi } from '@/api'
+import { leadApi, leadCategoryApi, staffApi, contactApi, labelApi, leadActivityApi } from '@/api'
 import { catalogApi } from '@/pages/wa-agent/catalog/api'
 import { LeadChatCard, LeadChatDrawer } from './components/LeadChat'
 import LeadInstallments from './components/LeadInstallments'
 import SideDrawer from './components/SideDrawer'
 import AssignStaffDrawer from './components/AssignStaffDrawer'
-import { Button, ConfirmModal, Badge, Spinner } from '@/components/ui'
+import { Button, ConfirmModal, Badge, Spinner, Modal } from '@/components/ui'
 import { fmt, formatPhone, phoneLabel, getError, stageConfig, priorityConfig } from '@/utils'
 import toast from 'react-hot-toast'
 import type { Lead, LeadStage } from '@/types'
@@ -39,6 +39,7 @@ const Swatches = ({ value, onChange }: { value: string; onChange: (c: string) =>
 export default function LeadDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  const [params, setParams] = useSearchParams()   // the open tab lives in the URL (?tab=activity) so refresh, links and Back all work
 
   const canManage = usePermission('leads.manage')
   const [lead, setLead] = useState<Lead | null>(null)
@@ -104,6 +105,21 @@ export default function LeadDetailPage() {
   }, [])
 
   const { askNote, noteModal } = useStageNote()
+  // "Conversion details" step after a lead is marked converted: deal value, lead cost, and (optionally) straight on to the installment plan.
+  const [conv, setConv] = useState<{ sale_value: string; cost: string } | null>(null)
+  const [convSaving, setConvSaving] = useState(false)
+  const saveConversion = async (thenInstallments: boolean) => {
+    if (!lead || !conv) return
+    setConvSaving(true)
+    try {
+      if (conv.sale_value !== '') await leadApi.update(lead.id, { sale_value: Number(conv.sale_value) })
+      if (conv.cost !== '') await leadActivityApi.setCost(lead.id, Number(conv.cost))
+      setConv(null)
+      await load()
+      toast.success('Conversion details saved.')
+      if (thenInstallments) setParams({ tab: 'installments' }, { replace: true })
+    } catch (e) { toast.error(getError(e)) } finally { setConvSaving(false) }
+  }
   const handleStageChange = async (stage: LeadStage) => {
     if (!lead || lead.stage === stage) return
     const note = await askNote(lead.stage, stage)   // closing as lost / reopening asks for a note first
@@ -113,6 +129,9 @@ export default function LeadDetailPage() {
       const { data } = await leadApi.update(lead.id, { stage, reason: note || undefined })
       setLead(data.lead)
       toast.success(`Stage → ${stageConfig[stage].label}`)
+      if (stage === 'enrolled') {   // converted: capture what it was worth and what it cost while it's fresh
+        setConv({ sale_value: data.lead.sale_value != null ? String(data.lead.sale_value) : '', cost: (data.lead as any).cost != null ? String((data.lead as any).cost) : '' })
+      }
     } catch (e) { toast.error(getError(e)) }
     finally { setStageUpdating(false) }
   }
@@ -291,6 +310,16 @@ export default function LeadDetailPage() {
   const selectedLabels = lead.contact?.labels ?? []
   const availableLabels = labelList.filter((l) => !selectedLabels.some((x) => x.id === l.id))
   const initial = (lead.contact?.name || lead.contact?.phone || '?').trim().charAt(0).toUpperCase()
+  const showInstallments = lead.stage === 'enrolled' || !!lead.sale_value
+  const detailTabs = [
+    { id: 'overview', icon: '📋', label: 'Overview' },
+    { id: 'conversation', icon: '💬', label: 'Conversation' },
+    { id: 'activity', icon: '📞', label: 'Activity' },
+    ...(showInstallments ? [{ id: 'installments', icon: '💳', label: 'Installments' }] : []),
+    { id: 'organize', icon: '🏷️', label: 'Categories & labels' },
+  ]
+  const tab = detailTabs.find((t) => t.id === params.get('tab'))?.id ?? 'overview'
+  const setTab = (id: string) => setParams(id === 'overview' ? {} : { tab: id }, { replace: true })
   return (
     <div className="space-y-5 max-w-6xl">
       <Link to="/crm/leads" className="text-xs text-gray-400 hover:underline">← All leads</Link>
@@ -315,50 +344,51 @@ export default function LeadDetailPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 items-start">
-        {/* ── Main column ───────────────────────────────────────── */}
-        <div className="lg:col-span-2 space-y-5">
-          {/* Pipeline */}
-          <div className="card p-5">
-            <p className="text-sm font-semibold text-gray-800 mb-4">Pipeline</p>
-            {lead.stage === 'lost' ? (
-              <div className="flex items-center gap-3">
-                <Badge variant="red" className="text-sm px-3 py-1">Lost</Badge>
-                <button disabled={stageUpdating} onClick={() => handleStageChange('new')} className="text-xs text-brand-600 hover:underline">Reopen as New</button>
-              </div>
-            ) : (
-              <div className="flex items-center">
-                {(() => { const forward = STAGES.filter((s) => s !== 'lost'); const currentIdx = forward.indexOf(lead.stage); return forward.map((s, i) => {
-                  const done = i < currentIdx
-                  const current = s === lead.stage
-                  return (
-                    <div key={s} className="flex items-center flex-1 last:flex-none">
-                      <button disabled={stageUpdating} onClick={() => handleStageChange(s)} className="flex flex-col items-center gap-1.5 group">
-                        <span className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold transition-colors ${
-                          current ? 'bg-brand-500 text-white' : done ? 'bg-brand-100 text-brand-600' : 'bg-gray-100 text-gray-400 group-hover:bg-gray-200'
-                        }`}>{done ? '✓' : i + 1}</span>
-                        <span className={`text-xs whitespace-nowrap ${current ? 'font-semibold text-gray-900' : 'text-gray-400'}`}>{stageConfig[s].label}</span>
-                      </button>
-                      {i < forward.length - 1 && <div className={`h-0.5 flex-1 mx-2 ${done ? 'bg-brand-200' : 'bg-gray-100'}`} />}
-                    </div>
-                  )
-                }) })()}
-                <button disabled={stageUpdating} onClick={() => handleStageChange('lost')}
-                  className="ml-4 text-xs text-red-400 hover:text-red-600 hover:underline whitespace-nowrap">Mark as Lost</button>
-              </div>
-            )}
+      {/* Pipeline — always visible above the tabs */}
+      <div className="card p-5">
+        <p className="text-sm font-semibold text-gray-800 mb-4">Pipeline</p>
+        {lead.stage === 'lost' ? (
+          <div className="flex items-center gap-3">
+            <Badge variant="red" className="text-sm px-3 py-1">Lost</Badge>
+            <button disabled={stageUpdating} onClick={() => handleStageChange('new')} className="text-xs text-brand-600 hover:underline">Reopen as New</button>
           </div>
+        ) : (
+          <div className="flex items-center">
+            {(() => { const forward = STAGES.filter((s) => s !== 'lost'); const currentIdx = forward.indexOf(lead.stage); return forward.map((s, i) => {
+              const done = i < currentIdx
+              const current = s === lead.stage
+              return (
+                <div key={s} className="flex items-center flex-1 last:flex-none">
+                  <button disabled={stageUpdating} onClick={() => handleStageChange(s)} className="flex flex-col items-center gap-1.5 group">
+                    <span className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-semibold transition-colors ${
+                      current ? 'bg-brand-500 text-white' : done ? 'bg-brand-100 text-brand-600' : 'bg-gray-100 text-gray-400 group-hover:bg-gray-200'
+                    }`}>{done ? '✓' : i + 1}</span>
+                    <span className={`text-xs whitespace-nowrap ${current ? 'font-semibold text-gray-900' : 'text-gray-400'}`}>{stageConfig[s].label}</span>
+                  </button>
+                  {i < forward.length - 1 && <div className={`h-0.5 flex-1 mx-2 ${done ? 'bg-brand-200' : 'bg-gray-100'}`} />}
+                </div>
+              )
+            }) })()}
+            <button disabled={stageUpdating} onClick={() => handleStageChange('lost')}
+              className="ml-4 text-xs text-red-400 hover:text-red-600 hover:underline whitespace-nowrap">Mark as Lost</button>
+          </div>
+        )}
+      </div>
 
-          {/* Chat preview */}
-          {lead.contact?.phone && (
-            <LeadChatCard contactId={lead.contact.id} phone={lead.contact.phone} name={lead.contact.name} onOpen={() => setChatOpen(true)} leadId={lead.id} waFirst={waFirst} onNumberFound={fillRealNumber} onReviewConflict={(id) => setMergeOther(id)} />
-          )}
 
-          {lead.stage === 'enrolled' || lead.sale_value ? <LeadInstallments leadId={lead.id} saleValue={lead.sale_value} /> : null}
+      {/* Tabs */}
+      <div className="flex flex-wrap gap-1 border-b border-gray-200" role="tablist">
+        {detailTabs.map((t) => (
+          <button key={t.id} role="tab" aria-selected={tab === t.id} onClick={() => setTab(t.id)}
+            className={`px-4 py-2.5 text-sm -mb-px border-b-2 whitespace-nowrap ${tab === t.id ? 'border-brand-600 text-brand-700 font-medium' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
+            <span className="mr-1.5">{t.icon}</span>{t.label}
+          </button>
+        ))}
+      </div>
 
-          <LeadChannelChats leadId={lead.id} source={lead.source} />
-          <LeadReferrer lead={lead} canEdit={canManage} onChanged={load} />
-
+      {tab === 'overview' && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 items-start">
+          <div className="lg:col-span-2 space-y-5">
           {/* Lead information (read-only — "Edit lead" opens the drawer) */}
           <div className="card p-5">
             <div className="flex items-center justify-between mb-3">
@@ -379,6 +409,57 @@ export default function LeadDetailPage() {
             </div>
           </div>
 
+          <LeadReferrer lead={lead} canEdit={canManage} onChanged={load} />
+
+          </div>
+          <aside className="space-y-5">
+          {/* Assigned staff */}
+          <div className="card p-5">
+            <p className="text-sm font-semibold text-gray-800 mb-3">Assigned staff</p>
+            {lead.assigned_to?.name ? (
+              <div className="flex items-center gap-3 mb-3">
+                <span className="w-9 h-9 rounded-full bg-brand-100 text-brand-700 flex items-center justify-center text-sm font-semibold">{lead.assigned_to.name.trim().charAt(0).toUpperCase()}</span>
+                <span className="min-w-0">
+                  <span className="block text-sm font-medium text-gray-900 truncate">{lead.assigned_to.name}</span>
+                  {lead.assigned_at && <span className="block text-[11px] text-gray-400">since {fmt.date(lead.assigned_at as any)}</span>}
+                </span>
+              </div>
+            ) : <p className="text-sm text-gray-400 mb-3">Not assigned to anyone yet</p>}
+            <Button variant="secondary" className="w-full justify-center" onClick={() => setAssignOpen(true)}>{lead.assigned_to?.name ? 'Switch to another staff' : 'Assign staff'}</Button>
+          </div>
+
+          {/* Contact */}
+          <div className="card p-5">
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-sm font-semibold text-gray-800">Contact details</p>
+              {lead.contact && (
+                <button className="text-xs text-brand-600 hover:underline"
+                  onClick={() => { setContactForm({ name: lead.contact?.name ?? '', email: lead.contact?.email ?? '', phone: '' }); setContactEditing(true) }}>Edit</button>
+              )}
+            </div>
+            <div className="space-y-2.5">
+              <Field label="Name">{lead.contact?.name || '—'}</Field>
+              <Field label="Phone"><span className="font-mono">{phoneLabel(lead.contact)}</span></Field>
+              <Field label="Email">{lead.contact?.email || '—'}</Field>
+            </div>
+          </div>
+          </aside>
+        </div>
+      )}
+
+      {tab === 'conversation' && (
+        <div className="max-w-4xl space-y-5">
+          {/* Chat preview */}
+          {lead.contact?.phone && (
+            <LeadChatCard contactId={lead.contact.id} phone={lead.contact.phone} name={lead.contact.name} onOpen={() => setChatOpen(true)} leadId={lead.id} waFirst={waFirst} onNumberFound={fillRealNumber} onReviewConflict={(id) => setMergeOther(id)} />
+          )}
+
+          <LeadChannelChats leadId={lead.id} source={lead.source} />
+        </div>
+      )}
+
+      {tab === 'activity' && (
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-5 items-start">
           {/* Activity */}
           <LeadCallLog leadId={lead.id} cost={(lead as any).cost} onChanged={load} />
 
@@ -405,24 +486,17 @@ export default function LeadDetailPage() {
             </div>
           </div>
         </div>
+      )}
 
-        {/* ── Side column ───────────────────────────────────────── */}
-        <aside className="space-y-5">
-          {/* Assigned staff */}
-          <div className="card p-5">
-            <p className="text-sm font-semibold text-gray-800 mb-3">Assigned staff</p>
-            {lead.assigned_to?.name ? (
-              <div className="flex items-center gap-3 mb-3">
-                <span className="w-9 h-9 rounded-full bg-brand-100 text-brand-700 flex items-center justify-center text-sm font-semibold">{lead.assigned_to.name.trim().charAt(0).toUpperCase()}</span>
-                <span className="min-w-0">
-                  <span className="block text-sm font-medium text-gray-900 truncate">{lead.assigned_to.name}</span>
-                  {lead.assigned_at && <span className="block text-[11px] text-gray-400">since {fmt.date(lead.assigned_at as any)}</span>}
-                </span>
-              </div>
-            ) : <p className="text-sm text-gray-400 mb-3">Not assigned to anyone yet</p>}
-            <Button variant="secondary" className="w-full justify-center" onClick={() => setAssignOpen(true)}>{lead.assigned_to?.name ? 'Switch to another staff' : 'Assign staff'}</Button>
-          </div>
+      {tab === 'installments' && showInstallments && (
+        <div className="max-w-4xl">
+          {lead.stage === 'enrolled' || lead.sale_value ? <LeadInstallments leadId={lead.id} saleValue={lead.sale_value} /> : null}
 
+        </div>
+      )}
+
+      {tab === 'organize' && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5 items-start">
           {/* Lead category — pick one */}
           <div className="card p-5">
             <div className="flex items-center justify-between mb-1">
@@ -483,23 +557,8 @@ export default function LeadDetailPage() {
             )}
           </div>
 
-          {/* Contact */}
-          <div className="card p-5">
-            <div className="flex items-center justify-between mb-3">
-              <p className="text-sm font-semibold text-gray-800">Contact details</p>
-              {lead.contact && (
-                <button className="text-xs text-brand-600 hover:underline"
-                  onClick={() => { setContactForm({ name: lead.contact?.name ?? '', email: lead.contact?.email ?? '', phone: '' }); setContactEditing(true) }}>Edit</button>
-              )}
-            </div>
-            <div className="space-y-2.5">
-              <Field label="Name">{lead.contact?.name || '—'}</Field>
-              <Field label="Phone"><span className="font-mono">{phoneLabel(lead.contact)}</span></Field>
-              <Field label="Email">{lead.contact?.email || '—'}</Field>
-            </div>
-          </div>
-        </aside>
-      </div>
+        </div>
+      )}
 
       {lead.contact?.phone && (
         <LeadChatDrawer open={chatOpen} contactId={lead.contact.id} phone={lead.contact.phone} name={lead.contact.name} leadId={lead.id} waFirst={waFirst} onClose={() => setChatOpen(false)} />
@@ -507,6 +566,23 @@ export default function LeadDetailPage() {
 
       <AssignStaffDrawer open={assignOpen} staff={counsellors} currentId={lead.assigned_to?.id} currentName={lead.assigned_to?.name}
         busyId={assigning ? assignTo : null} onAssign={handleAssign} onClose={() => setAssignOpen(false)} />
+
+      {/* Conversion details — shown right after a lead is marked converted */}
+      <Modal open={conv !== null} onClose={() => setConv(null)} title="Conversion details"
+        footer={<div className="flex flex-wrap justify-end gap-2">
+          <Button variant="secondary" onClick={() => setConv(null)}>Skip for now</Button>
+          <Button variant="secondary" onClick={() => saveConversion(false)} loading={convSaving}>Save</Button>
+          <Button onClick={() => saveConversion(true)} loading={convSaving} disabled={!conv?.sale_value}>Save &amp; set up installments</Button>
+        </div>}>
+        <div className="space-y-3 text-sm">
+          <p className="text-gray-600">Nice — this lead is converted. Add what it was worth and what it cost, so reports and incentives are right. You can change both later.</p>
+          <label className="block"><span className="label">Deal value (₹)</span>
+            <input type="number" min={0} autoFocus className="input w-full mt-1" placeholder="Total amount for this sale" value={conv?.sale_value ?? ''} onChange={(e) => setConv((c) => c && { ...c, sale_value: e.target.value })} /></label>
+          <label className="block"><span className="label">Lead cost (₹)</span>
+            <input type="number" min={0} className="input w-full mt-1" placeholder="What this lead cost to get (ad spend etc.) — optional" value={conv?.cost ?? ''} onChange={(e) => setConv((c) => c && { ...c, cost: e.target.value })} /></label>
+          <p className="text-xs text-gray-400">Collecting in parts? “Save &amp; set up installments” opens the Installments tab to set the dates and amounts.</p>
+        </div>
+      </Modal>
 
       {/* Edit lead */}
       <SideDrawer open={editing} onClose={() => setEditing(false)} title="Edit lead" subtitle={lead.contact?.name || formatPhone(lead.contact?.phone || '')} width="max-w-lg"
