@@ -331,6 +331,7 @@ export const leadApi = {
   list: (p?: Record<string, unknown>) => api.get('/leads', { params: p }),
   show: (id: number) => api.get(`/leads/${id}`),
   create: (d: Record<string, unknown>) => api.post('/leads', d),
+  origins: () => api.get('/leads/origins'),
   update: (id: number, d: Record<string, unknown>) => api.put(`/leads/${id}`, d),
   assign: (id: number, userId: number) => api.post(`/leads/${id}/assign`, { user_id: userId }),
   bulkAssign: (leadIds: number[], userIds: number[]) => api.post('/leads/bulk-assign', { lead_ids: leadIds, user_ids: userIds, mode: 'round_robin' }),

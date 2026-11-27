@@ -80,9 +80,50 @@ class LeadController extends Controller
         // several categories: the first is the primary one (leads.category); the rest are linked after the lead exists
         $cats = array_values(array_filter($data['categories'] ?? [], 'strlen'));
         if ($cats) { $data['category'] = $cats[0]; }
-        $lead = $this->leadService->create($company->id, CreateLeadDTO::fromRequest($data));
+        try {
+            $lead = $this->leadService->create($company->id, CreateLeadDTO::fromRequest($data));
+        } catch (\App\Modules\Lead\Exceptions\LeadException $e) {
+            // The customer already has an open lead. When the caller asks for it (the phone app does), keep that one lead and store the new
+            // enquiry INSIDE it — its notes, categories, origin and priority — instead of refusing.
+            if ($e->getErrorCode() === 'duplicate_lead' && $request->boolean('merge_if_duplicate')) {
+                $merged = $this->mergeIntoExisting($company, $data, $cats);
+                if ($merged) {
+                    return response()->json(['message' => 'This customer already has an open lead — your details were added to it.', 'merged' => true, 'lead' => new LeadResource($merged)]);
+                }
+            }
+            throw $e;
+        }
         if (count($cats) > 0) { app(\App\Services\LeadCategorizer::class)->replace($lead, $cats); }
         return response()->json(['message' => 'Lead created.', 'lead' => new LeadResource($lead)], 201);
+    }
+
+    /** Adds a repeat enquiry to the contact's open lead: a note in its history, extra categories, a higher priority. Null when the lead can't be seen by this user. */
+    private function mergeIntoExisting($company, array $data, array $cats): ?\App\Models\Lead
+    {
+        $repo = app(\App\Modules\Lead\Repositories\Interfaces\LeadRepositoryInterface::class);
+        $existing = $repo->findByContact((int) $data['contact_id'], $company->id);
+        if (!$existing || in_array($existing->stage, ['enrolled', 'lost'], true)) { return null; }
+        try {
+            $lead = $this->leadService->show($existing->id, $company->id, auth()->id(), $this->canViewAll());   // same visibility rules as opening the lead
+        } catch (\Throwable $e) {
+            return null;
+        }
+
+        $parts = [];
+        if (!empty($data['origin_label'])) { $parts[] = 'via ' . $data['origin_label']; }
+        if (!empty($data['notes'])) { $parts[] = trim((string) $data['notes']); }
+        $repo->logEvent($lead, 'note_added', ['content' => 'New enquiry' . ($parts ? ': ' . implode(' · ', $parts) : '') . ' (added instead of a duplicate lead)']);
+
+        if ($cats) {
+            [$before, $after] = app(\App\Services\LeadCategorizer::class)->add($lead, $cats);
+            if ($before !== $after) { $repo->logEvent($lead, 'category_changed', ['from' => $before, 'to' => $after]); }
+        }
+        $rank = ['low' => 1, 'medium' => 2, 'high' => 3];
+        if (!empty($data['priority']) && ($rank[$data['priority']] ?? 0) > ($rank[$lead->priority] ?? 0)) {
+            $lead->update(['priority' => $data['priority']]);
+        }
+
+        return $lead->fresh();
     }
 
     public function update(UpdateLeadRequest $request, int $lead): JsonResponse

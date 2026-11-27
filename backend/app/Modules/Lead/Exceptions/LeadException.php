@@ -20,6 +20,8 @@ class LeadException extends Exception
         return new self("{$name} has reached max lead capacity ({$max}).", 422, 'counsellor_at_capacity');
     }
 
+    public function getErrorCode(): ?string { return $this->errorCode; }
+
     public function render(): JsonResponse
     {
         return response()->json(['message' => $this->getMessage(), 'error_code' => $this->errorCode], $this->statusCode);

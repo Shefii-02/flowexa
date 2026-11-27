@@ -73,8 +73,13 @@ export default function LeadsPage() {
   const [newContactPhone, setNewContactPhone] = useState('')
   const [newContactName, setNewContactName] = useState('')
   const [newContactEmail, setNewContactEmail] = useState('')
-  const [phoneCheck, setPhoneCheck] = useState<'idle' | 'checking' | 'existing' | 'new'>('idle')
+  const [phoneCheck, setPhoneCheck] = useState<'idle' | 'checking' | 'pick' | 'existing' | 'new'>('idle')
   const [createForm, setCreateForm] = useState({ category: '', priority: 'medium', notes: '', assigned_to: '', source: 'manual', origin_label: '' })
+  // Lead origin = which number / account / campaign the lead came from (picked from what is connected; "not listed" = typed)
+  const [origins, setOrigins] = useState<any[]>([])
+  const [origin, setOrigin] = useState<any | null>(null)
+  const [originOther, setOriginOther] = useState(false)
+  useEffect(() => { if (showCreate && origins.length === 0) leadApi.origins().then((r) => setOrigins(r.data?.data ?? r.data?.origins ?? [])).catch(() => {}) }, [showCreate]) // eslint-disable-line react-hooks/exhaustive-deps
   const [categories, setCategories] = useState<string[]>([])
 
   // Switch leads: pick a "from" employee, list their leads, check the ones to move, pick "to"
@@ -230,10 +235,14 @@ export default function LeadsPage() {
         .then((r) => {
           if (stale) return
           const rows: any[] = r.data.data ?? []
-          const hit = rows.find((c) => { const p = String(c.phone ?? '').replace(/\D/g, ''); return p === digits || p.endsWith(digits) || digits.endsWith(p) })
-          setContactResults(rows)
-          if (hit) { setSelectedContact(hit); setNewContactName(hit.name ?? ''); setNewContactEmail(hit.email ?? ''); setPhoneCheck('existing') }
-          else { setSelectedContact(null); setPhoneCheck('new') }
+          const num = (c: any) => String(c.phone ?? '').replace(/\D/g, '')
+          // the same number with or without the country code / a leading 0 (9876543210 = 919876543210 = 09876543210)
+          const same = (a: string, b: string) => !!a && !!b && (a === b || (Math.min(a.length, b.length) >= 8 && (a.length < b.length ? b.endsWith(a) : a.endsWith(b))))
+          const exact = rows.filter((c) => same(num(c), digits))
+          const partial = rows.filter((c) => num(c).includes(digits))   // still typing: the start / middle of a stored number
+          if (exact.length === 1) { const hit = exact[0]; setContactResults([]); setSelectedContact(hit); setNewContactName(hit.name ?? ''); setNewContactEmail(hit.email ?? ''); setPhoneCheck('existing') }
+          else if (exact.length > 1 || partial.length > 0) { setContactResults((exact.length ? exact : partial).slice(0, 5)); setSelectedContact(null); setPhoneCheck('pick') }
+          else { setContactResults([]); setSelectedContact(null); setPhoneCheck('new') }
         })
         .catch(() => { if (!stale) { setContactResults([]); setPhoneCheck('new') } })
     }, 350)
@@ -244,6 +253,7 @@ export default function LeadsPage() {
     setShowCreate(false); setContactQuery(''); setContactResults([]); setSelectedContact(null)
     setNewContact(false); setNewContactPhone(''); setNewContactName(''); setNewContactEmail(''); setPhoneCheck('idle')
     setCreateForm({ category: '', priority: 'medium', notes: '', assigned_to: '', source: 'manual', origin_label: '' })
+    setOrigin(null); setOriginOther(false)
   }
 
   const handleCreate = async () => {
@@ -269,8 +279,7 @@ export default function LeadsPage() {
         priority: createForm.priority,
         notes: createForm.notes || undefined,
         assigned_to: createForm.assigned_to || undefined,
-        source: createForm.source || undefined,
-        origin_label: createForm.origin_label || undefined,
+        ...(origin ? { origin_type: origin.type, origin_id: origin.id } : { source: createForm.source || undefined, origin_label: createForm.origin_label || undefined }),
       })
       toast.success('Lead created.')
       resetCreate(); load()
@@ -805,9 +814,22 @@ export default function LeadsPage() {
             <p className={`text-xs mt-1 ${phoneCheck === 'existing' ? 'text-green-600' : phoneCheck === 'new' ? 'text-amber-600' : 'text-gray-400'}`}>
               {phoneCheck === 'idle' && 'Type the number — we check whether this customer is already in your contacts.'}
               {phoneCheck === 'checking' && 'Checking contacts…'}
+              {phoneCheck === 'pick' && `${contactResults.length} customer${contactResults.length === 1 ? '' : 's'} found — pick one, or keep typing the full number.`}
               {phoneCheck === 'existing' && '✓ Existing contact found — details filled in. You can edit them.'}
               {phoneCheck === 'new' && 'New number — a new contact will be added with the details below.'}
             </p>
+            {phoneCheck === 'pick' && (
+              <ul className="mt-2 divide-y divide-gray-100 rounded-lg border border-gray-200">
+                {contactResults.map((c) => (
+                  <li key={c.id}>
+                    <button type="button" className="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-gray-50"
+                      onClick={() => { setSelectedContact(c); setContactQuery(String(c.phone ?? '')); setNewContactName(c.name ?? ''); setNewContactEmail(c.email ?? ''); setContactResults([]); setPhoneCheck('existing') }}>
+                      <span className="font-medium text-gray-900">{c.name || 'Unnamed customer'}</span><span className="font-mono text-xs text-gray-500">{c.phone}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
             {(phoneCheck === 'existing' || phoneCheck === 'new') && (
               <div className="grid grid-cols-2 gap-2 mt-2">
                 <input className="input w-full" placeholder="Customer name" value={newContactName} onChange={(e) => setNewContactName(e.target.value)} />
@@ -818,9 +840,17 @@ export default function LeadsPage() {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <span className="label">Priority</span>
-              <select className="select w-full mt-1" value={createForm.priority} onChange={(e) => setCreateForm(f => ({ ...f, priority: e.target.value }))}>
-                <option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option>
-              </select>
+              <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1.5" role="radiogroup" aria-label="Priority">
+                {([['low', 'Low', '#16a34a'], ['medium', 'Medium', '#f59e0b'], ['high', 'High', '#dc2626']] as const).map(([v, l, col]) => {
+                  const on = createForm.priority === v
+                  return (
+                    <button key={v} type="button" role="radio" aria-checked={on} onClick={() => setCreateForm((f) => ({ ...f, priority: v }))} className="flex items-center gap-2 text-sm text-gray-700">
+                      <span className="flex h-4 w-4 items-center justify-center rounded-full border-2" style={{ borderColor: col }}>{on && <span className="h-2 w-2 rounded-full" style={{ background: col }} />}</span>
+                      <span className={on ? 'font-medium text-gray-900' : ''}>{l}</span>
+                    </button>
+                  )
+                })}
+              </div>
             </div>
             <div>
               <span className="label">Category</span>
@@ -837,19 +867,39 @@ export default function LeadsPage() {
               {counsellors.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <span className="label">Lead source</span>
-              <select className="select w-full mt-1" value={createForm.source} onChange={(e) => setCreateForm(f => ({ ...f, source: e.target.value }))}>
-                {Object.entries(sources).map(([k, s]) => <option key={k} value={k}>{s.icon} {s.label}</option>)}
-              </select>
+          <div>
+            <span className="label">Lead origin <span className="text-gray-400 font-normal">(which number / account / campaign it came from)</span></span>
+            <div className="mt-2 space-y-1.5" role="radiogroup" aria-label="Lead origin">
+              {origins.map((o) => {
+                const on = origin?.type === o.type && origin?.id === o.id
+                return (
+                  <button key={`${o.type}:${o.id}`} type="button" role="radio" aria-checked={on} onClick={() => { setOrigin(o); setOriginOther(false) }} className="flex w-full items-start gap-2 text-left text-sm">
+                    <span className={`mt-0.5 flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full border-2 ${on ? 'border-brand-600' : 'border-gray-300'}`}>{on && <span className="h-2 w-2 rounded-full bg-brand-600" />}</span>
+                    <span><span className={on ? 'font-medium text-gray-900' : 'text-gray-700'}>{o.icon} {o.source_label} · {o.label}</span>{o.sub && <span className="block text-xs text-gray-400">{o.sub}</span>}</span>
+                  </button>
+                )
+              })}
+              <button type="button" role="radio" aria-checked={originOther} onClick={() => { setOrigin(null); setOriginOther(true) }} className="flex items-center gap-2 text-sm">
+                <span className={`flex h-4 w-4 items-center justify-center rounded-full border-2 ${originOther ? 'border-brand-600' : 'border-gray-300'}`}>{originOther && <span className="h-2 w-2 rounded-full bg-brand-600" />}</span>
+                <span className={originOther ? 'font-medium text-gray-900' : 'text-gray-700'}>✏️ Not listed — type it myself</span>
+              </button>
             </div>
-            <div>
-              <span className="label">Lead origin <span className="text-gray-400 font-normal">(which number/account/campaign)</span></span>
-              <input className="input w-full mt-1" value={createForm.origin_label}
-                onChange={(e) => setCreateForm(f => ({ ...f, origin_label: e.target.value }))}
-                placeholder="e.g. Sales line +91…, @handle, Diwali campaign" />
-            </div>
+            {originOther && (
+              <div className="mt-2 space-y-2">
+                <div className="flex flex-wrap gap-x-4 gap-y-1.5" role="radiogroup" aria-label="Lead source">
+                  {Object.entries(sources).map(([k, src]) => {
+                    const on = createForm.source === k
+                    return (
+                      <button key={k} type="button" role="radio" aria-checked={on} onClick={() => setCreateForm((f) => ({ ...f, source: k }))} className="flex items-center gap-1.5 text-xs text-gray-700">
+                        <span className={`flex h-3.5 w-3.5 items-center justify-center rounded-full border-2 ${on ? 'border-brand-600' : 'border-gray-300'}`}>{on && <span className="h-1.5 w-1.5 rounded-full bg-brand-600" />}</span>
+                        <span className={on ? 'font-medium' : ''}>{src.icon} {src.label}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+                <input className="input w-full" value={createForm.origin_label} onChange={(e) => setCreateForm((f) => ({ ...f, origin_label: e.target.value }))} placeholder="e.g. Sales line +91…, @handle, Diwali campaign" />
+              </div>
+            )}
           </div>
           <div>
             <span className="label">Notes</span>
