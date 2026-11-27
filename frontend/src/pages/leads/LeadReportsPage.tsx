@@ -5,15 +5,41 @@ import { leadReportApi } from '@/api'
 import { EmptyState, Spinner } from '@/components/ui'
 import { fmt, getError } from '@/utils'
 import LeadsReportPage from './LeadsReportPage'
+import { ChannelsTab, DisciplineTab, FunnelTab, LostReasonsTab, SourceRevenueTab, TrendsTab } from './LeadReportTabs'
 
-type Tab = 'scheduled' | 'staff' | 'rejected' | 'summary' | 'campaigns' | 'custom'
+type Tab = 'scheduled' | 'staff' | 'rejected' | 'summary' | 'campaigns' | 'funnel' | 'lostReasons' | 'discipline' | 'sourceRevenue' | 'trends' | 'channels' | 'custom'
 const TABS: { id: Tab; label: string }[] = [
   { id: 'scheduled', label: 'Scheduled follow-ups' }, { id: 'staff', label: 'Staff report' }, { id: 'rejected', label: 'Rejected leads' },
-  { id: 'summary', label: 'Detailed summary' }, { id: 'campaigns', label: 'Campaign-wise (Facebook)' }, { id: 'custom', label: 'Custom report' },
+  { id: 'summary', label: 'Detailed summary' }, { id: 'campaigns', label: 'Campaign-wise (Facebook)' }, { id: 'funnel', label: 'Funnel' }, { id: 'lostReasons', label: 'Lost reasons' }, { id: 'discipline', label: 'Follow-up discipline' },
+  { id: 'sourceRevenue', label: 'Source revenue & ad spend' }, { id: 'trends', label: 'Trends' }, { id: 'channels', label: 'Channels' }, { id: 'custom', label: 'Custom report' },
 ]
 const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 const monthStart = () => { const d = new Date(); return iso(new Date(d.getFullYear(), d.getMonth(), 1)) }
 const monthEnd = () => { const d = new Date(); return iso(new Date(d.getFullYear(), d.getMonth() + 1, 0)) }
+/** The current tab's data as table rows for the CSV export (first row = headers). */
+function csvRows(tab: Tab, d: any): (string | number | null)[][] {
+  const rows = (k = 'rows'): any[] => d?.[k] ?? []
+  switch (tab) {
+    case 'scheduled': return [['Date', 'Follow-ups'], ...rows('days').map(x => [x.date, x.count])]
+    case 'staff': return [['Staff', 'Assigned', 'New', 'Calls', 'Connected', 'Call seconds', 'Follow-ups done', 'Closed', 'Rejected', 'Conversion %'], ...rows().map(r => [r.name, r.assigned, r.new, r.calls, r.connected, r.call_seconds, r.followups_done, r.closed, r.rejected, r.conversion])]
+    case 'rejected': return [['Lead', 'Phone', 'Category', 'Source', 'Staff', 'Reason', 'Rejected on'], ...rows().map(r => [r.name, r.phone, r.category, r.source, r.staff, r.reason, r.lost_at])]
+    case 'summary': return [['Group', 'Label', 'Count'], ...(['by_stage', 'by_priority', 'by_source', 'by_category'] as const).flatMap(g => rows(g).map(x => [g.replace('by_', ''), x.label, x.count]))]
+    case 'campaigns': return [['Campaign', 'Total leads', 'Rejected', 'In follow-up', 'Confirmed', 'Conversion %'], ...rows().map(r => [r.name, r.total, r.rejected, r.in_followup, r.confirmed, r.conversion])]
+    case 'funnel': return [['Stage', 'Reached', '% of total', 'Avg hours in stage'], ...rows().map(r => [r.stage, r.reached, r.pct_of_total, r.avg_hours_in_stage])]
+    case 'lostReasons': return [['Group', 'Label', 'Count'], ...(['by_reason', 'by_source', 'by_staff', 'by_category'] as const).flatMap(g => rows(g).map(x => [g.replace('by_', ''), x.label, x.count]))]
+    case 'discipline': return [['Staff', 'New leads', 'Contacted', 'Avg first contact (min)', 'Follow-ups due', 'Done', 'Follow-up rate %', 'Overdue now', 'Stale leads'], ...rows().map(r => [r.name, r.new_leads, r.contacted, r.avg_first_contact_minutes, r.followups_due, r.followups_done, r.followup_rate, r.overdue_followups, r.stale_leads])]
+    case 'sourceRevenue': return [['Source', 'Leads', 'Enrolled', 'Lost', 'Conversion %', 'Revenue'], ...rows().map(r => [r.label, r.total, r.enrolled, r.lost, r.conversion, r.revenue]),
+      [], ['Campaign', 'Spend', 'Leads', 'Cost per lead', 'Enrolled', 'Cost per enrolment', 'Value', 'Net', 'ROAS'], ...rows('campaigns').map(c => [c.name, c.spend, c.leads, c.cost_per_lead, c.enrolled, c.cost_per_enrolment, c.value, c.net, c.roas])]
+    case 'trends': return [['Metric', 'Current', 'Previous', 'Change %'], ...rows('metrics').map(m => [m.key, m.current, m.previous, m.change_pct]), [], ['Staff', 'Closed', 'Previous', 'Change'], ...rows('leaderboard').map(b => [b.name, b.closed, b.previous, b.change])]
+    case 'channels': return [['Channel', 'Origin', 'Leads', 'Active', 'Enrolled', 'Lost', 'Conversion %', 'Revenue'], ...rows().flatMap(r => [[r.label, '(all)', r.total, r.active, r.enrolled, r.lost, r.conversion, r.revenue], ...r.origins.map((o: any) => [r.label, o.label, o.total, o.active, o.enrolled, o.lost, o.conversion, o.revenue])])]
+    default: return []
+  }
+}
+const downloadCsv = (name: string, rows: (string | number | null)[][]) => {
+  const esc = (v: string | number | null) => { const x = v == null ? '' : String(v); return /[",\n]/.test(x) ? `"${x.replace(/"/g, '""')}"` : x }
+  const blob = new Blob(['\ufeff' + rows.map(r => r.map(esc).join(',')).join('\n')], { type: 'text/csv;charset=utf-8' })
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click(); URL.revokeObjectURL(a.href)
+}
 const secs = (n: number) => `${Math.floor(n / 3600)}h ${Math.floor((n % 3600) / 60)}m`
 
 /** The lead report pack in one place: scheduled follow-ups calendar, staff, rejected, detailed summary and campaign-wise. */
@@ -75,6 +101,7 @@ export default function LeadReportsPage() {
         <label className="text-xs text-gray-600">From<input type="date" className="input mt-1" value={from} onChange={e => setFrom(e.target.value)} /></label>
         <label className="text-xs text-gray-600">To<input type="date" className="input mt-1" value={to} onChange={e => setTo(e.target.value)} /></label>
         <button className="btn-secondary" onClick={() => { setFrom(monthStart()); setTo(monthEnd()) }}>This month</button>
+        <button className="btn-secondary ml-auto" disabled={!data} onClick={() => data && downloadCsv(`lead-report-${tab}-${from}_${to}.csv`, csvRows(tab, data))}>⬇ Export CSV</button>
       </div>
 
       {loading || !data ? <div className="flex justify-center py-16"><Spinner size="lg" /></div> : (
@@ -157,6 +184,13 @@ export default function LeadReportsPage() {
               </div>
             </div>
           )}
+
+          {tab === 'funnel' && <FunnelTab data={data} />}
+          {tab === 'lostReasons' && <LostReasonsTab data={data} />}
+          {tab === 'discipline' && <DisciplineTab data={data} />}
+          {tab === 'sourceRevenue' && <SourceRevenueTab data={data} />}
+          {tab === 'trends' && <TrendsTab data={data} />}
+          {tab === 'channels' && <ChannelsTab data={data} />}
 
           {tab === 'campaigns' && (
             !data.rows?.length ? <EmptyState icon="📣" title="No campaign data" desc="Leads that came in through Facebook / Instagram lead ads appear here by campaign." /> : (

@@ -128,8 +128,13 @@ class AuthController extends Controller
     }
 
     // ─── POST /auth/logout ────────────────────────────────────────────────────
-    public function logout(): JsonResponse
+    public function logout(Request $request): JsonResponse
     {
+        // Signing out of a device also drops it from "Your registered devices" (push), so logged-out browsers/phones don't pile up there.
+        if ($tok = (string) $request->input('fcm_token', '')) {
+            \App\Models\PushToken::where('user_id', auth()->id())->where('fcm_token', $tok)->update(['is_active' => false]);
+        }
+
         app(\App\Support\WebSessions::class)->release();
         $this->authService->logout();
 

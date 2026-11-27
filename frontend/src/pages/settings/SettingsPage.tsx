@@ -512,6 +512,8 @@ function DevicesTab() {
     createChallenge: () => deviceApi.createChallenge().then(r => r.data),
     challengeStatus: (id) => deviceApi.challengeStatus(id).then(r => r.data),
     revoke: (deviceId) => deviceApi.revoke(deviceId).then(() => undefined),
+    removeHistory: (deviceId) => deviceApi.removeHistory(deviceId).then(() => undefined),
+    clearHistory: () => deviceApi.clearHistory().then(() => undefined),
   }), [])
 
   const staffService: DeviceService | null = useMemo(() => {
@@ -522,6 +524,7 @@ function DevicesTab() {
       createChallenge: () => deviceApi.createChallenge(uid).then(r => r.data),
       challengeStatus: (id) => deviceApi.challengeStatus(id).then(r => r.data),
       revoke: (deviceId) => deviceApi.revoke(deviceId).then(() => undefined),
+      removeHistory: (deviceId) => deviceApi.removeHistory(deviceId).then(() => undefined),
     }
   }, [modalUser])
 
@@ -588,7 +591,7 @@ interface PushStep { key: string; label: string; ok: boolean; detail: string }
 
 function PushTab() {
   const [steps, setSteps] = useState<PushStep[]>([])
-  const [devices, setDevices] = useState<{ device_type: string; last_used_at: string | null }[]>([])
+  const [devices, setDevices] = useState<{ id: number; device_type: string; last_used_at: string | null }[]>([])
   const [browser, setBrowser] = useState<{ supported: boolean; permission: string; hasVapid: boolean } | null>(null)
   const [loading, setLoading] = useState(true)
   const [enabling, setEnabling] = useState(false)
@@ -604,6 +607,14 @@ function PushTab() {
     finally { setLoading(false) }
   }, [])
   useEffect(() => { check() }, [check])
+
+  const removeDevice = async (id: number) => {
+    try { await api.delete(`/push/devices/${id}`); setDevices(d => d.filter(x => x.id !== id)) } catch (e) { toast.error(getError(e)) }
+  }
+  const clearDevices = async () => {
+    if (!window.confirm('Remove every device from this list? A browser or phone is added back when it enables notifications or signs in again.')) return
+    try { await api.delete('/push/devices'); setDevices([]); toast.success('Device list cleared') } catch (e) { toast.error(getError(e)) }
+  }
 
   const enable = async () => {
     setEnabling(true)
@@ -659,13 +670,15 @@ function PushTab() {
       </div>
 
       <div className="card">
-        <div className="card-header"><h3 className="card-title">Your registered devices</h3><span className="text-xs text-gray-400">{devices.length}</span></div>
+        <div className="card-header"><h3 className="card-title">Your registered devices</h3><div className="flex items-center gap-3"><span className="text-xs text-gray-400">{devices.length}</span>
+          {devices.length > 0 && <button onClick={clearDevices} className="text-xs text-red-500 hover:underline">Clear all</button>}</div></div>
         <div className="card-body space-y-3">
           {devices.length === 0
             ? <p className="text-sm text-gray-500">None yet — click “Enable on this browser”, or sign in on the mobile app.</p>
-            : <ul className="text-sm text-gray-700 space-y-1">
-                {devices.map((d, i) => <li key={i}>{d.device_type === 'web' ? '🖥️ Web' : d.device_type === 'ios' ? '📱 iOS' : '📱 Android'}
-                  {d.last_used_at ? <span className="text-xs text-gray-400"> · last used {new Date(d.last_used_at).toLocaleString()}</span> : null}</li>)}
+            : <ul className="text-sm text-gray-700 divide-y divide-gray-50">
+                {devices.map((d) => <li key={d.id} className="flex items-center justify-between py-1.5"><span>{d.device_type === 'web' ? '🖥️ Web' : d.device_type === 'ios' ? '📱 iOS' : '📱 Android'}
+                  {d.last_used_at ? <span className="text-xs text-gray-400"> · last used {new Date(d.last_used_at).toLocaleString()}</span> : null}</span>
+                  <button onClick={() => removeDevice(d.id)} className="text-xs text-red-500 hover:underline" aria-label="Remove device">Remove</button></li>)}
               </ul>}
           <Button onClick={sendTest} loading={testing} disabled={!serverOk || devices.length === 0}>Send test notification</Button>
           {results && (

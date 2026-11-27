@@ -4,6 +4,7 @@ import { authApi } from '@/api'
 import type { AuthState, User, Wallet } from '@/types'
 import { WA_CHAT_API_KEY_STORAGE } from '@/pages/wa-chat/api/client'
 import { setPidKey } from '@/lib/publicId'
+import { forgetPushToken } from '@/lib/pushToken'
 
 // ── WA Chat session bootstrap ─────────────────────────────────────────────────
 // Maps Project A's user role to the WA Chat RBAC role so RequireWaAdmin gates
@@ -82,7 +83,7 @@ export const fetchMeThunk = createAsyncThunk('auth/me',
     })
 
 export const logoutThunk = createAsyncThunk('auth/logout', async () => {
-    try { await authApi.logout() } catch { /* ignore */ }
+    try { await authApi.logout(forgetPushToken()) } catch { /* ignore */ }
 })
 
 export const authSlice = createSlice({

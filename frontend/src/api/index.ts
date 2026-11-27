@@ -10,7 +10,7 @@ export const authApi = {
   register: (d: Record<string, string>) => api.post('/auth/register', d),
   me: () => api.get('/auth/me'),
   refresh: () => api.post('/auth/refresh'),
-  logout: () => api.post('/auth/logout'),
+  logout: (fcmToken?: string | null) => api.post('/auth/logout', fcmToken ? { fcm_token: fcmToken } : {}),
   removeWebSession: (limit_token: string, device_id: number) => api.post('/auth/web-sessions/remove', { limit_token, device_id }),
   updateProfile: (d: { name: string; phone: string; language: string; department: string }) =>
     api.put('/auth/profile', d),
@@ -445,6 +445,9 @@ export const deviceApi = {
   challengeStatus: (id: number) => api.get(`/devices/login-challenge/${id}`),
   cancelChallenge: (id: number) => api.post(`/devices/login-challenge/${id}/cancel`),
   revoke: (deviceId: number) => api.delete(`/devices/${deviceId}`),
+  // history = devices that were already removed
+  removeHistory: (deviceId: number) => api.delete(`/devices/history/${deviceId}`),
+  clearHistory: () => api.delete('/devices/history'),
 }
 
 // ── SuperAdmin ────────────────────────────────────────────────────────────────
@@ -1029,6 +1032,12 @@ export const leadReportApi = {
   rejected: (p?: Record<string, unknown>) => api.get('/leads/reports/rejected', { params: p }),
   summary: (p?: Record<string, unknown>) => api.get('/leads/reports/summary', { params: p }),
   campaigns: (p?: Record<string, unknown>) => api.get('/leads/reports/campaigns', { params: p }),
+  funnel: (p?: Record<string, unknown>) => api.get('/leads/reports/funnel', { params: p }),
+  lostReasons: (p?: Record<string, unknown>) => api.get('/leads/reports/lost-reasons', { params: p }),
+  discipline: (p?: Record<string, unknown>) => api.get('/leads/reports/discipline', { params: p }),
+  sourceRevenue: (p?: Record<string, unknown>) => api.get('/leads/reports/source-revenue', { params: p }),
+  trends: (p?: Record<string, unknown>) => api.get('/leads/reports/trends', { params: p }),
+  channels: (p?: Record<string, unknown>) => api.get('/leads/reports/channels', { params: p }),
 }
 export const staffExtrasApi = {
   designations: () => api.get('/staff/extras/designations'),

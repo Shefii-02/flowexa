@@ -19,10 +19,12 @@ class PushNotificationController extends Controller
         ]);
 
         $user  = auth()->user();
+        // Phones already send X-Device-Uid on every call; web sends its own stable browser id. Either identifies "the same device".
+        $d['device_id'] = $d['device_id'] ?? ($request->header('X-Device-Uid') ?: null);
         // fcm_token is globally unique, so key on it alone: when another user signs in on the same
         // browser/device the token moves to them instead of violating the unique index.
         $existing = PushToken::where('fcm_token', $d['fcm_token'])->first();
-        PushToken::updateOrCreate(
+        $row = PushToken::updateOrCreate(
             ['fcm_token' => $d['fcm_token']],
             [
                 // a phone handed to another person starts clean; the same person keeps their per-phone choices and its name
@@ -37,6 +39,11 @@ class PushNotificationController extends Controller
             ]
         );
 
+        // A device whose token rotated (or that re-registered) must not stay listed twice: keep only the newest row per device.
+        if (!empty($d['device_id'])) {
+            PushToken::where('user_id', $user->id)->where('device_id', $d['device_id'])->where('id', '!=', $row->id)->where('is_active', true)->update(['is_active' => false]);
+        }
+
         return response()->json(['message' => 'Push token registered.']);
     }
 
@@ -50,12 +57,26 @@ class PushNotificationController extends Controller
         return response()->json(['message' => 'Token unregistered.']);
     }
 
+    // DELETE /api/v1/push/devices/{id} — remove one of MY devices from the list
+    public function removeDevice(int $id): JsonResponse
+    {
+        PushToken::where('user_id', auth()->id())->whereKey($id)->update(['is_active' => false]);
+        return response()->json(['message' => 'Device removed.']);
+    }
+
+    // DELETE /api/v1/push/devices — clear my whole device list (a browser/phone re-adds itself next time it enables notifications or signs in)
+    public function clearDevices(): JsonResponse
+    {
+        $n = PushToken::where('user_id', auth()->id())->where('is_active', true)->update(['is_active' => false]);
+        return response()->json(['message' => "{$n} device(s) cleared.", 'count' => $n]);
+    }
+
     // GET /api/v1/push/status — config health check + this user's registered devices
     public function status(\App\Services\FirebasePushService $push): JsonResponse
     {
         $steps = $push->diagnose();
         $devices = PushToken::where('user_id', auth()->id())->where('is_active', true)
-            ->orderByDesc('last_used_at')->get(['device_type', 'device_id', 'last_used_at']);
+            ->orderByDesc('last_used_at')->get(['id', 'device_type', 'device_id', 'last_used_at']);
 
         return response()->json([
             'configured' => collect($steps)->every(fn ($s) => $s['ok']),

@@ -26,6 +26,8 @@ class Company extends Model
         'status',
         'wa_config',
         'wa_chat_billing',
+        'wa_cloud_rates',
+        'wa_cloud_gst_percent',
         'wa_chat_credits_per_message',
         'suspended_reason',
         'trial_ends_at',
@@ -62,6 +64,7 @@ class Company extends Model
     protected $hidden = ['private_token', 'wa_access_token'];
 
     protected $casts = [
+        'wa_cloud_rates'   => 'array',
         'settings'         => 'array',
         'trial_ends_at'    => 'datetime',
         'plan_expires_at'  => 'datetime',

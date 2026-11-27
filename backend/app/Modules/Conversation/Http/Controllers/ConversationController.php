@@ -373,7 +373,7 @@ class ConversationController extends Controller
         $message->update(['wa_message_id' => $result['wa_message_id'], 'status' => 'sent', 'status_updated_at' => now()]);
         $conversation->update(['last_message_at' => now()]);
         \App\Models\MessageLog::recordCloudOutbound($company->id, $phone, 'template', $rendered, 'inbox', $result['wa_message_id'], null, null, $template->name);
-        if ($billed) { $wallet->debit($company->id, 1, "Inbox template — {$template->name}", (string) $message->id, 'inbox_template'); }
+        // Charged when WhatsApp reports it delivered (WaCloudBilling), at the company's rate for the template's category.
         broadcast(new WaMessageReceived($message->fresh(['conversation', 'sentBy'])));
 
         return response()->json(['conversation' => $conversation->fresh(['waPhoneNumber']), 'message' => $message->fresh()], 201);

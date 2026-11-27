@@ -40,6 +40,10 @@ class SuperAdminCompanyConfigResource extends JsonResource
             'storage_used_bytes'  => $this->storage_used_bytes,
 
             'wa_config'              => $this->wa_config ?? 'wallet',
+            'wa_cloud_rates'         => $this->wa_cloud_rates ?? (object) [],
+            'wa_cloud_gst_percent'   => $this->wa_cloud_gst_percent,
+            'wa_cloud_rate_card'     => app(\App\Modules\WaCloud\Services\WaCloudBilling::class)->rateCard($this->resource),
+            'wa_cloud_rate_defaults' => app(\App\Modules\WaCloud\Services\WaCloudBilling::class)->defaults(),
             'wa_chat_billing'        => $this->wa_chat_billing ?? 'wallet',
             'wa_chat_credits_per_message' => $this->wa_chat_credits_per_message,   // null = follow the plan
             'wa_chat_plan_credits_per_message' => app(\App\Modules\WaChat\Services\WaChatBilling::class)->planRate($this->resource),

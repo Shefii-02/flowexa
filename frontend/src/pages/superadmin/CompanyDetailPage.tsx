@@ -96,6 +96,11 @@ export default function CompanyDetailPage() {
     wa_chat_token_expires_at: c.wa_chat_token_expires_at ? String(c.wa_chat_token_expires_at).slice(0, 10) : '',
     waha_enabled: !!c.waha_enabled,
     waha_max_sessions: c.waha_max_sessions ?? 0,
+    wa_cloud_rate_marketing: c.wa_cloud_rates?.marketing ?? '',
+    wa_cloud_rate_utility: c.wa_cloud_rates?.utility ?? '',
+    wa_cloud_rate_authentication: c.wa_cloud_rates?.authentication ?? '',
+    wa_cloud_rate_service: c.wa_cloud_rates?.service ?? '',
+    wa_cloud_gst_percent: c.wa_cloud_gst_percent ?? '',   // blank = default GST
     wa_chat_billing: c.wa_chat_billing === 'included' ? 'included' : 'wallet',
     wa_chat_credits_per_message: c.wa_chat_credits_per_message ?? '',   // blank = follow the plan
     waha_max_webhooks: c.waha_max_webhooks ?? 0,
@@ -156,6 +161,9 @@ export default function CompanyDetailPage() {
   const saveWhatsAppCloud = () => {
     const payload: Record<string, unknown> = {
       wa_config: form.wa_config,
+      // blank = Meta's default rate; only filled categories are stored as company overrides
+      wa_cloud_rates: Object.fromEntries(['marketing', 'utility', 'authentication', 'service'].map(k => [k, form[`wa_cloud_rate_${k}`] === '' ? null : Number(form[`wa_cloud_rate_${k}`])])),
+      wa_cloud_gst_percent: form.wa_cloud_gst_percent === '' ? null : Number(form.wa_cloud_gst_percent),
       wa_phone_id: form.wa_phone_id || null,
       wa_business_id: form.wa_business_id || null,
       meta_app_id: form.meta_app_id || null,
@@ -340,13 +348,38 @@ export default function CompanyDetailPage() {
         <div className="sm:col-span-2">
           <label className="label">Message billing</label>
           <select className="input" value={form.wa_config} onChange={(e) => set('wa_config', e.target.value)}>
-            <option value="wallet">Wallet — company buys message credits, 1 credit debited per message</option>
+            <option value="wallet">Wallet — company buys message credits; each delivered message is charged at the rate below</option>
             <option value="own_account">Own account — company pays Meta directly, wallet not used</option>
           </select>
           <p className="text-xs text-gray-400 mt-1">
             Own account needs the Phone number ID and Access token below. Campaigns, retries, resends and OTP follow this setting.
           </p>
         </div>
+        {form.wa_config === 'wallet' && (
+          <div className="sm:col-span-2 rounded-lg border border-gray-200 p-3 space-y-2">
+            <div className="text-sm font-medium text-gray-800">Message rate (₹ per delivered message, before GST)</div>
+            <p className="text-xs text-gray-400">
+              Charged only when WhatsApp confirms delivery: delivered messages × rate. Leave a box blank to use Meta's default for that category. GST is added on top
+              (default {cfg.wa_cloud_rate_defaults?.gst_percent ?? 18}%), then converted to credits at ₹{cfg.wa_cloud_rate_defaults?.inr_per_credit ?? 0.2} per credit.
+            </p>
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+              {(['marketing', 'utility', 'authentication', 'service'] as const).map(k => (
+                <Input key={k} label={k[0].toUpperCase() + k.slice(1)} type="number" step="0.0001" min={0} placeholder={`Meta ${cfg.wa_cloud_rate_defaults?.rates?.[k] ?? 0}`}
+                  value={form[`wa_cloud_rate_${k}`]} onChange={(e) => set(`wa_cloud_rate_${k}`, e.target.value)} />
+              ))}
+              <Input label="GST %" type="number" step="0.01" min={0} max={50} placeholder={`Default ${cfg.wa_cloud_rate_defaults?.gst_percent ?? 18}`}
+                value={form.wa_cloud_gst_percent} onChange={(e) => set('wa_cloud_gst_percent', e.target.value)} />
+            </div>
+            <div className="text-xs text-gray-500">
+              Effective per message incl. GST:{' '}
+              {(['marketing', 'utility', 'authentication', 'service'] as const).map(k => {
+                const base = form[`wa_cloud_rate_${k}`] === '' ? Number(cfg.wa_cloud_rate_defaults?.rates?.[k] ?? 0) : Number(form[`wa_cloud_rate_${k}`])
+                const gst = form.wa_cloud_gst_percent === '' ? Number(cfg.wa_cloud_rate_defaults?.gst_percent ?? 18) : Number(form.wa_cloud_gst_percent)
+                return <span key={k} className="mr-3">{k} ₹{(base * (1 + gst / 100)).toFixed(4)}</span>
+              })}
+            </div>
+          </div>
+        )}
         <Input label="Phone number ID" value={form.wa_phone_id} onChange={(e) => set('wa_phone_id', e.target.value)} />
         <Input label="Business account ID" value={form.wa_business_id} onChange={(e) => set('wa_business_id', e.target.value)} />
         <Input label="Meta app ID" value={form.meta_app_id} onChange={(e) => set('meta_app_id', e.target.value)} />

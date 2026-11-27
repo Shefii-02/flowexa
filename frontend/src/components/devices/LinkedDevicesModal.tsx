@@ -40,6 +40,10 @@ export interface DeviceService {
   createChallenge: () => Promise<DeviceChallenge>
   challengeStatus?: (id: number) => Promise<{ status: string; device?: { device_name?: string } | null }>
   revoke: (deviceId: number) => Promise<void>
+  /** Delete the record of one already-removed device. Omit to hide the option. */
+  removeHistory?: (deviceId: number) => Promise<void>
+  /** Delete every already-removed device record (own devices only). Omit to hide the option. */
+  clearHistory?: () => Promise<void>
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -72,6 +76,7 @@ export function LinkedDevicesPanel({ service, active = true, subtitle }: PanelPr
   const [starting, setStarting] = useState(false)
   const [secondsLeft, setSecondsLeft] = useState(0)
   const [revokingId, setRevokingId] = useState<number | null>(null)
+  const [clearing, setClearing] = useState(false)
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -188,6 +193,35 @@ export function LinkedDevicesPanel({ service, active = true, subtitle }: PanelPr
     }
   }
 
+  const removeHistory = async (id: number) => {
+    if (!service.removeHistory) return
+    setRevokingId(id)
+    try {
+      await service.removeHistory(id)
+      await load()
+    } catch (e) {
+      toast.error(getError(e))
+    } finally {
+      setRevokingId(null)
+    }
+  }
+
+  const clearHistory = async () => {
+    if (!service.clearHistory || !window.confirm('Clear the history of removed devices? This cannot be undone.')) return
+    setClearing(true)
+    try {
+      await service.clearHistory()
+      toast.success('History cleared')
+      await load()
+    } catch (e) {
+      toast.error(getError(e))
+    } finally {
+      setClearing(false)
+    }
+  }
+
+  const removedCount = data?.devices.filter(d => !d.active).length ?? 0
+
   return (
     <div className="space-y-5">
       {subtitle && <p className="text-sm text-gray-500">{subtitle}</p>}
@@ -252,7 +286,14 @@ export function LinkedDevicesPanel({ service, active = true, subtitle }: PanelPr
       )}
 
       <div>
-        <p className="text-xs font-semibold uppercase tracking-wide text-gray-400 mb-2">Devices</p>
+        <div className="flex items-center justify-between mb-2">
+          <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Devices</p>
+          {service.clearHistory && removedCount > 0 && (
+            <button onClick={clearHistory} disabled={clearing} className="text-xs text-red-500 hover:underline disabled:opacity-40">
+              {clearing ? 'Clearing…' : `Clear history (${removedCount})`}
+            </button>
+          )}
+        </div>
         {loading && !data ? (
           <p className="text-sm text-gray-400 py-4 text-center">Loading…</p>
         ) : !data?.devices.length ? (
@@ -273,6 +314,15 @@ export function LinkedDevicesPanel({ service, active = true, subtitle }: PanelPr
                     </p>
                   </div>
                 </div>
+                {!d.active && service.removeHistory && (
+                  <button
+                    onClick={() => removeHistory(d.id)}
+                    disabled={revokingId === d.id}
+                    className="text-xs text-gray-400 hover:text-red-500 hover:underline disabled:opacity-40 flex-shrink-0 ml-3"
+                  >
+                    {revokingId === d.id ? 'Deleting…' : 'Delete'}
+                  </button>
+                )}
                 {d.active && (
                   <button
                     onClick={() => revoke(d.id)}

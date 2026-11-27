@@ -68,6 +68,11 @@ export default function NotificationModes() {
   }
 
   if (!ready) return null
+  const clearAll = async () => {
+    if (!window.confirm('Remove every phone and browser from this list? A device is added back when it enables notifications or signs in again.')) return
+    try { await api.delete('/push/devices'); setDevices([]); toast.success('Device list cleared') } catch (e) { toast.error(getError(e)) }
+  }
+
   const label = (d: Device) => d.name || (d.type === 'web' ? 'Web browser' : d.type === 'ios' ? 'iPhone' : 'Android phone')
 
   return (
@@ -86,15 +91,19 @@ export default function NotificationModes() {
       </div>
 
       <div className="card">
-        <div className="card-header"><h3 className="card-title">Your phones &amp; browsers</h3><span className="text-xs text-gray-400">{devices.length}</span></div>
+        <div className="card-header"><h3 className="card-title">Your phones &amp; browsers</h3><div className="flex items-center gap-3"><span className="text-xs text-gray-400">{devices.length}</span>
+          {devices.length > 0 && <button onClick={clearAll} className="text-xs text-red-500 hover:underline">Clear all</button>}</div></div>
         <div className="card-body space-y-4">
           <p className="text-xs text-gray-500">Give one device its own choice — for example silent on your work phone, tone on your personal one. “Same as my setting” follows the list above.</p>
           {devices.length === 0 && <p className="text-sm text-gray-500">No phone or browser is registered yet — sign in on the mobile app or enable push on this browser.</p>}
           {devices.map(d => (
             <details key={d.id} className="rounded-lg border border-gray-200 p-3">
-              <summary className="cursor-pointer text-sm font-medium text-gray-800">
-                {d.type === 'web' ? '🖥️' : '📱'} {label(d)}
-                {d.last_used_at && <span className="ml-2 text-xs font-normal text-gray-400">last used {new Date(d.last_used_at).toLocaleString()}</span>}
+              <summary className="flex cursor-pointer items-center justify-between gap-2 text-sm font-medium text-gray-800">
+                <span>
+                  {d.type === 'web' ? '🖥️' : '📱'} {label(d)}
+                  {d.last_used_at && <span className="ml-2 text-xs font-normal text-gray-400">last used {new Date(d.last_used_at).toLocaleString()}</span>}
+                </span>
+                <button onClick={e => { e.preventDefault(); e.stopPropagation(); removeDevice(d) }} className="text-xs font-normal text-red-500 hover:underline" aria-label="Remove device">Remove</button>
               </summary>
               <div className="mt-3 space-y-2">
                 {GROUPS.map(g => (
@@ -103,7 +112,7 @@ export default function NotificationModes() {
                     <Picker inherit value={d.modes[g.key]} onChange={m => saveDevice(d, g.key, m)} />
                   </div>
                 ))}
-                <button onClick={() => removeDevice(d)} className="text-xs text-red-600 hover:underline">Stop notifications on this device</button>
+                <button onClick={() => removeDevice(d)} className="text-xs text-red-600 hover:underline">Remove this device</button>
               </div>
             </details>
           ))}

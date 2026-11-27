@@ -873,6 +873,12 @@ Route::prefix('v1')->group(function () {
             Route::get('/reports/summary',   [\App\Modules\Lead\Http\Controllers\LeadReportsController::class, 'summary'])->middleware('permission:leads.view');
             Route::get('/reports/campaigns', [\App\Modules\Lead\Http\Controllers\LeadReportsController::class, 'campaigns'])->middleware('permission:leads.view');
             Route::get('/reports/sources', [\App\Modules\Lead\Http\Controllers\LeadReportsController::class, 'sources'])->middleware('permission:leads.view');
+            Route::get('/reports/funnel', [\App\Modules\Lead\Http\Controllers\LeadReportsController::class, 'funnel'])->middleware('permission:leads.view');
+            Route::get('/reports/lost-reasons', [\App\Modules\Lead\Http\Controllers\LeadReportsController::class, 'lostReasons'])->middleware('permission:leads.view');
+            Route::get('/reports/discipline', [\App\Modules\Lead\Http\Controllers\LeadReportsController::class, 'discipline'])->middleware('permission:leads.view');
+            Route::get('/reports/source-revenue', [\App\Modules\Lead\Http\Controllers\LeadReportsController::class, 'sourceRevenue'])->middleware('permission:leads.view');
+            Route::get('/reports/channels', [\App\Modules\Lead\Http\Controllers\LeadReportsController::class, 'channels'])->middleware('permission:leads.view');
+            Route::get('/reports/trends', [\App\Modules\Lead\Http\Controllers\LeadReportsController::class, 'trends'])->middleware('permission:leads.view');
             // Deleted leads — list, restore, purge (before the /{lead} routes)
             Route::get('/deleted',            [LeadController::class, 'deleted'])->middleware('permission:leads.manage');
             Route::post('/deleted/restore',   [LeadController::class, 'restoreDeleted'])->middleware('permission:leads.manage');
@@ -1658,6 +1664,8 @@ Route::prefix('v1')->group(function () {
             ->group(function () {
                 Route::post('/register-token',   [PushNotificationController::class, 'registerToken'])->middleware('jwt.auth');
                 Route::delete('/unregister-token', [PushNotificationController::class, 'unregisterToken'])->middleware('jwt.auth');
+                Route::delete('/devices',        [PushNotificationController::class, 'clearDevices'])->middleware('jwt.auth');
+                Route::delete('/devices/{id}',   [PushNotificationController::class, 'removeDevice'])->middleware('jwt.auth')->whereNumber('id');
                 Route::get('/history',           [PushNotificationController::class, 'history'])->middleware('jwt.auth');
                 Route::get('/status',            [PushNotificationController::class, 'status'])->middleware('jwt.auth');
                 Route::post('/test',             [PushNotificationController::class, 'test'])->middleware('jwt.auth');

@@ -248,6 +248,12 @@ class SuperAdminController extends Controller
             'wa_config'                => ['sometimes', \Illuminate\Validation\Rule::in(['wallet', 'own_account'])],
             'wa_chat_billing'          => ['sometimes', \Illuminate\Validation\Rule::in(['wallet', 'included'])],
             'wa_chat_credits_per_message' => ['sometimes', 'nullable', 'integer', 'min:0', 'max:20'],   // null = follow the plan
+            'wa_cloud_rates'           => ['sometimes', 'nullable', 'array'],   // ₹ per message before GST, by category; a missing / blank key = Meta default
+            'wa_cloud_rates.marketing'      => ['nullable', 'numeric', 'min:0', 'max:1000'],
+            'wa_cloud_rates.utility'        => ['nullable', 'numeric', 'min:0', 'max:1000'],
+            'wa_cloud_rates.authentication' => ['nullable', 'numeric', 'min:0', 'max:1000'],
+            'wa_cloud_rates.service'        => ['nullable', 'numeric', 'min:0', 'max:1000'],
+            'wa_cloud_gst_percent'     => ['sometimes', 'nullable', 'numeric', 'min:0', 'max:50'],
             'wa_phone_id'              => ['sometimes', 'nullable', 'string', 'max:100'],
             'wa_business_id'           => ['sometimes', 'nullable', 'string', 'max:100'],
             'meta_app_id'              => ['sometimes', 'nullable', 'string', 'max:100'],

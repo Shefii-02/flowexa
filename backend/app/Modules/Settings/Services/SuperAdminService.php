@@ -222,6 +222,13 @@ class SuperAdminService
             if (array_key_exists($f, $data)) { $update[$f] = $data[$f]; }
         }
 
+        // WA Cloud rate card: blank = Meta's default (+ GST). Only categories with a value are stored as overrides.
+        if (array_key_exists('wa_cloud_rates', $data)) {
+            $over = array_filter((array) $data['wa_cloud_rates'], fn ($v) => $v !== null && $v !== '');
+            $update['wa_cloud_rates'] = $over ? array_map('floatval', $over) : null;
+        }
+        if (array_key_exists('wa_cloud_gst_percent', $data)) { $update['wa_cloud_gst_percent'] = $data['wa_cloud_gst_percent']; }
+
         foreach (['trial_ends_at', 'plan_expires_at', 'wa_chat_token_expires_at'] as $f) {
             if (array_key_exists($f, $data)) {
                 $update[$f] = $data[$f] ? \Carbon\Carbon::parse($data[$f]) : null;

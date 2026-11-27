@@ -2,6 +2,7 @@ import { initializeApp } from 'firebase/app'
 import { getMessaging, getToken, isSupported, onMessage } from 'firebase/messaging'
 import toast from 'react-hot-toast'
 import api from '@/api/client'
+import { browserId, getPushToken, setPushToken } from './pushToken'
 
 const config = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -11,8 +12,6 @@ const config = {
   messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
   appId: import.meta.env.VITE_FIREBASE_APP_ID,
 }
-
-let registeredToken: string | null = null
 
 export type WebPushResult = { ok: boolean; reason?: string }
 
@@ -39,10 +38,10 @@ export async function registerWebPush(): Promise<WebPushResult> {
     const sw = await navigator.serviceWorker.register('/firebase-messaging-sw.js')
     const token = await getToken(messaging, { vapidKey, serviceWorkerRegistration: sw })
     if (!token) return { ok: false, reason: 'Firebase did not return a token.' }
-    if (token === registeredToken) return { ok: true }
+    if (token === getPushToken()) return { ok: true }
 
-    await api.post('/push/register-token', { fcm_token: token, device_type: 'web' })
-    registeredToken = token
+    await api.post('/push/register-token', { fcm_token: token, device_type: 'web', device_id: browserId() || undefined })
+    setPushToken(token)
 
     // Foreground messages aren't shown by the browser — surface them as a toast.
     onMessage(messaging, (m) => {

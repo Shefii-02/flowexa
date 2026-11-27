@@ -156,9 +156,6 @@ class CampaignService
         Log::info('[campaign-retry] row + message log updated', ['campaign' => $campaign->id, 'row' => $row->id, 'status' => $r['ok'] ? 'sent' : 'failed']);
 
         if ($r['ok']) {
-            if ($this->walletService->usesWallet($company)) {
-                $this->walletService->debit($campaign->company_id, 1, "Retry — campaign #{$campaign->id}", (string) $campaign->id, 'campaign_resend');
-            }
             $this->campaignRepository->updateStats($campaign->id, [
                 'sent'   => DB::raw('sent + 1'),
                 'failed' => DB::raw('IF(failed > 0, failed - 1, 0)'), // `failed` is unsigned: failed - 1 would error at 0
@@ -326,8 +323,10 @@ class CampaignService
         $walletMode = $this->walletService->usesWallet($company);
         $wallet     = $walletMode ? $this->walletService->getWallet($companyId) : null;
 
-        if ($walletMode && $wallet->balance < $total) {
-            throw CampaignException::insufficientBalance($wallet->balance, $total);
+        // Billing is per DELIVERED message at the company's rate, so launch only checks the wallet could cover the whole send.
+        $estimate = $walletMode ? app(\App\Modules\WaCloud\Services\WaCloudBilling::class)->estimate($company, $campaign->template?->category, $total) : 0;
+        if ($walletMode && $wallet->balance < $estimate) {
+            throw CampaignException::insufficientBalance($wallet->balance, $estimate);
         }
 
         DB::transaction(function () use ($campaign, $contacts, $total, $companyId, $company) {
@@ -362,20 +361,9 @@ class CampaignService
             ]);
 
 
-            if ($this->walletService->usesWallet($company)) {
-                // Debit wallet upfront
-                $this->walletService->debit(
-                    companyId: $companyId,
-                    amount: $total,
-                    description: "Campaign '{$campaign->name}' — {$total} messages",
-                    refId: (string) $campaign->id,
-                    refType: 'campaign',
-                );
-            }
-
-            // Update wallet_debited field
+            // wallet_debited grows as messages are delivered and charged (WaCloudBilling).
             $this->campaignRepository->updateStats($campaign->id, [
-                'wallet_debited' => $total,
+                'wallet_debited' => 0,
             ]);
         });
 
@@ -387,7 +375,7 @@ class CampaignService
 
         return new LaunchResultDTO(
             totalContacts: $total,
-            walletDebited: $total,
+            walletDebited: 0,
             remainingBalance: (int) ($wallet?->balance ?? 0),
         );
     }
@@ -513,9 +501,6 @@ class CampaignService
         $this->sender->record($campaign, $row, $phone, $r, $row->attempts + 1, true);
 
         if ($r['ok']) {
-            if ($this->walletService->usesWallet($campaign->company)) {
-                $this->walletService->debit($campaign->company_id, 1, "Resend failed — campaign #{$campaign->id}", (string) $campaign->id, 'campaign_resend');
-            }
             $this->campaignRepository->updateStats($campaign->id, [
                 'sent'   => DB::raw('sent + 1'),
                 'failed' => DB::raw('IF(failed > 0, failed - 1, 0)')  /* `failed` is unsigned: failed - 1 would error at 0 even inside GREATEST */,

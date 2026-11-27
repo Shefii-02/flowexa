@@ -435,6 +435,12 @@ class WebhookService
             ]);
         }
 
+        // Pay for it once WhatsApp says it was delivered: delivered message × the company's rate for Meta's pricing category (+ GST).
+        if ($dto->status === 'delivered' || ($dto->status === 'read' && $dto->pricingCategory !== null)) {
+            try { app(\App\Modules\WaCloud\Services\WaCloudBilling::class)->chargeDelivered($company, $dto->waMessageId, $dto->pricingCategory, $dto->billable); }
+            catch (\Throwable $e) { \Illuminate\Support\Facades\Log::warning('WaCloudBilling: ' . $e->getMessage()); }
+        }
+
         if (in_array($dto->status, ['delivered', 'read', 'failed'])) {
             $cc = \App\Models\CampaignContact::where('wa_message_id', $dto->waMessageId)->first();
             if ($cc) {
