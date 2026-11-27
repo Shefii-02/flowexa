@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import { leadReportApi } from '@/api'
 import { EmptyState, Spinner } from '@/components/ui'
 import { fmt, getError } from '@/utils'
+import LeadsReportPage from './LeadsReportPage'
 
-type Tab = 'scheduled' | 'staff' | 'rejected' | 'summary' | 'campaigns'
+type Tab = 'scheduled' | 'staff' | 'rejected' | 'summary' | 'campaigns' | 'custom'
 const TABS: { id: Tab; label: string }[] = [
   { id: 'scheduled', label: 'Scheduled follow-ups' }, { id: 'staff', label: 'Staff report' }, { id: 'rejected', label: 'Rejected leads' },
-  { id: 'summary', label: 'Detailed summary' }, { id: 'campaigns', label: 'Campaign-wise (Facebook)' },
+  { id: 'summary', label: 'Detailed summary' }, { id: 'campaigns', label: 'Campaign-wise (Facebook)' }, { id: 'custom', label: 'Custom report' },
 ]
 const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 const monthStart = () => { const d = new Date(); return iso(new Date(d.getFullYear(), d.getMonth(), 1)) }
@@ -16,17 +18,23 @@ const secs = (n: number) => `${Math.floor(n / 3600)}h ${Math.floor((n % 3600) / 
 
 /** The lead report pack in one place: scheduled follow-ups calendar, staff, rejected, detailed summary and campaign-wise. */
 export default function LeadReportsPage() {
-  const [tab, setTab] = useState<Tab>('scheduled')
+  const [searchParams] = useSearchParams()
+  const initialTab = searchParams.get('tab')
+  const [tab, setTab] = useState<Tab>(TABS.some(t => t.id === initialTab) ? (initialTab as Tab) : 'scheduled')
   const [from, setFrom] = useState(monthStart())
   const [to, setTo] = useState(monthEnd())
-  const [data, setData] = useState<any>(null)
+  const [loaded, setLoaded] = useState<{ tab: Tab; data: any } | null>(null)
+  // ignore data that belongs to a previously selected tab (avoids rendering the wrong shape for one frame)
+  const data = loaded && loaded.tab === tab ? loaded.data : null
   const [loading, setLoading] = useState(true)
   const [day, setDay] = useState<string | null>(null)
   const [dayItems, setDayItems] = useState<any[]>([])
 
   const load = useCallback(() => {
+    if (tab === 'custom') { setLoading(false); return }
     setLoading(true); setDay(null)
-    leadReportApi[tab]({ from, to }).then(r => setData(r.data)).catch(e => toast.error(getError(e))).finally(() => setLoading(false))
+    const t = tab
+    leadReportApi[t as Exclude<Tab, 'custom'>]({ from, to }).then(r => setLoaded({ tab: t, data: r.data })).catch(e => toast.error(getError(e))).finally(() => setLoading(false))
   }, [tab, from, to])
   useEffect(() => { load() }, [load])
 
@@ -62,6 +70,7 @@ export default function LeadReportsPage() {
         ))}
       </div>
 
+      {tab === 'custom' ? <LeadsReportPage embedded /> : <>
       <div className="card p-4 flex flex-wrap items-end gap-3">
         <label className="text-xs text-gray-600">From<input type="date" className="input mt-1" value={from} onChange={e => setFrom(e.target.value)} /></label>
         <label className="text-xs text-gray-600">To<input type="date" className="input mt-1" value={to} onChange={e => setTo(e.target.value)} /></label>
@@ -101,7 +110,7 @@ export default function LeadReportsPage() {
           )}
 
           {tab === 'staff' && (
-            data.rows.length === 0 ? <EmptyState icon="👥" title="No staff data" /> : (
+            !data.rows?.length ? <EmptyState icon="👥" title="No staff data" /> : (
               <div className="card overflow-x-auto"><table className="table">
                 <thead><tr><th>Staff</th><th>Assigned</th><th>New</th><th>Calls</th><th>Connected</th><th>Call time</th><th>Follow-ups done</th><th>Closed</th><th>Rejected</th><th>Conversion</th></tr></thead>
                 <tbody>{data.rows.map((r: any) => (
@@ -113,7 +122,7 @@ export default function LeadReportsPage() {
           )}
 
           {tab === 'rejected' && (
-            data.rows.length === 0 ? <EmptyState icon="🙅" title="No rejected leads" desc="Nothing was marked lost in this period." /> : (
+            !data.rows?.length ? <EmptyState icon="🙅" title="No rejected leads" desc="Nothing was marked lost in this period." /> : (
               <div className="card overflow-x-auto"><table className="table">
                 <thead><tr><th>Lead</th><th>Phone</th><th>Category</th><th>Staff</th><th>Reason</th><th>Rejected on</th></tr></thead>
                 <tbody>{data.rows.map((r: any) => (
@@ -132,11 +141,11 @@ export default function LeadReportsPage() {
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                 {([['By stage', data.by_stage], ['By priority', data.by_priority], ['By source', data.by_source], ['By category', data.by_category]] as const).map(([title, list]) => {
-                  const max = Math.max(1, ...list.map((x: any) => x.count))
+                  const max = Math.max(1, ...(list ?? []).map((x: any) => x.count))
                   return (
                     <div key={title} className="card p-4">
                       <h3 className="text-sm font-semibold mb-3">{title}</h3>
-                      {list.length === 0 ? <p className="text-xs text-gray-400">No data.</p> : list.map((x: any) => (
+                      {!list?.length ? <p className="text-xs text-gray-400">No data.</p> : list.map((x: any) => (
                         <div key={x.label} className="mb-2">
                           <div className="flex justify-between text-xs"><span className="capitalize">{x.label.replace('_', ' ')}</span><span className="font-medium">{x.count}</span></div>
                           <div className="h-1.5 rounded bg-gray-100 mt-1"><div className="h-full rounded bg-brand-500" style={{ width: `${x.count / max * 100}%` }} /></div>
@@ -150,7 +159,7 @@ export default function LeadReportsPage() {
           )}
 
           {tab === 'campaigns' && (
-            data.rows.length === 0 ? <EmptyState icon="📣" title="No campaign data" desc="Leads that came in through Facebook / Instagram lead ads appear here by campaign." /> : (
+            !data.rows?.length ? <EmptyState icon="📣" title="No campaign data" desc="Leads that came in through Facebook / Instagram lead ads appear here by campaign." /> : (
               <div className="card overflow-x-auto"><table className="table">
                 <thead><tr><th>Campaign</th><th>Total leads</th><th>Rejected</th><th>In follow-up</th><th>Confirmed</th><th>Conversion</th></tr></thead>
                 <tbody>
@@ -164,6 +173,7 @@ export default function LeadReportsPage() {
           )}
         </>
       )}
+      </>}
     </div>
   )
 }

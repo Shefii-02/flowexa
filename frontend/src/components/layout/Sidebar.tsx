@@ -804,7 +804,6 @@ const SidebarInner = () => {
               </NestedAccordion> */}
 
               <SubLink to="/crm/leads/summary" icon="📈" label="Leads Summary" />
-              <SubLink to="/crm/leads/report" icon="📊" label="Leads Report" />
               <SubLink to="/crm/leads/assignments" icon="🧭" label="Assignment Queues" />
               <SubLink to="/crm/leads/assignment-rules" icon="📋" label="Assignment Rules" />
 

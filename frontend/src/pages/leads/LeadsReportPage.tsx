@@ -36,7 +36,7 @@ const DATE_FIELDS = [
 const iso = (d: Date) => d.toISOString().slice(0, 10)
 const inp = 'text-sm border border-gray-200 rounded-lg px-2 py-1.5 bg-white'
 
-export default function LeadsReportPage() {
+export default function LeadsReportPage({ embedded = false }: { embedded?: boolean }) {
   const today = new Date()
   const startD = new Date(); startD.setDate(today.getDate() - 29)
 
@@ -102,11 +102,13 @@ export default function LeadsReportPage() {
   const hasFilters = Object.values(filters).some(v => v !== undefined)
 
   return (
-    <div className="p-6 space-y-6 ">
-      <div>
-        <h1 className="page-title">📊 Leads Report</h1>
-        <p className="page-sub">Filtered, grouped lead breakdowns — the Advanced view</p>
-      </div>
+    <div className={embedded ? 'space-y-6' : 'p-6 space-y-6 '}>
+      {!embedded && (
+        <div>
+          <h1 className="page-title">📊 Leads Report</h1>
+          <p className="page-sub">Filtered, grouped lead breakdowns — the Advanced view</p>
+        </div>
+      )}
 
       {/* Filter bar */}
       <div className="bg-white border border-gray-200 rounded-xl p-4 flex flex-wrap items-end gap-3">

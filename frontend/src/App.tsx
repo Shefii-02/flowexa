@@ -41,7 +41,6 @@ import LeadSourcesPage from '@/pages/leads/LeadSourcesPage'
 import LeadLogsPage from '@/pages/leads/LeadLogsPage'
 import LeadDetailPage from '@/pages/leads/LeadDetailPage'
 import LeadsSummaryPage from '@/pages/leads/LeadsSummaryPage'
-import LeadsReportPage from '@/pages/leads/LeadsReportPage'
 import DealsPage from '@/pages/crm/DealsPage'
 import CrmTasksPage from '@/pages/crm/TasksPage'
 import CalendarPage from '@/pages/crm/CalendarPage'
@@ -378,7 +377,7 @@ export default function App() {
               <Route path="crm/leads/staff/:staffId" element={<StaffLeadsPage />} />
               <Route path="crm/leads/:id" element={<LeadDetailPage />} />
               <Route path="crm/leads/summary" element={<LeadsSummaryPage />} />
-              <Route path="crm/leads/report" element={<LeadsReportPage />} />
+              <Route path="crm/leads/report" element={<Navigate to="/crm/leads/reports?tab=custom" replace />} />
               <Route path="crm/leads/assignments" element={<AssignmentPage />} />
               <Route path="crm/leads/staff-availability" element={<Navigate to="/hr/admin/staff-availability" replace />} />
               <Route path="crm/leads/assignment-rules" element={<AssignmentRulesPage />} />
