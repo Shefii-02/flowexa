@@ -158,17 +158,51 @@ class LeadWaChatController extends Controller
             return null;
         }
         $rows = $res->json('messages') ?? [];
-        $out = collect($rows)->map(fn ($m) => [
-            'id'         => $m['id'] ?? $m['waMessageId'] ?? uniqid(),
-            'direction'  => ($m['direction'] ?? '') === 'outgoing' ? 'outbound' : 'inbound',
-            'type'       => $m['type'] ?? 'text',
-            'content'    => ['body' => (string) ($m['body'] ?? '')],
-            'created_at' => $m['createdAt'] ?? (isset($m['timestamp']) ? \Illuminate\Support\Carbon::createFromTimestamp((int) $m['timestamp'])->toIso8601String() : null),
-            'origin'     => $m['origin'] ?? null,        // ai | manual | chatbot — for outgoing messages
-            'sent_by'    => !empty($m['origin']) && $m['origin'] !== 'manual' ? ['name' => $m['origin'] === 'ai' ? 'AI agent' : 'Chatbot'] : null,
-        ])->filter(fn ($m) => $m['created_at'])->sortBy('created_at')->values()->all();
+        $out = collect($rows)->map(function ($m) {
+            $meta = is_array($m['metadata'] ?? null) ? $m['metadata'] : [];
+            $media = $this->media($meta['media'] ?? null);
+            // the gateway's type, tidied: older rows carry whatsapp-web.js tokens, and a media message with no type is recognised by its mimetype
+            $type = match ($m['type'] ?? 'text') { 'chat' => 'text', 'ptt' => 'voice', 'vcard', 'multi_vcard' => 'contact', default => (string) ($m['type'] ?? 'text') };
+            if (in_array($type, ['unknown', '', 'text'], true) && $media && !empty($media['mimetype'])) {
+                $mt = (string) $media['mimetype'];
+                $type = str_starts_with($mt, 'image/') ? 'image' : (str_starts_with($mt, 'video/') ? 'video' : (str_starts_with($mt, 'audio/') ? 'audio' : 'document'));
+            }
+            $content = ['body' => (string) ($m['body'] ?? '')];
+            if ($media) { $content['media'] = $media; }
+            if (is_array($meta['location'] ?? null)) { $content['location'] = $meta['location']; }
+
+            return [
+                'id'         => $m['id'] ?? $m['waMessageId'] ?? uniqid(),
+                'direction'  => ($m['direction'] ?? '') === 'outgoing' ? 'outbound' : 'inbound',
+                'type'       => $type,
+                'content'    => $content,
+                'created_at' => $m['createdAt'] ?? (isset($m['timestamp']) ? \Illuminate\Support\Carbon::createFromTimestamp((int) $m['timestamp'])->toIso8601String() : null),
+                'origin'     => $m['origin'] ?? null,        // ai | manual | chatbot — for outgoing messages
+                'sent_by'    => !empty($m['origin']) && $m['origin'] !== 'manual' ? ['name' => $m['origin'] === 'ai' ? 'AI agent' : 'Chatbot'] : null,
+            ];
+        })->filter(fn ($m) => $m['created_at'])->sortBy('created_at')->values()->all();
 
         return ['messages' => $out, 'total' => (int) ($res->json('total') ?? count($out))];
+    }
+
+    /**
+     * A gateway message's media in the shape the apps draw: a ready-to-use url (a link, or the inline base64 as a data: url when it is small
+     * enough), its mimetype and file name. Media too big to send along (or withheld by the gateway) is flagged `omitted` so the screen can say so.
+     */
+    private function media(mixed $media): ?array
+    {
+        if (!is_array($media)) { return null; }
+        $mime = (string) ($media['mimetype'] ?? '');
+        $name = $media['filename'] ?? null;
+        $data = is_string($media['data'] ?? null) ? $media['data'] : '';
+        if ($data !== '' && preg_match('#^https?://#i', $data)) {
+            return ['url' => $data, 'mimetype' => $mime, 'filename' => $name];
+        }
+        if ($data !== '' && empty($media['omitted']) && strlen($data) <= 3_000_000) {   // ~2.2 MB of file; bigger ones are left out of a preview list
+            return ['url' => 'data:' . ($mime ?: 'application/octet-stream') . ';base64,' . $data, 'mimetype' => $mime, 'filename' => $name];
+        }
+
+        return ['omitted' => true, 'mimetype' => $mime, 'filename' => $name];
     }
 
     /** The real number (digits) behind a privacy id, or null when the gateway cannot map it. */

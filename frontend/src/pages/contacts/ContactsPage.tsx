@@ -1,4 +1,5 @@
 // src/pages/contacts/ContactsPage.tsx
+import { messageLabel } from '@/components/chat/MessageBody'
 import { useLimit } from '@/lib/planUsage'
 import LimitBadge from '@/components/plan/LimitBadge'
 import { useEffect, useState, useCallback } from 'react'
@@ -382,7 +383,7 @@ console.log( contact)
                         : 'bg-gray-100 text-gray-800'
                     }`}
                   >
-                    <p>{m.content || `[${m.type}]`}</p>
+                    <p>{m.content || messageLabel(m) || '—'}</p>
                     <p className={`text-xs mt-1 ${m.direction === 'outbound' ? 'text-brand-100' : 'text-gray-400'}`}>
                       {fmt.relative?.(m.created_at) || ''} · {m.status}
                     </p>

@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { AlertCircle, CircleDashed, Loader2, Megaphone, Plus, Search } from 'lucide-react';
 import type { UseQueryResult } from '@tanstack/react-query';
@@ -61,6 +62,10 @@ function ChatSidebar({
   statusTab,
 }: ChatSidebarProps) {
   const { t } = useTranslation();
+  // The chat list has two tabs: Unread (with how many chats are waiting) and All chats.
+  const [listTab, setListTab] = useState<'unread' | 'all'>('all');
+  const unreadChats = chatsTab.chats.filter(c => c.unreadCount > 0);
+  const shownChats = listTab === 'unread' ? unreadChats : chatsTab.chats;
 
   const formatLastMessageSnippet = (chat: Chat) => chat.lastMessage || '';
 
@@ -201,18 +206,29 @@ function ChatSidebar({
 
       {/* Chat list */}
       {activeTab === 'chats' && (
+        <div className="chats-list-tabs" role="tablist" aria-label="Chat list" style={{ display: 'flex', borderBottom: '1px solid var(--border, #e5e7eb)' }}>
+          {([['unread', `Unread · ${unreadChats.length}`], ['all', 'All chats']] as const).map(([k, label]) => (
+            <button key={k} type="button" role="tab" aria-selected={listTab === k} onClick={() => setListTab(k)}
+              style={{ flex: 1, padding: '9px 6px', background: 'none', border: 0, cursor: 'pointer', fontSize: 13, fontWeight: listTab === k ? 700 : 500,
+                color: listTab === k ? 'inherit' : '#6b7280', borderBottom: `2px solid ${listTab === k ? '#25d366' : 'transparent'}`, marginBottom: -1 }}>
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+      {activeTab === 'chats' && (
         <div className="chats-list">
           {chatsTab.loading ? (
             <div className="chats-list-loading">
               <Loader2 className="animate-spin" size={24} />
               <span>{t('chats.loadingChats')}</span>
             </div>
-          ) : chatsTab.chats.length === 0 ? (
+          ) : shownChats.length === 0 ? (
             <div className="chats-list-empty">
-              <span>{t('chats.empty')}</span>
+              <span>{listTab === 'unread' ? 'No unread chats.' : t('chats.empty')}</span>
             </div>
           ) : (
-            chatsTab.chats.map(renderChatRow)
+            shownChats.map(renderChatRow)
           )}
         </div>
       )}

@@ -634,6 +634,11 @@ export const conversationApi = {
 
   // PUT /conversations/{id}/star — my personal star on a chat · POST close / reopen — finish with a customer (a new message from them reopens it)
   star: (id: number, starred: boolean) => api.put(`/conversations/${id}/star`, { starred }),
+  // POST /conversations/{id}/media — a photo, video, audio file or document (any time; after 24 h WhatsApp itself decides whether to accept it)
+  sendMedia: (id: number, file: File, caption?: string) => {
+    const fd = new FormData(); fd.append('file', file); if (caption) fd.append('caption', caption)
+    return api.post(`/conversations/${id}/media`, fd, { headers: { 'Content-Type': 'multipart/form-data' } })
+  },
   close: (id: number) => api.post(`/conversations/${id}/close`),
   reopen: (id: number) => api.post(`/conversations/${id}/reopen`),
 

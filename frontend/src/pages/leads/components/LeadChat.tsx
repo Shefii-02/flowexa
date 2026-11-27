@@ -3,6 +3,7 @@ import toast from 'react-hot-toast'
 import { Link } from 'react-router-dom'
 import { conversationApi, leadApi, phoneApi, templateApi } from '@/api'
 import { getError, formatPhone } from '@/utils'
+import MessageBody, { messageLabel } from '@/components/chat/MessageBody'
 
 // Chat on a lead's page: a small preview card (latest messages) and a drawer with the contact's chats listing + the thread.
 // Everything here is read-only and passes peek=1, so looking at a chat never clears the agents' unread count.
@@ -10,18 +11,14 @@ import { getError, formatPhone } from '@/utils'
 type Conv = { id: number; phone: string; status: string; unread_count: number; last_message_at: string | null; number?: string; wa_phone_number_id?: number | null; last_inbound_at?: string | null; window_open?: boolean }
 
 const fmt = (iso?: string | null) => iso ? new Date(iso).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : ''
-const bodyOf = (m: any) => {
-  const c = m.content
-  const t = typeof c === 'string' ? c : (c?.body ?? c?.text ?? c?.caption ?? '')
-  return t || `[${m.type}]`
-}
+const bodyOf = (m: any) => messageLabel(m)   // the words, or what kind of message it was — never "[unknown]"
 
 function Bubble({ m }: { m: any }) {
   const out = m.direction === 'outbound'
   return (
     <div className={`max-w-[85%] rounded-lg px-2.5 py-1.5 text-[13px] shadow-sm ${out ? 'self-end bg-[#d9fdd3]' : 'self-start bg-white'}`}>
       {out && m.sent_by?.name && <div className="text-[10px] font-semibold text-green-800">{m.sent_by.name}</div>}
-      <div className="whitespace-pre-wrap break-words">{bodyOf(m)}</div>
+      <div className="break-words"><MessageBody message={m} /></div>
       <div className="text-[10px] text-gray-500 text-right">{fmt(m.created_at)}</div>
     </div>
   )
@@ -201,7 +198,7 @@ function InboxComposer({ conv, phone, contactId, onSent }: { conv: Conv | null; 
     } catch (e) { toast.error(getError(e)) } finally { setSending(false) }
   }
 
-  if (open) return (
+  const textBox = (
     <div className="px-4 py-3 border-t border-gray-100">
       <div className="flex items-end gap-2">
         <textarea value={text} onChange={e => setText(e.target.value)} rows={1} placeholder="Type a message…"
@@ -209,13 +206,13 @@ function InboxComposer({ conv, phone, contactId, onSent }: { conv: Conv | null; 
           className="flex-1 resize-none rounded-lg border border-gray-200 px-3 py-2 text-sm focus:outline-none focus:border-green-500 max-h-28" />
         <button onClick={sendText} disabled={sending || !text.trim()} className="rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50">{sending ? '…' : 'Send'}</button>
       </div>
-      <div className="mt-1 text-[10px] text-gray-400">Replying from the shared inbox · the 24-hour window is open until {conv?.last_inbound_at ? fmt(new Date(new Date(conv.last_inbound_at).getTime() + 864e5).toISOString()) : '—'}</div>
+      <div className="mt-1 text-[10px] text-gray-400">Replying from the shared inbox{open && conv?.last_inbound_at ? ` · the 24-hour window is open until ${fmt(new Date(new Date(conv.last_inbound_at).getTime() + 864e5).toISOString())}` : ' · more than 24 hours since the customer wrote — WhatsApp may refuse it'}</div>
     </div>
   )
-  return (
+  const templateBox = (
     <div className="px-4 py-3 border-t border-gray-100 space-y-2">
       <p className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
-        {conv ? 'The 24-hour reply window has closed' : 'No chat with this number yet'} — WhatsApp only allows an approved <b>template</b> message now. Once the customer replies you can type freely again.
+        {conv ? 'More than 24 hours since the customer wrote' : 'No chat with this number yet'} — you can still send a message above and WhatsApp decides whether to accept it. An approved <b>template</b> below is always accepted.
       </p>
       {!conv?.wa_phone_number_id && (
         <select className="select w-full text-sm" value={numberId} onChange={e => { setNumberId(e.target.value); setTemplateId('') }}>
@@ -232,6 +229,7 @@ function InboxComposer({ conv, phone, contactId, onSent }: { conv: Conv | null; 
       <button onClick={sendTemplate} disabled={sending || !tpl || !numberId || vars.some(v => !v.trim())} className="w-full rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50">{sending ? 'Sending…' : 'Send template'}</button>
     </div>
   )
+  return <>{conv && textBox}{!open && templateBox}</>
 }
 
 /** Slide-over: the contact's chats listing on top, the selected thread below (older messages on request). */

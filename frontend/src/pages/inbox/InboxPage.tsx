@@ -4,7 +4,7 @@ import { subscribeStaffEvent } from '@/socket/staffSocket'
 import { useEffect, useLayoutEffect, useRef, useState, useCallback } from 'react'
 import {
   Search, Send, Info, UserPlus, LogOut, MessageSquare, SquarePen,
-  Star, CheckCircle2, RotateCcw, Image as ImageIcon, Video, FileText, Mic, MapPin, Check, CheckCheck, Clock, AlertTriangle,
+  Paperclip, Star, CheckCircle2, RotateCcw, Image as ImageIcon, Video, FileText, Mic, MapPin, Check, CheckCheck, Clock, AlertTriangle,
 } from 'lucide-react'
 import { useAppSelector, usePermission } from '@/store'
 import { conversationApi } from '@/api'
@@ -12,6 +12,7 @@ import { getError } from '@/utils'
 import toast from 'react-hot-toast'
 import ContactInfoDrawer from './ContactInfoDrawer'
 import NewChatModal from './NewChatModal'
+import { messageLabel } from '@/components/chat/MessageBody'
 import ReplyTemplateModal from './ReplyTemplateModal'
 import { avatarColor, initials } from './avatar'
 import './inbox.css'
@@ -370,6 +371,19 @@ export default function InboxPage() {
     } catch (e) { toast.error(getError(e)) }
   }
 
+  // a photo / video / audio / document (any time — after 24 h WhatsApp itself decides; its refusal is shown as is)
+  const fileRef = useRef<HTMLInputElement>(null)
+  const handleSendFile = async (file: File) => {
+    if (!activeId) return
+    setSending(true)
+    try {
+      await conversationApi.sendMedia(activeId, file, reply.trim() || undefined)
+      setReply('')
+    } catch (e: any) {
+      toast.error(getError(e), { duration: 7000 })
+    } finally { setSending(false) }
+  }
+
   const handleSend = async () => {
     const body = reply.trim()
     if (!body || !activeId) return
@@ -486,7 +500,7 @@ export default function InboxPage() {
             const last = c.last_message ?? c.lastMessage
             const preview = last?.content?.body
               || (last?.content?.template ? `[Template] ${last.content.template}` : '')
-              || (last?.type && last.type !== 'text' ? (MEDIA_LABEL[last.type] ?? last.type) : '')
+              || (last?.type && last.type !== 'text' ? messageLabel(last) : '')
             return (
               <div key={c.id} className={`wa-conv ${activeId === c.id ? 'is-active' : ''}`} onClick={() => openThread(c.id)}>
                 <div className="wa-avatar" style={{ background: avatarColor(c.phone || nm) }}>{initials(nm)}</div>
@@ -595,12 +609,17 @@ export default function InboxPage() {
 
           {canReplyHere && !windowOpen && !loadingThread && (
             <div style={{ background: '#fef3c7', color: '#92400e', fontSize: 12, padding: '6px 14px' }}>
-              The 24-hour reply window has closed — you can only send an approved template now. Once the customer replies you can type freely again.
+              It has been more than 24 hours since the customer wrote. You can still send a message or a file — WhatsApp may refuse it, and if so use the template button instead.
             </div>
           )}
           <div className="wa-composer">
             {canReplyHere && (
-              <button className="wa-iconbtn" title="Send a template" aria-label="Send a template" onClick={() => setTemplateOpen(true)}><FileText size={18} /></button>
+              <>
+                <button className="wa-iconbtn" title="Attach a photo, video, audio or document" aria-label="Attach a file" disabled={sending} onClick={() => fileRef.current?.click()}><Paperclip size={18} /></button>
+                <input ref={fileRef} type="file" hidden accept="image/jpeg,image/png,video/mp4,video/3gpp,audio/*,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip"
+                  onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void handleSendFile(f) }} />
+                <button className="wa-iconbtn" title="Send an approved template" aria-label="Send a template" onClick={() => setTemplateOpen(true)}><FileText size={18} /></button>
+              </>
             )}
             <textarea
               ref={taRef}
@@ -608,22 +627,18 @@ export default function InboxPage() {
               placeholder={
                 !canReplyHere
                   ? (active.assigned_to ? `Assigned to ${active.assigned_agent?.name || active.assignedAgent?.name || 'another agent'} — view only` : 'Claim this conversation to reply')
-                  : !windowOpen ? 'Window closed — send a template' : 'Type a message'
+                  : 'Type a message'
               }
               value={reply}
-              disabled={!canReplyHere || sending || !windowOpen}
+              disabled={!canReplyHere || sending}
               onChange={e => setReply(e.target.value)}
               onKeyDown={e => {
                 if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() }
               }}
             />
-            {windowOpen ? (
-              <button className="wa-send" onClick={handleSend} disabled={!canReplyHere || sending || !reply.trim()}>
-                <Send size={18} />
-              </button>
-            ) : (
-              <button className="wa-send" onClick={() => setTemplateOpen(true)} disabled={!canReplyHere} title="Send a template" style={{ width: 'auto', padding: '0 14px', fontSize: 13 }}>Template</button>
-            )}
+            <button className="wa-send" onClick={handleSend} disabled={!canReplyHere || sending || !reply.trim()}>
+              <Send size={18} />
+            </button>
           </div>
         </div>
       )}

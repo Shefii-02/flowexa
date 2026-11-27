@@ -1,3 +1,4 @@
+import MessageBody from '@/components/chat/MessageBody'
 import { useEffect, useState } from 'react'
 import { conversationApi } from '@/api'
 import { getError } from '@/utils'
@@ -43,11 +44,10 @@ export default function ChatPeek({ contactId, phone, name, sentAt, onClose }: {
               <div className="flex flex-col gap-1.5">
                 {state.messages.map((m: any) => {
                   const out = m.direction === 'outbound'
-                  const body = typeof m.content === 'string' ? m.content : (m.content?.body ?? m.content?.text ?? m.content?.caption ?? '')
                   const afterCampaign = sentAt && m.direction === 'inbound' && new Date(m.created_at) >= new Date(sentAt)
                   return (
                     <div key={m.id} className={`max-w-[85%] rounded-lg px-2.5 py-1.5 text-[13px] shadow-sm ${out ? 'self-end bg-[#d9fdd3]' : 'self-start bg-white'} ${afterCampaign ? 'ring-2 ring-green-400' : ''}`}>
-                      <div className="whitespace-pre-wrap break-words">{body || `[${m.type}]`}</div>
+                      <div className="break-words"><MessageBody message={m} /></div>
                       <div className="text-[10px] text-gray-500 text-right">{fmt(m.created_at)}</div>
                     </div>
                   )

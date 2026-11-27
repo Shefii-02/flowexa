@@ -1,3 +1,4 @@
+import MessageBody from '@/components/chat/MessageBody'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Activity, Loader2, Megaphone, Tag, UserCheck, X } from 'lucide-react'
 import { contactApi, labelApi, staffApi, leadApi, leadCategoryApi, conversationApi } from '@/api'
@@ -532,10 +533,9 @@ export default function ContactInfoDrawer({
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6, background: 'var(--wa-chat-bg)', padding: 8, borderRadius: 8, maxHeight: '55vh', overflowY: 'auto' }}>
                 {chat.messages.map((m: any) => {
                   const out = m.direction === 'outbound'
-                  const body = typeof m.content === 'string' ? m.content : (m.content?.body ?? m.content?.text ?? m.content?.caption ?? '')
                   return (
                     <div key={m.id} style={{ alignSelf: out ? 'flex-end' : 'flex-start', maxWidth: '85%', background: out ? 'var(--wa-bubble-out)' : 'var(--wa-bubble-in)', borderRadius: 8, padding: '5px 8px', fontSize: 12.5 }}>
-                      <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{body || `[${m.type}]`}</div>
+                      <MessageBody message={m} />
                       <div style={{ fontSize: 10, color: 'var(--wa-muted)', textAlign: 'right' }}>{fmtDateTime(m.created_at)}</div>
                     </div>
                   )

@@ -1,4 +1,5 @@
 // src/pages/messages/MessageLogsPage.tsx
+import { messageLabel } from '@/components/chat/MessageBody'
 import { useEffect, useState, useCallback } from 'react'
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend, CartesianGrid } from 'recharts'
 import { messageLogApi } from '@/api'
@@ -281,7 +282,7 @@ export default function MessageLogsPage({ lockChannel }: { lockChannel?: 'waha' 
                       )}
                     </div>
                     <p className="text-sm text-gray-700 truncate">
-                      {log.content || `[${log.type} message]`}
+                      {log.content || messageLabel(log) || '—'}
                     </p>
                     {log.status === 'failed' && (
                       <p className="text-xs text-red-600 truncate" title={log.failure_reason || undefined}>

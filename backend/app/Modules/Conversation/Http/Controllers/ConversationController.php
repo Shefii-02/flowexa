@@ -186,6 +186,79 @@ class ConversationController extends Controller
             'last_inbound_at' => $lastInAt?->toIso8601String(), 'window_open' => $lastInAt ? $lastInAt->gt(now()->subHours(24)) : false]);
     }
 
+    /** Meta's own wording of why a send failed — with a plain explanation for the 24-hour rule (error 131047 "re-engagement"). */
+    private function metaFailure($response): string
+    {
+        $reason = $response->json('error.error_user_msg') ?? $response->json('error.message') ?? 'Meta API error';
+        if ($this->isWindowError($response)) {
+            return 'WhatsApp did not accept this: more than 24 hours have passed since the customer last wrote, and Meta only allows an approved template message then. Send a template, or wait for the customer to reply.';
+        }
+        return $reason;
+    }
+
+    private function isWindowError($response): bool
+    {
+        return (int) $response->json('error.code') === 131047;
+    }
+
+    // POST /conversations/{id}/media — send a photo, video, audio file or document (multipart: file, caption?). Allowed at any time; after
+    // 24 hours WhatsApp itself decides whether to accept it (see metaFailure()).
+    public function sendMedia(Request $request, int $id): JsonResponse
+    {
+        $d = $request->validate(['file' => ['required', 'file', 'max:16384'], 'caption' => ['nullable', 'string', 'max:1024']]);   // 16 MB
+        $user = auth()->user();
+        $conversation = $this->visibleConversation($id)->load('waPhoneNumber');
+        if (!$user->hasPermission('inbox.view_all') && (int) $conversation->assigned_to !== (int) $user->id) {
+            return response()->json(['message' => $conversation->assigned_to ? 'This conversation is assigned to another agent.' : 'Claim this conversation before replying.'], 403);
+        }
+        $company = $user->company;
+        $number = $conversation->waPhoneNumber;
+        if (!$number || !$company->decrypt_wa_access_token) {
+            return response()->json(['message' => 'WhatsApp credentials not configured for this number.'], 422);
+        }
+
+        $file = $request->file('file');
+        $mime = (string) ($file->getMimeType() ?: $file->getClientMimeType());
+        $type = str_starts_with($mime, 'image/') && in_array($mime, ['image/jpeg', 'image/png'], true) ? 'image'
+            : (str_starts_with($mime, 'video/') && in_array($mime, ['video/mp4', 'video/3gpp'], true) ? 'video'
+            : (str_starts_with($mime, 'audio/') ? 'audio' : 'document'));
+        $path = $file->store('wa-outbound/' . $company->id, 'public');
+        $url = \Illuminate\Support\Facades\Storage::disk('public')->url($path);
+        if (!preg_match('#^https?://#i', $url)) { $url = url($url); }
+        $caption = trim((string) ($d['caption'] ?? ''));
+        $name = $file->getClientOriginalName();
+
+        $message = WaMessage::create([
+            'conversation_id' => $conversation->id, 'company_id' => $company->id, 'direction' => 'outbound', 'sender_type' => 'agent', 'sent_by' => $user->id,
+            'type' => $type, 'content' => ['body' => $caption, 'media' => ['url' => $url, 'mime' => $mime, 'mimetype' => $mime, 'filename' => $name, 'size' => $file->getSize()]],
+            'status' => 'queued',
+        ]);
+        broadcast(new WaMessageReceived($message->fresh(['conversation', 'sentBy'])));
+
+        $payload = ['messaging_product' => 'whatsapp', 'to' => $conversation->phone, 'type' => $type,
+            $type => array_filter(['link' => $url, 'caption' => $type === 'audio' ? null : ($caption ?: null), 'filename' => $type === 'document' ? $name : null])];
+        try {
+            $response = Http::withToken($company->decrypt_wa_access_token)->timeout(30)->post("https://graph.facebook.com/v21.0/{$number->phone_number_id}/messages", $payload);
+        } catch (\Illuminate\Http\Client\ConnectionException $e) {
+            $message->update(['status' => 'failed', 'failure_reason' => 'Timed out contacting Meta.']);
+            broadcast(new WaMessageReceived($message->fresh(['conversation', 'sentBy'])));
+            return response()->json(['message' => 'Timed out sending the file. It has been marked failed — you can retry.'], 422);
+        }
+        if ($response->failed()) {
+            $reason = $this->metaFailure($response);
+            $message->update(['status' => 'failed', 'failure_reason' => $reason]);
+            \App\Models\MessageLog::recordCloudOutbound($company->id, $conversation->phone, $type, $caption !== '' ? $caption : "[{$type}]", 'inbox', null, $reason);
+            broadcast(new WaMessageReceived($message->fresh(['conversation', 'sentBy'])));
+            return response()->json(['message' => $reason, 'window_closed' => $this->isWindowError($response)], 422);
+        }
+        $message->update(['wa_message_id' => $response->json('messages.0.id'), 'status' => 'sent', 'status_updated_at' => now()]);
+        \App\Models\MessageLog::recordCloudOutbound($company->id, $conversation->phone, $type, $caption !== '' ? $caption : "[{$type}]", 'inbox', $response->json('messages.0.id'));
+        $conversation->update(['last_message_at' => now()]);
+        broadcast(new WaMessageReceived($message->fresh(['conversation', 'sentBy'])));
+
+        return response()->json(['message' => $message->fresh()]);
+    }
+
     // PUT /conversations/{id}/star { starred: bool } — a personal star on a chat (only you see it)
     public function star(Request $request, int $id): JsonResponse
     {
@@ -309,11 +382,8 @@ class ConversationController extends Controller
             ], 403);
         }
 
-        // WhatsApp only allows free text within 24 hours of the customer's last message; after that a template is the only option.
-        $lastIn = \App\Models\WaMessage::where('conversation_id', $conversation->id)->where('direction', 'inbound')->max('created_at');
-        if (!$lastIn || \Illuminate\Support\Carbon::parse($lastIn)->lte(now()->subHours(24))) {
-            return response()->json(['message' => 'The 24-hour reply window has closed — send an approved template to start the conversation again.', 'window_closed' => true], 422);
-        }
+        // No window check of our own: staff may reply any time. After 24 hours WhatsApp itself may refuse a non-template message —
+        // that answer is passed back below (with a hint to send a template) instead of being blocked here.
 
         $company = auth()->user()->company;
         $phone   = $conversation->waPhoneNumber;
@@ -356,11 +426,11 @@ class ConversationController extends Controller
 
         if ($response->failed()) {
                Log::info($response);
-            $reason = $response->json('error.error_user_msg') ?? $response->json('error.message') ?? 'Meta API error';
+            $reason = $this->metaFailure($response);
             $message->update(['status' => 'failed', 'failure_reason' => $reason]);
             \App\Models\MessageLog::recordCloudOutbound($company->id, $conversation->phone, 'text', $d['body'], 'inbox', null, $reason);
             broadcast(new WaMessageReceived($message->fresh(['conversation', 'sentBy'])));
-            return response()->json(['message' => $reason], 422);
+            return response()->json(['message' => $reason, 'window_closed' => $this->isWindowError($response)], 422);
         }
 
         $message->update([

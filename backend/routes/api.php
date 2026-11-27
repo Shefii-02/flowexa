@@ -563,6 +563,7 @@ Route::prefix('v1')->group(function () {
             Route::post('conversations/{id}/claim', [ConversationController::class, 'claim']);
             Route::post('conversations/{id}/release', [ConversationController::class, 'release']);
             Route::post('conversations/{id}/messages', [ConversationController::class, 'send']);
+            Route::post('conversations/{id}/media', [ConversationController::class, 'sendMedia']);
         });
 
         Route::prefix('survey-forms')->group(function () {

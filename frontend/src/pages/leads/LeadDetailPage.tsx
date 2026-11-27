@@ -424,7 +424,7 @@ export default function LeadDetailPage() {
                   <div className="grid grid-cols-2 gap-2">
                     {hidden
                       ? <button type="button" disabled title="Needs the customer's real number" className={off}>📞 Phone call</button>
-                      : <a href={`tel:+${String(lead.contact.phone).replace(/\D+/g, '')}`} onClick={() => { setCallSignal((n) => n + 1); setSub('call') }} className="flex items-center justify-center gap-1.5 rounded-lg border border-gray-200 px-2 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50">📞 Phone call</a>}
+                      : <a href={`tel:+${String(lead.contact.phone).replace(/\D+/g, '')}`} className="flex items-center justify-center gap-1.5 rounded-lg border border-gray-200 px-2 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50">📞 Phone call</a>}
                     <button type="button" disabled title="IVR calling is not available yet" className={off}>☎️ IVR call</button>
                     <button type="button" onClick={() => setChatMode('wachat')} className="flex items-center justify-center gap-1.5 rounded-lg border border-green-200 bg-green-50 px-2 py-2 text-xs font-medium text-green-800 hover:bg-green-100">💬 WA Chat</button>
                     {hidden
