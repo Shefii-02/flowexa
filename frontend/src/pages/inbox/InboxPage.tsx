@@ -380,8 +380,18 @@ export default function InboxPage() {
       await conversationApi.sendMedia(activeId, file, reply.trim() || undefined)
       setReply('')
     } catch (e: any) {
-      toast.error(getError(e), { duration: 7000 })
+      offerTemplate(e)
     } finally { setSending(false) }
+  }
+
+  // WhatsApp refuses a normal message 24 h after the customer last wrote (error 131047) — nothing we or a higher price can change. Only an
+  // approved template is accepted then, so offer exactly that; any other error is just shown.
+  const offerTemplate = (e: any) => {
+    const d = e?.response?.data
+    const closed = d?.window_closed === true || /24 hours|re-engagement/i.test(String(d?.message ?? ''))
+    if (closed && window.confirm('More than 24 hours have passed since this customer last wrote, so WhatsApp does not accept a normal message — whatever it costs.\n\nSend an approved template instead? (It starts the conversation again.)')) {
+      setTemplateOpen(true)
+    } else if (!closed) toast.error(getError(e), { duration: 7000 })
   }
 
   const handleSend = async () => {
@@ -392,7 +402,7 @@ export default function InboxPage() {
     try {
       await conversationApi.send(activeId, { body })
     } catch (e) {
-      toast.error(getError(e))
+      offerTemplate(e)
       setReply(body)
     } finally { setSending(false) }
   }
