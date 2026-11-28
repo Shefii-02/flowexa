@@ -259,6 +259,10 @@ export default function InstagramInboxPage({ channel = 'instagram' }: { channel?
                     {media.map((a, i) => <div key={i} className={`mb-1 ${mine ? 'flex justify-end' : ''}`}><MediaBubble type={a.type} url={a.url} /></div>)}
                     {m.text && (
                       <div className={`rounded-2xl px-3 py-2 text-sm ${mine ? 'bg-brand-600 text-white' : 'bg-gray-100 text-gray-800'}`}>{m.text}</div>)}
+                    {!m.text && media.length === 0 && (
+                      <div className={`rounded-2xl px-3 py-2 text-sm italic ${mine ? 'bg-brand-600/80 text-white' : 'bg-gray-100 text-gray-500'}`}>
+                        💬 A message Instagram doesn't let us show here (a story reply, share or unsupported item) — open it in Instagram.
+                      </div>)}
                     {m.my_reaction && (
                       <span className={`-mt-1 inline-block rounded-full border border-white bg-white px-1.5 text-xs shadow ${mine ? 'float-right' : ''}`} title="Your reaction">{REACTION_EMOJI[m.my_reaction] ?? m.my_reaction}</span>)}
                     {Array.isArray(m.attachments) ? null : m.attachments?.buttons?.map(b => (
